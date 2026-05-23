@@ -46,26 +46,26 @@ export function TemplateRuntimeInputsSection({
       </div>
       {open || rows.length > 0 ? (
         <div className="mt-3 space-y-2">
-          <p className="text-xs text-muted-foreground">
-            Reuse one template by supplying compile-time values such as `ticker`,
-            `portfolio_slug`, or `analysis_tag`.
-          </p>
           {rows.length === 0 ? (
             <p className="text-xs italic text-muted-foreground">
-              No runtime inputs yet. Add one to parameterize this template.
+              No runtime inputs yet.
             </p>
           ) : null}
           {rows.map((row) => (
             <div key={row.id} className="flex items-center gap-2">
               <Input
                 value={row.key}
-                onChange={(event) => onUpdateRow(row.id, "key", event.target.value)}
+                onChange={(event) =>
+                  onUpdateRow(row.id, "key", event.target.value)
+                }
                 placeholder="ticker"
                 className="h-8 max-w-[16rem] text-xs"
               />
               <Input
                 value={row.value}
-                onChange={(event) => onUpdateRow(row.id, "value", event.target.value)}
+                onChange={(event) =>
+                  onUpdateRow(row.id, "value", event.target.value)
+                }
                 placeholder="AAPL"
                 className="h-8 flex-1 text-xs"
               />

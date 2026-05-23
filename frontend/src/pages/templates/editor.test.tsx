@@ -160,7 +160,9 @@ describe("TemplateEditorPage", () => {
     render(<TemplateEditorPage />);
 
     expect(screen.getByText("Template not found.")).toBeVisible();
-    expect(screen.queryByTestId("template-editor-shell")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("template-editor-shell"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows dynamic report selector guidance and inserts a selector example", () => {
@@ -171,12 +173,7 @@ describe("TemplateEditorPage", () => {
     );
 
     expect(
-      screen.getByText(
-        /Use these when the latest matching report matters more than a fixed saved name\./i,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/`reports\[0\]` is the newest report\./i),
+      screen.getByText(/Latest and tagged report selectors\./i),
     ).toBeInTheDocument();
     expect(
       screen.getByText('reports.latest("AAPL").content'),

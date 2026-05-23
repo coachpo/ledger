@@ -1,6 +1,9 @@
 import { Braces, ChevronDown, Loader2 } from "lucide-react";
 
-import { PlaceholderGroup, type PlaceholderItem } from "@/components/templates/placeholder-group";
+import {
+  PlaceholderGroup,
+  type PlaceholderItem,
+} from "@/components/templates/placeholder-group";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { PlaceholderTree } from "@/lib/types/text-template";
@@ -14,7 +17,8 @@ type PlaceholderReferenceGroup = {
 const STATIC_PLACEHOLDER_GROUPS: PlaceholderReferenceGroup[] = [
   {
     title: "Inputs",
-    description: "Compile-time values supplied from the editor when previewing or generating a report.",
+    description:
+      "Compile-time values supplied from the editor when previewing or generating a report.",
     items: [
       { path: "inputs", type: "object" },
       { path: "inputs.ticker", type: "string" },
@@ -40,16 +44,21 @@ const STATIC_PLACEHOLDER_GROUPS: PlaceholderReferenceGroup[] = [
   },
   {
     title: "Dynamic Portfolio Selectors",
-    description: "Use input-driven selectors when one template should work across multiple portfolios or tickers.",
     items: [
-      { path: 'portfolios.by_slug(inputs.portfolio_slug).name', type: "string" },
-      { path: 'portfolios.by_slug(inputs.portfolio_slug).positions', type: "list" },
       {
-        path: 'portfolios.by_slug(inputs.portfolio_slug).positions.by_symbol(inputs.ticker).quantity',
+        path: "portfolios.by_slug(inputs.portfolio_slug).name",
         type: "string",
       },
       {
-        path: 'portfolios.by_slug(inputs.portfolio_slug).positions.by_symbol(inputs.ticker).market_value',
+        path: "portfolios.by_slug(inputs.portfolio_slug).positions",
+        type: "list",
+      },
+      {
+        path: "portfolios.by_slug(inputs.portfolio_slug).positions.by_symbol(inputs.ticker).quantity",
+        type: "string",
+      },
+      {
+        path: "portfolios.by_slug(inputs.portfolio_slug).positions.by_symbol(inputs.ticker).market_value",
         type: "number",
       },
     ],
@@ -70,17 +79,28 @@ const STATIC_PLACEHOLDER_GROUPS: PlaceholderReferenceGroup[] = [
       { path: "portfolios.<slug>.positions", type: "list" },
       { path: "portfolios.<slug>.positions.<SYMBOL>", type: "object" },
       { path: "portfolios.<slug>.positions.<SYMBOL>.quantity", type: "string" },
-      { path: "portfolios.<slug>.positions.<SYMBOL>.average_cost", type: "string" },
+      {
+        path: "portfolios.<slug>.positions.<SYMBOL>.average_cost",
+        type: "string",
+      },
       { path: "portfolios.<slug>.positions.<SYMBOL>.currency", type: "string" },
       { path: "portfolios.<slug>.positions.<SYMBOL>.name", type: "string" },
-      { path: "portfolios.<slug>.positions.<SYMBOL>.market_value", type: "number" },
-      { path: "portfolios.<slug>.positions.<SYMBOL>.unrealized_pnl", type: "number" },
-      { path: "portfolios.<slug>.positions.<SYMBOL>.unrealized_pnl_percent", type: "number" },
+      {
+        path: "portfolios.<slug>.positions.<SYMBOL>.market_value",
+        type: "number",
+      },
+      {
+        path: "portfolios.<slug>.positions.<SYMBOL>.unrealized_pnl",
+        type: "number",
+      },
+      {
+        path: "portfolios.<slug>.positions.<SYMBOL>.unrealized_pnl_percent",
+        type: "number",
+      },
     ],
   },
   {
     title: "Report",
-    description: "Exact report references stay available when you already know a saved report name.",
     items: [
       { path: "reports", type: "list" },
       { path: "reports.<name>", type: "object" },
@@ -91,16 +111,18 @@ const STATIC_PLACEHOLDER_GROUPS: PlaceholderReferenceGroup[] = [
   },
   {
     title: "Dynamic Report Selectors",
-    description:
-      "Use these when the latest matching report matters more than a fixed saved name. `reports[0]` is the newest report. Valid selectors that match nothing compile to an empty string.",
+    description: "Latest and tagged report selectors.",
     items: [
       { path: "reports.latest", type: "object" },
       { path: 'reports.latest("AAPL").content', type: "string" },
-      { path: 'reports.latest(inputs.ticker).content', type: "string" },
+      { path: "reports.latest(inputs.ticker).content", type: "string" },
       { path: "reports[0].name", type: "string" },
       { path: 'reports.by_tag("weekly_review").latest', type: "object" },
-      { path: 'reports.by_tag(inputs.analysis_tag).latest', type: "object" },
-      { path: 'reports.by_tag("weekly_review").latest.content', type: "string" },
+      { path: "reports.by_tag(inputs.analysis_tag).latest", type: "object" },
+      {
+        path: 'reports.by_tag("weekly_review").latest.content',
+        type: "string",
+      },
     ],
   },
 ];
@@ -131,7 +153,9 @@ export function TemplatePlaceholderReference({
         <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
           Placeholder Reference
         </span>
-        {isLoading ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /> : null}
+        {isLoading ? (
+          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+        ) : null}
         <Button
           variant="ghost"
           size="icon"
