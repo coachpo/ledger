@@ -10,7 +10,7 @@
 - `uv run mypy app`
 - `uv run pytest`
 
-Backend tests cover preserved `/api/v1` CRUD, templates, reports, workflow package manifests, package import/export with inline private MCP `env`, `headers`, and `query` values, model connections, slim bundled extension state, extension-filtered global tools, package runtime behavior, dependency-only run extension records, ref-based public invocation payloads, native runtime tools, core memory schemas/services/tools, persisted run memory evidence, historical agent-memory report behavior, trace metadata, global runs, DB upgrades, and removed-route guarantees.
+Backend tests cover preserved `/api/v1` CRUD, templates, reports, artifact-only workflow package dependency persistence, launch/preflight readiness, rerun/fork draft readiness, package import/export with inline private MCP `env`, `headers`, and `query` values, model connections, slim bundled extension state, extension-filtered global tools, package runtime behavior, backend-owned run progress and queue read models, explicit scheduler worker semantics, dependency-only run extension records, ref-based public invocation payloads, native runtime tools, core memory schemas/services/tools, package-qualified memory scopes, shared-memory mutation conflicts, persisted run memory evidence, historical agent-memory report behavior, trace metadata, global runs, DB upgrades, and removed-route guarantees.
 
 ## Frontend Quality Gates
 
@@ -20,13 +20,13 @@ Backend tests cover preserved `/api/v1` CRUD, templates, reports, workflow packa
 - `pnpm test:run`
 - `pnpm test:e2e`
 
-Frontend tests cover API helpers, query keys, formatting helpers, markdown formatting, portfolio analytics, workflow package helpers, authoring-only package editor flows, dedicated `/workflow-packages/:packageId/run` launch page behavior, run-detail memory evidence rendering, layout routing, and browser E2E route families.
+Frontend tests cover API helpers, query keys, formatting helpers, markdown formatting, portfolio analytics, workflow package helpers, authoring-only package editor flows, dedicated `/workflow-packages/:packageId/run` launch page behavior, backend progress/queue consumption in run pages, rerun/fork current-readiness gating, run-detail memory evidence rendering, layout routing, and browser E2E route families.
 
 ## E2E Scope
 
 Playwright uses Chromium only. `frontend/playwright.config.ts` starts a dedicated backend on `8001` and built frontend preview on `4173`.
 
-The backend helper runs `uv run --frozen uvicorn app.main:app --host 127.0.0.1 --port 8001` and defaults `QUOTE_PROVIDER_BACKEND=deterministic`. The frontend helper builds first, previews with `--strictPort`, and defaults `VITE_API_BASE_URL=http://127.0.0.1:8001/api/v1`.
+The backend helper starts the explicit run scheduler worker alongside the Uvicorn backend on `8001` for the Playwright run. It defaults `QUOTE_PROVIDER_BACKEND=deterministic`. The frontend helper builds first, previews with `--strictPort`, and defaults `VITE_API_BASE_URL=http://127.0.0.1:8001/api/v1`.
 
 Specs use API-assisted setup when it keeps UI assertions focused. Preserved product setup uses `/api/v1`; platform setup uses `/api`.
 

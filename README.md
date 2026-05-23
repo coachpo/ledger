@@ -69,8 +69,9 @@ It will:
 - prefer PostgreSQL on `25432`, then fall back to `25433` or `25434` if needed
 - prefer the backend on `28000`, then fall back to `28001` or `28002` if the requested port is occupied by a non-SignalDeck service
 - prefer the frontend on `25173`, then fall back to `25174` if needed
-- stop previously running SignalDeck backend, frontend, and local Docker database instances before starting fresh ones
-- derive `DATABASE_URL` for backend startup when you do not provide one
+- stop previously running SignalDeck backend, scheduler worker, frontend, and local Docker database instances before starting fresh ones
+- start the dedicated scheduler worker that claims and executes queued Workflow Package runs
+- derive `DATABASE_URL` for backend and scheduler startup when you do not provide one
 - derive `VITE_API_BASE_URL` for frontend startup
 
 ### 5. Open the app and verify the stack
@@ -104,13 +105,23 @@ Backend compose is DB-only and exposes Postgres on `${SIGNALDECK_DB_PORT:-25432}
 
 The default local connection is `postgresql+psycopg://signaldeck:signaldeck@localhost:25432/signaldeck`. If you run the frontend on `25173`, keep backend CORS aligned with that origin through `CORS_ALLOWED_ORIGINS` when you need overrides.
 
-### 3. Start the frontend
+### 3. Start the scheduler worker
+
+```bash
+(cd backend && uv run python -m app.workers.run_scheduler)
+```
+
+Keep this process running beside the backend. API requests only enqueue Workflow Package runs; the scheduler worker is the process that claims queued runs, heartbeats leases, recovers expired leases, and executes work. Without it, queued runs remain queued until a worker starts.
+
+Scheduler defaults are `RUN_SCHEDULER_MAX_ACTIVE_RUNS=4`, `RUN_SCHEDULER_MAX_ACTIVE_PER_PACKAGE=1`, `RUN_SCHEDULER_POLL_INTERVAL_SECONDS=1`, `RUN_SCHEDULER_HEARTBEAT_SECONDS=10`, and `RUN_SCHEDULER_LEASE_TTL_SECONDS=60`.
+
+### 4. Start the frontend
 
 ```bash
 (cd frontend && VITE_API_BASE_URL=http://127.0.0.1:28000/api/v1 pnpm dev --host 127.0.0.1 --port 25173)
 ```
 
-### 4. Open the app
+### 5. Open the app
 
 Visit `http://127.0.0.1:25173/`.
 

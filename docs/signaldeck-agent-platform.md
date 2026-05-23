@@ -31,6 +31,8 @@ Backend registry and frontend scaffold data are private wiring. They may hold th
 
 Workflow Packages are the only live platform authoring root. Manifests use `signaldeck.workflowPackage/v1` YAML and store one mutable current package definition without a live status lifecycle. The editor is authoring-only: package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes live inside that current package artifact until the next save replaces it.
 
+Package persistence is artifact-only for dependency references. Saving, importing, and updating a package can persist referenced Model Connection keys, extension-owned tool keys, and package secret-binding keys as artifact references without proving every live dependency is currently present or enabled. Current readiness is evaluated by launch metadata, preflight, launch, rerun, and fork flows against the stored artifact plus the live environment.
+
 Package-local refs use local keys. Model bindings use global Model Connection keys. Tool grants use global server-declared tool keys inside package-local capability profiles. Workflow graph nodes currently ship as `kind: step`, `kind: sequence`, `kind: fanout`, `kind: loop`, and `kind: http`.
 
 `kind: step` continues to mean local package-agent invocation through `AgentExecutionService`. `kind: http` is the shipped non-agent operation node; it compiles into `ExecutionPlanOperation` and `PackageRuntimeOperationSpec`, not into fake agents. Mixed execution steps may carry both `agents` and `operations`; final outputs still resolve from step/slot selectors such as `${{ nodes.notify_slack.outputs.webhook_result }}`.
@@ -66,7 +68,7 @@ The HTTP runtime is intentionally narrow. `HttpOperationExecutionService` resolv
 
 ## Package Secret Bindings
 
-Package secret bindings are package-local encrypted values used by HTTP operation nodes. They are not Workflow Package manifest fields and are never included in exports, run details, logs, compiled graph refs, agent inputs, workflow outputs, or diagnostics.
+Package secret bindings are package-local encrypted values used by HTTP operation nodes. They are not Workflow Package manifest fields and are never included in exports, run details, logs, compiled graph refs, agent inputs, workflow outputs, or diagnostics. Deleting a binding is a live-environment mutation: the package artifact can keep the referenced key, while later readiness and runtime checks report the missing value.
 
 The API shape is:
 
@@ -80,7 +82,7 @@ The frontend exposes this through the package editor Secret Bindings tab. Stored
 
 Model Connections are global live bindings for provider endpoint, model id, API style, reasoning effort, timeout defaults, encrypted API keys, status, and last connection-test metadata.
 
-Read payloads and errors must mask or omit raw secrets. Blank API-key edits preserve the stored key; non-empty edits rotate it. Packages resolve Model Connections by key during validation, preflight, launch, and runtime.
+Read payloads and errors must mask or omit raw secrets. Blank API-key edits preserve the stored key; non-empty edits rotate it. Packages store Model Connection keys as artifact references. Current readiness and execution resolve those keys against the live Model Connection store, so deleting or changing a connection affects subsequent preflight, launch, rerun, fork, or runtime checks without rewriting historical run snapshots.
 
 ## Tools
 
@@ -96,13 +98,19 @@ The canonical TradingAgents-style advisory package grants native data/news/socia
 
 The browser launch surface is the dedicated `Launch Workflow Package` page at `/workflow-packages/:packageId/run` in phase 1. It is separate from the authoring editor and owns launch metadata, preflight gating, runtime parameters, saved inputs, and create-run state. The `/workflow-packages/:packageId/launch` browser rename is deferred follow-up only.
 
-Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launch`, then creates a run with `POST /api/workflow-packages/{packageId}/launches` using the selected workflow key and `parameters`. Launch captures the current package artifact into a run-owned executable snapshot before dispatch.
+Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launch`, then creates a durable queued run with `POST /api/workflow-packages/{packageId}/launches` using the selected workflow key and `parameters`. Launch captures the current package artifact into a run-owned executable snapshot before the explicit scheduler worker claims it.
 
-Runs persist run status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, fork metadata, dependency-only extension requirements, and snapshot-based package provenance. Current detail payloads include steps, agent invocations, operation invocations, read-only historical replay lineage when present, and the captured executable snapshot for review without requiring a separate tracing product or Logfire token. They expose invocation refs, not scalar internal `agent` or `output schema` ids. The `run_forks` artifact is persisted for forked descendants, but `RunRead` does not currently expose a top-level `fork` field. Reruns and forks execute the stored run snapshot, not the current package state. Deleting a Workflow Package deletes its owned runs and their run-owned snapshots. `packageProvenance.workflowPackageStatus` is nullable historical snapshot data only; `packageProvenance.currentPackage` does not carry live package status.
+Runs persist run status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, fork metadata, scheduler metadata, dependency-only extension requirements, and snapshot-based package provenance. Current detail payloads include steps, agent invocations, operation invocations, read-only historical replay lineage when present, and the captured executable snapshot for review without requiring a separate tracing product or Logfire token. They expose invocation refs, not scalar internal `agent` or `output schema` ids. The `run_forks` artifact is persisted for forked descendants, but `RunRead` does not currently expose a top-level `fork` field. Reruns and forks execute the stored run snapshot, not the current package state. Deleting a Workflow Package deletes its owned runs and their run-owned snapshots. `packageProvenance.workflowPackageStatus` is nullable historical snapshot data only; `packageProvenance.currentPackage` does not carry live package status.
 
-Rerun is the root-parameter flow. `GET /api/runs/{runId}/rerun-draft` returns root launch parameters, and `POST /api/runs/{runId}/reruns` creates a new run with edited `parameters`.
+Run progress is backend-owned. Run list and detail payloads include a `progress` object derived from persisted agent and operation invocation statuses, not from frontend status heuristics. The shipped shape uses `unit`, `terminalCount`, `totalCount`, and `percent`; terminal `succeeded` and `failed` runs report `percent: 100`, while count fields still come from invocation rows.
 
-Fork is the invocation-input flow. `GET /api/runs/{runId}/fork-draft?sourceInvocationId=...` returns the selected source agent invocation's persisted actual input, and `POST /api/runs/{runId}/forks` creates a descendant run that preserves the source run input, copies upstream context, edits that one target invocation input, and resumes from `resumeStepIndex`. Phase 1 supports agent invocation targets only. Operation and tool invocation forks are rejected rather than treated as step-wide forks.
+Queued-state explanations are backend-owned as a nullable `queue` read model on run list and detail payloads. Queue records explain whether a queued run is blocked behind an older or running run in the same serial package lane, or is awaiting worker capacity. `status` remains the lifecycle field and does not carry reason text.
+
+The run scheduler is an explicit backend worker process. API launch, rerun, and fork requests stop after creating durable queued rows; local and E2E startup helpers start `python -m app.workers.run_scheduler` as a sibling process. Worker claims stamp lease owner/timestamps, heartbeat extends the lease, completion clears it, and expired running leases fail the abandoned run before the lane claims more work.
+
+Rerun is the root-parameter flow. `GET /api/runs/{runId}/rerun-draft` returns root launch parameters, historical package provenance, and top-level current readiness for creating a descendant from the stored artifact plus the live environment. `POST /api/runs/{runId}/reruns` creates a new queued run with edited `parameters`.
+
+Fork is the invocation-input flow. `GET /api/runs/{runId}/fork-draft?sourceInvocationId=...` returns the selected source agent invocation's persisted actual input, historical package provenance, and top-level current readiness. `POST /api/runs/{runId}/forks` creates a queued descendant run that preserves the source run input, copies upstream context, edits that one target invocation input, and resumes from `resumeStepIndex`. Phase 1 supports agent invocation targets only. Operation and tool invocation forks are rejected rather than treated as step-wide forks.
 
 `resumeStepIndex` is an execution boundary, not the editable target. The editable target is `sourceInvocationId`, and the create payload uses `invocationInput` as a full replacement for that target invocation input. Browser URL state mirrors this separation with `fork=1&resumeStepIndex=<n>&invocationId=<id>`.
 
@@ -113,6 +121,52 @@ Run extension requirements appear as `extensionDependencies`. Each dependency re
 Run detail keeps operation invocation rows separate from agent rows. Each step has `invocations` for agents and `operationInvocations` for `kind: http` operations. Operation invocation detail includes `operationKey`, `operationKind`, `method`, `timeoutSeconds`, redacted `requestMetadata`, bounded `responseMetadata`, `output`, `outputOrigin`, status/error fields, replay source fields, and timestamps. HTTP-only steps have no agent invocations; mixed steps can show both families.
 
 Run memory evidence is persisted as `memoryEvents[]`, a generic stream of retrieval, injection, write/reuse, review, supersession, and failure facts from `run_memory_events`. `memoryArtifacts[]` is only a compact human-auditable slice for memories written by the run. Artifacts expose opaque `memoryId`, `summary`, `status`, `createdAt`, provenance, graph metadata when available, and optional `auditLinks.report` only when an ordinary report-domain audit action exists.
+
+## Immutable Workflow Artifact vs Late-Bound Execution Environment
+
+SignalDeck does not promise bit-for-bit historical replay. The stable platform contract is **immutable workflow artifact + late-bound execution environment**. The stored run snapshot is the execution authority for workflow structure and run evidence; current platform state continues to supply credentials, bindings, feature availability, and runtime infrastructure.
+
+### Terminology
+
+- **Immutable workflow artifact** — the package-defined execution structure captured onto the run: workflow graph, package-local resources, package-authored MCP config, selected workflow, input schema, and launch parameters.
+- **Run evidence** — the persisted history produced by execution: steps, invocation rows, operation rows, fork lineage, outputs, errors, trace ids, span ids, and memory evidence.
+- **Late-bound execution environment** — current global/platform state resolved outside the run snapshot: model-connection settings and secrets, package secret binding values, extension enablement, tool/runtime availability, MCP runtime boundaries, provider bundles, and backend operational settings.
+
+### Boundary Contract
+
+| Surface | Must be frozen for an existing run | Allowed to change in global state | Current code paths |
+|---|---|---|---|
+| Workflow Package artifact | `packageDefinition`, `compiledPlan`, manifest/compiled hashes, selected workflow, package-local refs, capability-profile tool grants, package-authored private MCP config, input schema, launch parameters | The current package row may change for later launches only; rerun/fork still derive structure from the stored run snapshot | `backend/app/services/workflow_package_service.py`, `backend/app/services/run_service.py`, `backend/app/models/run.py` |
+| Run evidence and lineage | `runs`, `run_steps`, `run_agent_invocations`, `run_operation_invocations`, `run_forks`, outputs, errors, trace/span ids, replay source metadata, `run_memory_events` | Historical rows are not rewritten; only new descendant runs add new evidence | `backend/app/services/run_service.py`, `backend/app/repositories/run*.py`, `backend/app/models/run.py` |
+| Model Connections | The referenced key and launch-time provenance in `packageProvenance.resolvedModelConnections` remain part of run audit history | Live base URL, model id, reasoning effort, API style, timeout, secret payload, and active/inactive status may change without mutating the stored run snapshot; current readiness, launch, rerun, fork, and execute-time rules validate current state | `backend/app/services/model_connection_service.py`, `backend/app/services/workflow_package_preflight.py`, `backend/app/services/run_rerun_fork.py`, `backend/app/services/agent_execution_service.py` |
+| Package secret bindings | Secret binding keys referenced by HTTP nodes and redacted request/response evidence | Secret binding values may rotate or be deleted independently of package artifacts and run snapshots; exports and run detail never include raw values, and later readiness/runtime checks surface missing bindings | `backend/app/services/workflow_package_service.py`, `backend/app/repositories/workflow_package_secret_binding.py`, `backend/app/services/http_operation_execution_service.py` |
+| Extensions and tool availability | Package-requested tool keys and dependency-only `extensionDependencies` captured on the run | Enabled/disabled extension state, tool catalog membership, runtime tool executors, provider bundles, and lifecycle hooks may change and affect later validation/runtime behavior | `backend/app/services/extension_service.py`, `backend/app/services/extension_dependency_service.py`, `backend/app/agents/tool_catalog/__init__.py`, `backend/app/agents/runtime_tools/registry.py` |
+| MCP runtime | Package-authored private MCP config and any pinned saved MCP server identity recorded in package-owned descriptors | Live MCP server enabled/published status, runtime boundary enforcement, package-private tool ownership checks, and dispatcher availability may change | `backend/app/agents/mcp/runtime.py`, `backend/app/agents/mcp/boundaries.py`, `backend/app/agents/mcp/tool_adapter.py` |
+| Platform runtime and providers | Stored outputs and evidence only | Backend settings, OpenAI client behavior, quote/social adapters, HTTP runtime limits, runtime tool implementations, and other server-owned execution infrastructure may change between runs | `backend/app/services/agent_execution_service.py`, `backend/app/services/execution_providers.py`, `backend/app/services/http_operation_execution_service.py`, `backend/app/core/config.py` |
+
+### Allowed To Change vs Must Be Frozen
+
+**Must be frozen for an existing run**
+
+- workflow graph and selected workflow entrypoint
+- package-local agents, schemas, capability profiles, and tool grants requested by the package
+- package-authored private MCP config stored in the package artifact
+- launch inputs, rerun/fork lineage, and persisted run evidence
+
+**Allowed to change without mutating the stored run snapshot**
+
+- credentials and non-secret connection settings resolved by model-connection key
+- package secret binding values for HTTP nodes
+- enabled/disabled extension state and live tool/runtime availability
+- provider/runtime implementations and backend operational settings
+
+### Rerun, Fork, and Replay Semantics
+
+- Rerun and fork derive execution structure from the stored run snapshot, not from the current mutable Workflow Package row.
+- Rerun and fork drafts expose top-level `ready`, `blockingErrors`, and `warnings` for current create-readiness. Historical `packageProvenance.preflightSummary` remains provenance and does not decide whether the create action is enabled.
+- Live dependencies are revalidated at launch, rerun, fork, or execute time. This validation affects whether a new run can start or continue, but it does not redefine what the package artifact or historical run snapshot contains.
+- Audit payloads such as `resolvedModelConnections`, `preflightSummary`, `extensionDependencies`, and `currentPackage` explain what launch saw or what the current package looks like; they do not replace the stored run snapshot as the execution artifact.
+- If stronger reproducibility is needed later, version the late-bound environment explicitly instead of broadening run snapshots to include raw secrets or mutable global state.
 
 ## UI Contract
 

@@ -23,9 +23,9 @@ There is still no public browser `/api/memory` CRUD surface in this phase. The i
 | Core memory schemas | `backend/app/schemas/memory.py` |
 | Schema contract tests | `backend/tests/test_memory_domain_schemas.py` |
 | Tool contract guardrails | `backend/tests/test_tool_catalog_api.py` |
-| Future persistence owner | `backend/app/db/`, `backend/app/models/`, `backend/app/repositories/` |
-| Future runtime-tool owner | `backend/app/agents/` |
-| Future run evidence owner | `backend/app/schemas/run.py`, `backend/app/services/run_service.py` |
+| Persistence owner | `backend/app/db/`, `backend/app/models/`, `backend/app/repositories/` |
+| Runtime-tool owner | `backend/app/agents/` |
+| Run evidence owner | `backend/app/schemas/run.py`, `backend/app/services/run_service.py` |
 
 ## Core DTO Contract
 
@@ -54,7 +54,9 @@ mode = "immutable-revision-per-content-change"
 duplicateContent = "reuse-existing-active-revision"
 ```
 
-If an exact duplicate active revision already exists, the write returns that revision with `revisionAction="reused"`. A new content revision returns `revisionAction="created"`. Superseding a prior revision is explicit through `supersedesRevisionId` and returns `revisionAction="superseded"` when that operation is implemented.
+If an exact duplicate active revision already exists, the write returns that revision with `revisionAction="reused"`. A new content revision returns `revisionAction="created"`. Superseding a prior revision is explicit through `supersedesRevisionId` and returns `revisionAction="superseded"`.
+
+Shared-scope revision mutations acquire the memory entry row before reading latest revision state. Concurrent broader-scope mutations have one canonical winner; lock contention returns a retryable `409` with `code="memory_revision_conflict"`, so callers can re-read the latest revision and retry.
 
 `MemoryWriteResult` returns `memoryId`, `revisionId`, status, `revisionAction`, created time, provenance, revision metadata, idempotency semantics, and warnings. It does not expose the old generic `action` field.
 
@@ -70,7 +72,9 @@ Writers may provide `idempotencyKey`. If they omit it, phase 1 uses this determi
 
 ## Lookup Scope and Budgets
 
-`signaldeck.memory.lookup` is never an unscoped global search. A request can provide explicit selectors through `scope`, `subjectRefs`, or `kind`. When those selectors are omitted, the server binds lookup to the current run/package/agent context only, represented in schema outputs as:
+`signaldeck.memory.lookup` is never an unscoped global search. A request can provide explicit selectors through `scope`, `subjectRefs`, or `kind`. Runtime broader scopes are canonicalized by server context: `package` resolves to the current package key, while `workflow` and `agent` resolve to package-qualified `package:local` keys. Raw provenance still records the run, workflow, agent, step, and slot that produced the memory.
+
+When selectors are omitted, the server binds lookup to the current run/package/agent context only, represented in schema outputs as:
 
 ```text
 scopeMode = "current-context-fallback"
@@ -121,10 +125,12 @@ Model-visible memory outputs can include `memoryId`, `revisionId`, `status`, `ki
 
 1. Do not add finance-only fields as required top-level core memory fields.
 2. Do not allow unscoped global lookup.
-3. Do not use reports as the canonical memory persistence substrate.
-4. Do not expose report identity or raw markdown in model-visible memory outputs.
-5. Do not register core memory tools through finance-owned registrars.
-6. Do not ship exact-id `get` until a concrete phase-1b flow proves the need.
+3. Do not let package-local workflow or agent scope keys collide across packages.
+4. Do not treat shared-memory mutation conflicts as generic server errors; callers should retry after reading the latest revision.
+5. Do not use reports as the canonical memory persistence substrate.
+6. Do not expose report identity or raw markdown in model-visible memory outputs.
+7. Do not register core memory tools through finance-owned registrars.
+8. Do not ship exact-id `get` until a concrete phase-1b flow proves the need.
 
 ## Verification Targets
 
