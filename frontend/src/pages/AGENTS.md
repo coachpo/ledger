@@ -73,7 +73,7 @@ src/pages/
 - Resource inventories render directly after toolbar and state cards. Platform pages prefer `PlatformResourceList` plus `PlatformResourceCard density="compactPlus"`; finance inventories can use `ResourceRowCard`, grouped list cards, or existing table primitives when the route owns that pattern.
 - Detail routes keep route identity and back navigation explicit. Use `text-xl font-semibold tracking-tight` for the route title, keep secondary actions before destructive or primary save actions, and do not truncate the entity identity.
 - Editor routes use metadata-owned `fullHeight` shell mode when they need split panes or persistent action bars. They must expose a labeled route shell, labeled inputs, save/cancel hierarchy, and mobile containment.
-- Console routes such as package launch and run detail use metadata-owned `fullHeight` shell mode. Preserve evidence, preflight, trace, payload, and fork/rerun controls with internal scrolling for wide data.
+- Console routes such as package launch and run detail use metadata-owned `fullHeight` shell mode. Preserve evidence, preflight, backend progress/queue/readiness payloads, trace, payload, and fork/rerun controls with internal scrolling for wide data.
 - System-state routes stay narrow and contract-bound. `/extensions` renders only slim bundled extension state and must not grow marketplace, install, remove, or private scaffold details.
 - Loading, error, empty, filtered-empty, disabled-extension, not-found, creating, editing, saving, importing, validating, launching, and polling states must match the route's `stateVariants` metadata and have targeted test coverage when they are visible user states.
 

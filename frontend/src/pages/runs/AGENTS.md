@@ -23,8 +23,8 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 ## CONVENTIONS
 
-- `list.tsx` keeps workflow-key and status filters local to the page and refetches on a timer.
-- `detail.tsx` computes progress from step outputs and keeps trace linkage visible even when the top-level trace id is missing.
+- `list.tsx` keeps target-kind, target-key, and status filters local to the page and refetches on a timer while any run is queued or running.
+- Run list and detail render backend `run.progress` and nullable `run.queue`; do not recreate status-to-percent or queued-reason heuristics in the page layer. Keep trace linkage visible even when the top-level trace id is missing.
 - Run detail renders `memoryEvents` as the canonical run-scoped evidence stream and `memoryArtifacts` as the compact artifact slice. Artifact `memoryId` values are opaque. Report open/download actions are optional audit actions sourced from `artifact.auditLinks.report.url` and `artifact.auditLinks.report.downloadUrl`, never derived from `memoryId`.
 - Memory event presentation is grouped into retrieved context, memory writes/reuse, review/follow-up, and audit-trail panes; keep those groupings route-owned instead of flattening everything into one raw event list.
 - Per-agent and per-operation details stay inside accordions/inspection panes so the page can expose the full run without flattening the layout.

@@ -57,7 +57,7 @@ frontend/
 | Portfolio routes | `src/pages/portfolios/AGENTS.md`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
 | Template routes | `src/pages/templates/AGENTS.md`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
 | Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
-| Agent-platform routes | `src/pages/workflow-packages/AGENTS.md`, `src/pages/model-connections/AGENTS.md`, `src/pages/runs/AGENTS.md` | Workflow Packages, Model Connections, and Runs |
+| Agent-platform routes | `src/pages/workflow-packages/AGENTS.md`, `src/pages/model-connections/AGENTS.md`, `src/pages/runs/AGENTS.md` | Workflow Packages, Model Connections, and Runs, including backend-owned run progress/queue payloads and current rerun/fork readiness |
 | Shared components | `src/components/AGENTS.md`, `src/components/platform-authoring/AGENTS.md`, `src/components/forms/*.tsx` | layout shell, theme, shared UI, cross-route dialogs, platform-authoring widgets, portfolio feature folders |
 | UI primitives | `src/components/ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
 | Unit test setup | `vite.config.ts`, `src/test/setup.ts` | jsdom config plus browser API mocks |
@@ -77,7 +77,7 @@ frontend/
 - Report inventory grouping/search/sort logic lives in `src/lib/report-grouping.ts`; the route composes that derived view state instead of re-implementing grouping inline.
 - `GenerateReportDialog` is the shared surface for parameterized report creation from both the template editor and the report list.
 - Workflow package editors are authoring-only YAML-manifest editors with local package-resource editing, backend validation, package secret bindings, import, and export. Launch, preflight gating, runtime parameters, saved inputs, and create-run state belong to the dedicated `/workflow-packages/:packageId/run` page labeled `Launch Workflow Package`.
-- Agent-platform pages use dedicated hooks and route params to keep package CRUD, extension-filtered global Tools reads, global Model Connections, and Run inspection inside the routed page layer.
+- Agent-platform pages use dedicated hooks and route params to keep package CRUD, extension-filtered global Tools reads, global Model Connections, backend-provided run progress/queue/readiness payloads, and Run inspection inside the routed page layer.
 - `useExtensions()` drives Finance Workspace route/nav visibility, `/extensions` state UI, and tool filtering for package capability profiles.
 - The `/extensions` page is a system state surface only; render only the backend contract (`key`, `label`, `enabled`) and keep marketplace/install/remove behavior out of phase 1.
 - Model connection editors keep credentials write-only in the UI: blank edit submissions preserve the stored key, and inline connection tests run against the persisted backend connection only after save.
