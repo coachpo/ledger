@@ -20,7 +20,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | CSV import schemas | `csv_import.py` | preview and commit payloads |
 | Template schemas | `text_template.py` | CRUD, inline compile, stored compile, placeholder tree |
 | Report schemas | `report.py` | read/update payloads plus metadata envelope |
-| Extension schemas | `extension.py` | bundled extension list/read/toggle payloads with slim public state |
+| Extension schemas | `extension.py` | statically resident extension list/read/toggle payloads with slim public state |
 | Agent-platform schemas | `workflow_package.py`, `workflow_package_manifest.py`, `model_connection.py`, `tool.py`, `run.py` | current `/api/*` request and response models |
 | Memory domain schemas | `memory.py`, `memory_report.py` | core memory DTO projections plus historical agent-memory report metadata |
 | Base/shared schema helpers | `common.py` | `CamelModel`, `TradingSide`, `OperationType`, shared validators |
@@ -34,7 +34,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Extra fields are forbidden to catch typos and unsupported payloads early.
 - Update schemas rely on `model_fields_set` to distinguish omitted fields from explicit null or empty updates.
 - Portfolio slugs are normalized to lowercase underscore identifiers on create and intentionally omitted from `PortfolioUpdate`.
-- `extension.py` keeps bundled extension state aligned with `/api/extensions` and frontend route/tool gating. Public reads expose only `key`, `label`, and `enabled`; toggles accept only `enabled`.
+- `extension.py` keeps statically resident extension state aligned with `/api/extensions` and frontend route/tool gating. Public reads expose only `key`, `label`, and `enabled`; toggles accept only `enabled`.
 - Agent-platform schemas keep current package artifacts, typed package-local wiring, secret-safe model bindings, run-owned snapshots, and persisted run detail aligned with live `/api/*` contracts and frontend callers.
 
 ## ANTI-PATTERNS
@@ -61,7 +61,7 @@ uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests
 - Trading operation schemas use a discriminated union across BUY/SELL/DIVIDEND/SPLIT payloads.
 - `workflow_package.py` and `workflow_package_manifest.py` carry current package authoring, validation, import/export, preflight, launch, and artifact payloads.
 - `model_connection.py` normalizes OpenAI-family base URLs, rejects empty/null API-key updates, and keeps read payloads secret-safe.
-- `extension.py` exposes bundled extension state and enable/disable toggle payloads only.
+- `extension.py` exposes statically resident extension state and enable/disable toggle payloads only.
 - `tool.py` exposes read-only server-declared tool metadata.
 - `memory.py` defines phase 1 projection boundaries. Model-visible payloads expose `memoryId`, status, summary, provenance, and warnings without report identity, raw markdown, URLs, downloads, or `auditLinks`; API/UI projections may include nested `auditLinks.report`; report routes stay report-shaped.
 - `memoryId` is an opaque platform-core memory identifier. Do not parse it in schemas, services, runtime tools, routes, or frontend callers.

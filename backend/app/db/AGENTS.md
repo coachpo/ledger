@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers `app/db/`.
 
 ## OVERVIEW
-`app/db/` owns engine/session creation, PostgreSQL-only database initialization, cache resets for tests, numeric-id guardrails, and in-code schema upgrades for preserved product tables, bundled extension state, and current agent-platform tables. `upgrades.py` is also the supported startup repair path for extension-state canonicalization, current-package/reference-table creation, run-fork tables, stale-run recovery, and retired-table cleanup.
+`app/db/` owns engine/session creation, PostgreSQL-only database initialization, cache resets for tests, numeric-id guardrails, and in-code schema upgrades for preserved product tables, statically resident extension state, and current agent-platform tables. `upgrades.py` is also the supported startup repair path for extension-state canonicalization, current-package/reference-table creation, run-fork tables, stale-run recovery, and retired-table cleanup.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 

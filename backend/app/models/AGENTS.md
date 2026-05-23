@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers SQLAlchemy model rules.
 
 ## OVERVIEW
-`app/models/` defines SQLAlchemy ORM entities, table names, constraints, indexes, cache tables, and relationships for the preserved product data model, bundled extension state, and current agent-platform tables. Models stay persistence-focused and should not contain service-layer business rules.
+`app/models/` defines SQLAlchemy ORM entities, table names, constraints, indexes, cache tables, and relationships for the preserved product data model, statically resident extension state, and current agent-platform tables. Models stay persistence-focused and should not contain service-layer business rules.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -21,7 +21,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Symbol-name cache | `symbol_name_cache.py` | unlogged cache table keyed by symbol |
 | Text templates | `text_template.py` | stored template names and content |
 | Reports | `report.py` | slug-addressed markdown snapshots with source and metadata |
-| Extension state | `extension.py` | persisted enable/disable state for bundled extension keys |
+| Extension state | `extension.py` | persisted enable/disable state for statically resident extension keys |
 | Platform package entities | `workflow_package.py` | package headers plus immutable package version artifacts |
 | Platform global entities | `model_connection.py`, `run.py` | saved model connections plus persisted global run detail and package provenance |
 ## CONVENTIONS
@@ -57,4 +57,4 @@ uv run pytest tests/test_api.py tests/test_runtime_models.py
 - `run.py` persists package version identity, package hash, workflow key, queued/running status, execution scope, concurrency policy, lease metadata, attempt counts, per-step outputs, final output, and run totals used by the run monitor.
 - `report.py` stores unique `name` and `slug`, tracks the canonical origin `source` values `compiled`, `uploaded`, `external`, and `agent`, and keeps optional metadata in JSONB under the `metadata` column. Historical agent-memory reports remain report-domain records; canonical memory rows live in `agent_memory.py`.
 - `symbol_name_cache.py` is intentionally `UNLOGGED` because the cache is reconstructible from provider lookups.
-- `extension.py` stores `extension_states` rows keyed by bundled extension key; the initial enabled seed is declared in `app/extensions/registry.py` and applied by DB upgrades.
+- `extension.py` stores `extension_states` rows keyed by statically resident extension key; the initial enabled seed is declared in `app/extensions/registry.py` and applied by DB upgrades.
