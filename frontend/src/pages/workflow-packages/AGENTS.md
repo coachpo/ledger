@@ -6,6 +6,8 @@
 
 `src/pages/workflow-packages/` owns the package-first route family: package inventory, a full-height authoring-only YAML/resource editor, a dedicated import workspace for pasted manifest YAML, and the saved-package launch console at `/workflow-packages/:packageId/run`. This folder is where package-local agents, output schemas, capability profiles, private MCP configs, validation, secret bindings, import/export, preflight, saved inputs, and run creation meet the route layer.
 
+Extension model: statically resident extension state filtering.
+
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.

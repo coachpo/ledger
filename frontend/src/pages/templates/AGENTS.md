@@ -6,6 +6,8 @@
 
 `src/pages/templates/` owns the stored-template route family: the inventory page for search, cards/table switching, table-only batch selection, bulk delete, and destructive delete flow, plus the full-height editor route for markdown authoring, inline compile preview, placeholder browsing, runtime input rows, formatting, and saved-template report generation.
 
+Extension model: statically resident Finance Workspace extension.
+
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
