@@ -55,9 +55,7 @@ describe("ExtensionsListPage", () => {
     toastSuccessMock.mockReset();
     useExtensionsMock.mockReset();
     useToggleExtensionMock.mockReset();
-    toggleExtensionMock.mockResolvedValue(
-      extensionFixture({ enabled: false }),
-    );
+    toggleExtensionMock.mockResolvedValue(extensionFixture({ enabled: false }));
     useToggleExtensionMock.mockReturnValue({
       isPending: false,
       mutateAsync: toggleExtensionMock,
@@ -76,21 +74,22 @@ describe("ExtensionsListPage", () => {
     expect(screen.getByTestId("extensions-list-page")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Extensions" })).toBeVisible();
     expect(
-      screen.getByText(/system-state surface for bundled extension availability/i),
-    ).toBeVisible();
-    expect(
-      screen.getByText(/route visibility and tool filtering stay owned by the extension runtime/i),
+      screen.getByText(/manage bundled extension availability/i),
     ).toBeVisible();
     const row = screen.getByTestId("extension-row-signaldeck-finance");
     expect(row).toHaveTextContent("Finance Workspace");
     expect(row).toHaveTextContent("signaldeck.finance");
     expect(row).toHaveTextContent("Enabled");
     expect(
-      screen.queryByText("Toggle whether this bundled extension is available in the app."),
+      screen.queryByText(
+        "Toggle whether this bundled extension is available in the app.",
+      ),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Enable or disable")).not.toBeInTheDocument();
     expect(
-      within(row).getByRole("switch", { name: "Disable Finance Workspace extension" }),
+      within(row).getByRole("switch", {
+        name: "Disable Finance Workspace extension",
+      }),
     ).toHaveAttribute("data-state", "checked");
     expect(
       within(row).getByTestId("extension-toggle-signaldeck-finance"),
@@ -106,9 +105,7 @@ describe("ExtensionsListPage", () => {
   it("toggles extension enabled state through the backend mutation", async () => {
     render(<ExtensionsListPage />);
 
-    fireEvent.click(
-      screen.getByTestId("extension-toggle-signaldeck-finance"),
-    );
+    fireEvent.click(screen.getByTestId("extension-toggle-signaldeck-finance"));
 
     await waitFor(() =>
       expect(toggleExtensionMock).toHaveBeenCalledWith({
@@ -132,9 +129,7 @@ describe("ExtensionsListPage", () => {
       isError: false,
       isPending: false,
     });
-    toggleExtensionMock.mockResolvedValue(
-      extensionFixture({ enabled: true }),
-    );
+    toggleExtensionMock.mockResolvedValue(extensionFixture({ enabled: true }));
     render(<ExtensionsListPage />);
 
     const row = screen.getByTestId("extension-row-signaldeck-finance");
@@ -158,9 +153,7 @@ describe("ExtensionsListPage", () => {
     );
     render(<ExtensionsListPage />);
 
-    fireEvent.click(
-      screen.getByTestId("extension-toggle-signaldeck-finance"),
-    );
+    fireEvent.click(screen.getByTestId("extension-toggle-signaldeck-finance"));
 
     await waitFor(() =>
       expect(toastErrorMock).toHaveBeenCalledWith("Extension API unavailable"),
@@ -179,11 +172,12 @@ describe("ExtensionsListPage", () => {
     });
     const { rerender } = render(<ExtensionsListPage />);
 
-    expect(screen.getByText("No bundled extensions are registered.")).toBeVisible();
     expect(
-      screen.getByText(/backend exposes slim bundled state with a key, label, and enabled flag/i),
+      screen.getByText("No bundled extensions are registered."),
     ).toBeVisible();
-    expect(screen.queryByRole("button", { name: /install/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /install/i }),
+    ).not.toBeInTheDocument();
 
     useExtensionsMock.mockReturnValue({
       data: undefined,
@@ -198,4 +192,3 @@ describe("ExtensionsListPage", () => {
     expect(alert).toHaveTextContent("Extension API unavailable");
   });
 });
-

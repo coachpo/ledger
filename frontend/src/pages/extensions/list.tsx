@@ -96,9 +96,7 @@ export function ExtensionsListPage() {
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Extensions</h1>
           <p className="max-w-3xl text-sm text-muted-foreground">
-            System-state surface for bundled extension availability. This page
-            only reflects backend enablement state; route visibility and tool
-            filtering stay owned by the extension runtime.
+            Manage bundled extension availability.
           </p>
         </div>
       </div>
@@ -133,10 +131,6 @@ export function ExtensionsListPage() {
           <CardContent className="space-y-1 py-8 text-center text-sm text-muted-foreground">
             <p className="font-medium text-foreground">
               No bundled extensions are registered.
-            </p>
-            <p className="text-xs">
-              Extension rows appear only when the backend exposes slim bundled
-              state with a key, label, and enabled flag.
             </p>
           </CardContent>
         </Card>
