@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-05-22
-**Commit:** e2c635f
+**Commit:** f9ae90d
 **Branch:** main
 
 ## OVERVIEW
@@ -33,7 +33,7 @@ signaldeck/
 ├── docs/                 # prd, spec, API, data-model, test, run-input, platform, and memory design docs
 ├── demo/                 # grounded example Workflow Package YAML
 ├── .github/workflows/    # CI quality gates, Docker image publish, cleanup
-└── start.sh              # local orchestrator with backend/frontend/db reuse and fallback ports
+└── start.sh              # local orchestrator for db/backend/scheduler/frontend with fallback ports
 ```
 
 ## WHERE TO LOOK
@@ -41,7 +41,7 @@ signaldeck/
 | Task | Location | Notes |
 |---|---|---|
 | Bootstrap a fresh clone | `backend/pyproject.toml`, `frontend/package.json`, `README.md`, `start.sh` | install with `uv sync` and `pnpm install`, then prefer `./start.sh` |
-| Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`; stops prior SignalDeck instances before restart and may fall back to `25433/25434`, `28001/28002`, or `25174` |
+| Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`; starts `python -m app.workers.run_scheduler`; stops prior SignalDeck instances before restart and may fall back to `25433/25434`, `28001/28002`, or `25174` |
 | Sample Workflow Package YAML | `demo/tradingagents_advisory_research.yaml` | grounded example package input for manual import/testing |
 | Cross-app E2E startup | `frontend/e2e/AGENTS.md`, `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with dedicated startup helpers |
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory plus extension-gated `/api/v1` and current `/api/*` composition |
@@ -83,7 +83,7 @@ signaldeck/
 - Legacy orchestration, Studio, Tryout, runtime-v2 routes, and retired legacy global authoring routes are not mounted live. Keep docs aligned with the package-first routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
 - `signaldeck.finance` is the bundled first-party Finance Workspace extension. It is enabled by default, owns the preserved `/api/v1` finance route families, and gates finance route/nav/tool visibility through backend and frontend extension state. Public `/api/extensions` state is only `key`, `label`, and `enabled`; registry and scaffold details stay private wiring.
 - When planning upgrades, decide explicitly whether behavior belongs in platform core or in extension-owned seams, then update registries, route gates, runtime tools, docs, and tests together instead of letting finance-specific behavior silently redefine shared contracts.
-- Workflow Packages are the canonical platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside immutable package versions.
+- Workflow Packages are the canonical platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside package artifacts; persistence is artifact-only, while launch/preflight/rerun/fork readiness is evaluated late against live Model Connections, extension state, and package secret bindings.
 - Global Tools are read-only server-declared metadata at `/api/tools`; packages reference tool keys through local capability profiles. Current finance-owned native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, and report lookup, and are filtered by enabled extension state. Platform-core memory tools use `signaldeck.memory.write` / `signaldeck.memory.lookup` and stay visible when finance is disabled.
 - Workflow package authoring is YAML-manifest based; backend parsers reject legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite numbers, duplicate refs, and raw global ids.
 - Test-writing rule: skip dedicated “proves not” tests for ordinary removal-only checks when manual confirmation already verifies the outcome. Keep absence assertions only when the absence itself is the shipped contract, such as removed-route or slim-contract guarantees.
@@ -126,9 +126,9 @@ signaldeck/
 
 ## NOTES
 
-- `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, stops prior SignalDeck instances before restart, may start PostgreSQL on `25432`, `25433`, or `25434`, and injects `DATABASE_URL` plus `VITE_API_BASE_URL`.
+- `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, stops prior SignalDeck instances before restart, may start PostgreSQL on `25432`, `25433`, or `25434`, starts the scheduler worker beside Uvicorn, and injects `DATABASE_URL` plus `VITE_API_BASE_URL`.
 - Supported schema repair is code-based in `backend/app/db/`; do not create migration instructions around a reappearing Alembic scaffold.
-- Playwright runs against backend `8001` and frontend `4173`; the backend and frontend startup helpers launch dedicated E2E servers on those fixed ports.
+- Playwright runs against backend `8001` and frontend `4173`; the backend startup helper starts both Uvicorn and the scheduler worker, while the frontend helper serves the built preview.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
 - Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing and cleanup live in separate workflows.
 - Root CI uses `uv sync --frozen` for backend jobs and `pnpm install --frozen-lockfile` for frontend jobs; `version-sync` checks `backend/VERSION` against `backend/pyproject.toml` and `frontend/VERSION` against `frontend/package.json`.
