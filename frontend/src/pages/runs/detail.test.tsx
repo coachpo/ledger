@@ -1,8 +1,22 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import type { RunAgentInvocationRead, RunForkDraftRead, RunMemoryEventRead, RunRead, RunRerunDraftRead, RunStepRead } from "@/lib/types/run";
+import type {
+  RunAgentInvocationRead,
+  RunForkDraftRead,
+  RunMemoryEventRead,
+  RunRead,
+  RunRerunDraftRead,
+  RunStepRead,
+} from "@/lib/types/run";
 
 import { RunsDetailPage } from "./detail";
 
@@ -18,8 +32,14 @@ const useRunMock = vi.fn();
 let searchParamsMock = new URLSearchParams();
 
 vi.mock("react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
-  useLocation: () => ({ hash: "", pathname: "/runs/42", search: searchParamsMock.toString() }),
+  Link: ({ children, to }: { children: ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
+  ),
+  useLocation: () => ({
+    hash: "",
+    pathname: "/runs/42",
+    search: searchParamsMock.toString(),
+  }),
   useNavigate: () => navigateMock,
   useParams: () => ({ runId: "42" }),
   useSearchParams: () => [searchParamsMock, setSearchParamsMock],
@@ -35,12 +55,21 @@ vi.mock("@/hooks/use-runs", () => ({
 
 vi.mock("@xyflow/react", () => ({
   applyNodeChanges: (
-    changes: Array<{ id: string; position?: { x: number; y: number }; type: string }>,
+    changes: Array<{
+      id: string;
+      position?: { x: number; y: number };
+      type: string;
+    }>,
     nodes: Array<{ id: string; position?: { x: number; y: number } }>,
-  ) => nodes.map((node) => {
-    const positionChange = changes.find((change) => change.id === node.id && change.type === "position");
-    return positionChange?.position ? { ...node, position: positionChange.position } : node;
-  }),
+  ) =>
+    nodes.map((node) => {
+      const positionChange = changes.find(
+        (change) => change.id === node.id && change.type === "position",
+      );
+      return positionChange?.position
+        ? { ...node, position: positionChange.position }
+        : node;
+    }),
   Background: () => <div data-testid="mock-react-flow-background" />,
   BackgroundVariant: { Dots: "dots" },
   Handle: () => <span data-testid="mock-react-flow-handle" />,
@@ -82,15 +111,30 @@ vi.mock("@xyflow/react", () => ({
     maxZoom?: number;
     minZoom?: number;
     nodes?: Array<{
-      data: { details: Array<{ label: string; value: ReactNode }>; eyebrow: string; testId: string; title: ReactNode };
+      data: {
+        details: Array<{ label: string; value: ReactNode }>;
+        eyebrow: string;
+        testId: string;
+        title: ReactNode;
+      };
       id: string;
       position?: { x: number; y: number };
     }>;
     nodesConnectable?: boolean;
     nodesDraggable?: boolean;
     nodesFocusable?: boolean;
-    onNodesChange?: (changes: Array<{ id: string; position?: { x: number; y: number }; type: string }>) => void;
-    onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void;
+    onNodesChange?: (
+      changes: Array<{
+        id: string;
+        position?: { x: number; y: number };
+        type: string;
+      }>,
+    ) => void;
+    onViewportChange?: (viewport: {
+      x: number;
+      y: number;
+      zoom: number;
+    }) => void;
     panOnDrag?: boolean;
     preventScrolling?: boolean;
     selectNodesOnDrag?: boolean;
@@ -107,7 +151,9 @@ vi.mock("@xyflow/react", () => ({
       data-elements-selectable={String(elementsSelectable)}
       data-fit-view-max-zoom={String(fitViewOptions?.maxZoom)}
       data-has-on-nodes-change={String(typeof onNodesChange === "function")}
-      data-has-on-viewport-change={String(typeof onViewportChange === "function")}
+      data-has-on-viewport-change={String(
+        typeof onViewportChange === "function",
+      )}
       data-max-zoom={String(maxZoom)}
       data-min-zoom={String(minZoom)}
       data-nodes-connectable={String(nodesConnectable)}
@@ -128,7 +174,13 @@ vi.mock("@xyflow/react", () => ({
         onClick={() => {
           const firstNode = nodes[0];
           if (firstNode) {
-            onNodesChange?.([{ id: firstNode.id, position: { x: 123, y: 45 }, type: "position" }]);
+            onNodesChange?.([
+              {
+                id: firstNode.id,
+                position: { x: 123, y: 45 },
+                type: "position",
+              },
+            ]);
           }
         }}
         type="button"
@@ -140,7 +192,12 @@ vi.mock("@xyflow/react", () => ({
         type="button"
       />
       {nodes.map((node) => (
-        <div data-node-x={String(node.position?.x)} data-node-y={String(node.position?.y)} data-testid={node.data.testId} key={node.id}>
+        <div
+          data-node-x={String(node.position?.x)}
+          data-node-y={String(node.position?.y)}
+          data-testid={node.data.testId}
+          key={node.id}
+        >
           <p>{node.data.eyebrow}</p>
           <p>{node.data.title}</p>
           <dl>
@@ -154,7 +211,9 @@ vi.mock("@xyflow/react", () => ({
         </div>
       ))}
       {edges.map((edge) => (
-        <p data-testid={`mock-react-flow-edge-${edge.id}`} key={edge.id}>{edge.label}</p>
+        <p data-testid={`mock-react-flow-edge-${edge.id}`} key={edge.id}>
+          {edge.label}
+        </p>
       ))}
       {children}
     </div>
@@ -163,7 +222,9 @@ vi.mock("@xyflow/react", () => ({
 
 const NOW = "2026-04-20T10:00:00Z";
 
-function buildInvocation(overrides: Partial<RunAgentInvocationRead> = {}): RunAgentInvocationRead {
+function buildInvocation(
+  overrides: Partial<RunAgentInvocationRead> = {},
+): RunAgentInvocationRead {
   return {
     agentRef: { scope: "global", id: 11, key: "research_agent", version: 3 },
     agentKey: "research_agent",
@@ -224,7 +285,9 @@ function buildStep(overrides: Partial<RunStepRead> = {}): RunStepRead {
   };
 }
 
-function buildMemoryEvent(overrides: Partial<RunMemoryEventRead> = {}): RunMemoryEventRead {
+function buildMemoryEvent(
+  overrides: Partial<RunMemoryEventRead> = {},
+): RunMemoryEventRead {
   return {
     budget: {},
     createdAt: NOW,
@@ -358,7 +421,9 @@ function buildReplayableWorkflowRun(overrides: Partial<RunRead> = {}): RunRead {
   });
 }
 
-function buildRerunDraft(overrides: Partial<RunRerunDraftRead> = {}): RunRerunDraftRead {
+function buildRerunDraft(
+  overrides: Partial<RunRerunDraftRead> = {},
+): RunRerunDraftRead {
   return {
     parameters: { ticker: "AAPL" },
     ready: true,
@@ -373,7 +438,9 @@ function buildRerunDraft(overrides: Partial<RunRerunDraftRead> = {}): RunRerunDr
   };
 }
 
-function buildForkDraft(overrides: Partial<RunForkDraftRead> = {}): RunForkDraftRead {
+function buildForkDraft(
+  overrides: Partial<RunForkDraftRead> = {},
+): RunForkDraftRead {
   return {
     invocationInput: { ticker: "AAPL" },
     ready: true,
@@ -431,11 +498,14 @@ function expectDraggableZoomableLineageContract(flow: HTMLElement) {
 }
 
 function applyLatestSearchParamsUpdate(currentSearch: string) {
-  const lastCall = setSearchParamsMock.mock.calls[setSearchParamsMock.mock.calls.length - 1];
+  const lastCall =
+    setSearchParamsMock.mock.calls[setSearchParamsMock.mock.calls.length - 1];
   const updater = lastCall?.[0];
 
   if (typeof updater !== "function") {
-    throw new Error("Expected the latest search params update to use an updater function.");
+    throw new Error(
+      "Expected the latest search params update to use an updater function.",
+    );
   }
 
   searchParamsMock = updater(new URLSearchParams(currentSearch));
@@ -460,7 +530,10 @@ describe("RunsDetailPage", () => {
     });
     useRunForkDraftMock.mockReset();
     useRunForkDraftMock.mockReturnValue(forkDraftQueryResult());
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1024,
+    });
     useRunRerunDraftMock.mockReset();
     useRunRerunDraftMock.mockReturnValue(draftQueryResult<RunRerunDraftRead>());
     useRunMock.mockReset();
@@ -475,7 +548,12 @@ describe("RunsDetailPage", () => {
       traceSpanId: "span-1",
     });
     const failedInvocation = buildInvocation({
-      agentRef: { scope: "packageLocal", localId: 12, key: "consumer_agent", version: 2 },
+      agentRef: {
+        scope: "packageLocal",
+        localId: 12,
+        key: "consumer_agent",
+        version: 2,
+      },
       agentKey: "consumer_agent",
       agentVersion: 2,
       durationMs: 12,
@@ -589,52 +667,139 @@ describe("RunsDetailPage", () => {
     const defaultRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-page")).toBeInTheDocument();
-    expect(screen.getByTestId("runs-detail-page")).toHaveClass("min-w-0", "overflow-hidden");
+    expect(screen.getByTestId("runs-detail-page")).toHaveClass(
+      "min-w-0",
+      "overflow-hidden",
+    );
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-inspection-workspace")).toBeInTheDocument();
-    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute("data-console-layout", "split");
+    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
+      "data-console-layout",
+      "split",
+    );
     expect(screen.getByTestId("runs-evidence-viewer")).toBeInTheDocument();
-    expect(screen.getByTestId("runs-detail-status")).toHaveTextContent(/succeeded/i);
-    expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(/workflow package/i);
-    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/snapshot: market_review_package/i);
-    expect(screen.getByRole("link", { name: /open current package/i })).toHaveAttribute("href", "/workflow-packages/7");
-    expect(screen.getByTestId("runs-detail-actions")).toHaveClass("flex", "min-w-0", "flex-col", "sm:flex-row");
-    expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(/run snapshot again/i);
-    expect(screen.getByTestId("runs-detail-rerun")).toHaveClass("bg-primary", "text-primary-foreground", "w-full", "sm:w-auto");
+    expect(screen.getByTestId("runs-detail-status")).toHaveTextContent(
+      /succeeded/i,
+    );
+    expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(
+      /workflow package/i,
+    );
+    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(
+      /snapshot: market_review_package/i,
+    );
+    expect(
+      screen.getByRole("link", { name: /open current package/i }),
+    ).toHaveAttribute("href", "/workflow-packages/7");
+    expect(screen.getByTestId("runs-detail-actions")).toHaveClass(
+      "flex",
+      "min-w-0",
+      "flex-col",
+      "sm:flex-row",
+    );
+    expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(
+      /run snapshot again/i,
+    );
+    expect(screen.getByTestId("runs-detail-rerun")).toHaveClass(
+      "bg-primary",
+      "text-primary-foreground",
+      "w-full",
+      "sm:w-auto",
+    );
     const finalOutputCard = screen.getByTestId("runs-detail-final-output-card");
-    const finalOutput = within(finalOutputCard).getByTestId("runs-detail-final-output");
+    const finalOutput = within(finalOutputCard).getByTestId(
+      "runs-detail-final-output",
+    );
     expect(finalOutputCard).toHaveAttribute("data-slot", "card");
-    expect(finalOutputCard.querySelector("[data-slot='card-content']")).toHaveClass("space-y-5", "pt-6");
+    expect(
+      finalOutputCard.querySelector("[data-slot='card-content']"),
+    ).toHaveClass("space-y-5", "pt-6");
     expect(finalOutput).toHaveTextContent(/normalized/i);
-    expect(finalOutput).toHaveClass("flex", "flex-col", "data-[orientation=vertical]:items-stretch", "min-w-0", "gap-3");
+    expect(finalOutput).toHaveClass(
+      "flex",
+      "flex-col",
+      "data-[orientation=vertical]:items-stretch",
+      "min-w-0",
+      "gap-3",
+    );
     expect(finalOutput).not.toHaveClass("overflow-hidden", "text-xs");
     expect(finalOutput.querySelector("pre")).toBeNull();
-    expect(within(finalOutputCard).getByRole("heading", { name: /final output/i })).toHaveClass("text-base", "font-medium", "leading-none");
-    expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/analysis\/span-1/i);
-    expect(screen.getByTestId("runs-step-2-trace-summary")).toHaveTextContent(/decision\/span-2/i);
-    expect(screen.getByTestId("runs-step-1-completed-indicator")).toBeInTheDocument();
-    expect(screen.queryByTestId("runs-step-2-completed-indicator")).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-workspace-context")).toHaveAttribute("data-slot", "card");
-    expect(within(screen.getByTestId("runs-workspace-context")).getAllByTestId(/runs-summary-.*-row/)).toHaveLength(3);
-    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute("data-slot", "resizable-panel-group");
-    expect(screen.getByTestId("runs-inspection-resize-handle")).toBeInTheDocument();
-    expect(screen.getByText(/^Total tokens$/i).parentElement).toHaveTextContent(/51/i);
-    expect(screen.getByText(/^Inherited tokens$/i).parentElement).toHaveTextContent(/21/i);
-    expect(screen.getByText(/^Executed tokens$/i).parentElement).toHaveTextContent(/30/i);
+    expect(
+      within(finalOutputCard).getByRole("heading", { name: /final output/i }),
+    ).toHaveClass("text-base", "font-medium", "leading-none");
+    expect(
+      within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole(
+        "button",
+        { name: /trace/i },
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(
+      /analysis\/span-1/i,
+    );
+    expect(screen.getByTestId("runs-step-2-trace-summary")).toHaveTextContent(
+      /decision\/span-2/i,
+    );
+    expect(
+      screen.getByTestId("runs-step-1-completed-indicator"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-step-2-completed-indicator"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-workspace-context")).toHaveAttribute(
+      "data-slot",
+      "card",
+    );
+    expect(
+      within(screen.getByTestId("runs-workspace-context")).getAllByTestId(
+        /runs-summary-.*-row/,
+      ),
+    ).toHaveLength(3);
+    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
+      "data-slot",
+      "resizable-panel-group",
+    );
+    expect(
+      screen.getByTestId("runs-inspection-resize-handle"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/^Total tokens$/i).parentElement).toHaveTextContent(
+      /51/i,
+    );
+    expect(
+      screen.getByText(/^Inherited tokens$/i).parentElement,
+    ).toHaveTextContent(/21/i);
+    expect(
+      screen.getByText(/^Executed tokens$/i).parentElement,
+    ).toHaveTextContent(/30/i);
     expect(screen.queryByText(/total cost/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/inherited cost/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/executed cost/i)).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/copied origin/i);
-    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/1 agent invocation/i);
-    expect(screen.getByTestId("runs-step-2")).toHaveTextContent(/1 agent invocation/i);
-    expect(screen.queryByTestId("runs-step-1-slot-analysis")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-step-2-slot-decision")).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(
+      /copied origin/i,
+    );
+    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(
+      /1 agent invocation/i,
+    );
+    expect(screen.getByTestId("runs-step-2")).toHaveTextContent(
+      /1 agent invocation/i,
+    );
+    expect(
+      screen.queryByTestId("runs-step-1-slot-analysis"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-step-2-slot-decision"),
+    ).not.toBeInTheDocument();
 
-    const stepOneButton = within(screen.getByTestId("runs-step-1")).getAllByRole("button", { name: /step 1/i })[0];
+    const stepOneButton = within(
+      screen.getByTestId("runs-step-1"),
+    ).getAllByRole("button", { name: /step 1/i })[0];
     fireEvent.click(stepOneButton);
-    expect(within(screen.getByTestId("runs-step-1")).queryByRole("link", { name: /step 1/i })).not.toBeInTheDocument();
-    const stepSelectUpdater = setSearchParamsMock.mock.calls.at(-1)?.[0] as (current: URLSearchParams) => URLSearchParams;
+    expect(
+      within(screen.getByTestId("runs-step-1")).queryByRole("link", {
+        name: /step 1/i,
+      }),
+    ).not.toBeInTheDocument();
+    const stepSelectUpdater = setSearchParamsMock.mock.calls.at(-1)?.[0] as (
+      current: URLSearchParams,
+    ) => URLSearchParams;
     const selectedStepParams = stepSelectUpdater(new URLSearchParams());
     expect(selectedStepParams.get("inspect")).toBe("step:1");
     expect(selectedStepParams.has("pane")).toBe(false);
@@ -646,89 +811,189 @@ describe("RunsDetailPage", () => {
     expect(runInput).toHaveTextContent(/AAPL/i);
     expect(runInput).toHaveClass("flex", "flex-col", "min-w-0", "gap-3");
     expect(runInput).not.toHaveClass("overflow-hidden", "text-xs");
-    expect(screen.getByRole("heading", { name: /^run input$/i })).toHaveClass("text-base", "font-medium", "leading-none");
-    expect(screen.queryByTestId("runs-detail-final-output-card")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-detail-final-output")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^run input$/i })).toHaveClass(
+      "text-base",
+      "font-medium",
+      "leading-none",
+    );
+    expect(
+      screen.queryByTestId("runs-detail-final-output-card"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-detail-final-output"),
+    ).not.toBeInTheDocument();
 
     runInputRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1");
     const stepSummaryRender = render(<RunsDetailPage />);
     const stepSummary = screen.getByTestId("runs-step-1-summary");
-    const metadataHeading = within(stepSummary).getByRole("heading", { name: /step metadata/i });
-    const outputHeading = within(stepSummary).getByRole("heading", { name: /aggregated output/i });
+    const metadataHeading = within(stepSummary).getByRole("heading", {
+      name: /step metadata/i,
+    });
+    const outputHeading = within(stepSummary).getByRole("heading", {
+      name: /aggregated output/i,
+    });
     expect(metadataHeading).toBeVisible();
     expect(metadataHeading).toHaveClass("text-base");
     expect(outputHeading).toBeVisible();
     expect(outputHeading).toHaveClass("text-base");
-    expect(within(stepSummary).queryByRole("heading", { name: /step summary/i })).not.toBeInTheDocument();
-    expect(within(stepSummary).queryByText(/step metadata and readonly aggregated output/i)).not.toBeInTheDocument();
-    expect(within(stepSummary).queryByText(/readonly step output/i)).not.toBeInTheDocument();
-    expect(stepSummary.querySelectorAll("[data-slot='card-content'] > section")).toHaveLength(2);
+    expect(
+      within(stepSummary).queryByRole("heading", { name: /step summary/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(stepSummary).queryByText(
+        /step metadata and readonly aggregated output/i,
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      within(stepSummary).queryByText(/readonly step output/i),
+    ).not.toBeInTheDocument();
+    expect(
+      stepSummary.querySelectorAll("[data-slot='card-content'] > section"),
+    ).toHaveLength(2);
     const metadata = screen.getByTestId("runs-step-1-metadata");
     expect(metadata.tagName).toBe("DL");
     expect(metadata.querySelectorAll("dt")).toHaveLength(9);
-    expect(screen.getByTestId("runs-step-1-aggregated-output")).toHaveTextContent(/analysis/i);
-    expect(screen.getByTestId("runs-step-1-aggregated-output")).toHaveTextContent(/research_agent/i);
+    expect(
+      screen.getByTestId("runs-step-1-aggregated-output"),
+    ).toHaveTextContent(/analysis/i);
+    expect(
+      screen.getByTestId("runs-step-1-aggregated-output"),
+    ).toHaveTextContent(/research_agent/i);
 
     stepSummaryRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1&pane=lineage");
     const stepLineageRender = render(<RunsDetailPage />);
     const stepLineage = screen.getByTestId("runs-step-1-lineage-summary");
-    const stepLineageDiagram = within(stepLineage).getByTestId("runs-step-1-lineage-diagram");
+    const stepLineageDiagram = within(stepLineage).getByTestId(
+      "runs-step-1-lineage-diagram",
+    );
     expect(stepLineageDiagram).toBeInTheDocument();
     expect(stepLineageDiagram).toHaveClass("h-80");
-    expectDraggableZoomableLineageContract(within(stepLineageDiagram).getByTestId("mock-react-flow"));
-    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-source")).toHaveTextContent(/source run/i);
-    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-source")).toHaveTextContent(/source step row/i);
-    const stepLineageSourceNode = within(stepLineage).getByTestId("runs-step-1-lineage-node-source");
-    expect(within(stepLineageSourceNode).getByRole("link", { name: /^run #41$/i })).toHaveAttribute("href", "/runs/41");
-    expect(within(stepLineageSourceNode).getByRole("link", { name: /run #41 step 1/i })).toHaveAttribute("href", "/runs/41#step-1");
-    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/origin/i);
-    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/copied/i);
-    expect(within(stepLineageDiagram).getByTestId("mock-react-flow-edge-source-current")).toHaveTextContent(/provenance/i);
+    expectDraggableZoomableLineageContract(
+      within(stepLineageDiagram).getByTestId("mock-react-flow"),
+    );
+    expect(
+      within(stepLineage).getByTestId("runs-step-1-lineage-node-source"),
+    ).toHaveTextContent(/source run/i);
+    expect(
+      within(stepLineage).getByTestId("runs-step-1-lineage-node-source"),
+    ).toHaveTextContent(/source step row/i);
+    const stepLineageSourceNode = within(stepLineage).getByTestId(
+      "runs-step-1-lineage-node-source",
+    );
+    expect(
+      within(stepLineageSourceNode).getByRole("link", { name: /^run #41$/i }),
+    ).toHaveAttribute("href", "/runs/41");
+    expect(
+      within(stepLineageSourceNode).getByRole("link", {
+        name: /run #41 step 1/i,
+      }),
+    ).toHaveAttribute("href", "/runs/41#step-1");
+    expect(
+      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
+    ).toHaveTextContent(/origin/i);
+    expect(
+      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
+    ).toHaveTextContent(/copied/i);
+    expect(
+      within(stepLineageDiagram).getByTestId(
+        "mock-react-flow-edge-source-current",
+      ),
+    ).toHaveTextContent(/provenance/i);
 
     stepLineageRender.unmount();
     searchParamsMock = new URLSearchParams("pane=provenance");
     const invalidRunPaneRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(/normalized/i);
-    expect(screen.getByRole("heading", { name: /final output/i })).toBeVisible();
+    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(
+      /normalized/i,
+    );
+    expect(
+      screen.getByRole("heading", { name: /final output/i }),
+    ).toBeVisible();
 
     invalidRunPaneRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1&pane=request");
     const invalidStepPaneRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-step-1-summary")).toBeInTheDocument();
-    expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole(
+        "button",
+        { name: /trace/i },
+      ),
+    ).not.toBeInTheDocument();
 
     invalidStepPaneRender.unmount();
     searchParamsMock = new URLSearchParams("pane=lineage");
     const lineageRender = render(<RunsDetailPage />);
     const lineage = screen.getByTestId("runs-lineage-summary");
-    const runLineageDiagram = within(lineage).getByTestId("runs-lineage-diagram");
+    const runLineageDiagram = within(lineage).getByTestId(
+      "runs-lineage-diagram",
+    );
     expect(runLineageDiagram).toBeInTheDocument();
     expect(runLineageDiagram).toHaveClass("h-80");
-    const runLineageFlow = within(runLineageDiagram).getByTestId("mock-react-flow");
+    const runLineageFlow =
+      within(runLineageDiagram).getByTestId("mock-react-flow");
     expectDraggableZoomableLineageContract(runLineageFlow);
-    fireEvent.click(within(runLineageFlow).getByTestId("mock-react-flow-drag-first-node"));
-    expect(within(lineage).getByTestId("runs-lineage-node-root")).toHaveAttribute("data-node-x", "123");
-    expect(within(lineage).getByTestId("runs-lineage-node-root")).toHaveAttribute("data-node-y", "45");
-    fireEvent.click(within(runLineageFlow).getByTestId("mock-react-flow-zoom-viewport"));
+    fireEvent.click(
+      within(runLineageFlow).getByTestId("mock-react-flow-drag-first-node"),
+    );
+    expect(
+      within(lineage).getByTestId("runs-lineage-node-root"),
+    ).toHaveAttribute("data-node-x", "123");
+    expect(
+      within(lineage).getByTestId("runs-lineage-node-root"),
+    ).toHaveAttribute("data-node-y", "45");
+    fireEvent.click(
+      within(runLineageFlow).getByTestId("mock-react-flow-zoom-viewport"),
+    );
     expect(runLineageFlow).toHaveAttribute("data-viewport-zoom", "1.25");
-    expect(within(lineage).getByTestId("runs-lineage-node-root")).toHaveTextContent(/lineage root/i);
-    expect(within(lineage).getByTestId("runs-lineage-node-root")).toHaveTextContent(/run #40/i);
-    expect(within(lineage).getByRole("link", { name: /run #41/i })).toHaveAttribute("href", "/runs/41");
-    expect(within(lineage).getByTestId("runs-lineage-node-source")).toHaveTextContent(/source run/i);
-    expect(within(lineage).getByTestId("runs-historical-lineage")).toHaveTextContent(/read-only historical lineage/i);
-    expect(within(lineage).getByTestId("runs-lineage-node-source")).toHaveTextContent(/historical lineage step/i);
-    expect(within(lineage).getByTestId("runs-lineage-node-source")).toHaveTextContent(/step 1/i);
-    expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/resume boundary/i);
-    expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/step 2/i);
-    expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/1 copied · 1 planned/i);
-    expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/1 copied · 1 planned\/executed/i);
-    expect(within(runLineageDiagram).getByTestId("mock-react-flow-edge-root-source")).toHaveTextContent(/lineage root/i);
-    expect(within(runLineageDiagram).getByTestId("mock-react-flow-edge-source-current")).toHaveTextContent(/historical lineage \/ resume/i);
+    expect(
+      within(lineage).getByTestId("runs-lineage-node-root"),
+    ).toHaveTextContent(/lineage root/i);
+    expect(
+      within(lineage).getByTestId("runs-lineage-node-root"),
+    ).toHaveTextContent(/run #40/i);
+    expect(
+      within(lineage).getByRole("link", { name: /run #41/i }),
+    ).toHaveAttribute("href", "/runs/41");
+    expect(
+      within(lineage).getByTestId("runs-lineage-node-source"),
+    ).toHaveTextContent(/source run/i);
+    expect(
+      within(lineage).getByTestId("runs-historical-lineage"),
+    ).toHaveTextContent(/read-only audit lineage/i);
+    expect(
+      within(lineage).getByTestId("runs-lineage-node-source"),
+    ).toHaveTextContent(/historical lineage step/i);
+    expect(
+      within(lineage).getByTestId("runs-lineage-node-source"),
+    ).toHaveTextContent(/step 1/i);
+    expect(
+      within(lineage).getByTestId("runs-lineage-node-current"),
+    ).toHaveTextContent(/resume boundary/i);
+    expect(
+      within(lineage).getByTestId("runs-lineage-node-current"),
+    ).toHaveTextContent(/step 2/i);
+    expect(
+      within(lineage).getByTestId("runs-lineage-node-current"),
+    ).toHaveTextContent(/1 copied · 1 planned/i);
+    expect(
+      within(lineage).getByTestId("runs-lineage-node-current"),
+    ).toHaveTextContent(/1 copied · 1 planned\/executed/i);
+    expect(
+      within(runLineageDiagram).getByTestId("mock-react-flow-edge-root-source"),
+    ).toHaveTextContent(/lineage root/i);
+    expect(
+      within(runLineageDiagram).getByTestId(
+        "mock-react-flow-edge-source-current",
+      ),
+    ).toHaveTextContent(/historical lineage \/ resume/i);
 
     lineageRender.unmount();
-    searchParamsMock = new URLSearchParams("inspect=invocation:1002&pane=error");
+    searchParamsMock = new URLSearchParams(
+      "inspect=invocation:1002&pane=error",
+    );
     render(<RunsDetailPage />);
     expect(screen.getByText("model_error")).toBeVisible();
     expect(screen.getByText("Provider failed")).toBeVisible();
@@ -736,24 +1001,45 @@ describe("RunsDetailPage", () => {
   });
 
   it("stacks the inspection console and keeps raw payloads scrollable on mobile", async () => {
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
-    useRunMock.mockReturnValue(queryResult(buildRun({ finalOutput: { payload: "x".repeat(240) } })));
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 390,
+    });
+    useRunMock.mockReturnValue(
+      queryResult(buildRun({ finalOutput: { payload: "x".repeat(240) } })),
+    );
 
     render(<RunsDetailPage />);
 
     const workspace = screen.getByTestId("runs-inspection-workspace");
-    await waitFor(() => expect(workspace).toHaveAttribute("data-console-layout", "stacked"));
+    await waitFor(() =>
+      expect(workspace).toHaveAttribute("data-console-layout", "stacked"),
+    );
     expect(workspace).toHaveClass("min-w-0");
     expect(screen.getByTestId("runs-execution-outline")).toHaveClass("min-w-0");
     expect(screen.getByTestId("runs-evidence-viewer")).toHaveClass("min-w-0");
-    expect(screen.getByTestId("runs-evidence-pane-nav")).toHaveClass("min-w-0", "flex-wrap");
+    expect(screen.getByTestId("runs-evidence-pane-nav")).toHaveClass(
+      "min-w-0",
+      "flex-wrap",
+    );
 
     const finalOutput = screen.getByTestId("runs-detail-final-output");
-    fireEvent.mouseDown(within(finalOutput).getByRole("tab", { name: "Raw" }), { button: 0 });
+    fireEvent.mouseDown(within(finalOutput).getByRole("tab", { name: "Raw" }), {
+      button: 0,
+    });
 
-    expect(screen.getByTestId("runs-detail-final-output-tab-scroll")).toHaveClass("max-w-full", "overflow-x-auto");
-    expect(screen.getByTestId("runs-detail-final-output-raw")).toHaveAttribute("data-wide-payload", "scroll");
-    expect(screen.getByTestId("runs-detail-final-output-raw")).toHaveClass("max-w-full", "overflow-x-auto", "whitespace-pre");
+    expect(
+      screen.getByTestId("runs-detail-final-output-tab-scroll"),
+    ).toHaveClass("max-w-full", "overflow-x-auto");
+    expect(screen.getByTestId("runs-detail-final-output-raw")).toHaveAttribute(
+      "data-wide-payload",
+      "scroll",
+    );
+    expect(screen.getByTestId("runs-detail-final-output-raw")).toHaveClass(
+      "max-w-full",
+      "overflow-x-auto",
+      "whitespace-pre",
+    );
   });
 
   it("groups graph metadata and renders compact memory artifact audit links", () => {
@@ -775,7 +1061,12 @@ describe("RunsDetailPage", () => {
                 workflowKey: "market_review",
                 workflowVersion: 2,
               },
-              sourceGraphMetadata: { nodeId: "decision", nodeKind: "step", loopId: "review_loop", loopIteration: 2 },
+              sourceGraphMetadata: {
+                nodeId: "decision",
+                nodeKind: "step",
+                loopId: "review_loop",
+                loopIteration: 2,
+              },
               auditLinks: {
                 report: {
                   slug: "memory_aapl_decision",
@@ -795,11 +1086,21 @@ describe("RunsDetailPage", () => {
               },
               invocations: [
                 buildInvocation({
-                  graphMetadata: { nodeId: "market_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "market" },
+                  graphMetadata: {
+                    nodeId: "market_analysis",
+                    nodeKind: "step",
+                    fanoutId: "analyst_fanout",
+                    branchId: "market",
+                  },
                   slot: "market",
                 }),
                 buildInvocation({
-                  graphMetadata: { nodeId: "news_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "news" },
+                  graphMetadata: {
+                    nodeId: "news_analysis",
+                    nodeKind: "step",
+                    fanoutId: "analyst_fanout",
+                    branchId: "news",
+                  },
                   id: 1002,
                   position: 2,
                   slot: "news",
@@ -811,7 +1112,12 @@ describe("RunsDetailPage", () => {
               index: 2,
               invocations: [
                 buildInvocation({
-                  graphMetadata: { nodeId: "risk_review", nodeKind: "step", loopId: "review_loop", loopIteration: 1 },
+                  graphMetadata: {
+                    nodeId: "risk_review",
+                    nodeKind: "step",
+                    loopId: "review_loop",
+                    loopIteration: 1,
+                  },
                   id: 1003,
                   runStepId: 102,
                   slot: "risk",
@@ -827,8 +1133,12 @@ describe("RunsDetailPage", () => {
     const defaultRender = render(<RunsDetailPage />);
 
     expect(screen.queryByTestId("runs-graph-summary")).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/2 agent invocation/i);
-    expect(screen.queryByTestId("runs-step-1-slot-market")).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(
+      /2 agent invocation/i,
+    );
+    expect(
+      screen.queryByTestId("runs-step-1-slot-market"),
+    ).not.toBeInTheDocument();
 
     defaultRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=memory:memory_701");
@@ -842,12 +1152,15 @@ describe("RunsDetailPage", () => {
     expect(artifact).toHaveTextContent(/slot decision/i);
     expect(artifact).toHaveTextContent(/run #42/i);
     expect(artifact).toHaveTextContent(/loop review_loop.*iteration 2/i);
-    expect(within(artifact).getByRole("link", { name: /open report/i })).toHaveAttribute("href", "/reports/memory_aapl_decision");
-    expect(within(artifact).getByRole("link", { name: /download/i })).toHaveAttribute("download");
-    expect(within(artifact).getByRole("link", { name: /download/i })).toHaveAttribute(
-      "href",
-      "/api/v1/reports/memory_aapl_decision/download",
-    );
+    expect(
+      within(artifact).getByRole("link", { name: /open report/i }),
+    ).toHaveAttribute("href", "/reports/memory_aapl_decision");
+    expect(
+      within(artifact).getByRole("link", { name: /download/i }),
+    ).toHaveAttribute("download");
+    expect(
+      within(artifact).getByRole("link", { name: /download/i }),
+    ).toHaveAttribute("href", "/api/v1/reports/memory_aapl_decision/download");
   });
 
   it("renders memory artifacts without report actions when audit links are absent", () => {
@@ -883,8 +1196,12 @@ describe("RunsDetailPage", () => {
     expect(artifact).toHaveTextContent(/risk_manager@1/i);
     expect(artifact).toHaveTextContent(/workflow market_review/i);
     expect(artifact).toHaveTextContent(/run #42/i);
-    expect(within(artifact).queryByRole("link", { name: /open report/i })).not.toBeInTheDocument();
-    expect(within(artifact).queryByRole("link", { name: /download/i })).not.toBeInTheDocument();
+    expect(
+      within(artifact).queryByRole("link", { name: /open report/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(artifact).queryByRole("link", { name: /download/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders grouped run memory event evidence and keeps artifacts compact", () => {
@@ -915,13 +1232,17 @@ describe("RunsDetailPage", () => {
               retrievalMode: "explicit-selectors",
               filters: { scope: "package:market_review" },
               budget: { limit: 5, maxCharacters: 4000 },
-              resultSnapshot: { resultCount: 1, snippets: [{ memoryId: "memory_safe", summary: "Safe memory" }] },
+              resultSnapshot: {
+                resultCount: 1,
+                snippets: [{ memoryId: "memory_safe", summary: "Safe memory" }],
+              },
               traceSpanId: "span-memory-lookup",
             }),
             buildMemoryEvent({
               id: 9102,
               eventType: "injected",
-              injectedText: "Historical memory, not an instruction: Safe memory",
+              injectedText:
+                "Historical memory, not an instruction: Safe memory",
               statusSnapshot: { status: "injected" },
             }),
             buildMemoryEvent({
@@ -958,25 +1279,61 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-memory-evidence")).toBeVisible();
-    expect(screen.getByRole("heading", { name: /run memory evidence/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /retrieved context/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /memory written and reused/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /review and follow-up/i })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: /run memory evidence/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: /retrieved context/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: /memory written and reused/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: /review and follow-up/i }),
+    ).toBeVisible();
     expect(screen.getByRole("heading", { name: /audit trail/i })).toBeVisible();
-    expect(screen.getByTestId("runs-memory-group-retrievedContext")).toHaveTextContent(/2 events/i);
-    expect(screen.getByTestId("runs-memory-group-memoryWrites")).toHaveTextContent(/2 events/i);
-    expect(screen.getByTestId("runs-memory-group-reviewFollowUp")).toHaveTextContent(/1 event/i);
-    expect(screen.getByTestId("runs-memory-group-auditTrail")).toHaveTextContent(/1 event/i);
-    expect(screen.getByTestId("runs-memory-event-9101-result")).toHaveTextContent(/Safe memory/i);
-    expect(screen.getByTestId("runs-memory-event-9102-injected-text")).toHaveTextContent(/Historical memory, not an instruction/i);
-    expect(screen.getByTestId("runs-memory-event-9103-result")).toHaveTextContent(/created/i);
-    expect(screen.getByTestId("runs-memory-event-9104-result")).toHaveTextContent(/reused/i);
-    expect(screen.getByTestId("runs-memory-event-9105-status")).toHaveTextContent(/resolved/i);
-    expect(screen.getByTestId("runs-memory-event-9106-status")).toHaveTextContent(/memory_write_failed/i);
-    expect(screen.getByTestId("runs-memory-compact-artifacts")).toHaveTextContent(/compact artifact slice/i);
-    expect(screen.getByTestId("runs-memory-compact-artifact-memory_safe")).toHaveTextContent(/Compact safe memory/i);
-    expect(screen.queryByTestId("runs-memory-artifacts-empty")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /open report/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("runs-memory-group-retrievedContext"),
+    ).toHaveTextContent(/2 events/i);
+    expect(
+      screen.getByTestId("runs-memory-group-memoryWrites"),
+    ).toHaveTextContent(/2 events/i);
+    expect(
+      screen.getByTestId("runs-memory-group-reviewFollowUp"),
+    ).toHaveTextContent(/1 event/i);
+    expect(
+      screen.getByTestId("runs-memory-group-auditTrail"),
+    ).toHaveTextContent(/1 event/i);
+    expect(
+      screen.getByTestId("runs-memory-event-9101-result"),
+    ).toHaveTextContent(/Safe memory/i);
+    expect(
+      screen.getByTestId("runs-memory-event-9102-injected-text"),
+    ).toHaveTextContent(/Historical memory, not an instruction/i);
+    expect(
+      screen.getByTestId("runs-memory-event-9103-result"),
+    ).toHaveTextContent(/created/i);
+    expect(
+      screen.getByTestId("runs-memory-event-9104-result"),
+    ).toHaveTextContent(/reused/i);
+    expect(
+      screen.getByTestId("runs-memory-event-9105-status"),
+    ).toHaveTextContent(/resolved/i);
+    expect(
+      screen.getByTestId("runs-memory-event-9106-status"),
+    ).toHaveTextContent(/memory_write_failed/i);
+    expect(
+      screen.getByTestId("runs-memory-compact-artifacts"),
+    ).toHaveTextContent(/compact artifact slice/i);
+    expect(
+      screen.getByTestId("runs-memory-compact-artifact-memory_safe"),
+    ).toHaveTextContent(/Compact safe memory/i);
+    expect(
+      screen.queryByTestId("runs-memory-artifacts-empty"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /open report/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("distinguishes absent run memory evidence from absent compact artifacts", () => {
@@ -985,9 +1342,15 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("runs-memory-evidence-empty")).toHaveTextContent(/No run memory evidence was recorded/i);
-    expect(screen.getByTestId("runs-memory-artifacts-empty")).toHaveTextContent(/No compact memory artifacts were written/i);
-    expect(screen.queryByText(/No memory artifacts were created by this run/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-memory-evidence-empty")).toHaveTextContent(
+      /No run memory evidence recorded/i,
+    );
+    expect(screen.getByTestId("runs-memory-artifacts-empty")).toHaveTextContent(
+      /No compact memory artifacts were written/i,
+    );
+    expect(
+      screen.queryByText(/No memory artifacts were created by this run/i),
+    ).not.toBeInTheDocument();
   });
 
   it("omits graph grouping and memory artifact cards when metadata is absent", () => {
@@ -996,7 +1359,9 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     expect(screen.queryByTestId("runs-graph-summary")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-memory-artifacts")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-memory-artifacts"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders a single-node step lineage diagram when no upstream source exists", () => {
@@ -1006,17 +1371,39 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     const stepLineage = screen.getByTestId("runs-step-1-lineage-summary");
-    const stepLineageDiagram = within(stepLineage).getByTestId("runs-step-1-lineage-diagram");
+    const stepLineageDiagram = within(stepLineage).getByTestId(
+      "runs-step-1-lineage-diagram",
+    );
     expect(stepLineageDiagram).toHaveClass("h-80");
-    expectDraggableZoomableLineageContract(within(stepLineageDiagram).getByTestId("mock-react-flow"));
-    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/origin/i);
-    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/planned/i);
-    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/source run/i);
-    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/source step/i);
-    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/source step row/i);
-    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/not recorded/i);
-    expect(within(stepLineage).queryByTestId("runs-step-1-lineage-node-source")).not.toBeInTheDocument();
-    expect(within(stepLineageDiagram).queryByTestId("mock-react-flow-edge-source-current")).not.toBeInTheDocument();
+    expectDraggableZoomableLineageContract(
+      within(stepLineageDiagram).getByTestId("mock-react-flow"),
+    );
+    expect(
+      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
+    ).toHaveTextContent(/origin/i);
+    expect(
+      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
+    ).toHaveTextContent(/planned/i);
+    expect(
+      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
+    ).toHaveTextContent(/source run/i);
+    expect(
+      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
+    ).toHaveTextContent(/source step/i);
+    expect(
+      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
+    ).toHaveTextContent(/source step row/i);
+    expect(
+      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
+    ).toHaveTextContent(/not recorded/i);
+    expect(
+      within(stepLineage).queryByTestId("runs-step-1-lineage-node-source"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(stepLineageDiagram).queryByTestId(
+        "mock-react-flow-edge-source-current",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("renders package target identity and span-only outline trace summary", () => {
@@ -1031,12 +1418,21 @@ describe("RunsDetailPage", () => {
               id: 201,
               invocations: [
                 buildInvocation({
-                  agentRef: { scope: "packageLocal", localId: 20, key: "macro_agent", version: 9 },
+                  agentRef: {
+                    scope: "packageLocal",
+                    localId: 20,
+                    key: "macro_agent",
+                    version: 9,
+                  },
                   agentKey: "macro_agent",
                   agentVersion: 9,
                   id: 2001,
                   output: { summary: "Macro complete" },
-                  outputSchemaRef: { scope: "packageLocal", localId: 31, version: 1 },
+                  outputSchemaRef: {
+                    scope: "packageLocal",
+                    localId: 31,
+                    version: 1,
+                  },
                   outputSchemaVersion: 1,
                   resolvedInput: { topic: "macro" },
                   runId: 43,
@@ -1061,12 +1457,22 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(/workflow package/i);
-    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/snapshot: macro_package/i);
+    expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(
+      /workflow package/i,
+    );
+    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(
+      /snapshot: macro_package/i,
+    );
     expect(screen.getByText(/captured package id: 12/i)).toBeVisible();
-    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/result\/span-agent-1/i);
-    expect(screen.getByTestId("runs-step-1-completed-indicator")).toBeInTheDocument();
-    expect(screen.queryByText(/captured through invocation spans/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(
+      /result\/span-agent-1/i,
+    );
+    expect(
+      screen.getByTestId("runs-step-1-completed-indicator"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/captured through invocation spans/i),
+    ).not.toBeInTheDocument();
   });
 
   it("renders structured final and aggregated output for nested payloads", () => {
@@ -1078,7 +1484,10 @@ describe("RunsDetailPage", () => {
             buildStep({
               invocations: [
                 buildInvocation({
-                  output: { agentSecond: false, agentFirst: [null, 3, "ready"] },
+                  output: {
+                    agentSecond: false,
+                    agentFirst: [null, 3, "ready"],
+                  },
                 }),
               ],
             }),
@@ -1099,18 +1508,26 @@ describe("RunsDetailPage", () => {
     expect(finalOutput).toHaveTextContent("3");
     expect(finalOutput).toHaveTextContent('"ready"');
     expect(finalOutput).toHaveTextContent("Empty object");
-    expect(finalText.indexOf("second")).toBeLessThan(finalText.indexOf("first"));
+    expect(finalText.indexOf("second")).toBeLessThan(
+      finalText.indexOf("first"),
+    );
 
     defaultRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1");
     render(<RunsDetailPage />);
 
-    const aggregatedOutput = screen.getByTestId("runs-step-1-aggregated-output");
+    const aggregatedOutput = screen.getByTestId(
+      "runs-step-1-aggregated-output",
+    );
     const aggregatedText = aggregatedOutput.textContent ?? "";
 
     expect(aggregatedOutput.querySelector("pre")).toBeNull();
-    expect(aggregatedText.indexOf("stepIndex")).toBeLessThan(aggregatedText.indexOf("agentInvocations"));
-    expect(aggregatedText.indexOf("agentSecond")).toBeLessThan(aggregatedText.indexOf("agentFirst"));
+    expect(aggregatedText.indexOf("stepIndex")).toBeLessThan(
+      aggregatedText.indexOf("agentInvocations"),
+    );
+    expect(aggregatedText.indexOf("agentSecond")).toBeLessThan(
+      aggregatedText.indexOf("agentFirst"),
+    );
   });
 
   it("enables multiline string views through runs payload wrappers", () => {
@@ -1173,15 +1590,21 @@ describe("RunsDetailPage", () => {
   });
 
   it("renders completed null final output instead of the pending-state copy", () => {
-    useRunMock.mockReturnValue(queryResult(buildRun({ finalOutput: null, status: "succeeded" })));
+    useRunMock.mockReturnValue(
+      queryResult(buildRun({ finalOutput: null, status: "succeeded" })),
+    );
 
     render(<RunsDetailPage />);
 
     const finalOutput = screen.getByTestId("runs-detail-final-output");
 
     expect(finalOutput).toHaveTextContent("null");
-    expect(finalOutput.querySelector("[data-structured-string-view]")).toBeNull();
-    expect(finalOutput).not.toHaveTextContent("Final output is not available yet.");
+    expect(
+      finalOutput.querySelector("[data-structured-string-view]"),
+    ).toBeNull();
+    expect(finalOutput).not.toHaveTextContent(
+      "Final output is not available yet.",
+    );
   });
 
   it("handles empty, running, skipped, and invalid pane URL state", () => {
@@ -1223,29 +1646,67 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     expect(screen.getByText(/0 of 0 invocation\(s\) terminal/i)).toBeVisible();
-    expect(screen.getByText(/run progress/i).parentElement).toHaveTextContent(/64%/i);
-    const pendingFinalOutputCard = screen.getByTestId("runs-detail-final-output-card");
-    const pendingFinalOutput = within(pendingFinalOutputCard).getByTestId("runs-detail-final-output");
+    expect(screen.getByText(/run progress/i).parentElement).toHaveTextContent(
+      /64%/i,
+    );
+    const pendingFinalOutputCard = screen.getByTestId(
+      "runs-detail-final-output-card",
+    );
+    const pendingFinalOutput = within(pendingFinalOutputCard).getByTestId(
+      "runs-detail-final-output",
+    );
     expect(pendingFinalOutputCard).toHaveAttribute("data-slot", "card");
-    expect(pendingFinalOutputCard.querySelector("[data-slot='card-content']")).toHaveClass("space-y-5", "pt-6");
-    expect(pendingFinalOutput).toHaveTextContent("Final output is not available yet.");
-    expect(pendingFinalOutput).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm", "text-muted-foreground");
-    expect(within(pendingFinalOutputCard).getByRole("heading", { name: /final output/i })).toBeVisible();
-    expect(screen.queryByText(/no invocation trace spans captured/i)).not.toBeInTheDocument();
-    expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/no invocations have been planned or persisted/i)).not.toBeInTheDocument();
+    expect(
+      pendingFinalOutputCard.querySelector("[data-slot='card-content']"),
+    ).toHaveClass("space-y-5", "pt-6");
+    expect(pendingFinalOutput).toHaveTextContent(
+      "Final output is not available yet.",
+    );
+    expect(pendingFinalOutput).toHaveClass(
+      "rounded-md",
+      "border",
+      "bg-muted/20",
+      "p-3",
+      "text-sm",
+      "text-muted-foreground",
+    );
+    expect(
+      within(pendingFinalOutputCard).getByRole("heading", {
+        name: /final output/i,
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/no invocation trace spans captured/i),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole(
+        "button",
+        { name: /trace/i },
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/no invocations have been planned or persisted/i),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/running/i);
-    expect(screen.getByTestId("runs-step-1-executing-indicator")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("runs-step-1-executing-indicator"),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("runs-step-2")).toHaveTextContent(/skipped/i);
-    expect(screen.queryByTestId("runs-step-2-completed-indicator")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-step-2-completed-indicator"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders an explicit empty state when no steps exist", () => {
-    useRunMock.mockReturnValue(queryResult(buildRun({ steps: [], traceId: null })));
+    useRunMock.mockReturnValue(
+      queryResult(buildRun({ steps: [], traceId: null })),
+    );
 
     render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("runs-empty-steps")).toHaveTextContent(/no steps have been planned/i);
+    expect(screen.getByTestId("runs-empty-steps")).toHaveTextContent(
+      /no steps have been planned/i,
+    );
   });
 
   it("shows backend-owned queued reasons with zero progress", () => {
@@ -1261,7 +1722,8 @@ describe("RunsDetailPage", () => {
           },
           queue: {
             blockingRunId: 41,
-            message: "Backend queue read model: source package run #41 is still active.",
+            message:
+              "Backend queue read model: source package run #41 is still active.",
             reason: "blocked-by-package-serial-policy",
             state: "blocked",
           },
@@ -1275,7 +1737,9 @@ describe("RunsDetailPage", () => {
 
     const queuedReasonRender = render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("runs-detail-status")).toHaveTextContent(/queued/i);
+    expect(screen.getByTestId("runs-detail-status")).toHaveTextContent(
+      /queued/i,
+    );
     expect(screen.getByTestId("runs-detail-queue-reason")).toHaveTextContent(
       /blocked by package serial policy/i,
     );
@@ -1285,7 +1749,9 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-queue-reason")).toHaveTextContent(
       /blocking run: #41/i,
     );
-    expect(screen.getByText(/run progress/i).parentElement).toHaveTextContent(/0%/i);
+    expect(screen.getByText(/run progress/i).parentElement).toHaveTextContent(
+      /0%/i,
+    );
     expect(screen.queryByText(/awaiting execution/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/still running/i)).not.toBeInTheDocument();
 
@@ -1310,9 +1776,15 @@ describe("RunsDetailPage", () => {
     );
     render(<RunsDetailPage />);
 
-    expect(screen.queryByTestId("runs-detail-queue-reason")).not.toBeInTheDocument();
-    expect(screen.queryByText(/awaiting worker capacity/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/blocked by package serial policy/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-detail-queue-reason"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/awaiting worker capacity/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/blocked by package serial policy/i),
+    ).not.toBeInTheDocument();
   });
 
   it("submits a full rerun with changed root parameters and navigates to the created run", async () => {
@@ -1323,13 +1795,21 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    expect(screen.getByRole("dialog", { name: /run snapshot again/i })).toBeVisible();
-    expect(screen.getByText(/edits only root run parameters/i)).toBeVisible();
-    expect(useRunRerunDraftMock).toHaveBeenLastCalledWith("42", { enabled: true });
+    expect(
+      screen.getByRole("dialog", { name: /run snapshot again/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/create a new run from this captured snapshot/i),
+    ).toBeVisible();
+    expect(useRunRerunDraftMock).toHaveBeenLastCalledWith("42", {
+      enabled: true,
+    });
     fireEvent.change(await screen.findByLabelText("Root run parameters JSON"), {
       target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
     });
-    expect(screen.queryByLabelText("Target invocation input JSON")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Target invocation input JSON"),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("run-rerun-submit"));
 
     await waitFor(() =>
@@ -1347,12 +1827,22 @@ describe("RunsDetailPage", () => {
     useRunRerunDraftMock.mockReturnValue(
       draftQueryResult(
         buildRerunDraft({
-          blockingErrors: [{ field: "modelConnections.primary_openai", issue: "Current model connection is missing." }],
+          blockingErrors: [
+            {
+              field: "modelConnections.primary_openai",
+              issue: "Current model connection is missing.",
+            },
+          ],
           packageProvenance: buildPackageProvenance({
             preflightSummary: { ready: true, blockingErrors: [], warnings: [] },
           }),
           ready: false,
-          warnings: [{ field: "extensions.signaldeck.finance", issue: "Historical package used Finance Workspace tools." }],
+          warnings: [
+            {
+              field: "extensions.signaldeck.finance",
+              issue: "Historical package used Finance Workspace tools.",
+            },
+          ],
         }),
       ),
     );
@@ -1362,7 +1852,9 @@ describe("RunsDetailPage", () => {
     const readiness = await screen.findByTestId("run-rerun-readiness");
     expect(readiness).toHaveTextContent(/current snapshot readiness blocked/i);
     expect(readiness).toHaveTextContent(/current model connection is missing/i);
-    expect(readiness).toHaveTextContent(/historical package used finance workspace tools/i);
+    expect(readiness).toHaveTextContent(
+      /historical package used finance workspace tools/i,
+    );
     expect(screen.getByTestId("run-rerun-submit")).toBeDisabled();
     fireEvent.click(screen.getByTestId("run-rerun-submit"));
     expect(createRunRerunMutateAsyncMock).not.toHaveBeenCalled();
@@ -1376,7 +1868,12 @@ describe("RunsDetailPage", () => {
         buildRerunDraft({
           packageProvenance: buildPackageProvenance({
             preflightSummary: {
-              blockingErrors: [{ field: "modelConnections.old", issue: "Historical model connection was missing." }],
+              blockingErrors: [
+                {
+                  field: "modelConnections.old",
+                  issue: "Historical model connection was missing.",
+                },
+              ],
               ready: false,
               warnings: [],
             },
@@ -1390,37 +1887,61 @@ describe("RunsDetailPage", () => {
 
     const readiness = await screen.findByTestId("run-rerun-readiness");
     expect(readiness).toHaveTextContent(/current snapshot readiness passed/i);
-    expect(readiness).not.toHaveTextContent(/historical model connection was missing/i);
+    expect(readiness).not.toHaveTextContent(
+      /historical model connection was missing/i,
+    );
     expect(screen.getByTestId("run-rerun-submit")).toBeEnabled();
   });
 
   it("opens the fork dialog from invocation URL params and fetches the invocation draft", async () => {
-    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
+    searchParamsMock = new URLSearchParams(
+      "fork=1&resumeStepIndex=1&invocationId=1001",
+    );
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
     useRunForkDraftMock.mockReturnValue(forkDraftQueryResult(buildForkDraft()));
 
     render(<RunsDetailPage />);
 
-    expect(screen.getByRole("dialog", { name: /fork from analysis invocation/i })).toBeVisible();
-    expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, { enabled: true });
+    expect(
+      screen.getByRole("dialog", { name: /fork from analysis invocation/i }),
+    ).toBeVisible();
+    expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, {
+      enabled: true,
+    });
     expect(screen.getByText(/resume at step 1/i)).toBeVisible();
     expect(screen.getByText(/invocation #1001/i)).toBeVisible();
-    expect(await screen.findByLabelText("Target invocation input JSON")).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));
-    expect(screen.queryByLabelText("Root run parameters JSON")).not.toBeInTheDocument();
+    expect(
+      await screen.findByLabelText("Target invocation input JSON"),
+    ).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));
+    expect(
+      screen.queryByLabelText("Root run parameters JSON"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows current fork readiness blockers from top-level draft fields", async () => {
-    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
+    searchParamsMock = new URLSearchParams(
+      "fork=1&resumeStepIndex=1&invocationId=1001",
+    );
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
     useRunForkDraftMock.mockReturnValue(
       forkDraftQueryResult(
         buildForkDraft({
-          blockingErrors: [{ field: "modelConnections.primary_openai", issue: "Current model connection is missing for fork." }],
+          blockingErrors: [
+            {
+              field: "modelConnections.primary_openai",
+              issue: "Current model connection is missing for fork.",
+            },
+          ],
           packageProvenance: buildPackageProvenance({
             preflightSummary: { ready: true, blockingErrors: [], warnings: [] },
           }),
           ready: false,
-          warnings: [{ field: "extensions.signaldeck.finance", issue: "Current extension state changed since source run." }],
+          warnings: [
+            {
+              field: "extensions.signaldeck.finance",
+              issue: "Current extension state changed since source run.",
+            },
+          ],
         }),
       ),
     );
@@ -1429,22 +1950,33 @@ describe("RunsDetailPage", () => {
 
     const readiness = await screen.findByTestId("run-fork-readiness");
     expect(readiness).toHaveTextContent(/current fork readiness blocked/i);
-    expect(readiness).toHaveTextContent(/current model connection is missing for fork/i);
-    expect(readiness).toHaveTextContent(/current extension state changed since source run/i);
+    expect(readiness).toHaveTextContent(
+      /current model connection is missing for fork/i,
+    );
+    expect(readiness).toHaveTextContent(
+      /current extension state changed since source run/i,
+    );
     expect(screen.getByTestId("run-fork-submit")).toBeDisabled();
     fireEvent.click(screen.getByTestId("run-fork-submit"));
     expect(createRunForkMutateAsyncMock).not.toHaveBeenCalled();
   });
 
   it("does not treat historical fork provenance preflight as current readiness", async () => {
-    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
+    searchParamsMock = new URLSearchParams(
+      "fork=1&resumeStepIndex=1&invocationId=1001",
+    );
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
     useRunForkDraftMock.mockReturnValue(
       forkDraftQueryResult(
         buildForkDraft({
           packageProvenance: buildPackageProvenance({
             preflightSummary: {
-              blockingErrors: [{ field: "modelConnections.old", issue: "Historical model connection was missing." }],
+              blockingErrors: [
+                {
+                  field: "modelConnections.old",
+                  issue: "Historical model connection was missing.",
+                },
+              ],
               ready: false,
               warnings: [],
             },
@@ -1458,56 +1990,82 @@ describe("RunsDetailPage", () => {
 
     const readiness = await screen.findByTestId("run-fork-readiness");
     expect(readiness).toHaveTextContent(/current fork readiness passed/i);
-    expect(readiness).not.toHaveTextContent(/historical model connection was missing/i);
+    expect(readiness).not.toHaveTextContent(
+      /historical model connection was missing/i,
+    );
     expect(screen.getByTestId("run-fork-submit")).toBeEnabled();
   });
 
   it("keeps the last fork presentation while Cancel closes the dialog", async () => {
-    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
+    searchParamsMock = new URLSearchParams(
+      "fork=1&resumeStepIndex=1&invocationId=1001",
+    );
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
     useRunForkDraftMock.mockReturnValue(forkDraftQueryResult(buildForkDraft()));
 
     const { rerender } = render(<RunsDetailPage />);
 
-    fireEvent.change(await screen.findByLabelText("Target invocation input JSON"), {
-      target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
-    });
+    fireEvent.change(
+      await screen.findByLabelText("Target invocation input JSON"),
+      {
+        target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
+      },
+    );
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     applyLatestSearchParamsUpdate("fork=1&resumeStepIndex=1&invocationId=1001");
     rerender(<RunsDetailPage />);
 
-    expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, { enabled: false });
-    expect(screen.queryByTestId("run-fork-invalid-target")).not.toBeInTheDocument();
+    expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, {
+      enabled: false,
+    });
+    expect(
+      screen.queryByTestId("run-fork-invalid-target"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(/fork unavailable/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/invocation #undefined/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/invocation #undefined/i),
+    ).not.toBeInTheDocument();
   });
 
   it("resets canceled fork edits after the close animation completes and the dialog reopens", async () => {
-    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
+    searchParamsMock = new URLSearchParams(
+      "fork=1&resumeStepIndex=1&invocationId=1001",
+    );
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
     useRunForkDraftMock.mockReturnValue(forkDraftQueryResult(buildForkDraft()));
 
     const { rerender } = render(<RunsDetailPage />);
 
-    fireEvent.change(await screen.findByLabelText("Target invocation input JSON"), {
-      target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
-    });
+    fireEvent.change(
+      await screen.findByLabelText("Target invocation input JSON"),
+      {
+        target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
+      },
+    );
 
     vi.useFakeTimers();
     try {
       fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-      applyLatestSearchParamsUpdate("fork=1&resumeStepIndex=1&invocationId=1001");
+      applyLatestSearchParamsUpdate(
+        "fork=1&resumeStepIndex=1&invocationId=1001",
+      );
       rerender(<RunsDetailPage />);
-      expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, { enabled: false });
+      expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, {
+        enabled: false,
+      });
 
       act(() => {
         vi.advanceTimersByTime(200);
       });
 
-      searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
+      searchParamsMock = new URLSearchParams(
+        "fork=1&resumeStepIndex=1&invocationId=1001",
+      );
       rerender(<RunsDetailPage />);
 
-      expect(screen.getByLabelText("Target invocation input JSON")).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));
+      expect(screen.getByLabelText("Target invocation input JSON")).toHaveValue(
+        JSON.stringify({ ticker: "AAPL" }, null, 2),
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -1518,12 +2076,18 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    expect(screen.queryByTestId("runs-step-1-replay-entry")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-step-1-replay-entry"),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("runs-invocation-1001-fork-entry"));
 
     expect(setSearchParamsMock).toHaveBeenCalledTimes(1);
-    const updater = setSearchParamsMock.mock.calls[0][0] as (current: URLSearchParams) => URLSearchParams;
-    const nextParams = updater(new URLSearchParams("panel=legacy&stepReplay=1&stepIndex=1"));
+    const updater = setSearchParamsMock.mock.calls[0][0] as (
+      current: URLSearchParams,
+    ) => URLSearchParams;
+    const nextParams = updater(
+      new URLSearchParams("panel=legacy&stepReplay=1&stepIndex=1"),
+    );
     expect(nextParams.get("panel")).toBe("legacy");
     expect(nextParams.get("fork")).toBe("1");
     expect(nextParams.get("resumeStepIndex")).toBe("1");
@@ -1558,7 +2122,11 @@ describe("RunsDetailPage", () => {
                   optional: false,
                   output: { ok: true },
                   outputOrigin: "executed",
-                  outputSchemaRef: { scope: "packageLocal", localId: 31, version: 1 },
+                  outputSchemaRef: {
+                    scope: "packageLocal",
+                    localId: 31,
+                    version: 1,
+                  },
                   outputSchemaVersion: 1,
                   persistedAt: "2026-04-20T10:00:03Z",
                   position: 3,
@@ -1587,11 +2155,23 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    expect(screen.queryByTestId("runs-step-1-replay-entry")).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-invocation-1001-fork-entry")).toHaveTextContent(/fork from this invocation/i);
-    expect(screen.getByTestId("runs-invocation-1003-fork-entry")).toHaveTextContent(/fork from this invocation/i);
-    expect(screen.getByTestId("runs-operation-2001-outline-entry")).toHaveTextContent(/operation forks are not supported/i);
-    expect(within(screen.getByTestId("runs-operation-2001-outline-entry")).queryByRole("button", { name: /fork from this invocation/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-step-1-replay-entry"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("runs-invocation-1001-fork-entry"),
+    ).toHaveTextContent(/fork from this invocation/i);
+    expect(
+      screen.getByTestId("runs-invocation-1003-fork-entry"),
+    ).toHaveTextContent(/fork from this invocation/i);
+    expect(
+      screen.getByTestId("runs-operation-2001-outline-entry"),
+    ).toHaveTextContent(/operation forks are not supported/i);
+    expect(
+      within(
+        screen.getByTestId("runs-operation-2001-outline-entry"),
+      ).queryByRole("button", { name: /fork from this invocation/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not expose fork actions for non-succeeded steps", () => {
@@ -1610,20 +2190,27 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    expect(screen.queryByRole("button", { name: /fork from this invocation/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /fork from this invocation/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("submits changed target invocation input and navigates to the created run", async () => {
-    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
+    searchParamsMock = new URLSearchParams(
+      "fork=1&resumeStepIndex=1&invocationId=1001",
+    );
     createRunForkMutateAsyncMock.mockResolvedValue({ id: 99 });
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
     useRunForkDraftMock.mockReturnValue(forkDraftQueryResult(buildForkDraft()));
 
     render(<RunsDetailPage />);
 
-    fireEvent.change(await screen.findByLabelText("Target invocation input JSON"), {
-      target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
-    });
+    fireEvent.change(
+      await screen.findByLabelText("Target invocation input JSON"),
+      {
+        target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
+      },
+    );
     fireEvent.click(screen.getByTestId("run-fork-submit"));
 
     await waitFor(() =>
@@ -1639,29 +2226,44 @@ describe("RunsDetailPage", () => {
   });
 
   it("blocks fork submit and shows precise JSON parse errors", async () => {
-    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
+    searchParamsMock = new URLSearchParams(
+      "fork=1&resumeStepIndex=1&invocationId=1001",
+    );
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
     useRunForkDraftMock.mockReturnValue(forkDraftQueryResult(buildForkDraft()));
 
     render(<RunsDetailPage />);
 
-    fireEvent.change(await screen.findByLabelText("Target invocation input JSON"), {
-      target: { value: "{not-json" },
-    });
+    fireEvent.change(
+      await screen.findByLabelText("Target invocation input JSON"),
+      {
+        target: { value: "{not-json" },
+      },
+    );
 
-    expect(await screen.findByText(/target invocation input json must be valid json/i)).toBeVisible();
+    expect(
+      await screen.findByText(
+        /target invocation input json must be valid json/i,
+      ),
+    ).toBeVisible();
     expect(screen.getByTestId("run-fork-submit")).toBeDisabled();
     fireEvent.click(screen.getByTestId("run-fork-submit"));
     expect(createRunForkMutateAsyncMock).not.toHaveBeenCalled();
   });
 
   it("shows invalid URL fork state without fetching a draft", () => {
-    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=3&invocationId=1001");
+    searchParamsMock = new URLSearchParams(
+      "fork=1&resumeStepIndex=3&invocationId=1001",
+    );
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
 
     render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("run-fork-invalid-target")).toHaveTextContent(/step 3 is not available/i);
-    expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, { enabled: false });
+    expect(screen.getByTestId("run-fork-invalid-target")).toHaveTextContent(
+      /step 3 is not available/i,
+    );
+    expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, {
+      enabled: false,
+    });
   });
 });

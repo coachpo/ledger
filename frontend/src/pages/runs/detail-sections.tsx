@@ -13,8 +13,23 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Activity, AlertCircle, Database, Download, FileText, GitBranch, Loader2, RotateCcw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Activity,
+  AlertCircle,
+  Database,
+  Download,
+  FileText,
+  GitBranch,
+  Loader2,
+  RotateCcw,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Link, useNavigate } from "react-router";
 
 import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
@@ -84,7 +99,11 @@ type DetailItem = {
   value: ReactNode;
 };
 
-type MemoryEventGroupKey = "retrievedContext" | "memoryWrites" | "reviewFollowUp" | "auditTrail";
+type MemoryEventGroupKey =
+  | "retrievedContext"
+  | "memoryWrites"
+  | "reviewFollowUp"
+  | "auditTrail";
 
 type MemoryEventGroupDefinition = {
   description: string;
@@ -121,29 +140,29 @@ const LINEAGE_MAX_ZOOM = 1.8;
 const LINEAGE_CANVAS_HEIGHT_CLASS = "h-80";
 const MEMORY_EVENT_GROUPS: MemoryEventGroupDefinition[] = [
   {
-    description: "Lookup and prompt-injection context captured while this run assembled memory for agents.",
-    emptyCopy: "No retrieval or prompt-injection memory events were recorded.",
+    description: "Memory context used by this run.",
+    emptyCopy: "No retrieval memory events recorded.",
     eventTypes: ["retrieved", "injected"],
     key: "retrievedContext",
     title: "Retrieved context",
   },
   {
-    description: "Writes, duplicate reuses, and supersession decisions emitted by core memory tools.",
-    emptyCopy: "No memory write, reuse, or supersession events were recorded.",
+    description: "Memory writes and reuse decisions.",
+    emptyCopy: "No memory write or reuse events recorded.",
     eventTypes: ["written", "reused", "superseded"],
     key: "memoryWrites",
     title: "Memory written and reused",
   },
   {
-    description: "Review and follow-up lifecycle evidence attached to memories touched by this run.",
-    emptyCopy: "No review or follow-up memory events were recorded.",
+    description: "Memory review and follow-up events.",
+    emptyCopy: "No review events recorded.",
     eventTypes: ["reviewed"],
     key: "reviewFollowUp",
     title: "Review and follow-up",
   },
   {
-    description: "Failure or uncategorized memory events retained as an audit trail for this run.",
-    emptyCopy: "No audit-only memory events were recorded.",
+    description: "Memory failures and uncategorized events.",
+    emptyCopy: "No audit-only events recorded.",
     eventTypes: ["failed"],
     key: "auditTrail",
     title: "Audit trail",
@@ -162,7 +181,9 @@ function formatTimestamp(value: string | null): string {
   return value ? formatDateTime(value) : "Not recorded";
 }
 
-function statusVariant(status: RunStatus | RunStepStatus): "secondary" | "destructive" | "outline" {
+function statusVariant(
+  status: RunStatus | RunStepStatus,
+): "secondary" | "destructive" | "outline" {
   if (status === "failed") {
     return "destructive";
   }
@@ -201,7 +222,9 @@ function aggregatedStepOutput(step: RunStepRead) {
       outputOrigin: invocation.outputOrigin,
       output: invocation.output,
     })),
-    operationInvocations: sortedOperationInvocations(step.operationInvocations).map((invocation) => ({
+    operationInvocations: sortedOperationInvocations(
+      step.operationInvocations,
+    ).map((invocation) => ({
       id: invocation.id,
       position: invocation.position,
       slot: invocation.slot,
@@ -215,8 +238,13 @@ function aggregatedStepOutput(step: RunStepRead) {
   };
 }
 
-function canForkInvocation(run: RunRead, step: RunStepRead, invocation: RunAgentInvocationRead): boolean {
-  return getRunForkAvailability(run, [step], step.index, invocation.id).isAvailable;
+function canForkInvocation(
+  run: RunRead,
+  step: RunStepRead,
+  invocation: RunAgentInvocationRead,
+): boolean {
+  return getRunForkAvailability(run, [step], step.index, invocation.id)
+    .isAvailable;
 }
 
 function formatJsonEditorValue(value: unknown): string {
@@ -227,7 +255,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function parseJsonValue(text: string, label: string): JsonValidationResult<unknown> {
+function parseJsonValue(
+  text: string,
+  label: string,
+): JsonValidationResult<unknown> {
   try {
     return { error: null, value: JSON.parse(text) as unknown };
   } catch (error) {
@@ -236,7 +267,10 @@ function parseJsonValue(text: string, label: string): JsonValidationResult<unkno
   }
 }
 
-function parseJsonRecord(text: string, label: string): JsonValidationResult<Record<string, unknown>> {
+function parseJsonRecord(
+  text: string,
+  label: string,
+): JsonValidationResult<Record<string, unknown>> {
   const parsed = parseJsonValue(text, label);
 
   if (parsed.error) {
@@ -259,8 +293,12 @@ function DetailGrid({ items }: { items: DetailItem[] }) {
     <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => (
         <div className="rounded-md border bg-muted/20 p-3" key={item.label}>
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</dt>
-          <dd className="mt-1 break-words text-foreground">{formatOptional(item.value)}</dd>
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {item.label}
+          </dt>
+          <dd className="mt-1 break-words text-foreground">
+            {formatOptional(item.value)}
+          </dd>
         </div>
       ))}
     </dl>
@@ -268,7 +306,10 @@ function DetailGrid({ items }: { items: DetailItem[] }) {
 }
 
 function lineageNodePosition(index: number) {
-  return { x: index * (LINEAGE_NODE_WIDTH + LINEAGE_NODE_GAP), y: LINEAGE_NODE_Y };
+  return {
+    x: index * (LINEAGE_NODE_WIDTH + LINEAGE_NODE_GAP),
+    y: LINEAGE_NODE_Y,
+  };
 }
 
 function LineageNode({ data }: NodeProps<LineageDiagramNode>) {
@@ -281,22 +322,40 @@ function LineageNode({ data }: NodeProps<LineageDiagramNode>) {
       )}
       data-testid={data.testId}
     >
-      <Handle className="size-1.5 border-border bg-muted-foreground" isConnectable={false} position={Position.Left} type="target" />
+      <Handle
+        className="size-1.5 border-border bg-muted-foreground"
+        isConnectable={false}
+        position={Position.Left}
+        type="target"
+      />
       <div className="space-y-2">
         <div>
-          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{data.eyebrow}</p>
-          <p className="mt-0.5 break-words text-sm font-medium leading-5 text-foreground">{data.title}</p>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {data.eyebrow}
+          </p>
+          <p className="mt-0.5 break-words text-sm font-medium leading-5 text-foreground">
+            {data.title}
+          </p>
         </div>
         <dl className="space-y-1.5 text-xs">
           {data.details.map((item) => (
             <div className="min-w-0" key={item.label}>
-              <dt className="font-medium uppercase tracking-wide text-muted-foreground">{item.label}</dt>
-              <dd className="mt-0.5 break-words text-foreground">{formatOptional(item.value)}</dd>
+              <dt className="font-medium uppercase tracking-wide text-muted-foreground">
+                {item.label}
+              </dt>
+              <dd className="mt-0.5 break-words text-foreground">
+                {formatOptional(item.value)}
+              </dd>
             </div>
           ))}
         </dl>
       </div>
-      <Handle className="size-1.5 border-border bg-muted-foreground" isConnectable={false} position={Position.Right} type="source" />
+      <Handle
+        className="size-1.5 border-border bg-muted-foreground"
+        isConnectable={false}
+        position={Position.Right}
+        type="source"
+      />
     </div>
   );
 }
@@ -325,8 +384,12 @@ function LineageDiagram({
 
   useEffect(() => {
     setInteractiveNodes((currentNodes) => {
-      const currentNodesById = new Map(currentNodes.map((node) => [node.id, node]));
-      const hasSameNodes = currentNodes.length === nodes.length && nodes.every((node) => currentNodesById.has(node.id));
+      const currentNodesById = new Map(
+        currentNodes.map((node) => [node.id, node]),
+      );
+      const hasSameNodes =
+        currentNodes.length === nodes.length &&
+        nodes.every((node) => currentNodesById.has(node.id));
 
       if (!hasSameNodes) {
         return nodes;
@@ -339,9 +402,14 @@ function LineageDiagram({
     });
   }, [nodes]);
 
-  const handleNodesChange = useCallback((changes: NodeChange<LineageDiagramNode>[]) => {
-    setInteractiveNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
-  }, []);
+  const handleNodesChange = useCallback(
+    (changes: NodeChange<LineageDiagramNode>[]) => {
+      setInteractiveNodes((currentNodes) =>
+        applyNodeChanges(changes, currentNodes),
+      );
+    },
+    [],
+  );
 
   const handleViewportChange = useCallback((nextViewport: Viewport) => {
     setViewport(nextViewport);
@@ -386,7 +454,12 @@ function LineageDiagram({
         zoomOnPinch
         zoomOnScroll
       >
-        <Background color="var(--border)" gap={16} size={1} variant={BackgroundVariant.Dots} />
+        <Background
+          color="var(--border)"
+          gap={16}
+          size={1}
+          variant={BackgroundVariant.Dots}
+        />
       </ReactFlow>
     </div>
   );
@@ -396,7 +469,13 @@ function formatRawPayload(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? "";
 }
 
-function RawPayloadBlock({ testId, value }: { testId?: string; value: unknown }) {
+function RawPayloadBlock({
+  testId,
+  value,
+}: {
+  testId?: string;
+  value: unknown;
+}) {
   return (
     <pre
       className="max-w-full overflow-x-auto whitespace-pre rounded-md border bg-muted/20 p-3 text-xs"
@@ -408,11 +487,29 @@ function RawPayloadBlock({ testId, value }: { testId?: string; value: unknown })
   );
 }
 
-function PayloadViewTabs({ label, testId, value }: { label: string; testId?: string; value: unknown }) {
+function PayloadViewTabs({
+  label,
+  testId,
+  value,
+}: {
+  label: string;
+  testId?: string;
+  value: unknown;
+}) {
   return (
-    <Tabs defaultValue="rendered" className="min-w-0 gap-3" data-testid={testId}>
-      <div className="max-w-full overflow-x-auto pb-1" data-testid={testId ? `${testId}-tab-scroll` : undefined}>
-        <TabsList aria-label={`${label} payload view modes`} className="h-8 rounded-lg">
+    <Tabs
+      defaultValue="rendered"
+      className="min-w-0 gap-3"
+      data-testid={testId}
+    >
+      <div
+        className="max-w-full overflow-x-auto pb-1"
+        data-testid={testId ? `${testId}-tab-scroll` : undefined}
+      >
+        <TabsList
+          aria-label={`${label} payload view modes`}
+          className="h-8 rounded-lg"
+        >
           <TabsTrigger className="rounded-md px-2 text-xs" value="rendered">
             Rendered
           </TabsTrigger>
@@ -422,45 +519,98 @@ function PayloadViewTabs({ label, testId, value }: { label: string; testId?: str
         </TabsList>
       </div>
       <TabsContent className="min-w-0" value="rendered">
-        <StructuredValueInspector className="min-w-0 rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId ? `${testId}-rendered` : undefined} enableMarkdownStringPreview label={null} preserveObjectKeyOrder presentation="tree" value={value} />
+        <StructuredValueInspector
+          className="min-w-0 rounded-md border bg-muted/20 p-3 text-sm"
+          data-testid={testId ? `${testId}-rendered` : undefined}
+          enableMarkdownStringPreview
+          label={null}
+          preserveObjectKeyOrder
+          presentation="tree"
+          value={value}
+        />
       </TabsContent>
       <TabsContent className="min-w-0" value="raw">
-        <RawPayloadBlock testId={testId ? `${testId}-raw` : undefined} value={value} />
+        <RawPayloadBlock
+          testId={testId ? `${testId}-raw` : undefined}
+          value={value}
+        />
       </TabsContent>
     </Tabs>
   );
 }
 
-function JsonBlock({ label, testId, value }: { label?: string; testId?: string; value: unknown }) {
+function JsonBlock({
+  label,
+  testId,
+  value,
+}: {
+  label?: string;
+  testId?: string;
+  value: unknown;
+}) {
   return (
     <div className="min-w-0 space-y-2">
       {label ? <p className="text-sm font-medium">{label}</p> : null}
-      <PayloadViewTabs label={label ?? "Payload"} testId={testId} value={value} />
+      <PayloadViewTabs
+        label={label ?? "Payload"}
+        testId={testId}
+        value={value}
+      />
     </div>
   );
 }
 
-function RunPayloadPane({ headingId, label, testId, value }: { headingId: string; label: string; testId: string; value: unknown }) {
+function RunPayloadPane({
+  headingId,
+  label,
+  testId,
+  value,
+}: {
+  headingId: string;
+  label: string;
+  testId: string;
+  value: unknown;
+}) {
   return (
     <section aria-labelledby={headingId} className="min-w-0 space-y-3">
-      <h3 className="text-base font-medium leading-none" id={headingId}>{label}</h3>
+      <h3 className="text-base font-medium leading-none" id={headingId}>
+        {label}
+      </h3>
       <PayloadViewTabs label={label} testId={testId} value={value} />
     </section>
   );
 }
 
 function RunFinalOutputPane({ run }: { run: RunRead }) {
-  const isPendingFinalOutput = (run.status === "queued" || run.status === "running") && run.finalOutput === null;
+  const isPendingFinalOutput =
+    (run.status === "queued" || run.status === "running") &&
+    run.finalOutput === null;
 
   return (
     <Card data-testid="runs-detail-final-output-card">
       <CardContent className="min-w-0 space-y-5 pt-6">
         {!isPendingFinalOutput ? (
-          <RunPayloadPane headingId="runs-final-output-heading" label="Final output" testId="runs-detail-final-output" value={run.finalOutput} />
+          <RunPayloadPane
+            headingId="runs-final-output-heading"
+            label="Final output"
+            testId="runs-detail-final-output"
+            value={run.finalOutput}
+          />
         ) : (
-          <section aria-labelledby="runs-final-output-heading" className="space-y-3">
-            <h3 className="text-base font-medium leading-none" id="runs-final-output-heading">Final output</h3>
-            <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground" data-testid="runs-detail-final-output">
+          <section
+            aria-labelledby="runs-final-output-heading"
+            className="space-y-3"
+          >
+            <h3
+              className="text-base font-medium leading-none"
+              id="runs-final-output-heading"
+            >
+              Final output
+            </h3>
+            <div
+              className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground"
+              data-testid="runs-detail-final-output"
+            >
               Final output is not available yet.
             </div>
           </section>
@@ -470,7 +620,9 @@ function RunFinalOutputPane({ run }: { run: RunRead }) {
   );
 }
 
-function graphMetadataLabel(metadata: RunGraphMetadata | null | undefined): string {
+function graphMetadataLabel(
+  metadata: RunGraphMetadata | null | undefined,
+): string {
   if (!metadata) {
     return "Not recorded";
   }
@@ -482,16 +634,27 @@ function graphMetadataLabel(metadata: RunGraphMetadata | null | undefined): stri
     metadata.branchId ? `branch ${metadata.branchId}` : null,
     metadata.loopId ? `loop ${metadata.loopId}` : null,
     metadata.loopIteration ? `iteration ${metadata.loopIteration}` : null,
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
-function SourceRunLink({ children, runId }: { children: ReactNode; runId: number | null }) {
+function SourceRunLink({
+  children,
+  runId,
+}: {
+  children: ReactNode;
+  runId: number | null;
+}) {
   if (!runId) {
     return <>{children}</>;
   }
 
   return (
-    <Link className="nodrag nopan text-primary underline-offset-4 hover:underline" to={`/runs/${runId}`}>
+    <Link
+      className="nodrag nopan text-primary underline-offset-4 hover:underline"
+      to={`/runs/${runId}`}
+    >
       {children}
     </Link>
   );
@@ -503,13 +666,22 @@ function SourceStepLink({ step }: { step: RunStepRead }) {
   }
 
   return (
-    <Link className="nodrag nopan text-primary underline-offset-4 hover:underline" to={`/runs/${step.sourceRunId}#step-${step.sourceStepIndex}`}>
+    <Link
+      className="nodrag nopan text-primary underline-offset-4 hover:underline"
+      to={`/runs/${step.sourceRunId}#step-${step.sourceStepIndex}`}
+    >
       Run #{step.sourceRunId} step {step.sourceStepIndex}
     </Link>
   );
 }
 
-function SourceInvocationLink({ invocation, step }: { invocation: RunAgentInvocationRead; step: RunStepRead }) {
+function SourceInvocationLink({
+  invocation,
+  step,
+}: {
+  invocation: RunAgentInvocationRead;
+  step: RunStepRead;
+}) {
   if (invocation.sourceInvocationId === null) {
     return "Not recorded";
   }
@@ -519,13 +691,20 @@ function SourceInvocationLink({ invocation, step }: { invocation: RunAgentInvoca
   }
 
   return (
-    <Link className="text-primary underline-offset-4 hover:underline" to={`/runs/${step.sourceRunId}#invocation-${invocation.sourceInvocationId}`}>
+    <Link
+      className="text-primary underline-offset-4 hover:underline"
+      to={`/runs/${step.sourceRunId}#invocation-${invocation.sourceInvocationId}`}
+    >
       Invocation #{invocation.sourceInvocationId}
     </Link>
   );
 }
 
-function SourceOperationInvocationLink({ invocation }: { invocation: RunOperationInvocationRead }) {
+function SourceOperationInvocationLink({
+  invocation,
+}: {
+  invocation: RunOperationInvocationRead;
+}) {
   if (invocation.sourceOperationInvocationId === null) {
     return "Not recorded";
   }
@@ -535,7 +714,10 @@ function SourceOperationInvocationLink({ invocation }: { invocation: RunOperatio
   }
 
   return (
-    <Link className="text-primary underline-offset-4 hover:underline" to={`/runs/${invocation.sourceRunId}#operation-invocation-${invocation.sourceOperationInvocationId}`}>
+    <Link
+      className="text-primary underline-offset-4 hover:underline"
+      to={`/runs/${invocation.sourceRunId}#operation-invocation-${invocation.sourceOperationInvocationId}`}
+    >
       Operation invocation #{invocation.sourceOperationInvocationId}
     </Link>
   );
@@ -543,14 +725,18 @@ function SourceOperationInvocationLink({ invocation }: { invocation: RunOperatio
 
 function memoryProvenanceLabel(artifact: RunMemoryArtifactRead): string {
   const provenance = artifact.provenance;
-  const workflow = provenance.workflowKey ? `workflow ${provenance.workflowKey}` : null;
+  const workflow = provenance.workflowKey
+    ? `workflow ${provenance.workflowKey}`
+    : null;
 
   return [
     `${provenance.agentKey}@${provenance.agentVersion}`,
     workflow,
     provenance.slot ? `slot ${provenance.slot}` : null,
     `run #${provenance.runId}`,
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function hasRecordEntries(value: Record<string, unknown>): boolean {
@@ -571,11 +757,19 @@ function formatMemoryEventType(eventType: RunMemoryEventType): string {
   return labels[eventType];
 }
 
-function groupKeyForMemoryEvent(eventType: RunMemoryEventType): MemoryEventGroupKey {
-  return MEMORY_EVENT_GROUPS.find((definition) => definition.eventTypes.includes(eventType))?.key ?? "auditTrail";
+function groupKeyForMemoryEvent(
+  eventType: RunMemoryEventType,
+): MemoryEventGroupKey {
+  return (
+    MEMORY_EVENT_GROUPS.find((definition) =>
+      definition.eventTypes.includes(eventType),
+    )?.key ?? "auditTrail"
+  );
 }
 
-function groupedMemoryEvents(events: RunMemoryEventRead[]): Record<MemoryEventGroupKey, RunMemoryEventRead[]> {
+function groupedMemoryEvents(
+  events: RunMemoryEventRead[],
+): Record<MemoryEventGroupKey, RunMemoryEventRead[]> {
   const grouped: Record<MemoryEventGroupKey, RunMemoryEventRead[]> = {
     auditTrail: [],
     memoryWrites: [],
@@ -603,10 +797,16 @@ function memoryEventDetails(event: RunMemoryEventRead): DetailItem[] {
     items.push({ label: "Step key", value: event.stepId });
   }
   if (event.runAgentInvocationId) {
-    items.push({ label: "Agent invocation", value: `#${event.runAgentInvocationId}` });
+    items.push({
+      label: "Agent invocation",
+      value: `#${event.runAgentInvocationId}`,
+    });
   }
   if (event.runOperationInvocationId) {
-    items.push({ label: "Operation invocation", value: `#${event.runOperationInvocationId}` });
+    items.push({
+      label: "Operation invocation",
+      value: `#${event.runOperationInvocationId}`,
+    });
   }
   if (event.invocationId) {
     items.push({ label: "Invocation key", value: event.invocationId });
@@ -646,7 +846,9 @@ function JsonEditorField({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <Label className="text-sm" htmlFor={id}>{label}</Label>
+      <Label className="text-sm" htmlFor={id}>
+        {label}
+      </Label>
       <Textarea
         aria-invalid={Boolean(error)}
         className="min-h-40 font-mono text-xs leading-relaxed"
@@ -666,19 +868,33 @@ function draftDiagnosticBadge(diagnostic: RunDraftReadinessDiagnostic) {
   return diagnostic.severity === "error" ? (
     <Badge variant="destructive">Blocking</Badge>
   ) : (
-    <Badge className="border-chart-3/30 bg-chart-3/10 text-chart-3" variant="outline">Warning</Badge>
+    <Badge
+      className="border-chart-3/30 bg-chart-3/10 text-chart-3"
+      variant="outline"
+    >
+      Warning
+    </Badge>
   );
 }
 
-function RunForkReadinessPanel({ readiness }: { readiness: RunDraftReadiness }) {
+function RunForkReadinessPanel({
+  readiness,
+}: {
+  readiness: RunDraftReadiness;
+}) {
   const diagnostics = diagnosticsFromDraftReadiness(readiness);
-  const title = readiness.ready ? "Current fork readiness passed" : "Current fork readiness blocked";
+  const title = readiness.ready
+    ? "Current fork readiness passed"
+    : "Current fork readiness blocked";
   const description = readiness.ready
     ? "The backend reports this fork draft is ready to create from current package dependencies."
     : "The backend reports this fork draft is not ready to create from current package dependencies.";
 
   return (
-    <Alert data-testid="run-fork-readiness" variant={readiness.ready ? "default" : "destructive"}>
+    <Alert
+      data-testid="run-fork-readiness"
+      variant={readiness.ready ? "default" : "destructive"}
+    >
       <AlertCircle />
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription className="space-y-3">
@@ -686,9 +902,14 @@ function RunForkReadinessPanel({ readiness }: { readiness: RunDraftReadiness }) 
         {diagnostics.length > 0 ? (
           <div className="space-y-2">
             {diagnostics.map((diagnostic) => (
-              <div className="grid min-w-0 gap-2 rounded-md border bg-background/60 p-3 text-sm md:grid-cols-[auto_minmax(0,10rem)_minmax(0,1fr)] md:items-center" key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}`}>
+              <div
+                className="grid min-w-0 gap-2 rounded-md border bg-background/60 p-3 text-sm md:grid-cols-[auto_minmax(0,10rem)_minmax(0,1fr)] md:items-center"
+                key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}`}
+              >
                 <div>{draftDiagnosticBadge(diagnostic)}</div>
-                <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">{diagnostic.field}</code>
+                <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">
+                  {diagnostic.field}
+                </code>
                 <span className="min-w-0 break-words">{diagnostic.issue}</span>
               </div>
             ))}
@@ -718,15 +939,28 @@ export function RunForkDialog({
 }) {
   const navigate = useNavigate();
   const createFork = useCreateRunFork();
-  const [presentedForkState, setPresentedForkState] = useState(() => ({ forkAvailability, forkTarget, invocationId, resumeStepIndex }));
+  const [presentedForkState, setPresentedForkState] = useState(() => ({
+    forkAvailability,
+    forkTarget,
+    invocationId,
+    resumeStepIndex,
+  }));
   const [draftTargetKey, setDraftTargetKey] = useState<string | null>(null);
   const [invocationInputText, setInvocationInputText] = useState("");
   const [apiError, setApiError] = useState<string | null>(null);
-  const presentedAvailability = open ? forkAvailability : presentedForkState.forkAvailability;
+  const presentedAvailability = open
+    ? forkAvailability
+    : presentedForkState.forkAvailability;
   const presentedTarget = open ? forkTarget : presentedForkState.forkTarget;
-  const presentedInvocationId = open ? invocationId : presentedForkState.invocationId;
-  const presentedResumeStepIndex = open ? resumeStepIndex : presentedForkState.resumeStepIndex;
-  const draftQuery = useRunForkDraft(runId, presentedInvocationId, { enabled: open && presentedAvailability.isAvailable });
+  const presentedInvocationId = open
+    ? invocationId
+    : presentedForkState.invocationId;
+  const presentedResumeStepIndex = open
+    ? resumeStepIndex
+    : presentedForkState.resumeStepIndex;
+  const draftQuery = useRunForkDraft(runId, presentedInvocationId, {
+    enabled: open && presentedAvailability.isAvailable,
+  });
 
   const resetLocalState = useCallback(() => {
     setDraftTargetKey(null);
@@ -750,14 +984,24 @@ export function RunForkDialog({
         resumeStepIndex,
       });
     }
-  }, [forkAvailability.isAvailable, forkAvailability.reason, forkTarget, invocationId, open, resumeStepIndex]);
+  }, [
+    forkAvailability.isAvailable,
+    forkAvailability.reason,
+    forkTarget,
+    invocationId,
+    open,
+    resumeStepIndex,
+  ]);
 
   useEffect(() => {
     if (open) {
       return undefined;
     }
 
-    const cleanupTimer = window.setTimeout(resetLocalState, FORK_DIALOG_CLOSE_CLEANUP_DELAY_MS);
+    const cleanupTimer = window.setTimeout(
+      resetLocalState,
+      FORK_DIALOG_CLOSE_CLEANUP_DELAY_MS,
+    );
     return () => window.clearTimeout(cleanupTimer);
   }, [open, resetLocalState]);
 
@@ -772,16 +1016,26 @@ export function RunForkDialog({
     }
 
     setDraftTargetKey(nextTargetKey);
-    setInvocationInputText(formatJsonEditorValue(draftQuery.data.invocationInput));
+    setInvocationInputText(
+      formatJsonEditorValue(draftQuery.data.invocationInput),
+    );
     setApiError(null);
   }, [draftQuery.data, draftTargetKey, open]);
 
   const invocationInputValidation = useMemo(
-    () => parseJsonRecord(invocationInputText || "{}", "Target invocation input JSON"),
+    () =>
+      parseJsonRecord(
+        invocationInputText || "{}",
+        "Target invocation input JSON",
+      ),
     [invocationInputText],
   );
   const forkPayload = useMemo(() => {
-    if (!draftQuery.data || invocationInputValidation.error || !invocationInputValidation.value) {
+    if (
+      !draftQuery.data ||
+      invocationInputValidation.error ||
+      !invocationInputValidation.value
+    ) {
       return null;
     }
 
@@ -789,20 +1043,41 @@ export function RunForkDialog({
       invocationInput: invocationInputValidation.value,
       sourceInvocationId: draftQuery.data.sourceInvocationId,
     };
-  }, [draftQuery.data, invocationInputValidation.error, invocationInputValidation.value]);
-  const hasDraftEdits = Boolean(draftQuery.data && !areJsonValuesEqual(invocationInputValidation.value, draftQuery.data.invocationInput));
-  const isSubmitDisabled = !forkPayload || createFork.isPending || draftQuery.isPending || Boolean(invocationInputValidation.error) || (draftQuery.data ? !draftQuery.data.ready : false);
+  }, [
+    draftQuery.data,
+    invocationInputValidation.error,
+    invocationInputValidation.value,
+  ]);
+  const hasDraftEdits = Boolean(
+    draftQuery.data &&
+    !areJsonValuesEqual(
+      invocationInputValidation.value,
+      draftQuery.data.invocationInput,
+    ),
+  );
+  const isSubmitDisabled =
+    !forkPayload ||
+    createFork.isPending ||
+    draftQuery.isPending ||
+    Boolean(invocationInputValidation.error) ||
+    (draftQuery.data ? !draftQuery.data.ready : false);
   const targetLabel = presentedTarget
     ? `${presentedTarget.invocation.slot} invocation`
-    : presentedInvocationId === undefined ? "selected invocation" : `invocation #${presentedInvocationId}`;
+    : presentedInvocationId === undefined
+      ? "selected invocation"
+      : `invocation #${presentedInvocationId}`;
 
   const resetToDraft = () => {
     if (!draftQuery.data) {
       return;
     }
 
-    setDraftTargetKey(`${draftQuery.data.sourceRunId}:${draftQuery.data.sourceInvocationId}`);
-    setInvocationInputText(formatJsonEditorValue(draftQuery.data.invocationInput));
+    setDraftTargetKey(
+      `${draftQuery.data.sourceRunId}:${draftQuery.data.sourceInvocationId}`,
+    );
+    setInvocationInputText(
+      formatJsonEditorValue(draftQuery.data.invocationInput),
+    );
     setApiError(null);
   };
 
@@ -814,11 +1089,16 @@ export function RunForkDialog({
     setApiError(null);
 
     try {
-      const createdRun = await createFork.mutateAsync({ runId, payload: forkPayload });
+      const createdRun = await createFork.mutateAsync({
+        runId,
+        payload: forkPayload,
+      });
       resetLocalState();
       navigate(`/runs/${createdRun.id}`);
     } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Failed to create the fork.");
+      setApiError(
+        error instanceof Error ? error.message : "Failed to create the fork.",
+      );
     }
   };
 
@@ -842,13 +1122,34 @@ export function RunForkDialog({
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2 pr-6">
             <DialogTitle>Fork from {targetLabel}</DialogTitle>
-            {presentedResumeStepIndex !== undefined ? <Badge variant="outline">Resume at Step {presentedResumeStepIndex}</Badge> : null}
-            {presentedInvocationId !== undefined ? <Badge variant="outline">Invocation #{presentedInvocationId}</Badge> : null}
-            {presentedTarget ? <Badge variant="outline">{presentedTarget.invocation.agentKey} v{presentedTarget.invocation.agentVersion}</Badge> : null}
-            {draftQuery.data ? <Badge variant={hasDraftEdits ? "secondary" : "outline"}>{hasDraftEdits ? "Invocation input edited" : "Invocation input unchanged"}</Badge> : null}
+            {presentedResumeStepIndex !== undefined ? (
+              <Badge variant="outline">
+                Resume at Step {presentedResumeStepIndex}
+              </Badge>
+            ) : null}
+            {presentedInvocationId !== undefined ? (
+              <Badge variant="outline">
+                Invocation #{presentedInvocationId}
+              </Badge>
+            ) : null}
+            {presentedTarget ? (
+              <Badge variant="outline">
+                {presentedTarget.invocation.agentKey} v
+                {presentedTarget.invocation.agentVersion}
+              </Badge>
+            ) : null}
+            {draftQuery.data ? (
+              <Badge variant={hasDraftEdits ? "secondary" : "outline"}>
+                {hasDraftEdits
+                  ? "Invocation input edited"
+                  : "Invocation input unchanged"}
+              </Badge>
+            ) : null}
           </div>
           <DialogDescription>
-            Fork copies upstream context before the resume boundary, edits only the selected agent invocation input, and leaves the source run unchanged.
+            Fork copies upstream context before the resume boundary, edits only
+            the selected agent invocation input, and leaves the source run
+            unchanged.
           </DialogDescription>
         </DialogHeader>
 
@@ -856,12 +1157,17 @@ export function RunForkDialog({
           <Alert variant="destructive" data-testid="run-fork-invalid-target">
             <AlertCircle />
             <AlertTitle>Fork unavailable</AlertTitle>
-            <AlertDescription>{presentedAvailability.reason ?? DEFAULT_FORK_UNAVAILABLE_REASON}</AlertDescription>
+            <AlertDescription>
+              {presentedAvailability.reason ?? DEFAULT_FORK_UNAVAILABLE_REASON}
+            </AlertDescription>
           </Alert>
         ) : null}
 
         {presentedAvailability.isAvailable && draftQuery.isPending ? (
-          <div className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground" data-testid="run-fork-loading">
+          <div
+            className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground"
+            data-testid="run-fork-loading"
+          >
             <Loader2 className="size-4 animate-spin" />
             Loading target invocation input...
           </div>
@@ -871,7 +1177,11 @@ export function RunForkDialog({
           <Alert variant="destructive" data-testid="run-fork-draft-error">
             <AlertCircle />
             <AlertTitle>Unable to load fork draft</AlertTitle>
-            <AlertDescription>{draftQuery.error instanceof Error ? draftQuery.error.message : "The target invocation input could not be loaded."}</AlertDescription>
+            <AlertDescription>
+              {draftQuery.error instanceof Error
+                ? draftQuery.error.message
+                : "The target invocation input could not be loaded."}
+            </AlertDescription>
           </Alert>
         ) : null}
 
@@ -883,23 +1193,43 @@ export function RunForkDialog({
           </Alert>
         ) : null}
 
-        {draftQuery.data ? <RunForkReadinessPanel readiness={draftQuery.data} /> : null}
+        {draftQuery.data ? (
+          <RunForkReadinessPanel readiness={draftQuery.data} />
+        ) : null}
 
         {draftQuery.data ? (
           <Card className="gap-3" data-testid="run-fork-dialog-body">
             <CardHeader>
-              <CardTitle className="text-base">Target invocation input</CardTitle>
+              <CardTitle className="text-base">
+                Target invocation input
+              </CardTitle>
               <CardDescription>
-                Edit the persisted input for {targetLabel}. Root run parameters stay unchanged; use rerun for root parameter edits.
+                Edit the persisted input for {targetLabel}. Root run parameters
+                stay unchanged; use rerun for root parameter edits.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <DetailGrid
                 items={[
-                  { label: "Source run", value: `Run #${draftQuery.data.sourceRunId}` },
-                  { label: "Source invocation", value: `#${draftQuery.data.sourceInvocationId}` },
-                  { label: "Resume boundary", value: presentedResumeStepIndex === undefined ? "Not recorded" : `Step ${presentedResumeStepIndex}` },
-                  { label: "Target slot", value: presentedTarget?.invocation.slot ?? "Not recorded" },
+                  {
+                    label: "Source run",
+                    value: `Run #${draftQuery.data.sourceRunId}`,
+                  },
+                  {
+                    label: "Source invocation",
+                    value: `#${draftQuery.data.sourceInvocationId}`,
+                  },
+                  {
+                    label: "Resume boundary",
+                    value:
+                      presentedResumeStepIndex === undefined
+                        ? "Not recorded"
+                        : `Step ${presentedResumeStepIndex}`,
+                  },
+                  {
+                    label: "Target slot",
+                    value: presentedTarget?.invocation.slot ?? "Not recorded",
+                  },
                 ]}
               />
               <JsonEditorField
@@ -919,15 +1249,32 @@ export function RunForkDialog({
         ) : null}
 
         <DialogFooter>
-          <Button disabled={createFork.isPending} onClick={closeDialog} type="button" variant="ghost">
+          <Button
+            disabled={createFork.isPending}
+            onClick={closeDialog}
+            type="button"
+            variant="ghost"
+          >
             Cancel
           </Button>
-          <Button disabled={!draftQuery.data || createFork.isPending} onClick={resetToDraft} type="button" variant="outline">
+          <Button
+            disabled={!draftQuery.data || createFork.isPending}
+            onClick={resetToDraft}
+            type="button"
+            variant="outline"
+          >
             <RotateCcw data-icon="inline-start" />
             Reset target input
           </Button>
-          <Button data-testid="run-fork-submit" disabled={isSubmitDisabled} onClick={() => void handleSubmit()} type="button">
-            {createFork.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+          <Button
+            data-testid="run-fork-submit"
+            disabled={isSubmitDisabled}
+            onClick={() => void handleSubmit()}
+            type="button"
+          >
+            {createFork.isPending ? (
+              <Loader2 className="animate-spin" data-icon="inline-start" />
+            ) : null}
             Create fork from invocation
           </Button>
         </DialogFooter>
@@ -936,8 +1283,10 @@ export function RunForkDialog({
   );
 }
 
-
-function isInspectionTargetEqual(left: RunInspectionTarget, right: RunInspectionTarget): boolean {
+function isInspectionTargetEqual(
+  left: RunInspectionTarget,
+  right: RunInspectionTarget,
+): boolean {
   if (left.type !== right.type) {
     return false;
   }
@@ -947,7 +1296,10 @@ function isInspectionTargetEqual(left: RunInspectionTarget, right: RunInspection
   if (left.type === "agentInvocation" && right.type === "agentInvocation") {
     return left.invocationId === right.invocationId;
   }
-  if (left.type === "operationInvocation" && right.type === "operationInvocation") {
+  if (
+    left.type === "operationInvocation" &&
+    right.type === "operationInvocation"
+  ) {
     return left.invocationId === right.invocationId;
   }
   if (left.type === "memoryArtifact" && right.type === "memoryArtifact") {
@@ -956,9 +1308,14 @@ function isInspectionTargetEqual(left: RunInspectionTarget, right: RunInspection
   return left.type === "run";
 }
 
-function findAgentInvocation(steps: RunStepRead[], invocationId: number): { invocation: RunAgentInvocationRead; step: RunStepRead } | null {
+function findAgentInvocation(
+  steps: RunStepRead[],
+  invocationId: number,
+): { invocation: RunAgentInvocationRead; step: RunStepRead } | null {
   for (const step of steps) {
-    const invocation = step.invocations.find((item) => item.id === invocationId);
+    const invocation = step.invocations.find(
+      (item) => item.id === invocationId,
+    );
     if (invocation) {
       return { invocation, step };
     }
@@ -966,9 +1323,14 @@ function findAgentInvocation(steps: RunStepRead[], invocationId: number): { invo
   return null;
 }
 
-function findOperationInvocation(steps: RunStepRead[], invocationId: number): RunOperationInvocationRead | null {
+function findOperationInvocation(
+  steps: RunStepRead[],
+  invocationId: number,
+): RunOperationInvocationRead | null {
   for (const step of steps) {
-    const invocation = step.operationInvocations.find((item) => item.id === invocationId);
+    const invocation = step.operationInvocations.find(
+      (item) => item.id === invocationId,
+    );
     if (invocation) {
       return invocation;
     }
@@ -976,20 +1338,32 @@ function findOperationInvocation(steps: RunStepRead[], invocationId: number): Ru
   return null;
 }
 
-function selectedTargetLabel(target: RunInspectionTarget, steps: RunStepRead[], run: RunRead): string {
+function selectedTargetLabel(
+  target: RunInspectionTarget,
+  steps: RunStepRead[],
+  run: RunRead,
+): string {
   if (target.type === "step") {
     return `Step ${target.stepIndex}`;
   }
   if (target.type === "agentInvocation") {
     const match = findAgentInvocation(steps, target.invocationId);
-    return match ? `${match.invocation.slot} invocation` : `Invocation #${target.invocationId}`;
+    return match
+      ? `${match.invocation.slot} invocation`
+      : `Invocation #${target.invocationId}`;
   }
   if (target.type === "operationInvocation") {
     const invocation = findOperationInvocation(steps, target.invocationId);
-    return invocation ? `${invocation.slot} operation` : `Operation #${target.invocationId}`;
+    return invocation
+      ? `${invocation.slot} operation`
+      : `Operation #${target.invocationId}`;
   }
   if (target.type === "memoryArtifact") {
-    return run.memoryArtifacts.find((artifact) => artifact.memoryId === target.memoryId)?.summary ?? target.memoryId;
+    return (
+      run.memoryArtifacts.find(
+        (artifact) => artifact.memoryId === target.memoryId,
+      )?.summary ?? target.memoryId
+    );
   }
   return `Run #${run.id}`;
 }
@@ -1011,12 +1385,18 @@ function InspectionSelectorButton({
   target: RunInspectionTarget;
   testId?: string;
 }) {
-  const isActiveTarget = isInspectionTargetEqual(activeInspection.target, target);
+  const isActiveTarget = isInspectionTargetEqual(
+    activeInspection.target,
+    target,
+  );
   const isActive = isActiveTarget && (!pane || activeInspection.pane === pane);
 
   return (
     <Button
-      className={cn("h-auto w-full cursor-pointer justify-start px-3 py-2 text-left", className)}
+      className={cn(
+        "h-auto w-full cursor-pointer justify-start px-3 py-2 text-left",
+        className,
+      )}
       data-testid={testId}
       onClick={() => onSelect(target, pane)}
       size="sm"
@@ -1042,16 +1422,31 @@ export function RunContextStrip({
   terminalInvocationsCount: number;
 }) {
   return (
-    <Card className="min-w-0 overflow-hidden bg-muted/20" data-testid="runs-workspace-context">
+    <Card
+      className="min-w-0 overflow-hidden bg-muted/20"
+      data-testid="runs-workspace-context"
+    >
       <CardContent className="grid min-w-0 gap-3 p-3 text-sm">
         <div
           className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2"
           data-testid="runs-summary-execution-row"
         >
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Execution</span>
-          <Badge data-testid="runs-detail-status" variant={statusVariant(run.status)}>{run.status}</Badge>
-          <Badge data-testid="runs-detail-target-kind" variant="outline">{targetKindLabel}</Badge>
-          <span className="min-w-0 break-words text-muted-foreground">{terminalInvocationsCount} of {allInvocationsCount} invocation(s) terminal.</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Execution
+          </span>
+          <Badge
+            data-testid="runs-detail-status"
+            variant={statusVariant(run.status)}
+          >
+            {run.status}
+          </Badge>
+          <Badge data-testid="runs-detail-target-kind" variant="outline">
+            {targetKindLabel}
+          </Badge>
+          <span className="min-w-0 break-words text-muted-foreground">
+            {terminalInvocationsCount} of {allInvocationsCount} invocation(s)
+            terminal.
+          </span>
         </div>
 
         <dl
@@ -1064,11 +1459,15 @@ export function RunContextStrip({
           </div>
           <div className="flex items-center gap-2">
             <dt>Inherited tokens</dt>
-            <dd className="font-medium text-foreground">{run.inheritedTokens}</dd>
+            <dd className="font-medium text-foreground">
+              {run.inheritedTokens}
+            </dd>
           </div>
           <div className="flex items-center gap-2">
             <dt>Executed tokens</dt>
-            <dd className="font-medium text-foreground">{run.executedTokens}</dd>
+            <dd className="font-medium text-foreground">
+              {run.executedTokens}
+            </dd>
           </div>
         </dl>
 
@@ -1087,13 +1486,21 @@ export function RunContextStrip({
   );
 }
 
-function StepStatusIndicator({ state, stepIndex }: { state: StepIndicatorState; stepIndex: number }) {
+function StepStatusIndicator({
+  state,
+  stepIndex,
+}: {
+  state: StepIndicatorState;
+  stepIndex: number;
+}) {
   if (state === "neutral") {
     return null;
   }
 
   const isExecuting = state === "executing";
-  const label = isExecuting ? `Step ${stepIndex} currently executing` : `Step ${stepIndex} completed`;
+  const label = isExecuting
+    ? `Step ${stepIndex} currently executing`
+    : `Step ${stepIndex} completed`;
 
   return (
     <span
@@ -1110,17 +1517,32 @@ function StepStatusIndicator({ state, stepIndex }: { state: StepIndicatorState; 
   );
 }
 
-function StepTraceSummary({ entries, stepIndex }: { entries: TraceSpanEntry[]; stepIndex: number }) {
+function StepTraceSummary({
+  entries,
+  stepIndex,
+}: {
+  entries: TraceSpanEntry[];
+  stepIndex: number;
+}) {
   if (entries.length === 0) {
     return null;
   }
 
   return (
-    <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground" data-testid={`runs-step-${stepIndex}-trace-summary`}>
-      <Badge variant="outline">{entries.length} trace span{entries.length === 1 ? "" : "s"}</Badge>
+    <span
+      className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+      data-testid={`runs-step-${stepIndex}-trace-summary`}
+    >
+      <Badge variant="outline">
+        {entries.length} trace span{entries.length === 1 ? "" : "s"}
+      </Badge>
       {entries.slice(0, 2).map((entry) => (
-        <span className="break-all" key={`${entry.invocationId}-${entry.spanId}`}>
-          {entry.invocationKind === "operation" ? "operation " : ""}{entry.slot}/{entry.spanId}
+        <span
+          className="break-all"
+          key={`${entry.invocationId}-${entry.spanId}`}
+        >
+          {entry.invocationKind === "operation" ? "operation " : ""}
+          {entry.slot}/{entry.spanId}
         </span>
       ))}
       {entries.length > 2 ? <span>+{entries.length - 2} more</span> : null}
@@ -1144,69 +1566,122 @@ export function ExecutionOutline({
   traceSpanEntries: TraceSpanEntry[];
 }) {
   return (
-    <aside className="flex h-full min-h-0 min-w-0 flex-col bg-card/40" data-testid="runs-execution-outline">
+    <aside
+      className="flex h-full min-h-0 min-w-0 flex-col bg-card/40"
+      data-testid="runs-execution-outline"
+    >
       <div className="shrink-0 border-b border-border bg-muted/40 px-4 py-3">
         <div className="flex items-center gap-2">
           <Activity className="size-4 text-muted-foreground" />
-          <h2 className="text-base font-semibold tracking-tight">Execution outline</h2>
+          <h2 className="text-base font-semibold tracking-tight">
+            Execution outline
+          </h2>
         </div>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 p-3">
           <div id="run-context" className="rounded-xl border bg-background p-2">
-            <InspectionSelectorButton activeInspection={activeInspection} onSelect={onSelect} pane="finalOutput" target={{ type: "run" }}>
+            <InspectionSelectorButton
+              activeInspection={activeInspection}
+              onSelect={onSelect}
+              pane="finalOutput"
+              target={{ type: "run" }}
+            >
               <span className="flex min-w-0 flex-col gap-1">
                 <span className="font-medium">Run result</span>
-                <span className="text-xs text-muted-foreground">Final output, input, lineage, and memory</span>
+                <span className="text-xs text-muted-foreground">
+                  Final output, input, lineage, and memory
+                </span>
               </span>
             </InspectionSelectorButton>
           </div>
           {steps.length === 0 ? (
-            <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground" data-testid="runs-empty-steps">
+            <div
+              className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground"
+              data-testid="runs-empty-steps"
+            >
               No steps have been planned for this run yet.
             </div>
           ) : null}
           {steps.map((step) => {
             const invocations = sortedInvocations(step.invocations);
-            const operationInvocations = sortedOperationInvocations(step.operationInvocations);
+            const operationInvocations = sortedOperationInvocations(
+              step.operationInvocations,
+            );
             const allInvocations = [...invocations, ...operationInvocations];
-            const stepProgress = progressForInvocations(allInvocations, step.status);
-            const stepTarget: RunInspectionTarget = { type: "step", stepIndex: step.index };
+            const stepProgress = progressForInvocations(
+              allInvocations,
+              step.status,
+            );
+            const stepTarget: RunInspectionTarget = {
+              type: "step",
+              stepIndex: step.index,
+            };
             const indicatorState = stepIndicatorState(step.status);
-            const stepTraceEntries = traceSpanEntries.filter((entry) => entry.stepIndex === step.index);
+            const stepTraceEntries = traceSpanEntries.filter(
+              (entry) => entry.stepIndex === step.index,
+            );
 
             return (
               <div
                 className={cn(
                   "rounded-xl border bg-background p-2 transition-colors",
-                  indicatorState === "executing" && "border-primary/50 bg-primary/5",
-                  indicatorState === "completed" && "border-positive/40 bg-positive/5",
+                  indicatorState === "executing" &&
+                    "border-primary/50 bg-primary/5",
+                  indicatorState === "completed" &&
+                    "border-positive/40 bg-positive/5",
                 )}
                 data-testid={`runs-step-${step.index}`}
                 id={`step-${step.index}`}
                 key={step.id}
               >
-                <InspectionSelectorButton activeInspection={activeInspection} onSelect={onSelect} target={stepTarget}>
+                <InspectionSelectorButton
+                  activeInspection={activeInspection}
+                  onSelect={onSelect}
+                  target={stepTarget}
+                >
                   <span className="flex min-w-0 flex-1 flex-col gap-1">
                     <span className="flex flex-wrap items-center gap-2">
-                      <StepStatusIndicator state={indicatorState} stepIndex={step.index} />
+                      <StepStatusIndicator
+                        state={indicatorState}
+                        stepIndex={step.index}
+                      />
                       <span className="font-medium">Step {step.index}</span>
-                      <Badge variant={statusVariant(step.status)}>{step.status}</Badge>
+                      <Badge variant={statusVariant(step.status)}>
+                        {step.status}
+                      </Badge>
                       <Badge variant="outline">{step.origin} origin</Badge>
                       <Badge variant="secondary">{stepProgress}%</Badge>
                     </span>
-                    <span className="text-xs text-muted-foreground">{invocations.length} agent invocation(s) · {operationInvocations.length} operation invocation(s)</span>
-                    <StepTraceSummary entries={stepTraceEntries} stepIndex={step.index} />
+                    <span className="text-xs text-muted-foreground">
+                      {invocations.length} agent invocation(s) ·{" "}
+                      {operationInvocations.length} operation invocation(s)
+                    </span>
+                    <StepTraceSummary
+                      entries={stepTraceEntries}
+                      stepIndex={step.index}
+                    />
                   </span>
                 </InspectionSelectorButton>
                 {allInvocations.length > 0 ? (
-                  <div className="mt-2 space-y-2 rounded-lg border bg-muted/20 p-2" data-testid={`runs-step-${step.index}-invocation-targets`}>
+                  <div
+                    className="mt-2 space-y-2 rounded-lg border bg-muted/20 p-2"
+                    data-testid={`runs-step-${step.index}-invocation-targets`}
+                  >
                     {invocations.map((invocation) => {
-                      const invocationTarget: RunInspectionTarget = { type: "agentInvocation", invocationId: invocation.id };
+                      const invocationTarget: RunInspectionTarget = {
+                        type: "agentInvocation",
+                        invocationId: invocation.id,
+                      };
                       const forkable = canForkInvocation(run, step, invocation);
 
                       return (
-                        <div className="rounded-md border bg-background/80 p-2" data-testid={`runs-invocation-${invocation.id}-outline-entry`} id={`invocation-${invocation.id}`} key={invocation.id}>
+                        <div
+                          className="rounded-md border bg-background/80 p-2"
+                          data-testid={`runs-invocation-${invocation.id}-outline-entry`}
+                          id={`invocation-${invocation.id}`}
+                          key={invocation.id}
+                        >
                           <InspectionSelectorButton
                             activeInspection={activeInspection}
                             className="px-2 py-1.5"
@@ -1215,18 +1690,31 @@ export function ExecutionOutline({
                           >
                             <span className="flex min-w-0 flex-1 flex-col gap-1">
                               <span className="flex flex-wrap items-center gap-2">
-                                <Badge variant={statusVariant(invocation.status)}>{invocation.status}</Badge>
-                                <span className="font-medium">{invocation.slot} agent</span>
-                                <Badge variant="outline">#{invocation.id}</Badge>
+                                <Badge
+                                  variant={statusVariant(invocation.status)}
+                                >
+                                  {invocation.status}
+                                </Badge>
+                                <span className="font-medium">
+                                  {invocation.slot} agent
+                                </span>
+                                <Badge variant="outline">
+                                  #{invocation.id}
+                                </Badge>
                               </span>
-                              <span className="text-xs text-muted-foreground">{invocation.agentKey} v{invocation.agentVersion} · input {invocation.resolvedInputOrigin}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {invocation.agentKey} v{invocation.agentVersion}{" "}
+                                · input {invocation.resolvedInputOrigin}
+                              </span>
                             </span>
                           </InspectionSelectorButton>
                           {forkable ? (
                             <Button
                               className="mt-2 w-full cursor-pointer justify-start"
                               data-testid={`runs-invocation-${invocation.id}-fork-entry`}
-                              onClick={() => onOpenFork(step.index, invocation.id)}
+                              onClick={() =>
+                                onOpenFork(step.index, invocation.id)
+                              }
                               size="sm"
                               type="button"
                               variant="outline"
@@ -1239,10 +1727,18 @@ export function ExecutionOutline({
                       );
                     })}
                     {operationInvocations.map((invocation) => {
-                      const operationTarget: RunInspectionTarget = { type: "operationInvocation", invocationId: invocation.id };
+                      const operationTarget: RunInspectionTarget = {
+                        type: "operationInvocation",
+                        invocationId: invocation.id,
+                      };
 
                       return (
-                        <div className="rounded-md border bg-background/80 p-2" data-testid={`runs-operation-${invocation.id}-outline-entry`} id={`operation-invocation-${invocation.id}`} key={invocation.id}>
+                        <div
+                          className="rounded-md border bg-background/80 p-2"
+                          data-testid={`runs-operation-${invocation.id}-outline-entry`}
+                          id={`operation-invocation-${invocation.id}`}
+                          key={invocation.id}
+                        >
                           <InspectionSelectorButton
                             activeInspection={activeInspection}
                             className="px-2 py-1.5"
@@ -1251,11 +1747,22 @@ export function ExecutionOutline({
                           >
                             <span className="flex min-w-0 flex-1 flex-col gap-1">
                               <span className="flex flex-wrap items-center gap-2">
-                                <Badge variant={statusVariant(invocation.status)}>{invocation.status}</Badge>
-                                <span className="font-medium">{invocation.slot} operation</span>
-                                <Badge variant="outline">#{invocation.id}</Badge>
+                                <Badge
+                                  variant={statusVariant(invocation.status)}
+                                >
+                                  {invocation.status}
+                                </Badge>
+                                <span className="font-medium">
+                                  {invocation.slot} operation
+                                </span>
+                                <Badge variant="outline">
+                                  #{invocation.id}
+                                </Badge>
                               </span>
-                              <span className="text-xs text-muted-foreground">{invocation.operationKey} · operation forks are not supported in this phase</span>
+                              <span className="text-xs text-muted-foreground">
+                                {invocation.operationKey} · operation forks are
+                                not supported in this phase
+                              </span>
                             </span>
                           </InspectionSelectorButton>
                         </div>
@@ -1268,19 +1775,32 @@ export function ExecutionOutline({
           })}
           {run.memoryArtifacts.length > 0 ? (
             <div className="rounded-xl border bg-background p-2">
-              <p className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Compact memory artifacts</p>
+              <p className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Compact memory artifacts
+              </p>
               <div className="space-y-1">
                 {run.memoryArtifacts.map((artifact) => (
                   <InspectionSelectorButton
                     activeInspection={activeInspection}
                     key={artifact.memoryId}
                     onSelect={onSelect}
-                    target={{ type: "memoryArtifact", memoryId: artifact.memoryId }}
+                    target={{
+                      type: "memoryArtifact",
+                      memoryId: artifact.memoryId,
+                    }}
                     testId={`runs-memory-outline-${artifact.memoryId}`}
                   >
-                    <span className="flex min-w-0 flex-col gap-1" id={`memory-${artifact.memoryId}`}>
-                      <span className="flex items-center gap-2"><Database className="size-3.5" />{artifact.summary}</span>
-                      <span className="text-xs text-muted-foreground">{artifact.status} · {memoryProvenanceLabel(artifact)}</span>
+                    <span
+                      className="flex min-w-0 flex-col gap-1"
+                      id={`memory-${artifact.memoryId}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Database className="size-3.5" />
+                        {artifact.summary}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {artifact.status} · {memoryProvenanceLabel(artifact)}
+                      </span>
                     </span>
                   </InspectionSelectorButton>
                 ))}
@@ -1301,7 +1821,10 @@ function EvidencePaneNav({
   onSelect: (target: RunInspectionTarget, pane?: RunInspectionPane) => void;
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap gap-2" data-testid="runs-evidence-pane-nav">
+    <div
+      className="flex min-w-0 flex-wrap gap-2"
+      data-testid="runs-evidence-pane-nav"
+    >
       {inspectionPanesForTarget(activeInspection.target).map((pane) => (
         <Button
           className="max-w-full cursor-pointer"
@@ -1318,12 +1841,41 @@ function EvidencePaneNav({
   );
 }
 
-function RunLineageEvidence({ copiedInvocations, copiedSteps, isCurrentFork, plannedInvocations, plannedSteps, run }: { copiedInvocations: number; copiedSteps: number; isCurrentFork: boolean; plannedInvocations: number; plannedSteps: number; run: RunRead }) {
+function RunLineageEvidence({
+  copiedInvocations,
+  copiedSteps,
+  isCurrentFork,
+  plannedInvocations,
+  plannedSteps,
+  run,
+}: {
+  copiedInvocations: number;
+  copiedSteps: number;
+  isCurrentFork: boolean;
+  plannedInvocations: number;
+  plannedSteps: number;
+  run: RunRead;
+}) {
   const lineageRootRunId = run.lineageRootRunId ?? run.id;
-  const sourceRunValue = run.sourceRunId ? <SourceRunLink runId={run.sourceRunId}>Run #{run.sourceRunId}</SourceRunLink> : "Original run";
-  const sourceStepValue = run.replayStepIndex === null ? "Not recorded" : `Step ${run.replayStepIndex}`;
-  const sourceKindLabel = run.sourceRunId ? (isCurrentFork ? "Fork source" : "Historical lineage source") : "Original source";
-  const sourceStepLabel = isCurrentFork ? "Fork source step" : "Historical lineage step";
+  const sourceRunValue = run.sourceRunId ? (
+    <SourceRunLink runId={run.sourceRunId}>
+      Run #{run.sourceRunId}
+    </SourceRunLink>
+  ) : (
+    "Original run"
+  );
+  const sourceStepValue =
+    run.replayStepIndex === null
+      ? "Not recorded"
+      : `Step ${run.replayStepIndex}`;
+  const sourceKindLabel = run.sourceRunId
+    ? isCurrentFork
+      ? "Fork source"
+      : "Historical lineage source"
+    : "Original source";
+  const sourceStepLabel = isCurrentFork
+    ? "Fork source step"
+    : "Historical lineage step";
   const nodes: LineageDiagramNode[] = [
     {
       data: {
@@ -1355,8 +1907,14 @@ function RunLineageEvidence({ copiedInvocations, copiedSteps, isCurrentFork, pla
       data: {
         details: [
           { label: "Resume boundary", value: `Step ${run.resumeStepIndex}` },
-          { label: "Step origins", value: `${copiedSteps} copied · ${plannedSteps} planned` },
-          { label: "Invocation origins", value: `${copiedInvocations} copied · ${plannedInvocations} planned/executed` },
+          {
+            label: "Step origins",
+            value: `${copiedSteps} copied · ${plannedSteps} planned`,
+          },
+          {
+            label: "Invocation origins",
+            value: `${copiedInvocations} copied · ${plannedInvocations} planned/executed`,
+          },
         ],
         eyebrow: "Current run",
         testId: "runs-lineage-node-current",
@@ -1369,37 +1927,71 @@ function RunLineageEvidence({ copiedInvocations, copiedSteps, isCurrentFork, pla
     },
   ];
   const edges: LineageDiagramEdge[] = [
-    { id: "root-source", label: "lineage root", source: "lineage-root", target: "lineage-source" },
-    { id: "source-current", label: run.sourceRunId ? (isCurrentFork ? "fork / resume" : "historical lineage / resume") : "original / resume", source: "lineage-source", target: "lineage-current" },
+    {
+      id: "root-source",
+      label: "lineage root",
+      source: "lineage-root",
+      target: "lineage-source",
+    },
+    {
+      id: "source-current",
+      label: run.sourceRunId
+        ? isCurrentFork
+          ? "fork / resume"
+          : "historical lineage / resume"
+        : "original / resume",
+      source: "lineage-source",
+      target: "lineage-current",
+    },
   ];
 
   return (
     <Card data-testid="runs-lineage-summary">
       <CardHeader>
         <CardTitle className="text-base">Lineage</CardTitle>
-        <CardDescription>Readonly {isCurrentFork ? "fork" : "historical lineage and resume"} diagram for copied and planned execution origins.</CardDescription>
+        <CardDescription>
+          {isCurrentFork ? "Fork" : "Historical lineage"} diagram.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {run.sourceRunId && !isCurrentFork ? (
           <Alert data-testid="runs-historical-lineage">
             <GitBranch />
             <AlertTitle>Historical lineage</AlertTitle>
-            <AlertDescription>
-              This run includes read-only historical lineage. It is preserved for audit only and is not the current invocation-specific fork UX.
-            </AlertDescription>
+            <AlertDescription>Read-only audit lineage.</AlertDescription>
           </Alert>
         ) : null}
-        <LineageDiagram ariaLabel="Run lineage diagram" edges={edges} nodes={nodes} testId="runs-lineage-diagram" />
+        <LineageDiagram
+          ariaLabel="Run lineage diagram"
+          edges={edges}
+          nodes={nodes}
+          testId="runs-lineage-diagram"
+        />
       </CardContent>
     </Card>
   );
 }
 
-function MemoryTextEvidence({ label, testId, value }: { label: string; testId?: string; value: string }) {
+function MemoryTextEvidence({
+  label,
+  testId,
+  value,
+}: {
+  label: string;
+  testId?: string;
+  value: string;
+}) {
   return (
-    <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId}>
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-1 whitespace-pre-wrap break-words text-foreground">{value}</p>
+    <div
+      className="rounded-md border bg-muted/20 p-3 text-sm"
+      data-testid={testId}
+    >
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 whitespace-pre-wrap break-words text-foreground">
+        {value}
+      </p>
     </div>
   );
 }
@@ -1409,57 +2001,133 @@ function MemoryEventCard({ event }: { event: RunMemoryEventRead }) {
     <Card className="gap-3" data-testid={`runs-memory-event-${event.id}`}>
       <CardHeader className="px-4 pt-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{formatMemoryEventType(event.eventType)}</Badge>
-          {event.memoryId ? <Badge variant="outline">{event.memoryId}</Badge> : null}
-          {event.revisionId ? <Badge variant="outline">{event.revisionId}</Badge> : null}
+          <Badge variant="secondary">
+            {formatMemoryEventType(event.eventType)}
+          </Badge>
+          {event.memoryId ? (
+            <Badge variant="outline">{event.memoryId}</Badge>
+          ) : null}
+          {event.revisionId ? (
+            <Badge variant="outline">{event.revisionId}</Badge>
+          ) : null}
         </div>
         <CardDescription>{formatDateTime(event.createdAt)}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 px-4 pb-4">
         <DetailGrid items={memoryEventDetails(event)} />
-        {event.excerpt ? <MemoryTextEvidence label="Excerpt" testId={`runs-memory-event-${event.id}-excerpt`} value={event.excerpt} /> : null}
-        {event.injectedText ? <MemoryTextEvidence label="Injected text" testId={`runs-memory-event-${event.id}-injected-text`} value={event.injectedText} /> : null}
-        {hasRecordEntries(event.filters) ? <JsonBlock label="Filters" testId={`runs-memory-event-${event.id}-filters`} value={event.filters} /> : null}
-        {hasRecordEntries(event.budget) ? <JsonBlock label="Budget" testId={`runs-memory-event-${event.id}-budget`} value={event.budget} /> : null}
-        {hasRecordEntries(event.resultSnapshot) ? <JsonBlock label="Result snapshot" testId={`runs-memory-event-${event.id}-result`} value={event.resultSnapshot} /> : null}
-        {hasRecordEntries(event.statusSnapshot) ? <JsonBlock label="Status snapshot" testId={`runs-memory-event-${event.id}-status`} value={event.statusSnapshot} /> : null}
+        {event.excerpt ? (
+          <MemoryTextEvidence
+            label="Excerpt"
+            testId={`runs-memory-event-${event.id}-excerpt`}
+            value={event.excerpt}
+          />
+        ) : null}
+        {event.injectedText ? (
+          <MemoryTextEvidence
+            label="Injected text"
+            testId={`runs-memory-event-${event.id}-injected-text`}
+            value={event.injectedText}
+          />
+        ) : null}
+        {hasRecordEntries(event.filters) ? (
+          <JsonBlock
+            label="Filters"
+            testId={`runs-memory-event-${event.id}-filters`}
+            value={event.filters}
+          />
+        ) : null}
+        {hasRecordEntries(event.budget) ? (
+          <JsonBlock
+            label="Budget"
+            testId={`runs-memory-event-${event.id}-budget`}
+            value={event.budget}
+          />
+        ) : null}
+        {hasRecordEntries(event.resultSnapshot) ? (
+          <JsonBlock
+            label="Result snapshot"
+            testId={`runs-memory-event-${event.id}-result`}
+            value={event.resultSnapshot}
+          />
+        ) : null}
+        {hasRecordEntries(event.statusSnapshot) ? (
+          <JsonBlock
+            label="Status snapshot"
+            testId={`runs-memory-event-${event.id}-status`}
+            value={event.statusSnapshot}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );
 }
 
-function MemoryEventGroupSection({ definition, events }: { definition: MemoryEventGroupDefinition; events: RunMemoryEventRead[] }) {
+function MemoryEventGroupSection({
+  definition,
+  events,
+}: {
+  definition: MemoryEventGroupDefinition;
+  events: RunMemoryEventRead[];
+}) {
   return (
-    <section aria-labelledby={`runs-memory-group-${definition.key}-heading`} className="space-y-3" data-testid={`runs-memory-group-${definition.key}`}>
+    <section
+      aria-labelledby={`runs-memory-group-${definition.key}-heading`}
+      className="space-y-3"
+      data-testid={`runs-memory-group-${definition.key}`}
+    >
       <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-base font-medium leading-none" id={`runs-memory-group-${definition.key}-heading`}>{definition.title}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{definition.description}</p>
+          <h3
+            className="text-base font-medium leading-none"
+            id={`runs-memory-group-${definition.key}-heading`}
+          >
+            {definition.title}
+          </h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {definition.description}
+          </p>
         </div>
-        <Badge variant="outline">{events.length} event{events.length === 1 ? "" : "s"}</Badge>
+        <Badge variant="outline">
+          {events.length} event{events.length === 1 ? "" : "s"}
+        </Badge>
       </div>
       {events.length > 0 ? (
         <div className="grid gap-3">
-          {events.map((event) => <MemoryEventCard event={event} key={event.id} />)}
+          {events.map((event) => (
+            <MemoryEventCard event={event} key={event.id} />
+          ))}
         </div>
       ) : (
-        <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">{definition.emptyCopy}</div>
+        <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+          {definition.emptyCopy}
+        </div>
       )}
     </section>
   );
 }
 
-function MemoryArtifactSummaryCard({ artifact }: { artifact: RunMemoryArtifactRead }) {
+function MemoryArtifactSummaryCard({
+  artifact,
+}: {
+  artifact: RunMemoryArtifactRead;
+}) {
   return (
-    <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={`runs-memory-compact-artifact-${artifact.memoryId}`}>
+    <div
+      className="rounded-md border bg-muted/20 p-3 text-sm"
+      data-testid={`runs-memory-compact-artifact-${artifact.memoryId}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-medium">{artifact.summary}</p>
-          <p className="text-xs text-muted-foreground">{artifact.status} · {formatDateTime(artifact.createdAt)}</p>
+          <p className="text-xs text-muted-foreground">
+            {artifact.status} · {formatDateTime(artifact.createdAt)}
+          </p>
         </div>
         <FileText className="size-4 shrink-0 text-muted-foreground" />
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">{memoryProvenanceLabel(artifact)}</p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {memoryProvenanceLabel(artifact)}
+      </p>
     </div>
   );
 }
@@ -1475,33 +2143,58 @@ function RunMemoryEvidence({ run }: { run: RunRead }) {
       <CardHeader>
         <CardTitle className="text-base">Run memory evidence</CardTitle>
         <CardDescription>
-          Run-scoped memory events are the full evidence trail; compact artifacts below are only the human-auditable slice.
+          Run-scoped memory events and artifacts.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {!hasEvents ? (
-          <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground" data-testid="runs-memory-evidence-empty">
-            No run memory evidence was recorded for this run. The backend did not emit retrieval, injection, write, reuse, review, follow-up, or audit events.
+          <div
+            className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground"
+            data-testid="runs-memory-evidence-empty"
+          >
+            No run memory evidence recorded.
           </div>
         ) : (
           MEMORY_EVENT_GROUPS.map((definition) => (
-            <MemoryEventGroupSection definition={definition} events={groupedEvents[definition.key]} key={definition.key} />
+            <MemoryEventGroupSection
+              definition={definition}
+              events={groupedEvents[definition.key]}
+              key={definition.key}
+            />
           ))
         )}
 
-        <section aria-labelledby="runs-memory-compact-artifacts-heading" className="space-y-3" data-testid="runs-memory-compact-artifacts">
+        <section
+          aria-labelledby="runs-memory-compact-artifacts-heading"
+          className="space-y-3"
+          data-testid="runs-memory-compact-artifacts"
+        >
           <div>
-            <h3 className="text-base font-medium leading-none" id="runs-memory-compact-artifacts-heading">Compact artifact slice</h3>
+            <h3
+              className="text-base font-medium leading-none"
+              id="runs-memory-compact-artifacts-heading"
+            >
+              Compact artifact slice
+            </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              These artifacts summarize memory rows written for human audit; they do not replace the event groups above.
+              These artifacts summarize memory rows written for human audit;
+              they do not replace the event groups above.
             </p>
           </div>
           {hasArtifacts ? (
             <div className="grid gap-3">
-              {run.memoryArtifacts.map((artifact) => <MemoryArtifactSummaryCard artifact={artifact} key={artifact.memoryId} />)}
+              {run.memoryArtifacts.map((artifact) => (
+                <MemoryArtifactSummaryCard
+                  artifact={artifact}
+                  key={artifact.memoryId}
+                />
+              ))}
             </div>
           ) : (
-            <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground" data-testid="runs-memory-artifacts-empty">
+            <div
+              className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground"
+              data-testid="runs-memory-artifacts-empty"
+            >
               No compact memory artifacts were written by this run.
             </div>
           )}
@@ -1511,30 +2204,52 @@ function RunMemoryEvidence({ run }: { run: RunRead }) {
   );
 }
 
-function MemoryArtifactEvidence({ artifact }: { artifact: RunMemoryArtifactRead }) {
+function MemoryArtifactEvidence({
+  artifact,
+}: {
+  artifact: RunMemoryArtifactRead;
+}) {
   const auditReport = artifact.auditLinks?.report;
 
   return (
     <Card data-testid="runs-memory-artifacts">
       <CardHeader>
         <CardTitle className="text-base">Memory artifact</CardTitle>
-        <CardDescription>Agent memory artifact and optional report audit actions.</CardDescription>
+        <CardDescription>
+          Agent memory artifact and optional report audit actions.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={`runs-memory-artifact-${artifact.memoryId}`}>
+        <div
+          className="rounded-md border bg-muted/20 p-3 text-sm"
+          data-testid={`runs-memory-artifact-${artifact.memoryId}`}
+        >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="truncate font-medium">{artifact.summary}</p>
-              <p className="text-xs text-muted-foreground">{artifact.status} · {formatDateTime(artifact.createdAt)}</p>
+              <p className="text-xs text-muted-foreground">
+                {artifact.status} · {formatDateTime(artifact.createdAt)}
+              </p>
             </div>
             <FileText className="size-4 shrink-0 text-muted-foreground" />
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">{memoryProvenanceLabel(artifact)}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{graphMetadataLabel(artifact.sourceGraphMetadata)}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {memoryProvenanceLabel(artifact)}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {graphMetadataLabel(artifact.sourceGraphMetadata)}
+          </p>
           {auditReport ? (
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button asChild size="sm" variant="outline"><Link to={auditReport.url}>Open report</Link></Button>
-              <Button asChild size="sm" variant="ghost"><a href={auditReport.downloadUrl} download><Download data-icon="inline-start" />Download</a></Button>
+              <Button asChild size="sm" variant="outline">
+                <Link to={auditReport.url}>Open report</Link>
+              </Button>
+              <Button asChild size="sm" variant="ghost">
+                <a href={auditReport.downloadUrl} download>
+                  <Download data-icon="inline-start" />
+                  Download
+                </a>
+              </Button>
             </div>
           ) : null}
         </div>
@@ -1559,19 +2274,42 @@ function StepSummaryEvidence({ step }: { step: RunStepRead }) {
   return (
     <Card data-testid={`runs-step-${step.index}-summary`}>
       <CardContent className="min-w-0 space-y-5 pt-6">
-        <section aria-labelledby={`runs-step-${step.index}-metadata-heading`} className="space-y-3">
-          <h3 className="text-base font-medium leading-none" id={`runs-step-${step.index}-metadata-heading`}>Step metadata</h3>
-          <dl className="grid gap-x-5 gap-y-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 xl:grid-cols-3" data-testid={`runs-step-${step.index}-metadata`}>
+        <section
+          aria-labelledby={`runs-step-${step.index}-metadata-heading`}
+          className="space-y-3"
+        >
+          <h3
+            className="text-base font-medium leading-none"
+            id={`runs-step-${step.index}-metadata-heading`}
+          >
+            Step metadata
+          </h3>
+          <dl
+            className="grid gap-x-5 gap-y-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 xl:grid-cols-3"
+            data-testid={`runs-step-${step.index}-metadata`}
+          >
             {metadataItems.map((item) => (
               <div className="min-w-0" key={item.label}>
-                <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</dt>
-                <dd className="mt-0.5 break-words text-foreground">{formatOptional(item.value)}</dd>
+                <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {item.label}
+                </dt>
+                <dd className="mt-0.5 break-words text-foreground">
+                  {formatOptional(item.value)}
+                </dd>
               </div>
             ))}
           </dl>
         </section>
-        <section aria-labelledby={`runs-step-${step.index}-output-heading`} className="space-y-3">
-          <h3 className="text-base font-medium leading-none" id={`runs-step-${step.index}-output-heading`}>Aggregated output</h3>
+        <section
+          aria-labelledby={`runs-step-${step.index}-output-heading`}
+          className="space-y-3"
+        >
+          <h3
+            className="text-base font-medium leading-none"
+            id={`runs-step-${step.index}-output-heading`}
+          >
+            Aggregated output
+          </h3>
           <JsonBlock
             testId={`runs-step-${step.index}-aggregated-output`}
             value={aggregatedStepOutput(step)}
@@ -1583,10 +2321,20 @@ function StepSummaryEvidence({ step }: { step: RunStepRead }) {
 }
 
 function StepLineageEvidence({ step }: { step: RunStepRead }) {
-  const sourceRunValue = step.sourceRunId ? <SourceRunLink runId={step.sourceRunId}>Run #{step.sourceRunId}</SourceRunLink> : "Not recorded";
+  const sourceRunValue = step.sourceRunId ? (
+    <SourceRunLink runId={step.sourceRunId}>
+      Run #{step.sourceRunId}
+    </SourceRunLink>
+  ) : (
+    "Not recorded"
+  );
   const sourceStepValue = <SourceStepLink step={step} />;
-  const sourceStepRowValue = step.sourceRunStepId ? `#${step.sourceRunStepId}` : "Not recorded";
-  const hasUpstreamStep = Boolean(step.sourceRunId && step.sourceStepIndex !== null);
+  const sourceStepRowValue = step.sourceRunStepId
+    ? `#${step.sourceRunStepId}`
+    : "Not recorded";
+  const hasUpstreamStep = Boolean(
+    step.sourceRunId && step.sourceStepIndex !== null,
+  );
   const nodes: LineageDiagramNode[] = hasUpstreamStep
     ? [
         {
@@ -1598,7 +2346,10 @@ function StepLineageEvidence({ step }: { step: RunStepRead }) {
             ],
             eyebrow: "Upstream",
             testId: `runs-step-${step.index}-lineage-node-source`,
-            title: step.sourceStepIndex === null ? "Source step" : `Step ${step.sourceStepIndex}`,
+            title:
+              step.sourceStepIndex === null
+                ? "Source step"
+                : `Step ${step.sourceStepIndex}`,
             tone: "source",
           },
           id: "step-source",
@@ -1638,14 +2389,21 @@ function StepLineageEvidence({ step }: { step: RunStepRead }) {
         },
       ];
   const edges: LineageDiagramEdge[] = hasUpstreamStep
-    ? [{ id: "source-current", label: "provenance", source: "step-source", target: "step-current" }]
+    ? [
+        {
+          id: "source-current",
+          label: "provenance",
+          source: "step-source",
+          target: "step-current",
+        },
+      ]
     : [];
 
   return (
     <Card data-testid={`runs-step-${step.index}-lineage-summary`}>
       <CardHeader>
         <CardTitle className="text-base">Step lineage</CardTitle>
-        <CardDescription>Readonly provenance diagram for this workflow step.</CardDescription>
+        <CardDescription>Step provenance diagram.</CardDescription>
       </CardHeader>
       <CardContent>
         <LineageDiagram
@@ -1666,10 +2424,20 @@ function StepErrorEvidence({ step }: { step: RunStepRead }) {
       <AlertTitle>Step failed</AlertTitle>
       <AlertDescription>{step.error}</AlertDescription>
     </Alert>
-  ) : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No step error recorded.</div>;
+  ) : (
+    <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+      No step error recorded.
+    </div>
+  );
 }
 
-function StepEvidence({ pane, step }: { pane: RunInspectionPane; step: RunStepRead }) {
+function StepEvidence({
+  pane,
+  step,
+}: {
+  pane: RunInspectionPane;
+  step: RunStepRead;
+}) {
   if (pane === "lineage") {
     return <StepLineageEvidence step={step} />;
   }
@@ -1680,38 +2448,156 @@ function StepEvidence({ pane, step }: { pane: RunInspectionPane; step: RunStepRe
   return <StepSummaryEvidence step={step} />;
 }
 
-function InvocationEvidence({ invocation, pane, step }: { invocation: RunAgentInvocationRead; pane: RunInspectionPane; step: RunStepRead }) {
-  const hasError = Boolean(invocation.errorCode || invocation.errorMessage || invocation.errorDetails.length > 0);
+function InvocationEvidence({
+  invocation,
+  pane,
+  step,
+}: {
+  invocation: RunAgentInvocationRead;
+  pane: RunInspectionPane;
+  step: RunStepRead;
+}) {
+  const hasError = Boolean(
+    invocation.errorCode ||
+    invocation.errorMessage ||
+    invocation.errorDetails.length > 0,
+  );
   if (pane === "input") {
-    return <JsonBlock label="Resolved input" value={invocation.resolvedInput} />;
+    return (
+      <JsonBlock label="Resolved input" value={invocation.resolvedInput} />
+    );
   }
   if (pane === "wiring") {
     return <JsonBlock label="Wiring" value={invocation.wiring} />;
   }
   if (pane === "lineage") {
-    return <DetailGrid items={[{ label: "Source invocation", value: <SourceInvocationLink invocation={invocation} step={step} /> }, { label: "Input origin", value: invocation.resolvedInputOrigin }, { label: "Output origin", value: invocation.outputOrigin ?? "pending" }]} />;
+    return (
+      <DetailGrid
+        items={[
+          {
+            label: "Source invocation",
+            value: <SourceInvocationLink invocation={invocation} step={step} />,
+          },
+          { label: "Input origin", value: invocation.resolvedInputOrigin },
+          {
+            label: "Output origin",
+            value: invocation.outputOrigin ?? "pending",
+          },
+        ]}
+      />
+    );
   }
   if (pane === "error") {
-    return hasError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{invocation.errorCode ?? "Invocation failed"}</AlertTitle><AlertDescription className="space-y-2"><p>{invocation.errorMessage ?? "No error message recorded."}</p>{invocation.errorDetails.length > 0 ? <pre className="max-w-full overflow-x-auto whitespace-pre rounded-md border border-destructive/30 bg-muted/30 p-3 text-xs" data-wide-payload="scroll">{stringifyJson(invocation.errorDetails)}</pre> : null}</AlertDescription></Alert> : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No invocation error recorded.</div>;
+    return hasError ? (
+      <Alert variant="destructive">
+        <AlertCircle />
+        <AlertTitle>{invocation.errorCode ?? "Invocation failed"}</AlertTitle>
+        <AlertDescription className="space-y-2">
+          <p>{invocation.errorMessage ?? "No error message recorded."}</p>
+          {invocation.errorDetails.length > 0 ? (
+            <pre
+              className="max-w-full overflow-x-auto whitespace-pre rounded-md border border-destructive/30 bg-muted/30 p-3 text-xs"
+              data-wide-payload="scroll"
+            >
+              {stringifyJson(invocation.errorDetails)}
+            </pre>
+          ) : null}
+        </AlertDescription>
+      </Alert>
+    ) : (
+      <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+        No invocation error recorded.
+      </div>
+    );
   }
   return <JsonBlock label="Output" value={invocation.output} />;
 }
 
-function OperationEvidence({ invocation, pane }: { invocation: RunOperationInvocationRead; pane: RunInspectionPane }) {
-  const hasError = Boolean(invocation.errorCode || invocation.errorMessage || invocation.errorDetails.length > 0);
+function OperationEvidence({
+  invocation,
+  pane,
+}: {
+  invocation: RunOperationInvocationRead;
+  pane: RunInspectionPane;
+}) {
+  const hasError = Boolean(
+    invocation.errorCode ||
+    invocation.errorMessage ||
+    invocation.errorDetails.length > 0,
+  );
   if (pane === "request") {
-    return <JsonBlock label="Redacted request metadata" testId={`runs-operation-${invocation.id}-request-metadata`} value={invocation.requestMetadata} />;
+    return (
+      <JsonBlock
+        label="Redacted request metadata"
+        testId={`runs-operation-${invocation.id}-request-metadata`}
+        value={invocation.requestMetadata}
+      />
+    );
   }
   if (pane === "response") {
-    return <JsonBlock label="Response metadata" testId={`runs-operation-${invocation.id}-response-metadata`} value={invocation.responseMetadata} />;
+    return (
+      <JsonBlock
+        label="Response metadata"
+        testId={`runs-operation-${invocation.id}-response-metadata`}
+        value={invocation.responseMetadata}
+      />
+    );
   }
   if (pane === "lineage") {
-    return <DetailGrid items={[{ label: "Source operation", value: <SourceOperationInvocationLink invocation={invocation} /> }, { label: "Source run", value: invocation.sourceRunId ? `Run #${invocation.sourceRunId}` : "Not recorded" }, { label: "Source step", value: invocation.sourceStepIndex === null ? "Not recorded" : `Step ${invocation.sourceStepIndex}` }]} />;
+    return (
+      <DetailGrid
+        items={[
+          {
+            label: "Source operation",
+            value: <SourceOperationInvocationLink invocation={invocation} />,
+          },
+          {
+            label: "Source run",
+            value: invocation.sourceRunId
+              ? `Run #${invocation.sourceRunId}`
+              : "Not recorded",
+          },
+          {
+            label: "Source step",
+            value:
+              invocation.sourceStepIndex === null
+                ? "Not recorded"
+                : `Step ${invocation.sourceStepIndex}`,
+          },
+        ]}
+      />
+    );
   }
   if (pane === "error") {
-    return hasError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{invocation.errorCode ?? "Operation failed"}</AlertTitle><AlertDescription className="space-y-2"><p>{invocation.errorMessage ?? "No error message recorded."}</p>{invocation.errorDetails.length > 0 ? <pre className="max-w-full overflow-x-auto whitespace-pre rounded-md border border-destructive/30 bg-muted/30 p-3 text-xs" data-wide-payload="scroll">{stringifyJson(invocation.errorDetails)}</pre> : null}</AlertDescription></Alert> : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No operation error recorded.</div>;
+    return hasError ? (
+      <Alert variant="destructive">
+        <AlertCircle />
+        <AlertTitle>{invocation.errorCode ?? "Operation failed"}</AlertTitle>
+        <AlertDescription className="space-y-2">
+          <p>{invocation.errorMessage ?? "No error message recorded."}</p>
+          {invocation.errorDetails.length > 0 ? (
+            <pre
+              className="max-w-full overflow-x-auto whitespace-pre rounded-md border border-destructive/30 bg-muted/30 p-3 text-xs"
+              data-wide-payload="scroll"
+            >
+              {stringifyJson(invocation.errorDetails)}
+            </pre>
+          ) : null}
+        </AlertDescription>
+      </Alert>
+    ) : (
+      <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+        No operation error recorded.
+      </div>
+    );
   }
-  return <JsonBlock label="Output preview" testId={`runs-operation-${invocation.id}-output-preview`} value={invocation.output} />;
+  return (
+    <JsonBlock
+      label="Output preview"
+      testId={`runs-operation-${invocation.id}-output-preview`}
+      value={invocation.output}
+    />
+  );
 }
 
 export function EvidenceViewer({
@@ -1741,20 +2627,48 @@ export function EvidenceViewer({
 
   if (target.type === "step") {
     const step = steps.find((item) => item.index === target.stepIndex);
-    content = step ? <StepEvidence pane={activeInspection.pane} step={step} /> : null;
+    content = step ? (
+      <StepEvidence pane={activeInspection.pane} step={step} />
+    ) : null;
   } else if (target.type === "agentInvocation") {
     const match = findAgentInvocation(steps, target.invocationId);
-    content = match ? <InvocationEvidence invocation={match.invocation} pane={activeInspection.pane} step={match.step} /> : null;
+    content = match ? (
+      <InvocationEvidence
+        invocation={match.invocation}
+        pane={activeInspection.pane}
+        step={match.step}
+      />
+    ) : null;
   } else if (target.type === "operationInvocation") {
     const invocation = findOperationInvocation(steps, target.invocationId);
-    content = invocation ? <OperationEvidence invocation={invocation} pane={activeInspection.pane} /> : null;
+    content = invocation ? (
+      <OperationEvidence invocation={invocation} pane={activeInspection.pane} />
+    ) : null;
   } else if (target.type === "memoryArtifact") {
-    const artifact = run.memoryArtifacts.find((item) => item.memoryId === target.memoryId);
+    const artifact = run.memoryArtifacts.find(
+      (item) => item.memoryId === target.memoryId,
+    );
     content = artifact ? <MemoryArtifactEvidence artifact={artifact} /> : null;
   } else if (activeInspection.pane === "input") {
-    content = <RunPayloadPane headingId="runs-input-heading" label="Run input" testId="runs-detail-input" value={run.input} />;
+    content = (
+      <RunPayloadPane
+        headingId="runs-input-heading"
+        label="Run input"
+        testId="runs-detail-input"
+        value={run.input}
+      />
+    );
   } else if (activeInspection.pane === "lineage") {
-    content = <RunLineageEvidence copiedInvocations={copiedInvocations} copiedSteps={copiedSteps} isCurrentFork={isCurrentFork} plannedInvocations={plannedInvocations} plannedSteps={plannedSteps} run={run} />;
+    content = (
+      <RunLineageEvidence
+        copiedInvocations={copiedInvocations}
+        copiedSteps={copiedSteps}
+        isCurrentFork={isCurrentFork}
+        plannedInvocations={plannedInvocations}
+        plannedSteps={plannedSteps}
+        run={run}
+      />
+    );
   } else if (activeInspection.pane === "memory") {
     content = <RunMemoryEvidence run={run} />;
   } else {
@@ -1762,21 +2676,38 @@ export function EvidenceViewer({
   }
 
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-col" data-testid="runs-evidence-viewer">
+    <section
+      className="flex h-full min-h-0 min-w-0 flex-col"
+      data-testid="runs-evidence-viewer"
+    >
       <div className="shrink-0 border-b border-border bg-muted/40 px-4 py-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-              <Badge variant="outline">{inspectionPaneLabel(activeInspection.pane)}</Badge>
+              <h2 className="text-base font-semibold tracking-tight">
+                {title}
+              </h2>
+              <Badge variant="outline">
+                {inspectionPaneLabel(activeInspection.pane)}
+              </Badge>
             </div>
           </div>
-          <EvidencePaneNav activeInspection={activeInspection} onSelect={onSelect} />
+          <EvidencePaneNav
+            activeInspection={activeInspection}
+            onSelect={onSelect}
+          />
         </div>
       </div>
       <ScrollArea className="min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0 [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:max-w-full [&_[data-slot=scroll-area-viewport]>div]:overflow-x-hidden">
-        <div className="min-h-full min-w-0 overflow-hidden p-4" data-testid="runs-active-evidence-viewer">
-          {content ?? <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">Selected evidence is no longer available.</div>}
+        <div
+          className="min-h-full min-w-0 overflow-hidden p-4"
+          data-testid="runs-active-evidence-viewer"
+        >
+          {content ?? (
+            <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+              Selected evidence is no longer available.
+            </div>
+          )}
         </div>
       </ScrollArea>
     </section>
