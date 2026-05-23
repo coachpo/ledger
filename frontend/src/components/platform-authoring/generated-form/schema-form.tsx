@@ -23,7 +23,10 @@ import {
   getPrimitiveValue,
   rebaseValueEntryPaths,
 } from "@/lib/platform-authoring/values/factories";
-import { validateValueEntryNode, type ValueEntryValidationIssue } from "@/lib/platform-authoring/values/validation";
+import {
+  validateValueEntryNode,
+  type ValueEntryValidationIssue,
+} from "@/lib/platform-authoring/values/validation";
 import type {
   ValueEntry,
   ValueEntryArray,
@@ -90,15 +93,22 @@ function extendPath(pathTokens: ValueEntryPath, token: string): ValueEntryPath {
   return [...pathTokens, token];
 }
 
-function getDiscriminatedUnionOptions(schema: SchemaIRDiscriminatedUnion): DiscriminatedUnionOption[] {
+function getDiscriminatedUnionOptions(
+  schema: SchemaIRDiscriminatedUnion,
+): DiscriminatedUnionOption[] {
   return schema.variants.map((variant, index) => {
     if (variant.kind === "object") {
-      const discriminatorField = (variant.fields ?? []).find((field) => field.name === schema.discriminator);
+      const discriminatorField = (variant.fields ?? []).find(
+        (field) => field.name === schema.discriminator,
+      );
       if (discriminatorField?.schema.kind === "literal") {
         return {
           discriminatorValue: discriminatorField.schema.value,
           index,
-          label: getSchemaDisplayLabel(variant, String(discriminatorField.schema.value)),
+          label: getSchemaDisplayLabel(
+            variant,
+            String(discriminatorField.schema.value),
+          ),
           schema: variant,
         } satisfies DiscriminatedUnionOption;
       }
@@ -113,25 +123,39 @@ function getDiscriminatedUnionOptions(schema: SchemaIRDiscriminatedUnion): Discr
   });
 }
 
-function getSelectedDiscriminatedUnionIndex(schema: SchemaIRDiscriminatedUnion, value: ValueEntry | null | undefined): number {
+function getSelectedDiscriminatedUnionIndex(
+  schema: SchemaIRDiscriminatedUnion,
+  value: ValueEntry | null | undefined,
+): number {
   if (!value || value.kind !== "object") {
     return 0;
   }
 
-  const discriminatorField = value.fields.find((field) => field.key === schema.discriminator);
-  const discriminatorValue = discriminatorField ? getPrimitiveValue(discriminatorField.value) : undefined;
+  const discriminatorField = value.fields.find(
+    (field) => field.key === schema.discriminator,
+  );
+  const discriminatorValue = discriminatorField
+    ? getPrimitiveValue(discriminatorField.value)
+    : undefined;
   if (discriminatorValue == null) {
     return 0;
   }
 
-  return getDiscriminatedUnionOptions(schema).find((option) => option.discriminatorValue === discriminatorValue)?.index ?? 0;
+  return (
+    getDiscriminatedUnionOptions(schema).find(
+      (option) => option.discriminatorValue === discriminatorValue,
+    )?.index ?? 0
+  );
 }
 
 function getFieldPathLabel(pathTokens: ValueEntryPath): string {
   return valueEntryPathToString(pathTokens) || "root";
 }
 
-function getSchemaDisplayLabel(schema: SchemaIRNode, fallbackLabel: string): string {
+function getSchemaDisplayLabel(
+  schema: SchemaIRNode,
+  fallbackLabel: string,
+): string {
   return schema.title ?? fallbackLabel;
 }
 
@@ -152,25 +176,43 @@ function parsePrimitiveOptionValue(value: string): JsonPrimitive {
   return String(parsed);
 }
 
-function updateArrayItems(schema: SchemaIRNode, value: ValueEntryArray, items: ValueEntry[]): ValueEntryArray {
+function updateArrayItems(
+  schema: SchemaIRNode,
+  value: ValueEntryArray,
+  items: ValueEntry[],
+): ValueEntryArray {
   return createArrayValueEntry(
     items.map((item, index) => {
       const itemPath = extendPath(value.pathTokens, String(index));
-      return createValueEntryArrayItem(index, coerceValueEntryForSchema(schema, item, itemPath), itemPath);
+      return createValueEntryArrayItem(
+        index,
+        coerceValueEntryForSchema(schema, item, itemPath),
+        itemPath,
+      );
     }),
     value.pathTokens,
   );
 }
 
-function updateObjectFields(schema: SchemaIRObject, value: ValueEntryObject, fields: ValueEntryObject["fields"]): ValueEntryObject {
-  const knownFieldNames = new Set((schema.fields ?? []).map((field) => field.name));
+function updateObjectFields(
+  schema: SchemaIRObject,
+  value: ValueEntryObject,
+  fields: ValueEntryObject["fields"],
+): ValueEntryObject {
+  const knownFieldNames = new Set(
+    (schema.fields ?? []).map((field) => field.name),
+  );
   const nextFields = fields.map((field) => {
     const fieldPath = extendPath(value.pathTokens, field.key);
-    const schemaField = (schema.fields ?? []).find((item) => item.name === field.key);
+    const schemaField = (schema.fields ?? []).find(
+      (item) => item.name === field.key,
+    );
 
     return createValueEntryObjectField(
       field.key,
-      schemaField ? coerceValueEntryForSchema(schemaField.schema, field.value, fieldPath) : rebaseValueEntryPaths(field.value, fieldPath),
+      schemaField
+        ? coerceValueEntryForSchema(schemaField.schema, field.value, fieldPath)
+        : rebaseValueEntryPaths(field.value, fieldPath),
       fieldPath,
     );
   });
@@ -199,13 +241,19 @@ function SchemaEditorHeader({
       <Badge variant="outline" className="capitalize">
         {schema.kind.replaceAll("_", " ")}
       </Badge>
-      <Badge variant="secondary">{required === false ? "optional" : "required"}</Badge>
+      <Badge variant="secondary">
+        {required === false ? "optional" : "required"}
+      </Badge>
       <Badge variant="outline">{getFieldPathLabel(pathTokens)}</Badge>
     </div>
   );
 }
 
-function ValidationIssuesAlert({ issues }: { issues: readonly ValueEntryValidationIssue[] }) {
+function ValidationIssuesAlert({
+  issues,
+}: {
+  issues: readonly ValueEntryValidationIssue[];
+}) {
   if (issues.length === 0) {
     return null;
   }
@@ -227,20 +275,39 @@ function ValidationIssuesAlert({ issues }: { issues: readonly ValueEntryValidati
   );
 }
 
-function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, value }: SchemaNodeEditorProps) {
+function SchemaNodeEditor({
+  depth,
+  disabled,
+  label,
+  onChange,
+  required,
+  schema,
+  value,
+}: SchemaNodeEditorProps) {
   const displayLabel = getSchemaDisplayLabel(schema, label);
 
   if (schema.kind === "object") {
-    const objectValue = value.kind === "object" ? value : createObjectValueEntry([], value.pathTokens);
+    const objectValue =
+      value.kind === "object"
+        ? value
+        : createObjectValueEntry([], value.pathTokens);
     const definedFields = schema.fields ?? [];
-    const renderedFieldNames = new Set(objectValue.fields.map((field) => field.key));
+    const renderedFieldNames = new Set(
+      objectValue.fields.map((field) => field.key),
+    );
 
     return (
       <Card className={cn(depth > 0 && "border-dashed")}>
         <CardHeader>
-          <SchemaEditorHeader label={displayLabel} pathTokens={objectValue.pathTokens} required={required} schema={schema} />
+          <SchemaEditorHeader
+            label={displayLabel}
+            pathTokens={objectValue.pathTokens}
+            required={required}
+            schema={schema}
+          />
           <CardDescription>
-            {schema.description ?? "Capture object fields without dropping the shared value-entry structure."}
+            {schema.description ??
+              "Capture object fields without dropping the shared value-entry structure."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -251,14 +318,28 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
           ) : null}
           {definedFields.map((field) => {
             const fieldLabel = getSchemaDisplayLabel(field.schema, field.name);
-            const existingField = objectValue.fields.find((item) => item.key === field.name);
+            const existingField = objectValue.fields.find(
+              (item) => item.key === field.name,
+            );
             if (!existingField && field.required === false) {
               return (
-                <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/20 p-3" key={field.name}>
+                <div
+                  className="flex items-center justify-between rounded-md border border-dashed bg-muted/20 p-3"
+                  key={field.name}
+                >
                   <div className="flex flex-col gap-1">
-                    <SchemaEditorHeader label={fieldLabel} pathTokens={extendPath(objectValue.pathTokens, field.name)} required={false} schema={field.schema} />
+                    <SchemaEditorHeader
+                      label={fieldLabel}
+                      pathTokens={extendPath(
+                        objectValue.pathTokens,
+                        field.name,
+                      )}
+                      required={false}
+                      schema={field.schema}
+                    />
                     <p className="text-sm text-muted-foreground">
-                      {field.schema.description ?? "Optional field. Add it when you need to capture this value."}
+                      {field.schema.description ??
+                        "Optional field. Add it when you need to capture this value."}
                     </p>
                   </div>
                   <Button
@@ -267,11 +348,18 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
                     type="button"
                     variant="outline"
                     onClick={() => {
-                      const fieldPath = extendPath(objectValue.pathTokens, field.name);
+                      const fieldPath = extendPath(
+                        objectValue.pathTokens,
+                        field.name,
+                      );
                       onChange(
                         updateObjectFields(schema, objectValue, [
                           ...objectValue.fields,
-                          createValueEntryObjectField(field.name, createValueEntryForSchema(field.schema, fieldPath), fieldPath),
+                          createValueEntryObjectField(
+                            field.name,
+                            createValueEntryForSchema(field.schema, fieldPath),
+                            fieldPath,
+                          ),
                         ]),
                       );
                     }}
@@ -283,17 +371,37 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
               );
             }
 
-            const nextField = existingField ?? createValueEntryObjectField(field.name, createValueEntryForSchema(field.schema, extendPath(objectValue.pathTokens, field.name)), extendPath(objectValue.pathTokens, field.name));
+            const nextField =
+              existingField ??
+              createValueEntryObjectField(
+                field.name,
+                createValueEntryForSchema(
+                  field.schema,
+                  extendPath(objectValue.pathTokens, field.name),
+                ),
+                extendPath(objectValue.pathTokens, field.name),
+              );
             return (
               <div className="flex flex-col gap-3" key={field.name}>
                 <div className="flex justify-end">
-                  {field.required === false && renderedFieldNames.has(field.name) ? (
+                  {field.required === false &&
+                  renderedFieldNames.has(field.name) ? (
                     <Button
                       disabled={disabled}
                       size="sm"
                       type="button"
                       variant="ghost"
-                      onClick={() => onChange(updateObjectFields(schema, objectValue, objectValue.fields.filter((item) => item.key !== field.name)))}
+                      onClick={() =>
+                        onChange(
+                          updateObjectFields(
+                            schema,
+                            objectValue,
+                            objectValue.fields.filter(
+                              (item) => item.key !== field.name,
+                            ),
+                          ),
+                        )
+                      }
                     >
                       <Trash2 data-icon="inline-start" />
                       Remove Optional Field
@@ -304,7 +412,23 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
                   depth={depth + 1}
                   disabled={disabled}
                   label={fieldLabel}
-                  onChange={(nextValue) => onChange(updateObjectFields(schema, objectValue, objectValue.fields.map((item) => item.key === field.name ? createValueEntryObjectField(item.key, nextValue, item.pathTokens) : item)))}
+                  onChange={(nextValue) =>
+                    onChange(
+                      updateObjectFields(
+                        schema,
+                        objectValue,
+                        objectValue.fields.map((item) =>
+                          item.key === field.name
+                            ? createValueEntryObjectField(
+                                item.key,
+                                nextValue,
+                                item.pathTokens,
+                              )
+                            : item,
+                        ),
+                      ),
+                    )
+                  }
                   required={field.required !== false}
                   schema={field.schema}
                   value={nextField.value}
@@ -318,14 +442,22 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
   }
 
   if (schema.kind === "array") {
-    const arrayValue = value.kind === "array" ? value : createArrayValueEntry([], value.pathTokens);
+    const arrayValue =
+      value.kind === "array"
+        ? value
+        : createArrayValueEntry([], value.pathTokens);
 
     return (
       <Card className={cn(depth > 0 && "border-dashed")}>
         <CardHeader>
-          <SchemaEditorHeader label={displayLabel} pathTokens={arrayValue.pathTokens} required={required} schema={schema} />
+          <SchemaEditorHeader
+            label={displayLabel}
+            pathTokens={arrayValue.pathTokens}
+            required={required}
+            schema={schema}
+          />
           <CardDescription>
-            {schema.description ?? "Add, remove, and reorder repeated values while keeping indexed path tokens aligned."}
+            {schema.description ?? "Repeated values."}
           </CardDescription>
           <CardAction>
             <Button
@@ -333,7 +465,20 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
               size="sm"
               type="button"
               variant="outline"
-              onClick={() => onChange(updateArrayItems(schema.items, arrayValue, [...arrayValue.items.map((item) => item.value), createValueEntryForSchema(schema.items, extendPath(arrayValue.pathTokens, String(arrayValue.items.length)))]))}
+              onClick={() =>
+                onChange(
+                  updateArrayItems(schema.items, arrayValue, [
+                    ...arrayValue.items.map((item) => item.value),
+                    createValueEntryForSchema(
+                      schema.items,
+                      extendPath(
+                        arrayValue.pathTokens,
+                        String(arrayValue.items.length),
+                      ),
+                    ),
+                  ]),
+                )
+              }
             >
               <Plus data-icon="inline-start" />
               Add Item
@@ -347,14 +492,27 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
             </div>
           ) : null}
           {arrayValue.items.map((item, index) => (
-            <div className="flex flex-col gap-3 rounded-lg border border-dashed p-4" key={`${label}-${index}`}>
+            <div
+              className="flex flex-col gap-3 rounded-lg border border-dashed p-4"
+              key={`${label}-${index}`}
+            >
               <div className="flex justify-end">
                 <Button
                   disabled={disabled}
                   size="sm"
                   type="button"
                   variant="ghost"
-                  onClick={() => onChange(updateArrayItems(schema.items, arrayValue, arrayValue.items.filter((_, itemIndex) => itemIndex !== index).map((entry) => entry.value)))}
+                  onClick={() =>
+                    onChange(
+                      updateArrayItems(
+                        schema.items,
+                        arrayValue,
+                        arrayValue.items
+                          .filter((_, itemIndex) => itemIndex !== index)
+                          .map((entry) => entry.value),
+                      ),
+                    )
+                  }
                 >
                   <Trash2 data-icon="inline-start" />
                   Remove Item
@@ -364,7 +522,17 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
                 depth={depth + 1}
                 disabled={disabled}
                 label={`Item ${index + 1}`}
-                onChange={(nextValue) => onChange(updateArrayItems(schema.items, arrayValue, arrayValue.items.map((entry, itemIndex) => itemIndex === index ? nextValue : entry.value)))}
+                onChange={(nextValue) =>
+                  onChange(
+                    updateArrayItems(
+                      schema.items,
+                      arrayValue,
+                      arrayValue.items.map((entry, itemIndex) =>
+                        itemIndex === index ? nextValue : entry.value,
+                      ),
+                    ),
+                  )
+                }
                 schema={schema.items}
                 value={item.value}
               />
@@ -383,9 +551,15 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
     return (
       <Card className={cn(depth > 0 && "border-dashed")}>
         <CardHeader>
-          <SchemaEditorHeader label={displayLabel} pathTokens={value.pathTokens} required={required} schema={schema} />
+          <SchemaEditorHeader
+            label={displayLabel}
+            pathTokens={value.pathTokens}
+            required={required}
+            schema={schema}
+          />
           <CardDescription>
-            {schema.description ?? `Pick a ${schema.discriminator} variant before filling the matching object shape.`}
+            {schema.description ??
+              `Pick a ${schema.discriminator} variant before filling the matching object shape.`}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -393,11 +567,20 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
             <Label>Variant</Label>
             <Select
               disabled={disabled}
-              value={selectedOption ? String(selectedOption.index) : NONE_OPTION}
+              value={
+                selectedOption ? String(selectedOption.index) : NONE_OPTION
+              }
               onValueChange={(nextValue) => {
-                const nextOption = options.find((option) => String(option.index) === nextValue);
+                const nextOption = options.find(
+                  (option) => String(option.index) === nextValue,
+                );
                 if (nextOption) {
-                  onChange(createValueEntryForSchema(nextOption.schema, value.pathTokens));
+                  onChange(
+                    createValueEntryForSchema(
+                      nextOption.schema,
+                      value.pathTokens,
+                    ),
+                  );
                 }
               }}
             >
@@ -407,7 +590,10 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
               <SelectContent>
                 <SelectGroup>
                   {options.map((option) => (
-                    <SelectItem key={`${label}-${option.index}`} value={String(option.index)}>
+                    <SelectItem
+                      key={`${label}-${option.index}`}
+                      value={String(option.index)}
+                    >
                       {option.label}
                     </SelectItem>
                   ))}
@@ -422,7 +608,11 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
               label={selectedOption.label}
               onChange={onChange}
               schema={selectedOption.schema}
-              value={coerceValueEntryForSchema(selectedOption.schema, value, value.pathTokens)}
+              value={coerceValueEntryForSchema(
+                selectedOption.schema,
+                value,
+                value.pathTokens,
+              )}
             />
           ) : null}
         </CardContent>
@@ -438,11 +628,17 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
         <AlertDescription className="space-y-2">
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">ref</Badge>
-            <Badge variant="secondary">registry://{schema.schemaKey}{schema.schemaVersion ? `@${schema.schemaVersion}` : ""}</Badge>
-            <Badge variant="outline">{getFieldPathLabel(value.pathTokens)}</Badge>
+            <Badge variant="secondary">
+              registry://{schema.schemaKey}
+              {schema.schemaVersion ? `@${schema.schemaVersion}` : ""}
+            </Badge>
+            <Badge variant="outline">
+              {getFieldPathLabel(value.pathTokens)}
+            </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            {schema.description ?? "Referenced schemas are preserved in the shared value model, but this first generated-form surface cannot expand registry refs yet."}
+            {schema.description ??
+              "Referenced schemas are preserved in the shared value model, but this first generated-form surface cannot expand registry refs yet."}
           </p>
         </AlertDescription>
       </Alert>
@@ -451,32 +647,105 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/20 p-4">
-      <SchemaEditorHeader label={displayLabel} pathTokens={value.pathTokens} required={required} schema={schema} />
-      <p className="text-sm text-muted-foreground">{schema.description ?? "Provide a value that matches the selected schema branch."}</p>
+      <SchemaEditorHeader
+        label={displayLabel}
+        pathTokens={value.pathTokens}
+        required={required}
+        schema={schema}
+      />
+      <p className="text-sm text-muted-foreground">
+        {schema.description ??
+          "Provide a value that matches the selected schema branch."}
+      </p>
       {schema.kind === "string" ? (
-        <Textarea aria-label={displayLabel} disabled={disabled} rows={3} value={value.kind === "string" ? value.value : ""} onChange={(event) => onChange(createStringValueEntry(event.target.value, value.pathTokens))} />
+        <Textarea
+          aria-label={displayLabel}
+          disabled={disabled}
+          rows={3}
+          value={value.kind === "string" ? value.value : ""}
+          onChange={(event) =>
+            onChange(
+              createStringValueEntry(event.target.value, value.pathTokens),
+            )
+          }
+        />
       ) : null}
       {schema.kind === "integer" ? (
-        <Input aria-label={displayLabel} disabled={disabled} inputMode="numeric" type="number" value={value.kind === "integer" ? value.value : 0} onChange={(event) => onChange(createIntegerValueEntry(Number.parseInt(event.target.value || "0", 10), value.pathTokens))} />
+        <Input
+          aria-label={displayLabel}
+          disabled={disabled}
+          inputMode="numeric"
+          type="number"
+          value={value.kind === "integer" ? value.value : 0}
+          onChange={(event) =>
+            onChange(
+              createIntegerValueEntry(
+                Number.parseInt(event.target.value || "0", 10),
+                value.pathTokens,
+              ),
+            )
+          }
+        />
       ) : null}
       {schema.kind === "number" ? (
-        <Input aria-label={displayLabel} disabled={disabled} inputMode="decimal" type="number" value={value.kind === "number" ? value.value : 0} onChange={(event) => onChange(createNumberValueEntry(Number.parseFloat(event.target.value || "0"), value.pathTokens))} />
+        <Input
+          aria-label={displayLabel}
+          disabled={disabled}
+          inputMode="decimal"
+          type="number"
+          value={value.kind === "number" ? value.value : 0}
+          onChange={(event) =>
+            onChange(
+              createNumberValueEntry(
+                Number.parseFloat(event.target.value || "0"),
+                value.pathTokens,
+              ),
+            )
+          }
+        />
       ) : null}
       {schema.kind === "boolean" ? (
         <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
-          <span className="text-sm text-foreground">Toggle the boolean value.</span>
-          <Switch aria-label={displayLabel} checked={value.kind === "boolean" ? value.value : false} disabled={disabled} onCheckedChange={(checked) => onChange(createBooleanValueEntry(checked, value.pathTokens))} />
+          <span className="text-sm text-foreground">
+            Toggle the boolean value.
+          </span>
+          <Switch
+            aria-label={displayLabel}
+            checked={value.kind === "boolean" ? value.value : false}
+            disabled={disabled}
+            onCheckedChange={(checked) =>
+              onChange(createBooleanValueEntry(checked, value.pathTokens))
+            }
+          />
         </div>
       ) : null}
       {schema.kind === "enum" ? (
-        <Select disabled={disabled} value={getPrimitiveOptionValue((getPrimitiveValue(value) as JsonPrimitive | undefined) ?? schema.values[0] ?? "")} onValueChange={(nextValue) => onChange(createPrimitiveValueEntry(parsePrimitiveOptionValue(nextValue), value.pathTokens))}>
+        <Select
+          disabled={disabled}
+          value={getPrimitiveOptionValue(
+            (getPrimitiveValue(value) as JsonPrimitive | undefined) ??
+              schema.values[0] ??
+              "",
+          )}
+          onValueChange={(nextValue) =>
+            onChange(
+              createPrimitiveValueEntry(
+                parsePrimitiveOptionValue(nextValue),
+                value.pathTokens,
+              ),
+            )
+          }
+        >
           <SelectTrigger aria-label={`${displayLabel} enum value`}>
             <SelectValue placeholder="Select value" />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
               {schema.values.map((option) => (
-                <SelectItem key={getPrimitiveOptionValue(option)} value={getPrimitiveOptionValue(option)}>
+                <SelectItem
+                  key={getPrimitiveOptionValue(option)}
+                  value={getPrimitiveOptionValue(option)}
+                >
                   {String(option)}
                 </SelectItem>
               ))}
@@ -485,7 +754,12 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
         </Select>
       ) : null}
       {schema.kind === "literal" ? (
-        <Input aria-label={displayLabel} disabled readOnly value={String(schema.value)} />
+        <Input
+          aria-label={displayLabel}
+          disabled
+          readOnly
+          value={String(schema.value)}
+        />
       ) : null}
     </div>
   );
@@ -500,13 +774,26 @@ export function SchemaValueEntryForm({
   value,
   ...props
 }: SchemaValueEntryFormProps) {
-  const resolvedValue = useMemo(() => coerceValueEntryForSchema(schema, value), [schema, value]);
-  const validationIssues = useMemo(() => validateValueEntryNode(resolvedValue), [resolvedValue]);
+  const resolvedValue = useMemo(
+    () => coerceValueEntryForSchema(schema, value),
+    [schema, value],
+  );
+  const validationIssues = useMemo(
+    () => validateValueEntryNode(resolvedValue),
+    [resolvedValue],
+  );
 
   return (
     <div className={cn("flex flex-col gap-4", className)} {...props}>
       <ValidationIssuesAlert issues={validationIssues} />
-      <SchemaNodeEditor depth={0} disabled={disabled} label={schema.title ?? label} onChange={onChange} schema={schema} value={resolvedValue} />
+      <SchemaNodeEditor
+        depth={0}
+        disabled={disabled}
+        label={schema.title ?? label}
+        onChange={onChange}
+        schema={schema}
+        value={resolvedValue}
+      />
     </div>
   );
 }
@@ -527,11 +814,19 @@ export function SchemaForm({
         <CardHeader>
           <CardTitle>{label}</CardTitle>
           <CardDescription>
-            {description ?? schema.description ?? "Enter structured values directly from the shared schema and value-entry foundations."}
+            {description ??
+              schema.description ??
+              "Enter structured values directly from the shared schema and value-entry foundations."}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <SchemaValueEntryForm disabled={disabled} label={label} onChange={onChange} schema={schema} value={value} />
+          <SchemaValueEntryForm
+            disabled={disabled}
+            label={label}
+            onChange={onChange}
+            schema={schema}
+            value={value}
+          />
         </CardContent>
       </Card>
     </div>

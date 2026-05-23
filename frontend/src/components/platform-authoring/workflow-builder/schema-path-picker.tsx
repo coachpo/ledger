@@ -1,9 +1,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import { type ComponentProps, useId } from "react";
 
-import {
-  workflowPathTokensToPath,
-} from "@/lib/platform-authoring/workflows/codec";
+import { workflowPathTokensToPath } from "@/lib/platform-authoring/workflows/codec";
 import { getObjectProperties } from "@/lib/platform-authoring/workflows/validation";
 import type { WorkflowBindingPath } from "@/lib/platform-authoring/workflows/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -49,7 +47,10 @@ function normalizePathTokens(pathTokens: readonly string[]): string[] {
   return pathTokens.map((token) => token.trim()).filter(Boolean);
 }
 
-function getAvailableKeys(schema: unknown, pathTokens: readonly string[]): string[] {
+function getAvailableKeys(
+  schema: unknown,
+  pathTokens: readonly string[],
+): string[] {
   let currentSchema = schema;
 
   for (const token of pathTokens) {
@@ -65,7 +66,10 @@ function getAvailableKeys(schema: unknown, pathTokens: readonly string[]): strin
   );
 }
 
-function findInvalidTokenIndex(schema: unknown, pathTokens: readonly string[]): number | null {
+function findInvalidTokenIndex(
+  schema: unknown,
+  pathTokens: readonly string[],
+): number | null {
   let currentSchema = schema;
 
   for (const [index, token] of pathTokens.entries()) {
@@ -79,7 +83,11 @@ function findInvalidTokenIndex(schema: unknown, pathTokens: readonly string[]): 
   return null;
 }
 
-function getSegmentOptions(schema: unknown, pathTokens: readonly string[], index: number): string[] {
+function getSegmentOptions(
+  schema: unknown,
+  pathTokens: readonly string[],
+  index: number,
+): string[] {
   return getAvailableKeys(schema, pathTokens.slice(0, index));
 }
 
@@ -87,10 +95,9 @@ export function WorkflowSchemaPathPicker({
   className,
   description = "Select schema path segments as tokens instead of editing a dotted path string.",
   disabled = false,
-  emptyPathDescription = "Leave the path empty to target the full schema value at the current binding source.",
+  emptyPathDescription = "Empty path selects the full schema value.",
   label = "Schema path",
-  noSchemaDescription =
-    "Schema-aware suggestions appear when a JSON schema is available for this binding source.",
+  noSchemaDescription = "Schema-aware suggestions appear when a JSON schema is available for this binding source.",
   onChange,
   schema,
   value,
@@ -100,8 +107,12 @@ export function WorkflowSchemaPathPicker({
   const normalizedValue = normalizePathTokens(value);
   const pathPreview = workflowPathTokensToPath(normalizedValue);
   const hasSchema = typeof schema !== "undefined";
-  const invalidTokenIndex = hasSchema ? findInvalidTokenIndex(schema, normalizedValue) : null;
-  const availableNextKeys = hasSchema ? getAvailableKeys(schema, normalizedValue) : [];
+  const invalidTokenIndex = hasSchema
+    ? findInvalidTokenIndex(schema, normalizedValue)
+    : null;
+  const availableNextKeys = hasSchema
+    ? getAvailableKeys(schema, normalizedValue)
+    : [];
 
   const updatePathTokens = (nextValue: readonly string[]) => {
     onChange(normalizePathTokens(nextValue));
@@ -114,7 +125,9 @@ export function WorkflowSchemaPathPicker({
   };
 
   const removeToken = (index: number) => {
-    updatePathTokens(normalizedValue.filter((_, currentIndex) => currentIndex !== index));
+    updatePathTokens(
+      normalizedValue.filter((_, currentIndex) => currentIndex !== index),
+    );
   };
 
   const addToken = (nextToken: string) => {
@@ -139,9 +152,11 @@ export function WorkflowSchemaPathPicker({
           <Alert>
             <AlertTitle>Current path no longer matches the schema</AlertTitle>
             <AlertDescription>
-              Segment {invalidTokenIndex + 1} (<code>{normalizedValue[invalidTokenIndex]}</code>) is
-              not available at this level anymore. You can keep editing the tokenized path manually
-              or replace it with one of the current schema keys.
+              Segment {invalidTokenIndex + 1} (
+              <code>{normalizedValue[invalidTokenIndex]}</code>) is not
+              available at this level anymore. You can keep editing the
+              tokenized path manually or replace it with one of the current
+              schema keys.
             </AlertDescription>
           </Alert>
         ) : null}
@@ -150,9 +165,12 @@ export function WorkflowSchemaPathPicker({
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{pathPreview ?? "No path selected"}</Badge>
             <Badge variant="outline">
-              {normalizedValue.length} segment{normalizedValue.length === 1 ? "" : "s"}
+              {normalizedValue.length} segment
+              {normalizedValue.length === 1 ? "" : "s"}
             </Badge>
-            <Badge variant="secondary">{hasSchema ? "Schema-aware" : "Manual editing"}</Badge>
+            <Badge variant="secondary">
+              {hasSchema ? "Schema-aware" : "Manual editing"}
+            </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
             {normalizedValue.length > 0
@@ -165,9 +183,13 @@ export function WorkflowSchemaPathPicker({
 
         <div className="flex flex-col gap-4">
           {normalizedValue.map((token, index) => {
-            const segmentOptions = hasSchema ? getSegmentOptions(schema, normalizedValue, index) : [];
+            const segmentOptions = hasSchema
+              ? getSegmentOptions(schema, normalizedValue, index)
+              : [];
             const hasSegmentOptions = segmentOptions.length > 0;
-            const isCustomToken = hasSegmentOptions ? !segmentOptions.includes(token) : true;
+            const isCustomToken = hasSegmentOptions
+              ? !segmentOptions.includes(token)
+              : true;
             const selectValue = hasSegmentOptions
               ? isCustomToken
                 ? CUSTOM_OPTION
@@ -181,7 +203,10 @@ export function WorkflowSchemaPathPicker({
                 : "md:grid-cols-[minmax(0,1fr)_auto]";
 
             return (
-              <div className={cn("grid gap-3", gridClassName)} key={`${segmentFieldId}-${token}`}>
+              <div
+                className={cn("grid gap-3", gridClassName)}
+                key={`${segmentFieldId}-${token}`}
+              >
                 <div className="flex flex-col gap-2">
                   <Label htmlFor={segmentFieldId}>Segment {index + 1}</Label>
                   {hasSegmentOptions ? (
@@ -190,7 +215,10 @@ export function WorkflowSchemaPathPicker({
                       value={selectValue}
                       onValueChange={(nextValue) => {
                         if (nextValue === CUSTOM_OPTION) {
-                          replaceToken(index, isCustomToken ? token : `field_${index + 1}`);
+                          replaceToken(
+                            index,
+                            isCustomToken ? token : `field_${index + 1}`,
+                          );
                           return;
                         }
 
@@ -202,14 +230,24 @@ export function WorkflowSchemaPathPicker({
                         replaceToken(index, nextValue);
                       }}
                     >
-                      <SelectTrigger aria-label={`Segment ${index + 1}`} id={segmentFieldId}>
-                        <SelectValue placeholder={`Select segment ${index + 1}`} />
+                      <SelectTrigger
+                        aria-label={`Segment ${index + 1}`}
+                        id={segmentFieldId}
+                      >
+                        <SelectValue
+                          placeholder={`Select segment ${index + 1}`}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          <SelectItem value={CUSTOM_OPTION}>Custom value</SelectItem>
+                          <SelectItem value={CUSTOM_OPTION}>
+                            Custom value
+                          </SelectItem>
                           {segmentOptions.map((option) => (
-                            <SelectItem key={`${segmentFieldId}-${option}`} value={option}>
+                            <SelectItem
+                              key={`${segmentFieldId}-${option}`}
+                              value={option}
+                            >
                               {option}
                             </SelectItem>
                           ))}
@@ -223,7 +261,9 @@ export function WorkflowSchemaPathPicker({
                       id={segmentFieldId}
                       placeholder={`Segment ${index + 1}`}
                       value={token}
-                      onChange={(event) => replaceToken(index, event.target.value)}
+                      onChange={(event) =>
+                        replaceToken(index, event.target.value)
+                      }
                     />
                   )}
                 </div>
@@ -237,7 +277,9 @@ export function WorkflowSchemaPathPicker({
                       id={customFieldId}
                       placeholder={`Segment ${index + 1}`}
                       value={token}
-                      onChange={(event) => replaceToken(index, event.target.value)}
+                      onChange={(event) =>
+                        replaceToken(index, event.target.value)
+                      }
                     />
                   </div>
                 ) : null}
