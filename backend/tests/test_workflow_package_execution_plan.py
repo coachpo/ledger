@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 
 from app.services.agent_execution_service import AgentExecutionService
+from app.schemas.model_connection import default_model_connection_capabilities
 from app.services.execution_plan import PackageResolvedModelBinding
 from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
@@ -26,13 +27,24 @@ def _compiled_plan(source: str | None = None) -> dict[str, Any]:
 
 
 def _model_binding(key: str = "tradingagents_primary_model") -> PackageResolvedModelBinding:
+    protocol_profile = "openai_responses"
     return PackageResolvedModelBinding(
         key=key,
         name="Package Model",
         connection_kind="provider",
+        protocol_profile=protocol_profile,
         base_url="https://api.openai.com/v1",
         model_id="gpt-5.4-mini",
         reasoning_effort="medium",
+        capabilities=default_model_connection_capabilities(protocol_profile).model_dump(
+            mode="json",
+            by_alias=True,
+        ),
+        output_strategy_policy="prefer_strict_schema",
+        parallel_tool_calls_policy="serialize",
+        reasoning_policy="allow",
+        streaming_policy="allow",
+        probe_cache_ttl_seconds=900,
         api_style="responses",
         timeout_seconds=60,
         has_api_key=True,

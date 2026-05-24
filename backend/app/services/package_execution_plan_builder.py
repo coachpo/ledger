@@ -19,6 +19,7 @@ from app.services.execution_plan import (
     ExecutionPlanStep,
     ExecutionPlanTarget,
     PackageCapabilityProfileGrant,
+    PackageExecutionRequirements,
     PackageExecutionStep,
     PackageExecutionWorkflow,
     PackageLocalOutputSchemaSpec,
@@ -104,6 +105,50 @@ class PackageExecutionPlanBuilder:
             model_bindings=model_bindings,
             ownership=ownership,
         ).build_workflow_plan(workflow_key)
+
+    @classmethod
+    def derive_package_requirements(
+        cls,
+        compiled_plan: Mapping[str, Any],
+    ) -> PackageExecutionRequirements:
+        def compiled_section(name: str) -> list[dict[str, Any]]:
+            raw_items = compiled_plan.get(name) or []
+            return (
+                [item for item in raw_items if isinstance(item, dict)]
+                if isinstance(raw_items, list)
+                else []
+            )
+
+        native_tool_sources: list[str] = []
+        structured_output_sources: list[str] = []
+        parallel_tool_sources: list[str] = []
+
+        for profile in compiled_section("capabilityProfiles"):
+            tool_keys = [str(key) for key in profile.get("toolKeys") or []]
+            if not tool_keys:
+                continue
+            profile_key = str(profile.get("key") or "capability_profile")
+            native_tool_sources.append(f"spec.capabilityProfiles.{profile_key}.toolKeys")
+
+        for schema in compiled_section("outputSchemas"):
+            schema_key = str(schema.get("key") or "output_schema")
+            structured_output_sources.append(f"spec.outputSchemas.{schema_key}.jsonSchema")
+
+        if native_tool_sources:
+            for workflow in compiled_section("workflows"):
+                if cls._workflow_requires_parallel_tool_calls(workflow):
+                    workflow_key = str(workflow.get("key") or "workflow")
+                    parallel_tool_sources.append(f"spec.workflows.{workflow_key}.compiledGraph")
+                    break
+
+        return PackageExecutionRequirements(
+            requires_native_tool_calls=bool(native_tool_sources),
+            requires_structured_output=bool(structured_output_sources),
+            requires_parallel_tool_calls=bool(parallel_tool_sources),
+            native_tool_sources=tuple(native_tool_sources),
+            structured_output_sources=tuple(structured_output_sources),
+            parallel_tool_sources=tuple(parallel_tool_sources),
+        )
 
     def _build_plan_for_workflow(self, workflow: dict[str, Any]) -> ExecutionPlan:
         workflow_key = str(workflow["key"])
@@ -781,6 +826,28 @@ class PackageExecutionPlanBuilder:
             if isinstance(raw_source, dict)
         }
 
+    @classmethod
+    def _workflow_requires_parallel_tool_calls(cls, workflow: dict[str, Any]) -> bool:
+        return cls._node_requires_parallel_tool_calls(workflow.get("compiledGraph"))
+
+    @classmethod
+    def _node_requires_parallel_tool_calls(cls, node: object) -> bool:
+        if not isinstance(node, dict):
+            return False
+        kind = str(node.get("kind") or "")
+        if kind == "fanout":
+            return True
+        if kind == "loop":
+            return cls._node_requires_parallel_tool_calls(node.get("sequence"))
+        if kind == "sequence":
+            nodes = node.get("nodes")
+            return (
+                any(cls._node_requires_parallel_tool_calls(child) for child in nodes)
+                if isinstance(nodes, list)
+                else False
+            )
+        return False
+
     def _iter_section(self, section_name: str) -> list[dict[str, Any]]:
         raw_items = self.compiled_plan.get(section_name) or []
         if not isinstance(raw_items, list):
@@ -826,14 +893,44 @@ class PackageExecutionPlanBuilder:
     ) -> PackageResolvedModelBinding:
         if isinstance(binding, PackageResolvedModelBinding):
             return binding
+        protocol_profile = str(getattr(binding, "protocol_profile", "") or "")
+        api_style = str(getattr(binding, "api_style", "") or "")
+        if not protocol_profile:
+            protocol_profile = (
+                "openai_chat_completions"
+                if api_style == "chat_completions"
+                else "openai_responses"
+            )
+        if not api_style:
+            api_style = "chat_completions" if protocol_profile == "openai_chat_completions" else "responses"
+        capabilities = getattr(binding, "capabilities", None)
+        if capabilities is None:
+            capabilities = {}
+        elif hasattr(capabilities, "model_dump"):
+            capabilities = cast(
+                dict[str, Any], capabilities.model_dump(mode="json", by_alias=True)
+            )
+        elif not isinstance(capabilities, dict):
+            capabilities = {}
         return PackageResolvedModelBinding(
             key=str(getattr(binding, "key", key)),
             name=str(getattr(binding, "name", key)),
             connection_kind=str(getattr(binding, "connection_kind", "provider")),
+            protocol_profile=protocol_profile,
             base_url=str(getattr(binding, "base_url", "")),
             model_id=str(getattr(binding, "model_id", "")),
             reasoning_effort=cast(str | None, getattr(binding, "reasoning_effort", None)),
-            api_style=str(getattr(binding, "api_style", "responses")),
+            capabilities=capabilities,
+            output_strategy_policy=str(
+                getattr(binding, "output_strategy_policy", "prefer_strict_schema")
+            ),
+            parallel_tool_calls_policy=str(
+                getattr(binding, "parallel_tool_calls_policy", "serialize")
+            ),
+            reasoning_policy=str(getattr(binding, "reasoning_policy", "allow")),
+            streaming_policy=str(getattr(binding, "streaming_policy", "allow")),
+            probe_cache_ttl_seconds=int(getattr(binding, "probe_cache_ttl_seconds", 900)),
+            api_style=api_style,
             timeout_seconds=int(getattr(binding, "timeout_seconds", 60)),
             has_api_key=bool(getattr(binding, "has_api_key", False)),
         )

@@ -45,12 +45,33 @@ class PackageResolvedModelBinding:
     key: str
     name: str
     connection_kind: str
+    protocol_profile: str
     base_url: str
     model_id: str
     reasoning_effort: str | None
+    capabilities: dict[str, Any]
+    output_strategy_policy: str
+    parallel_tool_calls_policy: str
+    reasoning_policy: str
+    streaming_policy: str
+    probe_cache_ttl_seconds: int
     api_style: str
     timeout_seconds: int
     has_api_key: bool
+
+
+@dataclass(frozen=True)
+class PackageExecutionRequirements:
+    requires_native_tool_calls: bool = False
+    requires_structured_output: bool = False
+    requires_parallel_tool_calls: bool = False
+    requires_streaming: bool = False
+    requires_reasoning_hints: bool = False
+    native_tool_sources: tuple[str, ...] = ()
+    structured_output_sources: tuple[str, ...] = ()
+    parallel_tool_sources: tuple[str, ...] = ()
+    streaming_sources: tuple[str, ...] = ()
+    reasoning_sources: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -202,6 +223,7 @@ __all__ = [
     "ExecutionPlanTarget",
     "ExecutionPlanTargetKind",
     "PackageExecutionOwnership",
+    "PackageExecutionRequirements",
     "PackageCapabilityProfileGrant",
     "PackageExecutionStep",
     "PackageExecutionWorkflow",
