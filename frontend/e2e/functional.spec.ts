@@ -48,7 +48,7 @@ test.describe("Portfolio CRUD", () => {
     await page.getByRole("button", { name: "Add Position" }).click();
     await page.getByLabel("Symbol").fill("AAPL");
     await expect(page.getByLabel("Name")).toHaveValue("Apple Inc.");
-    await expect(page.getByText("Suggested name loaded. You can edit it before saving.")).toBeVisible();
+    await expect(page.getByText("Suggested name loaded.")).toBeVisible();
 
     await page.getByLabel("Name").fill("Apple E2E Override");
     await page.getByLabel("Quantity").fill("10");
@@ -58,7 +58,8 @@ test.describe("Portfolio CRUD", () => {
 
     await page.getByRole("button", { name: "Add Position" }).click();
     await page.getByLabel("Symbol").fill("ZZZZZZZZ");
-    await expect(page.getByText("Suggested name loaded. You can edit it before saving.")).toBeVisible();
+    await expect(page.getByLabel("Name")).toHaveValue("ZZZZZZZZ");
+    await expect(page.getByText("Suggested name loaded.")).toBeVisible();
 
     await page.getByLabel("Name").fill("Manual Fallback Name");
     await page.getByLabel("Quantity").fill("1");

@@ -5,9 +5,14 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const backendDir = resolve(__dirname, "..", "..", "backend");
+const fakeProviderPort = process.env.SIGNALDECK_FAKE_PROVIDER_PORT ?? "18081";
 const backendEnv = {
   ...process.env,
   QUOTE_PROVIDER_BACKEND: process.env.QUOTE_PROVIDER_BACKEND ?? "deterministic",
+  SIGNALDECK_FAKE_PROVIDER_BASE_URL:
+    process.env.SIGNALDECK_FAKE_PROVIDER_BASE_URL ??
+    `http://127.0.0.1:${fakeProviderPort}/v1`,
+  SIGNALDECK_FAKE_PROVIDER_PORT: fakeProviderPort,
 };
 const children = new Set();
 let shuttingDown = false;
@@ -60,6 +65,17 @@ async function waitForWorkerReady(worker) {
 }
 
 async function main() {
+  spawnOwned("fake OpenAI-compatible provider", [
+    "run",
+    "--frozen",
+    "python",
+    "tests/fake_openai_provider.py",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    fakeProviderPort,
+  ]);
+  await delay(250);
   const worker = spawnOwned("scheduler worker", [
     "run",
     "--frozen",

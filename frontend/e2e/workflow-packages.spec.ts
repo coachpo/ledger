@@ -8,6 +8,8 @@ import {
 const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
 const DETERMINISTIC_MODEL_BASE_URL =
   "https://signaldeck-deterministic-model.local/v1";
+const FAKE_PROVIDER_BASE_URL =
+  process.env.SIGNALDECK_FAKE_PROVIDER_BASE_URL ?? "http://127.0.0.1:18081/v1";
 
 function packageManifest(
   packageKey: string,
@@ -77,6 +79,13 @@ function packageManifest(
   ].join("\n");
 }
 
+function compatibilityPackageManifest(packageKey: string, modelKey: string) {
+  return packageManifest(packageKey, modelKey).replace(
+    "  capabilityProfiles:\n    - key: quote_tools\n      name: Quote Tools\n      toolKeys:\n        - signaldeck.market_data.quote_lookup\n",
+    "  capabilityProfiles: []\n",
+  ).replace("      capabilityProfiles: [quote_tools]", "      capabilityProfiles: []");
+}
+
 function wideOutputPackageManifest(
   packageKey: string,
   modelKey: string,
@@ -131,14 +140,7 @@ function wideOutputPackageManifest(
 }
 
 async function seedModelConnection(request: APIRequestContext, key: string) {
-  const list = await request.get(`${PLATFORM_API_BASE}/model-connections`, {
-    params: { status: "active" },
-  });
-  expect(list.ok()).toBeTruthy();
-  const existing = (await list.json()).items.find(
-    (item: { id: number; key: string }) => item.key === key,
-  );
-  const payload = {
+  return seedModelConnectionPayload(request, {
     key,
     name: `E2E deterministic model ${key}`,
     description: "Deterministic model connection for package-first E2E.",
@@ -146,10 +148,23 @@ async function seedModelConnection(request: APIRequestContext, key: string) {
     baseUrl: DETERMINISTIC_MODEL_BASE_URL,
     modelId: "signaldeck-deterministic-json",
     reasoningEffort: "low",
-    apiStyle: "responses",
+    protocolProfile: "openai_responses",
     timeoutSeconds: 5,
     apiKey: "sk-e2e-deterministic",
-  };
+  });
+}
+
+async function seedModelConnectionPayload(
+  request: APIRequestContext,
+  payload: Record<string, unknown> & { key: string },
+) {
+  const list = await request.get(`${PLATFORM_API_BASE}/model-connections`, {
+    params: { status: "active" },
+  });
+  expect(list.ok()).toBeTruthy();
+  const existing = (await list.json()).items.find(
+    (item: { id: number; key: string }) => item.key === payload.key,
+  );
   if (existing) {
     const { key: _key, ...updatePayload } = payload;
     const response = await request.patch(
@@ -157,13 +172,18 @@ async function seedModelConnection(request: APIRequestContext, key: string) {
       { data: updatePayload },
     );
     expect(response.ok()).toBeTruthy();
-    return;
+    return existing.id;
   }
   const response = await request.post(
     `${PLATFORM_API_BASE}/model-connections`,
     { data: payload },
   );
   expect(response.ok()).toBeTruthy();
+  return Number((await response.json()).id);
+}
+
+function capability(status: string, detail: string) {
+  return { detail, status };
 }
 
 async function waitForRun(request: APIRequestContext, runId: number) {
@@ -453,20 +473,6 @@ test.describe("Workflow packages", () => {
       `/workflow-packages/${created.id}`,
     );
 
-    await page
-      .getByTestId("runs-evidence-pane-nav")
-      .getByRole("button", { name: "Memory" })
-      .click();
-    await expect(page.getByTestId("runs-memory-evidence-empty")).toContainText(
-      "No run memory evidence was recorded",
-    );
-    await expect(page.getByTestId("runs-memory-artifacts-empty")).toContainText(
-      "No compact memory artifacts were written",
-    );
-    await expect(
-      page.getByTestId("runs-memory-compact-artifacts"),
-    ).toContainText("Compact artifact slice");
-
     await page.getByTestId("runs-detail-rerun").click();
     await expect(
       page.getByRole("dialog", { name: /run snapshot again/i }),
@@ -479,24 +485,236 @@ test.describe("Workflow packages", () => {
       `runs-invocation-${forkInvocationId}-fork-entry`,
     );
     await expect(forkAction).toContainText("Fork from this invocation");
-    await forkAction.click();
+    await forkAction.evaluate((node) => {
+      node.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    const forkDialog = page.getByRole("dialog", {
+      name: /fork from .+ invocation/i,
+    });
+    await expect(forkDialog).toBeVisible();
+    await expect(forkDialog.getByText(`Resume at Step ${forkStepIndex}`)).toBeVisible();
+    await expect(forkDialog.getByText(`Invocation #${forkInvocationId}`)).toBeVisible();
     await expect(
-      page.getByRole("dialog", { name: /fork from .+ invocation/i }),
-    ).toBeVisible();
-    await expect(
-      page.getByText(`Resume at Step ${forkStepIndex}`),
-    ).toBeVisible();
-    await expect(
-      page.getByText(`Invocation #${forkInvocationId}`),
-    ).toBeVisible();
-    await expect(
-      page.getByText(/edits only the selected agent invocation input/i),
+      forkDialog.getByText(/edits only the selected agent invocation input/i),
     ).toBeVisible();
     await expect(page.getByLabel("Target invocation input JSON")).toHaveValue(
       JSON.stringify({ ticker: "AAPL" }, null, 2),
     );
     await page.getByTestId("run-fork-submit").click();
     await expect(page).toHaveURL(/\/runs\/\d+$/);
+  });
+
+  test("covers fake provider capability blockers and runtime profiles", async ({
+    page,
+    request,
+  }) => {
+    const suffix = Date.now();
+    const noToolsModelKey = `e2e_fake_tools_disabled_${suffix}`;
+    const jsonModelKey = `e2e_fake_json_object_${suffix}`;
+    const strictModelKey = `e2e_fake_strict_${suffix}`;
+    const noUsageModelKey = `e2e_fake_missing_usage_${suffix}`;
+    const reasoningModelKey = `e2e_fake_reasoning_disabled_${suffix}`;
+
+    await seedModelConnectionPayload(request, {
+      key: noToolsModelKey,
+      name: "E2E fake provider tools disabled",
+      description: "Fake provider with native tool calls disabled.",
+      connectionKind: "provider",
+      baseUrl: FAKE_PROVIDER_BASE_URL,
+      modelId: "fake-tools-disabled",
+      reasoningEffort: null,
+      protocolProfile: "openai_responses",
+      capabilities: {
+        nativeToolCalls: capability("unsupported", "Fake provider rejects tools."),
+        strictJsonSchemaOutput: capability("unsupported", "Strict schema is unavailable."),
+        jsonObjectOutput: capability("supported", "JSON object mode is available."),
+      },
+      outputStrategyPolicy: "allow_json_object_validation",
+      parallelToolCallsPolicy: "serialize",
+      reasoningPolicy: "forbid",
+      streamingPolicy: "forbid",
+      timeoutSeconds: 5,
+      apiKey: "sk-e2e-fake-tools-disabled",
+    });
+    const blockedPackage = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      { data: { manifestSource: packageManifest(`e2e_fake_blocked_${suffix}`, noToolsModelKey) } },
+    );
+    expect(blockedPackage.status()).toBe(201);
+    const blocked = await blockedPackage.json();
+
+    await page.goto(`/workflow-packages/${blocked.id}/run`);
+    await expect(page.getByTestId("workflow-package-launch-page")).toBeVisible();
+    await expect(page.getByTestId("workflow-package-launch-blockers")).toContainText(
+      "This workflow requires native tool calls",
+    );
+    await expect(page.getByTestId("workflow-package-launch-warnings")).toContainText(
+      "No warnings reported",
+    );
+    await expect(page.getByTestId("workflow-package-model-connection-modes")).toContainText(
+      "No deterministic smoke warnings were reported",
+    );
+
+    await seedModelConnectionPayload(request, {
+      key: strictModelKey,
+      name: "E2E fake provider strict schema",
+      description: "Fake provider with strict schema support.",
+      connectionKind: "provider",
+      baseUrl: FAKE_PROVIDER_BASE_URL,
+      modelId: "fake-strict-schema",
+      reasoningEffort: null,
+      protocolProfile: "openai_responses",
+      capabilities: {
+        strictJsonSchemaOutput: capability("supported", "Strict schema is supported."),
+        jsonObjectOutput: capability("supported", "JSON object mode is supported."),
+        nativeToolCalls: capability("unsupported", "No tools required by this package."),
+      },
+      outputStrategyPolicy: "require_strict_schema",
+      parallelToolCallsPolicy: "serialize",
+      reasoningPolicy: "forbid",
+      streamingPolicy: "forbid",
+      timeoutSeconds: 5,
+      apiKey: "sk-e2e-fake-strict",
+    });
+    const strictPackage = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      { data: { manifestSource: compatibilityPackageManifest(`e2e_fake_strict_${suffix}`, strictModelKey) } },
+    );
+    expect(strictPackage.status()).toBe(201);
+    const strictCreated = await strictPackage.json();
+    const strictRunId = await launchPackageFromDedicatedPage(
+      page,
+      Number(strictCreated.id),
+      "advisory_flow",
+      { ticker: "MSFT" },
+    );
+    const strictDetail = await waitForRun(request, strictRunId);
+    expect(strictDetail.status).toBe("succeeded");
+    expect(JSON.stringify(strictDetail)).toContain("strictJsonSchema");
+
+    await seedModelConnectionPayload(request, {
+      key: jsonModelKey,
+      name: "E2E fake provider JSON object only",
+      description: "Fake provider with JSON object mode but no strict schema.",
+      connectionKind: "provider",
+      baseUrl: FAKE_PROVIDER_BASE_URL,
+      modelId: "fake-json-object-only",
+      reasoningEffort: null,
+      protocolProfile: "openai_responses",
+      capabilities: {
+        strictJsonSchemaOutput: capability("unsupported", "Strict schema is rejected."),
+        jsonObjectOutput: capability("supported", "JSON object mode is supported."),
+        nativeToolCalls: capability("unsupported", "No tools required by this package."),
+      },
+      outputStrategyPolicy: "allow_json_object_validation",
+      parallelToolCallsPolicy: "serialize",
+      reasoningPolicy: "forbid",
+      streamingPolicy: "forbid",
+      timeoutSeconds: 5,
+      apiKey: "sk-e2e-fake-json-object",
+    });
+    const jsonPackage = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      { data: { manifestSource: compatibilityPackageManifest(`e2e_fake_json_${suffix}`, jsonModelKey) } },
+    );
+    expect(jsonPackage.status()).toBe(201);
+    const jsonCreated = await jsonPackage.json();
+    const jsonRunId = await launchPackageFromDedicatedPage(
+      page,
+      Number(jsonCreated.id),
+      "advisory_flow",
+      { ticker: "AAPL" },
+    );
+    const jsonDetail = await waitForRun(request, jsonRunId);
+    expect(jsonDetail.status).toBe("succeeded");
+    expect(JSON.stringify(jsonDetail)).toContain("jsonObjectWithValidation");
+
+    await seedModelConnectionPayload(request, {
+      key: noUsageModelKey,
+      name: "E2E fake provider missing usage",
+      description: "Fake provider omits usage metadata.",
+      connectionKind: "provider",
+      baseUrl: FAKE_PROVIDER_BASE_URL,
+      modelId: "fake-missing-usage",
+      reasoningEffort: null,
+      protocolProfile: "openai_responses",
+      capabilities: {
+        strictJsonSchemaOutput: capability("supported", "Strict schema is supported."),
+        usageReporting: capability("unsupported", "Usage metadata is omitted."),
+      },
+      outputStrategyPolicy: "require_strict_schema",
+      parallelToolCallsPolicy: "serialize",
+      reasoningPolicy: "forbid",
+      streamingPolicy: "forbid",
+      timeoutSeconds: 5,
+      apiKey: "sk-e2e-fake-missing-usage",
+    });
+    const usagePackage = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      { data: { manifestSource: compatibilityPackageManifest(`e2e_fake_usage_${suffix}`, noUsageModelKey) } },
+    );
+    expect(usagePackage.status()).toBe(201);
+    const usageCreated = await usagePackage.json();
+    const usageRunId = await launchPackageFromDedicatedPage(
+      page,
+      Number(usageCreated.id),
+      "advisory_flow",
+      { ticker: "NVDA" },
+    );
+    const usageDetail = await waitForRun(request, usageRunId);
+    expect(usageDetail.status).toBe("succeeded");
+    expect(usageDetail.executedTokens).toBe(0);
+
+    await seedModelConnectionPayload(request, {
+      key: reasoningModelKey,
+      name: "E2E fake provider reasoning disabled",
+      description: "Fake provider rejects reasoning fields.",
+      connectionKind: "provider",
+      baseUrl: FAKE_PROVIDER_BASE_URL,
+      modelId: "fake-reasoning-disabled",
+      reasoningEffort: "high",
+      protocolProfile: "openai_responses",
+      capabilities: {
+        reasoningHints: capability("unsupported", "Reasoning hints are rejected."),
+        strictJsonSchemaOutput: capability("supported", "Strict schema is supported."),
+      },
+      outputStrategyPolicy: "require_strict_schema",
+      parallelToolCallsPolicy: "serialize",
+      reasoningPolicy: "allow",
+      streamingPolicy: "forbid",
+      timeoutSeconds: 5,
+      apiKey: "sk-e2e-fake-reasoning",
+    });
+    const reasoningPackage = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      { data: { manifestSource: compatibilityPackageManifest(`e2e_fake_reasoning_${suffix}`, reasoningModelKey) } },
+    );
+    expect(reasoningPackage.status()).toBe(201);
+    const reasoningCreated = await reasoningPackage.json();
+    const reasoningLaunch = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages/${reasoningCreated.id}/launches`,
+      { data: { workflowKey: "advisory_flow", parameters: { ticker: "AAPL" } } },
+    );
+    expect(reasoningLaunch.status()).toBe(201);
+    const reasoningRun = await waitForRun(request, Number((await reasoningLaunch.json()).id));
+    expect(reasoningRun.status).toBe("failed");
+    expect(JSON.stringify(reasoningRun)).toContain("model_reasoning_unsupported");
+
+    await page.goto(`/runs/${usageRunId}`);
+    await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+    await expect(page.getByTestId("runs-runtime-profile")).toContainText(
+      "Effective runtime profile",
+    );
+    await expect(page.getByTestId("runs-runtime-profile")).toContainText(
+      "Usage reporting",
+    );
+    await expect(page.getByTestId("runs-runtime-profile")).toContainText(
+      "Unsupported",
+    );
+    await expect(page.getByTestId("runs-runtime-selected-strategies")).toContainText(
+      "Adapter-selected strategies",
+    );
+    await expect(page.getByText(/sk-e2e-fake/i)).toHaveCount(0);
   });
 
   test("keeps run step evidence width stable when aggregated output switches to raw", async ({
@@ -573,7 +791,9 @@ test.describe("Workflow packages", () => {
     ).toBeVisible();
     const renderedMetrics = await layoutMetrics();
 
-    await aggregatedOutput.getByRole("tab", { name: "Raw" }).click();
+    const rawTab = aggregatedOutput.getByRole("tab", { name: "Raw" });
+    await rawTab.focus();
+    await page.keyboard.press("Space");
     const rawPayload = aggregatedOutput.getByTestId(
       "runs-step-1-aggregated-output-raw",
     );

@@ -42,7 +42,7 @@ async function seedTradingAgentsModel(request: APIRequestContext) {
     baseUrl: DETERMINISTIC_MODEL_BASE_URL,
     modelId: "signaldeck-deterministic-json",
     reasoningEffort: "low",
-    apiStyle: "responses",
+    protocolProfile: "openai_responses",
     timeoutSeconds: 5,
     apiKey: "sk-e2e-tradingagents-deterministic",
   };
