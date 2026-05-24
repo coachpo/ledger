@@ -7,7 +7,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 
-from app.schemas.common import CamelModel, ensure_timezone
+from app.schemas.common import CamelModel, ensure_timezone, to_camel
 
 _STABLE_MODEL_CONNECTION_KEY_RE = r"^[a-z][a-z0-9_]{0,119}$"
 
@@ -84,9 +84,39 @@ def normalize_model_connection_key(value: object) -> str:
 type ModelConnectionReasoningEffort = str
 
 
-class ModelConnectionApiStyle(str, Enum):  # noqa: UP042
-    RESPONSES = "responses"
-    CHAT_COMPLETIONS = "chat_completions"
+class ModelConnectionProtocolProfile(str, Enum):  # noqa: UP042
+    OPENAI_CHAT_COMPLETIONS = "openai_chat_completions"
+    OPENAI_RESPONSES = "openai_responses"
+
+
+class ModelConnectionCapabilityStatus(str, Enum):  # noqa: UP042
+    SUPPORTED = "supported"
+    UNSUPPORTED = "unsupported"
+    UNKNOWN = "unknown"
+    NOT_APPLICABLE = "notApplicable"
+
+
+class ModelConnectionOutputStrategyPolicy(str, Enum):  # noqa: UP042
+    REQUIRE_STRICT_SCHEMA = "require_strict_schema"
+    PREFER_STRICT_SCHEMA = "prefer_strict_schema"
+    ALLOW_JSON_OBJECT_VALIDATION = "allow_json_object_validation"
+    ALLOW_PLAIN_TEXT = "allow_plain_text"
+
+
+class ModelConnectionParallelToolCallsPolicy(str, Enum):  # noqa: UP042
+    ALLOW = "allow"
+    SERIALIZE = "serialize"
+    FORBID = "forbid"
+
+
+class ModelConnectionReasoningPolicy(str, Enum):  # noqa: UP042
+    ALLOW = "allow"
+    FORBID = "forbid"
+
+
+class ModelConnectionStreamingPolicy(str, Enum):  # noqa: UP042
+    ALLOW = "allow"
+    FORBID = "forbid"
 
 
 class ModelConnectionKind(str, Enum):  # noqa: UP042
@@ -94,18 +124,164 @@ class ModelConnectionKind(str, Enum):  # noqa: UP042
     DETERMINISTIC_SMOKE = "deterministic_smoke"
 
 
+_PROTOCOL_PROFILE_TO_API_STYLE = {
+    ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS.value: "chat_completions",
+    ModelConnectionProtocolProfile.OPENAI_RESPONSES.value: "responses",
+}
+_API_STYLE_TO_PROTOCOL_PROFILE = {
+    api_style: protocol_profile
+    for protocol_profile, api_style in _PROTOCOL_PROFILE_TO_API_STYLE.items()
+}
+
+
+def api_style_for_model_connection_protocol_profile(value: object) -> str:
+    profile = value.value if isinstance(value, ModelConnectionProtocolProfile) else str(value)
+    try:
+        return _PROTOCOL_PROFILE_TO_API_STYLE[profile]
+    except KeyError as exc:
+        raise ValueError("Protocol profile is invalid") from exc
+
+
+def protocol_profile_for_legacy_api_style(value: object) -> str:
+    api_style = str(value).strip()
+    return _API_STYLE_TO_PROTOCOL_PROFILE.get(
+        api_style,
+        ModelConnectionProtocolProfile.OPENAI_RESPONSES.value,
+    )
+
+
+class ModelConnectionCapabilityState(CamelModel):
+    status: ModelConnectionCapabilityStatus = ModelConnectionCapabilityStatus.UNKNOWN
+    detail: str | None = Field(default=None, max_length=1000)
+    last_probed_at: datetime | None = None
+
+    @field_validator("detail", mode="before")
+    @classmethod
+    def validate_detail(cls, value: object) -> str | None:
+        return _normalize_optional_text(value)
+
+    @field_validator("last_probed_at")
+    @classmethod
+    def validate_last_probed_at(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_timezone(value)
+
+
+class ModelConnectionCapabilities(CamelModel):
+    text_generation: ModelConnectionCapabilityState = Field(
+        default_factory=ModelConnectionCapabilityState,
+    )
+    chat_completions: ModelConnectionCapabilityState = Field(
+        default_factory=ModelConnectionCapabilityState,
+    )
+    responses_api: ModelConnectionCapabilityState = Field(
+        default_factory=ModelConnectionCapabilityState,
+    )
+    streaming: ModelConnectionCapabilityState = Field(
+        default_factory=ModelConnectionCapabilityState,
+    )
+    native_tool_calls: ModelConnectionCapabilityState = Field(
+        default_factory=ModelConnectionCapabilityState,
+    )
+    parallel_tool_calls: ModelConnectionCapabilityState = Field(
+        default_factory=ModelConnectionCapabilityState,
+    )
+    json_object_output: ModelConnectionCapabilityState = Field(
+        default_factory=ModelConnectionCapabilityState,
+    )
+    strict_json_schema_output: ModelConnectionCapabilityState = Field(
+        default_factory=ModelConnectionCapabilityState,
+    )
+    reasoning_hints: ModelConnectionCapabilityState = Field(
+        default_factory=ModelConnectionCapabilityState,
+    )
+    usage_reporting: ModelConnectionCapabilityState = Field(
+        default_factory=ModelConnectionCapabilityState,
+    )
+    system_messages: ModelConnectionCapabilityState = Field(
+        default_factory=ModelConnectionCapabilityState,
+    )
+
+
+_MODEL_CONNECTION_CAPABILITY_FIELD_NAMES = tuple(ModelConnectionCapabilities.model_fields)
+_MODEL_CONNECTION_CAPABILITY_FIELD_NAME_SET = set(_MODEL_CONNECTION_CAPABILITY_FIELD_NAMES)
+_MODEL_CONNECTION_CAPABILITY_PUBLIC_NAME_BY_FIELD = {
+    field_name: to_camel(field_name) for field_name in _MODEL_CONNECTION_CAPABILITY_FIELD_NAMES
+}
+_MODEL_CONNECTION_CAPABILITY_FIELD_BY_PUBLIC_NAME = {
+    public_name: field_name
+    for field_name, public_name in _MODEL_CONNECTION_CAPABILITY_PUBLIC_NAME_BY_FIELD.items()
+}
+
+
+def normalize_model_connection_capability_key(value: object) -> str:
+    normalized = _normalize_required_text(value, field_name="Capability key")
+    candidate = _MODEL_CONNECTION_CAPABILITY_FIELD_BY_PUBLIC_NAME.get(normalized, normalized)
+    if candidate not in _MODEL_CONNECTION_CAPABILITY_FIELD_NAME_SET:
+        supported = ", ".join(_MODEL_CONNECTION_CAPABILITY_PUBLIC_NAME_BY_FIELD.values())
+        raise ValueError(f"Capability key must be one of: {supported}")
+    return candidate
+
+
+def _capability_state(status: ModelConnectionCapabilityStatus) -> ModelConnectionCapabilityState:
+    return ModelConnectionCapabilityState(status=status)
+
+
+def default_model_connection_capabilities(
+    protocol_profile: object = ModelConnectionProtocolProfile.OPENAI_RESPONSES,
+) -> ModelConnectionCapabilities:
+    profile = (
+        protocol_profile.value
+        if isinstance(protocol_profile, ModelConnectionProtocolProfile)
+        else str(protocol_profile)
+    )
+    chat_status = ModelConnectionCapabilityStatus.UNKNOWN
+    responses_status = ModelConnectionCapabilityStatus.UNKNOWN
+    if profile == ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS.value:
+        chat_status = ModelConnectionCapabilityStatus.SUPPORTED
+        responses_status = ModelConnectionCapabilityStatus.NOT_APPLICABLE
+    elif profile == ModelConnectionProtocolProfile.OPENAI_RESPONSES.value:
+        chat_status = ModelConnectionCapabilityStatus.NOT_APPLICABLE
+        responses_status = ModelConnectionCapabilityStatus.SUPPORTED
+
+    return ModelConnectionCapabilities(
+        text_generation=_capability_state(ModelConnectionCapabilityStatus.SUPPORTED),
+        chat_completions=_capability_state(chat_status),
+        responses_api=_capability_state(responses_status),
+    )
+
+
+def dump_model_connection_capabilities(
+    capabilities: ModelConnectionCapabilities,
+) -> dict[str, object]:
+    return capabilities.model_dump(mode="json", by_alias=True)
+
+
 class ModelConnectionCreate(CamelModel):
     key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
     connection_kind: ModelConnectionKind = ModelConnectionKind.PROVIDER
+    protocol_profile: ModelConnectionProtocolProfile = (
+        ModelConnectionProtocolProfile.OPENAI_RESPONSES
+    )
     base_url: str
     model_id: str = Field(min_length=1, max_length=200)
     reasoning_effort: ModelConnectionReasoningEffort | None = Field(
         default="medium",
         max_length=128,
     )
-    api_style: ModelConnectionApiStyle = ModelConnectionApiStyle.RESPONSES
+    capabilities: ModelConnectionCapabilities = Field(default_factory=ModelConnectionCapabilities)
+    output_strategy_policy: ModelConnectionOutputStrategyPolicy = (
+        ModelConnectionOutputStrategyPolicy.PREFER_STRICT_SCHEMA
+    )
+    parallel_tool_calls_policy: ModelConnectionParallelToolCallsPolicy = (
+        ModelConnectionParallelToolCallsPolicy.SERIALIZE
+    )
+    reasoning_policy: ModelConnectionReasoningPolicy = ModelConnectionReasoningPolicy.ALLOW
+    streaming_policy: ModelConnectionStreamingPolicy = ModelConnectionStreamingPolicy.ALLOW
+    probe_cache_ttl_seconds: int = Field(default=900, ge=1)
     timeout_seconds: int = Field(default=60, ge=1)
     api_key: str | None = None
 
@@ -140,18 +316,30 @@ class ModelConnectionCreate(CamelModel):
     def validate_api_key(cls, value: object) -> str | None:
         return _normalize_optional_secret(value)
 
+    @model_validator(mode="after")
+    def fill_default_capabilities(self) -> ModelConnectionCreate:
+        if "capabilities" not in self.model_fields_set:
+            self.capabilities = default_model_connection_capabilities(self.protocol_profile)
+        return self
+
 
 class ModelConnectionUpdate(CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
     connection_kind: ModelConnectionKind | None = None
+    protocol_profile: ModelConnectionProtocolProfile | None = None
     base_url: str | None = None
     model_id: str | None = Field(default=None, min_length=1, max_length=200)
     reasoning_effort: ModelConnectionReasoningEffort | None = Field(
         default=None,
         max_length=128,
     )
-    api_style: ModelConnectionApiStyle | None = None
+    capabilities: ModelConnectionCapabilities | None = None
+    output_strategy_policy: ModelConnectionOutputStrategyPolicy | None = None
+    parallel_tool_calls_policy: ModelConnectionParallelToolCallsPolicy | None = None
+    reasoning_policy: ModelConnectionReasoningPolicy | None = None
+    streaming_policy: ModelConnectionStreamingPolicy | None = None
+    probe_cache_ttl_seconds: int | None = Field(default=None, ge=1)
     timeout_seconds: int | None = Field(default=None, ge=1)
     api_key: str | None = None
 
@@ -180,7 +368,18 @@ class ModelConnectionUpdate(CamelModel):
     def validate_reasoning_effort(cls, value: object) -> str | None:
         return _normalize_reasoning_effort(value)
 
-    @field_validator("timeout_seconds", "api_style", "connection_kind", mode="before")
+    @field_validator(
+        "timeout_seconds",
+        "connection_kind",
+        "protocol_profile",
+        "capabilities",
+        "output_strategy_policy",
+        "parallel_tool_calls_policy",
+        "reasoning_policy",
+        "streaming_policy",
+        "probe_cache_ttl_seconds",
+        mode="before",
+    )
     @classmethod
     def reject_null_scalar_updates(cls, value: object, info: ValidationInfo) -> object:
         if value is None:
@@ -208,21 +407,28 @@ class ModelConnectionListItemRead(CamelModel):
     name: str
     description: str
     connection_kind: ModelConnectionKind
+    protocol_profile: ModelConnectionProtocolProfile
     base_url: str
     model_id: str
     reasoning_effort: ModelConnectionReasoningEffort | None = Field(
         default=None,
         max_length=128,
     )
-    api_style: ModelConnectionApiStyle
+    capabilities: ModelConnectionCapabilities
+    output_strategy_policy: ModelConnectionOutputStrategyPolicy
+    parallel_tool_calls_policy: ModelConnectionParallelToolCallsPolicy
+    reasoning_policy: ModelConnectionReasoningPolicy
+    streaming_policy: ModelConnectionStreamingPolicy
+    last_probed_at: datetime | None = None
+    probe_cache_ttl_seconds: int = Field(ge=1)
     timeout_seconds: int = Field(ge=1)
     last_tested_at: datetime | None = None
     last_test_ok: bool | None = None
     last_test_message: str | None = None
 
-    @field_validator("last_tested_at")
+    @field_validator("last_tested_at", "last_probed_at")
     @classmethod
-    def validate_last_tested_at(cls, value: datetime | None) -> datetime | None:
+    def validate_optional_timestamps(cls, value: datetime | None) -> datetime | None:
         if value is None:
             return None
         return ensure_timezone(value)
@@ -254,16 +460,61 @@ class ModelConnectionConnectionTestRead(CamelModel):
         return ensure_timezone(value)
 
 
+class ModelConnectionCapabilityProbeRequest(CamelModel):
+    capability_keys: list[str] = Field(default_factory=list)
+    refresh: bool = False
+
+    @field_validator("capability_keys", mode="before")
+    @classmethod
+    def normalize_capability_keys(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("Capability keys must be an array of strings")
+        normalized_keys = [normalize_model_connection_capability_key(item) for item in value]
+        if len(set(normalized_keys)) != len(normalized_keys):
+            raise ValueError("Capability keys must be unique")
+        return normalized_keys
+
+
+class ModelConnectionCapabilityProbeRead(CamelModel):
+    model_connection_id: int
+    requested_capability_keys: list[str] = Field(default_factory=list)
+    cached: bool
+    last_probed_at: datetime
+    probe_cache_ttl_seconds: int = Field(ge=1)
+    capabilities: ModelConnectionCapabilities
+
+    @field_validator("last_probed_at")
+    @classmethod
+    def validate_last_probed_at(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
 __all__ = [
-    "ModelConnectionApiStyle",
+    "ModelConnectionCapabilities",
+    "ModelConnectionCapabilityState",
+    "ModelConnectionCapabilityStatus",
+    "ModelConnectionCapabilityProbeRead",
+    "ModelConnectionCapabilityProbeRequest",
     "ModelConnectionConnectionTestRead",
     "ModelConnectionCreate",
     "ModelConnectionKind",
     "ModelConnectionListItemRead",
     "ModelConnectionListRead",
+    "ModelConnectionOutputStrategyPolicy",
+    "ModelConnectionParallelToolCallsPolicy",
+    "ModelConnectionProtocolProfile",
     "ModelConnectionRead",
     "ModelConnectionReasoningEffort",
+    "ModelConnectionReasoningPolicy",
+    "ModelConnectionStreamingPolicy",
     "ModelConnectionUpdate",
+    "api_style_for_model_connection_protocol_profile",
     "build_model_connection_openai_base_url",
+    "default_model_connection_capabilities",
+    "dump_model_connection_capabilities",
+    "normalize_model_connection_capability_key",
     "normalize_model_connection_key",
+    "protocol_profile_for_legacy_api_style",
 ]
