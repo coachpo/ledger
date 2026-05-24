@@ -1,5 +1,12 @@
-import { requestPlatform, toPathSegment, toQueryRecord, type IdParam } from "../api-client";
+import {
+  requestPlatform,
+  toPathSegment,
+  toQueryRecord,
+  type IdParam,
+} from "../api-client";
 import type {
+  ModelConnectionCapabilityProbeRead,
+  ModelConnectionCapabilityProbeRequest,
   ModelConnectionConnectionTestRead,
   ModelConnectionCreateInput,
   ModelConnectionListParams,
@@ -67,6 +74,21 @@ export function testModelConnection(
   );
 }
 
+export function probeModelConnectionCapabilities(
+  modelConnectionId: IdParam,
+  payload: ModelConnectionCapabilityProbeRequest = {},
+  signal?: AbortSignal,
+): Promise<ModelConnectionCapabilityProbeRead> {
+  return requestPlatform<ModelConnectionCapabilityProbeRead>(
+    `${modelConnectionDetailPath(modelConnectionId)}/capability-probe`,
+    {
+      body: payload,
+      method: "POST",
+      signal,
+    },
+  );
+}
+
 export function deleteModelConnection(
   modelConnectionId: IdParam,
   signal?: AbortSignal,
@@ -82,6 +104,7 @@ export const modelConnectionsApi = {
   delete: deleteModelConnection,
   get: getModelConnection,
   list: listModelConnections,
+  probeCapabilities: probeModelConnectionCapabilities,
   testConnection: testModelConnection,
   update: updateModelConnection,
 } as const;

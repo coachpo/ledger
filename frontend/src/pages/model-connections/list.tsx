@@ -18,10 +18,7 @@ import {
 } from "@/hooks/use-model-connections";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { formatDateTime } from "@/lib/format";
-import type {
-  ModelConnectionApiStyle,
-  ModelConnectionListItemRead,
-} from "@/lib/types/model-connection";
+import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -47,16 +44,18 @@ import {
   PlatformResourceCard,
   PlatformResourceList,
 } from "../platform-resource-shared";
-
-const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
-  chat_completions: "Chat Completions API",
-  responses: "Responses API",
-};
-
-const API_STYLE_BADGE_LABELS: Record<ModelConnectionApiStyle, string> = {
-  chat_completions: "Chat Completions",
-  responses: "Responses API",
-};
+import {
+  CAPABILITY_LABEL_BY_KEY,
+  CAPABILITY_STATUS_LABELS,
+  OUTPUT_STRATEGY_POLICY_LABELS,
+  PARALLEL_TOOL_CALLS_POLICY_LABELS,
+  PROTOCOL_PROFILE_DESCRIPTIONS,
+  PROTOCOL_PROFILE_LABELS,
+  REASONING_POLICY_LABELS,
+  STREAMING_POLICY_LABELS,
+  SUMMARY_CAPABILITY_KEYS,
+  formatCapabilitySummary,
+} from "./model-connection-ui";
 
 type ViewMode = "cards" | "table";
 
@@ -91,6 +90,12 @@ function filterConnections(
       connection.modelId,
       connection.description,
       connection.baseUrl,
+      connection.protocolProfile,
+      PROTOCOL_PROFILE_LABELS[connection.protocolProfile],
+      PROTOCOL_PROFILE_DESCRIPTIONS[connection.protocolProfile],
+      formatCapabilitySummary(connection.capabilities),
+      formatCapabilityDetails(connection),
+      formatPolicySummary(connection),
       connection.lastTestMessage ?? "",
     ]
       .join(" ")
@@ -117,6 +122,26 @@ function formatReasoningEffort(
   return value ?? "Omitted";
 }
 
+function formatPolicySummary(connection: ModelConnectionListItemRead): string {
+  return [
+    OUTPUT_STRATEGY_POLICY_LABELS[connection.outputStrategyPolicy],
+    PARALLEL_TOOL_CALLS_POLICY_LABELS[connection.parallelToolCallsPolicy],
+    REASONING_POLICY_LABELS[connection.reasoningPolicy],
+    STREAMING_POLICY_LABELS[connection.streamingPolicy],
+  ].join(" · ");
+}
+
+function formatCapabilityDetails(
+  connection: ModelConnectionListItemRead,
+): string {
+  return SUMMARY_CAPABILITY_KEYS.map((capabilityKey) => {
+    const capability = connection.capabilities[capabilityKey];
+    return `${CAPABILITY_LABEL_BY_KEY[capabilityKey]}: ${
+      CAPABILITY_STATUS_LABELS[capability.status]
+    }`;
+  }).join(" · ");
+}
+
 function ModelConnectionMetadata({
   connection,
 }: {
@@ -125,27 +150,37 @@ function ModelConnectionMetadata({
   return (
     <div className="grid min-w-0 gap-x-5 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
       <div className="min-w-0">
-        <span className="font-medium text-foreground">Base URL:</span>{" "}
-        <span className="break-all">{connection.baseUrl}</span>
-      </div>
-      <div className="min-w-0">
-        <span className="font-medium text-foreground">Reasoning:</span>{" "}
-        <span>{formatReasoningEffort(connection.reasoningEffort)}</span>{" "}
-        <span aria-hidden="true">·</span>{" "}
+        <span className="font-medium text-foreground">Protocol profile:</span>{" "}
         <span className="break-words">
-          {API_STYLE_LABELS[connection.apiStyle]}
+          {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
         </span>{" "}
         <span aria-hidden="true">·</span>{" "}
         <span>{connection.timeoutSeconds}s timeout</span>
       </div>
       <div className="min-w-0">
-        <span className="font-medium text-foreground">Last Test:</span>{" "}
+        <span className="font-medium text-foreground">Base URL:</span>{" "}
+        <span className="break-all">{connection.baseUrl}</span>
+      </div>
+      <div className="min-w-0">
+        <span className="font-medium text-foreground">Reasoning:</span>{" "}
+        <span>{formatReasoningEffort(connection.reasoningEffort)}</span>
+      </div>
+      <div className="min-w-0 sm:col-span-2 xl:col-span-1">
+        <span className="font-medium text-foreground">Capability summary:</span>{" "}
+        <span className="break-words">{formatCapabilityDetails(connection)}</span>
+      </div>
+      <div className="min-w-0 sm:col-span-2 xl:col-span-1">
+        <span className="font-medium text-foreground">Policy controls:</span>{" "}
+        <span className="break-words">{formatPolicySummary(connection)}</span>
+      </div>
+      <div className="min-w-0">
+        <span className="font-medium text-foreground">Reachability:</span>{" "}
         <span>{formatLastTestStatus(connection)}</span>{" "}
         <span className="break-words">
           ·{" "}
           {connection.lastTestedAt
             ? formatDateTime(connection.lastTestedAt)
-            : "No connection test recorded."}
+            : "No reachability test recorded."}
         </span>
         {connection.lastTestMessage ? (
           <span className="break-words"> · {connection.lastTestMessage}</span>
@@ -166,8 +201,8 @@ function ModelConnectionsHeader() {
           Model Connections
         </h1>
         <p className="text-sm text-muted-foreground">
-          Manage live model endpoints, credentials, and runtime defaults that
-          workflow packages reference by stable key.
+          Manage live model endpoints, credentials, protocol profiles,
+          capabilities, and runtime policies by stable key.
         </p>
       </div>
       <Button asChild data-testid="model-connections-new" size="sm">
@@ -201,7 +236,7 @@ function ModelConnectionsToolbar({
         <Input
           aria-label="Search model connections"
           className="h-8 pl-8 text-xs"
-          placeholder="Search connections by name, key, model, or URL..."
+          placeholder="Search by name, key, model, protocol, capability, or policy..."
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
         />
@@ -315,7 +350,10 @@ function ModelConnectionsCards({
                 {formatLastTestStatus(connection)}
               </Badge>
               <Badge variant="outline">
-                {API_STYLE_BADGE_LABELS[connection.apiStyle]}
+                {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
+              </Badge>
+              <Badge variant="outline">
+                {formatCapabilitySummary(connection.capabilities)}
               </Badge>
             </>
           }
@@ -420,8 +458,10 @@ function ModelConnectionsTable({
           <TableHead>Name</TableHead>
           <TableHead>Model</TableHead>
           <TableHead>Base URL</TableHead>
-          <TableHead>Runtime Defaults</TableHead>
-          <TableHead>Last Test</TableHead>
+          <TableHead>Protocol Profile</TableHead>
+          <TableHead>Capability Summary</TableHead>
+          <TableHead>Policy Controls</TableHead>
+          <TableHead>Reachability Test</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
@@ -461,11 +501,20 @@ function ModelConnectionsTable({
                 {connection.baseUrl}
               </TableCell>
               <TableCell className="min-w-64 whitespace-normal text-xs text-muted-foreground">
-                <span>{formatReasoningEffort(connection.reasoningEffort)}</span>{" "}
+                <span>{PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}</span>{" "}
                 <span aria-hidden="true">·</span>{" "}
-                <span>{API_STYLE_LABELS[connection.apiStyle]}</span>{" "}
+                <span>Reasoning {formatReasoningEffort(connection.reasoningEffort)}</span>{" "}
                 <span aria-hidden="true">·</span>{" "}
                 <span>{connection.timeoutSeconds}s timeout</span>
+              </TableCell>
+              <TableCell className="min-w-72 whitespace-normal text-xs text-muted-foreground">
+                <span>{formatCapabilitySummary(connection.capabilities)}</span>
+                <span className="block break-words">
+                  {formatCapabilityDetails(connection)}
+                </span>
+              </TableCell>
+              <TableCell className="min-w-72 whitespace-normal text-xs text-muted-foreground">
+                {formatPolicySummary(connection)}
               </TableCell>
               <TableCell className="min-w-56 whitespace-normal text-xs text-muted-foreground">
                 <span>{formatLastTestStatus(connection)}</span>{" "}
@@ -473,7 +522,7 @@ function ModelConnectionsTable({
                   ·{" "}
                   {connection.lastTestedAt
                     ? formatDateTime(connection.lastTestedAt)
-                    : "No connection test recorded."}
+                    : "No reachability test recorded."}
                 </span>
                 {connection.lastTestMessage ? (
                   <span> · {connection.lastTestMessage}</span>

@@ -9,12 +9,14 @@ import {
   deleteModelConnection,
   getModelConnection,
   listModelConnections,
+  probeModelConnectionCapabilities,
   testModelConnection,
   updateModelConnection,
 } from "@/lib/api/model-connections";
 import type { IdParam } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import type {
+  ModelConnectionCapabilityProbeRequest,
   ModelConnectionCreateInput,
   ModelConnectionListParams,
   ModelConnectionUpdateInput,
@@ -159,6 +161,30 @@ export function useTestModelConnection(modelConnectionId: IdParam | undefined) {
       }
 
       return testModelConnection(modelConnectionId);
+    },
+    onSuccess: async (result) => {
+      await invalidateModelConnectionScope(
+        queryClient,
+        result.modelConnectionId,
+      );
+    },
+  });
+}
+
+export function useProbeModelConnectionCapabilities(
+  modelConnectionId: IdParam | undefined,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: ModelConnectionCapabilityProbeRequest = {}) => {
+      if (!modelConnectionId) {
+        throw new Error(
+          "Model connection id is required to probe capabilities.",
+        );
+      }
+
+      return probeModelConnectionCapabilities(modelConnectionId, payload);
     },
     onSuccess: async (result) => {
       await invalidateModelConnectionScope(

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, PlugZap, Save, XCircle } from "lucide-react";
+import { CheckCircle2, PlugZap, Radar, Save, XCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import {
   useCreateModelConnection,
   useModelConnection,
+  useProbeModelConnectionCapabilities,
   useTestModelConnection,
   useUpdateModelConnection,
 } from "@/hooks/use-model-connections";
@@ -33,10 +34,16 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/format";
 import type {
-  ModelConnectionApiStyle,
+  ModelConnectionCapabilities,
+  ModelConnectionCapabilityStatus,
   ModelConnectionCreateInput,
+  ModelConnectionOutputStrategyPolicy,
+  ModelConnectionParallelToolCallsPolicy,
+  ModelConnectionProtocolProfile,
   ModelConnectionRead,
   ModelConnectionReasoningEffort,
+  ModelConnectionReasoningPolicy,
+  ModelConnectionStreamingPolicy,
   ModelConnectionUpdateInput,
 } from "@/lib/types/model-connection";
 
@@ -44,16 +51,35 @@ import {
   parseOptionalNumber,
   parseRequiredText,
 } from "../platform-resource-helpers";
+import {
+  CAPABILITY_DEFINITIONS,
+  CAPABILITY_LABEL_BY_KEY,
+  CAPABILITY_STATUS_LABELS,
+  CAPABILITY_STATUS_OPTIONS,
+  OUTPUT_STRATEGY_POLICY_LABELS,
+  OUTPUT_STRATEGY_POLICY_OPTIONS,
+  PARALLEL_TOOL_CALLS_POLICY_LABELS,
+  PARALLEL_TOOL_CALLS_POLICY_OPTIONS,
+  PROBE_CAPABILITY_KEYS,
+  PROTOCOL_PROFILE_DESCRIPTIONS,
+  PROTOCOL_PROFILE_LABELS,
+  REASONING_POLICY_LABELS,
+  REASONING_POLICY_OPTIONS,
+  STREAMING_POLICY_LABELS,
+  STREAMING_POLICY_OPTIONS,
+  SUMMARY_CAPABILITY_KEYS,
+  capabilitiesForProtocolProfile,
+  createDefaultCapabilities,
+  formatCapabilitySummary,
+  normalizeCapabilities,
+  toCapabilityWritePayload,
+  validatePolicyCompatibility,
+} from "./model-connection-ui";
 
 type ConnectionFeedback = {
   message: string;
   title: string;
   variant: "default" | "destructive";
-};
-
-const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
-  chat_completions: "Chat Completions API",
-  responses: "Responses API",
 };
 
 const REASONING_EFFORT_OMIT_VALUE = "__omit__";
@@ -76,27 +102,42 @@ type ReasoningEffortSelection =
 
 type ModelConnectionEditorValues = {
   apiKey: string;
-  apiStyle: ModelConnectionApiStyle;
   baseUrl: string;
+  capabilities: ModelConnectionCapabilities;
   customReasoningEffort: string;
   description: string;
   key: string;
   modelId: string;
   name: string;
+  outputStrategyPolicy: ModelConnectionOutputStrategyPolicy;
+  parallelToolCallsPolicy: ModelConnectionParallelToolCallsPolicy;
+  probeCacheTtlSeconds: string;
+  protocolProfile: ModelConnectionProtocolProfile;
   reasoningEffort: ReasoningEffortSelection;
+  reasoningPolicy: ModelConnectionReasoningPolicy;
+  streamingPolicy: ModelConnectionStreamingPolicy;
   timeoutSeconds: string;
 };
 
+const DEFAULT_PROTOCOL_PROFILE: ModelConnectionProtocolProfile =
+  "openai_responses";
+
 const initialValues: ModelConnectionEditorValues = {
   apiKey: "",
-  apiStyle: "responses",
-  baseUrl: "https://api.openai.com/v1",
+  baseUrl: "https://model-endpoint.example/v1",
+  capabilities: createDefaultCapabilities(DEFAULT_PROTOCOL_PROFILE),
   customReasoningEffort: "",
   description: "",
   key: "",
   modelId: "",
   name: "",
+  outputStrategyPolicy: "prefer_strict_schema",
+  parallelToolCallsPolicy: "serialize",
+  probeCacheTtlSeconds: "900",
+  protocolProfile: DEFAULT_PROTOCOL_PROFILE,
   reasoningEffort: "medium",
+  reasoningPolicy: "allow",
+  streamingPolicy: "allow",
   timeoutSeconds: "60",
 };
 
@@ -127,29 +168,46 @@ function buildValuesFromConnection(
 ): ModelConnectionEditorValues {
   return {
     apiKey: "",
-    apiStyle: connection.apiStyle,
     baseUrl: connection.baseUrl,
+    capabilities: normalizeCapabilities(
+      connection.protocolProfile,
+      connection.capabilities,
+    ),
     customReasoningEffort: getCustomReasoningEffort(connection.reasoningEffort),
     description: connection.description ?? "",
     key: connection.key,
     modelId: connection.modelId,
     name: connection.name,
+    outputStrategyPolicy: connection.outputStrategyPolicy,
+    parallelToolCallsPolicy: connection.parallelToolCallsPolicy,
+    probeCacheTtlSeconds: String(connection.probeCacheTtlSeconds),
+    protocolProfile: connection.protocolProfile,
     reasoningEffort: getReasoningEffortSelection(connection.reasoningEffort),
+    reasoningPolicy: connection.reasoningPolicy,
+    streamingPolicy: connection.streamingPolicy,
     timeoutSeconds: String(connection.timeoutSeconds),
   };
 }
 
-function parseTimeoutSeconds(value: string) {
-  const timeoutSeconds = parseOptionalNumber("Timeout seconds", value, {
+function parsePositiveInteger(fieldName: string, value: string) {
+  const parsedValue = parseOptionalNumber(fieldName, value, {
     integer: true,
     min: 1,
   });
 
-  if (timeoutSeconds === undefined) {
-    throw new Error("Timeout seconds is required.");
+  if (parsedValue === undefined) {
+    throw new Error(`${fieldName} is required.`);
   }
 
-  return timeoutSeconds;
+  return parsedValue;
+}
+
+function parseTimeoutSeconds(value: string) {
+  return parsePositiveInteger("Timeout seconds", value);
+}
+
+function parseProbeCacheTtlSeconds(value: string) {
+  return parsePositiveInteger("Probe cache TTL seconds", value);
 }
 
 function getReasoningEffortValue(
@@ -183,19 +241,37 @@ function parseReasoningEffort(value: string | null): string | null {
   return trimmedValue;
 }
 
+function assertPolicyCompatibility(values: ModelConnectionEditorValues) {
+  const policyError = validatePolicyCompatibility(
+    values.capabilities,
+    values.outputStrategyPolicy,
+  );
+
+  if (policyError) {
+    throw new Error(policyError);
+  }
+}
+
 function buildCreatePayload(
   values: ModelConnectionEditorValues,
 ): ModelConnectionCreateInput {
   const apiKey = values.apiKey.trim();
+  assertPolicyCompatibility(values);
 
   return {
     key: parseRequiredText("Key", values.key).toLowerCase(),
     name: parseRequiredText("Name", values.name),
     description: values.description.trim() || undefined,
-    apiStyle: values.apiStyle,
+    protocolProfile: values.protocolProfile,
     baseUrl: parseRequiredText("Base URL", values.baseUrl),
     modelId: parseRequiredText("Model ID", values.modelId),
     reasoningEffort: parseReasoningEffort(getReasoningEffortValue(values)),
+    capabilities: toCapabilityWritePayload(values.capabilities),
+    outputStrategyPolicy: values.outputStrategyPolicy,
+    parallelToolCallsPolicy: values.parallelToolCallsPolicy,
+    reasoningPolicy: values.reasoningPolicy,
+    streamingPolicy: values.streamingPolicy,
+    probeCacheTtlSeconds: parseProbeCacheTtlSeconds(values.probeCacheTtlSeconds),
     timeoutSeconds: parseTimeoutSeconds(values.timeoutSeconds),
     ...(apiKey ? { apiKey } : {}),
   };
@@ -205,14 +281,21 @@ function buildUpdatePayload(
   values: ModelConnectionEditorValues,
 ): ModelConnectionUpdateInput {
   const apiKey = values.apiKey.trim();
+  assertPolicyCompatibility(values);
 
   return {
     name: parseRequiredText("Name", values.name),
     description: values.description.trim(),
-    apiStyle: values.apiStyle,
+    protocolProfile: values.protocolProfile,
     baseUrl: parseRequiredText("Base URL", values.baseUrl),
     modelId: parseRequiredText("Model ID", values.modelId),
     reasoningEffort: parseReasoningEffort(getReasoningEffortValue(values)),
+    capabilities: toCapabilityWritePayload(values.capabilities),
+    outputStrategyPolicy: values.outputStrategyPolicy,
+    parallelToolCallsPolicy: values.parallelToolCallsPolicy,
+    reasoningPolicy: values.reasoningPolicy,
+    streamingPolicy: values.streamingPolicy,
+    probeCacheTtlSeconds: parseProbeCacheTtlSeconds(values.probeCacheTtlSeconds),
     timeoutSeconds: parseTimeoutSeconds(values.timeoutSeconds),
     ...(apiKey ? { apiKey } : {}),
   };
@@ -226,10 +309,15 @@ export function ModelConnectionsEditorPage() {
   const createMutation = useCreateModelConnection();
   const updateMutation = useUpdateModelConnection();
   const testConnectionMutation = useTestModelConnection(modelConnectionId);
+  const probeCapabilitiesMutation =
+    useProbeModelConnectionCapabilities(modelConnectionId);
   const [values, setValues] =
     useState<ModelConnectionEditorValues>(initialValues);
   const [connectionFeedback, setConnectionFeedback] =
     useState<ConnectionFeedback | null>(null);
+  const [probeFeedback, setProbeFeedback] = useState<ConnectionFeedback | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!connectionQuery.data) {
@@ -238,10 +326,14 @@ export function ModelConnectionsEditorPage() {
 
     setValues(buildValuesFromConnection(connectionQuery.data));
     setConnectionFeedback(null);
+    setProbeFeedback(null);
   }, [connectionQuery.data]);
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
-  const isBusy = isSaving || testConnectionMutation.isPending;
+  const isBusy =
+    isSaving ||
+    testConnectionMutation.isPending ||
+    probeCapabilitiesMutation.isPending;
   const currentConnectionKind =
     connectionQuery.data?.connectionKind ?? "provider";
 
@@ -250,6 +342,35 @@ export function ModelConnectionsEditorPage() {
     value: ModelConnectionEditorValues[Key],
   ) => {
     setValues((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleProtocolProfileChange = (
+    protocolProfile: ModelConnectionProtocolProfile,
+  ) => {
+    setValues((current) => ({
+      ...current,
+      capabilities: capabilitiesForProtocolProfile(
+        current.capabilities,
+        protocolProfile,
+      ),
+      protocolProfile,
+    }));
+  };
+
+  const updateCapabilityStatus = (
+    capabilityKey: keyof ModelConnectionCapabilities,
+    status: ModelConnectionCapabilityStatus,
+  ) => {
+    setValues((current) => ({
+      ...current,
+      capabilities: {
+        ...current.capabilities,
+        [capabilityKey]: {
+          ...current.capabilities[capabilityKey],
+          status,
+        },
+      },
+    }));
   };
 
   const handleSave = async () => {
@@ -281,8 +402,8 @@ export function ModelConnectionsEditorPage() {
   const handleTestConnection = async () => {
     if (!modelConnectionId) {
       setConnectionFeedback({
-        message: "Save the model connection before testing it.",
-        title: "Connection unavailable",
+        message: "Save the model connection before testing reachability.",
+        title: "Reachability test unavailable",
         variant: "destructive",
       });
       return;
@@ -292,7 +413,7 @@ export function ModelConnectionsEditorPage() {
       const result = await testConnectionMutation.mutateAsync();
       setConnectionFeedback({
         message: result.message,
-        title: result.ok ? "Connection succeeded" : "Connection failed",
+        title: result.ok ? "Reachability succeeded" : "Reachability failed",
         variant: result.ok ? "default" : "destructive",
       });
       toast[result.ok ? "success" : "error"](result.message);
@@ -300,10 +421,55 @@ export function ModelConnectionsEditorPage() {
       const message =
         error instanceof Error
           ? error.message
-          : "Failed to test model connection";
+          : "Failed to test model connection reachability";
       setConnectionFeedback({
         message,
-        title: "Connection test failed",
+        title: "Reachability test failed",
+        variant: "destructive",
+      });
+      toast.error(message);
+    }
+  };
+
+  const handleProbeCapabilities = async () => {
+    if (!modelConnectionId) {
+      setProbeFeedback({
+        message: "Save the model connection before probing capabilities.",
+        title: "Capability probe unavailable",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const result = await probeCapabilitiesMutation.mutateAsync({
+        capabilityKeys: [...PROBE_CAPABILITY_KEYS],
+        refresh: true,
+      });
+      setValues((current) => ({
+        ...current,
+        capabilities: normalizeCapabilities(
+          current.protocolProfile,
+          result.capabilities,
+        ),
+        probeCacheTtlSeconds: String(result.probeCacheTtlSeconds),
+      }));
+      setProbeFeedback({
+        message: `${formatCapabilitySummary(result.capabilities)} · ${
+          result.cached ? "served from probe cache" : "fresh probe recorded"
+        }`,
+        title: "Capability probe completed",
+        variant: "default",
+      });
+      toast.success("Capability probe completed");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to probe model capabilities";
+      setProbeFeedback({
+        message,
+        title: "Capability probe failed",
         variant: "destructive",
       });
       toast.error(message);
@@ -350,7 +516,8 @@ export function ModelConnectionsEditorPage() {
             {isEditing ? "Edit Model Connection" : "Create Model Connection"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Save provider endpoints and runtime defaults.
+            Save protocol profiles, capability declarations, and runtime
+            policies for workflow packages.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -365,6 +532,16 @@ export function ModelConnectionsEditorPage() {
             Test Connection
           </Button>
           <Button
+            data-testid="model-connection-probe"
+            disabled={isBusy}
+            size="sm"
+            variant="outline"
+            onClick={() => void handleProbeCapabilities()}
+          >
+            <Radar data-icon="inline-start" />
+            Probe Required Capabilities
+          </Button>
+          <Button
             data-testid="model-connection-save"
             disabled={isSaving}
             size="sm"
@@ -374,6 +551,11 @@ export function ModelConnectionsEditorPage() {
             Save Model Connection
           </Button>
         </div>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Test Connection checks reachability on the saved endpoint only.
+          Probe Required Capabilities refreshes the capability summary and
+          policy readiness separately.
+        </p>
       </div>
 
       {connectionFeedback ? (
@@ -391,11 +573,22 @@ export function ModelConnectionsEditorPage() {
         </Alert>
       ) : null}
 
+      {probeFeedback ? (
+        <Alert
+          data-testid="model-connection-probe-feedback"
+          variant={probeFeedback.variant}
+        >
+          {probeFeedback.variant === "default" ? <CheckCircle2 /> : <XCircle />}
+          <AlertTitle>{probeFeedback.title}</AlertTitle>
+          <AlertDescription>{probeFeedback.message}</AlertDescription>
+        </Alert>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Connection details</CardTitle>
           <CardDescription>
-            Enter the provider base URL exactly.
+            Enter the model endpoint identity and protocol-compatible base URL.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -458,33 +651,35 @@ export function ModelConnectionsEditorPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="model-connection-api-style">API Style</Label>
+              <Label htmlFor="model-connection-protocol-profile">
+                Protocol Profile
+              </Label>
               <Select
-                value={values.apiStyle}
+                value={values.protocolProfile}
                 disabled={isSaving}
-                onValueChange={(value: ModelConnectionApiStyle) =>
-                  updateValue("apiStyle", value)
+                onValueChange={(value: ModelConnectionProtocolProfile) =>
+                  handleProtocolProfileChange(value)
                 }
               >
                 <SelectTrigger
-                  id="model-connection-api-style"
-                  aria-label="API Style"
+                  id="model-connection-protocol-profile"
+                  aria-label="Protocol Profile"
                 >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value="responses">
-                      {API_STYLE_LABELS.responses}
+                    <SelectItem value="openai_responses">
+                      {PROTOCOL_PROFILE_LABELS.openai_responses}
                     </SelectItem>
-                    <SelectItem value="chat_completions">
-                      {API_STYLE_LABELS.chat_completions}
+                    <SelectItem value="openai_chat_completions">
+                      {PROTOCOL_PROFILE_LABELS.openai_chat_completions}
                     </SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
-                Chat Completions is for third-party chat models.
+                {PROTOCOL_PROFILE_DESCRIPTIONS[values.protocolProfile]}
               </p>
             </div>
             <div className="space-y-2">
@@ -568,6 +763,225 @@ export function ModelConnectionsEditorPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Capability summary</CardTitle>
+          <CardDescription>
+            Summarize what this endpoint can support. Probe results and manual
+            overrides stay separate from the reachability test.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            {SUMMARY_CAPABILITY_KEYS.map((capabilityKey) => {
+              const capability = values.capabilities[capabilityKey];
+
+              return (
+                <div
+                  key={capabilityKey}
+                  className="rounded-lg border bg-muted/30 p-3"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium text-foreground">
+                      {CAPABILITY_LABEL_BY_KEY[capabilityKey]}
+                    </p>
+                    <Badge
+                      variant={
+                        capability.status === "unsupported"
+                          ? "destructive"
+                          : "secondary"
+                      }
+                    >
+                      {CAPABILITY_STATUS_LABELS[capability.status]}
+                    </Badge>
+                  </div>
+                  {capability.detail ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {capability.detail}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {CAPABILITY_DEFINITIONS.map(({ key, label }) => (
+              <div key={key} className="space-y-2">
+                <Label htmlFor={`model-connection-capability-${key}`}>
+                  {label}
+                </Label>
+                <Select
+                  value={values.capabilities[key].status}
+                  disabled={isSaving}
+                  onValueChange={(status: ModelConnectionCapabilityStatus) =>
+                    updateCapabilityStatus(key, status)
+                  }
+                >
+                  <SelectTrigger
+                    id={`model-connection-capability-${key}`}
+                    aria-label={`${label} capability`}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {CAPABILITY_STATUS_OPTIONS.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {CAPABILITY_STATUS_LABELS[status]}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Policy controls</CardTitle>
+          <CardDescription>
+            Choose how strictly runtime should require structured output, tools,
+            reasoning hints, and streaming support.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="model-connection-output-policy">
+              Output Strategy Policy
+            </Label>
+            <Select
+              value={values.outputStrategyPolicy}
+              disabled={isSaving}
+              onValueChange={(value: ModelConnectionOutputStrategyPolicy) =>
+                updateValue("outputStrategyPolicy", value)
+              }
+            >
+              <SelectTrigger
+                id="model-connection-output-policy"
+                aria-label="Output Strategy Policy"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {OUTPUT_STRATEGY_POLICY_OPTIONS.map((policy) => (
+                    <SelectItem key={policy} value={policy}>
+                      {OUTPUT_STRATEGY_POLICY_LABELS[policy]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="model-connection-parallel-tools-policy">
+              Parallel Tool Calls Policy
+            </Label>
+            <Select
+              value={values.parallelToolCallsPolicy}
+              disabled={isSaving}
+              onValueChange={(value: ModelConnectionParallelToolCallsPolicy) =>
+                updateValue("parallelToolCallsPolicy", value)
+              }
+            >
+              <SelectTrigger
+                id="model-connection-parallel-tools-policy"
+                aria-label="Parallel Tool Calls Policy"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {PARALLEL_TOOL_CALLS_POLICY_OPTIONS.map((policy) => (
+                    <SelectItem key={policy} value={policy}>
+                      {PARALLEL_TOOL_CALLS_POLICY_LABELS[policy]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="model-connection-reasoning-policy">
+              Reasoning Policy
+            </Label>
+            <Select
+              value={values.reasoningPolicy}
+              disabled={isSaving}
+              onValueChange={(value: ModelConnectionReasoningPolicy) =>
+                updateValue("reasoningPolicy", value)
+              }
+            >
+              <SelectTrigger
+                id="model-connection-reasoning-policy"
+                aria-label="Reasoning Policy"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {REASONING_POLICY_OPTIONS.map((policy) => (
+                    <SelectItem key={policy} value={policy}>
+                      {REASONING_POLICY_LABELS[policy]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="model-connection-streaming-policy">
+              Streaming Policy
+            </Label>
+            <Select
+              value={values.streamingPolicy}
+              disabled={isSaving}
+              onValueChange={(value: ModelConnectionStreamingPolicy) =>
+                updateValue("streamingPolicy", value)
+              }
+            >
+              <SelectTrigger
+                id="model-connection-streaming-policy"
+                aria-label="Streaming Policy"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {STREAMING_POLICY_OPTIONS.map((policy) => (
+                    <SelectItem key={policy} value={policy}>
+                      {STREAMING_POLICY_LABELS[policy]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="model-connection-probe-cache-ttl">
+              Probe Cache TTL Seconds
+            </Label>
+            <Input
+              id="model-connection-probe-cache-ttl"
+              aria-label="Probe Cache TTL Seconds"
+              disabled={isSaving}
+              inputMode="numeric"
+              value={values.probeCacheTtlSeconds}
+              onChange={(event) =>
+                updateValue("probeCacheTtlSeconds", event.target.value)
+              }
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Credentials & health</CardTitle>
           <CardDescription>
             {currentConnectionKind === "deterministic_smoke"
@@ -600,8 +1014,8 @@ export function ModelConnectionsEditorPage() {
                   }
                 >
                   {connectionQuery.data.lastTestOk
-                    ? "Last test passed"
-                    : "Last test failed"}
+                    ? "Last reachability test passed"
+                    : "Last reachability test failed"}
                 </Badge>
                 <span>{formatDateTime(connectionQuery.data.lastTestedAt)}</span>
               </div>
@@ -611,7 +1025,7 @@ export function ModelConnectionsEditorPage() {
             </div>
           ) : (
             <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-              No connection test has been recorded yet.
+              No reachability test has been recorded yet.
             </div>
           )}
         </CardContent>

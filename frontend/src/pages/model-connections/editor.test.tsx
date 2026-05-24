@@ -2,30 +2,53 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ModelConnectionsEditorPage } from "./editor";
+import { createDefaultCapabilities } from "./model-connection-ui";
 
 const navigateMock = vi.fn();
 const paramsMock: { modelConnectionId?: string } = {};
 const createModelConnectionMock = vi.fn();
+const probeModelConnectionMock = vi.fn();
 const testModelConnectionMock = vi.fn();
 const updateModelConnectionMock = vi.fn();
 const useModelConnectionMock = vi.fn();
 const toastErrorMock = vi.fn();
 const toastSuccessMock = vi.fn();
 
+const existingCapabilities = {
+  ...createDefaultCapabilities("openai_chat_completions"),
+  nativeToolCalls: {
+    detail: "Tool calls rejected by fixture.",
+    lastProbedAt: "2026-04-22T08:20:00Z",
+    status: "unsupported" as const,
+  },
+  strictJsonSchemaOutput: {
+    detail: "Strict schema accepted.",
+    lastProbedAt: "2026-04-22T08:20:00Z",
+    status: "supported" as const,
+  },
+};
+
 const existingConnection = {
-  apiStyle: "chat_completions",
   baseUrl: "https://provider.example.test/v1/",
+  capabilities: existingCapabilities,
   connectionKind: "deterministic_smoke",
   createdAt: "2026-04-21T12:00:00Z",
-  description: "Production OpenAI connection.",
+  description: "Production compatible endpoint.",
   id: 4,
-  key: "primary_openai",
+  key: "primary_compatible",
+  lastProbedAt: "2026-04-22T08:20:00Z",
   lastTestMessage: "Healthy",
   lastTestOk: true,
   lastTestedAt: "2026-04-22T08:30:00Z",
-  modelId: "gpt-4.1",
-  name: "Primary OpenAI",
+  modelId: "fake-tools-disabled",
+  name: "Primary Compatible",
+  outputStrategyPolicy: "prefer_strict_schema",
+  parallelToolCallsPolicy: "serialize",
+  probeCacheTtlSeconds: 900,
+  protocolProfile: "openai_chat_completions",
   reasoningEffort: "high",
+  reasoningPolicy: "allow",
+  streamingPolicy: "allow",
   timeoutSeconds: 90,
   updatedAt: "2026-04-22T08:31:00Z",
 };
@@ -54,6 +77,10 @@ vi.mock("@/hooks/use-model-connections", () => ({
   }),
   useModelConnection: (modelConnectionId?: string) =>
     useModelConnectionMock(modelConnectionId),
+  useProbeModelConnectionCapabilities: () => ({
+    isPending: false,
+    mutateAsync: probeModelConnectionMock,
+  }),
   useTestModelConnection: () => ({
     isPending: false,
     mutateAsync: testModelConnectionMock,
@@ -66,13 +93,13 @@ vi.mock("@/hooks/use-model-connections", () => ({
 
 function fillRequiredCreateFields() {
   fireEvent.change(screen.getByLabelText(/^Name$/i), {
-    target: { value: "Primary OpenAI" },
+    target: { value: "Primary Compatible" },
   });
   fireEvent.change(screen.getByLabelText(/^Key$/i), {
-    target: { value: "primary_openai" },
+    target: { value: "primary_compatible" },
   });
   fireEvent.change(screen.getByLabelText(/^Model ID$/i), {
-    target: { value: "gpt-4.1" },
+    target: { value: "fake-tools-disabled" },
   });
 }
 
@@ -88,6 +115,7 @@ describe("ModelConnectionsEditorPage", () => {
     paramsMock.modelConnectionId = undefined;
     createModelConnectionMock.mockReset();
     navigateMock.mockReset();
+    probeModelConnectionMock.mockReset();
     testModelConnectionMock.mockReset();
     toastErrorMock.mockReset();
     toastSuccessMock.mockReset();
@@ -129,9 +157,15 @@ describe("ModelConnectionsEditorPage", () => {
       "Model ID",
       "Description",
       "Base URL",
-      "API Style",
+      "Protocol Profile",
       "Timeout Seconds",
       "Reasoning Effort",
+      "Strict JSON schema output capability",
+      "Output Strategy Policy",
+      "Parallel Tool Calls Policy",
+      "Reasoning Policy",
+      "Streaming Policy",
+      "Probe Cache TTL Seconds",
       "API Key",
     ]) {
       expect(screen.getByLabelText(label)).toBeVisible();
@@ -141,8 +175,16 @@ describe("ModelConnectionsEditorPage", () => {
       screen.getByRole("button", { name: /test connection/i }),
     ).toBeVisible();
     expect(
+      screen.getByRole("button", { name: /probe required capabilities/i }),
+    ).toBeVisible();
+    expect(
       screen.getByRole("button", { name: /save model connection/i }),
     ).toBeEnabled();
+    expect(
+      screen.getByText(
+        /test connection checks reachability on the saved endpoint only/i,
+      ),
+    ).toBeVisible();
   });
 
   it("submits a create body without apiKey until one is entered", async () => {
@@ -152,15 +194,7 @@ describe("ModelConnectionsEditorPage", () => {
 
     expect(screen.queryByText("Connection mode:")).not.toBeInTheDocument();
     expect(screen.queryByText("Provider-backed")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/^Name$/i), {
-      target: { value: "Primary OpenAI" },
-    });
-    fireEvent.change(screen.getByLabelText(/^Key$/i), {
-      target: { value: "primary_openai" },
-    });
-    fireEvent.change(screen.getByLabelText(/^Model ID$/i), {
-      target: { value: "gpt-4.1" },
-    });
+    fillRequiredCreateFields();
 
     fireEvent.click(
       screen.getByRole("button", { name: /save model connection/i }),
@@ -169,15 +203,28 @@ describe("ModelConnectionsEditorPage", () => {
     await waitFor(() =>
       expect(createModelConnectionMock).toHaveBeenCalledTimes(1),
     );
-    expect(createModelConnectionMock).toHaveBeenCalledWith({
-      apiStyle: "responses",
-      baseUrl: "https://api.openai.com/v1",
-      key: "primary_openai",
-      modelId: "gpt-4.1",
-      name: "Primary OpenAI",
-      reasoningEffort: "medium",
-      timeoutSeconds: 60,
-    });
+    expect(createModelConnectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseUrl: "https://model-endpoint.example/v1",
+        key: "primary_compatible",
+        modelId: "fake-tools-disabled",
+        name: "Primary Compatible",
+        outputStrategyPolicy: "prefer_strict_schema",
+        parallelToolCallsPolicy: "serialize",
+        probeCacheTtlSeconds: 900,
+        protocolProfile: "openai_responses",
+        reasoningEffort: "medium",
+        reasoningPolicy: "allow",
+        streamingPolicy: "allow",
+        timeoutSeconds: 60,
+      }),
+    );
+    expect(createModelConnectionMock.mock.calls[0][0]).not.toHaveProperty(
+      "apiKey",
+    );
+    expect(createModelConnectionMock.mock.calls[0][0]).not.toHaveProperty(
+      "apiStyle",
+    );
     expect(navigateMock).toHaveBeenCalledWith("/model-connections/9/edit");
   });
 
@@ -324,26 +371,18 @@ describe("ModelConnectionsEditorPage", () => {
     );
   });
 
-  it("submits Chat Completions API style when selected", async () => {
+  it("submits Chat Completions protocol profile when selected", async () => {
     createModelConnectionMock.mockResolvedValue({ id: 10 });
 
     render(<ModelConnectionsEditorPage />);
 
-    fireEvent.change(screen.getByLabelText(/^Name$/i), {
-      target: { value: "Compatible Chat" },
-    });
-    fireEvent.change(screen.getByLabelText(/^Key$/i), {
-      target: { value: "compatible_chat" },
-    });
-    fireEvent.change(screen.getByLabelText(/^Model ID$/i), {
-      target: { value: "third-party-chat" },
-    });
-    const apiStyleSelect = screen.getByLabelText(/^API Style$/i);
-    apiStyleSelect.focus();
-    fireEvent.keyDown(apiStyleSelect, { key: "ArrowDown" });
+    fillRequiredCreateFields();
+    const profileSelect = screen.getByLabelText(/^Protocol Profile$/i);
+    profileSelect.focus();
+    fireEvent.keyDown(profileSelect, { key: "ArrowDown" });
     fireEvent.click(
       await screen.findByRole("option", {
-        name: /^chat completions api$/i,
+        name: /^Chat Completions-compatible$/i,
       }),
     );
     fireEvent.click(
@@ -354,7 +393,10 @@ describe("ModelConnectionsEditorPage", () => {
       expect(createModelConnectionMock).toHaveBeenCalledTimes(1),
     );
     expect(createModelConnectionMock).toHaveBeenCalledWith(
-      expect.objectContaining({ apiStyle: "chat_completions" }),
+      expect.objectContaining({ protocolProfile: "openai_chat_completions" }),
+    );
+    expect(createModelConnectionMock.mock.calls[0][0]).not.toHaveProperty(
+      "apiStyle",
     );
   });
 
@@ -365,7 +407,7 @@ describe("ModelConnectionsEditorPage", () => {
     render(<ModelConnectionsEditorPage />);
 
     expect(screen.getByLabelText(/^API Key$/i)).toHaveValue("");
-    expect(screen.getByLabelText(/^Key$/i)).toHaveValue("primary_openai");
+    expect(screen.getByLabelText(/^Key$/i)).toHaveValue("primary_compatible");
     expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
     expect(screen.getByLabelText(/^Base URL$/i)).toHaveValue(
       "https://provider.example.test/v1/",
@@ -374,12 +416,12 @@ describe("ModelConnectionsEditorPage", () => {
     expect(
       screen.getByText(/optional for deterministic smoke\./i),
     ).toBeVisible();
-    expect(screen.getByText(/last test passed/i)).toBeVisible();
-    expect(screen.getByLabelText(/^API Style$/i)).toHaveTextContent(
-      "Chat Completions API",
+    expect(screen.getByText(/last reachability test passed/i)).toBeVisible();
+    expect(screen.getByLabelText(/^Protocol Profile$/i)).toHaveTextContent(
+      "Chat Completions-compatible",
     );
     fireEvent.change(screen.getByLabelText(/^Name$/i), {
-      target: { value: "Primary OpenAI Updated" },
+      target: { value: "Primary Compatible Updated" },
     });
     fireEvent.click(
       screen.getByRole("button", { name: /save model connection/i }),
@@ -391,14 +433,21 @@ describe("ModelConnectionsEditorPage", () => {
     const updateCall = updateModelConnectionMock.mock.calls[0][0];
     expect(updateCall.modelConnectionId).toBe("4");
     expect(updateCall.payload).toMatchObject({
-      apiStyle: "chat_completions",
       baseUrl: "https://provider.example.test/v1/",
-      description: "Production OpenAI connection.",
-      modelId: "gpt-4.1",
-      name: "Primary OpenAI Updated",
+      capabilities: expect.any(Object),
+      description: "Production compatible endpoint.",
+      modelId: "fake-tools-disabled",
+      name: "Primary Compatible Updated",
+      outputStrategyPolicy: "prefer_strict_schema",
+      parallelToolCallsPolicy: "serialize",
+      probeCacheTtlSeconds: 900,
+      protocolProfile: "openai_chat_completions",
       reasoningEffort: "high",
+      reasoningPolicy: "allow",
+      streamingPolicy: "allow",
       timeoutSeconds: 90,
     });
+    expect(updateCall.payload).not.toHaveProperty("apiStyle");
     expect(updateCall.payload).not.toHaveProperty("apiKey");
   });
 
@@ -417,7 +466,7 @@ describe("ModelConnectionsEditorPage", () => {
     await waitFor(() =>
       expect(screen.getByTestId("model-connection-feedback")).toBeVisible(),
     );
-    expect(screen.getByText(/connection succeeded/i)).toBeVisible();
+    expect(screen.getByText(/reachability succeeded/i)).toBeVisible();
     expect(screen.getByText(/connection ok/i)).toBeVisible();
     expect(toastSuccessMock).toHaveBeenCalledWith("Connection OK");
   });
@@ -437,8 +486,91 @@ describe("ModelConnectionsEditorPage", () => {
     await waitFor(() =>
       expect(screen.getByTestId("model-connection-feedback")).toBeVisible(),
     );
-    expect(screen.getByText(/connection failed/i)).toBeVisible();
+    expect(screen.getByText(/reachability failed/i)).toBeVisible();
     expect(screen.getByText(/key rejected/i)).toBeVisible();
     expect(toastErrorMock).toHaveBeenCalledWith("Key rejected");
+  });
+
+  it("surfaces successful capability probe feedback inline", async () => {
+    paramsMock.modelConnectionId = "4";
+    probeModelConnectionMock.mockResolvedValue({
+      cached: false,
+      capabilities: existingCapabilities,
+      lastProbedAt: "2026-04-22T09:15:00Z",
+      modelConnectionId: 4,
+      probeCacheTtlSeconds: 900,
+      requestedCapabilityKeys: [
+        "textGeneration",
+        "chatCompletions",
+        "responsesApi",
+        "streaming",
+        "nativeToolCalls",
+        "parallelToolCalls",
+        "jsonObjectOutput",
+        "strictJsonSchemaOutput",
+        "reasoningHints",
+        "usageReporting",
+        "systemMessages",
+      ],
+    });
+
+    render(<ModelConnectionsEditorPage />);
+    fireEvent.click(screen.getByTestId("model-connection-probe"));
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("model-connection-probe-feedback"),
+      ).toBeVisible(),
+    );
+    expect(screen.getByText(/capability probe completed/i)).toBeVisible();
+    expect(screen.getByText(/fresh probe recorded/i)).toBeVisible();
+    expect(toastSuccessMock).toHaveBeenCalledWith(
+      "Capability probe completed",
+    );
+  });
+
+  it("blocks impossible strict schema policy combinations", async () => {
+    createModelConnectionMock.mockResolvedValue({ id: 14 });
+
+    render(<ModelConnectionsEditorPage />);
+    fillRequiredCreateFields();
+    const profileSelect = screen.getByLabelText(/^Protocol Profile$/i);
+    profileSelect.focus();
+    fireEvent.keyDown(profileSelect, { key: "ArrowDown" });
+    fireEvent.click(
+      await screen.findByRole("option", {
+        name: /^Chat Completions-compatible$/i,
+      }),
+    );
+    const outputPolicySelect = screen.getByLabelText(
+      /^Output Strategy Policy$/i,
+    );
+    outputPolicySelect.focus();
+    fireEvent.keyDown(outputPolicySelect, { key: "ArrowDown" });
+    fireEvent.click(
+      await screen.findByRole("option", {
+        name: /^Require strict schema$/i,
+      }),
+    );
+    const strictCapabilitySelect = screen.getByLabelText(
+      /^Strict JSON schema output capability$/i,
+    );
+    strictCapabilitySelect.focus();
+    fireEvent.keyDown(strictCapabilitySelect, { key: "ArrowDown" });
+    fireEvent.click(
+      await screen.findByRole("option", {
+        name: /^Unsupported$/i,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /save model connection/i }),
+    );
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith(
+        expect.stringContaining("Strict schema output is required by policy"),
+      ),
+    );
+    expect(createModelConnectionMock).not.toHaveBeenCalled();
   });
 });

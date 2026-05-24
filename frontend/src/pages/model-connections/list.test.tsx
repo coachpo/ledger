@@ -9,6 +9,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ModelConnectionsListPage } from "./list";
+import { createDefaultCapabilities } from "./model-connection-ui";
 
 const {
   deleteModelConnectionMock,
@@ -69,49 +70,118 @@ describe("ModelConnectionsListPage", () => {
       data: {
         items: [
           {
-            apiStyle: "responses",
             baseUrl: "https://api.openai.com/v1",
+            capabilities: {
+              ...createDefaultCapabilities("openai_responses"),
+              strictJsonSchemaOutput: {
+                detail: null,
+                lastProbedAt: null,
+                status: "supported",
+              },
+            },
             connectionKind: "provider",
             description: "Production traffic",
             id: 9,
-            key: "primary_openai",
+            key: "primary_compatible",
+            lastProbedAt: "2026-04-22T07:45:00Z",
             lastTestMessage: "Connection OK",
             lastTestOk: true,
             lastTestedAt: "2026-04-22T08:00:00Z",
             modelId: "gpt-4.1",
-            name: "Primary OpenAI",
+            name: "Primary Compatible",
+            outputStrategyPolicy: "prefer_strict_schema",
+            parallelToolCallsPolicy: "serialize",
+            probeCacheTtlSeconds: 900,
+            protocolProfile: "openai_responses",
             reasoningEffort: null,
+            reasoningPolicy: "allow",
+            streamingPolicy: "allow",
             timeoutSeconds: 90,
           },
           {
-            apiStyle: "chat_completions",
             baseUrl: "https://backup.openai.com/v1",
+            capabilities: {
+              ...createDefaultCapabilities("openai_chat_completions"),
+              nativeToolCalls: {
+                detail: "Tool calls rejected by fixture.",
+                lastProbedAt: "2026-04-21T07:30:00Z",
+                status: "unsupported",
+              },
+            },
             connectionKind: "deterministic_smoke",
             description: "Fallback traffic",
             id: 4,
             key: "legacy_backup",
+            lastProbedAt: "2026-04-21T07:30:00Z",
             lastTestMessage: "Key rejected",
             lastTestOk: false,
             lastTestedAt: "2026-04-21T08:00:00Z",
             modelId: "gpt-4o-mini",
             name: "Legacy Backup",
+            outputStrategyPolicy: "allow_json_object_validation",
+            parallelToolCallsPolicy: "forbid",
+            probeCacheTtlSeconds: 300,
+            protocolProfile: "openai_chat_completions",
             reasoningEffort: "xhigh",
+            reasoningPolicy: "forbid",
+            streamingPolicy: "forbid",
             timeoutSeconds: 45,
           },
           {
-            apiStyle: "responses",
             baseUrl: "https://literal.openai.com/v1",
+            capabilities: createDefaultCapabilities("openai_responses"),
             connectionKind: "provider",
             description: "Literal none reasoning value",
             id: 12,
             key: "literal_none",
+            lastProbedAt: null,
             lastTestMessage: null,
             lastTestOk: null,
             lastTestedAt: null,
             modelId: "gpt-none-literal",
             name: "Literal None",
+            outputStrategyPolicy: "allow_plain_text",
+            parallelToolCallsPolicy: "allow",
+            probeCacheTtlSeconds: 1200,
+            protocolProfile: "openai_responses",
             reasoningEffort: "none",
+            reasoningPolicy: "allow",
+            streamingPolicy: "allow",
             timeoutSeconds: 30,
+          },
+          {
+            baseUrl: "https://reasoning-blocked.openai.com/v1",
+            capabilities: {
+              ...createDefaultCapabilities("openai_chat_completions"),
+              reasoningHints: {
+                detail: "Reasoning hints are unsupported by this fixture.",
+                lastProbedAt: "2026-04-20T07:30:00Z",
+                status: "unsupported",
+              },
+              usageReporting: {
+                detail: "Usage metadata was not reported.",
+                lastProbedAt: "2026-04-20T07:31:00Z",
+                status: "unsupported",
+              },
+            },
+            connectionKind: "provider",
+            description: "Unsupported reasoning and usage metadata",
+            id: 18,
+            key: "reasoning_blocked",
+            lastProbedAt: "2026-04-20T07:31:00Z",
+            lastTestMessage: "Reasoning hints rejected",
+            lastTestOk: false,
+            lastTestedAt: "2026-04-20T07:35:00Z",
+            modelId: "gpt-blocked-reasoning",
+            name: "Reasoning Blocked",
+            outputStrategyPolicy: "prefer_strict_schema",
+            parallelToolCallsPolicy: "serialize",
+            probeCacheTtlSeconds: 900,
+            protocolProfile: "openai_chat_completions",
+            reasoningEffort: "high",
+            reasoningPolicy: "allow",
+            streamingPolicy: "allow",
+            timeoutSeconds: 60,
           },
         ],
       },
@@ -156,16 +226,19 @@ describe("ModelConnectionsListPage", () => {
     render(<ModelConnectionsListPage />);
 
     expect(
-      screen.getByText(/workflow packages reference by stable key/i),
+      screen.getByText(/manage live model endpoints, credentials, protocol profiles/i),
     ).toBeVisible();
     expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
-    expect(screen.getAllByText("Responses API")).toHaveLength(4);
-    expect(screen.getByText("Chat Completions API")).toBeVisible();
+    expect(screen.getAllByText("Responses-compatible")).toHaveLength(4);
+    expect(screen.getAllByText("Chat Completions-compatible")).toHaveLength(4);
     expect(screen.getByText(/^Omitted$/)).toBeVisible();
     expect(screen.getByText(/^xhigh$/)).toBeVisible();
     expect(screen.getByText(/^none$/)).toBeVisible();
+    expect(screen.getByText(/^high$/)).toBeVisible();
+    expect(screen.getByText(/Usage reporting: Unsupported/i)).toBeVisible();
+    expect(screen.getByText(/Reasoning hints: Unsupported/i)).toBeVisible();
     expect(screen.queryByText(/^medium$/)).not.toBeInTheDocument();
     expect(screen.queryByText("Provider-backed")).not.toBeInTheDocument();
     expect(screen.queryByText("Deterministic smoke")).not.toBeInTheDocument();
@@ -174,13 +247,13 @@ describe("ModelConnectionsListPage", () => {
 
     fireEvent.keyDown(
       screen.getByRole("button", {
-        name: "Open actions for model connection Primary OpenAI",
+        name: "Open actions for model connection Primary Compatible",
       }),
       { key: "Enter" },
     );
     fireEvent.click(screen.getByTestId("model-connections-delete-9"));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
-      "Delete Primary OpenAI?",
+      "Delete Primary Compatible?",
     );
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Deletion is blocked while current workflow packages reference its stable key.",
@@ -208,7 +281,7 @@ describe("ModelConnectionsListPage", () => {
       screen.getByRole("textbox", { name: "Search model connections" }),
     ).toHaveAttribute(
       "placeholder",
-      "Search connections by name, key, model, or URL...",
+      "Search by name, key, model, protocol, capability, or policy...",
     );
     expect(screen.getByLabelText("Cards view")).toHaveAttribute(
       "data-state",
@@ -222,7 +295,7 @@ describe("ModelConnectionsListPage", () => {
     expect(
       within(screen.getByTestId("model-connections-row-9")).queryByRole(
         "checkbox",
-        { name: "Select model connection Primary OpenAI" },
+        { name: "Select model connection Primary Compatible" },
       ),
     ).not.toBeInTheDocument();
 
@@ -244,7 +317,7 @@ describe("ModelConnectionsListPage", () => {
     expect(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
         "checkbox",
-        { name: "Select model connection Primary OpenAI" },
+        { name: "Select model connection Primary Compatible" },
       ),
     ).toBeVisible();
 
@@ -252,8 +325,10 @@ describe("ModelConnectionsListPage", () => {
       "Name",
       "Model",
       "Base URL",
-      "Runtime Defaults",
-      "Last Test",
+      "Protocol Profile",
+      "Capability Summary",
+      "Policy Controls",
+      "Reachability Test",
       "Actions",
     ]) {
       expect(screen.getByRole("columnheader", { name: column })).toBeVisible();
@@ -265,12 +340,27 @@ describe("ModelConnectionsListPage", () => {
     );
     fireEvent.click(screen.getByTestId("model-connections-delete-9"));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
-      "Delete Primary OpenAI?",
+      "Delete Primary Compatible?",
     );
   });
 
   it("filters the sorted model connection inventory locally", () => {
     render(<ModelConnectionsListPage />);
+
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Search model connections" }),
+      { target: { value: "responses-compatible" } },
+    );
+
+    expect(
+      screen.getByTestId("model-connections-row-9"),
+    ).toBeVisible();
+    expect(
+      screen.getByTestId("model-connections-row-12"),
+    ).toBeVisible();
+    expect(
+      screen.queryByTestId("model-connections-row-4"),
+    ).not.toBeInTheDocument();
 
     fireEvent.change(
       screen.getByRole("textbox", { name: "Search model connections" }),
@@ -306,10 +396,10 @@ describe("ModelConnectionsListPage", () => {
     fireEvent.click(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
         "checkbox",
-        { name: "Select model connection Primary OpenAI" },
+        { name: "Select model connection Primary Compatible" },
       ),
     );
-    expect(screen.getByText("1 of 3 model connections selected")).toBeVisible();
+    expect(screen.getByText("1 of 4 model connections selected")).toBeVisible();
     const bulkActions = screen.getByTestId("model-connections-bulk-actions");
     expect(bulkActions).toBeVisible();
     expect(screen.getByRole("table").compareDocumentPosition(bulkActions)).toBe(
@@ -360,15 +450,15 @@ describe("ModelConnectionsListPage", () => {
     fireEvent.click(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
         "checkbox",
-        { name: "Select model connection Primary OpenAI" },
+        { name: "Select model connection Primary Compatible" },
       ),
     );
-    expect(screen.getByText("1 of 3 model connections selected")).toBeVisible();
+    expect(screen.getByText("1 of 4 model connections selected")).toBeVisible();
 
     fireEvent.click(screen.getByLabelText("Cards view"));
 
     expect(
-      screen.queryByText("1 of 3 model connections selected"),
+      screen.queryByText("1 of 4 model connections selected"),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("checkbox", {
@@ -380,7 +470,7 @@ describe("ModelConnectionsListPage", () => {
     expect(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
         "checkbox",
-        { name: "Select model connection Primary OpenAI" },
+        { name: "Select model connection Primary Compatible" },
       ),
     ).toHaveAttribute("aria-checked", "false");
     expect(
@@ -403,7 +493,7 @@ describe("ModelConnectionsListPage", () => {
     render(<ModelConnectionsListPage />);
     fireEvent.keyDown(
       screen.getByRole("button", {
-        name: "Open actions for model connection Primary OpenAI",
+        name: "Open actions for model connection Primary Compatible",
       }),
       { key: "Enter" },
     );
