@@ -1,6 +1,6 @@
 # Test Plan
 
-> Status: Live automated-coverage reference for branch `main` at `f9ae90d`.
+> Status: Live automated-coverage reference for branch `main` at `adc9887`.
 
 ## Backend Quality Gates
 
@@ -10,7 +10,7 @@
 - `uv run mypy app`
 - `uv run pytest`
 
-Backend tests cover preserved `/api/v1` CRUD, templates, reports, artifact-only workflow package dependency persistence, launch/preflight readiness, capability-aware model-connection probes, protocol-profile and policy validation, rerun/fork draft readiness, package import/export with inline private MCP `env`, `headers`, and `query` values, model connections, slim bundled extension state, extension-filtered global tools, package runtime behavior, Model Gateway adapter execution, structured-output strategy selection, native tool-call capability enforcement, provider error normalization, frozen run-owned runtime-profile provenance, backend-owned run progress and queue read models, explicit scheduler worker semantics, dependency-only run extension records, ref-based public invocation payloads, native runtime tools, core memory schemas/services/tools, package-qualified memory scopes, shared-memory mutation conflicts, persisted run memory evidence, historical agent-memory report behavior, trace metadata, global runs, DB upgrades, and removed-route guarantees.
+Backend coverage must prove preserved `/api/v1` finance CRUD, template/report behavior, package-first platform contracts, Model Gateway behavior, native runtime tools, memory services, scheduler semantics, run provenance, and removed-route guarantees.
 
 ## Frontend Quality Gates
 
@@ -20,21 +20,57 @@ Backend tests cover preserved `/api/v1` CRUD, templates, reports, artifact-only 
 - `pnpm test:run`
 - `pnpm test:e2e`
 
-Frontend tests cover API helpers, query keys, formatting helpers, markdown formatting, portfolio analytics, workflow package helpers, authoring-only package editor flows, Model Connections protocol-profile editing, capability summary rendering, separate reachability-test and capability-probe actions, dedicated `/workflow-packages/:packageId/run` launch page behavior, capability blocker and warning rendering, backend progress/queue consumption in run pages, rerun/fork current-readiness gating, run-detail effective runtime-profile rendering, run-detail memory evidence rendering, layout routing, and browser E2E route families.
+Frontend coverage must prove API helpers, query keys, formatting helpers, portfolio analytics, template/report flows, Workflow Package authoring, package secret bindings, dedicated launch page behavior, Model Connections, Extensions, Tools, Runs, run detail evidence, memory evidence rendering, and removed-route absence.
+
+## Contract Coverage Matrix
+
+| Surface | Required coverage |
+|---|---|
+| API conventions | Error envelope shape, camelCase aliases, decimal string serialization, multipart upload routes, and `422` validation behavior. |
+| Preserved finance routes | Portfolio, balance, position, CSV import, trade, quote/history, template, and report route families under `/api/v1`. |
+| Extension state | `GET/PATCH /api/extensions` exposes only `key`, `label`, and `enabled`; finance-owned routes/nav/tools are hidden when disabled while platform-core memory tools remain visible. |
+| Workflow Packages | YAML parser rejects aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate refs, raw ids, and unsupported `spec.skills`; package reads/writes do not expose live status. |
+| Package secrets and HTTP ops | Secret binding CRUD masks values; HTTP nodes allow only supported methods, keep secrets in request fields only, redact metadata, validate responses, and persist operation invocation rows. |
+| Model Connections | Protocol profile validation, secret preservation/rotation, reachability test, capability probe cache, policy defaults, and secret-safe reads/errors. |
+| Tools | Server-declared `/api/tools` catalog, extension filtering, OpenAI function names, finance-owned data tools, social sentiment, report lookup, and platform memory tools. |
+| Runs | Launch, scheduler queue semantics, progress read model, run-owned package snapshots, resolved model runtime profile provenance, rerun, fork, operation cards, extension dependencies, trace/span ids, and memory evidence. |
+| Runtime inputs | JSON Schema `title` and `description` render as display metadata only; unsupported help-text/schema mechanisms remain rejected or ignored according to schema rules. |
+| Memory | Core schemas, write/reuse/supersede semantics, scoped lookup fallback, conflict handling, runtime tools, run memory events, and report-domain separation. |
+| Removed surfaces | Backend and frontend absence for `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtests, and removed global authoring routes. |
+
+## Backend Test Scope
+
+Backend tests cover preserved `/api/v1` CRUD, templates, reports, artifact-only workflow package dependency persistence, launch/preflight readiness, capability-aware model-connection probes, protocol-profile and policy validation, rerun/fork draft readiness, package import/export with inline private MCP `env`, `headers`, and `query`, package secret bindings, HTTP operation execution, model connections, slim bundled extension state, extension-filtered tools, Model Gateway adapter execution, structured-output strategy selection, native tool-call capability enforcement, provider error normalization, frozen run-owned runtime-profile provenance, backend-owned run progress and queue read models, explicit scheduler worker semantics, dependency-only run extension records, ref-based invocation payloads, runtime tools, core memory schemas/services/tools, package-qualified memory scopes, shared-memory conflicts, persisted run memory evidence, trace metadata, global runs, DB upgrades, and removed-route guarantees.
+
+## Frontend Test Scope
+
+Frontend tests cover API helpers, query keys, formatting helpers, markdown formatting, portfolio analytics, workflow package helpers, authoring-only package editor flows, package secret binding UI, Model Connections protocol-profile editing, capability summary rendering, separate reachability-test and capability-probe actions, dedicated launch page behavior, capability blocker and warning rendering, backend progress/queue consumption, rerun/fork current-readiness gating, run-detail operation cards, effective runtime-profile rendering, memory evidence rendering, layout routing, and browser E2E route families.
 
 ## E2E Scope
 
 Playwright uses Chromium only. `frontend/playwright.config.ts` starts a dedicated backend on `8001` and built frontend preview on `4173`.
 
-The backend helper starts the explicit run scheduler worker alongside the Uvicorn backend on `8001` for the Playwright run. It defaults `QUOTE_PROVIDER_BACKEND=deterministic`. The frontend helper builds first, previews with `--strictPort`, and defaults `VITE_API_BASE_URL=http://127.0.0.1:8001/api/v1`.
+The backend helper starts the explicit run scheduler worker alongside Uvicorn for the Playwright run and defaults `QUOTE_PROVIDER_BACKEND=deterministic`. The frontend helper builds first, previews with `--strictPort`, and defaults `VITE_API_BASE_URL=http://127.0.0.1:8001/api/v1`.
 
 Specs use API-assisted setup when it keeps UI assertions focused. Preserved product setup uses `/api/v1`; platform setup uses `/api`.
 
-Route-family coverage includes smoke/navigation, portfolio CRUD, reports/templates, the `/extensions` state page, Workflow Packages, Model Connections, Runs, run detail fixtures, package import/export flows, authoring-only package editor behavior, the dedicated `/workflow-packages/:packageId/run` page labeled `Launch Workflow Package`, extension enable/disable gating, and the TradingAgents smoke package as ordinary demo data. Compatibility E2E coverage uses deterministic or fake OpenAI-compatible providers for strict schema, JSON-object fallback, missing native tool-call support, unsupported reasoning fields, and missing usage metadata without live external network dependencies. Frontend removed-route assertions cover `/templates/seed`, `/tryout*`, `/studio*`, `/orchestration*`, `/backtests*`, hidden removed navigation entries, and the absence of live global-authoring routes from the router. Backend removed-surface coverage separately guards `/api/skills` and the removed global-authoring API families.
+Route-family coverage includes smoke/navigation, portfolio CRUD, reports/templates, the `/extensions` state page, Workflow Packages, Model Connections, Runs, run detail fixtures, package import/export flows, package secret bindings, authoring-only package editor behavior, the dedicated `/workflow-packages/:packageId/run` page labeled `Launch Workflow Package`, extension enable/disable gating, and the TradingAgents smoke package as ordinary demo data.
+
+Compatibility E2E coverage uses deterministic or fake OpenAI-compatible providers for strict schema, JSON-object fallback, missing native tool-call support, unsupported reasoning fields, and missing usage metadata without live external network dependencies.
+Frontend removed-route assertions cover `/templates/seed`, `/tryout*`, `/studio*`, `/orchestration*`, `/backtests*`, hidden removed navigation entries, and absence of live global-authoring routes from the router. Backend removed-surface coverage separately guards `/api/skills` and removed global-authoring API families.
+
+## Focused Verification Targets
+
+Use targeted checks when these contracts change:
+
+```bash
+(cd backend && uv run pytest tests/test_workflow_package_preflight.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_run_contracts.py tests/test_runtime_tools.py tests/test_mcp_runtime.py tests/test_memory_domain_schemas.py tests/test_memory_service.py tests/test_runtime_db_upgrades.py tests/test_legacy_backend_cutover.py)
+(cd frontend && pnpm test:run src/pages/workflow-packages src/pages/model-connections src/pages/runs src/routes.test.tsx src/platform-clean-break.test.ts)
+```
 
 ## Extension Metadata Absence Guard
 
-The final cleanup guard searches live code, docs, and AGENTS files for removed public extension metadata names. Allowed matches are destructive upgrade code in `backend/app/db/upgrades.py`, explicit negative-validation tests, upgrade-normalization tests that prove old data is removed or normalized, and private initial-enabled seed wiring in the backend registry/service. Live docs and AGENTS files are not exceptions.
+The final cleanup guard searches live code, docs, and AGENTS files for removed public extension metadata names. Allowed matches are destructive upgrade code, explicit negative-validation tests, upgrade-normalization tests, and private initial-enabled seed wiring. Live docs and AGENTS files are not exceptions.
 
 ```bash
 rg -n "disabled""Reason|disabled_""reason|state""Version|state_""version|contribution""Categories|contribution_""categories|versioning""Rule|versioning_""rule|default""Enabled|default_""enabled|Extension""ContributionRead|extension""Snapshots|extension_""snapshots|Run""ExtensionSnapshotRead" backend frontend docs AGENTS.md -g '!frontend/retired/**' -g '!frontend/dist/**' -g '!backend/.venv/**' -g '!backend/.mypy_cache/**' -g '!backend/.pytest_cache/**'
