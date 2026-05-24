@@ -29,15 +29,32 @@ from app.schemas.memory import (
     MemorySubjectRef,
     MemoryWriteRequest,
 )
+from app.schemas.model_connection import default_model_connection_capabilities
 from app.services.agent_execution_service import AgentExecutionService, RunAgentInvocationResult
 from app.services.extension_service import ExtensionService
 from app.services.memory_service import MemoryLookupContext, MemoryService
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
+from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from tests.test_workflow_package_manifest_http_node import (
     assert_removed_contract_tokens_absent,
     http_node_package_source,
 )
+
+_EXPECTED_STRUCTURED_OUTPUT_WARNING = {
+    "field": "spec.outputSchemas.summary_output.jsonSchema",
+    "code": "model_capability_probe_inconclusive",
+    "issue": (
+        "This workflow requires structured JSON output, but strict JSON-schema output has "
+        "not been proven yet."
+    ),
+    "severity": "warning",
+}
+_EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING = {
+    "ready": True,
+    "blockingErrors": [],
+    "warnings": [_EXPECTED_STRUCTURED_OUTPUT_WARNING],
+}
 
 
 class _RuntimeOpenAIUsage:
@@ -812,19 +829,24 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
             "key": "package_runtime_model",
             "name": "Package Runtime Model",
             "connectionKind": "provider",
+            "protocolProfile": "openai_responses",
             "baseUrl": "https://runtime-v1.example.com/v1",
             "modelId": "gpt-package-v1",
             "reasoningEffort": "high",
+            "capabilities": default_model_connection_capabilities(
+                "openai_responses"
+            ).model_dump(mode="json", by_alias=True),
+            "outputStrategyPolicy": "prefer_strict_schema",
+            "parallelToolCallsPolicy": "serialize",
+            "reasoningPolicy": "allow",
+            "streamingPolicy": "allow",
+            "probeCacheTtlSeconds": 900,
             "apiStyle": "responses",
             "timeoutSeconds": 31,
             "hasApiKey": True,
         }
     ]
-    assert provenance["preflightSummary"] == {
-        "ready": True,
-        "blockingErrors": [],
-        "warnings": [],
-    }
+    assert provenance["preflightSummary"] == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
     assert provenance["currentPackage"]["available"] is True
     assert "status" not in provenance["currentPackage"]
     assert provenance["currentPackage"]["manifestHashMatchesSnapshot"] is True
@@ -838,7 +860,17 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     assert rerun_draft.status_code == 200, rerun_draft.json()
     rerun_provenance = cast(dict[str, Any], rerun_draft.json()["packageProvenance"])
     assert rerun_provenance["workflowPackageKey"] == "provenance_filter_package"
-    assert rerun_provenance["resolvedModelConnections"][0]["connectionKind"] == "provider"
+    first_connection = cast(dict[str, Any], rerun_provenance["resolvedModelConnections"][0])
+    assert first_connection["connectionKind"] == "provider"
+    assert first_connection["protocolProfile"] == "openai_responses"
+    assert first_connection["outputStrategyPolicy"] == "prefer_strict_schema"
+    assert first_connection["parallelToolCallsPolicy"] == "serialize"
+    assert first_connection["reasoningPolicy"] == "allow"
+    assert first_connection["streamingPolicy"] == "allow"
+    assert first_connection["probeCacheTtlSeconds"] == 900
+    assert first_connection["capabilities"] == default_model_connection_capabilities(
+        "openai_responses"
+    ).model_dump(mode="json", by_alias=True)
 
 
 def test_new_workflow_package_runs_store_null_snapshot_status_for_fresh_and_lineage(
@@ -1175,7 +1207,7 @@ def test_deleted_model_connection_preserves_historical_detail_and_blocks_future_
         assert session.query(Run).count() == runs_before
 
 
-def test_rerun_and_fork_drafts_create_and_execute_after_live_model_connection_drift(
+def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connection_drift(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -1197,6 +1229,11 @@ def test_rerun_and_fork_drafts_create_and_execute_after_live_model_connection_dr
     with session_factory() as session:
         source_snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
         assert source_snapshot is not None
+        source_profile = cast(dict[str, Any], source_snapshot.resolved_model_connections[0])
+        assert source_profile["baseUrl"] == "https://runtime-v1.example.com/v1"
+        assert source_profile["modelId"] == "gpt-package-v1"
+        assert source_profile["reasoningEffort"] == "high"
+        assert source_profile["timeoutSeconds"] == 31
         source_snapshot.preflight_summary = {
             "ready": False,
             "blockingErrors": [{"field": "historical", "issue": "stale source readiness"}],
@@ -1205,6 +1242,9 @@ def test_rerun_and_fork_drafts_create_and_execute_after_live_model_connection_dr
         connection = session.query(ModelConnection).filter_by(key="package_runtime_model").one()
         connection.base_url = "https://runtime-live-drift.example.com/v1"
         connection.model_id = "gpt-package-live-drift"
+        connection.reasoning_effort = "low"
+        connection.timeout_seconds = 91
+        connection.secret_payload = {"apiKey": "sk-package-runtime-live"}
         session.commit()
         runs_before = session.query(Run).count()
 
@@ -1220,9 +1260,11 @@ def test_rerun_and_fork_drafts_create_and_execute_after_live_model_connection_dr
         assert draft["blockingErrors"] == []
         draft_provenance = cast(dict[str, Any], draft["packageProvenance"])
         assert draft_provenance["preflightSummary"]["ready"] is False
-        assert draft_provenance["resolvedModelConnections"][0]["baseUrl"] == (
-            "https://runtime-v1.example.com/v1"
-        )
+        draft_profile = cast(dict[str, Any], draft_provenance["resolvedModelConnections"][0])
+        assert draft_profile["baseUrl"] == "https://runtime-v1.example.com/v1"
+        assert draft_profile["modelId"] == "gpt-package-v1"
+        assert draft_profile["reasoningEffort"] == "high"
+        assert draft_profile["timeoutSeconds"] == 31
 
     rerun_response = client.post(
         f"/api/runs/{run_id}/reruns",
@@ -1257,21 +1299,179 @@ def test_rerun_and_fork_drafts_create_and_execute_after_live_model_connection_dr
     rerun_detail = _wait_for_run(client, rerun_id)
     assert rerun_detail["status"] == "succeeded"
     assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
-        "api_key": "sk-package-runtime-v1",
-        "base_url": "https://runtime-live-drift.example.com/v1",
+        "api_key": "sk-package-runtime-live",
+        "base_url": "https://runtime-v1.example.com/v1",
         "timeout": 31.0,
     }
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-live-drift"
+    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-v1"
+    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "high"}
+
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "drift fork output"}'
+    with session_factory() as session:
+        RunService(session, session_factory).execute_run(fork_id)
+    fork_detail = _wait_for_run(client, fork_id)
+    assert fork_detail["status"] == "succeeded"
+    assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
+        "api_key": "sk-package-runtime-live",
+        "base_url": "https://runtime-v1.example.com/v1",
+        "timeout": 31.0,
+    }
+    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-v1"
+    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "high"}
 
     with session_factory() as session:
         rerun_snapshot = session.get(RunWorkflowPackageSnapshot, rerun_id)
         fork_snapshot = session.get(RunWorkflowPackageSnapshot, fork_id)
         assert rerun_snapshot is not None
         assert fork_snapshot is not None
-        expected_current_readiness = {"ready": True, "blockingErrors": [], "warnings": []}
-        assert rerun_snapshot.preflight_summary == expected_current_readiness
-        assert fork_snapshot.preflight_summary == expected_current_readiness
+        assert (
+            rerun_snapshot.resolved_model_connections
+            == source_snapshot.resolved_model_connections
+        )
+        assert (
+            fork_snapshot.resolved_model_connections
+            == source_snapshot.resolved_model_connections
+        )
+        assert (
+            rerun_snapshot.preflight_summary
+            == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
+        )
+        assert (
+            fork_snapshot.preflight_summary
+            == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
+        )
         assert session.query(Run).count() == runs_before + 2
+
+
+def test_compat_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    fixture_run_id = 9201
+    fixture_package_id = 9101
+    fixture_target_key = "compat-runtime-profile-run"
+    manifest_source = _package_source(package_key="compat_runtime_profile_package")
+    compiled = compile_workflow_package_manifest(manifest_source)
+    package_definition = cast(dict[str, Any], deepcopy(compiled["packageDefinition"]))
+    compiled_plan = cast(dict[str, Any], deepcopy(compiled["compiledPlan"]))
+    package_definition["metadata"]["key"] = fixture_target_key
+    compiled_plan["packageKey"] = fixture_target_key
+    workflow = cast(dict[str, Any], compiled_plan["workflows"][0])
+    capabilities = default_model_connection_capabilities(
+        "openai_chat_completions"
+    ).model_dump(mode="json", by_alias=True)
+    capabilities["strictJsonSchemaOutput"]["status"] = "unsupported"
+    resolved_model_connections = [
+        {
+            "key": "package_runtime_model",
+            "name": "Compatibility Runtime Profile Model",
+            "connectionKind": "provider",
+            "protocolProfile": "openai_chat_completions",
+            "baseUrl": "https://compat-runtime-profile.example.test/v1",
+            "modelId": "fake-compat-runtime-profile",
+            "reasoningEffort": None,
+            "capabilities": capabilities,
+            "outputStrategyPolicy": "allow_json_object_validation",
+            "parallelToolCallsPolicy": "serialize",
+            "reasoningPolicy": "forbid",
+            "streamingPolicy": "forbid",
+            "probeCacheTtlSeconds": 120,
+            "apiStyle": "chat_completions",
+            "timeoutSeconds": 45,
+            "hasApiKey": True,
+        }
+    ]
+
+    with session_factory() as session:
+        package = WorkflowPackage(
+            id=fixture_package_id,
+            key=fixture_target_key,
+            name="Compatibility Runtime Profile Package",
+            description="Deterministic run-detail fixture for runtime profile provenance.",
+            manifest_source=manifest_source,
+            manifest_hash=str(compiled["manifestHash"]),
+            package_definition=package_definition,
+            compiled_plan=compiled_plan,
+            compiled_hash=str(compiled["compiledHash"]),
+            extension_dependencies=[],
+        )
+        session.add(package)
+        session.flush()
+        run = Run(
+            id=fixture_run_id,
+            agent_id=None,
+            target_workflow_id=None,
+            target_kind="workflowPackage",
+            target_id=fixture_package_id,
+            target_key=fixture_target_key,
+            target_version=1,
+            workflow_package_id=fixture_package_id,
+            workflow_package_key=fixture_target_key,
+            workflow_package_workflow_key="runtime_workflow",
+            extension_dependencies=[],
+            input={"ticker": "MSFT"},
+            status="succeeded",
+            source_run_id=None,
+            lineage_root_run_id=None,
+            forked_from_step_index=None,
+            resume_step_index=1,
+            final_output={"summary": "compat fixture output"},
+            total_tokens=17,
+            inherited_tokens=0,
+            executed_tokens=17,
+            trace_id="trace-compat-runtime-profile",
+            error=None,
+        )
+        run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+            workflow_package_id=fixture_package_id,
+            workflow_package_key=fixture_target_key,
+            workflow_package_name="Compatibility Runtime Profile Package",
+            workflow_package_description=package.description,
+            workflow_package_status=None,
+            workflow_key="runtime_workflow",
+            workflow_name=str(workflow["name"]),
+            workflow_description=str(workflow.get("description") or ""),
+            manifest_hash=str(compiled["manifestHash"]),
+            compiled_hash=str(compiled["compiledHash"]),
+            manifest_source=manifest_source,
+            package_definition=package_definition,
+            compiled_plan=compiled_plan,
+            extension_dependencies=[],
+            local_resource_refs={
+                "agents": ["package_analyst"],
+                "outputSchemas": ["summary_output"],
+                "capabilityProfiles": [],
+                "mcpServers": [],
+                "workflows": ["runtime_workflow"],
+            },
+            input_schema=deepcopy(workflow["inputSchema"]),
+            launch_parameters={"ticker": "MSFT"},
+            resolved_model_connections=resolved_model_connections,
+            preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
+        )
+        session.add(run)
+        session.commit()
+
+    detail_response = client.get(f"/api/runs/{fixture_run_id}")
+
+    assert detail_response.status_code == 200, detail_response.json()
+    detail = cast(dict[str, Any], detail_response.json())
+    provenance = cast(dict[str, Any], detail["packageProvenance"])
+    profile = cast(dict[str, Any], provenance["resolvedModelConnections"][0])
+    serialized = json.dumps(detail, sort_keys=True)
+    assert detail["id"] == fixture_run_id
+    assert detail["targetKey"] == fixture_target_key
+    assert provenance["workflowPackageKey"] == fixture_target_key
+    assert provenance["launchSnapshot"]["parameters"] == {"ticker": "MSFT"}
+    assert provenance["preflightSummary"] == {"ready": True, "blockingErrors": [], "warnings": []}
+    assert provenance["currentPackage"]["available"] is True
+    assert provenance["currentPackage"]["manifestHashMatchesSnapshot"] is True
+    assert provenance["currentPackage"]["compiledHashMatchesSnapshot"] is True
+    assert profile == resolved_model_connections[0]
+    assert "secretPayload" not in serialized
+    assert "sk-" not in serialized
+    assert "providerPayload" not in serialized
 
 
 def _create_tradingagents_package(client: TestClient) -> dict[str, Any]:
