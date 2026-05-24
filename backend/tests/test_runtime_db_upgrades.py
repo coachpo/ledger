@@ -449,11 +449,11 @@ def _assert_tradingagents_preset_launchable(
                 """
                 INSERT INTO model_connections (
                     key, status, connection_kind, name, description, base_url, model_id,
-                    reasoning_effort, api_style, timeout_seconds, secret_payload,
+                    reasoning_effort, protocol_profile, timeout_seconds, secret_payload,
                     created_at, updated_at
                 ) VALUES (
                     :key, 'active', 'deterministic_smoke', 'TradingAgents Primary Model',
-                    '', :base_url, :model_id, 'medium', 'responses', 60, '{}'::jsonb,
+                    '', :base_url, :model_id, 'medium', 'openai_responses', 60, '{}'::jsonb,
                     NOW(), NOW()
                 )
                 ON CONFLICT (key) DO UPDATE SET
@@ -1298,7 +1298,7 @@ def _insert_model_connection_reasoning_effort_row(
     *,
     key: str,
     reasoning_effort: object,
-    api_style: str = "responses",
+    protocol_profile: str = "openai_responses",
 ) -> int:
     model_connection_id = cast(
         int,
@@ -1307,18 +1307,18 @@ def _insert_model_connection_reasoning_effort_row(
                 """
                 INSERT INTO model_connections (
                     key, status, name, description, base_url, model_id, reasoning_effort,
-                    api_style, timeout_seconds, secret_payload, created_at, updated_at
+                    protocol_profile, timeout_seconds, secret_payload, created_at, updated_at
                 ) VALUES (
                     :key, 'active', :name, '', 'https://api.openai.com/v1', :model_id,
-                    :reasoning_effort, :api_style, 60, '{}'::jsonb, NOW(), NOW()
+                    :reasoning_effort, :protocol_profile, 60, '{}'::jsonb, NOW(), NOW()
                 ) RETURNING id
                 """
             ),
             {
-                "api_style": api_style,
                 "key": key,
                 "model_id": f"openai:{key}",
                 "name": key.replace("_", " ").title(),
+                "protocol_profile": protocol_profile,
                 "reasoning_effort": reasoning_effort,
             },
         ).scalar_one(),
@@ -3707,11 +3707,11 @@ def test_init_db_hard_cutover_deletes_runtime_rows_and_preserves_config_product_
                 text(
                     "INSERT INTO model_connections ("
                     "key, status, name, description, base_url, model_id, reasoning_effort, "
-                    "api_style, timeout_seconds, secret_payload, created_at, updated_at"
+                    "protocol_profile, timeout_seconds, secret_payload, created_at, updated_at"
                     ") VALUES ("
                     "'post_cutover_model', 'active', 'Post Cutover Model', '', "
                     "'https://api.openai.com/v1', 'openai:gpt-5.4-mini', 'medium', "
-                    "'responses', 60, '{}'::jsonb, NOW(), NOW()"
+                    "'openai_responses', 60, '{}'::jsonb, NOW(), NOW()"
                     ") RETURNING id"
                 )
             ).scalar_one()
@@ -3740,11 +3740,11 @@ def test_workflow_package_clean_break_removes_legacy_authoring_rows_preserves_mo
                     """
                     INSERT INTO model_connections (
                         key, status, name, description, base_url, model_id, reasoning_effort,
-                        api_style, timeout_seconds, secret_payload, created_at, updated_at
+                        protocol_profile, timeout_seconds, secret_payload, created_at, updated_at
                     ) VALUES (
                         'clean_break_model', 'active', 'Clean Break Model', '',
                         'https://api.openai.com/v1', 'openai:gpt-5.4-mini', 'medium',
-                        'responses', 60, '{}'::jsonb, NOW(), NOW()
+                        'openai_responses', 60, '{}'::jsonb, NOW(), NOW()
                     )
                     """
                 )
@@ -4036,11 +4036,11 @@ def test_init_db_drops_legacy_model_connection_secret_metadata_columns(
                     f"""
                     INSERT INTO model_connections (
                         key, status, name, description, base_url, organization, project,
-                        model_id, reasoning_effort, api_style, timeout_seconds, secret_payload,
+                        model_id, reasoning_effort, protocol_profile, timeout_seconds, secret_payload,
                         {marker_column}, {suffix_column}, created_at, updated_at
                     ) VALUES (
                         :key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL,
-                        :model_id, 'medium', 'responses', 60, CAST(:secret_payload AS jsonb),
+                        :model_id, 'medium', 'openai_responses', 60, CAST(:secret_payload AS jsonb),
                         TRUE, '1234', NOW(), NOW()
                     )
                     """
@@ -4129,7 +4129,7 @@ def test_init_db_backfills_model_connection_keys_deterministically(database_url:
 
         with engine.connect() as connection:
             rows = connection.execute(
-                text("SELECT id, key, api_style FROM model_connections ORDER BY id ASC")
+                text("SELECT id, key, protocol_profile FROM model_connections ORDER BY id ASC")
             ).all()
 
         model_connection_columns = {
@@ -4148,18 +4148,20 @@ def test_init_db_backfills_model_connection_keys_deterministically(database_url:
         }
 
         assert rows == [
-            (1, "primary_openai", "responses"),
-            (2, "primary_openai_2", "responses"),
-            (3, "openai_gpt_4_1", "responses"),
-            (4, "model_connection_2026_default", "responses"),
+            (1, "primary_openai", "openai_responses"),
+            (2, "primary_openai_2", "openai_responses"),
+            (3, "openai_gpt_4_1", "openai_responses"),
+            (4, "model_connection_2026_default", "openai_responses"),
         ]
         assert model_connection_columns["key"]["nullable"] is False
-        assert model_connection_columns["api_style"]["nullable"] is False
+        assert model_connection_columns["protocol_profile"]["nullable"] is False
+        assert "api_style" not in model_connection_columns
         assert {"organization", "project"}.isdisjoint(model_connection_columns)
         assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
             model_connection_columns
         )
-        assert "ck_model_connections_api_style" in model_connection_check_constraints
+        assert "ck_model_connections_protocol_profile" in model_connection_check_constraints
+        assert "ck_model_connections_api_style" not in model_connection_check_constraints
         assert "uq_model_connections_key" in unique_constraints
         assert "ix_model_connections_key" in model_connection_indexes
     finally:
@@ -4603,10 +4605,10 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                 text(
                     "INSERT INTO model_connections ("
                     "key, status, name, description, base_url, model_id, reasoning_effort, "
-                    "api_style, timeout_seconds, secret_payload, created_at, updated_at"
+                    "protocol_profile, timeout_seconds, secret_payload, created_at, updated_at"
                     ") VALUES ("
                     ":key, 'active', :name, '', 'https://api.openai.com/v1', :model_id, "
-                    "'medium', 'chat_completions', 60, '{}'::jsonb, NOW(), NOW()"
+                    "'medium', 'openai_chat_completions', 60, '{}'::jsonb, NOW(), NOW()"
                     ") RETURNING id"
                 ),
                 {
@@ -4666,7 +4668,7 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                     "(SELECT COUNT(*) FROM agents WHERE key = :agent_key), "
                     "(SELECT COUNT(*) AS row_count FROM model_connections "
                     "WHERE id = :connection_id), "
-                    "(SELECT MIN(api_style) FROM model_connections WHERE id = :connection_id)"
+                    "(SELECT MIN(protocol_profile) FROM model_connections WHERE id = :connection_id)"
                 ),
                 {
                     "agent_key": "already_linked_agent",
@@ -4675,7 +4677,7 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
             ).one()
 
         agent_columns = {column["name"]: column for column in inspect(engine).get_columns("agents")}
-        assert clean_break_counts == (0, 1, "chat_completions")
+        assert clean_break_counts == (0, 1, "openai_chat_completions")
         assert agent_columns["model_connection_id"]["nullable"] is False
         assert agent_columns["model_connection_snapshot"]["nullable"] is False
     finally:
@@ -4704,7 +4706,7 @@ def test_upgrade_legacy_schema_backfills_snapshot_reasoning_effort_null_and_cust
                 connection,
                 key="snapshot_missing_field_connection",
                 reasoning_effort="custom-exact",
-                api_style="chat_completions",
+                protocol_profile="openai_chat_completions",
             )
             _insert_agent_model_connection_snapshot_row(
                 connection,

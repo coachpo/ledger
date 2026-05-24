@@ -29,10 +29,12 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.schemas.output_schema import OutputSchemaDraftCreate
+from app.schemas.model_connection import default_model_connection_capabilities
 from app.schemas.run import (
     RunListItemRead,
     RunMemoryArtifactRead,
     RunMemoryEventRead,
+    RunPackageResolvedModelConnectionRead,
     RunRead,
     RunStatus,
 )
@@ -557,8 +559,16 @@ def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
         "last_test_ok",
         "last_test_message",
         "reasoning_effort",
-        "api_style",
+        "protocol_profile",
+        "capabilities",
+        "output_strategy_policy",
+        "parallel_tool_calls_policy",
+        "reasoning_policy",
+        "streaming_policy",
+        "last_probed_at",
+        "probe_cache_ttl_seconds",
     } <= set(model_connection_table.c.keys())
+    assert "api_style" not in set(model_connection_table.c.keys())
     reasoning_effort_column = model_connection_table.c.reasoning_effort
     assert reasoning_effort_column.nullable is True
     assert getattr(reasoning_effort_column.type, "length", None) == 128
@@ -566,9 +576,15 @@ def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
     assert str(reasoning_effort_column.server_default) == (
         "DefaultClause('medium', for_update=False)"
     )
-    assert model_connection_table.c.api_style.nullable is False
-    assert model_connection_table.c.api_style.default is not None
-    assert model_connection_table.c.api_style.server_default is not None
+    assert model_connection_table.c.protocol_profile.nullable is False
+    assert model_connection_table.c.protocol_profile.default is not None
+    assert model_connection_table.c.protocol_profile.server_default is not None
+    assert model_connection_table.c.capabilities.nullable is False
+    assert model_connection_table.c.capabilities.default is not None
+    assert model_connection_table.c.capabilities.server_default is not None
+    assert model_connection_table.c.probe_cache_ttl_seconds.nullable is False
+    assert model_connection_table.c.probe_cache_ttl_seconds.default is not None
+    assert model_connection_table.c.probe_cache_ttl_seconds.server_default is not None
     constraints = {
         constraint.name: constraint
         for constraint in model_connection_table.constraints
@@ -577,10 +593,17 @@ def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
     assert {
         "ck_model_connections_status",
         "ck_model_connections_reasoning_effort",
-        "ck_model_connections_api_style",
+        "ck_model_connections_protocol_profile",
+        "ck_model_connections_capability_statuses",
+        "ck_model_connections_output_strategy_policy",
+        "ck_model_connections_parallel_tool_calls_policy",
+        "ck_model_connections_reasoning_policy",
+        "ck_model_connections_streaming_policy",
+        "ck_model_connections_probe_cache_ttl_positive",
         "ck_model_connections_timeout_seconds_positive",
         "uq_model_connections_key",
     } <= constraints.keys()
+    assert "ck_model_connections_api_style" not in constraints
     reasoning_effort_constraint = cast(
         CheckConstraint,
         constraints["ck_model_connections_reasoning_effort"],
@@ -1968,6 +1991,37 @@ def test_run_memory_event_schema_serializes_generic_redacted_contract() -> None:
     assert "sk-never" not in serialized
     assert "/reports/" not in serialized
     assert "download" not in serialized
+
+
+def test_run_package_resolved_model_connection_schema_serializes_effective_runtime_profile_without_secrets() -> None:
+    payload = {
+        "key": "package_runtime_model",
+        "name": "Package Runtime Model",
+        "connectionKind": "provider",
+        "protocolProfile": "openai_responses",
+        "baseUrl": "https://runtime.example.com/v1",
+        "modelId": "gpt-package-runtime",
+        "reasoningEffort": "high",
+        "capabilities": default_model_connection_capabilities("openai_responses").model_dump(
+            mode="json",
+            by_alias=True,
+        ),
+        "outputStrategyPolicy": "prefer_strict_schema",
+        "parallelToolCallsPolicy": "serialize",
+        "reasoningPolicy": "allow",
+        "streamingPolicy": "allow",
+        "probeCacheTtlSeconds": 900,
+        "apiStyle": "responses",
+        "timeoutSeconds": 31,
+        "hasApiKey": True,
+    }
+
+    model = RunPackageResolvedModelConnectionRead.model_validate(payload)
+    serialized = cast(dict[str, object], model.model_dump(mode="json", by_alias=True))
+
+    assert serialized == payload
+    assert "apiKey" not in json.dumps(serialized)
+    assert model.capabilities == default_model_connection_capabilities("openai_responses")
 
 
 def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> None:

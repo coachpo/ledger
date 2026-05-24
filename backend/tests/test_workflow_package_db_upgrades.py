@@ -300,7 +300,14 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         "base_url",
         "model_id",
         "reasoning_effort",
-        "api_style",
+        "protocol_profile",
+        "capabilities",
+        "output_strategy_policy",
+        "parallel_tool_calls_policy",
+        "reasoning_policy",
+        "streaming_policy",
+        "last_probed_at",
+        "probe_cache_ttl_seconds",
         "timeout_seconds",
         "secret_payload",
         "last_tested_at",
@@ -309,6 +316,7 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         "created_at",
         "updated_at",
     } <= set(model_connection_columns)
+    assert "api_style" not in model_connection_columns
     assert model_connection_columns["connection_kind"]["nullable"] is False
     assert "provider" in model_connection_check_sql["ck_model_connections_connection_kind"]
     assert (
