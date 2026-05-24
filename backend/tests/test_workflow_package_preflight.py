@@ -14,7 +14,14 @@ from app.models.model_connection import ModelConnection
 from app.models.workflow_package import WorkflowPackage
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.extension import ExtensionToggleRequest
+from app.schemas.model_connection import (
+    ModelConnectionCapabilities,
+    ModelConnectionCapabilityStatus,
+    default_model_connection_capabilities,
+    dump_model_connection_capabilities,
+)
 from app.services.extension_service import ExtensionService
+from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
@@ -25,10 +32,20 @@ _FIXTURE = (
     / "workflow_packages"
     / "tradingagents_advisory_research.yaml"
 )
+_TOOL_REQUIRED_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "workflow_packages"
+    / "tool-required-fixture.yaml"
+)
 
 
 def _package_source() -> str:
     return _FIXTURE.read_text()
+
+
+def _tool_required_package_source() -> str:
+    return _TOOL_REQUIRED_FIXTURE.read_text()
 
 
 def _delete_existing_tradingagents_package(client: TestClient) -> None:
@@ -55,20 +72,108 @@ def _seed_model_connection(
     *,
     api_key: str | None = "sk-preflight",
     connection_kind: str = "provider",
+    key: str = "tradingagents_primary_model",
+    name: str = "TradingAgents Primary Model",
+    description: str = "Preflight model binding.",
+    base_url: str = "https://api.openai.com/v1",
+    model_id: str = "gpt-5.5-mini",
+    protocol_profile: str = "openai_responses",
+    capabilities: ModelConnectionCapabilities | None = None,
+    output_strategy_policy: str = "prefer_strict_schema",
+    parallel_tool_calls_policy: str = "serialize",
+    reasoning_policy: str = "allow",
+    streaming_policy: str = "allow",
+    probe_cache_ttl_seconds: int = 900,
+    timeout_seconds: int = 60,
     last_test_ok: bool | None = None,
     last_test_message: str | None = None,
 ) -> None:
+    if capabilities is None:
+        capabilities = default_model_connection_capabilities(protocol_profile)
     with session_factory() as session:
         session.add(
             ModelConnection(
-                key="tradingagents_primary_model",
+                key=key,
                 status="active",
                 connection_kind=connection_kind,
-                name="TradingAgents Primary Model",
-                description="Preflight model binding.",
-                base_url="https://api.openai.com/v1",
-                model_id="gpt-5.5-mini",
-                api_style="responses",
+                protocol_profile=protocol_profile,
+                name=name,
+                description=description,
+                base_url=base_url,
+                model_id=model_id,
+                capabilities=dump_model_connection_capabilities(capabilities),
+                output_strategy_policy=output_strategy_policy,
+                parallel_tool_calls_policy=parallel_tool_calls_policy,
+                reasoning_policy=reasoning_policy,
+                streaming_policy=streaming_policy,
+                probe_cache_ttl_seconds=probe_cache_ttl_seconds,
+                timeout_seconds=timeout_seconds,
+                secret_payload={} if api_key is None else {"apiKey": api_key},
+                last_tested_at=(
+                    utcnow() if last_test_ok is not None or last_test_message is not None else None
+                ),
+                last_test_ok=last_test_ok,
+                last_test_message=last_test_message,
+            )
+        )
+        session.commit()
+
+
+def _seed_tool_required_package(session_factory: sessionmaker[Session]) -> None:
+    compiled = compile_workflow_package_manifest(_tool_required_package_source())
+    package_definition = cast(dict[str, Any], compiled["packageDefinition"])
+    metadata = cast(dict[str, Any], package_definition["metadata"])
+    with session_factory() as session:
+        session.add(
+            WorkflowPackage(
+                id=9101,
+                key=str(metadata["key"]),
+                name=str(metadata["name"]),
+                description=str(metadata.get("description") or ""),
+                manifest_source=_tool_required_package_source(),
+                manifest_hash=str(compiled["manifestHash"]),
+                package_definition=package_definition,
+                compiled_plan=cast(dict[str, Any], compiled["compiledPlan"]),
+                compiled_hash=str(compiled["compiledHash"]),
+                extension_dependencies=cast(
+                    list[dict[str, Any]], compiled.get("extensionDependencies") or []
+                ),
+            )
+        )
+        session.commit()
+
+
+def _seed_compatibility_fixture_connection(
+    session_factory: sessionmaker[Session],
+    *,
+    native_tool_calls_status: ModelConnectionCapabilityStatus,
+    strict_json_schema_status: ModelConnectionCapabilityStatus,
+    json_object_status: ModelConnectionCapabilityStatus = ModelConnectionCapabilityStatus.UNKNOWN,
+    api_key: str | None = "sk-compat",
+    last_test_ok: bool | None = None,
+    last_test_message: str | None = None,
+) -> None:
+    capabilities = default_model_connection_capabilities("openai_chat_completions")
+    capabilities.native_tool_calls.status = native_tool_calls_status
+    capabilities.strict_json_schema_output.status = strict_json_schema_status
+    capabilities.json_object_output.status = json_object_status
+    with session_factory() as session:
+        session.add(
+            ModelConnection(
+                key="compat_fixture_tools_disabled",
+                status="active",
+                connection_kind="provider",
+                protocol_profile="openai_chat_completions",
+                name="Compatibility Fixture: Tools Disabled",
+                description="Probe fixture with tool calls disabled.",
+                base_url="https://compat-fixture-tools-disabled.example.test",
+                model_id="fake-tools-disabled",
+                capabilities=dump_model_connection_capabilities(capabilities),
+                output_strategy_policy="prefer_strict_schema",
+                parallel_tool_calls_policy="serialize",
+                reasoning_policy="allow",
+                streaming_policy="allow",
+                probe_cache_ttl_seconds=900,
                 timeout_seconds=60,
                 secret_payload={} if api_key is None else {"apiKey": api_key},
                 last_tested_at=(
@@ -123,6 +228,84 @@ def test_preflight_rejects_duplicate_tool_keys_and_accepts_core_memory_tool_keys
         {
             "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[1]",
             "issue": "Duplicate tool key 'signaldeck.memory.write' is not allowed",
+        }
+    ]
+
+
+def test_package_execution_plan_builder_derives_tool_and_output_requirements() -> None:
+    compiled = compile_workflow_package_manifest(_tool_required_package_source())
+    requirements = PackageExecutionPlanBuilder.derive_package_requirements(
+        cast(dict[str, Any], compiled["compiledPlan"])
+    )
+
+    assert requirements.requires_native_tool_calls is True
+    assert requirements.requires_structured_output is True
+    assert requirements.native_tool_sources == ("spec.capabilityProfiles.tool_required.toolKeys",)
+    assert requirements.structured_output_sources == ("spec.outputSchemas.report.jsonSchema",)
+
+
+def test_preflight_blocks_tool_required_fixture_with_unsupported_native_tool_calls(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_tool_required_package(session_factory)
+    _seed_compatibility_fixture_connection(
+        session_factory,
+        native_tool_calls_status=ModelConnectionCapabilityStatus.UNSUPPORTED,
+        strict_json_schema_status=ModelConnectionCapabilityStatus.UNSUPPORTED,
+    )
+
+    preflight = client.post("/api/workflow-packages/9101/preflight")
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is False
+    errors = cast(list[dict[str, object]], body["blockingErrors"])
+    assert {
+        "field": "spec.capabilityProfiles.tool_required.toolKeys",
+        "code": "model_capability_required_missing",
+        "issue": (
+            "This workflow requires native tool calls, but the selected model connection "
+            "does not support them."
+        ),
+    } in errors
+    warnings = cast(list[dict[str, object]], body["warnings"])
+    assert any(
+        warning["field"] == "spec.outputSchemas.report.jsonSchema"
+        and warning.get("code") == "model_capability_probe_inconclusive"
+        and "JSON object output has not been proven yet" in str(warning["issue"])
+        for warning in warnings
+    )
+
+
+def test_preflight_warns_when_structured_output_falls_back_to_json_object_validation(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_tool_required_package(session_factory)
+    _seed_compatibility_fixture_connection(
+        session_factory,
+        native_tool_calls_status=ModelConnectionCapabilityStatus.SUPPORTED,
+        strict_json_schema_status=ModelConnectionCapabilityStatus.UNSUPPORTED,
+        json_object_status=ModelConnectionCapabilityStatus.SUPPORTED,
+    )
+
+    preflight = client.post("/api/workflow-packages/9101/preflight")
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is True
+    assert body["blockingErrors"] == []
+    warnings = cast(list[dict[str, object]], body["warnings"])
+    assert warnings == [
+        {
+            "field": "spec.outputSchemas.report.jsonSchema",
+            "code": "model_capability_required_missing",
+            "issue": (
+                "This workflow requires structured JSON output, but strict JSON-schema output "
+                "is unavailable so JSON object validation will be used."
+            ),
+            "severity": "warning",
         }
     ]
 

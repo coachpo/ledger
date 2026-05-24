@@ -15,7 +15,7 @@ from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
 from app.schemas.workflow_package_manifest import WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS
-from app.services.execution_plan import PackageResolvedModelBinding
+from app.services.execution_plan import PackageExecutionRequirements, PackageResolvedModelBinding
 from app.services.extension_dependency_service import ExtensionDependencyService
 from app.services.extension_service import ExtensionService
 from app.services.model_connection_service import ModelConnectionService
@@ -28,6 +28,10 @@ from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
     WorkflowPackageExecutionPlanError,
 )
+
+_MODEL_CAPABILITY_REQUIRED_MISSING_CODE = "model_capability_required_missing"
+_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE = "model_capability_probe_inconclusive"
+_MODEL_REASONING_UNSUPPORTED_CODE = "model_reasoning_unsupported"
 
 
 @dataclass(frozen=True)
@@ -96,9 +100,13 @@ class WorkflowPackagePreflightService:
             )
         )
         blocking_errors.extend(self._http_errors(package, compiled_plan))
+        package_requirements = PackageExecutionPlanBuilder.derive_package_requirements(
+            compiled_plan
+        )
         model_bindings, model_warnings, model_errors = self._model_bindings(
             compiled_plan,
             require_api_key=require_api_key,
+            package_requirements=package_requirements,
         )
         blocking_errors.extend(model_errors)
         if not self._has_http_operations(compiled_plan):
@@ -566,6 +574,7 @@ class WorkflowPackagePreflightService:
         compiled_plan: dict[str, Any],
         *,
         require_api_key: bool,
+        package_requirements: PackageExecutionRequirements,
     ) -> tuple[
         dict[str, PackageResolvedModelBinding],
         list[dict[str, Any]],
@@ -590,20 +599,23 @@ class WorkflowPackagePreflightService:
             if connection is None:
                 errors.append({"field": path, "issue": f"Model connection {key!r} was not found"})
                 continue
-            payload = (
-                connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
-            )
-            has_api_key = bool(str(payload.get("apiKey") or "").strip())
             model_binding = PackageResolvedModelBinding(
-                key=connection.key,
-                name=connection.name,
-                connection_kind=connection.connection_kind,
-                base_url=connection.base_url,
-                model_id=connection.model_id,
-                reasoning_effort=connection.reasoning_effort,
-                api_style=connection.api_style,
-                timeout_seconds=connection.timeout_seconds,
-                has_api_key=has_api_key,
+                key=binding.key,
+                name=binding.name,
+                connection_kind=binding.connection_kind,
+                protocol_profile=binding.protocol_profile,
+                base_url=binding.base_url,
+                model_id=binding.model_id,
+                reasoning_effort=binding.reasoning_effort,
+                capabilities=binding.capabilities,
+                output_strategy_policy=binding.output_strategy_policy,
+                parallel_tool_calls_policy=binding.parallel_tool_calls_policy,
+                reasoning_policy=binding.reasoning_policy,
+                streaming_policy=binding.streaming_policy,
+                probe_cache_ttl_seconds=binding.probe_cache_ttl_seconds,
+                api_style=binding.api_style,
+                timeout_seconds=binding.timeout_seconds,
+                has_api_key=binding.has_api_key,
             )
             if connection.connection_kind == "deterministic_smoke":
                 warnings.append(
@@ -616,7 +628,7 @@ class WorkflowPackagePreflightService:
                 )
                 bindings[connection.key] = model_binding
                 continue
-            if require_api_key and not has_api_key:
+            if require_api_key and not binding.has_api_key:
                 errors.append({"field": path, "issue": "API key is not configured"})
                 continue
             if connection.last_test_ok is False:
@@ -627,8 +639,362 @@ class WorkflowPackagePreflightService:
                     }
                 )
                 continue
+            requirement_errors, requirement_warnings = self._package_requirement_issues(
+                binding=model_binding,
+                requirements=package_requirements,
+                path=path,
+            )
+            errors.extend(requirement_errors)
+            warnings.extend(requirement_warnings)
+            if requirement_errors:
+                continue
             bindings[connection.key] = model_binding
         return bindings, warnings, errors
+
+    def _package_requirement_issues(
+        self,
+        *,
+        binding: PackageResolvedModelBinding,
+        requirements: PackageExecutionRequirements,
+        path: str,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        errors: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+        if requirements.requires_native_tool_calls:
+            self._native_tool_requirement_issues(
+                binding=binding,
+                requirements=requirements,
+                path=path,
+                errors=errors,
+                warnings=warnings,
+            )
+        if requirements.requires_structured_output:
+            self._structured_output_requirement_issues(
+                binding=binding,
+                requirements=requirements,
+                path=path,
+                errors=errors,
+                warnings=warnings,
+            )
+        if requirements.requires_parallel_tool_calls:
+            self._parallel_tool_requirement_warnings(
+                binding=binding,
+                requirements=requirements,
+                path=path,
+                warnings=warnings,
+            )
+        if requirements.requires_streaming:
+            self._streaming_requirement_issues(
+                binding=binding,
+                requirements=requirements,
+                path=path,
+                errors=errors,
+                warnings=warnings,
+            )
+        if requirements.requires_reasoning_hints:
+            self._reasoning_requirement_issues(
+                binding=binding,
+                requirements=requirements,
+                path=path,
+                errors=errors,
+                warnings=warnings,
+            )
+        return errors, warnings
+
+    def _native_tool_requirement_issues(
+        self,
+        *,
+        binding: PackageResolvedModelBinding,
+        requirements: PackageExecutionRequirements,
+        path: str,
+        errors: list[dict[str, Any]],
+        warnings: list[dict[str, Any]],
+    ) -> None:
+        field = requirements.native_tool_sources[0] if requirements.native_tool_sources else path
+        status = self._capability_status(binding, "nativeToolCalls")
+        if binding.parallel_tool_calls_policy == "forbid":
+            errors.append(
+                {
+                    "field": field,
+                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    "issue": (
+                        "This workflow requires native tool calls, but the selected model "
+                        "connection forbids tool calls."
+                    ),
+                }
+            )
+            return
+        if status in {"unsupported", "notApplicable"}:
+            errors.append(
+                {
+                    "field": field,
+                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    "issue": (
+                        "This workflow requires native tool calls, but the selected model "
+                        "connection does not support them."
+                    ),
+                }
+            )
+            return
+        if status == "unknown":
+            warnings.append(
+                {
+                    "field": field,
+                    "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    "issue": (
+                        "This workflow requires native tool calls, but support has not been "
+                        "proven yet."
+                    ),
+                    "severity": "warning",
+                }
+            )
+
+    def _structured_output_requirement_issues(
+        self,
+        *,
+        binding: PackageResolvedModelBinding,
+        requirements: PackageExecutionRequirements,
+        path: str,
+        errors: list[dict[str, Any]],
+        warnings: list[dict[str, Any]],
+    ) -> None:
+        field = (
+            requirements.structured_output_sources[0]
+            if requirements.structured_output_sources
+            else path
+        )
+        strict_status = self._capability_status(binding, "strictJsonSchemaOutput")
+        json_status = self._capability_status(binding, "jsonObjectOutput")
+        policy = binding.output_strategy_policy
+        if policy == "allow_plain_text":
+            errors.append(
+                {
+                    "field": field,
+                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    "issue": (
+                        "This workflow requires structured JSON output, but the selected "
+                        "model connection is configured for plain text."
+                    ),
+                }
+            )
+            return
+        if policy == "require_strict_schema":
+            if strict_status in {"unsupported", "notApplicable"}:
+                errors.append(
+                    {
+                        "field": field,
+                        "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                        "issue": (
+                            "This workflow requires structured JSON output, but strict "
+                            "JSON-schema output is not supported."
+                        ),
+                    }
+                )
+                return
+            if strict_status == "unknown":
+                warnings.append(
+                    {
+                        "field": field,
+                        "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                        "issue": (
+                            "This workflow requires structured JSON output, but strict "
+                            "JSON-schema output has not been proven yet."
+                        ),
+                        "severity": "warning",
+                    }
+                )
+            return
+        if policy == "allow_json_object_validation":
+            if json_status in {"unsupported", "notApplicable"}:
+                errors.append(
+                    {
+                        "field": field,
+                        "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                        "issue": (
+                            "This workflow requires structured JSON output, but JSON object "
+                            "output is not supported."
+                        ),
+                    }
+                )
+                return
+            if json_status == "unknown":
+                warnings.append(
+                    {
+                        "field": field,
+                        "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                        "issue": (
+                            "This workflow requires structured JSON output, but JSON object "
+                            "output has not been proven yet."
+                        ),
+                        "severity": "warning",
+                    }
+                )
+            return
+        if strict_status in {"unsupported", "notApplicable"}:
+            if json_status in {"unsupported", "notApplicable"}:
+                errors.append(
+                    {
+                        "field": field,
+                        "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                        "issue": (
+                            "This workflow requires structured JSON output, but neither strict "
+                            "JSON-schema output nor JSON object output is supported."
+                        ),
+                    }
+                )
+                return
+            if json_status == "unknown":
+                warnings.append(
+                    {
+                        "field": field,
+                        "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                        "issue": (
+                            "This workflow requires structured JSON output, but strict "
+                            "JSON-schema output is unavailable and JSON object output has not "
+                            "been proven yet."
+                        ),
+                        "severity": "warning",
+                    }
+                )
+                return
+            warnings.append(
+                {
+                    "field": field,
+                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    "issue": (
+                        "This workflow requires structured JSON output, but strict JSON-schema "
+                        "output is unavailable so JSON object validation will be used."
+                    ),
+                    "severity": "warning",
+                }
+            )
+            return
+        if strict_status == "unknown":
+            warnings.append(
+                {
+                    "field": field,
+                    "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    "issue": (
+                        "This workflow requires structured JSON output, but strict "
+                        "JSON-schema output has not been proven yet."
+                    ),
+                    "severity": "warning",
+                }
+            )
+
+    def _parallel_tool_requirement_warnings(
+        self,
+        *,
+        binding: PackageResolvedModelBinding,
+        requirements: PackageExecutionRequirements,
+        path: str,
+        warnings: list[dict[str, Any]],
+    ) -> None:
+        field = requirements.parallel_tool_sources[0] if requirements.parallel_tool_sources else path
+        status = self._capability_status(binding, "parallelToolCalls")
+        if status in {"unsupported", "notApplicable"}:
+            warnings.append(
+                {
+                    "field": field,
+                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    "issue": (
+                        "This workflow uses parallel tool behavior, but the selected model "
+                        "connection will serialize tool calls instead."
+                    ),
+                    "severity": "warning",
+                }
+            )
+        elif status == "unknown":
+            warnings.append(
+                {
+                    "field": field,
+                    "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    "issue": (
+                        "This workflow uses parallel tool behavior, but parallel tool-call "
+                        "support has not been proven yet."
+                    ),
+                    "severity": "warning",
+                }
+            )
+
+    def _streaming_requirement_issues(
+        self,
+        *,
+        binding: PackageResolvedModelBinding,
+        requirements: PackageExecutionRequirements,
+        path: str,
+        errors: list[dict[str, Any]],
+        warnings: list[dict[str, Any]],
+    ) -> None:
+        field = requirements.streaming_sources[0] if requirements.streaming_sources else path
+        status = self._capability_status(binding, "streaming")
+        if status in {"unsupported", "notApplicable"}:
+            errors.append(
+                {
+                    "field": field,
+                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    "issue": (
+                        "This workflow requires streamed UI updates, but the selected model "
+                        "connection does not support streaming."
+                    ),
+                }
+            )
+        elif status == "unknown":
+            warnings.append(
+                {
+                    "field": field,
+                    "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    "issue": (
+                        "This workflow requires streamed UI updates, but streaming support "
+                        "has not been proven yet."
+                    ),
+                    "severity": "warning",
+                }
+            )
+
+    def _reasoning_requirement_issues(
+        self,
+        *,
+        binding: PackageResolvedModelBinding,
+        requirements: PackageExecutionRequirements,
+        path: str,
+        errors: list[dict[str, Any]],
+        warnings: list[dict[str, Any]],
+    ) -> None:
+        field = requirements.reasoning_sources[0] if requirements.reasoning_sources else path
+        status = self._capability_status(binding, "reasoningHints")
+        if status in {"unsupported", "notApplicable"}:
+            errors.append(
+                {
+                    "field": field,
+                    "code": _MODEL_REASONING_UNSUPPORTED_CODE,
+                    "issue": (
+                        "This workflow requires reasoning hints, but the selected model "
+                        "connection does not support them."
+                    ),
+                }
+            )
+        elif status == "unknown":
+            warnings.append(
+                {
+                    "field": field,
+                    "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    "issue": (
+                        "This workflow requires reasoning hints, but reasoning support has "
+                        "not been proven yet."
+                    ),
+                    "severity": "warning",
+                }
+            )
+
+    @staticmethod
+    def _capability_status(binding: PackageResolvedModelBinding, capability_key: str) -> str:
+        capability = binding.capabilities.get(capability_key)
+        if isinstance(capability, dict):
+            status = capability.get("status")
+            if isinstance(status, str):
+                return status
+        return "unknown"
 
 
 __all__ = ["WorkflowPackagePreflightResult", "WorkflowPackagePreflightService"]
