@@ -205,8 +205,11 @@ class RunReadProjection:
             "launchSnapshot": self._package_launch_snapshot_payload(snapshot),
             "extensionDependencies": deepcopy(snapshot.extension_dependencies),
             "localResourceRefs": deepcopy(snapshot.local_resource_refs),
+            # Historical effective runtime profile evidence stays read-safe here.
             "resolvedModelConnections": deepcopy(snapshot.resolved_model_connections),
+            # Historical readiness evidence is preserved separately from current launch checks.
             "preflightSummary": deepcopy(snapshot.preflight_summary),
+            # Current package audit is display-only and never used to rebind the run.
             "currentPackage": self._current_package_audit_payload(snapshot, package),
         }
 

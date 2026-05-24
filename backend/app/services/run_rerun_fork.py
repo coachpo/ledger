@@ -20,6 +20,15 @@ from app.models.workflow_package import WorkflowPackage
 from app.repositories.run import RunRepository
 from app.repositories.run_agent_invocation import RunAgentInvocationRepository
 from app.repositories.run_operation_invocation import RunOperationInvocationRepository
+from app.schemas.model_connection import (
+    ModelConnectionCapabilities,
+    ModelConnectionOutputStrategyPolicy,
+    ModelConnectionParallelToolCallsPolicy,
+    ModelConnectionProtocolProfile,
+    ModelConnectionReasoningPolicy,
+    ModelConnectionStreamingPolicy,
+    default_model_connection_capabilities,
+)
 from app.schemas.run import (
     RunForkCreateRequest,
     RunForkDraftRead,
@@ -192,17 +201,29 @@ class RunRerunForkPreparation:
     def build_plan_for_run(self, run: Run) -> ExecutionPlan:
         if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
             raise_legacy_global_authoring_runtime_blocked(run.target_kind)
+        # Rebuild the plan from the stored run snapshot so rerun/fork keeps the
+        # frozen effective runtime profile by default instead of rebinding live.
         snapshot = self._workflow_package_snapshot_for_run(run)
         ownership = self._package_execution_ownership_from_snapshot(snapshot)
         workflow_key = ownership.workflow_key
-        model_bindings = self._snapshot_model_bindings(snapshot)
         try:
+            model_bindings = self._snapshot_model_bindings(snapshot)
             package_plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
                 snapshot.compiled_plan,
                 workflow_key,
                 model_bindings=model_bindings,
                 ownership=ownership,
             )
+        except ValueError as exc:
+            raise validation_error(
+                "Run descendant validation failed",
+                [
+                    {
+                        "field": "packageProvenance.resolvedModelConnections",
+                        "issue": str(exc),
+                    }
+                ],
+            ) from exc
         except WorkflowPackageExecutionPlanError as exc:
             raise ExecutionPlanBuilderError(
                 code=exc.code,
@@ -569,6 +590,120 @@ class RunRerunForkPreparation:
     def _snapshot_model_bindings(
         snapshot: RunWorkflowPackageSnapshot,
     ) -> dict[str, PackageResolvedModelBinding]:
+        def _required_text(raw_binding: dict[str, Any], *keys: str, field_name: str) -> str:
+            for key in keys:
+                value = raw_binding.get(key)
+                if value is None:
+                    continue
+                normalized = str(value).strip()
+                if normalized:
+                    return normalized
+            raise ValueError(f"Model connection snapshot {field_name} must be a non-empty string")
+
+        def _optional_reasoning_effort(raw_binding: dict[str, Any]) -> str | None:
+            value = raw_binding.get("reasoningEffort")
+            if value is None:
+                value = raw_binding.get("reasoning_effort")
+            if value is None:
+                return None
+            if not isinstance(value, str):
+                raise ValueError(
+                    "Model connection snapshot reasoningEffort must be a string or null"
+                )
+            normalized = value.strip()
+            if not normalized:
+                raise ValueError(
+                    "Model connection snapshot reasoningEffort must be a non-empty string"
+                )
+            if len(normalized) > 128:
+                raise ValueError(
+                    "Model connection snapshot reasoningEffort must be at most 128 characters"
+                )
+            return normalized
+
+        def _protocol_profile(raw_binding: dict[str, Any]) -> str:
+            value = raw_binding.get("protocolProfile")
+            if value is None:
+                value = raw_binding.get("protocol_profile")
+            if value is None:
+                api_style = raw_binding.get("apiStyle") or raw_binding.get("api_style")
+                if api_style == "chat_completions":
+                    value = ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS.value
+                elif api_style == "responses":
+                    value = ModelConnectionProtocolProfile.OPENAI_RESPONSES.value
+                else:
+                    raise ValueError(
+                        "Model connection snapshot must include protocolProfile or apiStyle"
+                    )
+            try:
+                return ModelConnectionProtocolProfile(str(value)).value
+            except ValueError as exc:
+                raise ValueError("Model connection snapshot protocolProfile is invalid") from exc
+
+        def _capabilities(raw_binding: dict[str, Any], protocol_profile: str) -> dict[str, Any]:
+            value = raw_binding.get("capabilities")
+            if value is None:
+                capabilities = default_model_connection_capabilities(protocol_profile)
+            else:
+                if not isinstance(value, dict):
+                    raise ValueError("Model connection snapshot capabilities must be an object")
+                try:
+                    capabilities = ModelConnectionCapabilities.model_validate(value)
+                except ValidationError as exc:
+                    raise ValueError("Model connection snapshot capabilities are invalid") from exc
+            return cast(
+                dict[str, Any],
+                capabilities.model_dump(mode="json", by_alias=True),
+            )
+
+        def _policy_value(
+            raw_binding: dict[str, Any],
+            *,
+            field_name: str,
+            legacy_field_name: str,
+            enum_type: type[Any],
+            default_value: str,
+        ) -> str:
+            value = raw_binding.get(field_name)
+            if value is None:
+                value = raw_binding.get(legacy_field_name)
+            if value is None:
+                value = default_value
+            try:
+                return enum_type(str(value)).value
+            except ValueError as exc:
+                raise ValueError(f"Model connection snapshot {field_name} is invalid") from exc
+
+        def _timeout_seconds(raw_binding: dict[str, Any]) -> int:
+            value = raw_binding.get("timeoutSeconds")
+            if value is None:
+                value = raw_binding.get("timeout_seconds")
+            if isinstance(value, bool) or not isinstance(value, int):
+                value = 60 if value is None else value
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(
+                    "Model connection snapshot timeoutSeconds must be an integer"
+                )
+            if value <= 0:
+                raise ValueError("Model connection snapshot timeoutSeconds must be positive")
+            return int(value)
+
+        def _probe_cache_ttl_seconds(raw_binding: dict[str, Any]) -> int:
+            value = raw_binding.get("probeCacheTtlSeconds")
+            if value is None:
+                value = raw_binding.get("probe_cache_ttl_seconds")
+            if value is None:
+                value = 900
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(
+                    "Model connection snapshot probeCacheTtlSeconds must be an integer"
+                )
+            if value <= 0:
+                raise ValueError(
+                    "Model connection snapshot probeCacheTtlSeconds must be positive"
+                )
+            return int(value)
+
         bindings: dict[str, PackageResolvedModelBinding] = {}
         for raw_binding in snapshot.resolved_model_connections or []:
             if not isinstance(raw_binding, dict):
@@ -576,29 +711,63 @@ class RunRerunForkPreparation:
             key = str(raw_binding.get("key") or "").strip()
             if not key:
                 continue
-            timeout_seconds = raw_binding.get("timeoutSeconds") or raw_binding.get(
-                "timeout_seconds"
-            )
+            protocol_profile = _protocol_profile(raw_binding)
             bindings[key] = PackageResolvedModelBinding(
                 key=key,
                 name=str(raw_binding.get("name") or key),
-                connection_kind=str(
-                    raw_binding.get("connectionKind")
-                    or raw_binding.get("connection_kind")
-                    or "provider"
+                connection_kind=_required_text(
+                    raw_binding,
+                    "connectionKind",
+                    "connection_kind",
+                    field_name="connectionKind",
+                )
+                if raw_binding.get("connectionKind") is not None
+                or raw_binding.get("connection_kind") is not None
+                else "provider",
+                protocol_profile=protocol_profile,
+                base_url=_required_text(raw_binding, "baseUrl", "base_url", field_name="baseUrl"),
+                model_id=_required_text(raw_binding, "modelId", "model_id", field_name="modelId"),
+                reasoning_effort=_optional_reasoning_effort(raw_binding),
+                capabilities=_capabilities(raw_binding, protocol_profile),
+                output_strategy_policy=_policy_value(
+                    raw_binding,
+                    field_name="outputStrategyPolicy",
+                    legacy_field_name="output_strategy_policy",
+                    enum_type=ModelConnectionOutputStrategyPolicy,
+                    default_value=ModelConnectionOutputStrategyPolicy.PREFER_STRICT_SCHEMA.value,
                 ),
-                base_url=str(raw_binding.get("baseUrl") or raw_binding.get("base_url") or ""),
-                model_id=str(raw_binding.get("modelId") or raw_binding.get("model_id") or ""),
-                reasoning_effort=cast(
-                    str | None,
-                    (
-                        raw_binding.get("reasoningEffort")
-                        if "reasoningEffort" in raw_binding
-                        else raw_binding.get("reasoning_effort")
-                    ),
+                parallel_tool_calls_policy=_policy_value(
+                    raw_binding,
+                    field_name="parallelToolCallsPolicy",
+                    legacy_field_name="parallel_tool_calls_policy",
+                    enum_type=ModelConnectionParallelToolCallsPolicy,
+                    default_value=ModelConnectionParallelToolCallsPolicy.SERIALIZE.value,
                 ),
-                api_style=str(raw_binding.get("apiStyle") or raw_binding.get("api_style") or ""),
-                timeout_seconds=int(timeout_seconds or 60),
+                reasoning_policy=_policy_value(
+                    raw_binding,
+                    field_name="reasoningPolicy",
+                    legacy_field_name="reasoning_policy",
+                    enum_type=ModelConnectionReasoningPolicy,
+                    default_value=ModelConnectionReasoningPolicy.ALLOW.value,
+                ),
+                streaming_policy=_policy_value(
+                    raw_binding,
+                    field_name="streamingPolicy",
+                    legacy_field_name="streaming_policy",
+                    enum_type=ModelConnectionStreamingPolicy,
+                    default_value=ModelConnectionStreamingPolicy.ALLOW.value,
+                ),
+                probe_cache_ttl_seconds=_probe_cache_ttl_seconds(raw_binding),
+                api_style=str(
+                    raw_binding.get("apiStyle")
+                    or raw_binding.get("api_style")
+                    or (
+                        "chat_completions"
+                        if protocol_profile == ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS.value
+                        else "responses"
+                    )
+                ),
+                timeout_seconds=_timeout_seconds(raw_binding),
                 has_api_key=bool(
                     raw_binding.get("hasApiKey")
                     if "hasApiKey" in raw_binding
