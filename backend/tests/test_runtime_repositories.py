@@ -40,6 +40,7 @@ from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.capability import CapabilityDraftCreate, CapabilityDraftUpdate
 from app.schemas.mcp_server import McpServerCreate, McpServerTransport, McpServerUpdate
 from app.schemas.output_schema import OutputSchemaDraftCreate, OutputSchemaDraftUpdate
+from app.schemas.model_connection import default_model_connection_capabilities
 from app.schemas.run import (
     RunAgentInvocationRead,
     RunForkCreateRequest,
@@ -970,9 +971,18 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
                     "key": connection.key,
                     "name": connection.name,
                     "connectionKind": connection.connection_kind,
+                    "protocolProfile": connection.protocol_profile,
                     "baseUrl": connection.base_url,
                     "modelId": connection.model_id,
                     "reasoningEffort": connection.reasoning_effort,
+                    "capabilities": default_model_connection_capabilities(
+                        connection.protocol_profile
+                    ).model_dump(mode="json", by_alias=True),
+                    "outputStrategyPolicy": connection.output_strategy_policy,
+                    "parallelToolCallsPolicy": connection.parallel_tool_calls_policy,
+                    "reasoningPolicy": connection.reasoning_policy,
+                    "streamingPolicy": connection.streaming_policy,
+                    "probeCacheTtlSeconds": connection.probe_cache_ttl_seconds,
                     "apiStyle": connection.api_style,
                     "timeoutSeconds": connection.timeout_seconds,
                     "hasApiKey": True,
@@ -999,9 +1009,18 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
             "key": f"snapshot_ignored_model_{run_status}",
             "name": f"Snapshot Ignored Model {run_status}",
             "connectionKind": "provider",
+            "protocolProfile": connection.protocol_profile,
             "baseUrl": "https://api.openai.com/v1",
             "modelId": "gpt-5.4-mini",
             "reasoningEffort": "medium",
+            "capabilities": default_model_connection_capabilities(
+                connection.protocol_profile
+            ).model_dump(mode="json", by_alias=True),
+            "outputStrategyPolicy": connection.output_strategy_policy,
+            "parallelToolCallsPolicy": connection.parallel_tool_calls_policy,
+            "reasoningPolicy": connection.reasoning_policy,
+            "streamingPolicy": connection.streaming_policy,
+            "probeCacheTtlSeconds": connection.probe_cache_ttl_seconds,
             "apiStyle": "responses",
             "timeoutSeconds": 60,
             "hasApiKey": True,

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
+from app.schemas.model_connection import default_model_connection_capabilities
 from app.schemas.run import RunPackageProvenanceRead, RunRead
 
 UTC_TZ = timezone.utc  # noqa: UP017
@@ -176,9 +177,18 @@ def _snapshot() -> RunWorkflowPackageSnapshot:
                 "key": "package_runtime_model",
                 "name": "Package Runtime Model",
                 "connectionKind": "provider",
+                "protocolProfile": "openai_responses",
                 "baseUrl": "https://runtime.example.com/v1",
                 "modelId": "gpt-package-runtime",
                 "reasoningEffort": "high",
+                "capabilities": default_model_connection_capabilities(
+                    "openai_responses"
+                ).model_dump(mode="json", by_alias=True),
+                "outputStrategyPolicy": "prefer_strict_schema",
+                "parallelToolCallsPolicy": "serialize",
+                "reasoningPolicy": "allow",
+                "streamingPolicy": "allow",
+                "probeCacheTtlSeconds": 900,
                 "apiStyle": "responses",
                 "timeoutSeconds": 31,
                 "hasApiKey": True,
