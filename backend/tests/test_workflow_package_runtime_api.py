@@ -26,6 +26,7 @@ from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.workflow_package import WorkflowPackageLaunchCreateRequest
 from app.services.extension_service import ExtensionService
+from app.services.model_gateway import ModelExecutionGateway
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 from app.services.workflow_package_runtime_input_registry import (
@@ -62,6 +63,7 @@ class _RuntimeRecordingOpenAIClient:
     init_calls: list[dict[str, Any]] = []
     create_calls: list[dict[str, Any]] = []
     output_text = '{"summary": "package runtime output"}'
+    output_texts: list[str] | None = None
     total_tokens = 23
 
     def __init__(self, **kwargs: Any) -> None:
@@ -77,8 +79,14 @@ class _RuntimeRecordingOpenAIClient:
 
     def create(self, **kwargs: Any) -> _RuntimeOpenAIResponse:
         type(self).create_calls.append(kwargs)
+        output_texts = type(self).output_texts
+        output_text = (
+            output_texts[min(len(type(self).create_calls) - 1, len(output_texts) - 1)]
+            if output_texts
+            else type(self).output_text
+        )
         return _RuntimeOpenAIResponse(
-            output_text=type(self).output_text,
+            output_text=output_text,
             total_tokens=type(self).total_tokens,
         )
 
@@ -87,7 +95,192 @@ class _RuntimeRecordingOpenAIClient:
         cls.init_calls = []
         cls.create_calls = []
         cls.output_text = '{"summary": "package runtime output"}'
+        cls.output_texts = None
         cls.total_tokens = 23
+
+
+class _RuntimeRecordingChatCompletionsClient:
+    init_calls: list[dict[str, Any]] = []
+    create_calls: list[dict[str, Any]] = []
+    final_output_text = '{"summary": "package chat runtime output"}'
+    return_empty_choices = False
+    malformed_tool_arguments = False
+
+    def __init__(self, **kwargs: Any) -> None:
+        type(self).init_calls.append(kwargs)
+        self.chat = self
+        self.completions = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create(self, **kwargs: Any) -> dict[str, Any]:
+        type(self).create_calls.append(kwargs)
+        if type(self).return_empty_choices:
+            return {
+                "choices": [],
+                "usage": self._usage(prompt_tokens=1, completion_tokens=0),
+            }
+        if len(type(self).create_calls) == 1:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_memory_lookup",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "signaldeck_memory_lookup",
+                                        "arguments": (
+                                            "{"
+                                            if type(self).malformed_tool_arguments
+                                            else self._memory_lookup_arguments()
+                                        ),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+                "usage": self._usage(prompt_tokens=7, completion_tokens=2),
+            }
+        return {
+            "choices": [{"message": {"content": type(self).final_output_text}}],
+            "usage": self._usage(prompt_tokens=11, completion_tokens=8),
+        }
+
+    @staticmethod
+    def _usage(*, prompt_tokens: int, completion_tokens: int) -> dict[str, int]:
+        return {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+        }
+
+    @staticmethod
+    def _memory_lookup_arguments() -> str:
+        return json.dumps(
+            {
+                "query": None,
+                "scope": None,
+                "subjectRefs": None,
+                "kind": None,
+                "status": None,
+                "tags": None,
+                "limit": 1,
+                "offset": 0,
+                "maxCharacters": 1000,
+            },
+            sort_keys=True,
+        )
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
+        cls.create_calls = []
+        cls.final_output_text = '{"summary": "package chat runtime output"}'
+        cls.return_empty_choices = False
+        cls.malformed_tool_arguments = False
+
+
+class _RuntimeMalformedResponsesToolClient:
+    create_calls: list[dict[str, Any]] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        del kwargs
+        self.responses = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create(self, **kwargs: Any) -> dict[str, Any]:
+        type(self).create_calls.append(kwargs)
+        return {
+            "id": "resp_tool_invalid",
+            "output": [
+                {
+                    "type": "function_call",
+                    "name": "signaldeck_memory_lookup",
+                    "call_id": "call_memory_lookup",
+                    "arguments": "{",
+                }
+            ],
+            "usage": {"total_tokens": 3},
+        }
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.create_calls = []
+
+
+class _RuntimeUsageLessResponsesClient:
+    init_calls: list[dict[str, Any]] = []
+    create_calls: list[dict[str, Any]] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        type(self).init_calls.append(kwargs)
+        self.responses = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create(self, **kwargs: Any) -> dict[str, Any]:
+        type(self).create_calls.append(kwargs)
+        return {
+            "id": "resp_usage_missing",
+            "output_text": '{"summary": "usage omitted"}',
+        }
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
+        cls.create_calls = []
+
+
+class _RuntimeReasoningRejectingChatClient:
+    create_calls: list[dict[str, Any]] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        del kwargs
+        self.chat = self
+        self.completions = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create(self, **kwargs: Any) -> dict[str, Any]:
+        type(self).create_calls.append(kwargs)
+        if "reasoning_effort" in kwargs:
+            raise ApiError(
+                status_code=400,
+                code="invalid_request_error",
+                message="Unsupported reasoning fields were rejected by the provider.",
+            )
+        return {
+            "choices": [{"message": {"content": '{"summary": "reasoning omitted"}'}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.create_calls = []
 
 
 def _package_source(*, package_key: str = "runtime_package") -> str:
@@ -148,6 +341,25 @@ spec:
 """
 
 
+def _package_source_with_memory_lookup(*, package_key: str) -> str:
+    source = _package_source(package_key=package_key)
+    source = source.replace(
+        "  capabilityProfiles: []\n  outputSchemas:",
+        """  capabilityProfiles:
+    - key: memory_context_tools
+      name: Memory Context Tools
+      toolKeys:
+        - signaldeck.memory.lookup
+  outputSchemas:""",
+        1,
+    )
+    return source.replace(
+        "      capabilityProfiles: []\n  workflows:",
+        "      capabilityProfiles: [memory_context_tools]\n  workflows:",
+        1,
+    )
+
+
 def _package_source_with_inline_private_mcp(*, package_key: str) -> str:
     return (
         _package_source(package_key=package_key)
@@ -198,9 +410,20 @@ def _create_package(
     *,
     package_key: str = "runtime_package",
 ) -> dict[str, object]:
+    return _create_package_from_source(
+        client,
+        manifest_source=_package_source(package_key=package_key),
+    )
+
+
+def _create_package_from_source(
+    client: TestClient,
+    *,
+    manifest_source: str,
+) -> dict[str, object]:
     response = client.post(
         "/api/workflow-packages",
-        json={"manifestSource": _package_source(package_key=package_key)},
+        json={"manifestSource": manifest_source},
     )
     assert response.status_code == 201, response.json()
     body = cast(dict[str, object], response.json())
@@ -216,6 +439,11 @@ def _seed_model_connection(
     base_url: str = "https://runtime-v1.example.com/v1",
     model_id: str = "gpt-package-v1",
     api_style: str = "responses",
+    capabilities: dict[str, Any] | None = None,
+    output_strategy_policy: str = "prefer_strict_schema",
+    parallel_tool_calls_policy: str = "serialize",
+    reasoning_policy: str = "allow",
+    streaming_policy: str = "allow",
 ) -> None:
     with session_factory() as session:
         payload = {} if api_key is None else {"apiKey": api_key}
@@ -230,6 +458,11 @@ def _seed_model_connection(
                 model_id=model_id,
                 reasoning_effort="high",
                 api_style=api_style,
+                capabilities=capabilities or {},
+                output_strategy_policy=output_strategy_policy,
+                parallel_tool_calls_policy=parallel_tool_calls_policy,
+                reasoning_policy=reasoning_policy,
+                streaming_policy=streaming_policy,
                 timeout_seconds=31,
                 secret_payload=payload,
             )
@@ -1301,6 +1534,22 @@ def test_workflow_package_launch_executes_with_live_model_connection(
     _RuntimeRecordingOpenAIClient.reset()
     _RuntimeRecordingOpenAIClient.output_text = '{"summary": "package live runtime output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    gateway_calls: list[str] = []
+    original_gateway_invoke = ModelExecutionGateway.invoke
+
+    def _recording_gateway_invoke(
+        self: ModelExecutionGateway,
+        request: Any,
+        *,
+        tool_executor: Any,
+    ) -> Any:
+        gateway_calls.append(request.agent_key)
+        return original_gateway_invoke(self, request, tool_executor=tool_executor)
+
+    monkeypatch.setattr(
+        "app.services.model_gateway.ModelExecutionGateway.invoke",
+        _recording_gateway_invoke,
+    )
 
     _seed_model_connection(session_factory)
     created = _create_package(client)
@@ -1369,6 +1618,17 @@ def test_workflow_package_launch_executes_with_live_model_connection(
     assert "outputSchemaId" not in invocation
     assert detail["finalOutput"] == {"summary": "package live runtime output"}
     assert detail["executedTokens"] == 23
+    assert gateway_calls == ["package_analyst"]
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["usage"] == {"totalTokens": 23}
+    assert gateway_metadata["selectedStrategies"] == {
+        "outputStrategy": "strictJsonSchema",
+        "toolCallStrategy": "none",
+        "parallelToolCalls": False,
+        "reasoningStrategy": "enabled",
+        "reasoningEffort": "low",
+        "streamingStrategy": "disabled",
+    }
     assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
         "api_key": "sk-package-runtime-v2",
         "base_url": "https://runtime-v2.example.com/v1",
@@ -1398,6 +1658,475 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         assert invocation.agent_key == "package_analyst"
         assert invocation.output_schema_id == 1
         assert invocation.output == {"summary": "package live runtime output"}
+
+
+def test_workflow_package_runtime_strict_json_schema_strategy_sends_native_schema(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "strict schema output"}'
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+
+    _seed_model_connection(
+        session_factory,
+        capabilities={
+            "strictJsonSchemaOutput": {"status": "supported"},
+            "jsonObjectOutput": {"status": "unsupported"},
+        },
+        output_strategy_policy="require_strict_schema",
+    )
+    created = _create_package(client, package_key="runtime_strict_schema_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "strict schema output"}
+    text_format = _RuntimeRecordingOpenAIClient.create_calls[-1]["text"]["format"]
+    assert text_format["type"] == "json_schema"
+    assert text_format["strict"] is True
+    assert text_format["schema"]["properties"]["summary"]["type"] == "string"
+
+
+def test_workflow_package_runtime_forbidden_reasoning_and_streaming_policies_record_metadata(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "policy output"}'
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+
+    _seed_model_connection(
+        session_factory,
+        reasoning_policy="forbid",
+        streaming_policy="forbid",
+    )
+    created = _create_package(client, package_key="runtime_policy_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["selectedStrategies"] == {
+        "outputStrategy": "strictJsonSchema",
+        "toolCallStrategy": "none",
+        "parallelToolCalls": False,
+        "reasoningStrategy": "disabledByPolicy",
+        "streamingStrategy": "disabledByPolicy",
+    }
+    assert gateway_metadata["usage"] == {"totalTokens": 23}
+    assert "reasoning" not in _RuntimeRecordingOpenAIClient.create_calls[-1]
+    assert detail["finalOutput"] == {"summary": "policy output"}
+
+
+def test_workflow_package_runtime_reasoning_unsupported_is_normalized_before_provider_call(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeReasoningRejectingChatClient.reset()
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeReasoningRejectingChatClient,
+    )
+
+    _seed_model_connection(
+        session_factory,
+        api_style="chat_completions",
+        capabilities={
+            "reasoningHints": {"status": "unsupported"},
+        },
+    )
+    created = _create_package(client, package_key="runtime_reasoning_unsupported_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "failed"
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    assert invocation["errorCode"] == "model_reasoning_unsupported"
+    assert invocation["errorDetails"][0]["field"] == "reasoningHints"
+    assert _RuntimeReasoningRejectingChatClient.create_calls == []
+
+
+def test_workflow_package_runtime_missing_usage_metadata_stays_secret_safe_and_successful(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeUsageLessResponsesClient.reset()
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeUsageLessResponsesClient)
+
+    _seed_model_connection(session_factory)
+    created = _create_package(client, package_key="runtime_usage_missing_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "usage omitted"}
+    assert detail["executedTokens"] == 0
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["usage"] == {"totalTokens": 0}
+    assert gateway_metadata["selectedStrategies"] == {
+        "outputStrategy": "strictJsonSchema",
+        "toolCallStrategy": "none",
+        "parallelToolCalls": False,
+        "reasoningStrategy": "enabled",
+        "reasoningEffort": "high",
+        "streamingStrategy": "disabled",
+    }
+
+
+def test_workflow_package_runtime_json_object_validation_retries_once_and_succeeds(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_texts = [
+        '{"notSummary": "invalid"}',
+        '{"summary": "json fallback corrected output"}',
+    ]
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+
+    _seed_model_connection(
+        session_factory,
+        capabilities={
+            "strictJsonSchemaOutput": {"status": "unsupported"},
+            "jsonObjectOutput": {"status": "supported"},
+        },
+        output_strategy_policy="allow_json_object_validation",
+    )
+    created = _create_package(client, package_key="runtime_json_validation_retry_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "json fallback corrected output"}
+    assert len(_RuntimeRecordingOpenAIClient.create_calls) == 2
+    assert _RuntimeRecordingOpenAIClient.create_calls[0]["text"] == {
+        "format": {"type": "json_object"}
+    }
+    assert "server-side schema validation" in _RuntimeRecordingOpenAIClient.create_calls[1]["input"]
+
+
+def test_workflow_package_runtime_json_object_validation_retry_exhaustion_fails_stably(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_texts = [
+        '{"notSummary": "invalid"}',
+        '{"stillWrong": "invalid"}',
+    ]
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+
+    _seed_model_connection(
+        session_factory,
+        capabilities={
+            "strictJsonSchemaOutput": {"status": "unsupported"},
+            "jsonObjectOutput": {"status": "supported"},
+        },
+        output_strategy_policy="allow_json_object_validation",
+    )
+    created = _create_package(client, package_key="runtime_json_validation_exhausted_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "failed"
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    assert invocation["status"] == "failed"
+    assert invocation["errorCode"] == "model_output_retry_exhausted"
+    assert invocation["errorDetails"][0]["field"] == "summary"
+    assert cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"][
+        "selectedStrategies"
+    ]["outputStrategy"] == "jsonObjectWithValidation"
+    assert len(_RuntimeRecordingOpenAIClient.create_calls) == 2
+
+
+def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_and_usage(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeRecordingChatCompletionsClient,
+    )
+
+    _seed_model_connection(
+        session_factory,
+        model_id="chat-runtime-model",
+        api_style="chat_completions",
+    )
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_memory_lookup(
+            package_key="runtime_chat_tool_package"
+        ),
+    )
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "package chat runtime output"}
+    assert detail["executedTokens"] == 28
+    assert _RuntimeRecordingChatCompletionsClient.init_calls[-1] == {
+        "api_key": "sk-package-runtime-v1",
+        "base_url": "https://runtime-v1.example.com/v1",
+        "timeout": 31.0,
+    }
+    assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 2
+
+    first_call = _RuntimeRecordingChatCompletionsClient.create_calls[0]
+    assert first_call["model"] == "chat-runtime-model"
+    assert first_call["reasoning_effort"] == "high"
+    assert first_call["messages"][0]["role"] == "system"
+    assert first_call["messages"][1]["role"] == "user"
+    assert first_call["response_format"]["type"] == "json_schema"
+    assert first_call["parallel_tool_calls"] is False
+    tool_names = [tool["function"]["name"] for tool in first_call["tools"]]
+    assert "signaldeck_memory_lookup" in tool_names
+
+    second_call = _RuntimeRecordingChatCompletionsClient.create_calls[1]
+    assistant_message = second_call["messages"][-2]
+    tool_message = second_call["messages"][-1]
+    assert assistant_message["role"] == "assistant"
+    assert assistant_message["tool_calls"][0]["id"] == "call_memory_lookup"
+    assert tool_message["role"] == "tool"
+    assert tool_message["tool_call_id"] == "call_memory_lookup"
+    tool_payload = json.loads(tool_message["content"])
+    assert tool_payload["toolKey"] == "signaldeck.memory.lookup"
+    assert tool_payload["scopeMode"] == "current-context-fallback"
+    assert tool_payload["count"] == 0
+
+    with session_factory() as session:
+        invocation = session.query(RunAgentInvocation).filter_by(run_id=run_id).one()
+        assert invocation.status == "succeeded"
+        assert invocation.tokens == 28
+        assert invocation.output == {"summary": "package chat runtime output"}
+        gateway_metadata = cast(dict[str, Any], invocation.graph_metadata)["modelGateway"]
+        assert gateway_metadata["usage"] == {"inputTokens": 18, "outputTokens": 10, "totalTokens": 28}
+        assert gateway_metadata["selectedStrategies"] == {
+            "outputStrategy": "strictJsonSchema",
+            "toolCallStrategy": "serialize",
+            "parallelToolCalls": False,
+            "reasoningStrategy": "enabled",
+            "reasoningEffort": "high",
+            "streamingStrategy": "disabled",
+        }
+
+
+def test_workflow_package_runtime_chat_completions_adapter_normalizes_malformed_tool_call(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    _RuntimeRecordingChatCompletionsClient.malformed_tool_arguments = True
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeRecordingChatCompletionsClient,
+    )
+
+    _seed_model_connection(session_factory, api_style="chat_completions")
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_memory_lookup(
+            package_key="runtime_chat_malformed_tool_package"
+        ),
+    )
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "failed"
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    assert invocation["errorCode"] == "model_tool_call_payload_invalid"
+    assert "malformed tool call" in invocation["errorMessage"]
+    assert invocation["errorDetails"][0]["field"] == "toolCall"
+
+
+def test_workflow_package_runtime_responses_adapter_normalizes_malformed_tool_call(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeMalformedResponsesToolClient.reset()
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeMalformedResponsesToolClient,
+    )
+
+    _seed_model_connection(session_factory)
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_memory_lookup(
+            package_key="runtime_responses_malformed_tool_package"
+        ),
+    )
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "failed"
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    assert invocation["errorCode"] == "model_tool_call_payload_invalid"
+    assert invocation["errorDetails"][0]["issue"] == (
+        "Tool call 'signaldeck_memory_lookup' arguments are not valid JSON."
+    )
+    assert _RuntimeMalformedResponsesToolClient.create_calls[0]["parallel_tool_calls"] is False
+
+
+def test_workflow_package_runtime_tool_policy_forbid_blocks_tool_dependent_package(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeRecordingChatCompletionsClient,
+    )
+
+    _seed_model_connection(
+        session_factory,
+        api_style="chat_completions",
+        parallel_tool_calls_policy="forbid",
+    )
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_memory_lookup(
+            package_key="runtime_tool_policy_forbid_package"
+        ),
+    )
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+
+    assert launch.status_code == 422, launch.json()
+    assert launch.json()["code"] == "validation_error"
+    assert launch.json()["message"] == "Workflow package launch validation failed"
+    assert {
+        "field": "spec.capabilityProfiles.memory_context_tools.toolKeys",
+        "code": "model_capability_required_missing",
+        "issue": (
+            "This workflow requires native tool calls, but the selected model connection "
+            "forbids tool calls."
+        ),
+    } in launch.json()["details"]
+    assert _RuntimeRecordingChatCompletionsClient.create_calls == []
+
+
+def test_workflow_package_runtime_chat_completions_adapter_normalizes_empty_response_error(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    _RuntimeRecordingChatCompletionsClient.return_empty_choices = True
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeRecordingChatCompletionsClient,
+    )
+
+    _seed_model_connection(session_factory, api_style="chat_completions")
+    created = _create_package(client, package_key="runtime_chat_empty_response_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "failed"
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    assert invocation["status"] == "failed"
+    assert invocation["errorCode"] == "agent_provider_response_empty"
+    assert "choice message" in invocation["errorMessage"]
+    assert invocation["tokens"] == 0
+    assert detail["executedTokens"] == 0
 
 
 def test_workflow_package_runtime_uses_smoke_kind_without_openai(
