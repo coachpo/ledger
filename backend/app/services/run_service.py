@@ -8,7 +8,6 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, cast
 
-from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -99,6 +98,10 @@ from app.services.http_operation_execution_service import (
 from app.services.legacy_authoring import raise_legacy_global_authoring_runtime_blocked
 from app.services.memory_follow_up_service import MemoryFollowUpEvaluator, MemoryFollowUpService
 from app.services.memory_service import MemoryLookupContext, MemoryService
+from app.services.model_gateway import ModelExecutionGateway
+from app.services.model_gateway_openai import (
+    DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI,
+)
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     OutputSchemaCompilerError,
@@ -217,6 +220,7 @@ class RunService:
         self.agent_execution_service = AgentExecutionService(
             self.session_factory,
             provider_bundle=self.provider_bundle,
+            model_gateway=ModelExecutionGateway(client_factory=OpenAI),
         )
         self.http_operation_execution_service = HttpOperationExecutionService(session)
         self.schema_compiler = OutputSchemaCompiler(self.output_schema_repository)
@@ -631,6 +635,8 @@ class RunService:
             local_resource_refs=self._package_local_resource_refs(workflow_package.compiled_plan),
             input_schema=deepcopy(plan.input_schema),
             launch_parameters=deepcopy(validated_input),
+            # Capture the live effective runtime profile only when the run is created.
+            # Later rerun/fork provenance reads this frozen snapshot instead of rebinding.
             resolved_model_connections=[
                 self._model_binding_payload(binding)
                 for binding in sorted(preflight.model_bindings.values(), key=lambda item: item.key)
@@ -1584,6 +1590,10 @@ class RunService:
         duration_ms: int | None,
         trace_span_id: str | None,
     ) -> None:
+        self._merge_invocation_runtime_metadata(
+            invocation,
+            failure.runtime_metadata,
+        )
         _ = self.run_agent_invocation_repository.persist_failure(
             invocation,
             error_code=failure.code,
@@ -1817,6 +1827,10 @@ class RunService:
 
             assert isinstance(agent_result, RunAgentInvocationResult)
             step_tokens += agent_result.tokens
+            self._merge_invocation_runtime_metadata(
+                prepared_agent.invocation,
+                agent_result.runtime_metadata,
+            )
             _ = self.run_agent_invocation_repository.persist_success(
                 prepared_agent.invocation,
                 output=agent_result.output,
@@ -2099,6 +2113,23 @@ class RunService:
             payload["sourceRefs"] = deepcopy(graph_metadata.source_refs)
         return payload or None
 
+    @staticmethod
+    def _merge_invocation_runtime_metadata(
+        invocation: RunAgentInvocation,
+        runtime_metadata: dict[str, Any] | None,
+    ) -> None:
+        if not runtime_metadata:
+            return
+        metadata = deepcopy(invocation.graph_metadata or {})
+        gateway_metadata = metadata.get("modelGateway")
+        if isinstance(gateway_metadata, dict):
+            merged_gateway_metadata = deepcopy(gateway_metadata)
+            merged_gateway_metadata.update(runtime_metadata)
+        else:
+            merged_gateway_metadata = deepcopy(runtime_metadata)
+        metadata["modelGateway"] = merged_gateway_metadata
+        invocation.graph_metadata = metadata
+
     def _resolve_final_output_value(
         self,
         final_output: ExecutionPlanFinalOutput,
@@ -2253,6 +2284,7 @@ class RunService:
             tokens=result.tokens,
             duration_ms=result.duration_ms,
             trace_span_id=trace_span_id,
+            runtime_metadata=result.runtime_metadata,
         )
 
     async def _execute_operation(
@@ -2340,7 +2372,6 @@ class RunService:
             trace_id=trace_id,
             step_index=step_index,
             slot=slot,
-            openai_client_factory=OpenAI,
             run_id=None if runtime_context is None else runtime_context.run_id,
             run_step_id=invocation.run_step_id,
             run_agent_invocation_id=invocation.id,
@@ -2792,9 +2823,16 @@ class RunService:
             "key": binding.key,
             "name": binding.name,
             "connectionKind": binding.connection_kind,
+            "protocolProfile": binding.protocol_profile,
             "baseUrl": binding.base_url,
             "modelId": binding.model_id,
             "reasoningEffort": binding.reasoning_effort,
+            "capabilities": deepcopy(binding.capabilities),
+            "outputStrategyPolicy": binding.output_strategy_policy,
+            "parallelToolCallsPolicy": binding.parallel_tool_calls_policy,
+            "reasoningPolicy": binding.reasoning_policy,
+            "streamingPolicy": binding.streaming_policy,
+            "probeCacheTtlSeconds": binding.probe_cache_ttl_seconds,
             "apiStyle": binding.api_style,
             "timeoutSeconds": binding.timeout_seconds,
             "hasApiKey": binding.has_api_key,

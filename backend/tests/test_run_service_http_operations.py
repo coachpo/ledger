@@ -16,6 +16,7 @@ from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.repositories.run import RunRepository
+from app.schemas.model_connection import default_model_connection_capabilities
 from app.services.execution_plan import (
     ExecutionPlan,
     ExecutionPlanAgent,
@@ -260,13 +261,24 @@ def _schema(local_id: int, key: str, properties: dict[str, Any]) -> PackageLocal
 
 
 def _model_binding() -> PackageResolvedModelBinding:
+    protocol_profile = "openai_responses"
     return PackageResolvedModelBinding(
         key="mixed_model",
         name="Mixed Model",
         connection_kind="deterministic_smoke",
+        protocol_profile=protocol_profile,
         base_url="https://model.example.test/v1",
         model_id="mixed-model",
         reasoning_effort=None,
+        capabilities=default_model_connection_capabilities(protocol_profile).model_dump(
+            mode="json",
+            by_alias=True,
+        ),
+        output_strategy_policy="prefer_strict_schema",
+        parallel_tool_calls_policy="serialize",
+        reasoning_policy="allow",
+        streaming_policy="allow",
+        probe_cache_ttl_seconds=900,
         api_style="responses",
         timeout_seconds=10,
         has_api_key=False,
@@ -543,6 +555,31 @@ def test_progress_for_terminal_run_with_sparse_invocation_counts_is_complete(
     items = cast(list[dict[str, Any]], run_list["items"])
     assert [item["id"] for item in items] == [run_id]
     assert items[0]["progress"] == expected_progress
+
+
+class _RecordingModelExecutionGateway:
+    init_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        type(self).init_calls.append((args, kwargs))
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
+
+
+def test_run_service_composes_gateway_without_direct_protocol_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RecordingModelExecutionGateway.reset()
+    monkeypatch.setattr("app.services.run_service.ModelExecutionGateway", _RecordingModelExecutionGateway)
+    with session_factory() as session:
+        _ = RunService(session, session_factory)
+    assert len(_RecordingModelExecutionGateway.init_calls) == 1
+    args, kwargs = _RecordingModelExecutionGateway.init_calls[0]
+    assert args == ()
+    assert sorted(kwargs) == ["client_factory"]
 
 
 def test_mixed_execution_runs_agent_and_http_operation_families(
