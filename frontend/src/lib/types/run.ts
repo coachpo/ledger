@@ -1,5 +1,15 @@
 import type { UnknownRecord } from "./common";
-import type { ModelConnectionApiStyle, ModelConnectionKind, ModelConnectionReasoningEffort } from "./model-connection";
+import type {
+  ModelConnectionApiStyle,
+  ModelConnectionCapabilities,
+  ModelConnectionKind,
+  ModelConnectionOutputStrategyPolicy,
+  ModelConnectionParallelToolCallsPolicy,
+  ModelConnectionProtocolProfile,
+  ModelConnectionReasoningEffort,
+  ModelConnectionReasoningPolicy,
+  ModelConnectionStreamingPolicy,
+} from "./model-connection";
 
 export type RunStatus = "queued" | "running" | "succeeded" | "failed";
 export type RunQueueState = "waiting" | "blocked";
@@ -33,12 +43,34 @@ export interface RunAgentErrorRead {
   details: UnknownRecord[];
 }
 
+export interface RunModelGatewaySelectedStrategiesRead {
+  outputStrategy?: string | null;
+  toolCallStrategy?: string | null;
+  parallelToolCalls?: boolean | null;
+  reasoningStrategy?: string | null;
+  reasoningEffort?: string | null;
+  streamingStrategy?: string | null;
+}
+
+export interface RunModelGatewayUsageRead {
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+}
+
+export interface RunModelGatewayMetadataRead {
+  selectedStrategies?: RunModelGatewaySelectedStrategiesRead | null;
+  usage?: RunModelGatewayUsageRead | null;
+}
+
 export interface RunGraphMetadata {
+  [key: string]: unknown;
   branchId?: string;
   fanoutId?: string;
   graphPath?: string;
   loopId?: string;
   loopIteration?: number;
+  modelGateway?: RunModelGatewayMetadataRead | null;
   nodeId?: string;
   nodeKind?: "step" | "sequence" | "fanout" | "loop" | "http";
   sourceRefs?: unknown;
@@ -111,9 +143,17 @@ export interface RunPackageResolvedModelConnectionRead {
   key: string;
   name: string;
   connectionKind: ModelConnectionKind;
+  protocolProfile: ModelConnectionProtocolProfile;
   baseUrl: string;
   modelId: string;
   reasoningEffort: ModelConnectionReasoningEffort | null;
+  capabilities: ModelConnectionCapabilities;
+  outputStrategyPolicy: ModelConnectionOutputStrategyPolicy;
+  parallelToolCallsPolicy: ModelConnectionParallelToolCallsPolicy;
+  reasoningPolicy: ModelConnectionReasoningPolicy;
+  streamingPolicy: ModelConnectionStreamingPolicy;
+  probeCacheTtlSeconds: number;
+  /** @deprecated Historical compatibility only; use protocolProfile. */
   apiStyle: ModelConnectionApiStyle;
   timeoutSeconds: number;
   hasApiKey: boolean;

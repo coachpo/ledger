@@ -13,10 +13,15 @@ import type {
   RunAgentInvocationRead,
   RunForkDraftRead,
   RunMemoryEventRead,
+  RunPackageResolvedModelConnectionRead,
   RunRead,
   RunRerunDraftRead,
   RunStepRead,
 } from "@/lib/types/run";
+import type {
+  ModelConnectionCapabilities,
+  ModelConnectionCapabilityState,
+} from "@/lib/types/model-connection";
 
 import { RunsDetailPage } from "./detail";
 
@@ -357,6 +362,103 @@ function buildPackageProvenance(
   };
 }
 
+function buildCapabilityState(
+  status: ModelConnectionCapabilityState["status"],
+  detail: string,
+  lastProbedAt: string,
+): ModelConnectionCapabilityState {
+  return { detail, lastProbedAt, status };
+}
+
+function buildCapabilities(
+  overrides: Partial<
+    Record<keyof ModelConnectionCapabilities, ModelConnectionCapabilityState>
+  > = {},
+): ModelConnectionCapabilities {
+  return {
+    chatCompletions: buildCapabilityState(
+      "supported",
+      "Chat completions support was recorded for the frozen run profile.",
+      "2026-05-08T07:10:00Z",
+    ),
+    jsonObjectOutput: buildCapabilityState(
+      "supported",
+      "JSON object validation is available.",
+      "2026-05-08T07:11:00Z",
+    ),
+    nativeToolCalls: buildCapabilityState(
+      "unsupported",
+      "Native tool calls are not available on this run snapshot.",
+      "2026-05-08T07:13:00Z",
+    ),
+    parallelToolCalls: buildCapabilityState(
+      "unsupported",
+      "Parallel tool calls were serialized to preserve compatibility.",
+      "2026-05-08T07:14:00Z",
+    ),
+    reasoningHints: buildCapabilityState(
+      "supported",
+      "Reasoning hints were accepted.",
+      "2026-05-08T07:15:00Z",
+    ),
+    responsesApi: buildCapabilityState(
+      "supported",
+      "Responses API support was recorded for the frozen run profile.",
+      "2026-05-08T07:16:00Z",
+    ),
+    streaming: buildCapabilityState(
+      "supported",
+      "Streaming was available during the probe.",
+      "2026-05-08T07:17:00Z",
+    ),
+    strictJsonSchemaOutput: buildCapabilityState(
+      "supported",
+      "Strict JSON schema output was accepted.",
+      "2026-05-08T07:18:00Z",
+    ),
+    systemMessages: buildCapabilityState(
+      "supported",
+      "System messages were accepted.",
+      "2026-05-08T07:19:00Z",
+    ),
+    textGeneration: buildCapabilityState(
+      "supported",
+      "Text generation is supported.",
+      "2026-05-08T07:20:00Z",
+    ),
+    usageReporting: buildCapabilityState(
+      "supported",
+      "Usage metadata was reported.",
+      "2026-05-08T07:21:00Z",
+    ),
+    ...overrides,
+  };
+}
+
+function buildResolvedModelConnection(
+  overrides: Partial<RunPackageResolvedModelConnectionRead>,
+): RunPackageResolvedModelConnectionRead {
+  return {
+    apiStyle: "responses",
+    baseUrl: "https://api.openai.com/v1",
+    capabilities: buildCapabilities(),
+    connectionKind: "provider",
+    hasApiKey: true,
+    key: "primary_openai",
+    modelId: "gpt-5.5",
+    name: "Primary OpenAI",
+    outputStrategyPolicy: "prefer_strict_schema",
+    parallelToolCallsPolicy: "serialize",
+    probeCacheTtlSeconds: 900,
+    protocolProfile: "openai_responses",
+    reasoningEffort: "medium",
+    reasoningPolicy: "allow",
+    streamingPolicy: "allow",
+    timeoutSeconds: 60,
+    ...overrides,
+  };
+}
+
 function buildRun(overrides: Partial<RunRead> = {}): RunRead {
   return {
     createdAt: NOW,
@@ -560,6 +662,23 @@ describe("RunsDetailPage", () => {
       errorCode: "model_error",
       errorDetails: [{ type: "rate_limit" }],
       errorMessage: "Provider failed",
+      graphMetadata: {
+        modelGateway: {
+          selectedStrategies: {
+            outputStrategy: "json_object_validation",
+            parallelToolCalls: false,
+            reasoningEffort: "low",
+            reasoningStrategy: "disabled_by_policy",
+            streamingStrategy: "disabled",
+            toolCallStrategy: "native_tool_calls",
+          },
+          usage: {
+            inputTokens: 18,
+            outputTokens: 12,
+            totalTokens: 30,
+          },
+        },
+      },
       id: 1002,
       output: null,
       outputOrigin: null,
@@ -621,28 +740,99 @@ describe("RunsDetailPage", () => {
           compiledHashMatchesSnapshot: true,
         },
         resolvedModelConnections: [
-          {
-            apiStyle: "responses",
-            baseUrl: "https://api.openai.com/v1",
-            connectionKind: "provider",
-            hasApiKey: true,
-            key: "primary_openai",
-            modelId: "gpt-5.5",
-            name: "Primary OpenAI",
-            reasoningEffort: "medium",
-            timeoutSeconds: 60,
-          },
-          {
-            apiStyle: "responses",
+          buildResolvedModelConnection({
+            capabilities: buildCapabilities({
+              nativeToolCalls: buildCapabilityState(
+                "unsupported",
+                "Native tool calls are required by this run but were unavailable.",
+                "2026-05-08T07:22:00Z",
+              ),
+              parallelToolCalls: buildCapabilityState(
+                "unsupported",
+                "Parallel tool calls were serialized for compatibility.",
+                "2026-05-08T07:23:00Z",
+              ),
+              responsesApi: buildCapabilityState(
+                "supported",
+                "Responses API support was recorded for the frozen run profile.",
+                "2026-05-08T07:24:00Z",
+              ),
+            }),
+          }),
+          buildResolvedModelConnection({
+            apiStyle: "chat_completions",
             baseUrl: "https://signaldeck-deterministic-model.local/v1",
+            capabilities: buildCapabilities({
+              chatCompletions: buildCapabilityState(
+                "supported",
+                "Chat completions support is available on the smoke profile.",
+                "2026-05-08T07:31:00Z",
+              ),
+              jsonObjectOutput: buildCapabilityState(
+                "notApplicable",
+                "JSON object output is not exercised on the smoke profile.",
+                "2026-05-08T07:32:00Z",
+              ),
+              nativeToolCalls: buildCapabilityState(
+                "unsupported",
+                "Native tool calls are not available on the smoke profile.",
+                "2026-05-08T07:34:00Z",
+              ),
+              parallelToolCalls: buildCapabilityState(
+                "unsupported",
+                "Parallel tool calls are not available on the smoke profile.",
+                "2026-05-08T07:35:00Z",
+              ),
+              reasoningHints: buildCapabilityState(
+                "notApplicable",
+                "Reasoning hints are not exercised on the smoke profile.",
+                "2026-05-08T07:36:00Z",
+              ),
+              responsesApi: buildCapabilityState(
+                "notApplicable",
+                "Responses API is not exercised on the smoke profile.",
+                "2026-05-08T07:37:00Z",
+              ),
+              streaming: buildCapabilityState(
+                "unsupported",
+                "Streaming is disabled for the smoke profile.",
+                "2026-05-08T07:38:00Z",
+              ),
+              strictJsonSchemaOutput: buildCapabilityState(
+                "supported",
+                "Strict JSON schema output is available on the smoke profile.",
+                "2026-05-08T07:39:00Z",
+              ),
+              systemMessages: buildCapabilityState(
+                "supported",
+                "System messages are accepted on the smoke profile.",
+                "2026-05-08T07:40:00Z",
+              ),
+              textGeneration: buildCapabilityState(
+                "supported",
+                "Text generation is available on the smoke profile.",
+                "2026-05-08T07:41:00Z",
+              ),
+              usageReporting: buildCapabilityState(
+                "supported",
+                "Usage metadata was emitted by the smoke profile probe.",
+                "2026-05-08T07:42:00Z",
+              ),
+            }),
             connectionKind: "deterministic_smoke",
             hasApiKey: false,
             key: "smoke_model",
             modelId: "signaldeck-smoke",
             name: "Smoke Model",
+            outputStrategyPolicy: "allow_plain_text",
+            parallelToolCallsPolicy: "forbid",
+            probeCacheTtlSeconds: 300,
+            protocolProfile: "openai_chat_completions",
             reasoningEffort: null,
+            reasoningPolicy: "forbid",
+            streamingPolicy: "forbid",
             timeoutSeconds: 5,
-          },
+          }),
         ],
       },
       steps: [
@@ -760,15 +950,49 @@ describe("RunsDetailPage", () => {
     expect(
       screen.getByTestId("runs-inspection-resize-handle"),
     ).toBeInTheDocument();
-    expect(screen.getByText(/^Total tokens$/i).parentElement).toHaveTextContent(
-      /51/i,
-    );
+    const usageRow = within(screen.getByTestId("runs-summary-usage-row"));
     expect(
-      screen.getByText(/^Inherited tokens$/i).parentElement,
+      usageRow.getByText(/^Total tokens$/i).parentElement,
+    ).toHaveTextContent(/51/i);
+    expect(
+      usageRow.getByText(/^Inherited tokens$/i).parentElement,
     ).toHaveTextContent(/21/i);
     expect(
-      screen.getByText(/^Executed tokens$/i).parentElement,
+      usageRow.getByText(/^Executed tokens$/i).parentElement,
     ).toHaveTextContent(/30/i);
+    const runtimeProfile = screen.getByTestId("runs-runtime-profile");
+    expect(runtimeProfile).toHaveTextContent(/effective runtime profile/i);
+    expect(runtimeProfile).toHaveTextContent(/sanitized launch-time model profile/i);
+    const primaryProfile = screen.getByTestId(
+      "runs-runtime-profile-connection-primary_openai",
+    );
+    expect(primaryProfile).toHaveTextContent(/Primary OpenAI/i);
+    expect(primaryProfile).toHaveTextContent(/Responses-compatible/i);
+    expect(primaryProfile).toHaveTextContent(/Selected strategies/i);
+    expect(primaryProfile).toHaveTextContent(/Supported/i);
+    expect(primaryProfile).toHaveTextContent(/Last probed/i);
+    const smokeProfile = screen.getByTestId(
+      "runs-runtime-profile-connection-smoke_model",
+    );
+    expect(smokeProfile).toHaveTextContent(/Smoke Model/i);
+    expect(smokeProfile).toHaveTextContent(/Chat Completions-compatible/i);
+    expect(smokeProfile).toHaveTextContent(/No stored credential/i);
+    expect(smokeProfile).toHaveTextContent(/Unsupported/i);
+    const selectedStrategies = screen.getByTestId(
+      "runs-runtime-selected-strategies",
+    );
+    expect(selectedStrategies).toHaveTextContent(/Adapter-selected strategies/i);
+    expect(selectedStrategies).toHaveTextContent(
+      /compatibility degradation decisions/i,
+    );
+    const decisionStrategy = screen.getByTestId("runs-runtime-strategy-2-1002");
+    expect(decisionStrategy).toHaveTextContent(/consumer_agent@2/i);
+    expect(decisionStrategy).toHaveTextContent(/json object validation/i);
+    expect(decisionStrategy).toHaveTextContent(/native tool calls/i);
+    expect(decisionStrategy).toHaveTextContent(/Disabled/i);
+    expect(decisionStrategy).toHaveTextContent(/disabled by policy/i);
+    expect(decisionStrategy).toHaveTextContent(/Input tokens/i);
+    expect(decisionStrategy).toHaveTextContent(/30/i);
     expect(screen.queryByText(/total cost/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/inherited cost/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/executed cost/i)).not.toBeInTheDocument();
@@ -998,6 +1222,74 @@ describe("RunsDetailPage", () => {
     expect(screen.getByText("model_error")).toBeVisible();
     expect(screen.getByText("Provider failed")).toBeVisible();
     expect(screen.getByText(/rate_limit/i)).toBeVisible();
+  });
+
+  it("renders missing usage metadata without hiding selected strategies", () => {
+    useRunMock.mockReturnValue(
+      queryResult(
+        buildRun({
+          executedTokens: 0,
+          finalOutput: { summary: "usage omitted" },
+          steps: [
+            buildStep({
+              invocations: [
+                buildInvocation({
+                  graphMetadata: {
+                    modelGateway: {
+                      selectedStrategies: {
+                        outputStrategy: "strictJsonSchema",
+                        parallelToolCalls: false,
+                        reasoningEffort: "medium",
+                        reasoningStrategy: "enabled",
+                        streamingStrategy: "disabled",
+                        toolCallStrategy: "none",
+                      },
+                      usage: null,
+                    },
+                  },
+                }),
+              ],
+            }),
+          ],
+          packageProvenance: buildPackageProvenance({
+            resolvedModelConnections: [
+              buildResolvedModelConnection({
+                capabilities: buildCapabilities({
+                  usageReporting: buildCapabilityState(
+                    "unsupported",
+                    "Usage metadata was not reported by the fake provider.",
+                    "2026-05-08T07:50:00Z",
+                  ),
+                }),
+              }),
+            ],
+          }),
+        }),
+      ),
+    );
+
+    render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-runtime-profile")).toHaveTextContent(
+      /usage reporting/i,
+    );
+    expect(screen.getByTestId("runs-runtime-profile")).toHaveTextContent(
+      /unsupported/i,
+    );
+    expect(screen.getByTestId("runs-runtime-strategy-1-1001")).toHaveTextContent(
+      /strictJsonSchema/i,
+    );
+    expect(screen.getByTestId("runs-runtime-strategy-1-1001")).toHaveTextContent(
+      /enabled/i,
+    );
+    expect(
+      within(screen.getByTestId("runs-runtime-strategy-1-1001")).queryByText(
+        /^Input tokens$/i,
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-summary-usage-row")).toHaveTextContent(
+      /0/i,
+    );
   });
 
   it("stacks the inspection console and keeps raw payloads scrollable on mobile", async () => {

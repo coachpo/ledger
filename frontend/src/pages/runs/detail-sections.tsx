@@ -65,12 +65,24 @@ import type {
   RunMemoryArtifactRead,
   RunMemoryEventRead,
   RunMemoryEventType,
+  RunModelGatewaySelectedStrategiesRead,
+  RunModelGatewayUsageRead,
   RunOperationInvocationRead,
+  RunPackageResolvedModelConnectionRead,
   RunRead,
   RunStatus,
   RunStepRead,
   RunStepStatus,
 } from "@/lib/types/run";
+import type {
+  ModelConnectionCapabilities,
+  ModelConnectionCapabilityStatus,
+  ModelConnectionOutputStrategyPolicy,
+  ModelConnectionParallelToolCallsPolicy,
+  ModelConnectionProtocolProfile,
+  ModelConnectionReasoningPolicy,
+  ModelConnectionStreamingPolicy,
+} from "@/lib/types/model-connection";
 
 import { stringifyJson } from "../platform-resource-helpers";
 import {
@@ -737,6 +749,412 @@ function memoryProvenanceLabel(artifact: RunMemoryArtifactRead): string {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+const PROTOCOL_PROFILE_LABELS: Record<ModelConnectionProtocolProfile, string> = {
+  openai_chat_completions: "Chat Completions-compatible",
+  openai_responses: "Responses-compatible",
+};
+
+const OUTPUT_STRATEGY_POLICY_LABELS: Record<
+  ModelConnectionOutputStrategyPolicy,
+  string
+> = {
+  allow_json_object_validation: "Allow JSON object validation",
+  allow_plain_text: "Allow plain text",
+  prefer_strict_schema: "Prefer strict schema",
+  require_strict_schema: "Require strict schema",
+};
+
+const PARALLEL_TOOL_CALLS_POLICY_LABELS: Record<
+  ModelConnectionParallelToolCallsPolicy,
+  string
+> = {
+  allow: "Allow parallel calls",
+  forbid: "Forbid parallel calls",
+  serialize: "Serialize calls",
+};
+
+const REASONING_POLICY_LABELS: Record<ModelConnectionReasoningPolicy, string> = {
+  allow: "Allow reasoning",
+  forbid: "Forbid reasoning",
+};
+
+const STREAMING_POLICY_LABELS: Record<ModelConnectionStreamingPolicy, string> = {
+  allow: "Allow streaming",
+  forbid: "Forbid streaming",
+};
+
+const CAPABILITY_ORDER: (keyof ModelConnectionCapabilities)[] = [
+  "textGeneration",
+  "chatCompletions",
+  "responsesApi",
+  "streaming",
+  "nativeToolCalls",
+  "parallelToolCalls",
+  "jsonObjectOutput",
+  "strictJsonSchemaOutput",
+  "reasoningHints",
+  "usageReporting",
+  "systemMessages",
+];
+
+const CAPABILITY_LABELS: Record<keyof ModelConnectionCapabilities, string> = {
+  textGeneration: "Text generation",
+  chatCompletions: "Chat completions",
+  responsesApi: "Responses API",
+  streaming: "Streaming",
+  nativeToolCalls: "Native tool calls",
+  parallelToolCalls: "Parallel tool calls",
+  jsonObjectOutput: "JSON object output",
+  strictJsonSchemaOutput: "Strict JSON schema output",
+  reasoningHints: "Reasoning hints",
+  usageReporting: "Usage reporting",
+  systemMessages: "System messages",
+};
+
+function capabilityStatusLabel(
+  status: ModelConnectionCapabilityStatus,
+): string {
+  if (status === "supported") {
+    return "Supported";
+  }
+  if (status === "unsupported") {
+    return "Unsupported";
+  }
+  if (status === "notApplicable") {
+    return "Not applicable";
+  }
+  return "Unknown";
+}
+
+function capabilityStatusVariant(
+  status: ModelConnectionCapabilityStatus,
+): "secondary" | "destructive" | "outline" {
+  if (status === "supported") {
+    return "secondary";
+  }
+  if (status === "unsupported") {
+    return "destructive";
+  }
+  return "outline";
+}
+
+function runtimeConnectionKindLabel(
+  value: RunPackageResolvedModelConnectionRead["connectionKind"],
+): string {
+  return value === "deterministic_smoke"
+    ? "Deterministic smoke"
+    : "Provider-backed";
+}
+
+type RuntimeStrategySummary = {
+  agentLabel: string;
+  invocationId: number;
+  key: string;
+  status: RunStepStatus;
+  stepIndex: number;
+  strategies: RunModelGatewaySelectedStrategiesRead | null;
+  usage: RunModelGatewayUsageRead | null;
+};
+
+function formatRuntimeStrategyValue(value: unknown): string {
+  if (value === true) {
+    return "Enabled";
+  }
+  if (value === false) {
+    return "Disabled";
+  }
+  if (typeof value === "string" && value.trim()) {
+    return value.replaceAll("_", " ");
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  return "Not recorded";
+}
+
+function strategyItems(
+  strategies: RunModelGatewaySelectedStrategiesRead | null,
+): DetailItem[] {
+  return [
+    {
+      label: "Output strategy",
+      value: formatRuntimeStrategyValue(strategies?.outputStrategy),
+    },
+    {
+      label: "Tool call strategy",
+      value: formatRuntimeStrategyValue(strategies?.toolCallStrategy),
+    },
+    {
+      label: "Parallel tool calls",
+      value: formatRuntimeStrategyValue(strategies?.parallelToolCalls),
+    },
+    {
+      label: "Reasoning strategy",
+      value: formatRuntimeStrategyValue(strategies?.reasoningStrategy),
+    },
+    {
+      label: "Reasoning effort",
+      value: formatRuntimeStrategyValue(strategies?.reasoningEffort),
+    },
+    {
+      label: "Streaming strategy",
+      value: formatRuntimeStrategyValue(strategies?.streamingStrategy),
+    },
+  ];
+}
+
+function usageItems(usage: RunModelGatewayUsageRead | null): DetailItem[] {
+  return [
+    {
+      label: "Input tokens",
+      value: formatRuntimeStrategyValue(usage?.inputTokens),
+    },
+    {
+      label: "Output tokens",
+      value: formatRuntimeStrategyValue(usage?.outputTokens),
+    },
+    {
+      label: "Total tokens",
+      value: formatRuntimeStrategyValue(usage?.totalTokens),
+    },
+  ];
+}
+
+function runtimeStrategySummaries(run: RunRead): RuntimeStrategySummary[] {
+  return run.steps.flatMap((step) =>
+    sortedInvocations(step.invocations)
+      .map((invocation) => {
+        const gatewayMetadata = invocation.graphMetadata?.modelGateway;
+        const strategies = gatewayMetadata?.selectedStrategies ?? null;
+        const usage = gatewayMetadata?.usage ?? null;
+        if (!strategies && !usage) {
+          return null;
+        }
+        return {
+          agentLabel: `${invocation.agentKey}@${invocation.agentVersion}`,
+          invocationId: invocation.id,
+          key: `${step.index}-${invocation.id}`,
+          status: invocation.status,
+          stepIndex: step.index,
+          strategies,
+          usage,
+        } satisfies RuntimeStrategySummary;
+      })
+      .filter((item): item is RuntimeStrategySummary => item !== null),
+  );
+}
+
+function RunRuntimeProfileSection({ run }: { run: RunRead }) {
+  const provenance = run.packageProvenance;
+  if (run.targetKind !== "workflowPackage" || !provenance) {
+    return null;
+  }
+
+  const resolvedModelConnections = provenance.resolvedModelConnections;
+  const strategySummaries = runtimeStrategySummaries(run);
+
+  return (
+    <section
+      className="space-y-3 rounded-xl border bg-background/60 p-4"
+      data-testid="runs-runtime-profile"
+    >
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <h3 className="text-base font-medium leading-none">
+            Effective runtime profile
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Sanitized launch-time model profile captured in provenance. Secrets
+            and raw provider payloads are omitted.
+          </p>
+        </div>
+        <Badge variant="outline">
+          {resolvedModelConnections.length} connection
+          {resolvedModelConnections.length === 1 ? "" : "s"}
+        </Badge>
+      </div>
+      {resolvedModelConnections.length === 0 ? (
+        <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+          No resolved model connections were recorded for this run.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {resolvedModelConnections.map((connection) => (
+            <article
+              className="space-y-3 rounded-lg border bg-card/80 p-3"
+              data-testid={`runs-runtime-profile-connection-${connection.key}`}
+              key={connection.key}
+            >
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {connection.name}
+                  </p>
+                  <p className="break-all text-xs text-muted-foreground">
+                    {connection.key}
+                  </p>
+                </div>
+                <Badge variant="outline">
+                  {runtimeConnectionKindLabel(connection.connectionKind)}
+                </Badge>
+                <Badge variant="secondary">
+                  {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
+                </Badge>
+                <Badge variant={connection.hasApiKey ? "secondary" : "outline"}>
+                  {connection.hasApiKey
+                    ? "Credential present"
+                    : "No stored credential"}
+                </Badge>
+              </div>
+              <DetailGrid
+                items={[
+                  {
+                    label: "Protocol profile",
+                    value: PROTOCOL_PROFILE_LABELS[connection.protocolProfile],
+                  },
+                  { label: "Model id", value: connection.modelId },
+                  { label: "Base URL", value: connection.baseUrl },
+                  {
+                    label: "Reasoning effort",
+                    value: connection.reasoningEffort ?? "Not recorded",
+                  },
+                  {
+                    label: "Timeout",
+                    value: `${connection.timeoutSeconds}s`,
+                  },
+                  {
+                    label: "Probe cache TTL",
+                    value: `${connection.probeCacheTtlSeconds}s`,
+                  },
+                ]}
+              />
+              <section className="space-y-2">
+                <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Selected strategies
+                </h4>
+                <DetailGrid
+                  items={[
+                    {
+                      label: "Output strategy",
+                      value:
+                        OUTPUT_STRATEGY_POLICY_LABELS[
+                          connection.outputStrategyPolicy
+                        ],
+                    },
+                    {
+                      label: "Parallel tool calls",
+                      value:
+                        PARALLEL_TOOL_CALLS_POLICY_LABELS[
+                          connection.parallelToolCallsPolicy
+                        ],
+                    },
+                    {
+                      label: "Reasoning",
+                      value: REASONING_POLICY_LABELS[connection.reasoningPolicy],
+                    },
+                    {
+                      label: "Streaming",
+                      value: STREAMING_POLICY_LABELS[connection.streamingPolicy],
+                    },
+                  ]}
+                />
+              </section>
+              <section className="space-y-2">
+                <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Capability probe origin
+                </h4>
+                <div className="grid gap-2 xl:grid-cols-2">
+                  {CAPABILITY_ORDER.map((capabilityKey) => {
+                    const state = connection.capabilities[capabilityKey];
+                    return (
+                      <div
+                        className="flex min-w-0 items-start justify-between gap-3 rounded-md border bg-background/70 p-3"
+                        key={capabilityKey}
+                      >
+                        <div className="min-w-0 space-y-1">
+                          <p className="text-sm font-medium text-foreground">
+                            {CAPABILITY_LABELS[capabilityKey]}
+                          </p>
+                          <p className="break-words text-xs text-muted-foreground">
+                            {state.detail || "No probe detail recorded."}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+                          <Badge variant={capabilityStatusVariant(state.status)}>
+                            {capabilityStatusLabel(state.status)}
+                          </Badge>
+                          {state.lastProbedAt ? (
+                            <p className="text-[11px] text-muted-foreground">
+                              Last probed {formatDateTime(state.lastProbedAt)}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            </article>
+          ))}
+        </div>
+      )}
+      <section
+        className="space-y-2 rounded-lg border bg-card/70 p-3"
+        data-testid="runs-runtime-selected-strategies"
+      >
+        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Adapter-selected strategies
+            </h4>
+            <p className="text-xs text-muted-foreground">
+              Execution-time strategy metadata from agent invocations. These
+              values show compatibility degradation decisions without raw
+              provider payloads.
+            </p>
+          </div>
+          <Badge variant="outline">
+            {strategySummaries.length} invocation
+            {strategySummaries.length === 1 ? "" : "s"}
+          </Badge>
+        </div>
+        {strategySummaries.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+            No adapter-selected strategy metadata was recorded for this run.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {strategySummaries.map((summary) => (
+              <article
+                className="space-y-3 rounded-md border bg-background/70 p-3"
+                data-testid={`runs-runtime-strategy-${summary.key}`}
+                key={summary.key}
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Badge variant="outline">Step {summary.stepIndex}</Badge>
+                  <Badge variant={statusVariant(summary.status)}>
+                    {summary.status}
+                  </Badge>
+                  <span className="min-w-0 break-words text-sm font-medium text-foreground">
+                    {summary.agentLabel}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Invocation #{summary.invocationId}
+                  </span>
+                </div>
+                <DetailGrid items={strategyItems(summary.strategies)} />
+                {summary.usage ? (
+                  <DetailGrid items={usageItems(summary.usage)} />
+                ) : null}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </section>
+  );
 }
 
 function hasRecordEntries(value: Record<string, unknown>): boolean {
@@ -1481,6 +1899,7 @@ export function RunContextStrip({
           </div>
           <Progress className="min-w-0 flex-1" value={runProgress} />
         </div>
+        <RunRuntimeProfileSection run={run} />
       </CardContent>
     </Card>
   );

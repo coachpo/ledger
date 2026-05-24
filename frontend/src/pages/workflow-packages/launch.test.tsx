@@ -198,6 +198,57 @@ describe("WorkflowPackageLaunchPage", () => {
     await waitFor(() => expect(useWorkflowPackageLaunchMock).toHaveBeenLastCalledWith("42", "market_review"));
   });
 
+  it("separates capability blockers from warnings before run creation", async () => {
+    useWorkflowPackageLaunchMock.mockReturnValue({
+      data: {
+        ...launchRead,
+        blockingErrors: [
+          {
+            connectionKind: "provider",
+            field: "spec.agents[0].modelConnection",
+            issue: "This workflow requires native tool calls",
+            severity: "error",
+          },
+        ],
+        ready: false,
+        warnings: [
+          {
+            connectionKind: "deterministic_smoke",
+            field: "spec.agents[1].modelConnection",
+            issue: "This connection will degrade to plain text output",
+            severity: "warning",
+          },
+          {
+            connectionKind: "provider",
+            field: "spec.agents[2].modelConnection",
+            issue: "This model connection omits usage metadata, so run usage totals will be derived from the response body.",
+            severity: "warning",
+          },
+        ],
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    renderLaunchPage();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Workflow key")).toHaveValue("market_review"),
+    );
+    const blockers = screen.getByTestId("workflow-package-launch-blockers");
+    const warnings = screen.getByTestId("workflow-package-launch-warnings");
+    expect(
+      screen.getByTestId("workflow-package-capability-readiness-note"),
+    ).toHaveTextContent(/blockers prevent run creation/i);
+    expect(blockers).toHaveTextContent(/Capability blockers/i);
+    expect(blockers).toHaveTextContent(/This workflow requires native tool calls/i);
+    expect(blockers).toHaveTextContent(/Blocking/i);
+    expect(warnings).toHaveTextContent(/Warnings/i);
+    expect(warnings).toHaveTextContent(/This connection will degrade to plain text output/i);
+    expect(warnings).toHaveTextContent(/omits usage metadata/i);
+    expect(warnings).toHaveTextContent(/Warning/i);
+  });
+
   it("renders launch-specific invalid and not-found states", () => {
     const invalidView = renderLaunchPage("/workflow-packages/new/run");
     expect(screen.getByText("Invalid workflow package launch route")).toBeVisible();

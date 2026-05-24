@@ -124,7 +124,7 @@ describe("WorkflowPackageEditorPage import and export flows", () => {
     clickTab("Import / Export");
 
     expect(screen.queryByRole("button", { name: /preview export/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/route-level import workspace/i)).toBeVisible();
+    expect(screen.getByTestId("workflow-package-exports-tab")).toBeVisible();
     const preview = await screen.findByLabelText("Package YAML preview");
     expect(preview).toHaveClass("min-h-96", "font-mono", "text-xs");
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());

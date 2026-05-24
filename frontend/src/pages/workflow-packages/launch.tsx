@@ -257,52 +257,68 @@ function RuntimeInputValidationAlert({
   );
 }
 
-function DiagnosticRows({
+function DiagnosticGroup({
   diagnostics,
+  emptyCopy,
+  severity,
+  testId,
+  title,
 }: {
   diagnostics: readonly PackageDiagnostic[];
+  emptyCopy: string;
+  severity: "error" | "warning";
+  testId: string;
+  title: string;
 }) {
-  if (diagnostics.length === 0) {
-    return (
-      <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-        No launch diagnostics reported.
-      </p>
-    );
-  }
+  const isBlocking = severity === "error";
 
   return (
-    <div
-      className="space-y-2"
-      data-testid="workflow-package-launch-diagnostics"
-    >
-      {diagnostics.map((diagnostic) => (
-        <div
-          key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}`}
-          className="grid min-w-0 gap-2 rounded-lg border bg-background/60 p-3 text-sm md:grid-cols-[auto_minmax(0,12rem)_minmax(0,1fr)] md:items-center"
-        >
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {diagnosticBadge(diagnostic)}
-            {diagnostic.connectionKind ? (
-              <Badge
-                variant={
-                  diagnostic.connectionKind === "deterministic_smoke"
-                    ? "secondary"
-                    : "outline"
-                }
-              >
-                {connectionKindLabel(diagnostic.connectionKind)}
-              </Badge>
-            ) : null}
-          </div>
-          <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">
-            {diagnostic.field}
-          </code>
-          <span className="min-w-0 break-words text-muted-foreground">
-            {diagnostic.issue}
-          </span>
+    <section className="space-y-2" data-testid={testId}>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <h4 className="text-sm font-medium text-foreground">{title}</h4>
+        <Badge variant={isBlocking ? "destructive" : "outline"}>
+          {diagnostics.length}
+        </Badge>
+        <Badge variant={isBlocking ? "destructive" : "secondary"}>
+          {isBlocking ? "Blocking" : "Warning"}
+        </Badge>
+      </div>
+      {diagnostics.length === 0 ? (
+        <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+          {emptyCopy}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {diagnostics.map((diagnostic, diagnosticIndex) => (
+            <div
+              key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}-${diagnosticIndex}`}
+              className="grid min-w-0 gap-2 rounded-lg border bg-background/60 p-3 text-sm md:grid-cols-[auto_minmax(0,12rem)_minmax(0,1fr)] md:items-center"
+            >
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                {diagnosticBadge(diagnostic)}
+                {diagnostic.connectionKind ? (
+                  <Badge
+                    variant={
+                      diagnostic.connectionKind === "deterministic_smoke"
+                        ? "secondary"
+                        : "outline"
+                    }
+                  >
+                    {connectionKindLabel(diagnostic.connectionKind)}
+                  </Badge>
+                ) : null}
+              </div>
+              <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">
+                {diagnostic.field}
+              </code>
+              <span className="min-w-0 break-words text-muted-foreground">
+                {diagnostic.issue}
+              </span>
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
+      )}
+    </section>
   );
 }
 
@@ -583,6 +599,12 @@ function LaunchReadinessCard({
   onPreflight: () => void;
   preflightPending: boolean;
 }) {
+  const blockingDiagnostics = diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "error",
+  );
+  const warningDiagnostics = diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "warning",
+  );
   return (
     <Card
       className="min-w-0 border-border/70 bg-card/80 shadow-sm backdrop-blur"
@@ -657,7 +679,30 @@ function LaunchReadinessCard({
           diagnostics={[...diagnostics]}
           read={readinessRead}
         />
-        <DiagnosticRows diagnostics={diagnostics} />
+        <div
+          className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground"
+          data-testid="workflow-package-capability-readiness-note"
+        >
+          Capability blockers prevent run creation. Warnings stay launch-visible
+          as degraded capability or probe-status notes so operators can decide
+          whether to continue before queueing a run.
+        </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <DiagnosticGroup
+            diagnostics={blockingDiagnostics}
+            emptyCopy="No capability blockers reported."
+            severity="error"
+            testId="workflow-package-launch-blockers"
+            title="Capability blockers"
+          />
+          <DiagnosticGroup
+            diagnostics={warningDiagnostics}
+            emptyCopy="No warnings reported."
+            severity="warning"
+            testId="workflow-package-launch-warnings"
+            title="Warnings"
+          />
+        </div>
       </CardContent>
     </Card>
   );
