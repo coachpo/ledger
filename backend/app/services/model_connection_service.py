@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
-import openai
 from fastapi import status
-from openai import OpenAI
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError, not_found_error, validation_error
@@ -14,14 +12,25 @@ from app.core.formatting import utcnow
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
 from app.schemas.model_connection import (
+    ModelConnectionCapabilities,
     ModelConnectionConnectionTestRead,
     ModelConnectionCreate,
     ModelConnectionListItemRead,
     ModelConnectionListRead,
     ModelConnectionRead,
     ModelConnectionUpdate,
-    build_model_connection_openai_base_url,
+    api_style_for_model_connection_protocol_profile,
+    default_model_connection_capabilities,
+    dump_model_connection_capabilities,
     normalize_model_connection_key,
+)
+from app.services.model_gateway import ModelExecutionGateway
+from app.services.model_gateway_dto import ModelConnectionTestRequest, ModelGatewayConnectionConfig
+from app.services.model_gateway_openai import (
+    DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI,
+)
+from app.services.model_gateway_openai import (
+    OpenAIProtocolAdapter,
 )
 
 
@@ -37,9 +46,16 @@ class PackageModelConnectionBinding:
     key: str
     name: str
     connection_kind: str
+    protocol_profile: str
     base_url: str
     model_id: str
     reasoning_effort: str | None
+    capabilities: dict[str, object]
+    output_strategy_policy: str
+    parallel_tool_calls_policy: str
+    reasoning_policy: str
+    streaming_policy: str
+    probe_cache_ttl_seconds: int
     api_style: str
     timeout_seconds: int
     has_api_key: bool
@@ -49,9 +65,16 @@ class ModelConnectionService:
     session: Session
     repository: ModelConnectionRepository
 
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        model_gateway: ModelExecutionGateway | None = None,
+    ) -> None:
         self.session = session
         self.repository = ModelConnectionRepository(session)
+        self.model_gateway = model_gateway or ModelExecutionGateway(
+            OpenAIProtocolAdapter(client_factory=OpenAI)
+        )
 
     def list_connections(self) -> ModelConnectionListRead:
         items = self.repository.list_connections()
@@ -114,12 +137,18 @@ class ModelConnectionService:
             key=payload.key,
             status="active",
             connection_kind=payload.connection_kind.value,
+            protocol_profile=payload.protocol_profile.value,
             name=payload.name,
             description=payload.description,
-            api_style=payload.api_style.value,
             base_url=payload.base_url,
             model_id=payload.model_id,
             reasoning_effort=payload.reasoning_effort,
+            capabilities=dump_model_connection_capabilities(payload.capabilities),
+            output_strategy_policy=payload.output_strategy_policy.value,
+            parallel_tool_calls_policy=payload.parallel_tool_calls_policy.value,
+            reasoning_policy=payload.reasoning_policy.value,
+            streaming_policy=payload.streaming_policy.value,
+            probe_cache_ttl_seconds=payload.probe_cache_ttl_seconds,
             timeout_seconds=payload.timeout_seconds,
         )
         self._set_api_key(connection, payload.api_key)
@@ -146,28 +175,68 @@ class ModelConnectionService:
             connection.description = payload.description or ""
         reset_connection_test_result = False
 
+        reset_probe_cache = True
         if "connection_kind" in payload.model_fields_set and payload.connection_kind is not None:
             connection.connection_kind = payload.connection_kind.value
             reset_connection_test_result = True
-        if "api_style" in payload.model_fields_set and payload.api_style is not None:
-            connection.api_style = payload.api_style.value
+            reset_probe_cache = True
+        if "protocol_profile" in payload.model_fields_set and payload.protocol_profile is not None:
+            connection.protocol_profile = payload.protocol_profile.value
             reset_connection_test_result = True
+            reset_probe_cache = True
+            if "capabilities" not in payload.model_fields_set:
+                connection.capabilities = dump_model_connection_capabilities(
+                    default_model_connection_capabilities(connection.protocol_profile),
+                )
         if "base_url" in payload.model_fields_set and payload.base_url is not None:
             connection.base_url = payload.base_url
             reset_connection_test_result = True
+            reset_probe_cache = True
         if "model_id" in payload.model_fields_set and payload.model_id is not None:
             connection.model_id = payload.model_id
             reset_connection_test_result = True
+            reset_probe_cache = True
         if "reasoning_effort" in payload.model_fields_set:
             connection.reasoning_effort = payload.reasoning_effort
             reset_connection_test_result = True
+            reset_probe_cache = True
+        if "capabilities" in payload.model_fields_set and payload.capabilities is not None:
+            connection.capabilities = dump_model_connection_capabilities(payload.capabilities)
+            reset_probe_cache = True
+        if (
+            "output_strategy_policy" in payload.model_fields_set
+            and payload.output_strategy_policy is not None
+        ):
+            connection.output_strategy_policy = payload.output_strategy_policy.value
+            reset_probe_cache = True
+        if (
+            "parallel_tool_calls_policy" in payload.model_fields_set
+            and payload.parallel_tool_calls_policy is not None
+        ):
+            connection.parallel_tool_calls_policy = payload.parallel_tool_calls_policy.value
+            reset_probe_cache = True
+        if "reasoning_policy" in payload.model_fields_set and payload.reasoning_policy is not None:
+            connection.reasoning_policy = payload.reasoning_policy.value
+            reset_probe_cache = True
+        if "streaming_policy" in payload.model_fields_set and payload.streaming_policy is not None:
+            connection.streaming_policy = payload.streaming_policy.value
+            reset_probe_cache = True
+        if (
+            "probe_cache_ttl_seconds" in payload.model_fields_set
+            and payload.probe_cache_ttl_seconds is not None
+        ):
+            connection.probe_cache_ttl_seconds = payload.probe_cache_ttl_seconds
         if "timeout_seconds" in payload.model_fields_set and payload.timeout_seconds is not None:
             connection.timeout_seconds = payload.timeout_seconds
             reset_connection_test_result = True
+            reset_probe_cache = True
         if "api_key" in payload.model_fields_set:
             self._set_api_key(connection, payload.api_key)
             reset_connection_test_result = True
+            reset_probe_cache = True
 
+        if reset_probe_cache:
+            self._clear_probe_cache(connection)
         if reset_connection_test_result:
             self._clear_connection_test_result(connection)
 
@@ -187,6 +256,7 @@ class ModelConnectionService:
             connection.last_tested_at = result.tested_at
             connection.last_test_ok = result.ok
             connection.last_test_message = result.message
+            self._clear_probe_cache(connection)
             self.session.commit()
             self.session.refresh(connection)
         except Exception:
@@ -255,149 +325,73 @@ class ModelConnectionService:
             key=connection.key,
             name=connection.name,
             connection_kind=connection.connection_kind,
+            protocol_profile=connection.protocol_profile,
             base_url=connection.base_url,
             model_id=connection.model_id,
             reasoning_effort=connection.reasoning_effort,
-            api_style=connection.api_style,
+            capabilities=cls._capabilities_payload(connection),
+            output_strategy_policy=connection.output_strategy_policy,
+            parallel_tool_calls_policy=connection.parallel_tool_calls_policy,
+            reasoning_policy=connection.reasoning_policy,
+            streaming_policy=connection.streaming_policy,
+            probe_cache_ttl_seconds=connection.probe_cache_ttl_seconds,
+            api_style=api_style_for_model_connection_protocol_profile(connection.protocol_profile),
             timeout_seconds=connection.timeout_seconds,
             has_api_key=cls._get_api_key(connection) is not None,
         )
 
     def _run_connection_test(self, connection: ModelConnection) -> _ModelConnectionTestResult:
         tested_at = utcnow()
-        if connection.connection_kind == "deterministic_smoke":
-            return _ModelConnectionTestResult(
-                ok=True,
-                message="Deterministic smoke test succeeded.",
-                tested_at=tested_at,
+        result = self.model_gateway.test_connection(
+            ModelConnectionTestRequest(
+                connection=self._to_gateway_connection(connection),
+                instructions="Reply with the single word OK.",
+                input_text="Connection test.",
             )
-
-        api_key = self._get_api_key(connection)
-        if api_key is None:
-            return _ModelConnectionTestResult(
-                ok=False,
-                message="API key is not configured.",
-                tested_at=tested_at,
-            )
-
-        client_kwargs: dict[str, Any] = {
-            "api_key": api_key,
-            "base_url": build_model_connection_openai_base_url(connection.base_url),
-            "timeout": float(connection.timeout_seconds),
-            "max_retries": 0,
-        }
-
-        try:
-            if connection.api_style == "responses":
-                return self._run_responses_connection_test(
-                    connection,
-                    client_kwargs,
-                    tested_at,
-                )
-            if connection.api_style == "chat_completions":
-                return self._run_chat_completions_connection_test(
-                    connection,
-                    client_kwargs,
-                    tested_at,
-                )
-            api_style = connection.api_style
-            unsupported_api_style_message = (
-                f"Model connection validation failed: unsupported API style {api_style!r}."
-            )
-            return _ModelConnectionTestResult(
-                ok=False,
-                message=self._normalize_test_message(
-                    unsupported_api_style_message,
-                    api_key=api_key,
-                ),
-                tested_at=tested_at,
-            )
-        except openai.APITimeoutError:
-            return _ModelConnectionTestResult(
-                ok=False,
-                message="Connection test timed out.",
-                tested_at=tested_at,
-            )
-        except openai.APIConnectionError:
-            return _ModelConnectionTestResult(
-                ok=False,
-                message="Connection test could not reach the OpenAI API.",
-                tested_at=tested_at,
-            )
-        except openai.APIStatusError as exc:
-            return _ModelConnectionTestResult(
-                ok=False,
-                message=self._format_api_status_error(exc, api_key=api_key),
-                tested_at=tested_at,
-            )
-        except openai.APIError as exc:
-            return _ModelConnectionTestResult(
-                ok=False,
-                message=self._normalize_test_message(str(exc), api_key=api_key),
-                tested_at=tested_at,
-            )
-        except Exception as exc:
-            return _ModelConnectionTestResult(
-                ok=False,
-                message=self._normalize_test_message(
-                    f"Unexpected connection test failure: {exc}",
-                    api_key=api_key,
-                ),
-                tested_at=tested_at,
-            )
-
-    def _run_responses_connection_test(
-        self,
-        connection: ModelConnection,
-        client_kwargs: dict[str, Any],
-        tested_at: datetime,
-    ) -> _ModelConnectionTestResult:
-        request_kwargs: dict[str, Any] = {
-            "model": connection.model_id,
-            "instructions": "Reply with the single word OK.",
-            "input": "Connection test.",
-        }
-        if connection.reasoning_effort is not None:
-            request_kwargs["reasoning"] = {"effort": connection.reasoning_effort}
-        with OpenAI(**client_kwargs) as client:
-            response = client.responses.create(**request_kwargs)
+        )
         return _ModelConnectionTestResult(
-            ok=True,
-            message=self._success_message(response),
+            ok=result.ok,
+            message=result.message,
             tested_at=tested_at,
         )
 
-    def _run_chat_completions_connection_test(
-        self,
-        connection: ModelConnection,
-        client_kwargs: dict[str, Any],
-        tested_at: datetime,
-    ) -> _ModelConnectionTestResult:
-        request_kwargs: dict[str, Any] = {
-            "model": connection.model_id,
-            "messages": [
-                {"role": "system", "content": "Reply with the single word OK."},
-                {"role": "user", "content": "Connection test."},
-            ],
-        }
-        if connection.reasoning_effort is not None:
-            request_kwargs["reasoning_effort"] = connection.reasoning_effort
-
-        with OpenAI(**client_kwargs) as client:
-            response = client.chat.completions.create(**request_kwargs)
-        return _ModelConnectionTestResult(
-            ok=True,
-            message=self._success_message(response),
-            tested_at=tested_at,
+    @classmethod
+    def _to_gateway_connection(cls, connection: ModelConnection) -> ModelGatewayConnectionConfig:
+        return ModelGatewayConnectionConfig(
+            id=connection.id,
+            name=connection.name,
+            connection_kind=connection.connection_kind,
+            base_url=connection.base_url,
+            model_id=connection.model_id,
+            reasoning_effort=connection.reasoning_effort,
+            api_style=api_style_for_model_connection_protocol_profile(connection.protocol_profile),
+            timeout_seconds=connection.timeout_seconds,
+            api_key=cls._get_api_key(connection),
+            capabilities=cls._capabilities_payload(connection),
+            output_strategy_policy=connection.output_strategy_policy,
+            parallel_tool_calls_policy=connection.parallel_tool_calls_policy,
+            reasoning_policy=connection.reasoning_policy,
+            streaming_policy=connection.streaming_policy,
         )
 
     @staticmethod
-    def _success_message(response: Any) -> str:
-        request_id = getattr(response, "_request_id", None)
-        message = "Connection test succeeded."
-        if isinstance(request_id, str) and request_id.strip():
-            message = f"Connection test succeeded (request {request_id.strip()})."
-        return message
+    def _capabilities_payload(connection: ModelConnection) -> dict[str, object]:
+        try:
+            capabilities = ModelConnectionCapabilities.model_validate(connection.capabilities)
+        except ValidationError:
+            capabilities = default_model_connection_capabilities(connection.protocol_profile)
+        return dump_model_connection_capabilities(capabilities)
+
+    @classmethod
+    def _clear_probe_cache(cls, connection: ModelConnection) -> None:
+        connection.last_probed_at = None
+        try:
+            capabilities = ModelConnectionCapabilities.model_validate(connection.capabilities)
+        except ValidationError:
+            capabilities = default_model_connection_capabilities(connection.protocol_profile)
+        for field_name in type(capabilities).model_fields:
+            getattr(capabilities, field_name).last_probed_at = None
+        connection.capabilities = dump_model_connection_capabilities(capabilities)
 
     @staticmethod
     def _get_api_key(connection: ModelConnection) -> str | None:
@@ -424,45 +418,6 @@ class ModelConnectionService:
         connection.last_tested_at = None
         connection.last_test_ok = None
         connection.last_test_message = None
-
-    def _format_api_status_error(
-        self,
-        exc: openai.APIStatusError,
-        *,
-        api_key: str,
-    ) -> str:
-        message = self._extract_api_status_message(exc)
-        request_id = getattr(exc, "request_id", None)
-        if isinstance(request_id, str) and request_id.strip():
-            message = f"{message} requestId={request_id.strip()}"
-        return self._normalize_test_message(message, api_key=api_key)
-
-    @staticmethod
-    def _extract_api_status_message(exc: openai.APIStatusError) -> str:
-        body = getattr(exc, "body", None)
-        if isinstance(body, dict):
-            raw_error = body.get("error")
-            if isinstance(raw_error, dict):
-                raw_message = raw_error.get("message")
-                if isinstance(raw_message, str) and raw_message.strip():
-                    return raw_message.strip()
-            raw_message = body.get("message")
-            if isinstance(raw_message, str) and raw_message.strip():
-                return raw_message.strip()
-
-        status_code = getattr(exc, "status_code", None)
-        if isinstance(status_code, int):
-            return f"OpenAI request failed with status {status_code}."
-        return "OpenAI request failed."
-
-    @staticmethod
-    def _normalize_test_message(message: str, *, api_key: str | None) -> str:
-        normalized = " ".join(message.split()).strip()
-        if api_key:
-            normalized = normalized.replace(api_key, "[REDACTED]")
-        if len(normalized) > 500:
-            return f"{normalized[:497]}..."
-        return normalized or "Connection test failed."
 
 
 __all__ = ["ModelConnectionService", "PackageModelConnectionBinding"]

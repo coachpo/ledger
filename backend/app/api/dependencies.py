@@ -12,6 +12,7 @@ from app.core.errors import ApiError
 from app.db.session import get_db_session, get_session_factory
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.extension_service import ExtensionService, ResolvedExtensionState
+from app.services.model_connection_probe_service import ModelConnectionProbeService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.quote_provider import QuoteProvider
 from app.services.run_service import RunService
@@ -75,6 +76,12 @@ def get_model_connection_service(
     return ModelConnectionService(session)
 
 
+def get_model_connection_probe_service(
+    session: Annotated[Session, Depends(get_session)],
+) -> ModelConnectionProbeService:
+    return ModelConnectionProbeService(session)
+
+
 def get_workflow_package_service(
     session: Annotated[Session, Depends(get_session)],
     provider_bundle: Annotated[ExecutionProviderBundle, Depends(get_execution_provider_bundle)],
@@ -104,6 +111,7 @@ def get_run_service(
 __all__ = [
     "get_execution_provider_bundle",
     "get_extension_service",
+    "get_model_connection_probe_service",
     "get_model_connection_service",
     "get_quote_provider",
     "get_run_service",

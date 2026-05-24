@@ -4,14 +4,20 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.api.dependencies import get_model_connection_service
+from app.api.dependencies import (
+    get_model_connection_probe_service,
+    get_model_connection_service,
+)
 from app.schemas.model_connection import (
+    ModelConnectionCapabilityProbeRead,
+    ModelConnectionCapabilityProbeRequest,
     ModelConnectionConnectionTestRead,
     ModelConnectionCreate,
     ModelConnectionListRead,
     ModelConnectionRead,
     ModelConnectionUpdate,
 )
+from app.services.model_connection_probe_service import ModelConnectionProbeService
 from app.services.model_connection_service import ModelConnectionService
 
 router = APIRouter(prefix="/model-connections", tags=["model-connections"])
@@ -55,6 +61,15 @@ def test_model_connection(
     service: Annotated[ModelConnectionService, Depends(get_model_connection_service)],
 ) -> ModelConnectionConnectionTestRead:
     return service.test_connection(connection_id)
+
+
+@router.post("/{connection_id}/capability-probe", response_model=ModelConnectionCapabilityProbeRead)
+def probe_model_connection(
+    connection_id: int,
+    service: Annotated[ModelConnectionProbeService, Depends(get_model_connection_probe_service)],
+    payload: ModelConnectionCapabilityProbeRequest | None = None,
+) -> ModelConnectionCapabilityProbeRead:
+    return service.probe_connection_capabilities(connection_id, payload)
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
