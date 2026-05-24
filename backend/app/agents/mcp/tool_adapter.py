@@ -8,6 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Literal, cast
 
+from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
 from app.schemas.mcp_server import McpToolSnapshot
 
 _MCP_TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_.@/-]{1,128}$")
@@ -273,15 +274,31 @@ def mcp_tool_snapshot_from_descriptor(descriptor: ExecutionToolDescriptor) -> Mc
     )
 
 
+def execution_tool_descriptor_to_signaldeck_tool_declaration(
+    descriptor: ExecutionToolDescriptor,
+) -> SignalDeckToolDeclaration:
+    return SignalDeckToolDeclaration(
+        kind=descriptor.kind,
+        tool_key=descriptor.tool_key,
+        model_name=descriptor.openai_function_name,
+        description=descriptor.description,
+        input_schema=deepcopy(descriptor.strict_schema),
+        schema_hash=descriptor.schema_hash,
+        strict=True,
+        owner_extension_key=descriptor.owner_extension_key,
+    )
+
+
 def execution_tool_descriptor_to_openai_tool(
     descriptor: ExecutionToolDescriptor,
 ) -> dict[str, object]:
+    declaration = execution_tool_descriptor_to_signaldeck_tool_declaration(descriptor)
     return {
         "type": "function",
-        "name": descriptor.openai_function_name,
-        "description": descriptor.description,
-        "strict": True,
-        "parameters": deepcopy(descriptor.strict_schema),
+        "name": declaration.model_name,
+        "description": declaration.description,
+        "strict": declaration.strict,
+        "parameters": deepcopy(dict(declaration.input_schema)),
     }
 
 
@@ -460,6 +477,7 @@ __all__ = [
     "execution_tool_descriptor_from_payload",
     "execution_tool_descriptor_to_openai_tool",
     "execution_tool_descriptor_to_payload",
+    "execution_tool_descriptor_to_signaldeck_tool_declaration",
     "hash_strict_schema",
     "mcp_snapshot_to_execution_descriptor",
     "mcp_tool_snapshot_from_descriptor",

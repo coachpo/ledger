@@ -20,10 +20,12 @@ from app.agents.mcp.tool_adapter import (
     McpToolAdapterError,
     execution_tool_descriptor_from_payload,
     execution_tool_descriptor_to_openai_tool,
+    execution_tool_descriptor_to_signaldeck_tool_declaration,
     mcp_snapshot_to_execution_descriptor,
     mcp_tool_snapshot_from_descriptor,
     package_private_mcp_tool_input_schema,
 )
+from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
 from app.agents.runtime_tools.types import RuntimeToolError
 from app.core.errors import ApiError
 from app.models.mcp_server import McpServer
@@ -91,6 +93,15 @@ class McpRuntimeDispatcher:
             execution_tool_descriptor_to_openai_tool(tool.descriptor)
             for tool in self._tools_by_function_name.values()
         ]
+
+    def list_execution_descriptors(self) -> tuple[ExecutionToolDescriptor, ...]:
+        return tuple(tool.descriptor for tool in self._tools_by_function_name.values())
+
+    def list_tool_declarations(self) -> tuple[SignalDeckToolDeclaration, ...]:
+        return tuple(
+            execution_tool_descriptor_to_signaldeck_tool_declaration(tool.descriptor)
+            for tool in self._tools_by_function_name.values()
+        )
 
     def dispatch(self, *, name: str, arguments_json: str) -> dict[str, object]:
         tool = self._tools_by_function_name.get(name)
