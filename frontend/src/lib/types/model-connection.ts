@@ -1,17 +1,62 @@
 export type ModelConnectionReasoningEffort = string;
+export type ModelConnectionProtocolProfile =
+  | "openai_chat_completions"
+  | "openai_responses";
+/** @deprecated Historical run provenance may still include apiStyle. */
 export type ModelConnectionApiStyle = "responses" | "chat_completions";
+export type ModelConnectionCapabilityStatus =
+  | "supported"
+  | "unsupported"
+  | "unknown"
+  | "notApplicable";
+export type ModelConnectionOutputStrategyPolicy =
+  | "require_strict_schema"
+  | "prefer_strict_schema"
+  | "allow_json_object_validation"
+  | "allow_plain_text";
+export type ModelConnectionParallelToolCallsPolicy = "allow" | "serialize" | "forbid";
+export type ModelConnectionReasoningPolicy = "allow" | "forbid";
+export type ModelConnectionStreamingPolicy = "allow" | "forbid";
 export type ModelConnectionKind = "provider" | "deterministic_smoke";
+
+export interface ModelConnectionCapabilityState {
+  status: ModelConnectionCapabilityStatus;
+  detail?: string | null;
+  lastProbedAt?: string | null;
+}
+
+export interface ModelConnectionCapabilities {
+  textGeneration: ModelConnectionCapabilityState;
+  chatCompletions: ModelConnectionCapabilityState;
+  responsesApi: ModelConnectionCapabilityState;
+  streaming: ModelConnectionCapabilityState;
+  nativeToolCalls: ModelConnectionCapabilityState;
+  parallelToolCalls: ModelConnectionCapabilityState;
+  jsonObjectOutput: ModelConnectionCapabilityState;
+  strictJsonSchemaOutput: ModelConnectionCapabilityState;
+  reasoningHints: ModelConnectionCapabilityState;
+  usageReporting: ModelConnectionCapabilityState;
+  systemMessages: ModelConnectionCapabilityState;
+}
 
 export interface ModelConnectionCreateInput {
   key: string;
   name: string;
   description?: string;
   connectionKind?: ModelConnectionKind;
+  protocolProfile?: ModelConnectionProtocolProfile;
   baseUrl: string;
   modelId: string;
   reasoningEffort?: ModelConnectionReasoningEffort | null;
+  capabilities?: Partial<
+    Record<keyof ModelConnectionCapabilities, ModelConnectionCapabilityState>
+  >;
+  outputStrategyPolicy?: ModelConnectionOutputStrategyPolicy;
+  parallelToolCallsPolicy?: ModelConnectionParallelToolCallsPolicy;
+  reasoningPolicy?: ModelConnectionReasoningPolicy;
+  streamingPolicy?: ModelConnectionStreamingPolicy;
+  probeCacheTtlSeconds?: number;
   timeoutSeconds?: number;
-  apiStyle?: ModelConnectionApiStyle;
   apiKey?: string;
 }
 
@@ -19,11 +64,19 @@ export interface ModelConnectionUpdateInput {
   name?: string;
   description?: string | null;
   connectionKind?: ModelConnectionKind;
+  protocolProfile?: ModelConnectionProtocolProfile;
   baseUrl?: string;
   modelId?: string;
   reasoningEffort?: ModelConnectionReasoningEffort | null;
+  capabilities?: Partial<
+    Record<keyof ModelConnectionCapabilities, ModelConnectionCapabilityState>
+  >;
+  outputStrategyPolicy?: ModelConnectionOutputStrategyPolicy;
+  parallelToolCallsPolicy?: ModelConnectionParallelToolCallsPolicy;
+  reasoningPolicy?: ModelConnectionReasoningPolicy;
+  streamingPolicy?: ModelConnectionStreamingPolicy;
+  probeCacheTtlSeconds?: number;
   timeoutSeconds?: number;
-  apiStyle?: ModelConnectionApiStyle;
   apiKey?: string;
 }
 
@@ -33,11 +86,20 @@ export interface ModelConnectionListItemRead {
   name: string;
   description: string;
   connectionKind: ModelConnectionKind;
+  protocolProfile: ModelConnectionProtocolProfile;
+  /** @deprecated Historical compatibility only; use protocolProfile. */
+  apiStyle?: ModelConnectionApiStyle;
   baseUrl: string;
   modelId: string;
   reasoningEffort: ModelConnectionReasoningEffort | null;
+  capabilities: ModelConnectionCapabilities;
+  outputStrategyPolicy: ModelConnectionOutputStrategyPolicy;
+  parallelToolCallsPolicy: ModelConnectionParallelToolCallsPolicy;
+  reasoningPolicy: ModelConnectionReasoningPolicy;
+  streamingPolicy: ModelConnectionStreamingPolicy;
+  lastProbedAt?: string | null;
+  probeCacheTtlSeconds: number;
   timeoutSeconds: number;
-  apiStyle: ModelConnectionApiStyle;
   lastTestedAt?: string | null;
   lastTestOk?: boolean | null;
   lastTestMessage?: string | null;
@@ -59,4 +121,18 @@ export interface ModelConnectionConnectionTestRead {
   ok: boolean;
   message: string;
   lastTestedAt: string;
+}
+
+export interface ModelConnectionCapabilityProbeRequest {
+  capabilityKeys?: (keyof ModelConnectionCapabilities)[];
+  refresh?: boolean;
+}
+
+export interface ModelConnectionCapabilityProbeRead {
+  modelConnectionId: number;
+  requestedCapabilityKeys: (keyof ModelConnectionCapabilities)[];
+  cached: boolean;
+  lastProbedAt: string;
+  probeCacheTtlSeconds: number;
+  capabilities: ModelConnectionCapabilities;
 }

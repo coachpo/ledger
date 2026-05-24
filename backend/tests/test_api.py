@@ -20,10 +20,18 @@ from app.db.session import init_db, validate_supported_database_engine
 from app.extensions.signaldeck_finance.dependencies import get_quote_provider
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.market_quote import MarketQuote
+from app.models.model_connection import ModelConnection
 from app.models.report import Report
 from app.models.symbol_name_cache import SymbolNameCache
 from app.models.text_template import TextTemplate
-from app.schemas.model_connection import ModelConnectionCreate, ModelConnectionUpdate
+from app.schemas.model_connection import (
+    ModelConnectionCapabilities,
+    ModelConnectionCapabilityStatus,
+    ModelConnectionCreate,
+    ModelConnectionUpdate,
+    default_model_connection_capabilities,
+    dump_model_connection_capabilities,
+)
 from app.services.quote_provider import (
     ProviderHistoryPoint,
     ProviderHistorySeries,
@@ -34,6 +42,19 @@ from app.services.report_service import ReportService
 
 UTC_TZ = timezone.utc  # noqa: UP017
 _TRACE_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
+_EXPECTED_MODEL_CONNECTION_CAPABILITY_KEYS = {
+    "chatCompletions",
+    "jsonObjectOutput",
+    "nativeToolCalls",
+    "parallelToolCalls",
+    "reasoningHints",
+    "responsesApi",
+    "streaming",
+    "strictJsonSchemaOutput",
+    "systemMessages",
+    "textGeneration",
+    "usageReporting",
+}
 
 
 def _assert_logfire_trace_id(value: object) -> None:
@@ -143,6 +164,73 @@ def insert_report_row(
         report_id = report.id
         session.commit()
         return report_id
+
+
+def _seed_model_connection_record(
+    session_factory: sessionmaker[Session],
+    *,
+    connection_id: int,
+    key: str,
+    name: str,
+    description: str,
+    base_url: str,
+    model_id: str,
+    protocol_profile: str = "openai_responses",
+    connection_kind: str = "provider",
+    api_key: str | None = "sk-test-model-connection",
+    probe_cache_ttl_seconds: int = 900,
+    last_probed_at: datetime | None = None,
+    last_tested_at: datetime | None = None,
+    last_test_ok: bool | None = None,
+    last_test_message: str | None = None,
+    capabilities: ModelConnectionCapabilities | None = None,
+) -> None:
+    seeded_capabilities = capabilities or default_model_connection_capabilities(protocol_profile)
+    with session_factory() as session:
+        session.add(
+            ModelConnection(
+                id=connection_id,
+                key=key,
+                status="active",
+                connection_kind=connection_kind,
+                name=name,
+                description=description,
+                base_url=base_url,
+                model_id=model_id,
+                reasoning_effort="medium",
+                protocol_profile=protocol_profile,
+                capabilities=dump_model_connection_capabilities(seeded_capabilities),
+                output_strategy_policy="prefer_strict_schema",
+                parallel_tool_calls_policy="serialize",
+                reasoning_policy="allow",
+                streaming_policy="allow",
+                probe_cache_ttl_seconds=probe_cache_ttl_seconds,
+                timeout_seconds=60,
+                secret_payload={} if api_key is None else {"apiKey": api_key},
+                last_probed_at=last_probed_at,
+                last_tested_at=last_tested_at,
+                last_test_ok=last_test_ok,
+                last_test_message=last_test_message,
+            )
+        )
+        session.commit()
+
+
+def _set_model_connection_probe_cache(
+    session_factory: sessionmaker[Session],
+    *,
+    connection_id: int,
+    probed_at: datetime,
+) -> None:
+    with session_factory() as session:
+        connection = session.get(ModelConnection, connection_id)
+        assert connection is not None
+        capabilities = ModelConnectionCapabilities.model_validate(connection.capabilities)
+        connection.last_probed_at = probed_at
+        for field_name in type(capabilities).model_fields:
+            getattr(capabilities, field_name).last_probed_at = probed_at
+        connection.capabilities = dump_model_connection_capabilities(capabilities)
+        session.commit()
 
 
 def test_agent_platform_routes_mount_package_first_api_without_global_authoring_routes(
@@ -327,7 +415,7 @@ def _model_connection_create_payload(
         "baseUrl": base_url,
         "modelId": "gpt-5.5-mini",
         "reasoningEffort": "medium",
-        "apiStyle": "responses",
+        "protocolProfile": "openai_responses",
         "timeoutSeconds": 60,
         "apiKey": "sk-test-model-connection",
     }
@@ -2890,6 +2978,105 @@ def test_model_connection_round_trips_connection_kind(client: TestClient) -> Non
     assert get_body["connectionKind"] == "provider"
 
 
+def test_model_connection_round_trips_protocol_capabilities_and_policies(
+    client: TestClient,
+) -> None:
+    payload = {
+        **_model_connection_create_payload(),
+        "protocolProfile": "openai_chat_completions",
+        "capabilities": {
+            "nativeToolCalls": {
+                "status": "supported",
+                "detail": "Manual capability declaration for test endpoint.",
+            },
+            "strictJsonSchemaOutput": {"status": "unsupported"},
+        },
+        "outputStrategyPolicy": "allow_json_object_validation",
+        "parallelToolCallsPolicy": "forbid",
+        "reasoningPolicy": "forbid",
+        "streamingPolicy": "forbid",
+        "probeCacheTtlSeconds": 300,
+    }
+
+    create_response = client.post("/api/model-connections", json=payload)
+    assert create_response.status_code == 201, create_response.json()
+    create_body = cast(dict[str, object], create_response.json())
+    assert "apiStyle" not in create_body
+    assert create_body["protocolProfile"] == "openai_chat_completions"
+    assert create_body["outputStrategyPolicy"] == "allow_json_object_validation"
+    assert create_body["parallelToolCallsPolicy"] == "forbid"
+    assert create_body["reasoningPolicy"] == "forbid"
+    assert create_body["streamingPolicy"] == "forbid"
+    assert create_body["probeCacheTtlSeconds"] == 300
+    assert create_body["lastProbedAt"] is None
+    capabilities = cast(dict[str, dict[str, object]], create_body["capabilities"])
+    assert set(capabilities) == _EXPECTED_MODEL_CONNECTION_CAPABILITY_KEYS
+    assert capabilities["chatCompletions"]["status"] == "unknown"
+    assert capabilities["nativeToolCalls"]["status"] == "supported"
+    assert capabilities["nativeToolCalls"]["detail"] == (
+        "Manual capability declaration for test endpoint."
+    )
+    assert capabilities["strictJsonSchemaOutput"]["status"] == "unsupported"
+    connection_id = cast(int, create_body["id"])
+
+    patch_response = client.patch(
+        f"/api/model-connections/{connection_id}",
+        json={
+            "protocolProfile": "openai_responses",
+            "capabilities": {"responsesApi": {"status": "supported"}},
+            "outputStrategyPolicy": "require_strict_schema",
+            "parallelToolCallsPolicy": "serialize",
+            "reasoningPolicy": "allow",
+            "streamingPolicy": "allow",
+            "probeCacheTtlSeconds": 900,
+        },
+    )
+    assert patch_response.status_code == 200, patch_response.json()
+    patch_body = cast(dict[str, object], patch_response.json())
+    assert "apiStyle" not in patch_body
+    assert patch_body["protocolProfile"] == "openai_responses"
+    assert patch_body["outputStrategyPolicy"] == "require_strict_schema"
+    assert patch_body["parallelToolCallsPolicy"] == "serialize"
+    assert patch_body["reasoningPolicy"] == "allow"
+    assert patch_body["streamingPolicy"] == "allow"
+    assert patch_body["probeCacheTtlSeconds"] == 900
+    patched_capabilities = cast(dict[str, dict[str, object]], patch_body["capabilities"])
+    assert set(patched_capabilities) == _EXPECTED_MODEL_CONNECTION_CAPABILITY_KEYS
+    assert patched_capabilities["responsesApi"]["status"] == "supported"
+
+
+def test_model_connection_rejects_invalid_protocol_profile_and_capability_status(
+    client: TestClient,
+) -> None:
+    invalid_profile_response = client.post(
+        "/api/model-connections",
+        json={**_model_connection_create_payload(), "protocolProfile": "responses"},
+    )
+    assert invalid_profile_response.status_code == 422, invalid_profile_response.json()
+    invalid_profile_body = cast(dict[str, object], invalid_profile_response.json())
+    assert invalid_profile_body["code"] == "validation_error"
+
+    invalid_capability_response = client.post(
+        "/api/model-connections",
+        json={
+            **_model_connection_create_payload(),
+            "capabilities": {"nativeToolCalls": {"status": "maybe"}},
+        },
+    )
+    assert invalid_capability_response.status_code == 422, invalid_capability_response.json()
+    invalid_capability_body = cast(dict[str, object], invalid_capability_response.json())
+    assert invalid_capability_body["code"] == "validation_error"
+
+    with pytest.raises(ValidationError):
+        ModelConnectionCreate.model_validate(
+            {**_model_connection_create_payload(), "protocolProfile": "responses"}
+        )
+    with pytest.raises(ValidationError):
+        ModelConnectionUpdate.model_validate(
+            {"capabilities": {"nativeToolCalls": {"status": "maybe"}}}
+        )
+
+
 def test_model_connection_base_url_preserves_exact_user_input(
     client: TestClient,
 ) -> None:
@@ -2946,6 +3133,7 @@ def test_model_connection_base_url_preserves_exact_user_input(
 def test_model_connection_connection_test_uses_provider_openai_behavior(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
 ) -> None:
     fixed_now = datetime(2026, 5, 12, 15, 0, tzinfo=UTC_TZ)
 
@@ -2981,6 +3169,13 @@ def test_model_connection_connection_test_uses_provider_openai_behavior(
     assert create_response.status_code == 201, create_response.json()
     create_body = cast(dict[str, object], create_response.json())
     connection_id = cast(int, create_body["id"])
+
+    probe_seed_at = datetime(2026, 5, 12, 14, 50, tzinfo=UTC_TZ)
+    _set_model_connection_probe_cache(
+        session_factory,
+        connection_id=connection_id,
+        probed_at=probe_seed_at,
+    )
 
     test_response = client.post(f"/api/model-connections/{connection_id}/connection-test")
     assert test_response.status_code == 200, test_response.json()
@@ -3023,6 +3218,322 @@ def test_model_connection_connection_test_uses_provider_openai_behavior(
         datetime.fromisoformat(cast(str, get_body["lastTestedAt"]).replace("Z", "+00:00"))
         == fixed_now
     )
+    assert get_body["lastProbedAt"] is None
+    capabilities = cast(dict[str, dict[str, object]], get_body["capabilities"])
+    assert capabilities["responsesApi"]["lastProbedAt"] is None
+    assert capabilities["textGeneration"]["lastProbedAt"] is None
+
+
+def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixed_now = datetime(2026, 5, 12, 15, 0, tzinfo=UTC_TZ)
+    fresh_probe_at = fixed_now - timedelta(minutes=5)
+    stale_probe_at = fixed_now - timedelta(hours=2)
+
+    class _ProbeOpenAIResponse:
+        _request_id = "req-capability-probe"
+        usage = {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}
+        output_text = '{"ok": true}'
+        output = [{"type": "message", "content": [{"type": "output_text", "text": "OK"}]}]
+        choices = [{"message": {"content": "OK"}}]
+
+    class _ProbeOpenAIStream:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    class _CapabilityProbeOpenAIClient:
+        init_calls: list[dict[str, object]] = []
+        chat_calls: list[dict[str, object]] = []
+        response_calls: list[dict[str, object]] = []
+
+        class _Responses:
+            def __init__(self, client: _CapabilityProbeOpenAIClient) -> None:
+                self._client = client
+
+            def create(self, **kwargs: object) -> _ProbeOpenAIResponse | _ProbeOpenAIStream:
+                self._client.response_calls.append(dict(kwargs))
+                return self._client._create_probe_response(kwargs)
+
+        class _ChatCompletions:
+            def __init__(self, client: _CapabilityProbeOpenAIClient) -> None:
+                self._client = client
+
+            def create(self, **kwargs: object) -> _ProbeOpenAIResponse | _ProbeOpenAIStream:
+                self._client.chat_calls.append(dict(kwargs))
+                return self._client._create_probe_response(kwargs)
+
+        class _Chat:
+            def __init__(self, client: _CapabilityProbeOpenAIClient) -> None:
+                self.completions = _CapabilityProbeOpenAIClient._ChatCompletions(client)
+
+        def __init__(self, **kwargs: object) -> None:
+            self.init_calls.append(dict(kwargs))
+            self.responses = self._Responses(self)
+            self.chat = self._Chat(self)
+
+        def __enter__(self) -> _CapabilityProbeOpenAIClient:
+            return self
+
+        def __exit__(self, exc_type: object, exc_value: object, exc_traceback: object) -> bool:
+            return False
+
+        @staticmethod
+        def _create_probe_response(
+            kwargs: dict[str, object],
+        ) -> _ProbeOpenAIResponse | _ProbeOpenAIStream:
+            if kwargs.get("stream") is True:
+                return _ProbeOpenAIStream()
+            model = str(kwargs.get("model"))
+            if model == "fake-tools-disabled" and "tools" in kwargs:
+                raise RuntimeError("tool calls disabled by fake provider")
+            text = kwargs.get("text")
+            text_format = text.get("format") if isinstance(text, dict) else None
+            response_format = kwargs.get("response_format")
+            json_schema = (
+                response_format.get("json_schema") if isinstance(response_format, dict) else None
+            )
+            if model == "fake-strict-schema-disabled" and (
+                isinstance(text_format, dict)
+                and text_format.get("type") == "json_schema"
+                or isinstance(json_schema, dict)
+            ):
+                raise RuntimeError("strict schema disabled by fake provider")
+            return _ProbeOpenAIResponse()
+
+    fresh_capabilities = default_model_connection_capabilities("openai_chat_completions")
+    fresh_capabilities.native_tool_calls.status = ModelConnectionCapabilityStatus.UNSUPPORTED
+    fresh_capabilities.native_tool_calls.detail = (
+        "Compatibility fixture keeps tool calls unsupported."
+    )
+    fresh_capabilities.strict_json_schema_output.status = (
+        ModelConnectionCapabilityStatus.UNSUPPORTED
+    )
+    fresh_capabilities.strict_json_schema_output.detail = (
+        "Compatibility fixture keeps strict schema unsupported."
+    )
+    for field_name in type(fresh_capabilities).model_fields:
+        getattr(fresh_capabilities, field_name).last_probed_at = fresh_probe_at
+
+    _seed_model_connection_record(
+        session_factory,
+        connection_id=9001,
+        key="compat_fixture_tools_disabled",
+        name="Compatibility Fixture: Tools Disabled",
+        description="Probe fixture with tool calls disabled.",
+        base_url="https://compat-fixture-tools-disabled.example.test",
+        model_id="fake-tools-disabled",
+        protocol_profile="openai_chat_completions",
+        capabilities=fresh_capabilities,
+        last_probed_at=fresh_probe_at,
+    )
+
+    stale_capabilities = default_model_connection_capabilities("openai_responses")
+    stale_capabilities.strict_json_schema_output.status = (
+        ModelConnectionCapabilityStatus.UNSUPPORTED
+    )
+    stale_capabilities.strict_json_schema_output.detail = (
+        "Compatibility fixture keeps strict schema unsupported."
+    )
+    for field_name in type(stale_capabilities).model_fields:
+        getattr(stale_capabilities, field_name).last_probed_at = stale_probe_at
+
+    _seed_model_connection_record(
+        session_factory,
+        connection_id=9002,
+        key="compat_fixture_strict_schema_disabled",
+        name="Compatibility Fixture: Strict Schema Disabled",
+        description="Probe fixture with strict schema disabled.",
+        base_url="https://compat-fixture-strict-schema-disabled.example.test",
+        model_id="fake-strict-schema-disabled",
+        protocol_profile="openai_responses",
+        capabilities=stale_capabilities,
+        last_probed_at=stale_probe_at,
+    )
+
+    monkeypatch.setattr("app.services.model_connection_probe_service.utcnow", lambda: fixed_now)
+    monkeypatch.setattr(
+        "app.services.model_connection_probe_service.OpenAI",
+        _CapabilityProbeOpenAIClient,
+        raising=False,
+    )
+
+    cached_response = client.post("/api/model-connections/9001/capability-probe")
+    assert cached_response.status_code == 200, cached_response.json()
+    cached_body = cast(dict[str, object], cached_response.json())
+    assert cached_body["modelConnectionId"] == 9001
+    assert cached_body["cached"] is True
+    requested_capability_keys = cast(list[str], cached_body["requestedCapabilityKeys"])
+    assert len(requested_capability_keys) == len(ModelConnectionCapabilities.model_fields)
+    assert set(requested_capability_keys) == _EXPECTED_MODEL_CONNECTION_CAPABILITY_KEYS
+    assert (
+        datetime.fromisoformat(cast(str, cached_body["lastProbedAt"]).replace("Z", "+00:00"))
+        == fresh_probe_at
+    )
+    cached_capabilities = cast(dict[str, dict[str, object]], cached_body["capabilities"])
+    assert set(cached_capabilities) == _EXPECTED_MODEL_CONNECTION_CAPABILITY_KEYS
+    assert cached_capabilities["chatCompletions"]["status"] == "supported"
+    assert cached_capabilities["responsesApi"]["status"] == "notApplicable"
+    assert cached_capabilities["nativeToolCalls"]["status"] == "unsupported"
+    assert cached_capabilities["reasoningHints"]["status"] == "unknown"
+    assert cached_capabilities["strictJsonSchemaOutput"]["detail"] == (
+        "Compatibility fixture keeps strict schema unsupported."
+    )
+    assert (
+        datetime.fromisoformat(
+            cast(str, cached_capabilities["nativeToolCalls"]["lastProbedAt"]).replace(
+                "Z",
+                "+00:00",
+            )
+        )
+        == fresh_probe_at
+    )
+    assert _CapabilityProbeOpenAIClient.init_calls == []
+
+    refreshed_response = client.post(
+        "/api/model-connections/9001/capability-probe",
+        json={"refresh": True},
+    )
+    assert refreshed_response.status_code == 200, refreshed_response.json()
+    refreshed_body = cast(dict[str, object], refreshed_response.json())
+    assert refreshed_body["cached"] is False
+    assert (
+        datetime.fromisoformat(cast(str, refreshed_body["lastProbedAt"]).replace("Z", "+00:00"))
+        == fixed_now
+    )
+    refreshed_capabilities = cast(dict[str, dict[str, object]], refreshed_body["capabilities"])
+    assert refreshed_capabilities["strictJsonSchemaOutput"]["status"] == "supported"
+    assert refreshed_capabilities["nativeToolCalls"]["status"] == "unsupported"
+    assert "tool calls disabled" in cast(str, refreshed_capabilities["nativeToolCalls"]["detail"])
+    assert (
+        datetime.fromisoformat(
+            cast(str, refreshed_capabilities["strictJsonSchemaOutput"]["lastProbedAt"]).replace(
+                "Z",
+                "+00:00",
+            )
+        )
+        == fixed_now
+    )
+    assert (
+        datetime.fromisoformat(
+            cast(str, refreshed_capabilities["nativeToolCalls"]["lastProbedAt"]).replace(
+                "Z",
+                "+00:00",
+            )
+        )
+        == fixed_now
+    )
+    assert any("response_format" in call for call in _CapabilityProbeOpenAIClient.chat_calls)
+    assert any("tools" in call for call in _CapabilityProbeOpenAIClient.chat_calls)
+
+    stale_response = client.post(
+        "/api/model-connections/9002/capability-probe",
+        json={"capabilityKeys": ["strictJsonSchemaOutput", "nativeToolCalls"]},
+    )
+    assert stale_response.status_code == 200, stale_response.json()
+    stale_body = cast(dict[str, object], stale_response.json())
+    assert stale_body["modelConnectionId"] == 9002
+    assert stale_body["cached"] is False
+    assert stale_body["requestedCapabilityKeys"] == [
+        "strictJsonSchemaOutput",
+        "nativeToolCalls",
+    ]
+    assert (
+        datetime.fromisoformat(cast(str, stale_body["lastProbedAt"]).replace("Z", "+00:00"))
+        == fixed_now
+    )
+    stale_capabilities_body = cast(dict[str, dict[str, object]], stale_body["capabilities"])
+    assert stale_capabilities_body["strictJsonSchemaOutput"]["status"] == "unsupported"
+    assert "strict schema disabled" in cast(
+        str,
+        stale_capabilities_body["strictJsonSchemaOutput"]["detail"],
+    )
+    assert stale_capabilities_body["nativeToolCalls"]["status"] == "supported"
+
+    def _is_responses_strict_schema_probe(call: dict[str, object]) -> bool:
+        text = call.get("text")
+        if not isinstance(text, dict):
+            return False
+        text_format = text.get("format")
+        return isinstance(text_format, dict) and text_format.get("type") == "json_schema"
+
+    assert any(
+        _is_responses_strict_schema_probe(call)
+        for call in _CapabilityProbeOpenAIClient.response_calls
+    )
+    assert any("tools" in call for call in _CapabilityProbeOpenAIClient.response_calls)
+    assert (
+        datetime.fromisoformat(
+            cast(str, stale_capabilities_body["strictJsonSchemaOutput"]["lastProbedAt"]).replace(
+                "Z",
+                "+00:00",
+            )
+        )
+        == fixed_now
+    )
+
+
+def test_model_connection_capability_probe_marks_transport_failures_inconclusive(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixed_now = datetime(2026, 5, 12, 15, 10, tzinfo=UTC_TZ)
+
+    class _InconclusiveProbeOpenAIClient:
+        init_calls: list[dict[str, object]] = []
+
+        class _Responses:
+            @staticmethod
+            def create(**kwargs: object) -> object:
+                del kwargs
+                raise RuntimeError("temporary transport outage")
+
+        def __init__(self, **kwargs: object) -> None:
+            self.init_calls.append(dict(kwargs))
+            self.responses = self._Responses()
+
+        def __enter__(self) -> _InconclusiveProbeOpenAIClient:
+            return self
+
+        def __exit__(self, exc_type: object, exc_value: object, exc_traceback: object) -> bool:
+            return False
+
+    _seed_model_connection_record(
+        session_factory,
+        connection_id=9003,
+        key="compat_fixture_transport_inconclusive",
+        name="Compatibility Fixture: Transport Inconclusive",
+        description="Probe fixture with an inconclusive transport failure.",
+        base_url="https://compat-fixture-transport-inconclusive.example.test",
+        model_id="fake-transport-inconclusive",
+    )
+    monkeypatch.setattr("app.services.model_connection_probe_service.utcnow", lambda: fixed_now)
+    monkeypatch.setattr(
+        "app.services.model_connection_probe_service.OpenAI",
+        _InconclusiveProbeOpenAIClient,
+        raising=False,
+    )
+
+    response = client.post(
+        "/api/model-connections/9003/capability-probe",
+        json={"capabilityKeys": ["strictJsonSchemaOutput"]},
+    )
+
+    assert response.status_code == 200, response.json()
+    body = cast(dict[str, object], response.json())
+    assert body["cached"] is False
+    assert body["lastProbedAt"] == "2026-05-12T15:10:00Z"
+    capabilities = cast(dict[str, dict[str, object]], body["capabilities"])
+    strict_schema = capabilities["strictJsonSchemaOutput"]
+    assert strict_schema["status"] == "unknown"
+    assert "inconclusive" in cast(str, strict_schema["detail"])
+    assert "temporary transport outage" in cast(str, strict_schema["detail"])
+    assert strict_schema["lastProbedAt"] == "2026-05-12T15:10:00Z"
 
 
 def test_model_connection_connection_test_uses_smoke_kind_without_openai(
@@ -3043,7 +3554,7 @@ def test_model_connection_connection_test_uses_smoke_kind_without_openai(
         "connectionKind": "deterministic_smoke",
         "baseUrl": "https://smoke.invalid/v1",
         "modelId": "smoke-check",
-        "apiStyle": "chat_completions",
+        "protocolProfile": "openai_chat_completions",
     }
     payload.pop("apiKey")
 
