@@ -40,6 +40,8 @@ DEFAULT_OPENAI_CLIENT_FACTORY = OpenAI
 _MAX_SERVER_TOOL_CALL_ROUNDS = 5
 _CAPABILITY_PROBE_INSTRUCTIONS = "Reply with the single word OK."
 _CAPABILITY_PROBE_INPUT = "Capability probe."
+_CAPABILITY_PROBE_JSON_INSTRUCTIONS = "Reply with one JSON object only."
+_CAPABILITY_PROBE_JSON_INPUT = 'Capability probe. Return JSON exactly as {"ok": true}.'
 _CAPABILITY_PROBE_JSON_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -92,6 +94,7 @@ _UNSUPPORTED_PROBE_MESSAGE_MARKERS = (
     "unrecognized request argument",
     "unknown field",
     "not allowed",
+    "response_format type is unavailable",
 )
 
 
@@ -398,11 +401,19 @@ class OpenAIProtocolAdapter:
         connection: ModelGatewayConnectionConfig,
     ) -> Any:
         if connection.api_style == "responses":
-            request_kwargs = self._responses_probe_kwargs(connection)
+            request_kwargs = self._responses_probe_kwargs(
+                connection,
+                instructions=_CAPABILITY_PROBE_JSON_INSTRUCTIONS,
+                input_text=_CAPABILITY_PROBE_JSON_INPUT,
+            )
             request_kwargs["text"] = {"format": {"type": "json_object"}}
             return client.responses.create(**request_kwargs)
         if connection.api_style == "chat_completions":
-            request_kwargs = self._chat_probe_kwargs(connection)
+            request_kwargs = self._chat_probe_kwargs(
+                connection,
+                instructions=_CAPABILITY_PROBE_JSON_INSTRUCTIONS,
+                input_text=_CAPABILITY_PROBE_JSON_INPUT,
+            )
             request_kwargs["response_format"] = {"type": "json_object"}
             return client.chat.completions.create(**request_kwargs)
         raise self._probe_api_style_error(connection)
@@ -501,11 +512,13 @@ class OpenAIProtocolAdapter:
         connection: ModelGatewayConnectionConfig,
         *,
         include_reasoning: bool = False,
+        instructions: str = _CAPABILITY_PROBE_INSTRUCTIONS,
+        input_text: str = _CAPABILITY_PROBE_INPUT,
     ) -> dict[str, Any]:
         request_kwargs: dict[str, Any] = {
             "model": connection.model_id,
-            "instructions": _CAPABILITY_PROBE_INSTRUCTIONS,
-            "input": _CAPABILITY_PROBE_INPUT,
+            "instructions": instructions,
+            "input": input_text,
         }
         if include_reasoning and connection.reasoning_effort is not None:
             request_kwargs["reasoning"] = {"effort": connection.reasoning_effort}
@@ -516,12 +529,14 @@ class OpenAIProtocolAdapter:
         connection: ModelGatewayConnectionConfig,
         *,
         include_reasoning: bool = False,
+        instructions: str = _CAPABILITY_PROBE_INSTRUCTIONS,
+        input_text: str = _CAPABILITY_PROBE_INPUT,
     ) -> dict[str, Any]:
         request_kwargs: dict[str, Any] = {
             "model": connection.model_id,
             "messages": [
-                {"role": "system", "content": _CAPABILITY_PROBE_INSTRUCTIONS},
-                {"role": "user", "content": _CAPABILITY_PROBE_INPUT},
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": input_text},
             ],
         }
         if include_reasoning and connection.reasoning_effort is not None:
@@ -906,6 +921,9 @@ class OpenAIProtocolAdapter:
         content = cls._read_field(message, "content")
         if content is not None:
             assistant_message["content"] = content
+        reasoning_content = cls._read_field(message, "reasoning_content")
+        if reasoning_content is not None:
+            assistant_message["reasoning_content"] = reasoning_content
         return assistant_message
 
     def _build_chat_tool_result_messages(

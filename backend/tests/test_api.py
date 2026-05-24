@@ -3283,6 +3283,19 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
             return False
 
         @staticmethod
+        def _contains_json_word(value: object) -> bool:
+            if isinstance(value, str):
+                return re.search(r"\bjson\b", value, re.IGNORECASE) is not None
+            if isinstance(value, dict):
+                return any(
+                    _CapabilityProbeOpenAIClient._contains_json_word(item)
+                    for item in value.values()
+                )
+            if isinstance(value, list):
+                return any(_CapabilityProbeOpenAIClient._contains_json_word(item) for item in value)
+            return False
+
+        @staticmethod
         def _create_probe_response(
             kwargs: dict[str, object],
         ) -> _ProbeOpenAIResponse | _ProbeOpenAIStream:
@@ -3297,12 +3310,30 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
             json_schema = (
                 response_format.get("json_schema") if isinstance(response_format, dict) else None
             )
+            json_object_requested = (
+                isinstance(text_format, dict)
+                and text_format.get("type") == "json_object"
+                or isinstance(response_format, dict)
+                and response_format.get("type") == "json_object"
+            )
+            prompt_payload = [
+                kwargs.get("instructions"),
+                kwargs.get("input"),
+                kwargs.get("messages"),
+            ]
+            if json_object_requested and not _CapabilityProbeOpenAIClient._contains_json_word(
+                prompt_payload
+            ):
+                raise RuntimeError(
+                    "Prompt must contain the word 'json' in some form to use "
+                    "'response_format' of type 'json_object'."
+                )
             if model == "fake-strict-schema-disabled" and (
                 isinstance(text_format, dict)
                 and text_format.get("type") == "json_schema"
                 or isinstance(json_schema, dict)
             ):
-                raise RuntimeError("strict schema disabled by fake provider")
+                raise RuntimeError("This response_format type is unavailable now")
             return _ProbeOpenAIResponse()
 
     fresh_capabilities = default_model_connection_capabilities("openai_chat_completions")
@@ -3407,6 +3438,7 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
     )
     refreshed_capabilities = cast(dict[str, dict[str, object]], refreshed_body["capabilities"])
     assert refreshed_capabilities["strictJsonSchemaOutput"]["status"] == "supported"
+    assert refreshed_capabilities["jsonObjectOutput"]["status"] == "supported"
     assert refreshed_capabilities["nativeToolCalls"]["status"] == "unsupported"
     assert "tool calls disabled" in cast(str, refreshed_capabilities["nativeToolCalls"]["detail"])
     assert (
@@ -3427,12 +3459,31 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
         )
         == fixed_now
     )
+
+    def _is_chat_json_object_probe_with_json_prompt(call: dict[str, object]) -> bool:
+        response_format = call.get("response_format")
+        return (
+            isinstance(response_format, dict)
+            and response_format.get("type") == "json_object"
+            and _CapabilityProbeOpenAIClient._contains_json_word(call.get("messages"))
+        )
+
     assert any("response_format" in call for call in _CapabilityProbeOpenAIClient.chat_calls)
+    assert any(
+        _is_chat_json_object_probe_with_json_prompt(call)
+        for call in _CapabilityProbeOpenAIClient.chat_calls
+    )
     assert any("tools" in call for call in _CapabilityProbeOpenAIClient.chat_calls)
 
     stale_response = client.post(
         "/api/model-connections/9002/capability-probe",
-        json={"capabilityKeys": ["strictJsonSchemaOutput", "nativeToolCalls"]},
+        json={
+            "capabilityKeys": [
+                "strictJsonSchemaOutput",
+                "jsonObjectOutput",
+                "nativeToolCalls",
+            ]
+        },
     )
     assert stale_response.status_code == 200, stale_response.json()
     stale_body = cast(dict[str, object], stale_response.json())
@@ -3440,6 +3491,7 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
     assert stale_body["cached"] is False
     assert stale_body["requestedCapabilityKeys"] == [
         "strictJsonSchemaOutput",
+        "jsonObjectOutput",
         "nativeToolCalls",
     ]
     assert (
@@ -3448,10 +3500,11 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
     )
     stale_capabilities_body = cast(dict[str, dict[str, object]], stale_body["capabilities"])
     assert stale_capabilities_body["strictJsonSchemaOutput"]["status"] == "unsupported"
-    assert "strict schema disabled" in cast(
+    assert "This response_format type is unavailable now" in cast(
         str,
         stale_capabilities_body["strictJsonSchemaOutput"]["detail"],
     )
+    assert stale_capabilities_body["jsonObjectOutput"]["status"] == "supported"
     assert stale_capabilities_body["nativeToolCalls"]["status"] == "supported"
 
     def _is_responses_strict_schema_probe(call: dict[str, object]) -> bool:
@@ -3461,8 +3514,25 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
         text_format = text.get("format")
         return isinstance(text_format, dict) and text_format.get("type") == "json_schema"
 
+    def _is_responses_json_object_probe_with_json_prompt(call: dict[str, object]) -> bool:
+        text = call.get("text")
+        if not isinstance(text, dict):
+            return False
+        text_format = text.get("format")
+        return (
+            isinstance(text_format, dict)
+            and text_format.get("type") == "json_object"
+            and _CapabilityProbeOpenAIClient._contains_json_word(
+                [call.get("instructions"), call.get("input")]
+            )
+        )
+
     assert any(
         _is_responses_strict_schema_probe(call)
+        for call in _CapabilityProbeOpenAIClient.response_calls
+    )
+    assert any(
+        _is_responses_json_object_probe_with_json_prompt(call)
         for call in _CapabilityProbeOpenAIClient.response_calls
     )
     assert any("tools" in call for call in _CapabilityProbeOpenAIClient.response_calls)

@@ -105,6 +105,7 @@ class _RuntimeRecordingChatCompletionsClient:
     final_output_text = '{"summary": "package chat runtime output"}'
     return_empty_choices = False
     malformed_tool_arguments = False
+    reasoning_content: str | None = None
 
     def __init__(self, **kwargs: Any) -> None:
         type(self).init_calls.append(kwargs)
@@ -126,28 +127,27 @@ class _RuntimeRecordingChatCompletionsClient:
                 "usage": self._usage(prompt_tokens=1, completion_tokens=0),
             }
         if len(type(self).create_calls) == 1:
-            return {
-                "choices": [
+            message: dict[str, Any] = {
+                "content": None,
+                "tool_calls": [
                     {
-                        "message": {
-                            "content": None,
-                            "tool_calls": [
-                                {
-                                    "id": "call_memory_lookup",
-                                    "type": "function",
-                                    "function": {
-                                        "name": "signaldeck_memory_lookup",
-                                        "arguments": (
-                                            "{"
-                                            if type(self).malformed_tool_arguments
-                                            else self._memory_lookup_arguments()
-                                        ),
-                                    },
-                                }
-                            ],
-                        }
+                        "id": "call_memory_lookup",
+                        "type": "function",
+                        "function": {
+                            "name": "signaldeck_memory_lookup",
+                            "arguments": (
+                                "{"
+                                if type(self).malformed_tool_arguments
+                                else self._memory_lookup_arguments()
+                            ),
+                        },
                     }
                 ],
+            }
+            if type(self).reasoning_content is not None:
+                message["reasoning_content"] = type(self).reasoning_content
+            return {
+                "choices": [{"message": message}],
                 "usage": self._usage(prompt_tokens=7, completion_tokens=2),
             }
         return {
@@ -186,6 +186,7 @@ class _RuntimeRecordingChatCompletionsClient:
         cls.final_output_text = '{"summary": "package chat runtime output"}'
         cls.return_empty_choices = False
         cls.malformed_tool_arguments = False
+        cls.reasoning_content = None
 
 
 class _RuntimeMalformedResponsesToolClient:
@@ -1890,9 +1891,12 @@ def test_workflow_package_runtime_json_object_validation_retry_exhaustion_fails_
     assert invocation["status"] == "failed"
     assert invocation["errorCode"] == "model_output_retry_exhausted"
     assert invocation["errorDetails"][0]["field"] == "summary"
-    assert cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"][
-        "selectedStrategies"
-    ]["outputStrategy"] == "jsonObjectWithValidation"
+    assert (
+        cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]["selectedStrategies"][
+            "outputStrategy"
+        ]
+        == "jsonObjectWithValidation"
+    )
     assert len(_RuntimeRecordingOpenAIClient.create_calls) == 2
 
 
@@ -1902,6 +1906,7 @@ def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_a
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeRecordingChatCompletionsClient.reset()
+    _RuntimeRecordingChatCompletionsClient.reasoning_content = "preserved thinking trace"
     monkeypatch.setattr(
         "app.services.run_service.OpenAI",
         _RuntimeRecordingChatCompletionsClient,
@@ -1914,9 +1919,7 @@ def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_a
     )
     created = _create_package_from_source(
         client,
-        manifest_source=_package_source_with_memory_lookup(
-            package_key="runtime_chat_tool_package"
-        ),
+        manifest_source=_package_source_with_memory_lookup(package_key="runtime_chat_tool_package"),
     )
 
     launch = client.post(
@@ -1953,6 +1956,7 @@ def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_a
     assistant_message = second_call["messages"][-2]
     tool_message = second_call["messages"][-1]
     assert assistant_message["role"] == "assistant"
+    assert assistant_message["reasoning_content"] == "preserved thinking trace"
     assert assistant_message["tool_calls"][0]["id"] == "call_memory_lookup"
     assert tool_message["role"] == "tool"
     assert tool_message["tool_call_id"] == "call_memory_lookup"
@@ -1967,7 +1971,11 @@ def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_a
         assert invocation.tokens == 28
         assert invocation.output == {"summary": "package chat runtime output"}
         gateway_metadata = cast(dict[str, Any], invocation.graph_metadata)["modelGateway"]
-        assert gateway_metadata["usage"] == {"inputTokens": 18, "outputTokens": 10, "totalTokens": 28}
+        assert gateway_metadata["usage"] == {
+            "inputTokens": 18,
+            "outputTokens": 10,
+            "totalTokens": 28,
+        }
         assert gateway_metadata["selectedStrategies"] == {
             "outputStrategy": "strictJsonSchema",
             "toolCallStrategy": "serialize",
