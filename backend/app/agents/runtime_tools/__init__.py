@@ -5,6 +5,7 @@ from functools import lru_cache
 from importlib import import_module
 from typing import Any, Protocol, cast
 
+from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
 from app.agents.runtime_tools.registry import RuntimeToolRegistry
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError, RuntimeToolSpec
 
@@ -47,5 +48,6 @@ __all__ = [
     "RuntimeToolError",
     "RuntimeToolRegistry",
     "RuntimeToolSpec",
+    "SignalDeckToolDeclaration",
     "get_default_runtime_tool_registry",
 ]

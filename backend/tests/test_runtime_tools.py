@@ -1990,6 +1990,35 @@ def test_runtime_tool_registry_returns_granted_strict_definitions_in_sort_order(
     assert [tool["name"] for tool in position_only_tools] == [POSITION_LOOKUP_OPENAI_FUNCTION_NAME]
 
 
+def test_runtime_tool_registry_returns_signaldeck_declarations_in_sort_order() -> None:
+    registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC, REPORT_LOOKUP_TOOL_SPEC])
+
+    declarations = registry.get_tool_declarations(
+        {POSITION_LOOKUP_TOOL_KEY, REPORT_LOOKUP_TOOL_KEY}
+    )
+
+    assert [declaration.tool_key for declaration in declarations] == [
+        REPORT_LOOKUP_TOOL_KEY,
+        POSITION_LOOKUP_TOOL_KEY,
+    ]
+    assert [declaration.model_name for declaration in declarations] == [
+        REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
+        POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
+    ]
+    assert {declaration.kind for declaration in declarations} == {"native_runtime"}
+    assert all(declaration.strict for declaration in declarations)
+    report_schema = cast(dict[str, object], declarations[0].input_schema)
+    assert report_schema["required"] == [
+        "ticker",
+        "tag",
+        "reviewType",
+        "portfolioSlug",
+        "source",
+        "limit",
+        "offset",
+    ]
+
+
 def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None:
     registry = get_default_runtime_tool_registry()
 

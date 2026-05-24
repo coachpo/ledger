@@ -6,7 +6,9 @@ from app.agents.mcp.tool_adapter import (
     ExecutionToolDescriptor,
     build_native_runtime_tool_descriptor,
     execution_tool_descriptor_to_openai_tool,
+    execution_tool_descriptor_to_signaldeck_tool_declaration,
 )
+from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError, RuntimeToolSpec
 
 
@@ -52,6 +54,15 @@ class RuntimeToolRegistry:
             self._descriptors_by_openai_function_name[spec.openai_function_name]
             for spec in self._specs
             if spec.key in granted_tool_keys and self._is_enabled_spec(spec)
+        )
+
+    def get_tool_declarations(
+        self,
+        granted_tool_keys: Collection[str],
+    ) -> tuple[SignalDeckToolDeclaration, ...]:
+        return tuple(
+            execution_tool_descriptor_to_signaldeck_tool_declaration(descriptor)
+            for descriptor in self.get_execution_descriptors(granted_tool_keys)
         )
 
     def get_openai_tools(
