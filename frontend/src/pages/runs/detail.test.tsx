@@ -862,7 +862,20 @@ describe("RunsDetailPage", () => {
       "overflow-hidden",
     );
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-detail-context-frame")).toHaveClass(
+      "max-h-96",
+      "min-h-0",
+      "overflow-y-auto",
+      "overscroll-contain",
+      "shrink-0",
+    );
     expect(screen.getByTestId("runs-inspection-workspace")).toBeInTheDocument();
+    expect(screen.getByTestId("runs-inspection-workspace")).toHaveClass(
+      "basis-0",
+      "flex-1",
+      "min-h-0",
+      "min-w-0",
+    );
     expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
       "data-console-layout",
       "split",

@@ -200,7 +200,10 @@ export function RunsDetailPage() {
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background" data-testid="runs-detail-page">
-      <div className="min-w-0 shrink-0 border-b border-border bg-card/95 px-4 py-3 backdrop-blur">
+      <div
+        className="max-h-96 min-h-0 min-w-0 shrink-0 overflow-y-auto overscroll-contain border-b border-border bg-card/95 px-4 py-3 backdrop-blur"
+        data-testid="runs-detail-context-frame"
+      >
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 space-y-2">
@@ -260,7 +263,7 @@ export function RunsDetailPage() {
       </div>
 
       <ResizablePanelGroup
-        className="min-h-0 min-w-0 flex-1"
+        className="min-h-0 min-w-0 flex-1 basis-0"
         data-console-layout={consoleLayout}
         data-testid="runs-inspection-workspace"
         direction={consoleDirection}
