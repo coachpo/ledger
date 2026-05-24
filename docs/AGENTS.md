@@ -1,9 +1,12 @@
 # DOCS GUIDE
 
 > Inherits `/AGENTS.md`. This file governs the live reference docs in `docs/`.
+>
+> Status: Docs consolidation reference for branch `main` at `adc9887`.
 
 ## OVERVIEW
-`docs/` is the live product, requirements, spec, API, data-model, test, platform, run-input, memory, and advisory-research reference set. Live code remains source of truth; docs mirror the mounted browser/API surfaces and current persistence/runtime contracts.
+
+`docs/` has six canonical live owner documents: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and this `AGENTS.md`. Live code remains source of truth; these docs mirror the mounted browser/API surfaces and current persistence/runtime contracts.
 
 Extension model: docs mirror the core app plus statically resident extensions; they should describe state-gated exposure, not marketplace installation or hot-loading.
 
@@ -12,41 +15,48 @@ The repo has no users yet, so prefer clean architecture and current best practic
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
 
 ## WHERE TO LOOK
+
 | Task | Location | Notes |
 |---|---|---|
-| Product scope | `prd.md` | goals, non-goals, product areas, package-first platform framing |
-| Requirements | `requirements.md` | functional/nonfunctional requirements and acceptance criteria |
-| Technical behavior | `spec.md` | runtime topology, backend/frontend architecture, validation gates |
-| API contracts | `api-design.md` | route families, request/response conventions, removed-route guarantees |
-| Data model | `data-model.md` | current tables, JSONB contracts, schema-repair boundaries |
-| Test strategy | `test-plan.md` | quality gates, E2E ports, route-family coverage |
-| Run input help | `run-input-schema-helptext.md` | supported schema display metadata and unsupported help mechanisms |
-| Platform reference | `signaldeck-agent-platform.md` | Workflow Packages, Model Connections, Tools, Runs, and removed-surface boundaries |
-| Memory design | `signaldeck-memory-layer-design.md` | platform-core memory schemas, storage, runtime tools, run evidence, and report-domain boundaries |
-| Advisory research design | `advisory-research-signaldeck-upgrade-design.md` | research/design note for TradingAgents-inspired advisory upgrades |
+| Product scope | `prd.md` | Goals, non-goals, product areas, success criteria, and package-first platform framing. |
+| Requirements | `requirements.md` | Functional/nonfunctional requirements and acceptance criteria. |
+| Technical behavior | `spec.md` | Runtime topology, API conventions, backend/frontend architecture, validation gates, platform contracts, memory, and removed-surface boundaries. |
+| Data model | `data-model.md` | Current tables, JSONB contracts, persistence boundaries, memory tables, and schema-repair rules. |
+| Test strategy | `test-plan.md` | Quality gates, coverage matrix, E2E ports, route-family coverage, and stale-claim guards. |
+| Docs governance | `AGENTS.md` | Ownership rules, obsolete-content rules, anti-patterns, and consolidation policy. |
+
+## PENDING DESIGN NOTES
+
+`docs/pending-design/` may keep research and upgrade-design notes that are not live contracts. Do not treat pending-design files as canonical over the six owner docs or live code.
 
 ## CONVENTIONS
-- Keep each status line aligned with the current root AGENTS commit and branch metadata.
+
+- Keep status lines aligned with the current branch and commit when refreshing docs.
 - Keep removed surfaces only as explicit non-goals, out-of-scope items, or removed-route guardrails.
 - Do not present Studio, Tryout, orchestration, runtime-v2, simulations, backtests, `/api/skills`, `/skills*`, or removed global authoring routes as live.
-- `api-design.md` owns preserved API route tables and platform endpoint summaries.
-- `signaldeck-agent-platform.md` owns package-first platform contracts and removed-surface boundaries.
-- When documenting upgrades, keep platform-core behavior separate from extension-owned behavior; finance-specific examples must not silently rewrite shared platform contracts.
-- `data-model.md` documents current persistence intent, not migration steps; `backend/app/db/` remains the schema-repair authority.
-- `test-plan.md` records expected validation scope, not implementation history.
+- `spec.md` owns consolidated route summaries, API conventions, runtime topology, backend/frontend behavior, and platform technical contracts.
+- `requirements.md` owns testable functional and nonfunctional requirements.
+- `prd.md` owns product framing and success criteria.
+- `data-model.md` owns current persistence intent, not migration steps; `backend/app/db/` remains the schema-repair authority.
+- `test-plan.md` owns expected validation scope, not implementation history.
+- When documenting upgrades, keep platform-core behavior separate from extension-owned behavior.
+- Finance-specific examples must not silently rewrite shared platform contracts.
 - PRD and requirements overlap is intentional: product framing lives in `prd.md`, testable requirements live in `requirements.md`.
 
 ## OBSOLETE CONTENT RULES
-- No whole docs files currently need deletion; merge or delete obsolete passages inside their owner docs instead.
-- Preserve the current ten-file docs set unless live code proves a file has no remaining owner.
+
+- Preserve the six canonical owner docs unless live code proves a file has no remaining owner.
+- Keep root-level docs distilled to the six canonical owner files only; place non-live research notes under `pending-design/` when they must be retained.
 - Merge stale live-surface claims into the correct owner file instead of duplicating details.
 - Convert useful removed-surface material into explicit non-goals or removed-route guarantees.
 - Delete obsolete passages that duplicate a live owner or contradict mounted routes, schemas, or tests.
 
 ## ANTI-PATTERNS
+
 - Do not add new docs for dead surfaces.
-- Do not duplicate route tables outside `api-design.md` and `signaldeck-agent-platform.md`.
+- Do not duplicate route tables across owner and reference docs without making `spec.md` the authoritative summary.
 - Do not treat docs, old plans, or Alembic scaffolds as source of truth over live code.
 - Do not move package-first platform details back into removed global authoring concepts.
 - Do not add child `AGENTS.md` files under `docs/`; this file is the docs governance boundary.
 - Do not leave stale branch/SHA status markers after refreshing docs.
+- Do not re-expand research notes into duplicate route tables, data models, validation plans, or implementation checklists.
