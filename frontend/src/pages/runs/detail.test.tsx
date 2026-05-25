@@ -862,6 +862,13 @@ describe("RunsDetailPage", () => {
       "overflow-hidden",
     );
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /run summary/i })).toHaveAttribute(
+      "data-state",
+      "active",
+    );
+    expect(
+      screen.getByRole("tab", { name: /execution trace/i }),
+    ).toHaveAttribute("data-state", "inactive");
     expect(screen.getByTestId("runs-detail-context-frame")).toHaveClass(
       "max-h-96",
       "min-h-0",
@@ -869,6 +876,7 @@ describe("RunsDetailPage", () => {
       "overscroll-contain",
       "shrink-0",
     );
+    expect(screen.getByTestId("runs-detail-context-frame")).toBeVisible();
     expect(screen.getByTestId("runs-inspection-workspace")).toBeInTheDocument();
     expect(screen.getByTestId("runs-inspection-workspace")).toHaveClass(
       "basis-0",
@@ -985,7 +993,9 @@ describe("RunsDetailPage", () => {
     expect(primaryProfile).toHaveTextContent(/Responses-compatible/i);
     expect(primaryProfile).toHaveTextContent(/Credential was present/i);
     expect(primaryProfile).toHaveTextContent(/Capability summary/i);
-    expect(primaryProfile).toHaveTextContent(/Unsupported snapshot capabilities/i);
+    expect(primaryProfile).toHaveTextContent(
+      /Unsupported snapshot capabilities/i,
+    );
     expect(primaryProfile).not.toHaveTextContent(/Selected strategies/i);
     expect(primaryProfile).not.toHaveTextContent(/Last probed/i);
     const smokeProfile = screen.getByTestId(
@@ -994,8 +1004,12 @@ describe("RunsDetailPage", () => {
     expect(smokeProfile).toHaveTextContent(/Smoke Model/i);
     expect(smokeProfile).toHaveTextContent(/Chat Completions-compatible/i);
     expect(smokeProfile).toHaveTextContent(/No credential captured/i);
-    expect(screen.queryByTestId("runs-runtime-selected-strategies")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-runtime-strategy-2-1002")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-runtime-selected-strategies"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-runtime-strategy-2-1002"),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /audit evidence/i }));
 
@@ -1076,6 +1090,13 @@ describe("RunsDetailPage", () => {
     runInputRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1");
     const stepSummaryRender = render(<RunsDetailPage />);
+    expect(screen.getByRole("tab", { name: /run summary/i })).toHaveAttribute(
+      "data-state",
+      "inactive",
+    );
+    expect(
+      screen.getByRole("tab", { name: /execution trace/i }),
+    ).toHaveAttribute("data-state", "active");
     const stepSummary = screen.getByTestId("runs-step-1-summary");
     const metadataHeading = within(stepSummary).getByRole("heading", {
       name: /step metadata/i,
@@ -1302,16 +1323,18 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-runtime-profile")).toHaveTextContent(
       /unsupported/i,
     );
-    expect(screen.queryByTestId("runs-runtime-strategy-1-1001")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-runtime-strategy-1-1001"),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /audit evidence/i }));
 
-    expect(screen.getByTestId("runs-runtime-strategy-1-1001")).toHaveTextContent(
-      /strictJsonSchema/i,
-    );
-    expect(screen.getByTestId("runs-runtime-strategy-1-1001")).toHaveTextContent(
-      /enabled/i,
-    );
+    expect(
+      screen.getByTestId("runs-runtime-strategy-1-1001"),
+    ).toHaveTextContent(/strictJsonSchema/i);
+    expect(
+      screen.getByTestId("runs-runtime-strategy-1-1001"),
+    ).toHaveTextContent(/enabled/i);
     expect(
       within(screen.getByTestId("runs-runtime-strategy-1-1001")).queryByText(
         /^Input tokens$/i,

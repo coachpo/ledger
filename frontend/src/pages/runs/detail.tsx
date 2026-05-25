@@ -1,11 +1,16 @@
 import { AlertCircle, GitBranch, PlayCircle } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { useRun } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
@@ -50,10 +55,20 @@ export function RunsDetailPage() {
   const isMobileConsole = useIsMobile();
 
   const steps = useMemo(
-    () => [...(runQuery.data?.steps ?? [])].sort((left, right) => left.index - right.index),
+    () =>
+      [...(runQuery.data?.steps ?? [])].sort(
+        (left, right) => left.index - right.index,
+      ),
     [runQuery.data?.steps],
   );
-  const allInvocations = useMemo(() => steps.flatMap((step) => [...sortedInvocations(step.invocations), ...sortedOperationInvocations(step.operationInvocations)]), [steps]);
+  const allInvocations = useMemo(
+    () =>
+      steps.flatMap((step) => [
+        ...sortedInvocations(step.invocations),
+        ...sortedOperationInvocations(step.operationInvocations),
+      ]),
+    [steps],
+  );
   const traceSpanEntries = useMemo(
     () =>
       steps.flatMap((step) => [
@@ -78,6 +93,17 @@ export function RunsDetailPage() {
       ]),
     [steps],
   );
+  const inspectParam = searchParams.get("inspect");
+  const paneParam = searchParams.get("pane");
+  const requestedTab = inspectParam || paneParam ? "execution" : "summary";
+  const [activeTab, setActiveTab] = useState<"summary" | "execution">(
+    requestedTab,
+  );
+
+  useEffect(() => {
+    setActiveTab(requestedTab);
+  }, [requestedTab]);
+
   const forkDialogOpen = searchParams.get("fork") === "1";
   const resumeStepIndexParam = searchParams.get("resumeStepIndex");
   const forkInvocationIdParam = searchParams.get("invocationId");
@@ -144,17 +170,27 @@ export function RunsDetailPage() {
   };
 
   if (!runId) {
-    return <div className="p-4 text-sm text-muted-foreground">Run route is missing an id.</div>;
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        Run route is missing an id.
+      </div>
+    );
   }
 
   if (runQuery.isPending) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading run details...</div>;
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        Loading run details...
+      </div>
+    );
   }
 
   if (runQuery.isError || !runQuery.data) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
-        {runQuery.error instanceof Error ? runQuery.error.message : "Run not found."}
+        {runQuery.error instanceof Error
+          ? runQuery.error.message
+          : "Run not found."}
       </div>
     );
   }
@@ -163,16 +199,32 @@ export function RunsDetailPage() {
   const copiedSteps = steps.filter((step) => step.origin === "copied").length;
   const plannedSteps = steps.filter((step) => step.origin === "planned").length;
   const copiedInvocations = steps.reduce(
-    (count, step) => count
-      + step.invocations.filter((invocation) => invocation.outputOrigin === "copied" || invocation.resolvedInputOrigin === "copied").length
-      + step.operationInvocations.filter((invocation) => invocation.outputOrigin === "copied").length,
+    (count, step) =>
+      count +
+      step.invocations.filter(
+        (invocation) =>
+          invocation.outputOrigin === "copied" ||
+          invocation.resolvedInputOrigin === "copied",
+      ).length +
+      step.operationInvocations.filter(
+        (invocation) => invocation.outputOrigin === "copied",
+      ).length,
     0,
   );
   const plannedInvocations = allInvocations.length - copiedInvocations;
   const runProgress = run.progress.percent;
   const targetKindLabel = formatTargetKindLabel(run.targetKind);
-  const forkTarget = findForkTargetContext(steps, resumeStepIndex, forkInvocationId);
-  const forkAvailability = getRunForkAvailability(run, steps, resumeStepIndex, forkInvocationId);
+  const forkTarget = findForkTargetContext(
+    steps,
+    resumeStepIndex,
+    forkInvocationId,
+  );
+  const forkAvailability = getRunForkAvailability(
+    run,
+    steps,
+    resumeStepIndex,
+    forkInvocationId,
+  );
   const isCurrentFork = hasCurrentForkLineage(run, steps);
   const activeInspection = resolveRunInspectionState({
     hash: location.hash,
@@ -180,12 +232,17 @@ export function RunsDetailPage() {
     searchParams,
     steps,
   });
-  const terminalInvocationsCount = allInvocations.filter((invocation) => isTerminalStatus(invocation.status)).length;
+  const terminalInvocationsCount = allInvocations.filter((invocation) =>
+    isTerminalStatus(invocation.status),
+  ).length;
   const canRerunRun = run.targetKind === "workflowPackage";
   const consoleLayout = isMobileConsole ? "stacked" : "split";
   const consoleDirection = isMobileConsole ? "vertical" : "horizontal";
 
-  const selectInspection = (target: RunInspectionTarget, pane?: RunInspectionPane) => {
+  const selectInspection = (
+    target: RunInspectionTarget,
+    pane?: RunInspectionPane,
+  ) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set("inspect", serializeInspectionTarget(target));
@@ -199,102 +256,205 @@ export function RunsDetailPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background" data-testid="runs-detail-page">
-      <div
-        className="max-h-96 min-h-0 min-w-0 shrink-0 overflow-y-auto overscroll-contain border-b border-border bg-card/95 px-4 py-3 backdrop-blur"
-        data-testid="runs-detail-context-frame"
+    <div
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
+      data-testid="runs-detail-page"
+    >
+      <Tabs
+        className="flex h-full min-h-0 flex-1 flex-col gap-0"
+        value={activeTab}
+        onValueChange={(value) =>
+          setActiveTab(value as "summary" | "execution")
+        }
       >
-        <div className="flex min-w-0 flex-col gap-4">
-          <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-2">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <h1 className="text-xl font-semibold tracking-tight">Run #{run.id}</h1>
-                <Badge className="max-w-full min-w-0 break-all" data-testid="runs-detail-target-identity" variant="outline">{run.targetKind === "workflowPackage" ? `Snapshot: ${run.packageProvenance?.workflowPackageKey ?? run.targetKey}` : run.targetKey}</Badge>
-                <Badge className="max-w-full min-w-0 break-all" variant="outline">{run.targetKind === "workflowPackage" ? `Captured package id: ${run.packageProvenance?.workflowPackageId ?? run.targetId}` : `Target id: ${run.targetId}`}</Badge>
-                {run.sourceRunId ? <Badge variant="secondary"><GitBranch className="size-3" /> {isCurrentFork ? "Fork lineage" : "Historical lineage"}</Badge> : null}
+        <div className="flex h-full min-h-0 flex-1 flex-col border-b border-border bg-card/95 px-4 py-3 backdrop-blur">
+          <TabsList className="mb-4 grid w-full max-w-md shrink-0 grid-cols-2">
+            <TabsTrigger value="summary">Run summary</TabsTrigger>
+            <TabsTrigger value="execution">Execution trace</TabsTrigger>
+          </TabsList>
+          <TabsContent
+            className="m-0 min-h-0 data-[state=inactive]:hidden"
+            forceMount
+            value="summary"
+          >
+            <div
+              className="max-h-96 min-h-0 min-w-0 shrink-0 overflow-y-auto overscroll-contain"
+              data-testid="runs-detail-context-frame"
+            >
+              <div className="flex min-w-0 flex-col gap-4">
+                <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <h1 className="text-xl font-semibold tracking-tight">
+                        Run #{run.id}
+                      </h1>
+                      <Badge
+                        className="max-w-full min-w-0 break-all"
+                        data-testid="runs-detail-target-identity"
+                        variant="outline"
+                      >
+                        {run.targetKind === "workflowPackage"
+                          ? `Snapshot: ${run.packageProvenance?.workflowPackageKey ?? run.targetKey}`
+                          : run.targetKey}
+                      </Badge>
+                      <Badge
+                        className="max-w-full min-w-0 break-all"
+                        variant="outline"
+                      >
+                        {run.targetKind === "workflowPackage"
+                          ? `Captured package id: ${run.packageProvenance?.workflowPackageId ?? run.targetId}`
+                          : `Target id: ${run.targetId}`}
+                      </Badge>
+                      {run.sourceRunId ? (
+                        <Badge variant="secondary">
+                          <GitBranch className="size-3" />{" "}
+                          {isCurrentFork
+                            ? "Fork lineage"
+                            : "Historical lineage"}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {describeRunTarget(run.targetKind)} ·{" "}
+                      {run.startedAt
+                        ? `Started ${formatDateTime(run.startedAt)}`
+                        : `Queued ${formatDateTime(run.queuedAt)}`}
+                      {run.finishedAt
+                        ? ` · Finished ${formatDateTime(run.finishedAt)}`
+                        : formatUnfinishedRunStatus(run.status)}
+                    </p>
+                  </div>
+                  <div
+                    className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end"
+                    data-testid="runs-detail-actions"
+                  >
+                    {run.targetKind === "workflowPackage" &&
+                    run.packageProvenance?.currentPackage?.available ? (
+                      <Button
+                        asChild
+                        className="w-full sm:w-auto"
+                        data-testid="runs-detail-package-link"
+                        size="sm"
+                        variant="outline"
+                      >
+                        <Link
+                          to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}
+                        >
+                          Open current package
+                        </Link>
+                      </Button>
+                    ) : null}
+                    {canRerunRun ? (
+                      <Button
+                        className="w-full cursor-pointer sm:w-auto"
+                        data-testid="runs-detail-rerun"
+                        onClick={openRerunDialog}
+                        size="sm"
+                        type="button"
+                      >
+                        <PlayCircle data-icon="inline-start" />
+                        Run snapshot again
+                      </Button>
+                    ) : null}
+                    <Button
+                      asChild
+                      className="w-full sm:w-auto"
+                      size="sm"
+                      variant="outline"
+                    >
+                      <Link to="/runs">Back to runs</Link>
+                    </Button>
+                  </div>
+                </div>
+                {run.error ? (
+                  <Alert variant="destructive">
+                    <AlertCircle />
+                    <AlertTitle>Run failed</AlertTitle>
+                    <AlertDescription>{run.error}</AlertDescription>
+                  </Alert>
+                ) : null}
+                {run.status === "queued" && run.queue ? (
+                  <Alert data-testid="runs-detail-queue-reason">
+                    <AlertCircle />
+                    <AlertTitle>
+                      {formatQueueReasonTitle(run.queue.reason)}
+                    </AlertTitle>
+                    <AlertDescription>
+                      {run.queue.message}
+                      {run.queue.blockingRunId
+                        ? ` Blocking run: #${run.queue.blockingRunId}.`
+                        : null}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+                <RunContextStrip
+                  allInvocationsCount={allInvocations.length}
+                  run={run}
+                  runProgress={runProgress}
+                  targetKindLabel={targetKindLabel}
+                  terminalInvocationsCount={terminalInvocationsCount}
+                />
               </div>
-              <p className="text-sm text-muted-foreground">
-                {describeRunTarget(run.targetKind)} · {run.startedAt
-                  ? `Started ${formatDateTime(run.startedAt)}`
-                  : `Queued ${formatDateTime(run.queuedAt)}`}
-                {run.finishedAt ? ` · Finished ${formatDateTime(run.finishedAt)}` : formatUnfinishedRunStatus(run.status)}
-              </p>
             </div>
-            <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end" data-testid="runs-detail-actions">
-              {run.targetKind === "workflowPackage" && run.packageProvenance?.currentPackage?.available ? (
-                <Button asChild className="w-full sm:w-auto" data-testid="runs-detail-package-link" size="sm" variant="outline">
-                  <Link to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>Open current package</Link>
-                </Button>
-              ) : null}
-              {canRerunRun ? (
-                <Button className="w-full cursor-pointer sm:w-auto" data-testid="runs-detail-rerun" onClick={openRerunDialog} size="sm" type="button">
-                  <PlayCircle data-icon="inline-start" />
-                  Run snapshot again
-                </Button>
-              ) : null}
-              <Button asChild className="w-full sm:w-auto" size="sm" variant="outline"><Link to="/runs">Back to runs</Link></Button>
-            </div>
-          </div>
-          {run.error ? (
-            <Alert variant="destructive">
-              <AlertCircle />
-              <AlertTitle>Run failed</AlertTitle>
-              <AlertDescription>{run.error}</AlertDescription>
-            </Alert>
-          ) : null}
-          {run.status === "queued" && run.queue ? (
-            <Alert data-testid="runs-detail-queue-reason">
-              <AlertCircle />
-              <AlertTitle>{formatQueueReasonTitle(run.queue.reason)}</AlertTitle>
-              <AlertDescription>
-                {run.queue.message}
-                {run.queue.blockingRunId ? ` Blocking run: #${run.queue.blockingRunId}.` : null}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          <RunContextStrip
-            allInvocationsCount={allInvocations.length}
-            run={run}
-            runProgress={runProgress}
-            targetKindLabel={targetKindLabel}
-            terminalInvocationsCount={terminalInvocationsCount}
-          />
+          </TabsContent>
+          <TabsContent
+            className="m-0 min-h-0 flex-1 data-[state=inactive]:hidden"
+            forceMount
+            value="execution"
+          >
+            <ResizablePanelGroup
+              className="min-h-0 min-w-0 flex-1 basis-0"
+              data-console-layout={consoleLayout}
+              data-testid="runs-inspection-workspace"
+              direction={consoleDirection}
+            >
+              <ResizablePanel
+                className="min-h-0 min-w-0"
+                defaultSize={isMobileConsole ? 36 : 28}
+                maxSize={isMobileConsole ? 55 : 45}
+                minSize={isMobileConsole ? 24 : 18}
+              >
+                <ExecutionOutline
+                  activeInspection={activeInspection}
+                  onOpenFork={openForkDialog}
+                  onSelect={selectInspection}
+                  run={run}
+                  steps={steps}
+                  traceSpanEntries={traceSpanEntries}
+                />
+              </ResizablePanel>
+              <ResizableHandle
+                className="bg-border/80"
+                data-testid="runs-inspection-resize-handle"
+                withHandle
+              />
+              <ResizablePanel
+                className="min-h-0 min-w-0"
+                defaultSize={isMobileConsole ? 64 : 72}
+                minSize={isMobileConsole ? 45 : 45}
+              >
+                <EvidenceViewer
+                  activeInspection={activeInspection}
+                  copiedInvocations={copiedInvocations}
+                  copiedSteps={copiedSteps}
+                  isCurrentFork={isCurrentFork}
+                  onSelect={selectInspection}
+                  plannedInvocations={plannedInvocations}
+                  plannedSteps={plannedSteps}
+                  run={run}
+                  steps={steps}
+                />
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </TabsContent>
         </div>
-      </div>
+      </Tabs>
 
-      <ResizablePanelGroup
-        className="min-h-0 min-w-0 flex-1 basis-0"
-        data-console-layout={consoleLayout}
-        data-testid="runs-inspection-workspace"
-        direction={consoleDirection}
-      >
-        <ResizablePanel className="min-h-0 min-w-0" defaultSize={isMobileConsole ? 36 : 28} maxSize={isMobileConsole ? 55 : 45} minSize={isMobileConsole ? 24 : 18}>
-          <ExecutionOutline
-            activeInspection={activeInspection}
-            onOpenFork={openForkDialog}
-            onSelect={selectInspection}
-            run={run}
-            steps={steps}
-            traceSpanEntries={traceSpanEntries}
-          />
-        </ResizablePanel>
-        <ResizableHandle className="bg-border/80" data-testid="runs-inspection-resize-handle" withHandle />
-        <ResizablePanel className="min-h-0 min-w-0" defaultSize={isMobileConsole ? 64 : 72} minSize={isMobileConsole ? 45 : 45}>
-          <EvidenceViewer
-            activeInspection={activeInspection}
-            copiedInvocations={copiedInvocations}
-            copiedSteps={copiedSteps}
-            isCurrentFork={isCurrentFork}
-            onSelect={selectInspection}
-            plannedInvocations={plannedInvocations}
-            plannedSteps={plannedSteps}
-            run={run}
-            steps={steps}
-          />
-        </ResizablePanel>
-      </ResizablePanelGroup>
-
-      <RunRerunDialog onClose={closeRerunDialog} open={rerunDialogOpen && canRerunRun} runId={runId} />
+      <RunRerunDialog
+        onClose={closeRerunDialog}
+        open={rerunDialogOpen && canRerunRun}
+        runId={runId}
+      />
 
       <RunForkDialog
         forkAvailability={forkAvailability}
