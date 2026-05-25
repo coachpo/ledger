@@ -302,13 +302,13 @@ function areJsonValuesEqual(left: unknown, right: unknown): boolean {
 
 function DetailGrid({ items }: { items: DetailItem[] }) {
   return (
-    <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
+    <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => (
-        <div className="rounded-md border bg-muted/20 p-3" key={item.label}>
+        <div className="min-w-0 space-y-1" key={item.label}>
           <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {item.label}
           </dt>
-          <dd className="mt-1 break-words text-foreground">
+          <dd className="break-words text-foreground">
             {formatOptional(item.value)}
           </dd>
         </div>
@@ -1056,99 +1056,99 @@ function RunRuntimeProfileSection({ run }: { run: RunRead }) {
 
   return (
     <section
-      className="space-y-3 rounded-xl border bg-background/60 p-4"
+      className="min-w-0 space-y-3"
       data-testid="runs-runtime-profile"
     >
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-1">
-          <h3 className="text-base font-medium leading-none">
-            Runtime snapshot summary
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            User-facing model runtime summary from the frozen run provenance.
-            Current package or connection edits do not rewrite this snapshot.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">
-            {resolvedModelConnections.length} connection
-            {resolvedModelConnections.length === 1 ? "" : "s"}
-          </Badge>
-          <Badge variant="secondary">Frozen provenance</Badge>
-        </div>
-      </div>
-
-      <div
-        className="flex min-w-0 flex-wrap gap-2"
-        data-testid="runs-runtime-profile-mode"
-      >
-        <Button
-          className="cursor-pointer"
-          onClick={() => setProfileMode("summary")}
-          size="sm"
-          type="button"
-          variant={profileMode === "summary" ? "secondary" : "outline"}
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h3 className="text-base font-medium leading-none">Runtime profile</h3>
+        <div
+          className="flex min-w-0 flex-wrap items-center gap-2"
+          data-testid="runs-runtime-profile-mode"
         >
-          Summary
-        </Button>
-        <Button
-          className="cursor-pointer"
-          onClick={() => setProfileMode("audit")}
-          size="sm"
-          type="button"
-          variant={profileMode === "audit" ? "secondary" : "outline"}
-        >
-          Audit evidence
-        </Button>
+          <Button
+            className="h-8 cursor-pointer"
+            onClick={() => setProfileMode("summary")}
+            size="sm"
+            type="button"
+            variant={profileMode === "summary" ? "secondary" : "outline"}
+          >
+            Summary
+          </Button>
+          <Button
+            className="h-8 cursor-pointer"
+            onClick={() => setProfileMode("audit")}
+            size="sm"
+            type="button"
+            variant={profileMode === "audit" ? "secondary" : "outline"}
+          >
+            Audit evidence
+          </Button>
+        </div>
       </div>
 
       {resolvedModelConnections.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+        <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
           No resolved model connections were recorded for this run.
         </div>
       ) : profileMode === "summary" ? (
-        <div className="space-y-3" data-testid="runs-runtime-summary">
+        <div
+          className="grid gap-4 2xl:grid-cols-2"
+          data-testid="runs-runtime-summary"
+        >
           {resolvedModelConnections.map((connection) => {
-            const unsupportedCapabilities = unsupportedRuntimeCapabilities(connection);
+            const capabilityCounts = runtimeCapabilityCounts(connection);
+            const unsupportedCapabilities =
+              unsupportedRuntimeCapabilities(connection);
             return (
               <article
-                className="space-y-3 rounded-lg border bg-card/80 p-3"
+                className="min-w-0 space-y-3 border-t border-border pt-3 first:border-t-0 first:pt-0"
                 data-testid={`runs-runtime-profile-connection-${connection.key}`}
                 key={connection.key}
               >
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 space-y-1">
                     <p className="truncate text-sm font-medium text-foreground">
                       {connection.name}
                     </p>
                     <p className="break-all text-xs text-muted-foreground">
-                      Snapshot key: {connection.key}
+                      {connection.key}
                     </p>
                   </div>
-                  <Badge variant="outline">
-                    {runtimeConnectionKindLabel(connection.connectionKind)}
-                  </Badge>
-                  <Badge variant="secondary">
-                    {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
-                  </Badge>
-                  <Badge variant={connection.hasApiKey ? "secondary" : "outline"}>
-                    {connection.hasApiKey
-                      ? "Credential was present"
-                      : "No credential captured"}
-                  </Badge>
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:justify-end">
+                    <Badge variant="outline">
+                      {runtimeConnectionKindLabel(connection.connectionKind)}
+                    </Badge>
+                    <Badge variant="secondary">
+                      {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
+                    </Badge>
+                    <Badge variant="outline">
+                      {capabilityCounts.supported} supported
+                    </Badge>
+                    <Badge
+                      variant={
+                        capabilityCounts.unsupported > 0 ? "destructive" : "outline"
+                      }
+                    >
+                      {capabilityCounts.unsupported} unsupported
+                    </Badge>
+                    <Badge
+                      variant={connection.hasApiKey ? "secondary" : "outline"}
+                    >
+                      {connection.hasApiKey
+                        ? "Credential present"
+                        : "No credential"}
+                    </Badge>
+                  </div>
                 </div>
                 <DetailGrid items={runtimeSummaryItems(connection)} />
-                <div className="rounded-md border bg-muted/20 p-3 text-sm">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Runtime interpretation
+                {unsupportedCapabilities.length > 0 ? (
+                  <p className="break-words border-l border-border pl-3 text-sm text-muted-foreground">
+                    Unsupported: {" "}
+                    {unsupportedCapabilities
+                      .map((capabilityKey) => CAPABILITY_LABELS[capabilityKey])
+                      .join(", ")}
                   </p>
-                  <p className="mt-1 break-words text-foreground">
-                    This run used {connection.modelId} through {PROTOCOL_PROFILE_LABELS[connection.protocolProfile].toLowerCase()} with {OUTPUT_STRATEGY_POLICY_LABELS[connection.outputStrategyPolicy].toLowerCase()} output handling.
-                    {unsupportedCapabilities.length > 0
-                      ? ` Unsupported snapshot capabilities: ${unsupportedCapabilities.map((capabilityKey) => CAPABILITY_LABELS[capabilityKey]).join(", ")}.`
-                      : " No unsupported snapshot capabilities were recorded."}
-                  </p>
-                </div>
+                ) : null}
               </article>
             );
           })}
@@ -1157,7 +1157,7 @@ function RunRuntimeProfileSection({ run }: { run: RunRead }) {
         <div className="space-y-3" data-testid="runs-runtime-audit-evidence">
           {resolvedModelConnections.map((connection) => (
             <article
-              className="space-y-3 rounded-lg border bg-card/80 p-3"
+              className="space-y-3 rounded-md border bg-card/80 p-3"
               data-testid={`runs-runtime-audit-connection-${connection.key}`}
               key={connection.key}
             >
@@ -1201,7 +1201,7 @@ function RunRuntimeProfileSection({ run }: { run: RunRead }) {
               />
               <section className="space-y-2">
                 <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Compatibility policy evidence
+                  Compatibility policies
                 </h4>
                 <DetailGrid
                   items={[
@@ -1232,7 +1232,7 @@ function RunRuntimeProfileSection({ run }: { run: RunRead }) {
               </section>
               <section className="space-y-2">
                 <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Bounded capability probe evidence
+                  Capability probes
                 </h4>
                 <div className="grid gap-2 xl:grid-cols-2">
                   {CAPABILITY_ORDER.map((capabilityKey) => {
@@ -1268,19 +1268,13 @@ function RunRuntimeProfileSection({ run }: { run: RunRead }) {
             </article>
           ))}
           <section
-            className="space-y-2 rounded-lg border bg-card/70 p-3"
+            className="space-y-3 rounded-md border bg-card/70 p-3"
             data-testid="runs-runtime-selected-strategies"
           >
-            <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0 space-y-1">
-                <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Adapter-selected strategy evidence
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  Bounded invocation metadata for debugging compatibility
-                  degradation decisions. Raw provider payloads remain omitted.
-                </p>
-              </div>
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Selected strategies
+              </h4>
               <Badge variant="outline">
                 {strategySummaries.length} invocation
                 {strategySummaries.length === 1 ? "" : "s"}
@@ -2013,18 +2007,19 @@ export function RunContextStrip({
   terminalInvocationsCount: number;
 }) {
   return (
-    <Card
-      className="min-w-0 overflow-hidden bg-muted/20"
+    <section
+      className="grid min-w-0 gap-4 text-sm"
       data-testid="runs-workspace-context"
     >
-      <CardContent className="grid min-w-0 gap-3 p-3 text-sm">
-        <div
-          className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2"
-          data-testid="runs-summary-execution-row"
-        >
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Execution
-          </span>
+      <section
+        aria-label="Execution status"
+        className="min-w-0 space-y-2"
+        data-testid="runs-summary-execution-row"
+      >
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Execution status
+        </h2>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
           <Badge
             data-testid="runs-detail-status"
             variant={statusVariant(run.status)}
@@ -2039,7 +2034,12 @@ export function RunContextStrip({
             terminal.
           </span>
         </div>
+      </section>
 
+      <section aria-label="Token summary" className="min-w-0 space-y-2">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Token summary
+        </h2>
         <dl
           className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground"
           data-testid="runs-summary-usage-row"
@@ -2061,20 +2061,27 @@ export function RunContextStrip({
             </dd>
           </div>
         </dl>
+      </section>
 
-        <div
-          className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center"
-          data-testid="runs-summary-progress-row"
-        >
+      <section
+        aria-label="Progress"
+        className="min-w-0 space-y-2"
+        data-testid="runs-summary-progress-row"
+      >
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Progress
+        </h2>
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex items-center justify-between gap-3 text-muted-foreground sm:w-44 sm:justify-start">
             <span>Run progress</span>
             <span className="font-medium text-foreground">{runProgress}%</span>
           </div>
           <Progress className="min-w-0 flex-1" value={runProgress} />
         </div>
-        <RunRuntimeProfileSection run={run} />
-      </CardContent>
-    </Card>
+      </section>
+
+      <RunRuntimeProfileSection run={run} />
+    </section>
   );
 }
 
@@ -2144,14 +2151,12 @@ function StepTraceSummary({
 
 export function ExecutionOutline({
   activeInspection,
-  onOpenFork,
   onSelect,
   run,
   steps,
   traceSpanEntries,
 }: {
   activeInspection: RunInspectionState;
-  onOpenFork: (stepIndex: number, invocationId: number) => void;
   onSelect: (target: RunInspectionTarget, pane?: RunInspectionPane) => void;
   run: RunRead;
   steps: RunStepRead[];
@@ -2159,10 +2164,10 @@ export function ExecutionOutline({
 }) {
   return (
     <aside
-      className="flex h-full min-h-0 min-w-0 flex-col bg-card/40"
+      className="flex h-full min-h-0 min-w-0 flex-col bg-background"
       data-testid="runs-execution-outline"
     >
-      <div className="shrink-0 border-b border-border bg-muted/40 px-4 py-3">
+      <div className="shrink-0 border-b border-border bg-background px-4 py-3">
         <div className="flex items-center gap-2">
           <Activity className="size-4 text-muted-foreground" />
           <h2 className="text-base font-semibold tracking-tight">
@@ -2171,15 +2176,16 @@ export function ExecutionOutline({
         </div>
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-3 p-3">
-          <div id="run-context" className="rounded-xl border bg-background p-2">
+        <div className="space-y-2 p-3">
+          <div id="run-context">
             <InspectionSelectorButton
               activeInspection={activeInspection}
+              className="px-2 py-1.5"
               onSelect={onSelect}
               pane="finalOutput"
               target={{ type: "run" }}
             >
-              <span className="flex min-w-0 flex-col gap-1">
+              <span className="flex min-w-0 flex-col gap-0.5">
                 <span className="font-medium">Run result</span>
                 <span className="text-xs text-muted-foreground">
                   Final output, input, lineage, and memory
@@ -2189,7 +2195,7 @@ export function ExecutionOutline({
           </div>
           {steps.length === 0 ? (
             <div
-              className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground"
+              className="rounded-md border border-dashed p-4 text-sm text-muted-foreground"
               data-testid="runs-empty-steps"
             >
               No steps have been planned for this run yet.
@@ -2201,6 +2207,7 @@ export function ExecutionOutline({
               step.operationInvocations,
             );
             const allInvocations = [...invocations, ...operationInvocations];
+            const firstAgentInvocation = invocations[0];
             const stepProgress = progressForInvocations(
               allInvocations,
               step.status,
@@ -2210,6 +2217,10 @@ export function ExecutionOutline({
               stepIndex: step.index,
             };
             const indicatorState = stepIndicatorState(step.status);
+            const isStepActive = isInspectionTargetEqual(
+              activeInspection.target,
+              stepTarget,
+            );
             const stepTraceEntries = traceSpanEntries.filter(
               (entry) => entry.stepIndex === step.index,
             );
@@ -2217,11 +2228,10 @@ export function ExecutionOutline({
             return (
               <div
                 className={cn(
-                  "rounded-xl border bg-background p-2 transition-colors",
-                  indicatorState === "executing" &&
-                    "border-primary/50 bg-primary/5",
-                  indicatorState === "completed" &&
-                    "border-positive/40 bg-positive/5",
+                  "min-w-0 border-l border-border pl-2 transition-colors",
+                  isStepActive && "border-primary",
+                  indicatorState === "executing" && "border-primary",
+                  indicatorState === "completed" && !isStepActive && "border-positive/60",
                 )}
                 data-testid={`runs-step-${step.index}`}
                 id={`step-${step.index}`}
@@ -2229,6 +2239,7 @@ export function ExecutionOutline({
               >
                 <InspectionSelectorButton
                   activeInspection={activeInspection}
+                  className="px-2 py-1.5"
                   onSelect={onSelect}
                   target={stepTarget}
                 >
@@ -2248,6 +2259,9 @@ export function ExecutionOutline({
                     <span className="text-xs text-muted-foreground">
                       {invocations.length} agent invocation(s) ·{" "}
                       {operationInvocations.length} operation invocation(s)
+                      {firstAgentInvocation
+                        ? ` · first agent ${firstAgentInvocation.slot} #${firstAgentInvocation.id}`
+                        : ""}
                     </span>
                     <StepTraceSummary
                       entries={stepTraceEntries}
@@ -2257,7 +2271,7 @@ export function ExecutionOutline({
                 </InspectionSelectorButton>
                 {allInvocations.length > 0 ? (
                   <div
-                    className="mt-2 space-y-2 rounded-lg border bg-muted/20 p-2"
+                    className="mt-1 space-y-1 pl-2"
                     data-testid={`runs-step-${step.index}-invocation-targets`}
                   >
                     {invocations.map((invocation) => {
@@ -2265,23 +2279,22 @@ export function ExecutionOutline({
                         type: "agentInvocation",
                         invocationId: invocation.id,
                       };
-                      const forkable = canForkInvocation(run, step, invocation);
 
                       return (
                         <div
-                          className="rounded-md border bg-background/80 p-2"
+                          className="min-w-0"
                           data-testid={`runs-invocation-${invocation.id}-outline-entry`}
                           id={`invocation-${invocation.id}`}
                           key={invocation.id}
                         >
                           <InspectionSelectorButton
                             activeInspection={activeInspection}
-                            className="px-2 py-1.5"
+                            className="px-2 py-1.5 text-xs"
                             onSelect={onSelect}
                             target={invocationTarget}
                           >
-                            <span className="flex min-w-0 flex-1 flex-col gap-1">
-                              <span className="flex flex-wrap items-center gap-2">
+                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                              <span className="flex flex-wrap items-center gap-1.5">
                                 <Badge
                                   variant={statusVariant(invocation.status)}
                                 >
@@ -2290,31 +2303,16 @@ export function ExecutionOutline({
                                 <span className="font-medium">
                                   {invocation.slot} agent
                                 </span>
-                                <Badge variant="outline">
+                                <span className="text-muted-foreground">
                                   #{invocation.id}
-                                </Badge>
+                                </span>
                               </span>
-                              <span className="text-xs text-muted-foreground">
-                                {invocation.agentKey} v{invocation.agentVersion}{" "}
-                                · input {invocation.resolvedInputOrigin}
+                              <span className="text-muted-foreground">
+                                {invocation.agentKey} v{invocation.agentVersion} ·
+                                input {invocation.resolvedInputOrigin}
                               </span>
                             </span>
                           </InspectionSelectorButton>
-                          {forkable ? (
-                            <Button
-                              className="mt-2 w-full cursor-pointer justify-start"
-                              data-testid={`runs-invocation-${invocation.id}-fork-entry`}
-                              onClick={() =>
-                                onOpenFork(step.index, invocation.id)
-                              }
-                              size="sm"
-                              type="button"
-                              variant="outline"
-                            >
-                              <GitBranch data-icon="inline-start" />
-                              Fork from this invocation
-                            </Button>
-                          ) : null}
                         </div>
                       );
                     })}
@@ -2326,19 +2324,19 @@ export function ExecutionOutline({
 
                       return (
                         <div
-                          className="rounded-md border bg-background/80 p-2"
+                          className="min-w-0"
                           data-testid={`runs-operation-${invocation.id}-outline-entry`}
                           id={`operation-invocation-${invocation.id}`}
                           key={invocation.id}
                         >
                           <InspectionSelectorButton
                             activeInspection={activeInspection}
-                            className="px-2 py-1.5"
+                            className="px-2 py-1.5 text-xs"
                             onSelect={onSelect}
                             target={operationTarget}
                           >
-                            <span className="flex min-w-0 flex-1 flex-col gap-1">
-                              <span className="flex flex-wrap items-center gap-2">
+                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                              <span className="flex flex-wrap items-center gap-1.5">
                                 <Badge
                                   variant={statusVariant(invocation.status)}
                                 >
@@ -2347,11 +2345,11 @@ export function ExecutionOutline({
                                 <span className="font-medium">
                                   {invocation.slot} operation
                                 </span>
-                                <Badge variant="outline">
+                                <span className="text-muted-foreground">
                                   #{invocation.id}
-                                </Badge>
+                                </span>
                               </span>
-                              <span className="text-xs text-muted-foreground">
+                              <span className="text-muted-foreground">
                                 {invocation.operationKey} · operation forks are
                                 not supported in this phase
                               </span>
@@ -2366,14 +2364,15 @@ export function ExecutionOutline({
             );
           })}
           {run.memoryArtifacts.length > 0 ? (
-            <div className="rounded-xl border bg-background p-2">
-              <p className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="border-l border-border pl-2">
+              <p className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Compact memory artifacts
               </p>
               <div className="space-y-1">
                 {run.memoryArtifacts.map((artifact) => (
                   <InspectionSelectorButton
                     activeInspection={activeInspection}
+                    className="px-2 py-1.5 text-xs"
                     key={artifact.memoryId}
                     onSelect={onSelect}
                     target={{
@@ -2383,14 +2382,14 @@ export function ExecutionOutline({
                     testId={`runs-memory-outline-${artifact.memoryId}`}
                   >
                     <span
-                      className="flex min-w-0 flex-col gap-1"
+                      className="flex min-w-0 flex-col gap-0.5"
                       id={`memory-${artifact.memoryId}`}
                     >
                       <span className="flex items-center gap-2">
                         <Database className="size-3.5" />
                         {artifact.summary}
                       </span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-muted-foreground">
                         {artifact.status} · {memoryProvenanceLabel(artifact)}
                       </span>
                     </span>
@@ -3210,6 +3209,7 @@ export function EvidenceViewer({
   copiedInvocations,
   copiedSteps,
   isCurrentFork,
+  onOpenFork,
   onSelect,
   plannedInvocations,
   plannedSteps,
@@ -3220,6 +3220,7 @@ export function EvidenceViewer({
   copiedInvocations: number;
   copiedSteps: number;
   isCurrentFork: boolean;
+  onOpenFork: (stepIndex: number, invocationId: number) => void;
   onSelect: (target: RunInspectionTarget, pane?: RunInspectionPane) => void;
   plannedInvocations: number;
   plannedSteps: number;
@@ -3229,6 +3230,7 @@ export function EvidenceViewer({
   const target = activeInspection.target;
   const title = selectedTargetLabel(target, steps, run);
   let content: ReactNode;
+  let selectedInvocationForkAction: ReactNode = null;
 
   if (target.type === "step") {
     const step = steps.find((item) => item.index === target.stepIndex);
@@ -3244,6 +3246,21 @@ export function EvidenceViewer({
         step={match.step}
       />
     ) : null;
+    if (match && canForkInvocation(run, match.step, match.invocation)) {
+      selectedInvocationForkAction = (
+        <Button
+          className="w-full cursor-pointer justify-start sm:w-auto"
+          data-testid={`runs-invocation-${match.invocation.id}-fork-entry`}
+          onClick={() => onOpenFork(match.step.index, match.invocation.id)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <GitBranch data-icon="inline-start" />
+          Fork from this invocation
+        </Button>
+      );
+    }
   } else if (target.type === "operationInvocation") {
     const invocation = findOperationInvocation(steps, target.invocationId);
     content = invocation ? (
@@ -3285,7 +3302,7 @@ export function EvidenceViewer({
       className="flex h-full min-h-0 min-w-0 flex-col"
       data-testid="runs-evidence-viewer"
     >
-      <div className="shrink-0 border-b border-border bg-muted/40 px-4 py-3">
+      <div className="shrink-0 border-b border-border bg-background px-4 py-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -3297,10 +3314,13 @@ export function EvidenceViewer({
               </Badge>
             </div>
           </div>
-          <EvidencePaneNav
-            activeInspection={activeInspection}
-            onSelect={onSelect}
-          />
+          <div className="flex min-w-0 flex-col gap-2 sm:items-end">
+            {selectedInvocationForkAction}
+            <EvidencePaneNav
+              activeInspection={activeInspection}
+              onSelect={onSelect}
+            />
+          </div>
         </div>
       </div>
       <ScrollArea className="min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0 [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:max-w-full [&_[data-slot=scroll-area-viewport]>div]:overflow-x-hidden">

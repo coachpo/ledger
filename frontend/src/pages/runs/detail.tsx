@@ -17,7 +17,6 @@ import { formatDateTime } from "@/lib/format";
 import type { RunQueueReason } from "@/lib/types/run";
 
 import {
-  describeRunTarget,
   findForkTargetContext,
   formatTargetKindLabel,
   formatUnfinishedRunStatus,
@@ -267,187 +266,188 @@ export function RunsDetailPage() {
           setActiveTab(value as "summary" | "execution")
         }
       >
-        <div className="flex h-full min-h-0 flex-1 flex-col border-b border-border bg-card/95 px-4 py-3 backdrop-blur">
-          <TabsList className="mb-4 grid w-full max-w-md shrink-0 grid-cols-2">
+        <div
+          className="shrink-0 border-b border-border bg-card/95 px-4 py-3 backdrop-blur"
+          data-testid="runs-detail-header"
+        >
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 space-y-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <h1 className="text-xl font-semibold tracking-tight">
+                  Run #{run.id}
+                </h1>
+                <Badge
+                  className="max-w-full min-w-0 break-all"
+                  data-testid="runs-detail-target-identity"
+                  variant="outline"
+                >
+                  {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
+                </Badge>
+                {run.packageProvenance ? (
+                  <Badge
+                    className="max-w-full min-w-0 break-all"
+                    variant="secondary"
+                  >
+                    {run.packageProvenance.workflowPackageName}
+                  </Badge>
+                ) : null}
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                <span>
+                  {run.startedAt
+                    ? `Started ${formatDateTime(run.startedAt)}`
+                    : `Queued ${formatDateTime(run.queuedAt)}`}
+                </span>
+                <span>
+                  {run.finishedAt
+                    ? `Finished ${formatDateTime(run.finishedAt)}`
+                    : formatUnfinishedRunStatus(run.status).replace(/^ · /, "")}
+                </span>
+                <span
+                  className="inline-flex min-w-0 items-center gap-1.5"
+                  data-testid="runs-detail-lineage-indicator"
+                >
+                  {run.sourceRunId ? (
+                    <>
+                      <GitBranch className="size-3.5 shrink-0" />
+                      {isCurrentFork
+                        ? `Forked from Run #${run.sourceRunId}`
+                        : `Historical lineage from Run #${run.sourceRunId}`}
+                    </>
+                  ) : (
+                    "Original run"
+                  )}
+                </span>
+              </div>
+            </div>
+            <div
+              className="flex min-w-0 flex-wrap items-center gap-2"
+              data-testid="runs-detail-actions"
+            >
+              {run.targetKind === "workflowPackage" &&
+              run.packageProvenance?.currentPackage?.available ? (
+                <Button
+                  asChild
+                  data-testid="runs-detail-package-link"
+                  size="sm"
+                  variant="outline"
+                >
+                  <Link
+                    to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}
+                  >
+                    Open current package
+                  </Link>
+                </Button>
+              ) : null}
+              {canRerunRun ? (
+                <Button
+                  className="cursor-pointer"
+                  data-testid="runs-detail-rerun"
+                  onClick={openRerunDialog}
+                  size="sm"
+                  type="button"
+                >
+                  <PlayCircle data-icon="inline-start" />
+                  Run snapshot again
+                </Button>
+              ) : null}
+              <Button asChild size="sm" variant="outline">
+                <Link to="/runs">Back to runs</Link>
+              </Button>
+            </div>
+          </div>
+          <TabsList className="mt-3 grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="summary">Run summary</TabsTrigger>
             <TabsTrigger value="execution">Execution trace</TabsTrigger>
           </TabsList>
-          <TabsContent
-            className="m-0 min-h-0 data-[state=inactive]:hidden"
-            forceMount
-            value="summary"
-          >
-            <div
-              className="max-h-96 min-h-0 min-w-0 shrink-0 overflow-y-auto overscroll-contain"
-              data-testid="runs-detail-context-frame"
-            >
-              <div className="flex min-w-0 flex-col gap-4">
-                <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <h1 className="text-xl font-semibold tracking-tight">
-                        Run #{run.id}
-                      </h1>
-                      <Badge
-                        className="max-w-full min-w-0 break-all"
-                        data-testid="runs-detail-target-identity"
-                        variant="outline"
-                      >
-                        {run.targetKind === "workflowPackage"
-                          ? `Snapshot: ${run.packageProvenance?.workflowPackageKey ?? run.targetKey}`
-                          : run.targetKey}
-                      </Badge>
-                      <Badge
-                        className="max-w-full min-w-0 break-all"
-                        variant="outline"
-                      >
-                        {run.targetKind === "workflowPackage"
-                          ? `Captured package id: ${run.packageProvenance?.workflowPackageId ?? run.targetId}`
-                          : `Target id: ${run.targetId}`}
-                      </Badge>
-                      {run.sourceRunId ? (
-                        <Badge variant="secondary">
-                          <GitBranch className="size-3" />{" "}
-                          {isCurrentFork
-                            ? "Fork lineage"
-                            : "Historical lineage"}
-                        </Badge>
-                      ) : null}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {describeRunTarget(run.targetKind)} ·{" "}
-                      {run.startedAt
-                        ? `Started ${formatDateTime(run.startedAt)}`
-                        : `Queued ${formatDateTime(run.queuedAt)}`}
-                      {run.finishedAt
-                        ? ` · Finished ${formatDateTime(run.finishedAt)}`
-                        : formatUnfinishedRunStatus(run.status)}
-                    </p>
-                  </div>
-                  <div
-                    className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end"
-                    data-testid="runs-detail-actions"
-                  >
-                    {run.targetKind === "workflowPackage" &&
-                    run.packageProvenance?.currentPackage?.available ? (
-                      <Button
-                        asChild
-                        className="w-full sm:w-auto"
-                        data-testid="runs-detail-package-link"
-                        size="sm"
-                        variant="outline"
-                      >
-                        <Link
-                          to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}
-                        >
-                          Open current package
-                        </Link>
-                      </Button>
-                    ) : null}
-                    {canRerunRun ? (
-                      <Button
-                        className="w-full cursor-pointer sm:w-auto"
-                        data-testid="runs-detail-rerun"
-                        onClick={openRerunDialog}
-                        size="sm"
-                        type="button"
-                      >
-                        <PlayCircle data-icon="inline-start" />
-                        Run snapshot again
-                      </Button>
-                    ) : null}
-                    <Button
-                      asChild
-                      className="w-full sm:w-auto"
-                      size="sm"
-                      variant="outline"
-                    >
-                      <Link to="/runs">Back to runs</Link>
-                    </Button>
-                  </div>
-                </div>
-                {run.error ? (
-                  <Alert variant="destructive">
-                    <AlertCircle />
-                    <AlertTitle>Run failed</AlertTitle>
-                    <AlertDescription>{run.error}</AlertDescription>
-                  </Alert>
-                ) : null}
-                {run.status === "queued" && run.queue ? (
-                  <Alert data-testid="runs-detail-queue-reason">
-                    <AlertCircle />
-                    <AlertTitle>
-                      {formatQueueReasonTitle(run.queue.reason)}
-                    </AlertTitle>
-                    <AlertDescription>
-                      {run.queue.message}
-                      {run.queue.blockingRunId
-                        ? ` Blocking run: #${run.queue.blockingRunId}.`
-                        : null}
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
-                <RunContextStrip
-                  allInvocationsCount={allInvocations.length}
-                  run={run}
-                  runProgress={runProgress}
-                  targetKindLabel={targetKindLabel}
-                  terminalInvocationsCount={terminalInvocationsCount}
-                />
-              </div>
-            </div>
-          </TabsContent>
-          <TabsContent
-            className="m-0 min-h-0 flex-1 data-[state=inactive]:hidden"
-            forceMount
-            value="execution"
-          >
-            <ResizablePanelGroup
-              className="min-h-0 min-w-0 flex-1 basis-0"
-              data-console-layout={consoleLayout}
-              data-testid="runs-inspection-workspace"
-              direction={consoleDirection}
-            >
-              <ResizablePanel
-                className="min-h-0 min-w-0"
-                defaultSize={isMobileConsole ? 36 : 28}
-                maxSize={isMobileConsole ? 55 : 45}
-                minSize={isMobileConsole ? 24 : 18}
-              >
-                <ExecutionOutline
-                  activeInspection={activeInspection}
-                  onOpenFork={openForkDialog}
-                  onSelect={selectInspection}
-                  run={run}
-                  steps={steps}
-                  traceSpanEntries={traceSpanEntries}
-                />
-              </ResizablePanel>
-              <ResizableHandle
-                className="bg-border/80"
-                data-testid="runs-inspection-resize-handle"
-                withHandle
-              />
-              <ResizablePanel
-                className="min-h-0 min-w-0"
-                defaultSize={isMobileConsole ? 64 : 72}
-                minSize={isMobileConsole ? 45 : 45}
-              >
-                <EvidenceViewer
-                  activeInspection={activeInspection}
-                  copiedInvocations={copiedInvocations}
-                  copiedSteps={copiedSteps}
-                  isCurrentFork={isCurrentFork}
-                  onSelect={selectInspection}
-                  plannedInvocations={plannedInvocations}
-                  plannedSteps={plannedSteps}
-                  run={run}
-                  steps={steps}
-                />
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          </TabsContent>
         </div>
+        <TabsContent
+          className="m-0 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
+          forceMount
+          value="summary"
+        >
+          <div
+            className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overscroll-contain px-4 py-4"
+            data-testid="runs-detail-context-frame"
+          >
+            {run.error ? (
+              <Alert variant="destructive">
+                <AlertCircle />
+                <AlertTitle>Run failed</AlertTitle>
+                <AlertDescription>{run.error}</AlertDescription>
+              </Alert>
+            ) : null}
+            {run.status === "queued" && run.queue ? (
+              <Alert data-testid="runs-detail-queue-reason">
+                <AlertCircle />
+                <AlertTitle>{formatQueueReasonTitle(run.queue.reason)}</AlertTitle>
+                <AlertDescription>
+                  {run.queue.message}
+                  {run.queue.blockingRunId
+                    ? ` Blocking run: #${run.queue.blockingRunId}.`
+                    : null}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            <RunContextStrip
+              allInvocationsCount={allInvocations.length}
+              run={run}
+              runProgress={runProgress}
+              targetKindLabel={targetKindLabel}
+              terminalInvocationsCount={terminalInvocationsCount}
+            />
+          </div>
+        </TabsContent>
+        <TabsContent
+          className="m-0 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
+          forceMount
+          value="execution"
+        >
+          <ResizablePanelGroup
+            className="h-full min-h-0 min-w-0 flex-1 basis-0"
+            data-console-layout={consoleLayout}
+            data-testid="runs-inspection-workspace"
+            direction={consoleDirection}
+          >
+            <ResizablePanel
+              className="min-h-0 min-w-0"
+              defaultSize={isMobileConsole ? 36 : 28}
+              maxSize={isMobileConsole ? 55 : 45}
+              minSize={isMobileConsole ? 24 : 18}
+            >
+              <ExecutionOutline
+                activeInspection={activeInspection}
+                onSelect={selectInspection}
+                run={run}
+                steps={steps}
+                traceSpanEntries={traceSpanEntries}
+              />
+            </ResizablePanel>
+            <ResizableHandle
+              className="bg-border/80"
+              data-testid="runs-inspection-resize-handle"
+              withHandle
+            />
+            <ResizablePanel
+              className="min-h-0 min-w-0"
+              defaultSize={isMobileConsole ? 64 : 72}
+              minSize={isMobileConsole ? 45 : 45}
+            >
+              <EvidenceViewer
+                activeInspection={activeInspection}
+                copiedInvocations={copiedInvocations}
+                copiedSteps={copiedSteps}
+                isCurrentFork={isCurrentFork}
+                onOpenFork={openForkDialog}
+                onSelect={selectInspection}
+                plannedInvocations={plannedInvocations}
+                plannedSteps={plannedSteps}
+                run={run}
+                steps={steps}
+              />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </TabsContent>
       </Tabs>
 
       <RunRerunDialog

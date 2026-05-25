@@ -870,11 +870,11 @@ describe("RunsDetailPage", () => {
       screen.getByRole("tab", { name: /execution trace/i }),
     ).toHaveAttribute("data-state", "inactive");
     expect(screen.getByTestId("runs-detail-context-frame")).toHaveClass(
-      "max-h-96",
+      "h-full",
       "min-h-0",
       "overflow-y-auto",
       "overscroll-contain",
-      "shrink-0",
+      "flex-col",
     );
     expect(screen.getByTestId("runs-detail-context-frame")).toBeVisible();
     expect(screen.getByTestId("runs-inspection-workspace")).toBeInTheDocument();
@@ -896,16 +896,17 @@ describe("RunsDetailPage", () => {
       /workflow package/i,
     );
     expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(
-      /snapshot: market_review_package/i,
+      /market_review_package/i,
     );
+    expect(screen.queryByText(/captured package id/i)).not.toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /open current package/i }),
     ).toHaveAttribute("href", "/workflow-packages/7");
     expect(screen.getByTestId("runs-detail-actions")).toHaveClass(
       "flex",
       "min-w-0",
-      "flex-col",
-      "sm:flex-row",
+      "flex-wrap",
+      "items-center",
     );
     expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(
       /run snapshot again/i,
@@ -913,8 +914,7 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-rerun")).toHaveClass(
       "bg-primary",
       "text-primary-foreground",
-      "w-full",
-      "sm:w-auto",
+      "cursor-pointer",
     );
     const finalOutputCard = screen.getByTestId("runs-detail-final-output-card");
     const finalOutput = within(finalOutputCard).getByTestId(
@@ -955,9 +955,9 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByTestId("runs-step-2-completed-indicator"),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-workspace-context")).toHaveAttribute(
-      "data-slot",
-      "card",
+    expect(screen.getByTestId("runs-workspace-context")).toHaveClass(
+      "grid",
+      "gap-4",
     );
     expect(
       within(screen.getByTestId("runs-workspace-context")).getAllByTestId(
@@ -982,20 +982,19 @@ describe("RunsDetailPage", () => {
       usageRow.getByText(/^Executed tokens$/i).parentElement,
     ).toHaveTextContent(/30/i);
     const runtimeProfile = screen.getByTestId("runs-runtime-profile");
-    expect(runtimeProfile).toHaveTextContent(/runtime snapshot summary/i);
-    expect(runtimeProfile).toHaveTextContent(/frozen run provenance/i);
-    expect(runtimeProfile).toHaveTextContent(/frozen provenance/i);
+    expect(runtimeProfile).toHaveTextContent(/runtime profile/i);
+    expect(runtimeProfile).not.toHaveTextContent(/runtime snapshot summary/i);
+    expect(runtimeProfile).not.toHaveTextContent(/frozen run provenance/i);
     const primaryProfile = screen.getByTestId(
       "runs-runtime-profile-connection-primary_openai",
     );
     expect(primaryProfile).toHaveTextContent(/Primary OpenAI/i);
-    expect(primaryProfile).toHaveTextContent(/Snapshot key: primary_openai/i);
+    expect(primaryProfile).toHaveTextContent(/primary_openai/i);
     expect(primaryProfile).toHaveTextContent(/Responses-compatible/i);
-    expect(primaryProfile).toHaveTextContent(/Credential was present/i);
+    expect(primaryProfile).toHaveTextContent(/Credential present/i);
     expect(primaryProfile).toHaveTextContent(/Capability summary/i);
-    expect(primaryProfile).toHaveTextContent(
-      /Unsupported snapshot capabilities/i,
-    );
+    expect(primaryProfile).toHaveTextContent(/Unsupported:/i);
+    expect(primaryProfile).not.toHaveTextContent(/Snapshot key/i);
     expect(primaryProfile).not.toHaveTextContent(/Selected strategies/i);
     expect(primaryProfile).not.toHaveTextContent(/Last probed/i);
     const smokeProfile = screen.getByTestId(
@@ -1003,7 +1002,7 @@ describe("RunsDetailPage", () => {
     );
     expect(smokeProfile).toHaveTextContent(/Smoke Model/i);
     expect(smokeProfile).toHaveTextContent(/Chat Completions-compatible/i);
-    expect(smokeProfile).toHaveTextContent(/No credential captured/i);
+    expect(smokeProfile).toHaveTextContent(/No credential/i);
     expect(
       screen.queryByTestId("runs-runtime-selected-strategies"),
     ).not.toBeInTheDocument();
@@ -1016,10 +1015,8 @@ describe("RunsDetailPage", () => {
     const selectedStrategies = screen.getByTestId(
       "runs-runtime-selected-strategies",
     );
-    expect(selectedStrategies).toHaveTextContent(
-      /Adapter-selected strategy evidence/i,
-    );
-    expect(selectedStrategies).toHaveTextContent(
+    expect(selectedStrategies).toHaveTextContent(/Selected strategies/i);
+    expect(selectedStrategies).not.toHaveTextContent(
       /compatibility degradation decisions/i,
     );
     expect(
@@ -1813,9 +1810,11 @@ describe("RunsDetailPage", () => {
       /workflow package/i,
     );
     expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(
-      /snapshot: macro_package/i,
+      /macro_package/i,
     );
-    expect(screen.getByText(/captured package id: 12/i)).toBeVisible();
+    expect(
+      screen.queryByText(/captured package id: 12/i),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(
       /result\/span-agent-1/i,
     );
@@ -2423,13 +2422,20 @@ describe("RunsDetailPage", () => {
     }
   });
 
-  it("updates URL params when an explicit invocation fork action is clicked", () => {
+  it("updates URL params when the selected invocation fork action is clicked", () => {
+    searchParamsMock = new URLSearchParams("inspect=invocation:1001");
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
 
     render(<RunsDetailPage />);
 
     expect(
       screen.queryByTestId("runs-step-1-replay-entry"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("runs-invocation-1001-outline-entry")).queryByRole(
+        "button",
+        { name: /fork from this invocation/i },
+      ),
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("runs-invocation-1001-fork-entry"));
 
@@ -2448,7 +2454,8 @@ describe("RunsDetailPage", () => {
     expect(nextParams.has("stepIndex")).toBe(false);
   });
 
-  it("uses invocation-level fork actions and no ambiguous step shortcut for mixed or multi-invocation steps", () => {
+  it("uses selected invocation fork actions and no ambiguous step shortcut for mixed or multi-invocation steps", () => {
+    searchParamsMock = new URLSearchParams("inspect=invocation:1001");
     useRunMock.mockReturnValue(
       queryResult(
         buildReplayableWorkflowRun({
@@ -2505,7 +2512,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
-    render(<RunsDetailPage />);
+    const { rerender } = render(<RunsDetailPage />);
 
     expect(
       screen.queryByTestId("runs-step-1-replay-entry"),
@@ -2514,8 +2521,14 @@ describe("RunsDetailPage", () => {
       screen.getByTestId("runs-invocation-1001-fork-entry"),
     ).toHaveTextContent(/fork from this invocation/i);
     expect(
-      screen.getByTestId("runs-invocation-1003-fork-entry"),
-    ).toHaveTextContent(/fork from this invocation/i);
+      screen.queryByTestId("runs-invocation-1003-fork-entry"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("runs-invocation-1001-outline-entry")).queryByRole(
+        "button",
+        { name: /fork from this invocation/i },
+      ),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByTestId("runs-operation-2001-outline-entry"),
     ).toHaveTextContent(/operation forks are not supported/i);
@@ -2524,9 +2537,20 @@ describe("RunsDetailPage", () => {
         screen.getByTestId("runs-operation-2001-outline-entry"),
       ).queryByRole("button", { name: /fork from this invocation/i }),
     ).not.toBeInTheDocument();
+
+    searchParamsMock = new URLSearchParams("inspect=invocation:1003");
+    rerender(<RunsDetailPage />);
+
+    expect(
+      screen.queryByTestId("runs-invocation-1001-fork-entry"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("runs-invocation-1003-fork-entry"),
+    ).toHaveTextContent(/fork from this invocation/i);
   });
 
   it("does not expose fork actions for non-succeeded steps", () => {
+    searchParamsMock = new URLSearchParams("inspect=invocation:1001");
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
