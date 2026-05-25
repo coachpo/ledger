@@ -1,7 +1,17 @@
 import type {
+  EvidenceClusterItem,
+  EvidenceClusterTone,
+} from "@/components/shared/evidence-cluster";
+import type {
+  ResourceStatusStripItem,
+  ResourceStatusTone,
+} from "@/components/shared/resource-status-strip";
+import { formatDateTime } from "@/lib/format";
+import type {
   ModelConnectionCapabilities,
   ModelConnectionCapabilityState,
   ModelConnectionCapabilityStatus,
+  ModelConnectionListItemRead,
   ModelConnectionOutputStrategyPolicy,
   ModelConnectionParallelToolCallsPolicy,
   ModelConnectionProtocolProfile,
@@ -183,4 +193,179 @@ export function formatCapabilitySummary(
     `${counts.unsupported} unsupported`,
     `${counts.unknown} unknown`,
   ].join(" · ");
+}
+
+export function formatLastTestStatus(
+  connection: ModelConnectionListItemRead,
+): string {
+  if (connection.lastTestOk === true) {
+    return "Passed";
+  }
+
+  if (connection.lastTestOk === false) {
+    return "Failed";
+  }
+
+  return "Not tested";
+}
+
+export function formatReasoningEffort(
+  value: ModelConnectionListItemRead["reasoningEffort"],
+): string {
+  return value ?? "Omitted";
+}
+
+export function formatRuntimePolicyEvidence(
+  connection: ModelConnectionListItemRead,
+): string {
+  return [
+    OUTPUT_STRATEGY_POLICY_LABELS[connection.outputStrategyPolicy],
+    PARALLEL_TOOL_CALLS_POLICY_LABELS[connection.parallelToolCallsPolicy],
+    REASONING_POLICY_LABELS[connection.reasoningPolicy],
+    STREAMING_POLICY_LABELS[connection.streamingPolicy],
+  ].join(" · ");
+}
+
+export function formatCapabilityDetails(
+  connection: ModelConnectionListItemRead,
+): string {
+  return SUMMARY_CAPABILITY_KEYS.map((capabilityKey) => {
+    const capability = connection.capabilities[capabilityKey];
+    return `${CAPABILITY_LABEL_BY_KEY[capabilityKey]}: ${
+      CAPABILITY_STATUS_LABELS[capability.status]
+    }`;
+  }).join(" · ");
+}
+
+function getLastTestEvidenceTone(
+  connection: ModelConnectionListItemRead,
+): EvidenceClusterTone {
+  if (connection.lastTestOk === true) {
+    return "verified";
+  }
+
+  if (connection.lastTestOk === false) {
+    return "danger";
+  }
+
+  return "warning";
+}
+
+function getLastTestStatusTone(
+  connection: ModelConnectionListItemRead,
+): ResourceStatusTone {
+  if (connection.lastTestOk === true) {
+    return "success";
+  }
+
+  if (connection.lastTestOk === false) {
+    return "danger";
+  }
+
+  return "warning";
+}
+
+function getCapabilityEvidenceTone(
+  capabilities: ModelConnectionCapabilities,
+): EvidenceClusterTone {
+  const counts = getCapabilityCounts(capabilities);
+  return counts.unsupported > 0 || counts.unknown > 0 ? "warning" : "verified";
+}
+
+function getCapabilityStatusTone(
+  capabilities: ModelConnectionCapabilities,
+): ResourceStatusTone {
+  const counts = getCapabilityCounts(capabilities);
+  return counts.unsupported > 0 || counts.unknown > 0 ? "warning" : "success";
+}
+
+function formatReachabilityValue(connection: ModelConnectionListItemRead): string {
+  return connection.lastTestedAt
+    ? formatDateTime(connection.lastTestedAt)
+    : "No reachability test recorded";
+}
+
+function getCredentialState(connection: ModelConnectionListItemRead) {
+  if (connection.connectionKind === "deterministic_smoke") {
+    return {
+      description:
+        "Deterministic smoke connections can run offline fixtures without an API key.",
+      label: "API key optional",
+      tone: "verified" as const,
+    };
+  }
+
+  return {
+    description:
+      "Saved provider credentials stay write-only and can only be rotated from the editor.",
+    label: "Write-only secret",
+    tone: "neutral" as const,
+  };
+}
+
+export function getModelConnectionStatusItems(
+  connection: ModelConnectionListItemRead,
+): ResourceStatusStripItem[] {
+  return [
+    {
+      label: "Test",
+      tone: getLastTestStatusTone(connection),
+      value: formatLastTestStatus(connection),
+    },
+    {
+      label: "Profile",
+      tone: "neutral",
+      value: PROTOCOL_PROFILE_LABELS[connection.protocolProfile],
+    },
+    {
+      label: "Capabilities",
+      tone: getCapabilityStatusTone(connection.capabilities),
+      value: formatCapabilitySummary(connection.capabilities),
+    },
+  ];
+}
+
+export function getModelConnectionEvidenceItems(
+  connection: ModelConnectionListItemRead,
+): EvidenceClusterItem[] {
+  const credentialState = getCredentialState(connection);
+
+  return [
+    {
+      description: `${PROTOCOL_PROFILE_DESCRIPTIONS[connection.protocolProfile]} Timeout ${connection.timeoutSeconds}s against ${connection.baseUrl}.`,
+      label: "Protocol profile",
+      tone: "neutral",
+      value: PROTOCOL_PROFILE_LABELS[connection.protocolProfile],
+    },
+    {
+      description: connection.lastTestMessage ?? "Backend connection test has not reported a provider message.",
+      label: "Test state",
+      tone: getLastTestEvidenceTone(connection),
+      value: formatLastTestStatus(connection),
+    },
+    {
+      description: formatCapabilityDetails(connection),
+      label: "Capability support",
+      tone: getCapabilityEvidenceTone(connection.capabilities),
+      value: formatCapabilitySummary(connection.capabilities),
+    },
+    {
+      description: `Reasoning effort: ${formatReasoningEffort(connection.reasoningEffort)}.`,
+      label: "Runtime policy",
+      tone: "neutral",
+      value: formatRuntimePolicyEvidence(connection),
+    },
+    {
+      description: connection.lastTestMessage ?? "Run a saved backend connection test to refresh reachability.",
+      label: "Reachability",
+      tone: getLastTestEvidenceTone(connection),
+      value: formatReachabilityValue(connection),
+    },
+    {
+      description: credentialState.description,
+      label: "Credential state",
+      tone: credentialState.tone,
+      value: credentialState.label,
+    },
+  ];
 }

@@ -231,12 +231,30 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
+    const primaryRow = within(screen.getByTestId("model-connections-row-9"));
+    expect(primaryRow.getByLabelText("Stable key: primary_compatible")).toBeVisible();
+    for (const evidenceLabel of [
+      "Protocol profile",
+      "Test state",
+      "Capability support",
+      "Runtime policy",
+      "Reachability",
+      "Credential state",
+    ]) {
+      expect(primaryRow.getByText(evidenceLabel)).toBeVisible();
+    }
+    expect(primaryRow.getByText("Write-only secret")).toBeVisible();
+    expect(
+      within(screen.getByTestId("model-connections-row-4")).getByText(
+        "API key optional",
+      ),
+    ).toBeVisible();
     expect(screen.getAllByText("Responses-compatible")).toHaveLength(4);
     expect(screen.getAllByText("Chat Completions-compatible")).toHaveLength(4);
-    expect(screen.getByText(/^Omitted$/)).toBeVisible();
-    expect(screen.getByText(/^xhigh$/)).toBeVisible();
-    expect(screen.getByText(/^none$/)).toBeVisible();
-    expect(screen.getByText(/^high$/)).toBeVisible();
+    expect(screen.getByText(/Reasoning effort: Omitted/i)).toBeVisible();
+    expect(screen.getByText(/Reasoning effort: xhigh/i)).toBeVisible();
+    expect(screen.getByText(/Reasoning effort: none/i)).toBeVisible();
+    expect(screen.getByText(/Reasoning effort: high/i)).toBeVisible();
     expect(screen.getByText(/Usage reporting: Unsupported/i)).toBeVisible();
     expect(screen.getByText(/Reasoning hints: Unsupported/i)).toBeVisible();
     expect(screen.queryByText(/^medium$/)).not.toBeInTheDocument();
@@ -329,6 +347,7 @@ describe("ModelConnectionsListPage", () => {
       "Compatibility Evidence",
       "Runtime Policy Evidence",
       "Reachability Test",
+      "Credential State",
       "Actions",
     ]) {
       expect(screen.getByRole("columnheader", { name: column })).toBeVisible();

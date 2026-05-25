@@ -1,12 +1,4 @@
-import {
-  LayoutGrid,
-  List,
-  MoreHorizontal,
-  Plus,
-  Search,
-  SquarePen,
-  Trash2,
-} from "lucide-react";
+import { MoreHorizontal, Plus, SquarePen, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
@@ -17,9 +9,11 @@ import {
   useModelConnections,
 } from "@/hooks/use-model-connections";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
-import { formatDateTime } from "@/lib/format";
+import { EvidenceCluster } from "@/components/shared/evidence-cluster";
+import { ProvenanceBadge } from "@/components/shared/provenance-badge";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
+import { ResourceToolbar } from "@/components/shared/resource-toolbar";
 import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,7 +23,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -38,23 +31,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-
 import {
   PlatformResourceCard,
   PlatformResourceList,
 } from "../platform-resource-shared";
 import {
-  CAPABILITY_LABEL_BY_KEY,
-  CAPABILITY_STATUS_LABELS,
-  OUTPUT_STRATEGY_POLICY_LABELS,
-  PARALLEL_TOOL_CALLS_POLICY_LABELS,
   PROTOCOL_PROFILE_DESCRIPTIONS,
   PROTOCOL_PROFILE_LABELS,
-  REASONING_POLICY_LABELS,
-  STREAMING_POLICY_LABELS,
-  SUMMARY_CAPABILITY_KEYS,
+  formatCapabilityDetails,
   formatCapabilitySummary,
+  formatRuntimePolicyEvidence,
+  getModelConnectionEvidenceItems,
+  getModelConnectionStatusItems,
 } from "./model-connection-ui";
 
 type ViewMode = "cards" | "table";
@@ -104,92 +92,20 @@ function filterConnections(
   );
 }
 
-function formatLastTestStatus(connection: ModelConnectionListItemRead): string {
-  if (connection.lastTestOk === true) {
-    return "Passed";
-  }
-
-  if (connection.lastTestOk === false) {
-    return "Failed";
-  }
-
-  return "Not tested";
-}
-
-function formatReasoningEffort(
-  value: ModelConnectionListItemRead["reasoningEffort"],
-): string {
-  return value ?? "Omitted";
-}
-
-function formatRuntimePolicyEvidence(connection: ModelConnectionListItemRead): string {
-  return [
-    OUTPUT_STRATEGY_POLICY_LABELS[connection.outputStrategyPolicy],
-    PARALLEL_TOOL_CALLS_POLICY_LABELS[connection.parallelToolCallsPolicy],
-    REASONING_POLICY_LABELS[connection.reasoningPolicy],
-    STREAMING_POLICY_LABELS[connection.streamingPolicy],
-  ].join(" · ");
-}
-
-function formatCapabilityDetails(
-  connection: ModelConnectionListItemRead,
-): string {
-  return SUMMARY_CAPABILITY_KEYS.map((capabilityKey) => {
-    const capability = connection.capabilities[capabilityKey];
-    return `${CAPABILITY_LABEL_BY_KEY[capabilityKey]}: ${
-      CAPABILITY_STATUS_LABELS[capability.status]
-    }`;
-  }).join(" · ");
-}
-
-function ModelConnectionMetadata({
+function ModelConnectionEvidence({
   connection,
+  labels,
+  layout = "grid",
 }: {
   connection: ModelConnectionListItemRead;
+  labels?: readonly string[];
+  layout?: "grid" | "list" | "inline";
 }) {
-  return (
-    <div className="grid min-w-0 gap-x-5 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
-      <div className="min-w-0">
-        <span className="font-medium text-foreground">Protocol profile:</span>{" "}
-        <span className="break-words">
-          {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
-        </span>{" "}
-        <span aria-hidden="true">·</span>{" "}
-        <span>{connection.timeoutSeconds}s timeout</span>
-      </div>
-      <div className="min-w-0">
-        <span className="font-medium text-foreground">Base URL:</span>{" "}
-        <span className="break-all">{connection.baseUrl}</span>
-      </div>
-      <div className="min-w-0">
-        <span className="font-medium text-foreground">Reasoning:</span>{" "}
-        <span>{formatReasoningEffort(connection.reasoningEffort)}</span>
-      </div>
-      <div className="min-w-0 sm:col-span-2 xl:col-span-1">
-        <span className="font-medium text-foreground">Compatibility evidence:</span>{" "}
-        <span className="break-words">{formatCapabilityDetails(connection)}</span>
-      </div>
-      <div className="min-w-0 sm:col-span-2 xl:col-span-1">
-        <span className="font-medium text-foreground">Runtime policy evidence:</span>{" "}
-        <span className="break-words">
-          {formatRuntimePolicyEvidence(connection)}
-        </span>
-      </div>
-      <div className="min-w-0">
-        <span className="font-medium text-foreground">Reachability:</span>{" "}
-        <span>{formatLastTestStatus(connection)}</span>{" "}
-        <span className="break-words">
-          ·{" "}
-          {connection.lastTestedAt
-            ? formatDateTime(connection.lastTestedAt)
-            : "No reachability test recorded."}
-        </span>
-        {connection.lastTestMessage ? (
-          <span className="break-words"> · {connection.lastTestMessage}</span>
-        ) : null}
-      </div>
-    </div>
+  const items = getModelConnectionEvidenceItems(connection).filter((item) =>
+    labels ? labels.includes(String(item.label)) : true,
   );
+
+  return <EvidenceCluster items={items} layout={layout} />;
 }
 
 function ModelConnectionsHeader() {
@@ -218,56 +134,34 @@ function ModelConnectionsHeader() {
 }
 
 function ModelConnectionsToolbar({
+  filteredCount,
   search,
+  totalCount,
   viewMode,
   onSearchChange,
   onViewModeChange,
 }: {
+  filteredCount: number;
   search: string;
+  totalCount: number;
   viewMode: ViewMode;
   onSearchChange: (value: string) => void;
   onViewModeChange: (value: ViewMode) => void;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className="relative max-w-sm flex-1" role="search">
-        <Search
-          className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <Input
-          aria-label="Search model connections"
-          className="h-8 pl-8 text-xs"
-          placeholder="Search by name, key, model, protocol, or compatibility evidence..."
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-        />
-      </div>
-      <ToggleGroup
-        type="single"
-        value={viewMode}
-        onValueChange={(value) => {
-          if (value) {
-            onViewModeChange(value as ViewMode);
-          }
-        }}
-      >
-        <ToggleGroupItem
-          value="cards"
-          aria-label="Cards view"
-          className="h-8 w-8 px-0"
-        >
-          <LayoutGrid className="size-3.5" />
-        </ToggleGroupItem>
-        <ToggleGroupItem
-          value="table"
-          aria-label="Table view"
-          className="h-8 w-8 px-0"
-        >
-          <List className="size-3.5" />
-        </ToggleGroupItem>
-      </ToggleGroup>
-    </div>
+    <ResourceToolbar
+      resultSummary={`${filteredCount} of ${totalCount} model connections shown`}
+      search={{
+        id: "model-connections-search",
+        label: "Search model connections",
+        placeholder:
+          "Search by name, key, model, protocol, or compatibility evidence...",
+        value: search,
+        onChange: onSearchChange,
+      }}
+      viewMode={viewMode}
+      onViewModeChange={(value) => onViewModeChange(value as ViewMode)}
+    />
   );
 }
 
@@ -346,21 +240,16 @@ function ModelConnectionsCards({
           testId={`model-connections-row-${connection.id}`}
           title={connection.name}
           subtitle={connection.modelId}
-          badges={
-            <>
-              <Badge variant="secondary">
-                {formatLastTestStatus(connection)}
-              </Badge>
-              <Badge variant="outline">
-                {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
-              </Badge>
-              <Badge variant="outline">
-                {formatCapabilitySummary(connection.capabilities)}
-              </Badge>
-            </>
+          description={connection.description || "No description provided."}
+          provenance={
+            <ProvenanceBadge label="Stable key" detail={connection.key} />
           }
-          description={connection.description}
-          metadata={<ModelConnectionMetadata connection={connection} />}
+          statusStrip={
+            <ResourceStatusStrip
+              items={getModelConnectionStatusItems(connection)}
+            />
+          }
+          evidence={<ModelConnectionEvidence connection={connection} />}
           actions={
             <ModelConnectionActions
               connection={connection}
@@ -464,6 +353,7 @@ function ModelConnectionsTable({
           <TableHead>Compatibility Evidence</TableHead>
           <TableHead>Runtime Policy Evidence</TableHead>
           <TableHead>Reachability Test</TableHead>
+          <TableHead>Credential State</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
@@ -502,33 +392,40 @@ function ModelConnectionsTable({
               <TableCell className="max-w-72 whitespace-normal break-all text-xs text-muted-foreground">
                 {connection.baseUrl}
               </TableCell>
-              <TableCell className="min-w-64 whitespace-normal text-xs text-muted-foreground">
-                <span>{PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}</span>{" "}
-                <span aria-hidden="true">·</span>{" "}
-                <span>Reasoning {formatReasoningEffort(connection.reasoningEffort)}</span>{" "}
-                <span aria-hidden="true">·</span>{" "}
-                <span>{connection.timeoutSeconds}s timeout</span>
+              <TableCell className="min-w-72 whitespace-normal text-xs text-muted-foreground">
+                <ModelConnectionEvidence
+                  connection={connection}
+                  labels={["Protocol profile"]}
+                  layout="list"
+                />
+              </TableCell>
+              <TableCell className="min-w-80 whitespace-normal text-xs text-muted-foreground">
+                <ModelConnectionEvidence
+                  connection={connection}
+                  labels={["Capability support"]}
+                  layout="list"
+                />
+              </TableCell>
+              <TableCell className="min-w-80 whitespace-normal text-xs text-muted-foreground">
+                <ModelConnectionEvidence
+                  connection={connection}
+                  labels={["Runtime policy"]}
+                  layout="list"
+                />
               </TableCell>
               <TableCell className="min-w-72 whitespace-normal text-xs text-muted-foreground">
-                <span>{formatCapabilitySummary(connection.capabilities)}</span>
-                <span className="block break-words">
-                  {formatCapabilityDetails(connection)}
-                </span>
-              </TableCell>
-              <TableCell className="min-w-72 whitespace-normal text-xs text-muted-foreground">
-                {formatRuntimePolicyEvidence(connection)}
+                <ModelConnectionEvidence
+                  connection={connection}
+                  labels={["Test state", "Reachability"]}
+                  layout="list"
+                />
               </TableCell>
               <TableCell className="min-w-56 whitespace-normal text-xs text-muted-foreground">
-                <span>{formatLastTestStatus(connection)}</span>{" "}
-                <span>
-                  ·{" "}
-                  {connection.lastTestedAt
-                    ? formatDateTime(connection.lastTestedAt)
-                    : "No reachability test recorded."}
-                </span>
-                {connection.lastTestMessage ? (
-                  <span> · {connection.lastTestMessage}</span>
-                ) : null}
+                <ModelConnectionEvidence
+                  connection={connection}
+                  labels={["Credential state"]}
+                  layout="list"
+                />
               </TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2">
@@ -735,7 +632,9 @@ export function ModelConnectionsListPage() {
     >
       <ModelConnectionsHeader />
       <ModelConnectionsToolbar
+        filteredCount={filteredConnections.length}
         search={search}
+        totalCount={connections.length}
         viewMode={viewMode}
         onSearchChange={setSearch}
         onViewModeChange={handleViewModeChange}
