@@ -1,6 +1,6 @@
 # Test Plan
 
-> Status: Live automated-coverage reference for branch `main` at `9d9a7ec`.
+> Status: Live automated-coverage reference for branch `feature/memory` at `51d748b`.
 
 ## Backend Quality Gates
 
@@ -20,7 +20,7 @@ Backend coverage must prove preserved `/api/v1` finance CRUD, template/report be
 - `pnpm test:run`
 - `pnpm test:e2e`
 
-Frontend coverage must prove API helpers, query keys, formatting helpers, portfolio analytics, template/report flows, Workflow Package authoring, package secret bindings, dedicated launch page behavior, Model Connections, Extensions, Tools, Runs, run detail evidence, memory evidence rendering, explicit-private-scope `/memory`, and removed-route absence.
+Frontend coverage must prove API helpers, query keys, formatting helpers, portfolio analytics, template/report flows, Workflow Package authoring, package secret bindings, dedicated launch page behavior, Model Connections, Extensions, server-declared Tools metadata in package authoring, Runs, run detail evidence, memory evidence rendering, explicit-private-scope `/memory`, and removed-route absence.
 
 ## Contract Coverage Matrix
 
