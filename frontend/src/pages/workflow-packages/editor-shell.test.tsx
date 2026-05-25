@@ -2,11 +2,19 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WorkflowPackageManifestRead, WorkflowPackageRead } from "@/lib/types/workflow-package";
+import type {
+  WorkflowPackageManifestRead,
+  WorkflowPackageRead,
+} from "@/lib/types/workflow-package";
 
 import { WorkflowPackageEditorPage } from "./editor";
 
-const { navigateMock, updatePackageMock, useWorkflowPackageManifestMock, useWorkflowPackageMock } = vi.hoisted(() => ({
+const {
+  navigateMock,
+  updatePackageMock,
+  useWorkflowPackageManifestMock,
+  useWorkflowPackageMock,
+} = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   updatePackageMock: vi.fn(),
   useWorkflowPackageManifestMock: vi.fn(),
@@ -22,19 +30,47 @@ vi.mock("react-router", async (importOriginal) => {
 });
 
 vi.mock("@/hooks/use-model-connections", () => ({
-  useModelConnections: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
+  useModelConnections: () => ({
+    data: { items: [] },
+    error: null,
+    isError: false,
+    isPending: false,
+  }),
 }));
 
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useCreateWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useDeleteWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useTools: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
-  useUpdateWorkflowPackage: () => ({ isPending: false, mutateAsync: updatePackageMock }),
-  useUpsertWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useValidateWorkflowPackageManifest: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useDeleteWorkflowPackageSecretBinding: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
+  useTools: () => ({
+    data: { items: [] },
+    error: null,
+    isError: false,
+    isPending: false,
+  }),
+  useUpdateWorkflowPackage: () => ({
+    isPending: false,
+    mutateAsync: updatePackageMock,
+  }),
+  useUpsertWorkflowPackageSecretBinding: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
+  useValidateWorkflowPackageManifest: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
-  useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
-  useWorkflowPackageSecretBindings: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
+  useWorkflowPackageManifest: (...args: unknown[]) =>
+    useWorkflowPackageManifestMock(...args),
+  useWorkflowPackageSecretBindings: () => ({
+    data: { items: [] },
+    error: null,
+    isError: false,
+    isPending: false,
+  }),
 }));
 
 const packageRead: WorkflowPackageRead = {
@@ -104,12 +140,25 @@ describe("WorkflowPackageEditorPage", () => {
 
     const shell = screen.getByTestId("workflow-package-editor-shell");
     expect(shell).toBeVisible();
-    expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0", "overflow-y-auto", "overflow-x-hidden");
-    expect(shell).toHaveAttribute("aria-labelledby", "workflow-package-editor-title");
+    expect(shell).toHaveClass(
+      "h-full",
+      "min-h-0",
+      "min-w-0",
+      "overflow-y-auto",
+      "overflow-x-hidden",
+    );
+    expect(shell).toHaveAttribute(
+      "aria-labelledby",
+      "workflow-package-editor-title",
+    );
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Market Review Package" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Market Review Package" }),
+    ).toBeVisible();
     expect(screen.getByText("market_review_package")).toBeVisible();
-    expect(screen.getAllByText("Private package for multi-agent market review.")[0]).toBeVisible();
+    expect(
+      screen.getAllByText("Private package for multi-agent market review.")[0],
+    ).toBeVisible();
 
     for (const tabName of [
       "Overview",
@@ -124,12 +173,20 @@ describe("WorkflowPackageEditorPage", () => {
       expect(screen.getByRole("tab", { name: `${tabName} tab` })).toBeVisible();
     }
 
-    expect(screen.queryByRole("tab", { name: "Preflight tab" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Launch tab" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Preflight tab" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Launch tab" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Launch route")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save package" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Validate package" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Launch workflow package" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Validate package" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Launch workflow package" }),
+    ).toBeEnabled();
 
     const overviewTab = screen.getByRole("tab", { name: "Overview tab" });
     expect(overviewTab).toHaveAttribute("aria-selected", "true");
@@ -143,45 +200,77 @@ describe("WorkflowPackageEditorPage", () => {
     const tabpanel = screen.getByRole("tabpanel");
 
     expect(within(tabpanel).getAllByText("Workflow YAML")).toHaveLength(1);
-    expect(screen.getByRole("textbox", { name: "Workflow YAML" })).toBeVisible();
+    expect(
+      screen.getByRole("textbox", { name: "Workflow YAML" }),
+    ).toBeVisible();
   });
 
-  it("renders package editor tabs as a vertical rail beside the active panel", () => {
+  it("renders explicit sticky section navigation beside the active panel", () => {
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
-    const tabList = screen.getByRole("tablist", { name: "Workflow package editor sections" });
+    const contextBar = screen.getByTestId("workflow-package-context-bar");
+    expect(contextBar).toHaveClass("sticky", "top-0");
+    expect(contextBar).toHaveTextContent("Draft");
+    expect(contextBar).toHaveTextContent("Diagnostics");
+
+    const sectionNav = screen.getByTestId("workflow-package-section-nav");
+    expect(sectionNav).toHaveTextContent("Authoring Sections");
+    expect(sectionNav).toHaveTextContent("Package-local resources only");
+    expect(sectionNav).toHaveClass("lg:sticky");
+
+    const tabList = screen.getByRole("tablist", {
+      name: "Workflow package editor sections",
+    });
     expect(tabList).toHaveAttribute("aria-orientation", "vertical");
+    expect(tabList).toHaveTextContent(
+      "Package-private agent definitions stay local",
+    );
 
     const tabsRoot = tabList.closest("[data-slot='tabs']");
-    const tabRail = tabList.parentElement;
-    const contentColumn = tabRail?.nextElementSibling;
-    if (!tabsRoot || !tabRail || !contentColumn) {
-      throw new Error("Expected the tab rail and tab panel column to share one tabs root");
+    if (!tabsRoot) {
+      throw new Error(
+        "Expected the section navigation and panel to share one tabs root",
+      );
     }
 
-    expect(tabsRoot.children).toHaveLength(2);
-    expect(tabRail.parentElement).toBe(tabsRoot);
-    expect(contentColumn).toContainElement(screen.getByRole("tabpanel"));
+    expect(tabsRoot).toContainElement(sectionNav);
+    expect(tabsRoot).toContainElement(screen.getByRole("tabpanel"));
   });
 
   it("hydrates existing package draft fields from manifestSource instead of summary metadata", () => {
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
-    expect(screen.getByLabelText("Package key")).toHaveValue("hydrated_market_review");
-    expect(screen.getByLabelText("Package name")).toHaveValue("Hydrated Market Review");
-    expect(screen.getByLabelText("Package description")).toHaveValue("Manifest source description");
+    expect(screen.getByLabelText("Package key")).toHaveValue(
+      "hydrated_market_review",
+    );
+    expect(screen.getByLabelText("Package name")).toHaveValue(
+      "Hydrated Market Review",
+    );
+    expect(screen.getByLabelText("Package description")).toHaveValue(
+      "Manifest source description",
+    );
   });
 
   it("renders current-only authoring without historical affordances", () => {
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
-    expect(screen.getByLabelText("Package key")).toHaveValue("hydrated_market_review");
-    expect(screen.getByLabelText("Package name")).toHaveValue("Hydrated Market Review");
-    expect(screen.getByLabelText("Package description")).toHaveValue("Manifest source description");
+    expect(screen.getByLabelText("Package key")).toHaveValue(
+      "hydrated_market_review",
+    );
+    expect(screen.getByLabelText("Package name")).toHaveValue(
+      "Hydrated Market Review",
+    );
+    expect(screen.getByLabelText("Package description")).toHaveValue(
+      "Manifest source description",
+    );
     expect(screen.getByRole("button", { name: "Save package" })).toBeEnabled();
-    expect(screen.queryByText(new RegExp("Package vers" + "ion", "i"))).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(new RegExp("Package vers" + "ion", "i")),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(/Latest/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(new RegExp("selected vers" + "ion", "i"))).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(new RegExp("selected vers" + "ion", "i")),
+    ).not.toBeInTheDocument();
   });
 
   it("surfaces package load errors in a blocking retry state", () => {
@@ -195,21 +284,35 @@ describe("WorkflowPackageEditorPage", () => {
 
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
-    expect(screen.getByTestId("workflow-package-manifest-blocker")).toBeVisible();
+    expect(
+      screen.getByTestId("workflow-package-manifest-blocker"),
+    ).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent("Package missing");
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.getByRole("button", { name: "Save package" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Validate package" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Validate package" }),
+    ).toBeDisabled();
   });
 
   it("does not turn the editor shell into a launch mode when mounted on the run-shaped path", () => {
-    renderEditor("/workflow-packages/42/run", "/workflow-packages/:packageId/run");
+    renderEditor(
+      "/workflow-packages/42/run",
+      "/workflow-packages/:packageId/run",
+    );
 
     expect(screen.getByTestId("workflow-package-editor-shell")).toBeVisible();
-    expect(screen.queryByRole("tab", { name: "Preflight tab" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Launch tab" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Preflight tab" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Launch tab" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Launch route")).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Overview tab" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Overview tab" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Package overview");
   });
 
@@ -226,19 +329,29 @@ describe("WorkflowPackageEditorPage", () => {
 
     expect(useWorkflowPackageMock).toHaveBeenCalledWith(undefined);
     expect(useWorkflowPackageManifestMock).toHaveBeenCalledWith(undefined);
-    expect(screen.getByRole("heading", { name: "New Workflow Package" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "New Workflow Package" }),
+    ).toBeVisible();
     expect(screen.getByText("Draft manifest shell")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Launch workflow package" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Launch workflow package" }),
+    ).toBeDisabled();
   });
 
   it("switches tabs and routes clean launch button to the run shell", () => {
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
     fireEvent.click(screen.getByRole("tab", { name: "Private MCP tab" }));
-    expect(screen.getByRole("tab", { name: "Private MCP tab" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tabpanel")).toHaveTextContent("Private MCP servers");
+    expect(
+      screen.getByRole("tab", { name: "Private MCP tab" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveTextContent(
+      "Private MCP servers",
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Launch workflow package" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Launch workflow package" }),
+    );
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/42/run");
   });
 
@@ -248,19 +361,29 @@ describe("WorkflowPackageEditorPage", () => {
     fireEvent.change(screen.getByLabelText("Package name"), {
       target: { value: "Unsaved Market Review" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Launch workflow package" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Launch workflow package" }),
+    );
 
-    expect(screen.getByRole("dialog")).toHaveTextContent("Unsaved editor changes are excluded until you save them.");
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Unsaved editor changes are excluded until you save them.",
+    );
     expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Launch saved package" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Launch saved package" }),
+    ).toBeVisible();
     expect(updatePackageMock).not.toHaveBeenCalled();
     expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/42/run");
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Launch workflow package" }));
-    fireEvent.click(screen.getByRole("button", { name: "Launch saved package" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Launch workflow package" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Launch saved package" }),
+    );
 
     expect(updatePackageMock).not.toHaveBeenCalled();
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/42/run");
@@ -270,7 +393,8 @@ describe("WorkflowPackageEditorPage", () => {
     useWorkflowPackageManifestMock.mockReturnValue({
       data: {
         ...manifestRead,
-        manifestSource: "apiVersion: signaldeck.workflowPackage/v1\nmetadata:\n  key: broken\n  name: Broken Package\n  description: [",
+        manifestSource:
+          "apiVersion: signaldeck.workflowPackage/v1\nmetadata:\n  key: broken\n  name: Broken Package\n  description: [",
       },
       error: null,
       isError: false,
@@ -281,10 +405,16 @@ describe("WorkflowPackageEditorPage", () => {
 
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
-    expect(screen.getByTestId("workflow-package-manifest-blocker")).toBeVisible();
-    expect(screen.getByRole("alert")).toHaveTextContent("sufficiently indented");
+    expect(
+      screen.getByTestId("workflow-package-manifest-blocker"),
+    ).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "sufficiently indented",
+    );
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.getByRole("button", { name: "Save package" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Validate package" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Validate package" }),
+    ).toBeDisabled();
   });
 });

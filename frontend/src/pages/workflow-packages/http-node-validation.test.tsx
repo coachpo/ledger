@@ -2,7 +2,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WorkflowPackageManifestRead, WorkflowPackageRead } from "@/lib/types/workflow-package";
+import type {
+  WorkflowPackageManifestRead,
+  WorkflowPackageRead,
+} from "@/lib/types/workflow-package";
 
 import { WorkflowPackageEditorPage } from "./editor";
 
@@ -24,23 +27,59 @@ vi.mock("react-router", async (importOriginal) => {
 });
 
 vi.mock("@/hooks/use-model-connections", () => ({
-  useModelConnections: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
+  useModelConnections: () => ({
+    data: { items: [] },
+    error: null,
+    isError: false,
+    isPending: false,
+  }),
 }));
 
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useCreateWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useCreateWorkflowPackageLaunch: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useDeleteWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useCreateWorkflowPackageLaunch: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
+  useDeleteWorkflowPackageSecretBinding: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
   useImportWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  usePreflightWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useTools: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
+  usePreflightWorkflowPackage: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
+  useTools: () => ({
+    data: { items: [] },
+    error: null,
+    isError: false,
+    isPending: false,
+  }),
   useUpdateWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useUpsertWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useValidateWorkflowPackageManifest: () => ({ isPending: false, mutateAsync: validatePackageMock }),
+  useUpsertWorkflowPackageSecretBinding: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
+  useValidateWorkflowPackageManifest: () => ({
+    isPending: false,
+    mutateAsync: validatePackageMock,
+  }),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
-  useWorkflowPackageLaunch: () => ({ data: undefined, error: null, isError: false, isPending: false }),
-  useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
-  useWorkflowPackageSecretBindings: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
+  useWorkflowPackageLaunch: () => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isPending: false,
+  }),
+  useWorkflowPackageManifest: (...args: unknown[]) =>
+    useWorkflowPackageManifestMock(...args),
+  useWorkflowPackageSecretBindings: () => ({
+    data: { items: [] },
+    error: null,
+    isError: false,
+    isPending: false,
+  }),
 }));
 
 const packageRead: WorkflowPackageRead = {
@@ -107,7 +146,10 @@ function renderEditor() {
   return render(
     <MemoryRouter initialEntries={["/workflow-packages/42"]}>
       <Routes>
-        <Route path="/workflow-packages/:packageId" element={<WorkflowPackageEditorPage />} />
+        <Route
+          path="/workflow-packages/:packageId"
+          element={<WorkflowPackageEditorPage />}
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -134,7 +176,13 @@ describe("WorkflowPackageEditorPage HTTP node validation", () => {
       packageDefinition: null,
       warnings: [],
     });
-    useWorkflowPackageMock.mockReturnValue({ data: packageRead, error: null, isError: false, isPending: false, refetch: vi.fn() });
+    useWorkflowPackageMock.mockReturnValue({
+      data: packageRead,
+      error: null,
+      isError: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
     useWorkflowPackageManifestMock.mockReturnValue({
       data: manifestRead,
       error: null,
@@ -149,16 +197,31 @@ describe("WorkflowPackageEditorPage HTTP node validation", () => {
     renderEditor();
 
     fireEvent.click(screen.getByRole("tab", { name: "Workflow YAML tab" }));
-    expect((screen.getByRole("textbox", { name: "Workflow YAML" }) as HTMLTextAreaElement).value).toContain("kind: http");
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Workflow YAML",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toContain("kind: http");
     fireEvent.click(screen.getByRole("button", { name: "Validate package" }));
 
     await waitFor(() => expect(validatePackageMock).toHaveBeenCalledTimes(1));
-    const payload = validatePackageMock.mock.calls[0][0].manifestSource as string;
+    const payload = validatePackageMock.mock.calls[0][0]
+      .manifestSource as string;
     expect(payload).toContain("kind: http");
     expect(payload).toContain("method: PATCH");
-    expect(payload).toContain("Authorization: ${{ secrets.slack_webhook_token }}");
-    expect(await screen.findByRole("tab", { name: "Workflow YAML tab" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText(/HTTP method PATCH is not supported/i)).toBeVisible();
-    expect(screen.getByTestId("workflow-yaml-validation-feedback")).toHaveTextContent("spec.workflows[0].flow.method");
+    expect(payload).toContain(
+      "Authorization: ${{ secrets.slack_webhook_token }}",
+    );
+    expect(
+      await screen.findByRole("tab", { name: "Workflow YAML tab" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.getByText(/HTTP method PATCH is not supported/i),
+    ).toBeVisible();
+    expect(
+      screen.getByTestId("workflow-yaml-validation-feedback"),
+    ).toHaveTextContent("spec.workflows[0].flow.method");
   });
 });

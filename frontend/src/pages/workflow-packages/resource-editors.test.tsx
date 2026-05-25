@@ -265,7 +265,7 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     expect(screen.getByTestId(/package-private-mcp-card-/)).toHaveTextContent(
       "Environment values",
     );
-    expect(screen.getByText("Package-local transport values.")).toBeVisible();
+    expect(screen.getByText(/Package-local transport values/i)).toBeVisible();
   });
 
   it("hides disabled finance tools from authoring discovery and restores them", () => {

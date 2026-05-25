@@ -1,8 +1,17 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WorkflowPackageManifestRead, WorkflowPackageRead } from "@/lib/types/workflow-package";
+import type {
+  WorkflowPackageManifestRead,
+  WorkflowPackageRead,
+} from "@/lib/types/workflow-package";
 
 import { WorkflowPackageEditorPage } from "./editor";
 
@@ -26,24 +35,65 @@ vi.mock("react-router", async (importOriginal) => {
 });
 
 vi.mock("@/hooks/use-model-connections", () => ({
-  useModelConnections: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
+  useModelConnections: () => ({
+    data: { items: [] },
+    error: null,
+    isError: false,
+    isPending: false,
+  }),
 }));
 
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useCreateWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useCreateWorkflowPackageLaunch: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useDeleteWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: deleteSecretBindingMock }),
+  useCreateWorkflowPackageLaunch: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
+  useDeleteWorkflowPackageSecretBinding: () => ({
+    isPending: false,
+    mutateAsync: deleteSecretBindingMock,
+  }),
   useImportWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  usePreflightWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useTools: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
+  usePreflightWorkflowPackage: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
+  useTools: () => ({
+    data: { items: [] },
+    error: null,
+    isError: false,
+    isPending: false,
+  }),
   useUpdateWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useUpsertWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: upsertSecretBindingMock }),
-  useValidateWorkflowPackageManifest: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useUpsertWorkflowPackageSecretBinding: () => ({
+    isPending: false,
+    mutateAsync: upsertSecretBindingMock,
+  }),
+  useValidateWorkflowPackageManifest: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
-  useWorkflowPackageLaunch: () => ({ data: undefined, error: null, isError: false, isPending: false }),
-  useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
+  useWorkflowPackageLaunch: () => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isPending: false,
+  }),
+  useWorkflowPackageManifest: (...args: unknown[]) =>
+    useWorkflowPackageManifestMock(...args),
   useWorkflowPackageSecretBindings: () => ({
-    data: { items: [{ createdAt: "2026-05-15T08:00:00Z", hasValue: true, key: "slack_webhook_token", packageId: 42, updatedAt: "2026-05-15T08:00:00Z" }] },
+    data: {
+      items: [
+        {
+          createdAt: "2026-05-15T08:00:00Z",
+          hasValue: true,
+          key: "slack_webhook_token",
+          packageId: 42,
+          updatedAt: "2026-05-15T08:00:00Z",
+        },
+      ],
+    },
     error: null,
     isError: false,
     isPending: false,
@@ -108,7 +158,10 @@ function renderEditor() {
   return render(
     <MemoryRouter initialEntries={["/workflow-packages/42"]}>
       <Routes>
-        <Route path="/workflow-packages/:packageId" element={<WorkflowPackageEditorPage />} />
+        <Route
+          path="/workflow-packages/:packageId"
+          element={<WorkflowPackageEditorPage />}
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -119,10 +172,29 @@ describe("WorkflowPackageEditorPage secret bindings", () => {
     navigateMock.mockReset();
     upsertSecretBindingMock.mockReset();
     deleteSecretBindingMock.mockReset();
-    upsertSecretBindingMock.mockResolvedValue({ createdAt: "2026-05-15T08:05:00Z", hasValue: true, key: "body_token", packageId: 42, updatedAt: "2026-05-15T08:05:00Z" });
+    upsertSecretBindingMock.mockResolvedValue({
+      createdAt: "2026-05-15T08:05:00Z",
+      hasValue: true,
+      key: "body_token",
+      packageId: 42,
+      updatedAt: "2026-05-15T08:05:00Z",
+    });
     deleteSecretBindingMock.mockResolvedValue(undefined);
-    useWorkflowPackageMock.mockReturnValue({ data: packageRead, error: null, isError: false, isPending: false, refetch: vi.fn() });
-    useWorkflowPackageManifestMock.mockReturnValue({ data: manifestRead, error: null, isError: false, isFetching: false, isPending: false, refetch: vi.fn() });
+    useWorkflowPackageMock.mockReturnValue({
+      data: packageRead,
+      error: null,
+      isError: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: manifestRead,
+      error: null,
+      isError: false,
+      isFetching: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
   });
 
   it("edits package secret bindings without echoing stored secret values", async () => {
@@ -135,19 +207,36 @@ describe("WorkflowPackageEditorPage secret bindings", () => {
     expect(tab).toHaveTextContent(/stored value redacted/i);
     expect(screen.queryByText("slack-secret-value")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Secret binding key"), { target: { value: "body_token" } });
-    fireEvent.change(screen.getByLabelText("Secret binding value"), { target: { value: "body-secret-value" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save secret binding" }));
+    fireEvent.change(screen.getByLabelText("Secret binding key"), {
+      target: { value: "body_token" },
+    });
+    fireEvent.change(screen.getByLabelText("Secret binding value"), {
+      target: { value: "body-secret-value" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save secret binding" }),
+    );
 
-    await waitFor(() => expect(upsertSecretBindingMock).toHaveBeenCalledWith({
-      key: "body_token",
-      packageId: "42",
-      payload: { value: "body-secret-value" },
-    }));
+    await waitFor(() =>
+      expect(upsertSecretBindingMock).toHaveBeenCalledWith({
+        key: "body_token",
+        packageId: "42",
+        payload: { value: "body-secret-value" },
+      }),
+    );
     expect(screen.getByLabelText("Secret binding value")).toHaveValue("");
     expect(screen.queryByText("body-secret-value")).not.toBeInTheDocument();
 
-    fireEvent.click(within(tab).getByRole("button", { name: "Delete secret binding slack_webhook_token" }));
-    await waitFor(() => expect(deleteSecretBindingMock).toHaveBeenCalledWith({ key: "slack_webhook_token", packageId: "42" }));
+    fireEvent.click(
+      within(tab).getByRole("button", {
+        name: "Delete secret binding slack_webhook_token",
+      }),
+    );
+    await waitFor(() =>
+      expect(deleteSecretBindingMock).toHaveBeenCalledWith({
+        key: "slack_webhook_token",
+        packageId: "42",
+      }),
+    );
   });
 });
