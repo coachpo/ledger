@@ -1,0 +1,44 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+
+import { ResourceStatusStrip } from "./resource-status-strip";
+
+describe("ResourceStatusStrip", () => {
+  it("renders status items with deterministic tone badges", () => {
+    render(
+      <ResourceStatusStrip
+        items={[
+          { label: "Ready", tone: "success", value: "3 checks" },
+          { description: "review", label: "Warning", tone: "warning" },
+          { label: "Blocked", tone: "danger", value: "1 issue" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("list")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.getByText("Ready").closest("[data-slot='badge']")).toHaveAttribute("data-tone", "success");
+    expect(screen.getByText("Warning").closest("[data-slot='badge']")).toHaveAttribute("data-tone", "warning");
+    expect(screen.getByText("Blocked").closest("[data-slot='badge']")).toHaveAttribute("data-tone", "danger");
+  });
+
+  it("renders numeric zero values without showing empty falsy values", () => {
+    render(
+      <ResourceStatusStrip
+        items={[
+          { label: "Tokens", value: 0 },
+          { label: "Cost", value: "" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("0")).toBeVisible();
+    expect(screen.getByText("Cost").closest("[role='listitem']")).toHaveTextContent(/^Cost$/);
+  });
+
+  it("renders deterministic empty status copy", () => {
+    render(<ResourceStatusStrip emptyLabel="No runtime status" items={[]} />);
+
+    expect(screen.getByText("No runtime status")).toHaveClass("border", "bg-muted/30", "text-muted-foreground");
+  });
+});
