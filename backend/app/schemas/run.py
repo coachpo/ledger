@@ -8,16 +8,7 @@ from pydantic import Field, field_validator, model_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
 from app.schemas.memory import MemoryArtifactRead
-from app.schemas.model_connection import (
-    ModelConnectionCapabilities,
-    ModelConnectionKind,
-    ModelConnectionOutputStrategyPolicy,
-    ModelConnectionParallelToolCallsPolicy,
-    ModelConnectionProtocolProfile,
-    ModelConnectionReasoningPolicy,
-    ModelConnectionStreamingPolicy,
-    default_model_connection_capabilities,
-)
+from app.schemas.model_connection import ModelConnectionCompatibilityResolution
 
 
 class RunStatus(str, Enum):  # noqa: UP042
@@ -569,90 +560,7 @@ class RunPackageLocalResourceRefsRead(CamelModel):
     workflows: list[str] = Field(default_factory=list)
 
 
-class RunPackageResolvedModelConnectionRead(CamelModel):
-    key: str
-    name: str
-    connection_kind: ModelConnectionKind
-    protocol_profile: ModelConnectionProtocolProfile
-    base_url: str
-    model_id: str
-    reasoning_effort: str | None = None
-    capabilities: ModelConnectionCapabilities
-    output_strategy_policy: ModelConnectionOutputStrategyPolicy
-    parallel_tool_calls_policy: ModelConnectionParallelToolCallsPolicy
-    reasoning_policy: ModelConnectionReasoningPolicy
-    streaming_policy: ModelConnectionStreamingPolicy
-    probe_cache_ttl_seconds: int = Field(ge=1)
-    api_style: str
-    timeout_seconds: int = Field(ge=1)
-    has_api_key: bool
-
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_effective_runtime_profile(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return value
-        normalized = dict(value)
-        protocol_profile = normalized.get("protocolProfile") or normalized.get(
-            "protocol_profile"
-        )
-        api_style = normalized.get("apiStyle") or normalized.get("api_style")
-        if protocol_profile is None:
-            if api_style == "chat_completions":
-                protocol_profile = ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS.value
-            elif api_style == "responses":
-                protocol_profile = ModelConnectionProtocolProfile.OPENAI_RESPONSES.value
-            else:
-                raise ValueError(
-                    "Model connection snapshot must include protocolProfile or apiStyle"
-                )
-        try:
-            protocol_profile_enum = ModelConnectionProtocolProfile(str(protocol_profile))
-        except ValueError as exc:
-            raise ValueError("Model connection snapshot protocolProfile is invalid") from exc
-        normalized["protocolProfile"] = protocol_profile_enum.value
-        expected_api_style = (
-            "chat_completions"
-            if protocol_profile_enum == ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS
-            else "responses"
-        )
-        if api_style is None:
-            normalized["apiStyle"] = expected_api_style
-        else:
-            normalized_api_style = str(api_style).strip()
-            if normalized_api_style != expected_api_style:
-                raise ValueError(
-                    "Model connection snapshot apiStyle does not match protocolProfile"
-                )
-            normalized["apiStyle"] = normalized_api_style
-        if "capabilities" not in normalized or normalized.get("capabilities") is None:
-            normalized["capabilities"] = default_model_connection_capabilities(
-                protocol_profile_enum
-            )
-        if (
-            "outputStrategyPolicy" not in normalized
-            and "output_strategy_policy" not in normalized
-        ):
-            normalized["outputStrategyPolicy"] = (
-                ModelConnectionOutputStrategyPolicy.PREFER_STRICT_SCHEMA.value
-            )
-        if (
-            "parallelToolCallsPolicy" not in normalized
-            and "parallel_tool_calls_policy" not in normalized
-        ):
-            normalized["parallelToolCallsPolicy"] = (
-                ModelConnectionParallelToolCallsPolicy.SERIALIZE.value
-            )
-        if "reasoningPolicy" not in normalized and "reasoning_policy" not in normalized:
-            normalized["reasoningPolicy"] = ModelConnectionReasoningPolicy.ALLOW.value
-        if "streamingPolicy" not in normalized and "streaming_policy" not in normalized:
-            normalized["streamingPolicy"] = ModelConnectionStreamingPolicy.ALLOW.value
-        if (
-            "probeCacheTtlSeconds" not in normalized
-            and "probe_cache_ttl_seconds" not in normalized
-        ):
-            normalized["probeCacheTtlSeconds"] = 900
-        return normalized
+RunPackageResolvedModelConnectionRead = ModelConnectionCompatibilityResolution
 
 
 class RunPackagePreflightSummaryRead(CamelModel):
@@ -701,7 +609,7 @@ class RunPackageProvenanceRead(CamelModel):
     launch_snapshot: RunPackageLaunchSnapshotRead | None = None
     extension_dependencies: list[RunExtensionDependencyRead] = Field(default_factory=list)
     local_resource_refs: RunPackageLocalResourceRefsRead
-    resolved_model_connections: list[RunPackageResolvedModelConnectionRead] = Field(
+    resolved_model_connections: list[ModelConnectionCompatibilityResolution] = Field(
         default_factory=list
     )
     preflight_summary: RunPackagePreflightSummaryRead | None = None

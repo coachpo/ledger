@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from fastapi import status
 from pydantic import ValidationError
@@ -18,14 +19,19 @@ from app.schemas.model_connection import (
     ModelConnectionListItemRead,
     ModelConnectionListRead,
     ModelConnectionRead,
+    ModelConnectionOutputStrategyPolicy,
+    ModelConnectionParallelToolCallsPolicy,
+    ModelConnectionReasoningPolicy,
+    ModelConnectionStreamingPolicy,
     ModelConnectionUpdate,
-    api_style_for_model_connection_protocol_profile,
     default_model_connection_capabilities,
     dump_model_connection_capabilities,
     normalize_model_connection_key,
 )
+from app.services.execution_plan import PackageResolvedModelBinding
+from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.model_gateway import ModelExecutionGateway
-from app.services.model_gateway_dto import ModelConnectionTestRequest, ModelGatewayConnectionConfig
+from app.services.model_gateway_dto import ModelConnectionTestRequest
 from app.services.model_gateway_openai import (
     DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI,
 )
@@ -41,26 +47,6 @@ class _ModelConnectionTestResult:
     tested_at: datetime
 
 
-@dataclass(frozen=True)
-class PackageModelConnectionBinding:
-    key: str
-    name: str
-    connection_kind: str
-    protocol_profile: str
-    base_url: str
-    model_id: str
-    reasoning_effort: str | None
-    capabilities: dict[str, object]
-    output_strategy_policy: str
-    parallel_tool_calls_policy: str
-    reasoning_policy: str
-    streaming_policy: str
-    probe_cache_ttl_seconds: int
-    api_style: str
-    timeout_seconds: int
-    has_api_key: bool
-
-
 class ModelConnectionService:
     session: Session
     repository: ModelConnectionRepository
@@ -72,6 +58,7 @@ class ModelConnectionService:
     ) -> None:
         self.session = session
         self.repository = ModelConnectionRepository(session)
+        self.compatibility_resolution_service = CompatibilityResolutionService()
         self.model_gateway = model_gateway or ModelExecutionGateway(
             OpenAIProtocolAdapter(client_factory=OpenAI)
         )
@@ -79,11 +66,11 @@ class ModelConnectionService:
     def list_connections(self) -> ModelConnectionListRead:
         items = self.repository.list_connections()
         return ModelConnectionListRead(
-            items=[ModelConnectionListItemRead.model_validate(item) for item in items]
+            items=[self._to_list_item_read(item) for item in items]
         )
 
     def get_connection(self, connection_id: int) -> ModelConnectionRead:
-        return ModelConnectionRead.model_validate(self._get_model(connection_id))
+        return self._to_read(self._get_model(connection_id))
 
     def resolve_connection_by_key(self, key: str) -> ModelConnection:
         return self._resolve_connection_by_key(
@@ -95,7 +82,7 @@ class ModelConnectionService:
     def lookup_package_model_connection_binding(
         self,
         key: str,
-    ) -> PackageModelConnectionBinding | None:
+    ) -> PackageResolvedModelBinding | None:
         normalized_key = self._normalize_key_for_resolver(
             key,
             path="modelConnection",
@@ -112,18 +99,19 @@ class ModelConnectionService:
         *,
         path: str = "modelConnection",
         require_api_key: bool = False,
-    ) -> PackageModelConnectionBinding:
+    ) -> PackageResolvedModelBinding:
         connection = self._resolve_connection_by_key(
             key,
             path=path,
             message="Package model connection validation failed",
         )
-        if require_api_key and self._get_api_key(connection) is None:
+        binding = self._to_package_binding(connection)
+        if require_api_key and not binding.has_api_key:
             raise validation_error(
                 "Package model connection validation failed",
                 [{"field": path, "issue": "API key is not configured"}],
             )
-        return self._to_package_binding(connection)
+        return binding
 
     def create_connection(self, payload: ModelConnectionCreate) -> ModelConnectionRead:
         if self.repository.get_by_key(payload.key) is not None:
@@ -143,12 +131,14 @@ class ModelConnectionService:
             base_url=payload.base_url,
             model_id=payload.model_id,
             reasoning_effort=payload.reasoning_effort,
-            capabilities=dump_model_connection_capabilities(payload.capabilities),
-            output_strategy_policy=payload.output_strategy_policy.value,
-            parallel_tool_calls_policy=payload.parallel_tool_calls_policy.value,
-            reasoning_policy=payload.reasoning_policy.value,
-            streaming_policy=payload.streaming_policy.value,
-            probe_cache_ttl_seconds=payload.probe_cache_ttl_seconds,
+            capabilities=dump_model_connection_capabilities(
+                default_model_connection_capabilities(payload.protocol_profile),
+            ),
+            output_strategy_policy=ModelConnectionOutputStrategyPolicy.PREFER_STRICT_SCHEMA.value,
+            parallel_tool_calls_policy=ModelConnectionParallelToolCallsPolicy.SERIALIZE.value,
+            reasoning_policy=ModelConnectionReasoningPolicy.ALLOW.value,
+            streaming_policy=ModelConnectionStreamingPolicy.ALLOW.value,
+            probe_cache_ttl_seconds=900,
             timeout_seconds=payload.timeout_seconds,
         )
         self._set_api_key(connection, payload.api_key)
@@ -160,7 +150,7 @@ class ModelConnectionService:
         except Exception:
             self.session.rollback()
             raise
-        return ModelConnectionRead.model_validate(connection)
+        return self._to_read(connection)
 
     def update_connection(
         self,
@@ -182,12 +172,20 @@ class ModelConnectionService:
             reset_probe_cache = True
         if "protocol_profile" in payload.model_fields_set and payload.protocol_profile is not None:
             connection.protocol_profile = payload.protocol_profile.value
+            connection.capabilities = dump_model_connection_capabilities(
+                default_model_connection_capabilities(connection.protocol_profile),
+            )
+            connection.output_strategy_policy = (
+                ModelConnectionOutputStrategyPolicy.PREFER_STRICT_SCHEMA.value
+            )
+            connection.parallel_tool_calls_policy = (
+                ModelConnectionParallelToolCallsPolicy.SERIALIZE.value
+            )
+            connection.reasoning_policy = ModelConnectionReasoningPolicy.ALLOW.value
+            connection.streaming_policy = ModelConnectionStreamingPolicy.ALLOW.value
+            connection.probe_cache_ttl_seconds = 900
             reset_connection_test_result = True
             reset_probe_cache = True
-            if "capabilities" not in payload.model_fields_set:
-                connection.capabilities = dump_model_connection_capabilities(
-                    default_model_connection_capabilities(connection.protocol_profile),
-                )
         if "base_url" in payload.model_fields_set and payload.base_url is not None:
             connection.base_url = payload.base_url
             reset_connection_test_result = True
@@ -200,32 +198,6 @@ class ModelConnectionService:
             connection.reasoning_effort = payload.reasoning_effort
             reset_connection_test_result = True
             reset_probe_cache = True
-        if "capabilities" in payload.model_fields_set and payload.capabilities is not None:
-            connection.capabilities = dump_model_connection_capabilities(payload.capabilities)
-            reset_probe_cache = True
-        if (
-            "output_strategy_policy" in payload.model_fields_set
-            and payload.output_strategy_policy is not None
-        ):
-            connection.output_strategy_policy = payload.output_strategy_policy.value
-            reset_probe_cache = True
-        if (
-            "parallel_tool_calls_policy" in payload.model_fields_set
-            and payload.parallel_tool_calls_policy is not None
-        ):
-            connection.parallel_tool_calls_policy = payload.parallel_tool_calls_policy.value
-            reset_probe_cache = True
-        if "reasoning_policy" in payload.model_fields_set and payload.reasoning_policy is not None:
-            connection.reasoning_policy = payload.reasoning_policy.value
-            reset_probe_cache = True
-        if "streaming_policy" in payload.model_fields_set and payload.streaming_policy is not None:
-            connection.streaming_policy = payload.streaming_policy.value
-            reset_probe_cache = True
-        if (
-            "probe_cache_ttl_seconds" in payload.model_fields_set
-            and payload.probe_cache_ttl_seconds is not None
-        ):
-            connection.probe_cache_ttl_seconds = payload.probe_cache_ttl_seconds
         if "timeout_seconds" in payload.model_fields_set and payload.timeout_seconds is not None:
             connection.timeout_seconds = payload.timeout_seconds
             reset_connection_test_result = True
@@ -246,7 +218,7 @@ class ModelConnectionService:
         except Exception:
             self.session.rollback()
             raise
-        return ModelConnectionRead.model_validate(connection)
+        return self._to_read(connection)
 
     def test_connection(self, connection_id: int) -> ModelConnectionConnectionTestRead:
         connection = self._get_model(connection_id)
@@ -319,32 +291,56 @@ class ModelConnectionService:
                 [{"field": path, "issue": str(exc)}],
             ) from exc
 
-    @classmethod
-    def _to_package_binding(cls, connection: ModelConnection) -> PackageModelConnectionBinding:
-        return PackageModelConnectionBinding(
-            key=connection.key,
-            name=connection.name,
-            connection_kind=connection.connection_kind,
-            protocol_profile=connection.protocol_profile,
-            base_url=connection.base_url,
-            model_id=connection.model_id,
-            reasoning_effort=connection.reasoning_effort,
-            capabilities=cls._capabilities_payload(connection),
-            output_strategy_policy=connection.output_strategy_policy,
-            parallel_tool_calls_policy=connection.parallel_tool_calls_policy,
-            reasoning_policy=connection.reasoning_policy,
-            streaming_policy=connection.streaming_policy,
-            probe_cache_ttl_seconds=connection.probe_cache_ttl_seconds,
-            api_style=api_style_for_model_connection_protocol_profile(connection.protocol_profile),
-            timeout_seconds=connection.timeout_seconds,
-            has_api_key=cls._get_api_key(connection) is not None,
+    def _to_list_item_read(self, connection: ModelConnection) -> ModelConnectionListItemRead:
+        return ModelConnectionListItemRead.model_validate(self._read_payload(connection))
+
+    def _to_read(self, connection: ModelConnection) -> ModelConnectionRead:
+        return ModelConnectionRead.model_validate(
+            {
+                **self._read_payload(connection),
+                "created_at": connection.created_at,
+                "updated_at": connection.updated_at,
+            }
+        )
+
+    def _read_payload(self, connection: ModelConnection) -> dict[str, Any]:
+        resolution = self.compatibility_resolution_service.resolve_connection(connection)
+        return {
+            "id": connection.id,
+            "key": resolution.key,
+            "name": resolution.name,
+            "description": connection.description,
+            "connection_kind": resolution.connection_kind,
+            "protocol_profile": resolution.protocol_profile,
+            "base_url": resolution.base_url,
+            "model_id": resolution.model_id,
+            "reasoning_effort": resolution.reasoning_effort,
+            "capabilities": resolution.capabilities,
+            "output_strategy_policy": resolution.output_strategy_policy,
+            "parallel_tool_calls_policy": resolution.parallel_tool_calls_policy,
+            "reasoning_policy": resolution.reasoning_policy,
+            "streaming_policy": resolution.streaming_policy,
+            "last_probed_at": connection.last_probed_at,
+            "probe_cache_ttl_seconds": resolution.probe_cache_ttl_seconds,
+            "timeout_seconds": resolution.timeout_seconds,
+            "last_tested_at": connection.last_tested_at,
+            "last_test_ok": connection.last_test_ok,
+            "last_test_message": connection.last_test_message,
+        }
+
+    def _to_package_binding(self, connection: ModelConnection) -> PackageResolvedModelBinding:
+        resolution = self.compatibility_resolution_service.resolve_connection(connection)
+        return self.compatibility_resolution_service.to_package_resolved_model_binding(
+            resolution,
         )
 
     def _run_connection_test(self, connection: ModelConnection) -> _ModelConnectionTestResult:
         tested_at = utcnow()
         result = self.model_gateway.test_connection(
             ModelConnectionTestRequest(
-                connection=self._to_gateway_connection(connection),
+                connection=self.compatibility_resolution_service.to_gateway_connection_config(
+                    connection,
+                ),
                 instructions="Reply with the single word OK.",
                 input_text="Connection test.",
             )
@@ -354,33 +350,6 @@ class ModelConnectionService:
             message=result.message,
             tested_at=tested_at,
         )
-
-    @classmethod
-    def _to_gateway_connection(cls, connection: ModelConnection) -> ModelGatewayConnectionConfig:
-        return ModelGatewayConnectionConfig(
-            id=connection.id,
-            name=connection.name,
-            connection_kind=connection.connection_kind,
-            base_url=connection.base_url,
-            model_id=connection.model_id,
-            reasoning_effort=connection.reasoning_effort,
-            api_style=api_style_for_model_connection_protocol_profile(connection.protocol_profile),
-            timeout_seconds=connection.timeout_seconds,
-            api_key=cls._get_api_key(connection),
-            capabilities=cls._capabilities_payload(connection),
-            output_strategy_policy=connection.output_strategy_policy,
-            parallel_tool_calls_policy=connection.parallel_tool_calls_policy,
-            reasoning_policy=connection.reasoning_policy,
-            streaming_policy=connection.streaming_policy,
-        )
-
-    @staticmethod
-    def _capabilities_payload(connection: ModelConnection) -> dict[str, object]:
-        try:
-            capabilities = ModelConnectionCapabilities.model_validate(connection.capabilities)
-        except ValidationError:
-            capabilities = default_model_connection_capabilities(connection.protocol_profile)
-        return dump_model_connection_capabilities(capabilities)
 
     @classmethod
     def _clear_probe_cache(cls, connection: ModelConnection) -> None:
@@ -420,4 +389,4 @@ class ModelConnectionService:
         connection.last_test_message = None
 
 
-__all__ = ["ModelConnectionService", "PackageModelConnectionBinding"]
+__all__ = ["ModelConnectionService"]

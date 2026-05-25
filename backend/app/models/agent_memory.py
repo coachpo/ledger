@@ -31,7 +31,7 @@ class AgentMemoryEntry(IdMixin, Base):
     __table_args__ = (
         UniqueConstraint("memory_id", name="uq_agent_memory_entries_memory_id"),
         CheckConstraint(
-            "scope_type IN ('workspace', 'package', 'workflow', 'run', 'agent')",
+            "scope_type IN ('workspace', 'package', 'workflow', 'run', 'agent', 'namespace')",
             name="ck_agent_memory_entries_scope_type",
         ),
         CheckConstraint(

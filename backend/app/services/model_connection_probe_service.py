@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.errors import not_found_error
@@ -15,13 +14,12 @@ from app.schemas.model_connection import (
     ModelConnectionCapabilityProbeRead,
     ModelConnectionCapabilityProbeRequest,
     ModelConnectionCapabilityStatus,
-    api_style_for_model_connection_protocol_profile,
-    default_model_connection_capabilities,
     dump_model_connection_capabilities,
     normalize_model_connection_capability_key,
 )
+from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.model_gateway import ModelExecutionGateway
-from app.services.model_gateway_dto import ModelCapabilityProbeRequest, ModelGatewayConnectionConfig
+from app.services.model_gateway_dto import ModelCapabilityProbeRequest
 from app.services.model_gateway_openai import (
     DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI,
 )
@@ -39,6 +37,7 @@ class ModelConnectionProbeService:
     ) -> None:
         self.session = session
         self.repository = ModelConnectionRepository(session)
+        self.compatibility_resolution_service = CompatibilityResolutionService()
         self.model_gateway = model_gateway or ModelExecutionGateway(
             OpenAIProtocolAdapter(client_factory=OpenAI)
         )
@@ -50,12 +49,13 @@ class ModelConnectionProbeService:
     ) -> ModelConnectionCapabilityProbeRead:
         request = payload or ModelConnectionCapabilityProbeRequest()
         connection = self._get_model(connection_id)
-        capabilities = self._capabilities_payload(connection)
+        resolution = self.compatibility_resolution_service.resolve_connection(connection)
+        capabilities = resolution.capabilities
         requested_capability_fields = self._requested_capability_fields(request)
         cached = not request.refresh and self._is_cache_fresh(
             capabilities,
             requested_capability_fields,
-            ttl_seconds=connection.probe_cache_ttl_seconds,
+            ttl_seconds=resolution.probe_cache_ttl_seconds,
         )
         if cached:
             probed_at = self._latest_probe_timestamp(
@@ -66,7 +66,10 @@ class ModelConnectionProbeService:
         else:
             probe_result = self.model_gateway.probe_capabilities(
                 ModelCapabilityProbeRequest(
-                    connection=self._to_gateway_connection(connection),
+                    connection=self.compatibility_resolution_service.to_gateway_connection_config(
+                        connection,
+                        resolution=resolution,
+                    ),
                     capability_keys=requested_capability_fields,
                 )
             )
@@ -86,7 +89,8 @@ class ModelConnectionProbeService:
             except Exception:
                 self.session.rollback()
                 raise
-            capabilities = self._capabilities_payload(connection)
+            resolution = self.compatibility_resolution_service.resolve_connection(connection)
+            capabilities = resolution.capabilities
         return ModelConnectionCapabilityProbeRead.model_validate(
             {
                 "modelConnectionId": connection.id,
@@ -95,7 +99,7 @@ class ModelConnectionProbeService:
                 ],
                 "cached": cached,
                 "lastProbedAt": probed_at,
-                "probeCacheTtlSeconds": connection.probe_cache_ttl_seconds,
+                "probeCacheTtlSeconds": resolution.probe_cache_ttl_seconds,
                 "capabilities": dump_model_connection_capabilities(capabilities),
             }
         )
@@ -116,43 +120,6 @@ class ModelConnectionProbeService:
             normalize_model_connection_capability_key(capability_key)
             for capability_key in request.capability_keys
         )
-
-    @classmethod
-    def _to_gateway_connection(cls, connection: ModelConnection) -> ModelGatewayConnectionConfig:
-        return ModelGatewayConnectionConfig(
-            id=connection.id,
-            name=connection.name,
-            connection_kind=connection.connection_kind,
-            base_url=connection.base_url,
-            model_id=connection.model_id,
-            reasoning_effort=connection.reasoning_effort,
-            api_style=api_style_for_model_connection_protocol_profile(
-                connection.protocol_profile,
-            ),
-            timeout_seconds=connection.timeout_seconds,
-            api_key=cls._get_api_key(connection),
-            capabilities=dump_model_connection_capabilities(cls._capabilities_payload(connection)),
-            output_strategy_policy=connection.output_strategy_policy,
-            parallel_tool_calls_policy=connection.parallel_tool_calls_policy,
-            reasoning_policy=connection.reasoning_policy,
-            streaming_policy=connection.streaming_policy,
-        )
-
-    @staticmethod
-    def _capabilities_payload(connection: ModelConnection) -> ModelConnectionCapabilities:
-        try:
-            return ModelConnectionCapabilities.model_validate(connection.capabilities)
-        except ValidationError:
-            return default_model_connection_capabilities(connection.protocol_profile)
-
-    @staticmethod
-    def _get_api_key(connection: ModelConnection) -> str | None:
-        payload = connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
-        raw_api_key = payload.get("apiKey")
-        if raw_api_key is None:
-            return None
-        normalized = str(raw_api_key).strip()
-        return normalized or None
 
     def _is_cache_fresh(
         self,

@@ -2978,19 +2978,16 @@ def test_model_connection_round_trips_connection_kind(client: TestClient) -> Non
     assert get_body["connectionKind"] == "provider"
 
 
-def test_model_connection_round_trips_protocol_capabilities_and_policies(
+def test_model_connection_compatibility_derives_protocol_capabilities_and_rejects_public_policy_writes(
     client: TestClient,
 ) -> None:
-    payload = {
+    create_payload = {
         **_model_connection_create_payload(),
         "protocolProfile": "openai_chat_completions",
-        "capabilities": {
-            "nativeToolCalls": {
-                "status": "supported",
-                "detail": "Manual capability declaration for test endpoint.",
-            },
-            "strictJsonSchemaOutput": {"status": "unsupported"},
-        },
+    }
+    public_compatibility_fields: dict[str, object] = {
+        "apiStyle": "chat_completions",
+        "capabilities": {"nativeToolCalls": {"status": "supported"}},
         "outputStrategyPolicy": "allow_json_object_validation",
         "parallelToolCallsPolicy": "forbid",
         "reasoningPolicy": "forbid",
@@ -2998,54 +2995,64 @@ def test_model_connection_round_trips_protocol_capabilities_and_policies(
         "probeCacheTtlSeconds": 300,
     }
 
-    create_response = client.post("/api/model-connections", json=payload)
+    rejected_create = client.post(
+        "/api/model-connections",
+        json={**create_payload, **public_compatibility_fields},
+    )
+    field_names = set(public_compatibility_fields)
+    _assert_deleted_model_connection_fields_rejected(rejected_create, field_names)
+    _assert_schema_extra_forbidden(
+        ModelConnectionCreate,
+        {**create_payload, **public_compatibility_fields},
+        field_names,
+    )
+
+    create_response = client.post("/api/model-connections", json=create_payload)
     assert create_response.status_code == 201, create_response.json()
     create_body = cast(dict[str, object], create_response.json())
     assert "apiStyle" not in create_body
     assert create_body["protocolProfile"] == "openai_chat_completions"
-    assert create_body["outputStrategyPolicy"] == "allow_json_object_validation"
-    assert create_body["parallelToolCallsPolicy"] == "forbid"
-    assert create_body["reasoningPolicy"] == "forbid"
-    assert create_body["streamingPolicy"] == "forbid"
-    assert create_body["probeCacheTtlSeconds"] == 300
+    assert create_body["outputStrategyPolicy"] == "prefer_strict_schema"
+    assert create_body["parallelToolCallsPolicy"] == "serialize"
+    assert create_body["reasoningPolicy"] == "allow"
+    assert create_body["streamingPolicy"] == "allow"
+    assert create_body["probeCacheTtlSeconds"] == 900
     assert create_body["lastProbedAt"] is None
-    capabilities = cast(dict[str, dict[str, object]], create_body["capabilities"])
-    assert set(capabilities) == _EXPECTED_MODEL_CONNECTION_CAPABILITY_KEYS
-    assert capabilities["chatCompletions"]["status"] == "unknown"
-    assert capabilities["nativeToolCalls"]["status"] == "supported"
-    assert capabilities["nativeToolCalls"]["detail"] == (
-        "Manual capability declaration for test endpoint."
-    )
-    assert capabilities["strictJsonSchemaOutput"]["status"] == "unsupported"
+    assert create_body["capabilities"] == default_model_connection_capabilities(
+        "openai_chat_completions"
+    ).model_dump(mode="json", by_alias=True)
     connection_id = cast(int, create_body["id"])
+
+    rejected_patch = client.patch(
+        f"/api/model-connections/{connection_id}",
+        json=public_compatibility_fields,
+    )
+    _assert_deleted_model_connection_fields_rejected(rejected_patch, field_names)
+    _assert_schema_extra_forbidden(
+        ModelConnectionUpdate,
+        public_compatibility_fields,
+        field_names,
+    )
 
     patch_response = client.patch(
         f"/api/model-connections/{connection_id}",
-        json={
-            "protocolProfile": "openai_responses",
-            "capabilities": {"responsesApi": {"status": "supported"}},
-            "outputStrategyPolicy": "require_strict_schema",
-            "parallelToolCallsPolicy": "serialize",
-            "reasoningPolicy": "allow",
-            "streamingPolicy": "allow",
-            "probeCacheTtlSeconds": 900,
-        },
+        json={"protocolProfile": "openai_responses"},
     )
     assert patch_response.status_code == 200, patch_response.json()
     patch_body = cast(dict[str, object], patch_response.json())
     assert "apiStyle" not in patch_body
     assert patch_body["protocolProfile"] == "openai_responses"
-    assert patch_body["outputStrategyPolicy"] == "require_strict_schema"
+    assert patch_body["outputStrategyPolicy"] == "prefer_strict_schema"
     assert patch_body["parallelToolCallsPolicy"] == "serialize"
     assert patch_body["reasoningPolicy"] == "allow"
     assert patch_body["streamingPolicy"] == "allow"
     assert patch_body["probeCacheTtlSeconds"] == 900
-    patched_capabilities = cast(dict[str, dict[str, object]], patch_body["capabilities"])
-    assert set(patched_capabilities) == _EXPECTED_MODEL_CONNECTION_CAPABILITY_KEYS
-    assert patched_capabilities["responsesApi"]["status"] == "supported"
+    assert patch_body["capabilities"] == default_model_connection_capabilities(
+        "openai_responses"
+    ).model_dump(mode="json", by_alias=True)
 
 
-def test_model_connection_rejects_invalid_protocol_profile_and_capability_status(
+def test_model_connection_rejects_invalid_protocol_profile(
     client: TestClient,
 ) -> None:
     invalid_profile_response = client.post(
@@ -3056,24 +3063,9 @@ def test_model_connection_rejects_invalid_protocol_profile_and_capability_status
     invalid_profile_body = cast(dict[str, object], invalid_profile_response.json())
     assert invalid_profile_body["code"] == "validation_error"
 
-    invalid_capability_response = client.post(
-        "/api/model-connections",
-        json={
-            **_model_connection_create_payload(),
-            "capabilities": {"nativeToolCalls": {"status": "maybe"}},
-        },
-    )
-    assert invalid_capability_response.status_code == 422, invalid_capability_response.json()
-    invalid_capability_body = cast(dict[str, object], invalid_capability_response.json())
-    assert invalid_capability_body["code"] == "validation_error"
-
     with pytest.raises(ValidationError):
         ModelConnectionCreate.model_validate(
             {**_model_connection_create_payload(), "protocolProfile": "responses"}
-        )
-    with pytest.raises(ValidationError):
-        ModelConnectionUpdate.model_validate(
-            {"capabilities": {"nativeToolCalls": {"status": "maybe"}}}
         )
 
 

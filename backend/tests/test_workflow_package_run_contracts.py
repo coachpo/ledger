@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
@@ -29,10 +30,15 @@ from app.schemas.memory import (
     MemorySubjectRef,
     MemoryWriteRequest,
 )
-from app.schemas.model_connection import default_model_connection_capabilities
+from app.schemas.model_connection import (
+    ModelConnectionProtocolProfile,
+    default_model_connection_capabilities,
+)
+from app.schemas.run import RunPackageResolvedModelConnectionRead
 from app.services.agent_execution_service import AgentExecutionService, RunAgentInvocationResult
 from app.services.extension_service import ExtensionService
 from app.services.memory_service import MemoryLookupContext, MemoryService
+from app.services.model_connection_snapshot import parse_model_connection_runtime_snapshot
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
@@ -44,6 +50,9 @@ from tests.test_workflow_package_manifest_http_node import (
 _EXPECTED_STRUCTURED_OUTPUT_WARNING = {
     "field": "spec.outputSchemas.summary_output.jsonSchema",
     "code": "model_capability_probe_inconclusive",
+    "agentKey": "package_analyst",
+    "modelConnectionKey": "package_runtime_model",
+    "requirement": "structuredOutput",
     "issue": (
         "This workflow requires structured JSON output, but strict JSON-schema output has "
         "not been proven yet."
@@ -237,6 +246,74 @@ def _seed_model_connection(
             )
         )
         session.commit()
+
+
+def test_runtime_profile_normalizes_api_style_and_rejects_snapshot_mismatch() -> None:
+    legacy_profile_payload: dict[str, Any] = {
+        "key": "legacy_chat_model",
+        "name": "Legacy Chat Model",
+        "connectionKind": "provider",
+        "apiStyle": "chat_completions",
+        "baseUrl": "https://legacy-chat.example.test/v1",
+        "modelId": "gpt-legacy-chat",
+        "reasoningEffort": None,
+        "timeoutSeconds": 45,
+        "hasApiKey": True,
+    }
+
+    normalized_profile = RunPackageResolvedModelConnectionRead.model_validate(
+        legacy_profile_payload,
+    ).model_dump(mode="json", by_alias=True)
+
+    assert normalized_profile["protocolProfile"] == (
+        ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS.value
+    )
+    assert normalized_profile["apiStyle"] == "chat_completions"
+    assert normalized_profile["capabilities"] == default_model_connection_capabilities(
+        ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS,
+    ).model_dump(mode="json", by_alias=True)
+    assert normalized_profile["outputStrategyPolicy"] == "prefer_strict_schema"
+    assert normalized_profile["parallelToolCallsPolicy"] == "serialize"
+    assert normalized_profile["reasoningPolicy"] == "allow"
+    assert normalized_profile["streamingPolicy"] == "allow"
+    assert normalized_profile["probeCacheTtlSeconds"] == 900
+
+    parsed_snapshot = parse_model_connection_runtime_snapshot(
+        {
+            "api_style": "chat_completions",
+            "base_url": "https://legacy-chat.example.test/v1",
+            "model_id": "gpt-legacy-chat",
+            "reasoning_effort": None,
+            "timeout_seconds": 45,
+        },
+    )
+    assert parsed_snapshot.protocol_profile == (
+        ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS.value
+    )
+    assert parsed_snapshot.api_style == "chat_completions"
+    assert parsed_snapshot.output_strategy_policy == "prefer_strict_schema"
+    assert parsed_snapshot.parallel_tool_calls_policy == "serialize"
+    assert parsed_snapshot.reasoning_policy == "allow"
+    assert parsed_snapshot.streaming_policy == "allow"
+    assert parsed_snapshot.probe_cache_ttl_seconds == 900
+
+    with pytest.raises(ValidationError, match="apiStyle does not match protocolProfile"):
+        RunPackageResolvedModelConnectionRead.model_validate(
+            {
+                **legacy_profile_payload,
+                "protocolProfile": ModelConnectionProtocolProfile.OPENAI_RESPONSES.value,
+            },
+        )
+    with pytest.raises(ValueError, match="api_style does not match protocol_profile"):
+        parse_model_connection_runtime_snapshot(
+            {
+                "protocol_profile": ModelConnectionProtocolProfile.OPENAI_RESPONSES.value,
+                "api_style": "chat_completions",
+                "base_url": "https://legacy-chat.example.test/v1",
+                "model_id": "gpt-legacy-chat",
+                "timeout_seconds": 45,
+            },
+        )
 
 
 def _drain_run_queue(session_factory: sessionmaker[Session]) -> None:
@@ -833,9 +910,9 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
             "baseUrl": "https://runtime-v1.example.com/v1",
             "modelId": "gpt-package-v1",
             "reasoningEffort": "high",
-            "capabilities": default_model_connection_capabilities(
-                "openai_responses"
-            ).model_dump(mode="json", by_alias=True),
+            "capabilities": default_model_connection_capabilities("openai_responses").model_dump(
+                mode="json", by_alias=True
+            ),
             "outputStrategyPolicy": "prefer_strict_schema",
             "parallelToolCallsPolicy": "serialize",
             "reasoningPolicy": "allow",
@@ -1248,6 +1325,18 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
         session.commit()
         runs_before = session.query(Run).count()
 
+    drifted_detail_response = client.get(f"/api/runs/{run_id}")
+    assert drifted_detail_response.status_code == 200, drifted_detail_response.json()
+    drifted_detail = cast(dict[str, Any], drifted_detail_response.json())
+    drifted_provenance = cast(dict[str, Any], drifted_detail["packageProvenance"])
+    drifted_profile = cast(dict[str, Any], drifted_provenance["resolvedModelConnections"][0])
+    assert drifted_profile["baseUrl"] == "https://runtime-v1.example.com/v1"
+    assert drifted_profile["modelId"] == "gpt-package-v1"
+    assert drifted_profile["reasoningEffort"] == "high"
+    assert drifted_profile["timeoutSeconds"] == 31
+    assert "runtime-live-drift" not in json.dumps(drifted_detail, sort_keys=True)
+    assert "gpt-package-live-drift" not in json.dumps(drifted_detail, sort_keys=True)
+
     rerun_draft = client.get(f"/api/runs/{run_id}/rerun-draft")
     fork_draft = client.get(
         f"/api/runs/{run_id}/fork-draft",
@@ -1326,20 +1415,16 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
         assert rerun_snapshot is not None
         assert fork_snapshot is not None
         assert (
-            rerun_snapshot.resolved_model_connections
-            == source_snapshot.resolved_model_connections
+            rerun_snapshot.resolved_model_connections == source_snapshot.resolved_model_connections
         )
         assert (
-            fork_snapshot.resolved_model_connections
-            == source_snapshot.resolved_model_connections
+            fork_snapshot.resolved_model_connections == source_snapshot.resolved_model_connections
         )
         assert (
-            rerun_snapshot.preflight_summary
-            == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
+            rerun_snapshot.preflight_summary == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
         )
         assert (
-            fork_snapshot.preflight_summary
-            == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
+            fork_snapshot.preflight_summary == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
         )
         assert session.query(Run).count() == runs_before + 2
 
@@ -1358,9 +1443,9 @@ def test_compat_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(
     package_definition["metadata"]["key"] = fixture_target_key
     compiled_plan["packageKey"] = fixture_target_key
     workflow = cast(dict[str, Any], compiled_plan["workflows"][0])
-    capabilities = default_model_connection_capabilities(
-        "openai_chat_completions"
-    ).model_dump(mode="json", by_alias=True)
+    capabilities = default_model_connection_capabilities("openai_chat_completions").model_dump(
+        mode="json", by_alias=True
+    )
     capabilities["strictJsonSchemaOutput"]["status"] = "unsupported"
     resolved_model_connections = [
         {

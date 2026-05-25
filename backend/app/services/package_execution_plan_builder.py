@@ -18,6 +18,7 @@ from app.services.execution_plan import (
     ExecutionPlanSourceKind,
     ExecutionPlanStep,
     ExecutionPlanTarget,
+    PackageAgentExecutionRequirements,
     PackageCapabilityProfileGrant,
     PackageExecutionRequirements,
     PackageExecutionStep,
@@ -111,31 +112,42 @@ class PackageExecutionPlanBuilder:
         cls,
         compiled_plan: Mapping[str, Any],
     ) -> PackageExecutionRequirements:
-        def compiled_section(name: str) -> list[dict[str, Any]]:
-            raw_items = compiled_plan.get(name) or []
-            return (
-                [item for item in raw_items if isinstance(item, dict)]
-                if isinstance(raw_items, list)
-                else []
-            )
-
         native_tool_sources: list[str] = []
         structured_output_sources: list[str] = []
         parallel_tool_sources: list[str] = []
+        streaming_sources: list[str] = []
+        reasoning_sources: list[str] = []
 
-        for profile in compiled_section("capabilityProfiles"):
+        for profile in cls._compiled_section(compiled_plan, "capabilityProfiles"):
             tool_keys = [str(key) for key in profile.get("toolKeys") or []]
             if not tool_keys:
                 continue
             profile_key = str(profile.get("key") or "capability_profile")
             native_tool_sources.append(f"spec.capabilityProfiles.{profile_key}.toolKeys")
 
-        for schema in compiled_section("outputSchemas"):
+        for schema in cls._compiled_section(compiled_plan, "outputSchemas"):
             schema_key = str(schema.get("key") or "output_schema")
             structured_output_sources.append(f"spec.outputSchemas.{schema_key}.jsonSchema")
 
+        for agent in cls._compiled_section(compiled_plan, "agents"):
+            agent_key = str(agent.get("key") or "agent")
+            streaming_sources.extend(
+                cls._agent_flag_sources(
+                    agent,
+                    agent_key,
+                    flag_names=("requiresStreaming",),
+                )
+            )
+            reasoning_sources.extend(
+                cls._agent_flag_sources(
+                    agent,
+                    agent_key,
+                    flag_names=("requiresReasoningHints",),
+                )
+            )
+
         if native_tool_sources:
-            for workflow in compiled_section("workflows"):
+            for workflow in cls._compiled_section(compiled_plan, "workflows"):
                 if cls._workflow_requires_parallel_tool_calls(workflow):
                     workflow_key = str(workflow.get("key") or "workflow")
                     parallel_tool_sources.append(f"spec.workflows.{workflow_key}.compiledGraph")
@@ -145,10 +157,68 @@ class PackageExecutionPlanBuilder:
             requires_native_tool_calls=bool(native_tool_sources),
             requires_structured_output=bool(structured_output_sources),
             requires_parallel_tool_calls=bool(parallel_tool_sources),
+            requires_streaming=bool(streaming_sources),
+            requires_reasoning_hints=bool(reasoning_sources),
             native_tool_sources=tuple(native_tool_sources),
             structured_output_sources=tuple(structured_output_sources),
             parallel_tool_sources=tuple(parallel_tool_sources),
+            streaming_sources=tuple(streaming_sources),
+            reasoning_sources=tuple(reasoning_sources),
         )
+
+    @classmethod
+    def derive_workflow_agent_requirements(
+        cls,
+        compiled_plan: Mapping[str, Any],
+        workflow_key: str,
+    ) -> dict[str, PackageAgentExecutionRequirements]:
+        agent_entries_by_key = {
+            str(agent.get("key") or ""): (agent, f"spec.agents[{index}].modelConnection")
+            for index, agent in enumerate(cls._compiled_section(compiled_plan, "agents"))
+        }
+        profiles_by_key = {
+            str(profile.get("key") or ""): profile
+            for profile in cls._compiled_section(compiled_plan, "capabilityProfiles")
+        }
+        output_schemas_by_key = {
+            str(schema.get("key") or ""): schema
+            for schema in cls._compiled_section(compiled_plan, "outputSchemas")
+        }
+        workflow = next(
+            (
+                item
+                for item in cls._compiled_section(compiled_plan, "workflows")
+                if str(item.get("key") or "") == workflow_key
+            ),
+            None,
+        )
+        if workflow is None:
+            return {}
+
+        workflow_parallel_source = (
+            f"spec.workflows.{workflow_key}.compiledGraph"
+            if cls._workflow_requires_parallel_tool_calls(workflow)
+            else None
+        )
+        scoped_requirements: dict[str, PackageAgentExecutionRequirements] = {}
+        workflow_agent_keys = set(cls._workflow_agent_keys(workflow))
+        for agent_key, agent_entry in agent_entries_by_key.items():
+            if agent_key not in workflow_agent_keys:
+                continue
+            agent, model_connection_field = agent_entry
+            requirements = cls._derive_agent_requirements(
+                agent,
+                profiles_by_key=profiles_by_key,
+                output_schemas_by_key=output_schemas_by_key,
+                workflow_parallel_source=workflow_parallel_source,
+            )
+            scoped_requirements[agent_key] = PackageAgentExecutionRequirements(
+                agent_key=agent_key,
+                model_connection_key=str(agent.get("modelConnection") or ""),
+                model_connection_field=model_connection_field,
+                requirements=requirements,
+            )
+        return scoped_requirements
 
     def _build_plan_for_workflow(self, workflow: dict[str, Any]) -> ExecutionPlan:
         workflow_key = str(workflow["key"])
@@ -834,6 +904,11 @@ class PackageExecutionPlanBuilder:
     def _node_requires_parallel_tool_calls(cls, node: object) -> bool:
         if not isinstance(node, dict):
             return False
+        nodes = node.get("nodes")
+        if isinstance(nodes, list) and any(
+            cls._node_requires_parallel_tool_calls(child) for child in nodes
+        ):
+            return True
         kind = str(node.get("kind") or "")
         if kind == "fanout":
             return True
@@ -847,6 +922,106 @@ class PackageExecutionPlanBuilder:
                 else False
             )
         return False
+
+    @staticmethod
+    def _compiled_section(
+        compiled_plan: Mapping[str, Any],
+        section_name: str,
+    ) -> list[dict[str, Any]]:
+        raw_items = compiled_plan.get(section_name) or []
+        return (
+            [item for item in raw_items if isinstance(item, dict)]
+            if isinstance(raw_items, list)
+            else []
+        )
+
+    @classmethod
+    def _workflow_agent_keys(cls, workflow: dict[str, Any]) -> tuple[str, ...]:
+        agent_keys: list[str] = []
+        seen: set[str] = set()
+        for step in workflow.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            for raw_agent in step.get("agents") or []:
+                if not isinstance(raw_agent, dict):
+                    continue
+                agent_key = str(raw_agent.get("agentKey") or "")
+                if not agent_key or agent_key in seen:
+                    continue
+                seen.add(agent_key)
+                agent_keys.append(agent_key)
+        return tuple(agent_keys)
+
+    @classmethod
+    def _derive_agent_requirements(
+        cls,
+        agent: dict[str, Any],
+        *,
+        profiles_by_key: Mapping[str, dict[str, Any]],
+        output_schemas_by_key: Mapping[str, dict[str, Any]],
+        workflow_parallel_source: str | None,
+    ) -> PackageExecutionRequirements:
+        agent_key = str(agent.get("key") or "agent")
+        native_tool_sources: list[str] = []
+        structured_output_sources: list[str] = []
+        streaming_sources = cls._agent_flag_sources(
+            agent,
+            agent_key,
+            flag_names=("requiresStreaming",),
+        )
+        reasoning_sources = cls._agent_flag_sources(
+            agent,
+            agent_key,
+            flag_names=("requiresReasoningHints",),
+        )
+
+        for profile_key in agent.get("capabilityProfiles") or []:
+            normalized_key = str(profile_key)
+            profile = profiles_by_key.get(normalized_key)
+            if profile is None:
+                continue
+            tool_keys = [str(key) for key in profile.get("toolKeys") or []]
+            if tool_keys:
+                native_tool_sources.append(f"spec.capabilityProfiles.{normalized_key}.toolKeys")
+
+        schema_key = str(agent.get("outputSchema") or "")
+        if schema_key:
+            structured_output_sources.append(
+                f"spec.outputSchemas.{schema_key}.jsonSchema"
+                if schema_key in output_schemas_by_key
+                else f"spec.agents.{agent_key}.outputSchema"
+            )
+
+        parallel_tool_sources = (
+            (workflow_parallel_source,)
+            if native_tool_sources and workflow_parallel_source is not None
+            else ()
+        )
+        return PackageExecutionRequirements(
+            requires_native_tool_calls=bool(native_tool_sources),
+            requires_structured_output=bool(structured_output_sources),
+            requires_parallel_tool_calls=bool(parallel_tool_sources),
+            requires_streaming=bool(streaming_sources),
+            requires_reasoning_hints=bool(reasoning_sources),
+            native_tool_sources=tuple(native_tool_sources),
+            structured_output_sources=tuple(structured_output_sources),
+            parallel_tool_sources=parallel_tool_sources,
+            streaming_sources=tuple(streaming_sources),
+            reasoning_sources=tuple(reasoning_sources),
+        )
+
+    @staticmethod
+    def _agent_flag_sources(
+        agent: dict[str, Any],
+        agent_key: str,
+        *,
+        flag_names: tuple[str, ...],
+    ) -> list[str]:
+        return [
+            f"spec.agents.{agent_key}.{flag_name}"
+            for flag_name in flag_names
+            if agent.get(flag_name) is True
+        ]
 
     def _iter_section(self, section_name: str) -> list[dict[str, Any]]:
         raw_items = self.compiled_plan.get(section_name) or []
@@ -897,19 +1072,17 @@ class PackageExecutionPlanBuilder:
         api_style = str(getattr(binding, "api_style", "") or "")
         if not protocol_profile:
             protocol_profile = (
-                "openai_chat_completions"
-                if api_style == "chat_completions"
-                else "openai_responses"
+                "openai_chat_completions" if api_style == "chat_completions" else "openai_responses"
             )
         if not api_style:
-            api_style = "chat_completions" if protocol_profile == "openai_chat_completions" else "responses"
+            api_style = (
+                "chat_completions" if protocol_profile == "openai_chat_completions" else "responses"
+            )
         capabilities = getattr(binding, "capabilities", None)
         if capabilities is None:
             capabilities = {}
         elif hasattr(capabilities, "model_dump"):
-            capabilities = cast(
-                dict[str, Any], capabilities.model_dump(mode="json", by_alias=True)
-            )
+            capabilities = cast(dict[str, Any], capabilities.model_dump(mode="json", by_alias=True))
         elif not isinstance(capabilities, dict):
             capabilities = {}
         return PackageResolvedModelBinding(

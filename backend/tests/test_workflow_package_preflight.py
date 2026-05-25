@@ -48,6 +48,135 @@ def _tool_required_package_source() -> str:
     return _TOOL_REQUIRED_FIXTURE.read_text()
 
 
+def _mixed_capability_package_source() -> str:
+    return """apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: mixed_capability_fixture
+  name: Mixed Capability Fixture
+  description: Multi-agent fixture for scoped compatibility requirements.
+spec:
+  inputs:
+    type: object
+    required: [topic]
+    properties:
+      topic:
+        type: string
+  capabilityProfiles:
+    - key: tool_required
+      name: Tool Required
+      toolKeys:
+        - signaldeck.memory.lookup
+  outputSchemas:
+    - key: report
+      name: Report
+      jsonSchema:
+        type: object
+        required: [summary]
+        properties:
+          summary:
+            type: string
+  mcpServers: []
+  agents:
+    - key: tool_analyst
+      name: Tool Analyst
+      modelConnection: tool_capable_model
+      systemPrompt: Use tools and return JSON.
+      inputSchema:
+        type: object
+        required: [topic]
+        properties:
+          topic:
+            type: string
+      outputSchema: report
+      capabilityProfiles: [tool_required]
+      mcpServers: []
+    - key: summary_writer
+      name: Summary Writer
+      modelConnection: no_tool_model
+      systemPrompt: Return JSON without tools.
+      inputSchema:
+        type: object
+        required: [topic]
+        properties:
+          topic:
+            type: string
+      outputSchema: report
+      capabilityProfiles: []
+      mcpServers: []
+    - key: unused_critic
+      name: Unused Critic
+      modelConnection: unused_bad_model
+      systemPrompt: This agent is not in the selected workflow.
+      inputSchema:
+        type: object
+        required: [topic]
+        properties:
+          topic:
+            type: string
+      outputSchema: report
+      capabilityProfiles: []
+      mcpServers: []
+  workflows:
+    - key: main
+      name: Main
+      inputSchema:
+        type: object
+        required: [topic]
+        properties:
+          topic:
+            type: string
+      flow:
+        kind: sequence
+        id: main_sequence
+        nodes:
+          - kind: step
+            id: analyze
+            slot: analysis
+            uses: tool_analyst
+            with:
+              topic: ${{ inputs.topic }}
+          - kind: step
+            id: summarize
+            slot: summary
+            uses: summary_writer
+            with:
+              topic: ${{ inputs.topic }}
+      output:
+        from: ${{ nodes.summarize.outputs.summary }}
+    - key: fanout
+      name: Fanout
+      inputSchema:
+        type: object
+        required: [topic]
+        properties:
+          topic:
+            type: string
+      flow:
+        kind: fanout
+        id: fanout_tools
+        branches:
+          - id: tool
+            node:
+              kind: step
+              id: tool_branch
+              slot: tool_report
+              uses: tool_analyst
+              with:
+                topic: ${{ inputs.topic }}
+          - id: plain
+            node:
+              kind: step
+              id: plain_branch
+              slot: plain_report
+              uses: summary_writer
+              with:
+                topic: ${{ inputs.topic }}
+      output:
+        from: ${{ nodes.fanout_tools.outputs.tool_report }}
+"""
+
+
 def _delete_existing_tradingagents_package(client: TestClient) -> None:
     packages_response = client.get("/api/workflow-packages")
     assert packages_response.status_code == 200, packages_response.json()
@@ -117,6 +246,35 @@ def _seed_model_connection(
             )
         )
         session.commit()
+
+
+def _capabilities_with_statuses(
+    *,
+    native_tool_calls_status: ModelConnectionCapabilityStatus = (
+        ModelConnectionCapabilityStatus.SUPPORTED
+    ),
+    strict_json_schema_status: ModelConnectionCapabilityStatus = (
+        ModelConnectionCapabilityStatus.SUPPORTED
+    ),
+    json_object_status: ModelConnectionCapabilityStatus = (
+        ModelConnectionCapabilityStatus.SUPPORTED
+    ),
+    parallel_tool_calls_status: ModelConnectionCapabilityStatus = (
+        ModelConnectionCapabilityStatus.SUPPORTED
+    ),
+    streaming_status: ModelConnectionCapabilityStatus = ModelConnectionCapabilityStatus.UNKNOWN,
+    reasoning_hints_status: ModelConnectionCapabilityStatus = (
+        ModelConnectionCapabilityStatus.UNKNOWN
+    ),
+) -> ModelConnectionCapabilities:
+    capabilities = default_model_connection_capabilities("openai_chat_completions")
+    capabilities.native_tool_calls.status = native_tool_calls_status
+    capabilities.strict_json_schema_output.status = strict_json_schema_status
+    capabilities.json_object_output.status = json_object_status
+    capabilities.parallel_tool_calls.status = parallel_tool_calls_status
+    capabilities.streaming.status = streaming_status
+    capabilities.reasoning_hints.status = reasoning_hints_status
+    return capabilities
 
 
 def _seed_tool_required_package(session_factory: sessionmaker[Session]) -> None:
@@ -264,6 +422,9 @@ def test_preflight_blocks_tool_required_fixture_with_unsupported_native_tool_cal
     assert {
         "field": "spec.capabilityProfiles.tool_required.toolKeys",
         "code": "model_capability_required_missing",
+        "agentKey": "analyst",
+        "modelConnectionKey": "compat_fixture_tools_disabled",
+        "requirement": "nativeToolCalls",
         "issue": (
             "This workflow requires native tool calls, but the selected model connection "
             "does not support them."
@@ -276,6 +437,51 @@ def test_preflight_blocks_tool_required_fixture_with_unsupported_native_tool_cal
         and "JSON object output has not been proven yet" in str(warning["issue"])
         for warning in warnings
     )
+
+
+def test_preflight_warns_when_required_model_capabilities_are_unproven(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_tool_required_package(session_factory)
+    _seed_compatibility_fixture_connection(
+        session_factory,
+        native_tool_calls_status=ModelConnectionCapabilityStatus.UNKNOWN,
+        strict_json_schema_status=ModelConnectionCapabilityStatus.UNKNOWN,
+        json_object_status=ModelConnectionCapabilityStatus.UNKNOWN,
+    )
+
+    preflight = client.post("/api/workflow-packages/9101/preflight")
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is True
+    assert body["blockingErrors"] == []
+    assert cast(list[dict[str, object]], body["warnings"]) == [
+        {
+            "field": "spec.capabilityProfiles.tool_required.toolKeys",
+            "code": "model_capability_probe_inconclusive",
+            "agentKey": "analyst",
+            "modelConnectionKey": "compat_fixture_tools_disabled",
+            "requirement": "nativeToolCalls",
+            "issue": (
+                "This workflow requires native tool calls, but support has not been " "proven yet."
+            ),
+            "severity": "warning",
+        },
+        {
+            "field": "spec.outputSchemas.report.jsonSchema",
+            "code": "model_capability_probe_inconclusive",
+            "agentKey": "analyst",
+            "modelConnectionKey": "compat_fixture_tools_disabled",
+            "requirement": "structuredOutput",
+            "issue": (
+                "This workflow requires structured JSON output, but strict "
+                "JSON-schema output has not been proven yet."
+            ),
+            "severity": "warning",
+        },
+    ]
 
 
 def test_preflight_warns_when_structured_output_falls_back_to_json_object_validation(
@@ -301,6 +507,9 @@ def test_preflight_warns_when_structured_output_falls_back_to_json_object_valida
         {
             "field": "spec.outputSchemas.report.jsonSchema",
             "code": "model_capability_required_missing",
+            "agentKey": "analyst",
+            "modelConnectionKey": "compat_fixture_tools_disabled",
+            "requirement": "structuredOutput",
             "issue": (
                 "This workflow requires structured JSON output, but strict JSON-schema output "
                 "is unavailable so JSON object validation will be used."
@@ -308,6 +517,89 @@ def test_preflight_warns_when_structured_output_falls_back_to_json_object_valida
             "severity": "warning",
         }
     ]
+
+
+def test_preflight_multi_agent_per_agent_structured_output_scope_keeps_unrelated_agents_ready(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(
+        session_factory,
+        key="tool_capable_model",
+        capabilities=_capabilities_with_statuses(),
+    )
+    _seed_model_connection(
+        session_factory,
+        key="no_tool_model",
+        capabilities=_capabilities_with_statuses(
+            native_tool_calls_status=ModelConnectionCapabilityStatus.UNSUPPORTED,
+        ),
+    )
+    _seed_model_connection(
+        session_factory,
+        key="unused_bad_model",
+        capabilities=_capabilities_with_statuses(
+            native_tool_calls_status=ModelConnectionCapabilityStatus.UNSUPPORTED,
+            strict_json_schema_status=ModelConnectionCapabilityStatus.UNSUPPORTED,
+            json_object_status=ModelConnectionCapabilityStatus.UNSUPPORTED,
+        ),
+    )
+    created = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _mixed_capability_package_source()},
+    )
+    assert created.status_code == 201, created.json()
+
+    preflight = client.post(
+        f"/api/workflow-packages/{created.json()['id']}/preflight",
+        params={"workflowKey": "main"},
+    )
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is True
+    assert body["blockingErrors"] == []
+    assert body["warnings"] == []
+    with session_factory() as session:
+        package = WorkflowPackageRepository(session).get(int(created.json()["id"]))
+        assert package is not None
+        result = WorkflowPackagePreflightService(session).evaluate_readiness(
+            package,
+            workflow_key="main",
+            require_api_key=True,
+        )
+    assert set(result.model_bindings) == {"no_tool_model", "tool_capable_model"}
+    assert "unused_bad_model" not in result.model_bindings
+    assert result.package_requirements.requires_native_tool_calls is True
+    assert (
+        result.agent_requirement_scopes["summary_writer"].requirements.requires_native_tool_calls
+        is False
+    )
+
+
+def test_preflight_parallel_streaming_reasoning_requirements_are_per_agent_scoped() -> None:
+    compiled = compile_workflow_package_manifest(_mixed_capability_package_source())
+    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
+    agents = cast(list[dict[str, Any]], compiled_plan["agents"])
+    agents_by_key = {str(agent["key"]): agent for agent in agents}
+    agents_by_key["tool_analyst"]["requiresStreaming"] = True
+    agents_by_key["summary_writer"]["requiresReasoningHints"] = True
+
+    fanout_requirements = PackageExecutionPlanBuilder.derive_workflow_agent_requirements(
+        compiled_plan,
+        "fanout",
+    )
+    main_requirements = PackageExecutionPlanBuilder.derive_workflow_agent_requirements(
+        compiled_plan,
+        "main",
+    )
+
+    assert fanout_requirements["tool_analyst"].requirements.requires_parallel_tool_calls is True
+    assert fanout_requirements["summary_writer"].requirements.requires_parallel_tool_calls is False
+    assert main_requirements["tool_analyst"].requirements.requires_streaming is True
+    assert main_requirements["summary_writer"].requirements.requires_streaming is False
+    assert main_requirements["summary_writer"].requirements.requires_reasoning_hints is True
+    assert main_requirements["tool_analyst"].requirements.requires_reasoning_hints is False
 
 
 def test_save_allows_missing_model_connection_and_preflight_blocks(

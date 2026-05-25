@@ -37,10 +37,7 @@ from app.repositories.run_fork import RunForkRepository
 from app.repositories.run_operation_invocation import RunOperationInvocationRepository
 from app.repositories.run_step import RunStepRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
-from app.schemas.memory_report import (
-    AgentMemoryReportCreateMetadata,
-    AgentMemoryTrustedCreateContext,
-)
+from app.schemas.memory import MemoryDecision, MemoryProvenance, MemoryWriteRequest
 from app.schemas.run import (
     RunCreatedRead,
     RunForkCreateRequest,
@@ -98,6 +95,7 @@ from app.services.http_operation_execution_service import (
 from app.services.legacy_authoring import raise_legacy_global_authoring_runtime_blocked
 from app.services.memory_follow_up_service import MemoryFollowUpEvaluator, MemoryFollowUpService
 from app.services.memory_service import MemoryLookupContext, MemoryService
+from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_openai import (
     DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI,
@@ -223,6 +221,7 @@ class RunService:
             model_gateway=ModelExecutionGateway(client_factory=OpenAI),
         )
         self.http_operation_execution_service = HttpOperationExecutionService(session)
+        self.compatibility_resolution_service = CompatibilityResolutionService()
         self.schema_compiler = OutputSchemaCompiler(self.output_schema_repository)
         self._stored_schema_node_cache: dict[tuple[str, int], SchemaNode] = {}
         self._run_rerun_fork_preparation = RunRerunForkPreparation(
@@ -1261,12 +1260,6 @@ class RunService:
         if not isinstance(source_refs, dict):
             return
         slot_outputs = self._hydrate_slot_outputs(run.id)
-        payload = self._post_run_memory_payload(
-            source_refs,
-            benchmark_symbol_ref=policy.get("benchmarkSymbol"),
-            initial_input=run.input,
-            slot_outputs=slot_outputs,
-        )
         context_ref = self._post_run_memory_context_ref(source_refs, policy)
         context_invocation = self._post_run_memory_context_invocation(context_ref, run_id=run.id)
         if context_invocation is None:
@@ -1277,7 +1270,7 @@ class RunService:
         )
         if agent is None:
             return
-        trusted_context = AgentMemoryTrustedCreateContext(
+        provenance = MemoryProvenance(
             run_id=run.id,
             agent_key=context_invocation.agent_key,
             agent_version=context_invocation.agent_version,
@@ -1288,6 +1281,13 @@ class RunService:
             slot=self._post_run_memory_context_slot(context_ref, context_invocation),
             trace_id=run.trace_id,
         )
+        write_request = self._post_run_memory_write_request(
+            source_refs,
+            benchmark_symbol_ref=policy.get("benchmarkSymbol"),
+            initial_input=run.input,
+            slot_outputs=slot_outputs,
+            provenance=provenance,
+        )
         memory_service = MemoryService(
             self.session,
             current_context=MemoryLookupContext(
@@ -1296,16 +1296,13 @@ class RunService:
                 agent_key=context_invocation.agent_key,
                 run_step_id=context_invocation.run_step_id,
                 run_agent_invocation_id=context_invocation.id,
-                step_id=trusted_context.step_id,
+                step_id=provenance.step_id,
                 trace_span_id=context_invocation.trace_span_id,
             ),
         )
         _ = memory_service.write_memory(
             capability_references=agent.capabilities,
-            payload=memory_service.write_request_from_report_create(
-                payload=payload,
-                trusted_context=trusted_context,
-            ),
+            payload=write_request,
             commit=False,
         )
 
@@ -1324,63 +1321,67 @@ class RunService:
             return None
         return cast(dict[str, Any], policy)
 
-    def _post_run_memory_payload(
+    def _post_run_memory_write_request(
         self,
         source_refs: dict[Any, Any],
         *,
         benchmark_symbol_ref: Any | None = None,
         initial_input: dict[str, Any],
         slot_outputs: dict[tuple[int, str], Any],
-    ) -> AgentMemoryReportCreateMetadata:
-        analysis: dict[str, Any] = {
+        provenance: MemoryProvenance,
+    ) -> MemoryWriteRequest:
+        payload: dict[str, Any] = {
             "ticker": self._resolve_post_run_memory_ref(
                 source_refs["ticker"],
                 initial_input=initial_input,
                 slot_outputs=slot_outputs,
             ),
-            "decision": {
-                "action": self._resolve_post_run_memory_ref(
-                    source_refs["action"],
-                    initial_input=initial_input,
-                    slot_outputs=slot_outputs,
-                ),
-                "rationale": self._resolve_post_run_memory_ref(
-                    source_refs["rationale"],
-                    initial_input=initial_input,
-                    slot_outputs=slot_outputs,
-                ),
-                "riskSummary": self._resolve_post_run_memory_ref(
-                    source_refs["riskSummary"],
-                    initial_input=initial_input,
-                    slot_outputs=slot_outputs,
-                ),
-                "executionPlan": self._resolve_post_run_memory_ref(
-                    source_refs["executionPlan"],
-                    initial_input=initial_input,
-                    slot_outputs=slot_outputs,
-                ),
-            },
+            "decision": MemoryDecision.model_validate(
+                {
+                    "action": self._resolve_post_run_memory_ref(
+                        source_refs["action"],
+                        initial_input=initial_input,
+                        slot_outputs=slot_outputs,
+                    ),
+                    "rationale": self._resolve_post_run_memory_ref(
+                        source_refs["rationale"],
+                        initial_input=initial_input,
+                        slot_outputs=slot_outputs,
+                    ),
+                    "riskSummary": self._resolve_post_run_memory_ref(
+                        source_refs["riskSummary"],
+                        initial_input=initial_input,
+                        slot_outputs=slot_outputs,
+                    ),
+                    "executionPlan": self._resolve_post_run_memory_ref(
+                        source_refs["executionPlan"],
+                        initial_input=initial_input,
+                        slot_outputs=slot_outputs,
+                    ),
+                }
+            ),
+            "provenance": provenance,
         }
         if benchmark_symbol_ref is not None:
-            analysis["benchmarkSymbol"] = self._resolve_post_run_memory_ref(
+            payload["benchmark_symbol"] = self._resolve_post_run_memory_ref(
                 benchmark_symbol_ref,
                 initial_input=initial_input,
                 slot_outputs=slot_outputs,
             )
-        for source_field, analysis_field in (
-            ("portfolioSlug", "portfolioSlug"),
-            ("horizonDays", "horizonDays"),
+        for source_field, payload_field in (
+            ("portfolioSlug", "portfolio_slug"),
+            ("horizonDays", "horizon_days"),
             ("confidence", "confidence"),
-            ("decisionSummary", "decisionSummary"),
+            ("decisionSummary", "decision_summary"),
         ):
             reference = source_refs.get(source_field)
             if reference is not None:
-                analysis[analysis_field] = self._resolve_post_run_memory_ref(
+                payload[payload_field] = self._resolve_post_run_memory_ref(
                     reference,
                     initial_input=initial_input,
                     slot_outputs=slot_outputs,
                 )
-        return AgentMemoryReportCreateMetadata.model_validate({"analysis": analysis})
+        return MemoryWriteRequest.model_validate(payload)
 
     def _resolve_post_run_memory_ref(
         self,
@@ -2817,26 +2818,9 @@ class RunService:
             if isinstance(item, dict) and item.get("key") is not None
         )
 
-    @staticmethod
-    def _model_binding_payload(binding: PackageResolvedModelBinding) -> dict[str, Any]:
-        return {
-            "key": binding.key,
-            "name": binding.name,
-            "connectionKind": binding.connection_kind,
-            "protocolProfile": binding.protocol_profile,
-            "baseUrl": binding.base_url,
-            "modelId": binding.model_id,
-            "reasoningEffort": binding.reasoning_effort,
-            "capabilities": deepcopy(binding.capabilities),
-            "outputStrategyPolicy": binding.output_strategy_policy,
-            "parallelToolCallsPolicy": binding.parallel_tool_calls_policy,
-            "reasoningPolicy": binding.reasoning_policy,
-            "streamingPolicy": binding.streaming_policy,
-            "probeCacheTtlSeconds": binding.probe_cache_ttl_seconds,
-            "apiStyle": binding.api_style,
-            "timeoutSeconds": binding.timeout_seconds,
-            "hasApiKey": binding.has_api_key,
-        }
+    def _model_binding_payload(self, binding: PackageResolvedModelBinding) -> dict[str, Any]:
+        resolution = self.compatibility_resolution_service.resolve_package_model_binding(binding)
+        return resolution.model_dump(mode="json", by_alias=True)
 
     @staticmethod
     def _preflight_summary_payload(

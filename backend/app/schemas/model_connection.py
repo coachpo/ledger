@@ -272,16 +272,6 @@ class ModelConnectionCreate(CamelModel):
         default="medium",
         max_length=128,
     )
-    capabilities: ModelConnectionCapabilities = Field(default_factory=ModelConnectionCapabilities)
-    output_strategy_policy: ModelConnectionOutputStrategyPolicy = (
-        ModelConnectionOutputStrategyPolicy.PREFER_STRICT_SCHEMA
-    )
-    parallel_tool_calls_policy: ModelConnectionParallelToolCallsPolicy = (
-        ModelConnectionParallelToolCallsPolicy.SERIALIZE
-    )
-    reasoning_policy: ModelConnectionReasoningPolicy = ModelConnectionReasoningPolicy.ALLOW
-    streaming_policy: ModelConnectionStreamingPolicy = ModelConnectionStreamingPolicy.ALLOW
-    probe_cache_ttl_seconds: int = Field(default=900, ge=1)
     timeout_seconds: int = Field(default=60, ge=1)
     api_key: str | None = None
 
@@ -316,12 +306,6 @@ class ModelConnectionCreate(CamelModel):
     def validate_api_key(cls, value: object) -> str | None:
         return _normalize_optional_secret(value)
 
-    @model_validator(mode="after")
-    def fill_default_capabilities(self) -> ModelConnectionCreate:
-        if "capabilities" not in self.model_fields_set:
-            self.capabilities = default_model_connection_capabilities(self.protocol_profile)
-        return self
-
 
 class ModelConnectionUpdate(CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
@@ -334,12 +318,6 @@ class ModelConnectionUpdate(CamelModel):
         default=None,
         max_length=128,
     )
-    capabilities: ModelConnectionCapabilities | None = None
-    output_strategy_policy: ModelConnectionOutputStrategyPolicy | None = None
-    parallel_tool_calls_policy: ModelConnectionParallelToolCallsPolicy | None = None
-    reasoning_policy: ModelConnectionReasoningPolicy | None = None
-    streaming_policy: ModelConnectionStreamingPolicy | None = None
-    probe_cache_ttl_seconds: int | None = Field(default=None, ge=1)
     timeout_seconds: int | None = Field(default=None, ge=1)
     api_key: str | None = None
 
@@ -368,18 +346,7 @@ class ModelConnectionUpdate(CamelModel):
     def validate_reasoning_effort(cls, value: object) -> str | None:
         return _normalize_reasoning_effort(value)
 
-    @field_validator(
-        "timeout_seconds",
-        "connection_kind",
-        "protocol_profile",
-        "capabilities",
-        "output_strategy_policy",
-        "parallel_tool_calls_policy",
-        "reasoning_policy",
-        "streaming_policy",
-        "probe_cache_ttl_seconds",
-        mode="before",
-    )
+    @field_validator("timeout_seconds", "connection_kind", "protocol_profile", mode="before")
     @classmethod
     def reject_null_scalar_updates(cls, value: object, info: ValidationInfo) -> object:
         if value is None:
@@ -491,6 +458,124 @@ class ModelConnectionCapabilityProbeRead(CamelModel):
         return ensure_timezone(value)
 
 
+class ModelConnectionCompatibilityResolution(CamelModel):
+    key: str
+    name: str
+    connection_kind: ModelConnectionKind
+    protocol_profile: ModelConnectionProtocolProfile
+    base_url: str
+    model_id: str
+    reasoning_effort: ModelConnectionReasoningEffort | None = Field(
+        default=None,
+        max_length=128,
+    )
+    capabilities: ModelConnectionCapabilities = Field(default_factory=ModelConnectionCapabilities)
+    output_strategy_policy: ModelConnectionOutputStrategyPolicy = (
+        ModelConnectionOutputStrategyPolicy.PREFER_STRICT_SCHEMA
+    )
+    parallel_tool_calls_policy: ModelConnectionParallelToolCallsPolicy = (
+        ModelConnectionParallelToolCallsPolicy.SERIALIZE
+    )
+    reasoning_policy: ModelConnectionReasoningPolicy = ModelConnectionReasoningPolicy.ALLOW
+    streaming_policy: ModelConnectionStreamingPolicy = ModelConnectionStreamingPolicy.ALLOW
+    probe_cache_ttl_seconds: int = Field(default=900, ge=1)
+    api_style: str
+    timeout_seconds: int = Field(ge=1)
+    has_api_key: bool
+
+    @field_validator("key", "name", "base_url", "model_id", "api_style", mode="before")
+    @classmethod
+    def validate_required_runtime_text_fields(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> str:
+        field_name = (info.field_name or "field").replace("_", " ").title()
+        return _normalize_required_text(value, field_name=field_name)
+
+    @field_validator("reasoning_effort", mode="before")
+    @classmethod
+    def validate_runtime_reasoning_effort(cls, value: object) -> str | None:
+        return _normalize_reasoning_effort(value)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_effective_runtime_profile(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        connection_kind = normalized.get("connectionKind", normalized.get("connection_kind"))
+        if connection_kind is None:
+            normalized["connectionKind"] = ModelConnectionKind.PROVIDER.value
+        name = normalized.get("name")
+        if (not isinstance(name, str) or not name.strip()) and normalized.get("key") is not None:
+            normalized["name"] = normalized["key"]
+        if "timeoutSeconds" not in normalized and "timeout_seconds" not in normalized:
+            normalized["timeoutSeconds"] = 60
+        if "hasApiKey" not in normalized and "has_api_key" not in normalized:
+            normalized["hasApiKey"] = False
+        protocol_profile = normalized.get("protocolProfile") or normalized.get(
+            "protocol_profile"
+        )
+        api_style = normalized.get("apiStyle") or normalized.get("api_style")
+        if protocol_profile is None:
+            if api_style == "chat_completions":
+                protocol_profile = ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS.value
+            elif api_style == "responses":
+                protocol_profile = ModelConnectionProtocolProfile.OPENAI_RESPONSES.value
+            else:
+                raise ValueError(
+                    "Model connection snapshot must include protocolProfile or apiStyle"
+                )
+        try:
+            protocol_profile_enum = ModelConnectionProtocolProfile(str(protocol_profile))
+        except ValueError as exc:
+            raise ValueError("Model connection snapshot protocolProfile is invalid") from exc
+        normalized["protocolProfile"] = protocol_profile_enum.value
+        expected_api_style = (
+            "chat_completions"
+            if protocol_profile_enum == ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS
+            else "responses"
+        )
+        if api_style is None:
+            normalized["apiStyle"] = expected_api_style
+        else:
+            normalized_api_style = str(api_style).strip()
+            if normalized_api_style != expected_api_style:
+                raise ValueError(
+                    "Model connection snapshot apiStyle does not match protocolProfile"
+                )
+            normalized["apiStyle"] = normalized_api_style
+        if "capabilities" not in normalized or normalized.get("capabilities") is None:
+            normalized["capabilities"] = default_model_connection_capabilities(
+                protocol_profile_enum
+            )
+        if (
+            "outputStrategyPolicy" not in normalized
+            and "output_strategy_policy" not in normalized
+        ):
+            normalized["outputStrategyPolicy"] = (
+                ModelConnectionOutputStrategyPolicy.PREFER_STRICT_SCHEMA.value
+            )
+        if (
+            "parallelToolCallsPolicy" not in normalized
+            and "parallel_tool_calls_policy" not in normalized
+        ):
+            normalized["parallelToolCallsPolicy"] = (
+                ModelConnectionParallelToolCallsPolicy.SERIALIZE.value
+            )
+        if "reasoningPolicy" not in normalized and "reasoning_policy" not in normalized:
+            normalized["reasoningPolicy"] = ModelConnectionReasoningPolicy.ALLOW.value
+        if "streamingPolicy" not in normalized and "streaming_policy" not in normalized:
+            normalized["streamingPolicy"] = ModelConnectionStreamingPolicy.ALLOW.value
+        if (
+            "probeCacheTtlSeconds" not in normalized
+            and "probe_cache_ttl_seconds" not in normalized
+        ):
+            normalized["probeCacheTtlSeconds"] = 900
+        return normalized
+
+
 __all__ = [
     "ModelConnectionCapabilities",
     "ModelConnectionCapabilityState",
@@ -498,6 +583,7 @@ __all__ = [
     "ModelConnectionCapabilityProbeRead",
     "ModelConnectionCapabilityProbeRequest",
     "ModelConnectionConnectionTestRead",
+    "ModelConnectionCompatibilityResolution",
     "ModelConnectionCreate",
     "ModelConnectionKind",
     "ModelConnectionListItemRead",

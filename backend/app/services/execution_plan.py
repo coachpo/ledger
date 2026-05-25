@@ -75,6 +75,14 @@ class PackageExecutionRequirements:
 
 
 @dataclass(frozen=True)
+class PackageAgentExecutionRequirements:
+    agent_key: str
+    model_connection_key: str
+    model_connection_field: str
+    requirements: PackageExecutionRequirements
+
+
+@dataclass(frozen=True)
 class PackageCapabilityProfileGrant:
     key: str
     name: str
@@ -224,6 +232,7 @@ __all__ = [
     "ExecutionPlanTargetKind",
     "PackageExecutionOwnership",
     "PackageExecutionRequirements",
+    "PackageAgentExecutionRequirements",
     "PackageCapabilityProfileGrant",
     "PackageExecutionStep",
     "PackageExecutionWorkflow",
