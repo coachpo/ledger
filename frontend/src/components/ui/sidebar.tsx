@@ -5,7 +5,11 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { PanelLeftIcon } from "lucide-react";
 
-import { SidebarContext, type SidebarContextProps, useSidebar } from "./sidebar-context";
+import {
+  SidebarContext,
+  type SidebarContextProps,
+  useSidebar,
+} from "./sidebar-context";
 import { useIsMobile } from "./use-mobile";
 import { cn } from "./utils";
 import { Button } from "./button";
@@ -26,11 +30,16 @@ import {
   TooltipTrigger,
 } from "./tooltip";
 
-const SIDEBAR_WIDTH = "16rem";
-const SIDEBAR_WIDTH_MOBILE = "18rem";
-const SIDEBAR_WIDTH_COLLAPSED = "4rem";
+const SIDEBAR_WIDTH = "15rem";
+const SIDEBAR_WIDTH_MOBILE = "17rem";
+const SIDEBAR_WIDTH_COLLAPSED = "3.5rem";
 
-function SidebarProvider({ className, style, children, ...props }: React.ComponentProps<"div">) {
+function SidebarProvider({
+  className,
+  style,
+  children,
+  ...props
+}: React.ComponentProps<"div">) {
   const isMobile = useIsMobile();
   const [open, setOpen] = React.useState(true);
   const [openMobile, setOpenMobile] = React.useState(false);
@@ -125,12 +134,12 @@ function Sidebar({
               ? "w-[calc(var(--sidebar-width)+1rem)]"
               : variant === "inset"
                 ? "w-(--sidebar-width)"
-              : "w-(--sidebar-width)"
+                : "w-(--sidebar-width)"
             : variant === "floating"
               ? "w-[calc(var(--sidebar-width-collapsed)+1rem)]"
               : variant === "inset"
                 ? "w-(--sidebar-width-collapsed)"
-              : "w-(--sidebar-width-collapsed)",
+                : "w-(--sidebar-width-collapsed)",
         )}
       />
       <div
@@ -140,14 +149,14 @@ function Sidebar({
           open ? "w-(--sidebar-width)" : "w-(--sidebar-width-collapsed)",
           side === "left" ? "left-0" : "right-0",
           variant === "floating"
-            ? "p-2"
+            ? "p-1.5"
             : variant === "inset"
               ? side === "left"
-                ? "py-2 pl-2 pr-0"
-                : "py-2 pl-0 pr-2"
-            : side === "left"
-              ? "border-r"
-              : "border-l",
+                ? "py-1.5 pl-1.5 pr-0"
+                : "py-1.5 pl-0 pr-1.5"
+              : side === "left"
+                ? "border-r"
+                : "border-l",
           className,
         )}
         {...props}
@@ -170,7 +179,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="sidebar-inset"
       className={cn(
         "bg-background relative flex min-h-0 w-full flex-1 flex-col overflow-hidden",
-        "md:peer-data-[variant=inset]:my-2 md:peer-data-[variant=inset]:mr-2 md:peer-data-[variant=inset]:rounded-r-xl md:peer-data-[variant=inset]:rounded-l-none md:peer-data-[variant=inset]:shadow-sm",
+        "md:peer-data-[variant=inset]:my-1.5 md:peer-data-[variant=inset]:mr-1.5 md:peer-data-[variant=inset]:rounded-r-lg md:peer-data-[variant=inset]:rounded-l-none md:peer-data-[variant=inset]:shadow-sm",
         className,
       )}
       {...props}
@@ -178,7 +187,11 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<typeof Button>) {
+function SidebarTrigger({
+  className,
+  onClick,
+  ...props
+}: React.ComponentProps<typeof Button>) {
   const { isMobile, setOpen, setOpenMobile } = useSidebar();
 
   return (
@@ -230,7 +243,7 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-header"
       data-sidebar="header"
-      className={cn("flex flex-col gap-2 p-2", className)}
+      className={cn("flex flex-col gap-1.5 p-1.5", className)}
       {...props}
     />
   );
@@ -241,7 +254,7 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-footer"
       data-sidebar="footer"
-      className={cn("flex flex-col gap-2 p-2", className)}
+      className={cn("flex flex-col gap-1.5 p-1.5", className)}
       {...props}
     />
   );
@@ -267,7 +280,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
-        "flex min-h-0 flex-1 flex-col gap-2 overflow-auto",
+        "flex min-h-0 flex-1 flex-col gap-1 overflow-auto py-1",
         className,
       )}
       {...props}
@@ -280,7 +293,10 @@ function SidebarGroup({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-group"
       data-sidebar="group"
-      className={cn("relative flex w-full min-w-0 flex-col p-2", className)}
+      className={cn(
+        "relative flex w-full min-w-0 flex-col px-1.5 py-1",
+        className,
+      )}
       {...props}
     />
   );
@@ -298,7 +314,7 @@ function SidebarGroupLabel({
       data-slot="sidebar-group-label"
       data-sidebar="group-label"
       className={cn(
-        "text-sidebar-foreground/70 ring-sidebar-ring flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium outline-hidden focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
+        "text-sidebar-foreground/70 ring-sidebar-ring flex h-6 shrink-0 items-center rounded-md px-2 text-[11px] font-medium tracking-wide outline-hidden focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
         className,
       )}
       {...props}
@@ -346,7 +362,7 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<"ul">) {
     <ul
       data-slot="sidebar-menu"
       data-sidebar="menu"
-      className={cn("flex w-full min-w-0 flex-col gap-1", className)}
+      className={cn("flex w-full min-w-0 flex-col gap-0.5", className)}
       {...props}
     />
   );
@@ -364,7 +380,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-hidden ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
+  "peer/menu-button relative flex w-full items-center gap-2 overflow-hidden rounded-md px-2 py-1.5 text-left text-sm outline-hidden ring-sidebar-ring transition-colors before:absolute before:inset-y-1 before:content-[''] before:left-1 before:w-0.5 before:rounded-full before:bg-sidebar-primary before:opacity-0 before:transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-primary/10 data-[active=true]:font-semibold data-[active=true]:text-sidebar-primary data-[active=true]:shadow-sm data-[active=true]:before:opacity-100 data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
   {
     variants: {
       variant: {

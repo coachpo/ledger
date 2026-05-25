@@ -24,6 +24,18 @@ const platformRoutes = [
   },
 ] as const;
 
+const primaryShellNavTestIds = [
+  "nav-dashboard",
+  "nav-portfolios",
+  "nav-templates",
+  "nav-reports",
+  "nav-workflow-packages",
+  "nav-model-connections",
+  "nav-memory",
+  "nav-runs",
+  "nav-extensions",
+] as const;
+
 const retiredNavTestIds = [
   "nav-agents",
   "nav-capabilities",
@@ -61,10 +73,14 @@ test.describe("Primary workspace navigation", () => {
   }) => {
     await page.goto("/");
 
-    await expect(page.getByTestId("nav-dashboard")).toBeVisible();
-    await expect(page.getByTestId("nav-portfolios")).toBeVisible();
-    await expect(page.getByTestId("nav-templates")).toBeVisible();
-    await expect(page.getByTestId("nav-reports")).toBeVisible();
+    for (const testId of primaryShellNavTestIds) {
+      await expect(page.getByTestId(testId)).toBeVisible();
+    }
+    await expect(page.getByRole("banner")).toHaveClass(/h-12/);
+    await expect(page.getByTestId("nav-dashboard")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
     await expectSingleRouteMain(page, "route-dashboard", "scroll");
 
     for (const route of platformRoutes) {
@@ -79,6 +95,10 @@ test.describe("Primary workspace navigation", () => {
       await page.getByTestId(route.testId).click();
       await expect(page).toHaveURL(route.url);
       await expect(page.getByTestId(route.pageTestId)).toBeVisible();
+      await expect(page.getByTestId(route.testId)).toHaveAttribute(
+        "data-active",
+        "true",
+      );
       await expectSingleRouteMain(page, route.routeTestId, route.shellMode);
     }
   });
@@ -143,6 +163,21 @@ test.describe("Primary workspace navigation", () => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByTestId("workflow-packages-list-page")).toBeVisible();
+    await page.getByRole("button", { name: "Open sidebar" }).click();
+
+    const mobileSidebar = page.getByRole("dialog", { name: "Sidebar" });
+    await expect(mobileSidebar).toBeVisible();
+    for (const testId of primaryShellNavTestIds) {
+      await expect(mobileSidebar.getByTestId(testId)).toBeVisible();
+    }
+    await expect(
+      mobileSidebar.getByTestId("nav-workflow-packages"),
+    ).toHaveAttribute("data-active", "true");
+
+    await mobileSidebar.getByTestId("nav-dashboard").click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(mobileSidebar).toHaveCount(0);
+    await expectSingleRouteMain(page, "route-dashboard", "scroll");
     await expectNoDocumentOverflow(page);
   });
 });

@@ -45,10 +45,15 @@ function AppSidebar() {
 
   return (
     <Sidebar variant="inset">
-      <SidebarHeader className="h-14 justify-center border-b border-sidebar-border px-4 py-0">
-        <div className="flex items-center gap-3">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <img alt="" aria-hidden="true" className="size-5 shrink-0" src="/favicon.svg" />
+      <SidebarHeader className="h-12 justify-center border-b border-sidebar-border px-3 py-0">
+        <div className="flex items-center gap-2">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary/10 text-sidebar-primary">
+            <img
+              alt=""
+              aria-hidden="true"
+              className="size-4 shrink-0"
+              src="/favicon.svg"
+            />
           </div>
           {showExpandedContent ? (
             <div className="min-w-0">
@@ -60,14 +65,18 @@ function AppSidebar() {
       <SidebarContent>
         {navGroups.map((group) => (
           <SidebarGroup key={group.label}>
-            {showExpandedContent ? <SidebarGroupLabel>{group.label}</SidebarGroupLabel> : null}
+            {showExpandedContent ? (
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            ) : null}
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((item) => (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
                       asChild
-                      className={!showExpandedContent ? "justify-center" : undefined}
+                      className={
+                        !showExpandedContent ? "justify-center" : undefined
+                      }
                       isActive={isNavItemActive(location.pathname, item)}
                       tooltip={!showExpandedContent ? item.label : undefined}
                     >
@@ -78,7 +87,11 @@ function AppSidebar() {
                         to={item.to}
                       >
                         <item.icon className="size-4 shrink-0" />
-                        <span className={!showExpandedContent ? "sr-only" : undefined}>
+                        <span
+                          className={
+                            !showExpandedContent ? "sr-only" : undefined
+                          }
+                        >
                           {item.label}
                         </span>
                       </NavLink>
@@ -104,8 +117,8 @@ export function Layout() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur">
-          <SidebarTrigger />
+        <header className="sticky top-0 z-20 flex h-12 items-center gap-2 border-b border-border bg-background/95 px-3 backdrop-blur">
+          <SidebarTrigger className="shrink-0" />
           <div className="min-w-0 flex-1">
             <Breadcrumb>
               <BreadcrumbList>
@@ -120,7 +133,9 @@ export function Layout() {
                     </BreadcrumbItem>
                     <BreadcrumbSeparator />
                     <BreadcrumbItem>
-                      <BreadcrumbPage>{breadcrumbMetadata.title}</BreadcrumbPage>
+                      <BreadcrumbPage>
+                        {breadcrumbMetadata.title}
+                      </BreadcrumbPage>
                     </BreadcrumbItem>
                   </>
                 ) : (

@@ -202,6 +202,37 @@ describe("Layout", () => {
     },
   );
 
+  it("renders compact shell chrome and emphasizes the active route", () => {
+    const { container } = renderLayout("/workflow-packages");
+    const metadata = getRouteMetadataForPathname("/workflow-packages");
+    const banner = screen.getByRole("banner");
+    const sidebarHeader = container.querySelector<HTMLElement>(
+      '[data-sidebar="header"]',
+    );
+    const sidebarInset = container.querySelector<HTMLElement>(
+      '[data-slot="sidebar-inset"]',
+    );
+    const activeItem = screen.getByTestId(metadata.nav.testId);
+
+    expect(banner).toHaveClass("h-12", "gap-2", "px-3");
+    expect(sidebarHeader).toHaveClass("h-12", "px-3");
+    expect(sidebarInset).toHaveClass(
+      "md:peer-data-[variant=inset]:my-1.5",
+      "md:peer-data-[variant=inset]:mr-1.5",
+      "md:peer-data-[variant=inset]:rounded-r-lg",
+    );
+    expect(activeItem).toHaveAttribute("data-active", "true");
+    expect(activeItem).toHaveClass(
+      "data-[active=true]:bg-sidebar-primary/10",
+      "data-[active=true]:font-semibold",
+      "data-[active=true]:text-sidebar-primary",
+    );
+    expect(screen.getByTestId("nav-dashboard")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+  });
+
   it("constrains inventory scroll content to the shell width", () => {
     const { container } = renderLayout("/model-connections");
     const scrollArea = container.querySelector<HTMLElement>(
