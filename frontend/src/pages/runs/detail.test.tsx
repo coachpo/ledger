@@ -862,15 +862,20 @@ describe("RunsDetailPage", () => {
       "overflow-hidden",
     );
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /run summary/i })).toHaveAttribute(
-      "data-state",
-      "active",
-    );
     expect(
-      screen.getByRole("tab", { name: /execution trace/i }),
-    ).toHaveAttribute("data-state", "inactive");
+      screen.getByTestId("runs-evidence-console-rail"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("runs-inspection-split-layout"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^summary$/i })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: /lineage and usage/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: /audit evidence/i }),
+    ).toBeVisible();
     expect(screen.getByTestId("runs-detail-context-frame")).toHaveClass(
-      "h-full",
       "min-h-0",
       "overflow-y-auto",
       "overscroll-contain",
@@ -957,19 +962,19 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-workspace-context")).toHaveClass(
       "grid",
-      "gap-4",
+      "gap-3",
     );
     expect(
       within(screen.getByTestId("runs-workspace-context")).getAllByTestId(
         /runs-summary-.*-row/,
       ),
     ).toHaveLength(3);
-    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
+    expect(screen.getByTestId("runs-inspection-split-layout")).toHaveAttribute(
       "data-slot",
       "resizable-panel-group",
     );
     expect(
-      screen.getByTestId("runs-inspection-resize-handle"),
+      screen.getByTestId("split-inspector-resize-handle"),
     ).toBeInTheDocument();
     const usageRow = within(screen.getByTestId("runs-summary-usage-row"));
     expect(
@@ -1004,17 +1009,18 @@ describe("RunsDetailPage", () => {
     expect(smokeProfile).toHaveTextContent(/Chat Completions-compatible/i);
     expect(smokeProfile).toHaveTextContent(/No credential/i);
     expect(
-      screen.queryByTestId("runs-runtime-selected-strategies"),
-    ).not.toBeInTheDocument();
+      screen.getByTestId("runs-runtime-selected-strategies"),
+    ).not.toBeVisible();
     expect(
-      screen.queryByTestId("runs-runtime-strategy-2-1002"),
-    ).not.toBeInTheDocument();
+      screen.getByTestId("runs-runtime-strategy-2-1002"),
+    ).not.toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: /audit evidence/i }));
 
     const selectedStrategies = screen.getByTestId(
       "runs-runtime-selected-strategies",
     );
+    expect(selectedStrategies).toBeVisible();
     expect(selectedStrategies).toHaveTextContent(/Selected strategies/i);
     expect(selectedStrategies).not.toHaveTextContent(
       /compatibility degradation decisions/i,
@@ -1023,6 +1029,7 @@ describe("RunsDetailPage", () => {
       screen.getByTestId("runs-runtime-audit-connection-primary_openai"),
     ).toHaveTextContent(/Last probed/i);
     const decisionStrategy = screen.getByTestId("runs-runtime-strategy-2-1002");
+    expect(decisionStrategy).toBeVisible();
     expect(decisionStrategy).toHaveTextContent(/consumer_agent@2/i);
     expect(decisionStrategy).toHaveTextContent(/json object validation/i);
     expect(decisionStrategy).toHaveTextContent(/native tool calls/i);
@@ -1087,13 +1094,12 @@ describe("RunsDetailPage", () => {
     runInputRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1");
     const stepSummaryRender = render(<RunsDetailPage />);
-    expect(screen.getByRole("tab", { name: /run summary/i })).toHaveAttribute(
-      "data-state",
-      "inactive",
-    );
     expect(
-      screen.getByRole("tab", { name: /execution trace/i }),
-    ).toHaveAttribute("data-state", "active");
+      screen.getByTestId("runs-inspection-split-layout"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("runs-evidence-viewer")).toHaveTextContent(
+      /step evidence/i,
+    );
     const stepSummary = screen.getByTestId("runs-step-1-summary");
     const metadataHeading = within(stepSummary).getByRole("heading", {
       name: /step metadata/i,
@@ -1321,11 +1327,14 @@ describe("RunsDetailPage", () => {
       /unsupported/i,
     );
     expect(
-      screen.queryByTestId("runs-runtime-strategy-1-1001"),
-    ).not.toBeInTheDocument();
+      screen.getByTestId("runs-runtime-strategy-1-1001"),
+    ).not.toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: /audit evidence/i }));
 
+    expect(
+      screen.getByTestId("runs-runtime-strategy-1-1001"),
+    ).toBeVisible();
     expect(
       screen.getByTestId("runs-runtime-strategy-1-1001"),
     ).toHaveTextContent(/strictJsonSchema/i);
@@ -2432,10 +2441,9 @@ describe("RunsDetailPage", () => {
       screen.queryByTestId("runs-step-1-replay-entry"),
     ).not.toBeInTheDocument();
     expect(
-      within(screen.getByTestId("runs-invocation-1001-outline-entry")).queryByRole(
-        "button",
-        { name: /fork from this invocation/i },
-      ),
+      within(
+        screen.getByTestId("runs-invocation-1001-outline-entry"),
+      ).queryByRole("button", { name: /fork from this invocation/i }),
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("runs-invocation-1001-fork-entry"));
 
@@ -2524,10 +2532,9 @@ describe("RunsDetailPage", () => {
       screen.queryByTestId("runs-invocation-1003-fork-entry"),
     ).not.toBeInTheDocument();
     expect(
-      within(screen.getByTestId("runs-invocation-1001-outline-entry")).queryByRole(
-        "button",
-        { name: /fork from this invocation/i },
-      ),
+      within(
+        screen.getByTestId("runs-invocation-1001-outline-entry"),
+      ).queryByRole("button", { name: /fork from this invocation/i }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByTestId("runs-operation-2001-outline-entry"),

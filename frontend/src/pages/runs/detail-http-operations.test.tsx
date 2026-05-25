@@ -161,6 +161,23 @@ describe("RunsDetailPage HTTP operation invocations", () => {
 
     const outlineRender = render(<RunsDetailPage />);
 
+    expect(screen.getByTestId("runs-detail-page")).toHaveClass("h-full", "overflow-hidden");
+    expect(screen.getByTestId("runs-inspection-split-layout")).toHaveAttribute(
+      "data-slot",
+      "resizable-panel-group",
+    );
+    expect(screen.getByTestId("runs-evidence-console-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("runs-execution-outline-frame")).toHaveClass("min-h-96", "overflow-hidden");
+    const auditEvidenceSection = screen
+      .getByRole("heading", { name: "Audit evidence" })
+      .closest("[data-slot='card']");
+    expect(auditEvidenceSection).not.toBeNull();
+    expect(auditEvidenceSection as HTMLElement).toHaveTextContent(/trace-http/i);
+    expect(auditEvidenceSection as HTMLElement).toHaveTextContent(/2 invocation spans captured/i);
+    expect(auditEvidenceSection as HTMLElement).toHaveTextContent(/Input and final output captured/i);
+    expect(auditEvidenceSection as HTMLElement).toHaveTextContent(/0 events/i);
+    expect(auditEvidenceSection as HTMLElement).toHaveTextContent(/0 compact artifacts/i);
+
     expect(screen.getByText(/2 of 2 invocation\(s\) terminal/i)).toBeVisible();
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/0 agent invocation/i);
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/2 operation invocation/i);

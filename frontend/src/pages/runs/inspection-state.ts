@@ -32,17 +32,51 @@ type RunInspectionIndex = {
   stepIndexes: Set<number>;
 };
 
-const RUN_PANES: RunInspectionPane[] = ["finalOutput", "input", "lineage", "memory"];
+const RUN_PANES: RunInspectionPane[] = [
+  "finalOutput",
+  "input",
+  "lineage",
+  "memory",
+];
 const STEP_PANES: RunInspectionPane[] = ["details", "lineage", "error"];
-const AGENT_INVOCATION_PANES: RunInspectionPane[] = ["output", "input", "wiring", "lineage", "error"];
-const OPERATION_INVOCATION_PANES: RunInspectionPane[] = ["output", "request", "response", "lineage", "error"];
-const MEMORY_ARTIFACT_PANES: RunInspectionPane[] = ["details", "provenance", "lineage"];
+const AGENT_INVOCATION_PANES: RunInspectionPane[] = [
+  "output",
+  "input",
+  "wiring",
+  "lineage",
+  "error",
+];
+const OPERATION_INVOCATION_PANES: RunInspectionPane[] = [
+  "output",
+  "request",
+  "response",
+  "lineage",
+  "error",
+];
+const MEMORY_ARTIFACT_PANES: RunInspectionPane[] = [
+  "details",
+  "provenance",
+  "lineage",
+];
 
-function buildInspectionIndex(run: RunRead, steps: RunStepRead[]): RunInspectionIndex {
+function buildInspectionIndex(
+  run: RunRead,
+  steps: RunStepRead[],
+): RunInspectionIndex {
   return {
-    agentInvocationIds: new Set(steps.flatMap((step) => step.invocations.map((invocation) => invocation.id))),
-    memoryIds: new Set((run.memoryArtifacts ?? []).map((artifact) => artifact.memoryId)),
-    operationInvocationIds: new Set(steps.flatMap((step) => step.operationInvocations.map((invocation) => invocation.id))),
+    agentInvocationIds: new Set(
+      steps.flatMap((step) =>
+        step.invocations.map((invocation) => invocation.id),
+      ),
+    ),
+    memoryIds: new Set(
+      (run.memoryArtifacts ?? []).map((artifact) => artifact.memoryId),
+    ),
+    operationInvocationIds: new Set(
+      steps.flatMap((step) =>
+        step.operationInvocations.map((invocation) => invocation.id),
+      ),
+    ),
     stepIndexes: new Set(steps.map((step) => step.index)),
   };
 }
@@ -55,7 +89,9 @@ function parsePositiveInteger(value: string | undefined): number | null {
   return Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
 }
 
-export function inspectionPanesForTarget(target: RunInspectionTarget): RunInspectionPane[] {
+export function inspectionPanesForTarget(
+  target: RunInspectionTarget,
+): RunInspectionPane[] {
   if (target.type === "step") {
     return STEP_PANES;
   }
@@ -74,7 +110,10 @@ function defaultPaneForTarget(target: RunInspectionTarget): RunInspectionPane {
   if (target.type === "step" || target.type === "memoryArtifact") {
     return "details";
   }
-  if (target.type === "agentInvocation" || target.type === "operationInvocation") {
+  if (
+    target.type === "agentInvocation" ||
+    target.type === "operationInvocation"
+  ) {
     return "output";
   }
   return "finalOutput";
@@ -114,15 +153,24 @@ function parseAnchorTarget(hash: string): RunInspectionTarget | null {
     return { type: "step", stepIndex: Number(stepMatch[1]) };
   }
   if (invocationMatch) {
-    return { type: "agentInvocation", invocationId: Number(invocationMatch[1]) };
+    return {
+      type: "agentInvocation",
+      invocationId: Number(invocationMatch[1]),
+    };
   }
   if (operationMatch) {
-    return { type: "operationInvocation", invocationId: Number(operationMatch[1]) };
+    return {
+      type: "operationInvocation",
+      invocationId: Number(operationMatch[1]),
+    };
   }
   return null;
 }
 
-function targetExists(target: RunInspectionTarget, index: RunInspectionIndex): boolean {
+function targetExists(
+  target: RunInspectionTarget,
+  index: RunInspectionIndex,
+): boolean {
   if (target.type === "run") {
     return true;
   }
@@ -138,7 +186,12 @@ function targetExists(target: RunInspectionTarget, index: RunInspectionIndex): b
   return index.memoryIds.has(target.memoryId);
 }
 
-function canonicalTarget(run: RunRead, steps: RunStepRead[], searchParams: URLSearchParams, hash: string): RunInspectionTarget {
+function canonicalTarget(
+  run: RunRead,
+  steps: RunStepRead[],
+  searchParams: URLSearchParams,
+  hash: string,
+): RunInspectionTarget {
   const index = buildInspectionIndex(run, steps);
   const requestedTarget = parseInspectionTarget(searchParams.get("inspect"));
   if (requestedTarget && targetExists(requestedTarget, index)) {
@@ -169,7 +222,10 @@ export function resolveRunInspectionState({
   const validPanes = inspectionPanesForTarget(target);
 
   return {
-    pane: requestedPane && validPanes.includes(requestedPane) ? requestedPane : defaultPaneForTarget(target),
+    pane:
+      requestedPane && validPanes.includes(requestedPane)
+        ? requestedPane
+        : defaultPaneForTarget(target),
     target,
   };
 }
@@ -204,6 +260,22 @@ export function inspectionTargetHash(target: RunInspectionTarget): string {
     return `#memory-${target.memoryId}`;
   }
   return "#run-context";
+}
+
+export function inspectionTargetKindLabel(target: RunInspectionTarget): string {
+  if (target.type === "step") {
+    return "Step evidence";
+  }
+  if (target.type === "agentInvocation") {
+    return "Agent invocation";
+  }
+  if (target.type === "operationInvocation") {
+    return "Operation invocation";
+  }
+  if (target.type === "memoryArtifact") {
+    return "Memory artifact";
+  }
+  return "Run evidence";
 }
 
 export function inspectionPaneLabel(pane: RunInspectionPane): string {

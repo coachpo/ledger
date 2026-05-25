@@ -1,34 +1,33 @@
 import { AlertCircle, GitBranch, PlayCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
+import { SplitInspectorLayout } from "@/components/shared/split-inspector-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { useRun } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
-import type { RunQueueReason } from "@/lib/types/run";
 
 import {
   findForkTargetContext,
+  formatQueueReasonTitle,
   formatTargetKindLabel,
   formatUnfinishedRunStatus,
   getRunForkAvailability,
   hasCurrentForkLineage,
   isTerminalStatus,
+  runStatusTone,
   sortedInvocations,
   sortedOperationInvocations,
 } from "./detail-helpers";
 import {
   EvidenceViewer,
   ExecutionOutline,
+  RunAuditEvidenceSection,
   RunContextStrip,
   RunForkDialog,
 } from "./detail-sections";
@@ -39,12 +38,6 @@ import {
   type RunInspectionTarget,
 } from "./inspection-state";
 import { RunRerunDialog } from "./rerun-dialog";
-
-function formatQueueReasonTitle(reason: RunQueueReason): string {
-  return reason === "blocked-by-package-serial-policy"
-    ? "Blocked by package serial policy"
-    : "Awaiting worker capacity";
-}
 
 export function RunsDetailPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -92,17 +85,6 @@ export function RunsDetailPage() {
       ]),
     [steps],
   );
-  const inspectParam = searchParams.get("inspect");
-  const paneParam = searchParams.get("pane");
-  const requestedTab = inspectParam || paneParam ? "execution" : "summary";
-  const [activeTab, setActiveTab] = useState<"summary" | "execution">(
-    requestedTab,
-  );
-
-  useEffect(() => {
-    setActiveTab(requestedTab);
-  }, [requestedTab]);
-
   const forkDialogOpen = searchParams.get("fork") === "1";
   const resumeStepIndexParam = searchParams.get("resumeStepIndex");
   const forkInvocationIdParam = searchParams.get("invocationId");
@@ -254,72 +236,84 @@ export function RunsDetailPage() {
     });
   };
 
+  const lineageLabel = run.sourceRunId
+    ? isCurrentFork
+      ? `Forked from Run #${run.sourceRunId}`
+      : `Historical lineage from Run #${run.sourceRunId}`
+    : "Original run";
+  const startedLabel = run.startedAt
+    ? `Started ${formatDateTime(run.startedAt)}`
+    : `Queued ${formatDateTime(run.queuedAt)}`;
+  const finishedLabel = run.finishedAt
+    ? `Finished ${formatDateTime(run.finishedAt)}`
+    : formatUnfinishedRunStatus(run.status).replace(/^ · /, "");
+
+  const consoleRail = (
+    <section
+      className="flex h-full min-h-0 min-w-0 flex-col bg-background"
+      data-testid="runs-evidence-console-rail"
+    >
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-3"
+        data-testid="runs-detail-context-frame"
+      >
+        {run.error ? (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>Run failed</AlertTitle>
+            <AlertDescription>{run.error}</AlertDescription>
+          </Alert>
+        ) : null}
+        {run.status === "queued" && run.queue ? (
+          <Alert data-testid="runs-detail-queue-reason">
+            <AlertCircle />
+            <AlertTitle>{formatQueueReasonTitle(run.queue.reason)}</AlertTitle>
+            <AlertDescription>
+              {run.queue.message}
+              {run.queue.blockingRunId
+                ? ` Blocking run: #${run.queue.blockingRunId}.`
+                : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        <RunContextStrip
+          allInvocationsCount={allInvocations.length}
+          run={run}
+          runProgress={runProgress}
+          targetKindLabel={targetKindLabel}
+          terminalInvocationsCount={terminalInvocationsCount}
+        />
+        <RunAuditEvidenceSection
+          run={run}
+          traceSpanEntries={traceSpanEntries}
+        />
+        <div
+          className="min-h-96 overflow-hidden rounded-xl border"
+          data-testid="runs-execution-outline-frame"
+        >
+          <ExecutionOutline
+            activeInspection={activeInspection}
+            onSelect={selectInspection}
+            run={run}
+            steps={steps}
+            traceSpanEntries={traceSpanEntries}
+          />
+        </div>
+      </div>
+    </section>
+  );
+
   return (
     <div
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
       data-testid="runs-detail-page"
     >
-      <Tabs
-        className="flex h-full min-h-0 flex-1 flex-col gap-0"
-        value={activeTab}
-        onValueChange={(value) =>
-          setActiveTab(value as "summary" | "execution")
-        }
+      <div
+        className="shrink-0 border-b border-border bg-card/95 p-3 backdrop-blur"
+        data-testid="runs-detail-header"
       >
-        <div
-          className="shrink-0 border-b border-border bg-card/95 px-4 py-3 backdrop-blur"
-          data-testid="runs-detail-header"
-        >
-          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0 space-y-2">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <h1 className="text-xl font-semibold tracking-tight">
-                  Run #{run.id}
-                </h1>
-                <Badge
-                  className="max-w-full min-w-0 break-all"
-                  data-testid="runs-detail-target-identity"
-                  variant="outline"
-                >
-                  {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
-                </Badge>
-                {run.packageProvenance ? (
-                  <Badge
-                    className="max-w-full min-w-0 break-all"
-                    variant="secondary"
-                  >
-                    {run.packageProvenance.workflowPackageName}
-                  </Badge>
-                ) : null}
-              </div>
-              <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                <span>
-                  {run.startedAt
-                    ? `Started ${formatDateTime(run.startedAt)}`
-                    : `Queued ${formatDateTime(run.queuedAt)}`}
-                </span>
-                <span>
-                  {run.finishedAt
-                    ? `Finished ${formatDateTime(run.finishedAt)}`
-                    : formatUnfinishedRunStatus(run.status).replace(/^ · /, "")}
-                </span>
-                <span
-                  className="inline-flex min-w-0 items-center gap-1.5"
-                  data-testid="runs-detail-lineage-indicator"
-                >
-                  {run.sourceRunId ? (
-                    <>
-                      <GitBranch className="size-3.5 shrink-0" />
-                      {isCurrentFork
-                        ? `Forked from Run #${run.sourceRunId}`
-                        : `Historical lineage from Run #${run.sourceRunId}`}
-                    </>
-                  ) : (
-                    "Original run"
-                  )}
-                </span>
-              </div>
-            </div>
+        <PageContextBar
+          actions={
             <div
               className="flex min-w-0 flex-wrap items-center gap-2"
               data-testid="runs-detail-actions"
@@ -355,84 +349,83 @@ export function RunsDetailPage() {
                 <Link to="/runs">Back to runs</Link>
               </Button>
             </div>
-          </div>
-          <TabsList className="mt-3 grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="summary">Run summary</TabsTrigger>
-            <TabsTrigger value="execution">Execution trace</TabsTrigger>
-          </TabsList>
-        </div>
-        <TabsContent
-          className="m-0 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
-          forceMount
-          value="summary"
-        >
-          <div
-            className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overscroll-contain px-4 py-4"
-            data-testid="runs-detail-context-frame"
-          >
-            {run.error ? (
-              <Alert variant="destructive">
-                <AlertCircle />
-                <AlertTitle>Run failed</AlertTitle>
-                <AlertDescription>{run.error}</AlertDescription>
-              </Alert>
-            ) : null}
-            {run.status === "queued" && run.queue ? (
-              <Alert data-testid="runs-detail-queue-reason">
-                <AlertCircle />
-                <AlertTitle>{formatQueueReasonTitle(run.queue.reason)}</AlertTitle>
-                <AlertDescription>
-                  {run.queue.message}
-                  {run.queue.blockingRunId
-                    ? ` Blocking run: #${run.queue.blockingRunId}.`
-                    : null}
-                </AlertDescription>
-              </Alert>
-            ) : null}
-            <RunContextStrip
-              allInvocationsCount={allInvocations.length}
-              run={run}
-              runProgress={runProgress}
-              targetKindLabel={targetKindLabel}
-              terminalInvocationsCount={terminalInvocationsCount}
+          }
+          className="border-0 bg-transparent shadow-none"
+          description={
+            <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+              <span>{startedLabel}</span>
+              <span>{finishedLabel}</span>
+              <span
+                className="inline-flex min-w-0 items-center gap-1.5"
+                data-testid="runs-detail-lineage-indicator"
+              >
+                {run.sourceRunId ? (
+                  <GitBranch className="size-3.5 shrink-0" />
+                ) : null}
+                {lineageLabel}
+              </span>
+            </span>
+          }
+          meta={
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <Badge
+                className="max-w-full min-w-0 break-all"
+                data-testid="runs-detail-target-identity"
+                variant="outline"
+              >
+                {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
+              </Badge>
+              {run.packageProvenance ? (
+                <Badge
+                  className="max-w-full min-w-0 break-all"
+                  variant="secondary"
+                >
+                  {run.packageProvenance.workflowPackageName}
+                </Badge>
+              ) : null}
+            </div>
+          }
+          status={
+            <ResourceStatusStrip
+              items={[
+                {
+                  label: "Status",
+                  value: run.status,
+                  tone: runStatusTone(run.status),
+                },
+                { label: "Target", value: targetKindLabel },
+                { label: "Progress", value: `${runProgress}%` },
+                { label: "Tokens", value: run.totalTokens.toLocaleString() },
+              ]}
             />
-          </div>
-        </TabsContent>
-        <TabsContent
-          className="m-0 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
-          forceMount
-          value="execution"
+          }
+          title={`Run #${run.id}`}
+        />
+      </div>
+
+      <div className="min-h-0 min-w-0 flex-1 p-3">
+        <div
+          className="h-full min-h-0 min-w-0 flex-1 basis-0"
+          data-console-layout={consoleLayout}
+          data-testid="runs-inspection-workspace"
         >
-          <ResizablePanelGroup
-            className="h-full min-h-0 min-w-0 flex-1 basis-0"
-            data-console-layout={consoleLayout}
-            data-testid="runs-inspection-workspace"
+          <SplitInspectorLayout
+            className="h-full"
             direction={consoleDirection}
-          >
-            <ResizablePanel
-              className="min-h-0 min-w-0"
-              defaultSize={isMobileConsole ? 36 : 28}
-              maxSize={isMobileConsole ? 55 : 45}
-              minSize={isMobileConsole ? 24 : 18}
-            >
-              <ExecutionOutline
-                activeInspection={activeInspection}
-                onSelect={selectInspection}
-                run={run}
-                steps={steps}
-                traceSpanEntries={traceSpanEntries}
-              />
-            </ResizablePanel>
-            <ResizableHandle
-              className="bg-border/80"
-              data-testid="runs-inspection-resize-handle"
-              withHandle
-            />
-            <ResizablePanel
-              className="min-h-0 min-w-0"
-              defaultSize={isMobileConsole ? 64 : 72}
-              minSize={isMobileConsole ? 45 : 45}
-            >
+            emptyInspector={
+              <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+                Select execution evidence to inspect the captured payloads.
+              </div>
+            }
+            inspectorAriaLabel="Run evidence inspector"
+            leftPane={consoleRail}
+            leftPaneAriaLabel="Run summary and execution outline"
+            leftPanel={{
+              defaultSize: isMobileConsole ? 44 : 38,
+              maxSize: isMobileConsole ? 58 : 48,
+              minSize: isMobileConsole ? 34 : 28,
+            }}
+            rightPane={
               <EvidenceViewer
                 activeInspection={activeInspection}
                 copiedInvocations={copiedInvocations}
@@ -445,10 +438,15 @@ export function RunsDetailPage() {
                 run={run}
                 steps={steps}
               />
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        </TabsContent>
-      </Tabs>
+            }
+            rightPanel={{
+              defaultSize: isMobileConsole ? 56 : 62,
+              minSize: isMobileConsole ? 42 : 45,
+            }}
+            testId="runs-inspection-split-layout"
+          />
+        </div>
+      </div>
 
       <RunRerunDialog
         onClose={closeRerunDialog}

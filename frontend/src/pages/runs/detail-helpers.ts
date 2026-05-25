@@ -2,6 +2,7 @@ import type { UnknownRecord } from "@/lib/types/common";
 import type {
   RunAgentInvocationRead,
   RunOperationInvocationRead,
+  RunQueueReason,
   RunRead,
   RunRerunDraftRead,
   RunStatus,
@@ -28,7 +29,10 @@ export type ForkTargetContext = {
   step: RunStepRead;
 };
 
-export type RunDraftReadiness = Pick<RunRerunDraftRead, "ready" | "blockingErrors" | "warnings">;
+export type RunDraftReadiness = Pick<
+  RunRerunDraftRead,
+  "ready" | "blockingErrors" | "warnings"
+>;
 
 export type RunDraftReadinessDiagnostic = {
   field: string;
@@ -36,7 +40,8 @@ export type RunDraftReadinessDiagnostic = {
   severity: "error" | "warning";
 };
 
-export const DEFAULT_FORK_UNAVAILABLE_REASON = "Forking is available for succeeded Workflow Package runs and succeeded agent invocations.";
+export const DEFAULT_FORK_UNAVAILABLE_REASON =
+  "Forking is available for succeeded Workflow Package runs and succeeded agent invocations.";
 
 function isUnknownRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -46,23 +51,35 @@ function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function diagnosticFromRecord(value: unknown, severity: RunDraftReadinessDiagnostic["severity"]): RunDraftReadinessDiagnostic {
+function diagnosticFromRecord(
+  value: unknown,
+  severity: RunDraftReadinessDiagnostic["severity"],
+): RunDraftReadinessDiagnostic {
   const record = isUnknownRecord(value) ? value : {};
   return {
     field: stringValue(record.field) || stringValue(record.path) || "$",
-    issue: stringValue(record.issue) || stringValue(record.message) || "Review this run draft diagnostic.",
+    issue:
+      stringValue(record.issue) ||
+      stringValue(record.message) ||
+      "Review this run draft diagnostic.",
     severity,
   };
 }
 
-export function diagnosticsFromDraftReadiness(readiness: RunDraftReadiness | null | undefined): RunDraftReadinessDiagnostic[] {
+export function diagnosticsFromDraftReadiness(
+  readiness: RunDraftReadiness | null | undefined,
+): RunDraftReadinessDiagnostic[] {
   if (!readiness) {
     return [];
   }
 
   return [
-    ...readiness.blockingErrors.map((diagnostic) => diagnosticFromRecord(diagnostic, "error")),
-    ...readiness.warnings.map((diagnostic) => diagnosticFromRecord(diagnostic, "warning")),
+    ...readiness.blockingErrors.map((diagnostic) =>
+      diagnosticFromRecord(diagnostic, "error"),
+    ),
+    ...readiness.warnings.map((diagnostic) =>
+      diagnosticFromRecord(diagnostic, "warning"),
+    ),
   ];
 }
 
@@ -70,17 +87,46 @@ export function isTerminalStatus(status: RunStepStatus): boolean {
   return status === "succeeded" || status === "failed" || status === "skipped";
 }
 
-export function progressForInvocations(invocations: Array<{ status: RunStepStatus }>, fallbackStatus?: RunStepStatus | RunStatus): number {
+export function progressForInvocations(
+  invocations: Array<{ status: RunStepStatus }>,
+  fallbackStatus?: RunStepStatus | RunStatus,
+): number {
   if (invocations.length === 0) {
-    return fallbackStatus && fallbackStatus !== "running" && fallbackStatus !== "pending" ? 100 : 0;
+    return fallbackStatus &&
+      fallbackStatus !== "running" &&
+      fallbackStatus !== "pending"
+      ? 100
+      : 0;
   }
 
-  const completed = invocations.filter((invocation) => isTerminalStatus(invocation.status)).length;
+  const completed = invocations.filter((invocation) =>
+    isTerminalStatus(invocation.status),
+  ).length;
   return Math.round((completed / invocations.length) * 100);
 }
 
 export function formatUnfinishedRunStatus(status: RunStatus): string {
   return status === "queued" ? " · Queued" : " · Still running";
+}
+
+export function formatQueueReasonTitle(reason: RunQueueReason): string {
+  return reason === "blocked-by-package-serial-policy"
+    ? "Blocked by package serial policy"
+    : "Awaiting worker capacity";
+}
+
+export function runStatusTone(
+  status: RunStatus,
+): "neutral" | "success" | "warning" | "danger" {
+  if (status === "succeeded") {
+    return "success";
+  }
+
+  if (status === "failed") {
+    return "danger";
+  }
+
+  return status === "queued" ? "warning" : "neutral";
 }
 
 export function formatTargetKindLabel(targetKind: RunTargetKind): string {
@@ -101,12 +147,22 @@ export function describeRunTarget(targetKind: RunTargetKind): string {
     : "Workflow execution with step-by-step agent orchestration.";
 }
 
-export function sortedInvocations(invocations: RunAgentInvocationRead[]): RunAgentInvocationRead[] {
-  return [...invocations].sort((left, right) => left.position - right.position || left.slot.localeCompare(right.slot));
+export function sortedInvocations(
+  invocations: RunAgentInvocationRead[],
+): RunAgentInvocationRead[] {
+  return [...invocations].sort(
+    (left, right) =>
+      left.position - right.position || left.slot.localeCompare(right.slot),
+  );
 }
 
-export function sortedOperationInvocations(invocations: RunOperationInvocationRead[]): RunOperationInvocationRead[] {
-  return [...invocations].sort((left, right) => left.position - right.position || left.slot.localeCompare(right.slot));
+export function sortedOperationInvocations(
+  invocations: RunOperationInvocationRead[],
+): RunOperationInvocationRead[] {
+  return [...invocations].sort(
+    (left, right) =>
+      left.position - right.position || left.slot.localeCompare(right.slot),
+  );
 }
 
 export function findForkTargetContext(
@@ -134,7 +190,6 @@ export function getRunForkAvailability(
       isAvailable: false,
       reason: DEFAULT_FORK_UNAVAILABLE_REASON,
     };
-
   }
 
   if (resumeStepIndex === undefined || invocationId === undefined) {
@@ -152,7 +207,9 @@ export function getRunForkAvailability(
     };
   }
 
-  const selectedInvocation = selectedStep.invocations.find((invocation) => invocation.id === invocationId);
+  const selectedInvocation = selectedStep.invocations.find(
+    (invocation) => invocation.id === invocationId,
+  );
   if (!selectedInvocation) {
     return {
       isAvailable: false,
@@ -184,14 +241,21 @@ export function getRunForkAvailability(
   return { isAvailable: true, reason: null };
 }
 
-export function hasCurrentForkLineage(run: RunRead, steps: RunStepRead[]): boolean {
+export function hasCurrentForkLineage(
+  run: RunRead,
+  steps: RunStepRead[],
+): boolean {
   if (!run.sourceRunId) {
     return false;
   }
 
   return steps.some(
     (step) =>
-      step.index === run.resumeStepIndex
-      && step.invocations.some((invocation) => invocation.resolvedInputOrigin === "edited" && invocation.sourceInvocationId !== null),
+      step.index === run.resumeStepIndex &&
+      step.invocations.some(
+        (invocation) =>
+          invocation.resolvedInputOrigin === "edited" &&
+          invocation.sourceInvocationId !== null,
+      ),
   );
 }

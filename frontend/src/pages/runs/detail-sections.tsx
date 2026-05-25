@@ -33,6 +33,9 @@ import {
 import { Link, useNavigate } from "react-router";
 
 import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
+import { ConsoleSection } from "@/components/shared/console-section";
+import { EvidenceCluster } from "@/components/shared/evidence-cluster";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,8 +91,10 @@ import { stringifyJson } from "../platform-resource-helpers";
 import {
   DEFAULT_FORK_UNAVAILABLE_REASON,
   diagnosticsFromDraftReadiness,
+  formatQueueReasonTitle,
   getRunForkAvailability,
   progressForInvocations,
+  runStatusTone,
   sortedInvocations,
   sortedOperationInvocations,
   type ForkTargetContext,
@@ -101,6 +106,7 @@ import {
 import {
   inspectionPaneLabel,
   inspectionPanesForTarget,
+  inspectionTargetKindLabel,
   type RunInspectionPane,
   type RunInspectionState,
   type RunInspectionTarget,
@@ -774,10 +780,11 @@ function memoryProvenanceLabel(artifact: RunMemoryArtifactRead): string {
     .join(" · ");
 }
 
-const PROTOCOL_PROFILE_LABELS: Record<ModelConnectionProtocolProfile, string> = {
-  openai_chat_completions: "Chat Completions-compatible",
-  openai_responses: "Responses-compatible",
-};
+const PROTOCOL_PROFILE_LABELS: Record<ModelConnectionProtocolProfile, string> =
+  {
+    openai_chat_completions: "Chat Completions-compatible",
+    openai_responses: "Responses-compatible",
+  };
 
 const OUTPUT_STRATEGY_POLICY_LABELS: Record<
   ModelConnectionOutputStrategyPolicy,
@@ -798,15 +805,17 @@ const PARALLEL_TOOL_CALLS_POLICY_LABELS: Record<
   serialize: "Serialize calls",
 };
 
-const REASONING_POLICY_LABELS: Record<ModelConnectionReasoningPolicy, string> = {
-  allow: "Allow reasoning",
-  forbid: "Forbid reasoning",
-};
+const REASONING_POLICY_LABELS: Record<ModelConnectionReasoningPolicy, string> =
+  {
+    allow: "Allow reasoning",
+    forbid: "Forbid reasoning",
+  };
 
-const STREAMING_POLICY_LABELS: Record<ModelConnectionStreamingPolicy, string> = {
-  allow: "Allow streaming",
-  forbid: "Forbid streaming",
-};
+const STREAMING_POLICY_LABELS: Record<ModelConnectionStreamingPolicy, string> =
+  {
+    allow: "Allow streaming",
+    forbid: "Forbid streaming",
+  };
 
 const CAPABILITY_ORDER: (keyof ModelConnectionCapabilities)[] = [
   "textGeneration",
@@ -883,10 +892,7 @@ type RuntimeStrategySummary = {
 
 type RuntimeProfileMode = "summary" | "audit";
 
-type RuntimeCapabilityCounts = Record<
-  ModelConnectionCapabilityStatus,
-  number
->;
+type RuntimeCapabilityCounts = Record<ModelConnectionCapabilityStatus, number>;
 
 const RUNTIME_AUDIT_STRATEGY_LIMIT = 20;
 
@@ -1032,7 +1038,8 @@ function unsupportedRuntimeCapabilities(
   connection: RunPackageResolvedModelConnectionRead,
 ): Array<keyof ModelConnectionCapabilities> {
   return CAPABILITY_ORDER.filter(
-    (capabilityKey) => connection.capabilities[capabilityKey].status === "unsupported",
+    (capabilityKey) =>
+      connection.capabilities[capabilityKey].status === "unsupported",
   );
 }
 
@@ -1055,58 +1062,122 @@ function RunRuntimeProfileSection({ run }: { run: RunRead }) {
   );
 
   return (
-    <section
-      className="min-w-0 space-y-3"
-      data-testid="runs-runtime-profile"
-    >
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="text-base font-medium leading-none">Runtime profile</h3>
-        <div
-          className="flex min-w-0 flex-wrap items-center gap-2"
-          data-testid="runs-runtime-profile-mode"
-        >
-          <Button
-            className="h-8 cursor-pointer"
-            onClick={() => setProfileMode("summary")}
-            size="sm"
-            type="button"
-            variant={profileMode === "summary" ? "secondary" : "outline"}
+    <div data-testid="runs-runtime-profile">
+      <ConsoleSection
+        actions={
+          <div
+            className="flex min-w-0 flex-wrap items-center gap-2"
+            data-testid="runs-runtime-profile-mode"
           >
-            Summary
-          </Button>
-          <Button
-            className="h-8 cursor-pointer"
-            onClick={() => setProfileMode("audit")}
-            size="sm"
-            type="button"
-            variant={profileMode === "audit" ? "secondary" : "outline"}
-          >
-            Audit evidence
-          </Button>
-        </div>
-      </div>
-
-      {resolvedModelConnections.length === 0 ? (
-        <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-          No resolved model connections were recorded for this run.
-        </div>
-      ) : profileMode === "summary" ? (
-        <div
-          className="grid gap-4 2xl:grid-cols-2"
-          data-testid="runs-runtime-summary"
-        >
-          {resolvedModelConnections.map((connection) => {
-            const capabilityCounts = runtimeCapabilityCounts(connection);
-            const unsupportedCapabilities =
-              unsupportedRuntimeCapabilities(connection);
-            return (
+            <Button
+              className="h-8 cursor-pointer"
+              onClick={() => setProfileMode("summary")}
+              size="sm"
+              type="button"
+              variant={profileMode === "summary" ? "secondary" : "outline"}
+            >
+              Summary
+            </Button>
+            <Button
+              className="h-8 cursor-pointer"
+              onClick={() => setProfileMode("audit")}
+              size="sm"
+              type="button"
+              variant={profileMode === "audit" ? "secondary" : "outline"}
+            >
+              Audit evidence
+            </Button>
+          </div>
+        }
+        description="Frozen model connections, compatibility probes, and adapter-selected strategies captured with the run."
+        title="Runtime profile"
+      >
+        {resolvedModelConnections.length === 0 ? (
+          <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+            No resolved model connections were recorded for this run.
+          </div>
+        ) : (
+          <>
+            <div
+              className="grid gap-4 2xl:grid-cols-2"
+              data-testid="runs-runtime-summary"
+              hidden={profileMode !== "summary"}
+            >
+            {resolvedModelConnections.map((connection) => {
+              const capabilityCounts = runtimeCapabilityCounts(connection);
+              const unsupportedCapabilities =
+                unsupportedRuntimeCapabilities(connection);
+              return (
+                <article
+                  className="min-w-0 space-y-3 border-t border-border pt-3 first:border-t-0 first:pt-0"
+                  data-testid={`runs-runtime-profile-connection-${connection.key}`}
+                  key={connection.key}
+                >
+                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 space-y-1">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {connection.name}
+                      </p>
+                      <p className="break-all text-xs text-muted-foreground">
+                        {connection.key}
+                      </p>
+                    </div>
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:justify-end">
+                      <Badge variant="outline">
+                        {runtimeConnectionKindLabel(connection.connectionKind)}
+                      </Badge>
+                      <Badge variant="secondary">
+                        {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
+                      </Badge>
+                      <Badge variant="outline">
+                        {capabilityCounts.supported} supported
+                      </Badge>
+                      <Badge
+                        variant={
+                          capabilityCounts.unsupported > 0
+                            ? "destructive"
+                            : "outline"
+                        }
+                      >
+                        {capabilityCounts.unsupported} unsupported
+                      </Badge>
+                      <Badge
+                        variant={connection.hasApiKey ? "secondary" : "outline"}
+                      >
+                        {connection.hasApiKey
+                          ? "Credential present"
+                          : "No credential"}
+                      </Badge>
+                    </div>
+                  </div>
+                  <DetailGrid items={runtimeSummaryItems(connection)} />
+                  {unsupportedCapabilities.length > 0 ? (
+                    <p className="break-words border-l border-border pl-3 text-sm text-muted-foreground">
+                      Unsupported:{" "}
+                      {unsupportedCapabilities
+                        .map(
+                          (capabilityKey) => CAPABILITY_LABELS[capabilityKey],
+                        )
+                        .join(", ")}
+                    </p>
+                  ) : null}
+                </article>
+              );
+            })}
+            </div>
+            <div
+              className="space-y-3"
+              data-testid="runs-runtime-audit-evidence"
+              hidden={profileMode !== "audit"}
+            >
+            {resolvedModelConnections.map((connection) => (
               <article
-                className="min-w-0 space-y-3 border-t border-border pt-3 first:border-t-0 first:pt-0"
-                data-testid={`runs-runtime-profile-connection-${connection.key}`}
+                className="space-y-3 rounded-md border bg-card/80 p-3"
+                data-testid={`runs-runtime-audit-connection-${connection.key}`}
                 key={connection.key}
               >
-                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0 space-y-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-foreground">
                       {connection.name}
                     </p>
@@ -1114,213 +1185,168 @@ function RunRuntimeProfileSection({ run }: { run: RunRead }) {
                       {connection.key}
                     </p>
                   </div>
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:justify-end">
-                    <Badge variant="outline">
-                      {runtimeConnectionKindLabel(connection.connectionKind)}
-                    </Badge>
-                    <Badge variant="secondary">
-                      {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
-                    </Badge>
-                    <Badge variant="outline">
-                      {capabilityCounts.supported} supported
-                    </Badge>
-                    <Badge
-                      variant={
-                        capabilityCounts.unsupported > 0 ? "destructive" : "outline"
-                      }
-                    >
-                      {capabilityCounts.unsupported} unsupported
-                    </Badge>
-                    <Badge
-                      variant={connection.hasApiKey ? "secondary" : "outline"}
-                    >
-                      {connection.hasApiKey
-                        ? "Credential present"
-                        : "No credential"}
-                    </Badge>
-                  </div>
+                  <Badge variant="outline">
+                    {runtimeConnectionKindLabel(connection.connectionKind)}
+                  </Badge>
+                  <Badge variant="secondary">
+                    {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
+                  </Badge>
                 </div>
-                <DetailGrid items={runtimeSummaryItems(connection)} />
-                {unsupportedCapabilities.length > 0 ? (
-                  <p className="break-words border-l border-border pl-3 text-sm text-muted-foreground">
-                    Unsupported: {" "}
-                    {unsupportedCapabilities
-                      .map((capabilityKey) => CAPABILITY_LABELS[capabilityKey])
-                      .join(", ")}
-                  </p>
-                ) : null}
-              </article>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="space-y-3" data-testid="runs-runtime-audit-evidence">
-          {resolvedModelConnections.map((connection) => (
-            <article
-              className="space-y-3 rounded-md border bg-card/80 p-3"
-              data-testid={`runs-runtime-audit-connection-${connection.key}`}
-              key={connection.key}
-            >
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {connection.name}
-                  </p>
-                  <p className="break-all text-xs text-muted-foreground">
-                    {connection.key}
-                  </p>
-                </div>
-                <Badge variant="outline">
-                  {runtimeConnectionKindLabel(connection.connectionKind)}
-                </Badge>
-                <Badge variant="secondary">
-                  {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
-                </Badge>
-              </div>
-              <DetailGrid
-                items={[
-                  {
-                    label: "Protocol profile",
-                    value: PROTOCOL_PROFILE_LABELS[connection.protocolProfile],
-                  },
-                  { label: "Model id", value: connection.modelId },
-                  { label: "Base URL", value: connection.baseUrl },
-                  {
-                    label: "Reasoning effort",
-                    value: connection.reasoningEffort ?? "Not recorded",
-                  },
-                  {
-                    label: "Timeout",
-                    value: `${connection.timeoutSeconds}s`,
-                  },
-                  {
-                    label: "Probe cache TTL",
-                    value: `${connection.probeCacheTtlSeconds}s`,
-                  },
-                ]}
-              />
-              <section className="space-y-2">
-                <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Compatibility policies
-                </h4>
                 <DetailGrid
                   items={[
                     {
-                      label: "Output strategy",
+                      label: "Protocol profile",
                       value:
-                        OUTPUT_STRATEGY_POLICY_LABELS[
-                          connection.outputStrategyPolicy
-                        ],
+                        PROTOCOL_PROFILE_LABELS[connection.protocolProfile],
+                    },
+                    { label: "Model id", value: connection.modelId },
+                    { label: "Base URL", value: connection.baseUrl },
+                    {
+                      label: "Reasoning effort",
+                      value: connection.reasoningEffort ?? "Not recorded",
                     },
                     {
-                      label: "Parallel tool calls",
-                      value:
-                        PARALLEL_TOOL_CALLS_POLICY_LABELS[
-                          connection.parallelToolCallsPolicy
-                        ],
+                      label: "Timeout",
+                      value: `${connection.timeoutSeconds}s`,
                     },
                     {
-                      label: "Reasoning",
-                      value: REASONING_POLICY_LABELS[connection.reasoningPolicy],
-                    },
-                    {
-                      label: "Streaming",
-                      value: STREAMING_POLICY_LABELS[connection.streamingPolicy],
+                      label: "Probe cache TTL",
+                      value: `${connection.probeCacheTtlSeconds}s`,
                     },
                   ]}
                 />
-              </section>
-              <section className="space-y-2">
-                <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Capability probes
-                </h4>
-                <div className="grid gap-2 xl:grid-cols-2">
-                  {CAPABILITY_ORDER.map((capabilityKey) => {
-                    const state = connection.capabilities[capabilityKey];
-                    return (
-                      <div
-                        className="flex min-w-0 items-start justify-between gap-3 rounded-md border bg-background/70 p-3"
-                        key={capabilityKey}
-                      >
-                        <div className="min-w-0 space-y-1">
-                          <p className="text-sm font-medium text-foreground">
-                            {CAPABILITY_LABELS[capabilityKey]}
-                          </p>
-                          <p className="break-words text-xs text-muted-foreground">
-                            {state.detail || "No probe detail recorded."}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1 text-right">
-                          <Badge variant={capabilityStatusVariant(state.status)}>
-                            {capabilityStatusLabel(state.status)}
-                          </Badge>
-                          {state.lastProbedAt ? (
-                            <p className="text-[11px] text-muted-foreground">
-                              Last probed {formatDateTime(state.lastProbedAt)}
+                <section className="space-y-2">
+                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Compatibility policies
+                  </h4>
+                  <DetailGrid
+                    items={[
+                      {
+                        label: "Output strategy",
+                        value:
+                          OUTPUT_STRATEGY_POLICY_LABELS[
+                            connection.outputStrategyPolicy
+                          ],
+                      },
+                      {
+                        label: "Parallel tool calls",
+                        value:
+                          PARALLEL_TOOL_CALLS_POLICY_LABELS[
+                            connection.parallelToolCallsPolicy
+                          ],
+                      },
+                      {
+                        label: "Reasoning",
+                        value:
+                          REASONING_POLICY_LABELS[connection.reasoningPolicy],
+                      },
+                      {
+                        label: "Streaming",
+                        value:
+                          STREAMING_POLICY_LABELS[connection.streamingPolicy],
+                      },
+                    ]}
+                  />
+                </section>
+                <section className="space-y-2">
+                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Capability probes
+                  </h4>
+                  <div className="grid gap-2 xl:grid-cols-2">
+                    {CAPABILITY_ORDER.map((capabilityKey) => {
+                      const state = connection.capabilities[capabilityKey];
+                      return (
+                        <div
+                          className="flex min-w-0 items-start justify-between gap-3 rounded-md border bg-background/70 p-3"
+                          key={capabilityKey}
+                        >
+                          <div className="min-w-0 space-y-1">
+                            <p className="text-sm font-medium text-foreground">
+                              {CAPABILITY_LABELS[capabilityKey]}
                             </p>
-                          ) : null}
+                            <p className="break-words text-xs text-muted-foreground">
+                              {state.detail || "No probe detail recorded."}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+                            <Badge
+                              variant={capabilityStatusVariant(state.status)}
+                            >
+                              {capabilityStatusLabel(state.status)}
+                            </Badge>
+                            {state.lastProbedAt ? (
+                              <p className="text-[11px] text-muted-foreground">
+                                Last probed {formatDateTime(state.lastProbedAt)}
+                              </p>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+                </section>
+              </article>
+            ))}
+            <section
+              className="space-y-3 rounded-md border bg-card/70 p-3"
+              data-testid="runs-runtime-selected-strategies"
+            >
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Selected strategies
+                </h4>
+                <Badge variant="outline">
+                  {strategySummaries.length} invocation
+                  {strategySummaries.length === 1 ? "" : "s"}
+                </Badge>
+              </div>
+              {strategySummaries.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                  No adapter-selected strategy metadata was recorded for this
+                  run.
                 </div>
+              ) : (
+                <div className="space-y-3">
+                  {hiddenStrategyCount > 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Showing the first {visibleStrategySummaries.length} of{" "}
+                      {strategySummaries.length} invocation records.
+                    </p>
+                  ) : null}
+                  {visibleStrategySummaries.map((summary) => (
+                    <article
+                      className="space-y-3 rounded-md border bg-background/70 p-3"
+                      data-testid={`runs-runtime-strategy-${summary.key}`}
+                      key={summary.key}
+                    >
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <Badge variant="outline">
+                          Step {summary.stepIndex}
+                        </Badge>
+                        <Badge variant={statusVariant(summary.status)}>
+                          {summary.status}
+                        </Badge>
+                        <span className="min-w-0 break-words text-sm font-medium text-foreground">
+                          {summary.agentLabel}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Invocation #{summary.invocationId}
+                        </span>
+                      </div>
+                      <DetailGrid items={strategyItems(summary.strategies)} />
+                      {summary.usage ? (
+                        <DetailGrid items={usageItems(summary.usage)} />
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              )}
               </section>
-            </article>
-          ))}
-          <section
-            className="space-y-3 rounded-md border bg-card/70 p-3"
-            data-testid="runs-runtime-selected-strategies"
-          >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Selected strategies
-              </h4>
-              <Badge variant="outline">
-                {strategySummaries.length} invocation
-                {strategySummaries.length === 1 ? "" : "s"}
-              </Badge>
             </div>
-            {strategySummaries.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                No adapter-selected strategy metadata was recorded for this run.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {hiddenStrategyCount > 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    Showing the first {visibleStrategySummaries.length} of {strategySummaries.length} invocation records.
-                  </p>
-                ) : null}
-                {visibleStrategySummaries.map((summary) => (
-                  <article
-                    className="space-y-3 rounded-md border bg-background/70 p-3"
-                    data-testid={`runs-runtime-strategy-${summary.key}`}
-                    key={summary.key}
-                  >
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <Badge variant="outline">Step {summary.stepIndex}</Badge>
-                      <Badge variant={statusVariant(summary.status)}>
-                        {summary.status}
-                      </Badge>
-                      <span className="min-w-0 break-words text-sm font-medium text-foreground">
-                        {summary.agentLabel}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        Invocation #{summary.invocationId}
-                      </span>
-                    </div>
-                    <DetailGrid items={strategyItems(summary.strategies)} />
-                    {summary.usage ? (
-                      <DetailGrid items={usageItems(summary.usage)} />
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      )}
-    </section>
+          </>
+        )}
+      </ConsoleSection>
+    </div>
   );
 }
 
@@ -2006,82 +2032,171 @@ export function RunContextStrip({
   targetKindLabel: string;
   terminalInvocationsCount: number;
 }) {
+  const queueValue = run.queue
+    ? `${run.queue.state} · ${formatQueueReasonTitle(run.queue.reason)}`
+    : run.status === "queued"
+      ? "Queued without queue detail"
+      : "No queue hold";
+
   return (
     <section
-      className="grid min-w-0 gap-4 text-sm"
+      className="grid min-w-0 gap-3 text-sm"
       data-testid="runs-workspace-context"
     >
-      <section
-        aria-label="Execution status"
-        className="min-w-0 space-y-2"
-        data-testid="runs-summary-execution-row"
+      <ConsoleSection
+        description="Backend-owned progress, queue, status, and token truth for this immutable run snapshot."
+        title="Summary"
       >
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Execution status
-        </h2>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
-          <Badge
-            data-testid="runs-detail-status"
-            variant={statusVariant(run.status)}
+        <div className="flex min-w-0 flex-col gap-3">
+          <ResourceStatusStrip
+            items={[
+              {
+                label: "Status",
+                value: run.status,
+                tone: runStatusTone(run.status),
+              },
+              { label: "Target", value: targetKindLabel },
+              {
+                label: "Queue",
+                value: queueValue,
+                tone: run.queue ? "warning" : "muted",
+              },
+            ]}
+          />
+          <div className="min-w-0" data-testid="runs-summary-execution-row">
+            <Badge
+              data-testid="runs-detail-status"
+              variant={statusVariant(run.status)}
+            >
+              {run.status}
+            </Badge>{" "}
+            <Badge data-testid="runs-detail-target-kind" variant="outline">
+              {targetKindLabel}
+            </Badge>{" "}
+            <span className="min-w-0 break-words text-muted-foreground">
+              {terminalInvocationsCount} of {allInvocationsCount} invocation(s)
+              terminal.
+            </span>
+          </div>
+          <div
+            className="flex min-w-0 flex-col gap-2"
+            data-testid="runs-summary-progress-row"
           >
-            {run.status}
-          </Badge>
-          <Badge data-testid="runs-detail-target-kind" variant="outline">
-            {targetKindLabel}
-          </Badge>
-          <span className="min-w-0 break-words text-muted-foreground">
-            {terminalInvocationsCount} of {allInvocationsCount} invocation(s)
-            terminal.
-          </span>
+            <div className="flex items-center justify-between gap-3 text-muted-foreground">
+              <span>Run progress</span>
+              <span className="font-medium text-foreground">
+                {runProgress}%
+              </span>
+            </div>
+            <Progress className="min-w-0" value={runProgress} />
+          </div>
         </div>
-      </section>
+      </ConsoleSection>
 
-      <section aria-label="Token summary" className="min-w-0 space-y-2">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Token summary
-        </h2>
-        <dl
-          className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground"
-          data-testid="runs-summary-usage-row"
-        >
-          <div className="flex items-center gap-2">
+      <ConsoleSection
+        description="Token accounting stays split between inherited fork context and freshly executed work."
+        title="Lineage and usage"
+      >
+        <EvidenceCluster
+          items={[
+            {
+              label: "Total tokens",
+              value: run.totalTokens.toLocaleString(),
+              description: "All tokens in the read model.",
+            },
+            {
+              label: "Inherited tokens",
+              value: run.inheritedTokens.toLocaleString(),
+              description: "Copied upstream context in forked lineage.",
+            },
+            {
+              label: "Executed tokens",
+              value: run.executedTokens.toLocaleString(),
+              description: "Tokens generated by this run execution.",
+            },
+            {
+              label: "Resume boundary",
+              value: `Step ${run.resumeStepIndex}`,
+              description: run.sourceRunId
+                ? `Source run #${run.sourceRunId}`
+                : "Original run boundary.",
+            },
+          ]}
+          layout="grid"
+        />
+        <dl className="sr-only" data-testid="runs-summary-usage-row">
+          <div>
             <dt>Total tokens</dt>
-            <dd className="font-medium text-foreground">{run.totalTokens}</dd>
+            <dd>{run.totalTokens}</dd>
           </div>
-          <div className="flex items-center gap-2">
+          <div>
             <dt>Inherited tokens</dt>
-            <dd className="font-medium text-foreground">
-              {run.inheritedTokens}
-            </dd>
+            <dd>{run.inheritedTokens}</dd>
           </div>
-          <div className="flex items-center gap-2">
+          <div>
             <dt>Executed tokens</dt>
-            <dd className="font-medium text-foreground">
-              {run.executedTokens}
-            </dd>
+            <dd>{run.executedTokens}</dd>
           </div>
         </dl>
-      </section>
-
-      <section
-        aria-label="Progress"
-        className="min-w-0 space-y-2"
-        data-testid="runs-summary-progress-row"
-      >
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Progress
-        </h2>
-        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="flex items-center justify-between gap-3 text-muted-foreground sm:w-44 sm:justify-start">
-            <span>Run progress</span>
-            <span className="font-medium text-foreground">{runProgress}%</span>
-          </div>
-          <Progress className="min-w-0 flex-1" value={runProgress} />
-        </div>
-      </section>
+      </ConsoleSection>
 
       <RunRuntimeProfileSection run={run} />
     </section>
+  );
+}
+
+export function RunAuditEvidenceSection({
+  run,
+  traceSpanEntries,
+}: {
+  run: RunRead;
+  traceSpanEntries: TraceSpanEntry[];
+}) {
+  const groupedEvents = groupedMemoryEvents(run.memoryEvents ?? []);
+  const reportAuditLinks = run.memoryArtifacts.filter(
+    (artifact) => artifact.auditLinks?.report,
+  ).length;
+
+  return (
+    <ConsoleSection
+      description="Trace, payload, memory, and report audit breadcrumbs remain explicit before drilling into individual panes."
+      title="Audit evidence"
+    >
+      <EvidenceCluster
+        items={[
+          {
+            label: "Trace",
+            value: run.traceId ?? "Top-level trace missing",
+            description: `${traceSpanEntries.length} invocation span${traceSpanEntries.length === 1 ? "" : "s"} captured.`,
+            tone:
+              run.traceId || traceSpanEntries.length > 0
+                ? "verified"
+                : "warning",
+          },
+          {
+            label: "Payloads",
+            value:
+              run.finalOutput === null
+                ? "Final output pending"
+                : "Input and final output captured",
+            description:
+              "Wide JSON payloads stay inside scrollable inspection panes.",
+            tone: run.finalOutput === null ? "warning" : "verified",
+          },
+          {
+            label: "Memory groups",
+            value: `${run.memoryEvents.length} event${run.memoryEvents.length === 1 ? "" : "s"}`,
+            description: `${groupedEvents.retrievedContext.length} retrieved · ${groupedEvents.memoryWrites.length} write/reuse · ${groupedEvents.reviewFollowUp.length} review · ${groupedEvents.auditTrail.length} audit`,
+          },
+          {
+            label: "Artifacts",
+            value: `${run.memoryArtifacts.length} compact artifact${run.memoryArtifacts.length === 1 ? "" : "s"}`,
+            description: `${reportAuditLinks} report audit action${reportAuditLinks === 1 ? "" : "s"} sourced from artifact audit links.`,
+          },
+        ]}
+        layout="grid"
+      />
+    </ConsoleSection>
   );
 }
 
@@ -2231,7 +2346,9 @@ export function ExecutionOutline({
                   "min-w-0 border-l border-border pl-2 transition-colors",
                   isStepActive && "border-primary",
                   indicatorState === "executing" && "border-primary",
-                  indicatorState === "completed" && !isStepActive && "border-positive/60",
+                  indicatorState === "completed" &&
+                    !isStepActive &&
+                    "border-positive/60",
                 )}
                 data-testid={`runs-step-${step.index}`}
                 id={`step-${step.index}`}
@@ -2308,8 +2425,8 @@ export function ExecutionOutline({
                                 </span>
                               </span>
                               <span className="text-muted-foreground">
-                                {invocation.agentKey} v{invocation.agentVersion} ·
-                                input {invocation.resolvedInputOrigin}
+                                {invocation.agentKey} v{invocation.agentVersion}{" "}
+                                · input {invocation.resolvedInputOrigin}
                               </span>
                             </span>
                           </InspectionSelectorButton>
@@ -3270,7 +3387,9 @@ export function EvidenceViewer({
     const artifact = run.memoryArtifacts.find(
       (item) => item.memoryId === target.memoryId,
     );
-    content = artifact ? <MemoryArtifactEvidence artifact={artifact} run={run} /> : null;
+    content = artifact ? (
+      <MemoryArtifactEvidence artifact={artifact} run={run} />
+    ) : null;
   } else if (activeInspection.pane === "input") {
     content = (
       <RunPayloadPane
@@ -3310,6 +3429,9 @@ export function EvidenceViewer({
                 {title}
               </h2>
               <Badge variant="outline">
+                {inspectionTargetKindLabel(activeInspection.target)}
+              </Badge>
+              <Badge variant="secondary">
                 {inspectionPaneLabel(activeInspection.pane)}
               </Badge>
             </div>
