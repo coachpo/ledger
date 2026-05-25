@@ -2,11 +2,11 @@
 
 > Inherits `/AGENTS.md`. This file governs the live reference docs in `docs/`.
 >
-> Status: Docs consolidation reference for branch `main` at `adc9887`.
+> Status: Docs consolidation reference for branch `main` at `9d9a7ec`.
 
 ## OVERVIEW
 
-`docs/` has six canonical live owner documents: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and this `AGENTS.md`. Live code remains source of truth; these docs mirror the mounted browser/API surfaces and current persistence/runtime contracts.
+`docs/` has six canonical live owner documents: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and this `AGENTS.md`. Live code remains source of truth; these docs mirror the mounted browser/API surfaces and current persistence/runtime contracts, including package-first execution, backend-owned compatibility truth, platform-core memory, and finance-owned report history.
 
 Extension model: docs mirror the core app plus statically resident extensions; they should describe state-gated exposure, not marketplace installation or hot-loading.
 
@@ -27,7 +27,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 ## PENDING DESIGN NOTES
 
-`docs/pending-design/` may keep research and upgrade-design notes that are not live contracts. Do not treat pending-design files as canonical over the six owner docs or live code.
+`docs/pending-design/` may keep research and upgrade-design notes that are not live contracts. Do not treat pending-design files as canonical over the six owner docs or live code, even when a historical note names removed root docs such as `api-design.md`, `signaldeck-agent-platform.md`, `signaldeck-memory-layer-design.md`, or `run-input-schema-helptext.md`.
 
 ## CONVENTIONS
 
@@ -40,6 +40,9 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - `data-model.md` owns current persistence intent, not migration steps; `backend/app/db/` remains the schema-repair authority.
 - `test-plan.md` owns expected validation scope, not implementation history.
 - When documenting upgrades, keep platform-core behavior separate from extension-owned behavior.
+- Document `/api/memory` and `/memory` as platform-core explicit-private-scope memory surfaces; keep runtime shared namespace grants server-derived and keep historical agent reports plus `signaldeck.reports.lookup` under finance/report ownership.
+- Document Model Connection compatibility as backend-owned read/provenance truth; public writes may select `protocolProfile` but must not author capabilities, runtime policies, probe TTL, `apiStyle`, or `compatibilityProfile`.
+- Document tool-call recovery as typed and narrow: only pre-dispatch parser/schema/argument validation failures can use the bounded model-feedback retry path.
 - Finance-specific examples must not silently rewrite shared platform contracts.
 - PRD and requirements overlap is intentional: product framing lives in `prd.md`, testable requirements live in `requirements.md`.
 
@@ -60,3 +63,4 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Do not add child `AGENTS.md` files under `docs/`; this file is the docs governance boundary.
 - Do not leave stale branch/SHA status markers after refreshing docs.
 - Do not re-expand research notes into duplicate route tables, data models, validation plans, or implementation checklists.
+- Do not promote pending-design files or removed root docs as live contract sources after the six owner docs have been refreshed.

@@ -1,6 +1,6 @@
 # Technical Specification
 
-> Status: Live technical reference for branch `main` at `adc9887`.
+> Status: Live technical reference for branch `main` at `9d9a7ec`.
 
 ## Overview
 
@@ -30,7 +30,7 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 
 - `backend/app/main.py` owns app creation, exception handlers, CORS, and health.
 - `backend/app/api/router.py` composes preserved `/api/v1` finance routes behind extension gates.
-- `backend/app/api/platform_router.py` mounts `/api/workflow-packages`, `/api/model-connections`, `/api/extensions`, `/api/tools`, and `/api/runs`.
+- `backend/app/api/platform_router.py` mounts `/api/memory`, `/api/workflow-packages`, `/api/model-connections`, `/api/extensions`, `/api/tools`, and `/api/runs`.
 - `backend/app/extensions/signaldeck_finance/` contributes current finance/product/provider routes, tools, hooks, and registrars as `signaldeck.finance`.
 - `backend/app/api/dependencies.py` is the service composition root.
 - `backend/app/core/telemetry.py` owns optional Logfire setup and trace/span id formatting.
@@ -39,7 +39,7 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 ## Frontend Architecture
 
 - `frontend/src/App.tsx` creates the TanStack Query client, theme provider, error boundary, and router provider.
-- `frontend/src/routes.ts` defines flat routes for dashboard, portfolios, templates, reports, Workflow Packages, Model Connections, Extensions, and Runs.
+- `frontend/src/routes.ts` defines flat routes for dashboard, portfolios, templates, reports, Workflow Packages, Model Connections, Extensions, Tools-linked package authoring, Runs, and Memory.
 - `frontend/src/components/layout.tsx` owns sidebar labels, breadcrumbs, and the app shell.
 - `frontend/src/extensions/runtime-helpers.ts` assembles finance routes/nav from extension state; `ExtensionRead` is the slim `{key,label,enabled}` contract.
 - API helpers live under `frontend/src/lib/api/`; wire types live under `frontend/src/lib/types/`; query keys live in `frontend/src/lib/query-keys.ts`.
@@ -72,11 +72,12 @@ Template/report series use runtime inputs plus report metadata tags to resolve p
 | Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test`, `POST /api/model-connections/{connectionId}/capability-probe` |
 | Extensions | `GET /api/extensions`, `PATCH /api/extensions/{extensionKey}` |
 | Tools | `GET /api/tools` |
+| Memory | `POST /api/memory`, `POST /api/memory/{memoryId}/detail`, `POST /api/memory/{memoryId}/revisions`, `POST /api/memory/{memoryId}/events`, `POST /api/memory/{memoryId}/actions/resolve`, `POST /api/memory/{memoryId}/actions/reflect` |
 | Runs | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/fork-draft?sourceInvocationId=...`, `POST /api/runs/{runId}/forks` |
 
 Live package reads and writes do not include status. Package persistence stores dependency keys as artifact references; readiness endpoints evaluate those refs against live model connections, extension state, and package secret bindings. Deleting a package deletes its owned runs.
 
-Model Connection payloads use `protocolProfile` as the live selector, with `openai_chat_completions` and `openai_responses` as shipped values. Reads include capability states, policy fields, timeout, probe cache metadata, reachability-test metadata, and historical derived `apiStyle`; raw secrets are never returned.
+Model Connection payloads use `protocolProfile` as the live writable selector, with `openai_chat_completions` and `openai_responses` as shipped values. Backend `CompatibilityResolutionService` owns effective compatibility evidence for reads, preflight, runtime strategy selection, and run provenance. Public create/update requests accept writable connection identity, endpoint/model settings, `protocolProfile`, timeout, reasoning effort, and write-only `apiKey`; client-authored capabilities, policy fields, probe cache TTL, derived `apiStyle`, `compatibilityProfile`, and other compatibility truth are rejected rather than treated as authoritative. Reads include backend-derived capability states, policy fields, timeout, probe cache metadata, reachability-test metadata, and historical derived `apiStyle`; raw secrets are never returned.
 
 ## Workflow Packages, HTTP Operations, And Package Secrets
 
@@ -92,15 +93,19 @@ Package secret bindings are package-local encrypted values, not manifest/export 
 
 `/api/tools` is the core global read-only discovery host. Finance-owned tools appear only while `signaldeck.finance` is enabled. Platform-core memory tools remain visible when finance is disabled.
 
-Current native runtime tools include quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, `signaldeck.memory.write`, and `signaldeck.memory.lookup`.
+Current native runtime tools include quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, finance-owned report lookup, `signaldeck.memory.write`, and `signaldeck.memory.lookup`. The retired `signaldeck_reports_write` function name is fail-closed at native dispatch and is not live catalog metadata, ownership plumbing, or MCP fallback.
 
 `signaldeck.news.lookup` and `signaldeck.social_sentiment.lookup` are separate tools. Social sentiment accepts one symbol, optional `sources` of `reddit` and `stocktwits`, optional date bounds, and `itemLimit` up to `50`, returning source blocks, aggregate metrics, and warnings.
+
+Tool failure metadata is typed with `failureClass`, `source`, `phase`, `retryable`, and `disposition`. The retryable allowlist is limited to pre-dispatch provider tool-argument JSON/object failures, native tool argument validation, and MCP argument JSON/schema validation before transport dispatch. Auth, permission, grants, namespaces, extension-disabled states, missing secrets, unsupported or retired tool names, provider/network/transport errors, MCP transport errors, executor/business-rule failures, policy failures, output-schema failures, and retry-bound exhaustion are fatal.
+
+Model-feedback retries use one bounded correction attempt and record redacted `toolCallRetry` metadata. Retry admission is based on typed taxonomy, not free-form error text, provider status text, or exception class names alone.
 
 ## Runs, Scheduler, Reruns, And Forks
 
 The launch surface is `/workflow-packages/:packageId/run`, labeled `Launch Workflow Package`. It reads launch metadata, runs preflight, posts selected workflow key plus `parameters`, creates a durable queued run, and polls backend-owned progress/queue state while the explicit scheduler worker claims queued runs.
 
-Run detail includes `steps`, agent `invocations`, `operationInvocations`, `memoryArtifacts`, `memoryEvents`, `extensionDependencies`, and `packageProvenance`. Run package provenance carries sanitized `resolvedModelConnections` with protocol profile, model id, sanitized endpoint identity, capabilities, policies, probe cache TTL, timeout, and `hasApiKey`; it never includes raw API keys, headers, or provider payloads.
+Run detail includes `steps`, agent `invocations`, `operationInvocations`, `memoryArtifacts`, `memoryEvents`, `extensionDependencies`, `graphMetadata.modelGateway.failureTaxonomy`, bounded `toolCallRetries`, and `packageProvenance`. Run package provenance carries sanitized `resolvedModelConnections` from `ModelConnectionCompatibilityResolution` with protocol profile, model id, sanitized endpoint identity, backend-derived capabilities, policies, probe cache TTL, timeout, and `hasApiKey`; it never includes raw API keys, headers, or provider payloads.
 
 Run progress uses `unit`, `terminalCount`, `totalCount`, and `percent`, with terminal runs reporting `percent: 100`. Queue explanations are nullable backend read models that explain serial package-lane blocking or worker capacity.
 
@@ -108,13 +113,19 @@ Rerun is the root-parameter descendant flow. Fork is the invocation-input descen
 
 ## Core Memory Contract
 
-SignalDeck memory is platform-core infrastructure for Workflow Package runs. Runtime tools are `signaldeck.memory.write` and `signaldeck.memory.lookup`; exact-id `signaldeck.memory.get` is deferred. There is no public browser `/api/memory` CRUD surface in the current phase.
+SignalDeck memory is platform-core infrastructure for Workflow Package runs. Runtime tools are `signaldeck.memory.write` and `signaldeck.memory.lookup`; exact-id `signaldeck.memory.get` is deferred. `/api/memory` and `/memory` are platform-core explicit-private-scope surfaces, not finance routes and not generic CRUD.
 
 Memory writes use neutral `kind`, `summary`, `content`, `subjectRefs`, `attributes`, scope, status, revision, and trusted provenance. Writes create immutable revisions or reuse an exact duplicate active revision. Shared-scope conflicts return retryable `memory_revision_conflict`.
 
-Memory lookup is scoped. Explicit selectors may use scope, subject refs, kind, status, tags, query, limit, offset, and max characters. When selectors are omitted, the server falls back to current run/package/agent context instead of running unscoped global search.
+Memory lookup is scoped. Runtime selectors may use scope, subject refs, kind, status, tags, query, limit, offset, and max characters. When runtime-tool selectors are omitted, the server falls back to current run/package/agent context instead of running unscoped global search.
 
-Model-visible memory outputs may include memory/revision ids, status, kind, summary, content, subject refs, attributes, scope, provenance, and warnings. They must not expose report identity, raw markdown, download URLs, or audit links.
+Shared namespaces use `namespace` scope with keys shaped as `{ownerPackageKey}/{namespaceKey}`. Owner packages read and write their declared namespaces, while non-owner packages need explicit read or write grants. Wildcards, ownerless namespaces, global memory search, and cross-package private writes fail closed.
+
+`/api/memory` accepts body-carried `accessContext` and exposes bounded workflows: list explicit-scope memory, load detail, list revisions, list events, resolve, and reflect. List requests require `visibility="explicit-scope"` with a concrete private scope. Detail, revision, event, and action requests authorize the stored memory scope before returning data or mutating status.
+
+The browser `/memory` route requires a package key before issuing API calls. It supports optional workflow, agent, and run context plus explicit private scope selection. It does not accept browser-authored namespace declarations, namespace grants, or grant-visible namespace views. It renders canonical memory entries, detail, revisions, and events only for authorized scopes.
+
+Model-visible memory outputs may include memory/revision ids, status, kind, summary, content, subject refs, attributes, scope, provenance, and warnings. They must not expose report identity, raw markdown, download URLs, or audit links. API and UI memory projections return canonical memory only and do not include finance-owned report-history rows.
 
 ## Runtime Input Help Text
 
