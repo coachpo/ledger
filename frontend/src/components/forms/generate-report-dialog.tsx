@@ -10,19 +10,15 @@ import {
 import type { TemplateRuntimeInputs } from "@/lib/types/text-template";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { EntityDialogShell } from "@/components/shared/entity-dialog-shell";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -61,9 +57,11 @@ export function GenerateReportDialog({
   open,
   templateOptions,
 }: GenerateReportDialogProps) {
-  const [selectedTemplateId, setSelectedTemplateId] = useState(defaultTemplateId ?? "");
-  const [runtimeInputRows, setRuntimeInputRows] = useState<RuntimeInputRow[]>(() =>
-    createRuntimeInputRows("report", initialInputs),
+  const [selectedTemplateId, setSelectedTemplateId] = useState(
+    defaultTemplateId ?? "",
+  );
+  const [runtimeInputRows, setRuntimeInputRows] = useState<RuntimeInputRow[]>(
+    () => createRuntimeInputRows("report", initialInputs),
   );
 
   useEffect(() => {
@@ -88,7 +86,11 @@ export function GenerateReportDialog({
     setRuntimeInputRows((rows) => [...rows, createRuntimeInputRow("report")]);
   };
 
-  const updateRuntimeInputRow = (rowId: string, field: "key" | "value", value: string) => {
+  const updateRuntimeInputRow = (
+    rowId: string,
+    field: "key" | "value",
+    value: string,
+  ) => {
     setRuntimeInputRows((rows) =>
       rows.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)),
     );
@@ -98,7 +100,9 @@ export function GenerateReportDialog({
     setRuntimeInputRows((rows) => rows.filter((row) => row.id !== rowId));
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = (event?: { preventDefault: () => void }) => {
+    event?.preventDefault();
+
     if (!selectedTemplateId || isPending) {
       return;
     }
@@ -109,83 +113,139 @@ export function GenerateReportDialog({
     });
   };
 
+  const selectedTemplateName = templateOptions.find(
+    (template) => template.id === selectedTemplateId,
+  )?.name;
+  const formId = "generate-report-form";
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Generate Report</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-2">
-          <Label htmlFor="generate-report-template">Template</Label>
-          <Select
-            value={selectedTemplateId}
-            onValueChange={setSelectedTemplateId}
-            disabled={isPending || lockTemplateSelection}
-          >
-            <SelectTrigger id="generate-report-template" aria-label="Template">
-              <SelectValue placeholder="Select a template..." />
-            </SelectTrigger>
-            <SelectContent>
-              {templateOptions.map((template) => (
-                <SelectItem key={template.id} value={template.id}>
-                  {template.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">Runtime Inputs</p>
-            <Button type="button" variant="outline" size="sm" onClick={addRuntimeInputRow}>
-              Add Input
+      <EntityDialogShell
+        title="Generate Report"
+        description={description}
+        constraintStrip={
+          <ResourceStatusStrip
+            items={[
+              {
+                label: "Template",
+                value: selectedTemplateName ?? "Select one",
+              },
+              {
+                label: "Runtime inputs",
+                value: `${runtimeInputRows.length} ${runtimeInputRows.length === 1 ? "row" : "rows"}`,
+              },
+              {
+                label: "Selection",
+                value: lockTemplateSelection ? "Locked" : "Editable",
+              },
+            ]}
+          />
+        }
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => handleOpenChange(false)}
+            >
+              Cancel
             </Button>
+            <Button
+              form={formId}
+              type="submit"
+              disabled={!selectedTemplateId || isPending}
+            >
+              {isPending ? "Generating..." : "Generate"}
+            </Button>
+          </>
+        }
+      >
+        <form
+          id={formId}
+          className="flex flex-col gap-4"
+          onSubmit={handleGenerate}
+        >
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="generate-report-template">Template</Label>
+            <Select
+              value={selectedTemplateId}
+              onValueChange={setSelectedTemplateId}
+              disabled={isPending || lockTemplateSelection}
+            >
+              <SelectTrigger
+                id="generate-report-template"
+                aria-label="Template"
+              >
+                <SelectValue placeholder="Select a template..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {templateOptions.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Use key/value pairs like `ticker`, `portfolio_slug`, or `analysis_tag` when the
-            selected template is parameterized.
-          </p>
-          {runtimeInputRows.length === 0 ? (
-            <p className="text-xs italic text-muted-foreground">No runtime inputs provided.</p>
-          ) : null}
-            {runtimeInputRows.map((row) => (
-              <div key={row.id} className="flex items-center gap-2">
-                <Input
-                  aria-label={`Runtime input key ${row.id}`}
-                  name={`runtimeInputKey-${row.id}`}
-                  value={row.key}
-                  onChange={(event) => updateRuntimeInputRow(row.id, "key", event.target.value)}
-                  placeholder="ticker"
-                />
-                <Input
-                  aria-label={`Runtime input value ${row.id}`}
-                  name={`runtimeInputValue-${row.id}`}
-                  value={row.value}
-                  onChange={(event) => updateRuntimeInputRow(row.id, "value", event.target.value)}
-                  placeholder="AAPL"
-              />
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium">Runtime Inputs</p>
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => removeRuntimeInputRow(row.id)}
-                aria-label={`Remove runtime input ${row.key || row.id}`}
+                variant="outline"
+                size="sm"
+                onClick={addRuntimeInputRow}
               >
-                <Trash2 className="size-3.5" />
+                Add Input
               </Button>
             </div>
-          ))}
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => handleOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={handleGenerate} disabled={!selectedTemplateId || isPending}>
-            {isPending ? "Generating..." : "Generate"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+            <p className="text-xs text-muted-foreground">
+              Use key/value pairs like `ticker`, `portfolio_slug`, or
+              `analysis_tag` when the selected template is parameterized.
+            </p>
+            {runtimeInputRows.length === 0 ? (
+              <p className="text-xs italic text-muted-foreground">
+                No runtime inputs provided.
+              </p>
+            ) : null}
+            <div className="flex flex-col gap-2">
+              {runtimeInputRows.map((row) => (
+                <div key={row.id} className="flex items-center gap-2">
+                  <Input
+                    aria-label={`Runtime input key ${row.id}`}
+                    name={`runtimeInputKey-${row.id}`}
+                    value={row.key}
+                    onChange={(event) =>
+                      updateRuntimeInputRow(row.id, "key", event.target.value)
+                    }
+                    placeholder="ticker"
+                  />
+                  <Input
+                    aria-label={`Runtime input value ${row.id}`}
+                    name={`runtimeInputValue-${row.id}`}
+                    value={row.value}
+                    onChange={(event) =>
+                      updateRuntimeInputRow(row.id, "value", event.target.value)
+                    }
+                    placeholder="AAPL"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeRuntimeInputRow(row.id)}
+                    aria-label={`Remove runtime input ${row.key || row.id}`}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </form>
+      </EntityDialogShell>
     </Dialog>
   );
 }

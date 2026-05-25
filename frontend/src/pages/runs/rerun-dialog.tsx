@@ -3,24 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { useCreateRunRerun, useRunRerunDraft } from "@/hooks/use-runs";
+import { EntityDialogShell } from "@/components/shared/entity-dialog-shell";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -224,6 +212,27 @@ export function RunRerunDialog({
     setParametersText(formatJsonEditorValue(draftQuery.data.parameters));
     setApiError(null);
   };
+  const constraintItems = draftQuery.data
+    ? [
+        {
+          label: "Source run",
+          value: `#${draftQuery.data.sourceRunId}`,
+        },
+        {
+          label: "Draft",
+          value: hasDraftEdits ? "Edited" : "Captured snapshot",
+        },
+        {
+          label: "Readiness",
+          value: draftQuery.data.ready ? "Ready" : "Blocked",
+        },
+      ]
+    : [
+        {
+          label: "Draft",
+          value: draftQuery.isPending ? "Loading" : "Unavailable",
+        },
+      ];
   const handleSubmit = async () => {
     if (!rerunPayload) {
       return;
@@ -254,68 +263,91 @@ export function RunRerunDialog({
         }
       }}
     >
-      <DialogContent className="max-h-dvh overflow-y-auto sm:max-w-3xl">
-        <DialogHeader>
-          <div className="flex flex-wrap items-center gap-2 pr-6">
-            <DialogTitle>Run snapshot again</DialogTitle>
-            {draftQuery.data ? (
-              <Badge variant="outline">
-                Source run #{draftQuery.data.sourceRunId}
-              </Badge>
-            ) : null}
-            {draftQuery.data ? (
-              <Badge variant={hasDraftEdits ? "secondary" : "outline"}>
-                {hasDraftEdits ? "Edited draft" : "Captured snapshot"}
-              </Badge>
-            ) : null}
-          </div>
-          <DialogDescription>
-            Create a new run from this captured snapshot.
-          </DialogDescription>
-        </DialogHeader>
+      <EntityDialogShell
+        className="sm:max-w-3xl"
+        title="Run snapshot again"
+        description="Create a new run from this captured snapshot."
+        constraintStrip={<ResourceStatusStrip items={constraintItems} />}
+        footer={
+          <>
+            <Button
+              disabled={createRerun.isPending}
+              onClick={closeDialog}
+              type="button"
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!draftQuery.data || createRerun.isPending}
+              onClick={resetToDraft}
+              type="button"
+              variant="outline"
+            >
+              <RotateCcw data-icon="inline-start" />
+              Reset draft
+            </Button>
+            <Button
+              data-testid="run-rerun-submit"
+              disabled={isSubmitDisabled}
+              onClick={() => void handleSubmit()}
+              type="button"
+            >
+              {createRerun.isPending ? (
+                <Loader2 className="animate-spin" data-icon="inline-start" />
+              ) : null}
+              Run snapshot again
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          {draftQuery.isPending ? (
+            <div
+              className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground"
+              data-testid="run-rerun-loading"
+            >
+              <Loader2 className="size-4 animate-spin" />
+              Loading rerun draft...
+            </div>
+          ) : null}
+          {draftQuery.isError ? (
+            <Alert variant="destructive" data-testid="run-rerun-draft-error">
+              <AlertCircle />
+              <AlertTitle>Unable to load rerun draft</AlertTitle>
+              <AlertDescription>
+                {draftQuery.error instanceof Error
+                  ? draftQuery.error.message
+                  : "The rerun draft could not be loaded."}
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
-        {draftQuery.isPending ? (
-          <div
-            className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground"
-            data-testid="run-rerun-loading"
-          >
-            <Loader2 className="size-4 animate-spin" />
-            Loading rerun draft...
-          </div>
-        ) : null}
-        {draftQuery.isError ? (
-          <Alert variant="destructive" data-testid="run-rerun-draft-error">
-            <AlertCircle />
-            <AlertTitle>Unable to load rerun draft</AlertTitle>
-            <AlertDescription>
-              {draftQuery.error instanceof Error
-                ? draftQuery.error.message
-                : "The rerun draft could not be loaded."}
-            </AlertDescription>
-          </Alert>
-        ) : null}
+          {apiError ? (
+            <Alert variant="destructive" data-testid="run-rerun-api-error">
+              <AlertCircle />
+              <AlertTitle>Rerun creation failed</AlertTitle>
+              <AlertDescription>{apiError}</AlertDescription>
+            </Alert>
+          ) : null}
 
-        {apiError ? (
-          <Alert variant="destructive" data-testid="run-rerun-api-error">
-            <AlertCircle />
-            <AlertTitle>Rerun creation failed</AlertTitle>
-            <AlertDescription>{apiError}</AlertDescription>
-          </Alert>
-        ) : null}
+          {draftQuery.data ? (
+            <RunDraftReadinessPanel readiness={draftQuery.data} />
+          ) : null}
 
-        {draftQuery.data ? (
-          <RunDraftReadinessPanel readiness={draftQuery.data} />
-        ) : null}
-
-        {draftQuery.data ? (
-          <Card className="gap-3" data-testid="run-rerun-dialog-body">
-            <CardHeader>
-              <CardTitle className="text-base">Root run parameters</CardTitle>
-              <CardDescription>
-                Edit root parameters before creating the rerun.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+          {draftQuery.data ? (
+            <section
+              className="flex flex-col gap-3 rounded-lg border bg-card p-4 text-card-foreground"
+              data-testid="run-rerun-dialog-body"
+            >
+              <div className="flex flex-col gap-1">
+                <h3 className="text-base font-medium leading-none">
+                  Root run parameters
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Edit root parameters before creating the rerun.
+                </p>
+              </div>
               <JsonEditorField
                 disabled={createRerun.isPending}
                 error={parametersValidation.error}
@@ -327,41 +359,10 @@ export function RunRerunDialog({
                 }}
                 value={parametersText}
               />
-            </CardContent>
-          </Card>
-        ) : null}
-
-        <DialogFooter>
-          <Button
-            disabled={createRerun.isPending}
-            onClick={closeDialog}
-            type="button"
-            variant="ghost"
-          >
-            Cancel
-          </Button>
-          <Button
-            disabled={!draftQuery.data || createRerun.isPending}
-            onClick={resetToDraft}
-            type="button"
-            variant="outline"
-          >
-            <RotateCcw data-icon="inline-start" />
-            Reset draft
-          </Button>
-          <Button
-            data-testid="run-rerun-submit"
-            disabled={isSubmitDisabled}
-            onClick={() => void handleSubmit()}
-            type="button"
-          >
-            {createRerun.isPending ? (
-              <Loader2 className="animate-spin" data-icon="inline-start" />
-            ) : null}
-            Run snapshot again
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+            </section>
+          ) : null}
+        </div>
+      </EntityDialogShell>
     </Dialog>
   );
 }

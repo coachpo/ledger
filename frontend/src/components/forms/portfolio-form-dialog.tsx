@@ -3,11 +3,20 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 
-import type { PortfolioRead, PortfolioUpdateInput, PortfolioWriteInput } from "@/lib/types/portfolio";
-import { portfolioCreateFormSchema, type PortfolioCreateFormValues } from "@/components/shared/form-schemas";
+import type {
+  PortfolioRead,
+  PortfolioUpdateInput,
+  PortfolioWriteInput,
+} from "@/lib/types/portfolio";
+import {
+  portfolioCreateFormSchema,
+  type PortfolioCreateFormValues,
+} from "@/components/shared/form-schemas";
 
+import { EntityDialogShell } from "@/components/shared/entity-dialog-shell";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -55,15 +64,58 @@ export function PortfolioFormDialog({
     });
   }, [form, initial, initialBaseCurrency, open]);
 
+  const formId = "portfolio-form-dialog-form";
+  const dialogTitle = initial ? "Edit Portfolio" : "Create Portfolio";
+  const dialogDescription = initial
+    ? "Update the portfolio identity fields that remain editable after creation."
+    : "Create a Finance Workspace portfolio with a stable slug and base currency.";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{initial ? "Edit Portfolio" : "Create Portfolio"}</DialogTitle>
-        </DialogHeader>
+      <EntityDialogShell
+        title={dialogTitle}
+        description={dialogDescription}
+        constraintStrip={
+          <ResourceStatusStrip
+            items={[
+              {
+                label: "Mode",
+                value: initial ? "Editing" : "Creating",
+              },
+              {
+                label: "Slug",
+                value: initial ? "Immutable" : "Required",
+              },
+              {
+                label: "Currency",
+                value: initial ? initialBaseCurrency : "3-letter code",
+              },
+            ]}
+          />
+        }
+        footer={
+          <>
+            <Button
+              onClick={() => onOpenChange(false)}
+              type="button"
+              variant="outline"
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button form={formId} disabled={isPending} type="submit">
+              {isPending ? (
+                <Loader2 className="animate-spin" data-icon="inline-start" />
+              ) : null}
+              Save
+            </Button>
+          </>
+        }
+      >
         <Form {...form}>
           <form
-            className="space-y-4"
+            id={formId}
+            className="flex flex-col gap-4"
             onSubmit={form.handleSubmit((values) => {
               const payload = {
                 description: values.description.trim() || null,
@@ -107,7 +159,9 @@ export function PortfolioFormDialog({
                       autoCapitalize="off"
                       autoCorrect="off"
                       disabled={isPending || Boolean(initial)}
-                      onChange={(event) => field.onChange(event.target.value.toLowerCase())}
+                      onChange={(event) =>
+                        field.onChange(event.target.value.toLowerCase())
+                      }
                       placeholder="retirement"
                     />
                   </FormControl>
@@ -144,7 +198,9 @@ export function PortfolioFormDialog({
                       {...field}
                       disabled={isPending || Boolean(initial)}
                       maxLength={3}
-                      onChange={(event) => field.onChange(event.target.value.toUpperCase())}
+                      onChange={(event) =>
+                        field.onChange(event.target.value.toUpperCase())
+                      }
                       placeholder="USD"
                     />
                   </FormControl>
@@ -152,18 +208,9 @@ export function PortfolioFormDialog({
                 </FormItem>
               )}
             />
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => onOpenChange(false)} type="button" variant="outline" disabled={isPending}>
-                Cancel
-              </Button>
-              <Button disabled={isPending} type="submit">
-                {isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                Save
-              </Button>
-            </div>
           </form>
         </Form>
-      </DialogContent>
+      </EntityDialogShell>
     </Dialog>
   );
 }
