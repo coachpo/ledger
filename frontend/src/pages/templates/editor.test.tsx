@@ -130,6 +130,20 @@ describe("TemplateEditorPage", () => {
     expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0");
     expect(shell).toHaveAttribute("aria-labelledby", "template-editor-title");
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
+    expect(screen.getByTestId("template-editor-header")).toHaveClass(
+      "sticky",
+      "top-0",
+      "z-20",
+    );
+    expect(screen.getByTestId("template-authoring-context")).toHaveClass(
+      "grid",
+      "shrink-0",
+    );
+    expect(screen.getByTestId("template-editor-split")).toHaveClass(
+      "min-h-0",
+      "flex-1",
+      "rounded-xl",
+    );
     expect(
       screen.getByRole("heading", { name: "Create Template" }),
     ).toBeVisible();
@@ -143,6 +157,9 @@ describe("TemplateEditorPage", () => {
     expect(screen.getByRole("button", { name: "Close editor" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(screen.getByText("Unsaved draft")).toBeVisible();
+    expect(screen.getByText("Exact Runtime Input JSON")).toBeVisible();
+    expect(screen.getByText("Runtime Inputs")).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Generate Report" }),
     ).toBeDisabled();
