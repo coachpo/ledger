@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ModelConnectionsEditorPage } from "./editor";
@@ -132,7 +132,7 @@ describe("ModelConnectionsEditorPage", () => {
     );
   });
 
-  it("renders a full-height semantic form shell with labeled core controls", () => {
+  it("renders a full-height details-plus-evidence shell with labeled core controls", () => {
     render(<ModelConnectionsEditorPage />);
 
     const shell = screen.getByTestId("model-connections-editor");
@@ -175,11 +175,15 @@ describe("ModelConnectionsEditorPage", () => {
       screen.getByRole("button", { name: /save model connection/i }),
     ).toBeEnabled();
     expect(
-      screen.getByText(
+      screen.getAllByText(
         /test connection checks reachability on the saved endpoint only/i,
-      ),
+      )[0],
     ).toBeVisible();
+    expect(screen.getByText("Editable connection details")).toBeVisible();
+    expect(screen.getByText("Credential rotation")).toBeVisible();
     expect(screen.getByText("Compatibility evidence")).toBeVisible();
+    expect(screen.getByText("Capability matrix")).toBeVisible();
+    expect(screen.getByText("Backend runtime policies")).toBeVisible();
     expect(screen.getAllByText("Strict JSON schema output")[0]).toBeVisible();
     expect(screen.getByText("Output strategy policy")).toBeVisible();
     expect(
@@ -485,8 +489,10 @@ describe("ModelConnectionsEditorPage", () => {
     await waitFor(() =>
       expect(screen.getByTestId("model-connection-feedback")).toBeVisible(),
     );
-    expect(screen.getByText(/reachability succeeded/i)).toBeVisible();
-    expect(screen.getByText(/connection ok/i)).toBeVisible();
+    const feedback = within(screen.getByTestId("model-connection-feedback"));
+    expect(feedback.getByText(/reachability succeeded/i)).toBeVisible();
+    expect(feedback.getByText(/connection ok/i)).toBeVisible();
+    expect(screen.getAllByText(/reachability succeeded/i)[0]).toBeVisible();
     expect(toastSuccessMock).toHaveBeenCalledWith("Connection OK");
   });
 
@@ -505,8 +511,10 @@ describe("ModelConnectionsEditorPage", () => {
     await waitFor(() =>
       expect(screen.getByTestId("model-connection-feedback")).toBeVisible(),
     );
-    expect(screen.getByText(/reachability failed/i)).toBeVisible();
-    expect(screen.getByText(/key rejected/i)).toBeVisible();
+    const feedback = within(screen.getByTestId("model-connection-feedback"));
+    expect(feedback.getByText(/reachability failed/i)).toBeVisible();
+    expect(feedback.getByText(/key rejected/i)).toBeVisible();
+    expect(screen.getAllByText(/reachability failed/i)[0]).toBeVisible();
     expect(toastErrorMock).toHaveBeenCalledWith("Key rejected");
   });
 
@@ -541,8 +549,12 @@ describe("ModelConnectionsEditorPage", () => {
         screen.getByTestId("model-connection-probe-feedback"),
       ).toBeVisible(),
     );
-    expect(screen.getByText(/capability probe completed/i)).toBeVisible();
-    expect(screen.getByText(/fresh probe recorded/i)).toBeVisible();
+    const feedback = within(
+      screen.getByTestId("model-connection-probe-feedback"),
+    );
+    expect(feedback.getByText(/capability probe completed/i)).toBeVisible();
+    expect(feedback.getByText(/fresh probe recorded/i)).toBeVisible();
+    expect(screen.getAllByText(/capability probe completed/i)[0]).toBeVisible();
     expect(toastSuccessMock).toHaveBeenCalledWith(
       "Capability probe completed",
     );

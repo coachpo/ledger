@@ -11,16 +11,15 @@ import {
   useUpdateModelConnection,
 } from "@/hooks/use-model-connections";
 import { SecretInput } from "@/components/forms/secret-input";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { ConsoleSection } from "@/components/shared/console-section";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  EvidenceCluster,
+  type EvidenceClusterItem,
+  type EvidenceClusterTone,
+} from "@/components/shared/evidence-cluster";
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -35,7 +34,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/format";
 import type {
   ModelConnectionCapabilities,
+  ModelConnectionCapabilityStatus,
   ModelConnectionCreateInput,
+  ModelConnectionKind,
   ModelConnectionOutputStrategyPolicy,
   ModelConnectionParallelToolCallsPolicy,
   ModelConnectionProtocolProfile,
@@ -199,6 +200,192 @@ function parsePositiveInteger(fieldName: string, value: string) {
 
 function parseTimeoutSeconds(value: string) {
   return parsePositiveInteger("Timeout seconds", value);
+}
+
+function getFeedbackTone(variant: ConnectionFeedback["variant"]): EvidenceClusterTone {
+  return variant === "default" ? "verified" : "danger";
+}
+
+function getCapabilityEvidenceTone(
+  status: ModelConnectionCapabilityStatus,
+): EvidenceClusterTone {
+  if (status === "supported") {
+    return "verified";
+  }
+
+  if (status === "unsupported") {
+    return "danger";
+  }
+
+  return status === "unknown" ? "warning" : "neutral";
+}
+
+function getStoredReachabilityTone(
+  connection: ModelConnectionRead | undefined,
+): EvidenceClusterTone {
+  if (connection?.lastTestOk === true) {
+    return "verified";
+  }
+
+  if (connection?.lastTestOk === false) {
+    return "danger";
+  }
+
+  return "warning";
+}
+
+function getStoredReachabilityValue(connection: ModelConnectionRead | undefined) {
+  if (connection?.lastTestOk === true) {
+    return "Last reachability test passed";
+  }
+
+  if (connection?.lastTestOk === false) {
+    return "Last reachability test failed";
+  }
+
+  return "No reachability test recorded";
+}
+
+function getCredentialEvidence(connectionKind: ModelConnectionKind) {
+  if (connectionKind === "deterministic_smoke") {
+    return {
+      description:
+        "Deterministic smoke connections can run offline fixtures without an API key.",
+      value: "API key optional",
+    };
+  }
+
+  return {
+    description:
+      "Saved provider credentials stay write-only and can only be rotated from this editor.",
+    value: "Write-only secret",
+  };
+}
+
+function buildConnectionEvidenceItems({
+  connection,
+  connectionFeedback,
+  connectionKind,
+  probeFeedback,
+  values,
+}: {
+  connection?: ModelConnectionRead;
+  connectionFeedback: ConnectionFeedback | null;
+  connectionKind: ModelConnectionKind;
+  probeFeedback: ConnectionFeedback | null;
+  values: ModelConnectionEditorValues;
+}): EvidenceClusterItem[] {
+  const credentialEvidence = getCredentialEvidence(connectionKind);
+  const lastTestDescription = connection?.lastTestedAt
+    ? `${formatDateTime(connection.lastTestedAt)}${
+        connection.lastTestMessage ? ` · ${connection.lastTestMessage}` : ""
+      }`
+    : "Test Connection checks reachability on the saved endpoint only.";
+
+  return [
+    {
+      description: `${PROTOCOL_PROFILE_DESCRIPTIONS[values.protocolProfile]} Timeout ${values.timeoutSeconds}s against ${values.baseUrl}.`,
+      label: "Protocol profile",
+      tone: "neutral",
+      value: PROTOCOL_PROFILE_LABELS[values.protocolProfile],
+    },
+    {
+      description: connectionFeedback?.message ?? lastTestDescription,
+      label: "Test state",
+      tone: connectionFeedback
+        ? getFeedbackTone(connectionFeedback.variant)
+        : getStoredReachabilityTone(connection),
+      value: connectionFeedback?.title ?? getStoredReachabilityValue(connection),
+    },
+    {
+      description:
+        probeFeedback?.message ??
+        (values.lastProbedAt
+          ? `Last capability probe recorded ${formatDateTime(values.lastProbedAt)}.`
+          : "Probe Required Capabilities records backend-owned support evidence after save."),
+      label: "Capability support",
+      tone: probeFeedback ? getFeedbackTone(probeFeedback.variant) : "warning",
+      value: probeFeedback?.title ?? formatCapabilitySummary(values.capabilities),
+    },
+    {
+      description: `Reasoning effort: ${getReasoningEffortValue(values) ?? "Omitted"}.`,
+      label: "Runtime policy",
+      tone: "neutral",
+      value: [
+        OUTPUT_STRATEGY_POLICY_LABELS[values.outputStrategyPolicy],
+        PARALLEL_TOOL_CALLS_POLICY_LABELS[values.parallelToolCallsPolicy],
+        REASONING_POLICY_LABELS[values.reasoningPolicy],
+        STREAMING_POLICY_LABELS[values.streamingPolicy],
+      ].join(" · "),
+    },
+    {
+      description: credentialEvidence.description,
+      label: "Credential state",
+      tone: connectionKind === "deterministic_smoke" ? "verified" : "neutral",
+      value: credentialEvidence.value,
+    },
+  ];
+}
+
+function buildCapabilityEvidenceItems(
+  values: ModelConnectionEditorValues,
+  capabilityKeys: readonly (keyof ModelConnectionCapabilities)[],
+): EvidenceClusterItem[] {
+  return capabilityKeys.map((capabilityKey) => {
+    const capability = values.capabilities[capabilityKey];
+    const lastProbedAt = capability.lastProbedAt ?? values.lastProbedAt;
+
+    return {
+      description: [
+        capability.detail,
+        lastProbedAt ? `Probed ${formatDateTime(lastProbedAt)}.` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      label: CAPABILITY_LABEL_BY_KEY[capabilityKey],
+      tone: getCapabilityEvidenceTone(capability.status),
+      value: CAPABILITY_STATUS_LABELS[capability.status],
+    };
+  });
+}
+
+function buildRuntimePolicyEvidenceItems(
+  values: ModelConnectionEditorValues,
+): EvidenceClusterItem[] {
+  return [
+    {
+      label: "Output strategy policy",
+      tone: "neutral",
+      value: OUTPUT_STRATEGY_POLICY_LABELS[values.outputStrategyPolicy],
+    },
+    {
+      label: "Parallel tool calls policy",
+      tone: "neutral",
+      value: PARALLEL_TOOL_CALLS_POLICY_LABELS[values.parallelToolCallsPolicy],
+    },
+    {
+      label: "Reasoning policy",
+      tone: "neutral",
+      value: REASONING_POLICY_LABELS[values.reasoningPolicy],
+    },
+    {
+      label: "Streaming policy",
+      tone: "neutral",
+      value: STREAMING_POLICY_LABELS[values.streamingPolicy],
+    },
+    {
+      label: "Probe cache TTL",
+      tone: "neutral",
+      value: `${values.probeCacheTtlSeconds}s`,
+    },
+    {
+      label: "Last capability probe",
+      tone: values.lastProbedAt ? "verified" : "warning",
+      value: values.lastProbedAt
+        ? formatDateTime(values.lastProbedAt)
+        : "No capability probe recorded.",
+    },
+  ];
 }
 
 function getReasoningEffortValue(
@@ -457,450 +644,349 @@ export function ModelConnectionsEditorPage() {
       : isEditing
         ? "Leave blank to keep the current key."
         : "Optional; add or rotate it later.";
+  const connectionEvidenceItems = buildConnectionEvidenceItems({
+    connection: connectionQuery.data,
+    connectionFeedback,
+    connectionKind: currentConnectionKind,
+    probeFeedback,
+    values,
+  });
+  const summaryCapabilityItems = buildCapabilityEvidenceItems(
+    values,
+    SUMMARY_CAPABILITY_KEYS,
+  );
+  const capabilityEvidenceItems = buildCapabilityEvidenceItems(
+    values,
+    CAPABILITY_DEFINITIONS.map(({ key }) => key),
+  );
+  const runtimePolicyEvidenceItems = buildRuntimePolicyEvidenceItems(values);
 
   return (
     <div
       aria-labelledby="model-connection-editor-title"
-      className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto overflow-x-hidden p-4 font-sans"
+      className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overflow-x-hidden p-4 font-sans"
       data-testid="model-connections-editor"
     >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h1
-            id="model-connection-editor-title"
-            className="text-xl font-semibold tracking-tight"
-          >
-            {isEditing ? "Edit Model Connection" : "Create Model Connection"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Save endpoint settings and credentials. Compatibility evidence and
-            runtime policy truth are derived by the backend.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            data-testid="model-connection-test"
-            disabled={isBusy}
-            size="sm"
-            variant="outline"
-            onClick={() => void handleTestConnection()}
-          >
-            <PlugZap data-icon="inline-start" />
-            Test Connection
-          </Button>
-          <Button
-            data-testid="model-connection-probe"
-            disabled={isBusy}
-            size="sm"
-            variant="outline"
-            onClick={() => void handleProbeCapabilities()}
-          >
-            <Radar data-icon="inline-start" />
-            Probe Required Capabilities
-          </Button>
-          <Button
-            data-testid="model-connection-save"
-            disabled={isSaving}
-            size="sm"
-            onClick={handleSave}
-          >
-            <Save data-icon="inline-start" />
-            Save Model Connection
-          </Button>
-        </div>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Test Connection checks reachability on the saved endpoint only.
-          Probe Required Capabilities refreshes backend-owned capability
-          evidence separately.
-        </p>
+      <div className="sticky top-0 z-10 bg-background/95 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <PageContextBar
+          density="compact"
+          title={
+            <span id="model-connection-editor-title">
+              {isEditing ? "Edit Model Connection" : "Create Model Connection"}
+            </span>
+          }
+          description="Save endpoint settings and credentials. Backend evidence stays read-only and refreshes through saved-record actions."
+          meta={
+            <span>
+              Test Connection checks reachability on the saved endpoint only.
+              Probe Required Capabilities refreshes backend-owned capability
+              evidence separately.
+            </span>
+          }
+          status={
+            <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                Stable key: <span className="font-medium text-foreground">{values.key || "unsaved"}</span>
+              </span>
+              <span>
+                Model: <span className="font-medium text-foreground">{values.modelId || "not set"}</span>
+              </span>
+            </span>
+          }
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                data-testid="model-connection-test"
+                disabled={isBusy}
+                size="sm"
+                variant="outline"
+                onClick={() => void handleTestConnection()}
+              >
+                <PlugZap data-icon="inline-start" />
+                Test Connection
+              </Button>
+              <Button
+                data-testid="model-connection-probe"
+                disabled={isBusy}
+                size="sm"
+                variant="outline"
+                onClick={() => void handleProbeCapabilities()}
+              >
+                <Radar data-icon="inline-start" />
+                Probe Required Capabilities
+              </Button>
+              <Button
+                data-testid="model-connection-save"
+                disabled={isSaving}
+                size="sm"
+                onClick={handleSave}
+              >
+                <Save data-icon="inline-start" />
+                Save Model Connection
+              </Button>
+            </div>
+          }
+        />
       </div>
 
-      {connectionFeedback ? (
-        <Alert
-          data-testid="model-connection-feedback"
-          variant={connectionFeedback.variant}
-        >
-          {connectionFeedback.variant === "default" ? (
-            <CheckCircle2 />
-          ) : (
-            <XCircle />
-          )}
-          <AlertTitle>{connectionFeedback.title}</AlertTitle>
-          <AlertDescription>{connectionFeedback.message}</AlertDescription>
-        </Alert>
-      ) : null}
+      <div className="grid min-h-0 min-w-0 gap-4 xl:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-4">
+          <ConsoleSection
+            title="Editable connection details"
+            description="Keep the saved key stable, then edit the provider endpoint fields that feed create/update payloads."
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex min-w-0 flex-col gap-2">
+                <Label htmlFor="model-connection-key">Key</Label>
+                <Input
+                  id="model-connection-key"
+                  aria-label="Key"
+                  disabled={isSaving || isEditing}
+                  value={values.key}
+                  onChange={(event) => updateValue("key", event.target.value)}
+                />
+              </div>
+              <div className="flex min-w-0 flex-col gap-2">
+                <Label htmlFor="model-connection-name">Name</Label>
+                <Input
+                  id="model-connection-name"
+                  aria-label="Name"
+                  disabled={isSaving}
+                  value={values.name}
+                  onChange={(event) => updateValue("name", event.target.value)}
+                />
+              </div>
+              <div className="flex min-w-0 flex-col gap-2">
+                <Label htmlFor="model-connection-model-id">Model ID</Label>
+                <Input
+                  id="model-connection-model-id"
+                  aria-label="Model ID"
+                  disabled={isSaving}
+                  value={values.modelId}
+                  onChange={(event) => updateValue("modelId", event.target.value)}
+                />
+              </div>
+              <div className="flex min-w-0 flex-col gap-2">
+                <Label htmlFor="model-connection-base-url">Base URL</Label>
+                <Input
+                  id="model-connection-base-url"
+                  aria-label="Base URL"
+                  disabled={isSaving}
+                  value={values.baseUrl}
+                  onChange={(event) => updateValue("baseUrl", event.target.value)}
+                />
+              </div>
+              <div className="flex min-w-0 flex-col gap-2 md:col-span-2">
+                <Label htmlFor="model-connection-description">Description</Label>
+                <Textarea
+                  id="model-connection-description"
+                  aria-label="Description"
+                  disabled={isSaving}
+                  rows={3}
+                  value={values.description}
+                  onChange={(event) =>
+                    updateValue("description", event.target.value)
+                  }
+                />
+              </div>
+            </div>
+          </ConsoleSection>
 
-      {probeFeedback ? (
-        <Alert
-          data-testid="model-connection-probe-feedback"
-          variant={probeFeedback.variant}
-        >
-          {probeFeedback.variant === "default" ? <CheckCircle2 /> : <XCircle />}
-          <AlertTitle>{probeFeedback.title}</AlertTitle>
-          <AlertDescription>{probeFeedback.message}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Connection details</CardTitle>
-          <CardDescription>
-            Enter the model endpoint identity and protocol-compatible base URL.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="model-connection-key">Key</Label>
-              <Input
-                id="model-connection-key"
-                aria-label="Key"
-                disabled={isSaving || isEditing}
-                value={values.key}
-                onChange={(event) => updateValue("key", event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="model-connection-name">Name</Label>
-              <Input
-                id="model-connection-name"
-                aria-label="Name"
-                disabled={isSaving}
-                value={values.name}
-                onChange={(event) => updateValue("name", event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="model-connection-model-id">Model ID</Label>
-              <Input
-                id="model-connection-model-id"
-                aria-label="Model ID"
-                disabled={isSaving}
-                value={values.modelId}
-                onChange={(event) => updateValue("modelId", event.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="model-connection-description">Description</Label>
-            <Textarea
-              id="model-connection-description"
-              aria-label="Description"
-              disabled={isSaving}
-              rows={3}
-              value={values.description}
-              onChange={(event) =>
-                updateValue("description", event.target.value)
-              }
-            />
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="model-connection-base-url">Base URL</Label>
-              <Input
-                id="model-connection-base-url"
-                aria-label="Base URL"
-                disabled={isSaving}
-                value={values.baseUrl}
-                onChange={(event) => updateValue("baseUrl", event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="model-connection-protocol-profile">
-                Protocol Profile
-              </Label>
-              <Select
-                value={values.protocolProfile}
-                disabled={isSaving}
-                onValueChange={(value: ModelConnectionProtocolProfile) =>
-                  handleProtocolProfileChange(value)
-                }
-              >
-                <SelectTrigger
-                  id="model-connection-protocol-profile"
-                  aria-label="Protocol Profile"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="openai_responses">
-                      {PROTOCOL_PROFILE_LABELS.openai_responses}
-                    </SelectItem>
-                    <SelectItem value="openai_chat_completions">
-                      {PROTOCOL_PROFILE_LABELS.openai_chat_completions}
-                    </SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                {PROTOCOL_PROFILE_DESCRIPTIONS[values.protocolProfile]}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="model-connection-timeout-seconds">
-                Timeout Seconds
-              </Label>
-              <Input
-                id="model-connection-timeout-seconds"
-                aria-label="Timeout Seconds"
-                disabled={isSaving}
-                inputMode="numeric"
-                value={values.timeoutSeconds}
-                onChange={(event) =>
-                  updateValue("timeoutSeconds", event.target.value)
-                }
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="model-connection-reasoning-effort">
-                Reasoning Effort
-              </Label>
-              <Select
-                value={values.reasoningEffort}
-                disabled={isSaving}
-                onValueChange={(value) =>
-                  updateValue(
-                    "reasoningEffort",
-                    value as ReasoningEffortSelection,
-                  )
-                }
-              >
-                <SelectTrigger
-                  id="model-connection-reasoning-effort"
-                  aria-label="Reasoning Effort"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value={REASONING_EFFORT_OMIT_VALUE}>
-                      Omit reasoning parameter
-                    </SelectItem>
-                    {REASONING_EFFORT_PRESETS.map((preset) => (
-                      <SelectItem key={preset} value={preset}>
-                        {preset}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value={REASONING_EFFORT_CUSTOM_VALUE}>
-                      Custom...
-                    </SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              {values.reasoningEffort === REASONING_EFFORT_CUSTOM_VALUE ? (
-                <div className="space-y-2">
-                  <Label htmlFor="model-connection-custom-reasoning-effort">
-                    Custom Reasoning Effort
-                  </Label>
-                  <Input
-                    id="model-connection-custom-reasoning-effort"
-                    aria-label="Custom Reasoning Effort"
-                    disabled={isSaving}
-                    maxLength={CUSTOM_REASONING_EFFORT_MAX_LENGTH + 1}
-                    value={values.customReasoningEffort}
-                    onChange={(event) =>
-                      updateValue("customReasoningEffort", event.target.value)
-                    }
-                  />
-                </div>
-              ) : null}
-              <p className="text-sm text-muted-foreground">
-                Choose Omit for providers that reject reasoning.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Compatibility evidence</CardTitle>
-          <CardDescription>
-            Read-only capability and runtime policy evidence resolved by the
-            backend. Use the probe action to refresh capability evidence after
-            saving endpoint changes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-5">
-          <div className="grid gap-3 md:grid-cols-3">
-            {SUMMARY_CAPABILITY_KEYS.map((capabilityKey) => {
-              const capability = values.capabilities[capabilityKey];
-
-              return (
-                <div
-                  key={capabilityKey}
-                  className="rounded-lg border bg-muted/30 p-3"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium text-foreground">
-                      {CAPABILITY_LABEL_BY_KEY[capabilityKey]}
-                    </p>
-                    <Badge
-                      variant={
-                        capability.status === "unsupported"
-                          ? "destructive"
-                          : "secondary"
-                      }
-                    >
-                      {CAPABILITY_STATUS_LABELS[capability.status]}
-                    </Badge>
-                  </div>
-                  {capability.detail ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {capability.detail}
-                    </p>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {CAPABILITY_DEFINITIONS.map(({ key, label }) => {
-              const capability = values.capabilities[key];
-
-              return (
-                <div key={key} className="rounded-lg border bg-muted/30 p-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium text-foreground">
-                      {label}
-                    </p>
-                    <Badge
-                      variant={
-                        capability.status === "unsupported"
-                          ? "destructive"
-                          : "secondary"
-                      }
-                    >
-                      {CAPABILITY_STATUS_LABELS[capability.status]}
-                    </Badge>
-                  </div>
-                  {capability.detail ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {capability.detail}
-                    </p>
-                  ) : null}
-                  {capability.lastProbedAt ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Probed {formatDateTime(capability.lastProbedAt)}
-                    </p>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs font-medium text-muted-foreground">
-                Output strategy policy
-              </p>
-              <p className="mt-1 text-sm text-foreground">
-                {OUTPUT_STRATEGY_POLICY_LABELS[values.outputStrategyPolicy]}
-              </p>
-            </div>
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs font-medium text-muted-foreground">
-                Parallel tool calls policy
-              </p>
-              <p className="mt-1 text-sm text-foreground">
-                {PARALLEL_TOOL_CALLS_POLICY_LABELS[values.parallelToolCallsPolicy]}
-              </p>
-            </div>
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs font-medium text-muted-foreground">
-                Reasoning policy
-              </p>
-              <p className="mt-1 text-sm text-foreground">
-                {REASONING_POLICY_LABELS[values.reasoningPolicy]}
-              </p>
-            </div>
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs font-medium text-muted-foreground">
-                Streaming policy
-              </p>
-              <p className="mt-1 text-sm text-foreground">
-                {STREAMING_POLICY_LABELS[values.streamingPolicy]}
-              </p>
-            </div>
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs font-medium text-muted-foreground">
-                Probe cache TTL
-              </p>
-              <p className="mt-1 text-sm text-foreground">
-                {values.probeCacheTtlSeconds}s
-              </p>
-            </div>
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs font-medium text-muted-foreground">
-                Last capability probe
-              </p>
-              <p className="mt-1 text-sm text-foreground">
-                {values.lastProbedAt
-                  ? formatDateTime(values.lastProbedAt)
-                  : "No capability probe recorded."}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Credentials & health</CardTitle>
-          <CardDescription>
-            {currentConnectionKind === "deterministic_smoke"
-              ? "Deterministic smoke connections run offline; provider API keys remain optional and hidden."
-              : "Existing secrets are never shown again. Save a new value only when you want to rotate it."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <SecretInput
-            aria-label="API Key"
-            disabled={isSaving}
-            helperText={apiKeyHelpText}
-            id="model-connection-api-key"
-            label="API Key"
-            placeholder={
-              isEditing ? "Enter a new key to rotate it" : "Enter an API key"
-            }
-            value={values.apiKey}
-            onValueChange={(value) => updateValue("apiKey", value)}
-          />
-
-          {connectionQuery.data?.lastTestedAt ? (
-            <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant={
-                    connectionQuery.data.lastTestOk
-                      ? "secondary"
-                      : "destructive"
+          <ConsoleSection
+            title="Protocol and runtime defaults"
+            description="Base URL stays at the provider /v1 root; protocol profile carries Responses versus Chat Completions semantics."
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex min-w-0 flex-col gap-2">
+                <Label htmlFor="model-connection-protocol-profile">
+                  Protocol Profile
+                </Label>
+                <Select
+                  value={values.protocolProfile}
+                  disabled={isSaving}
+                  onValueChange={(value: ModelConnectionProtocolProfile) =>
+                    handleProtocolProfileChange(value)
                   }
                 >
-                  {connectionQuery.data.lastTestOk
-                    ? "Last reachability test passed"
-                    : "Last reachability test failed"}
-                </Badge>
-                <span>{formatDateTime(connectionQuery.data.lastTestedAt)}</span>
+                  <SelectTrigger
+                    id="model-connection-protocol-profile"
+                    aria-label="Protocol Profile"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="openai_responses">
+                        {PROTOCOL_PROFILE_LABELS.openai_responses}
+                      </SelectItem>
+                      <SelectItem value="openai_chat_completions">
+                        {PROTOCOL_PROFILE_LABELS.openai_chat_completions}
+                      </SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {PROTOCOL_PROFILE_DESCRIPTIONS[values.protocolProfile]}
+                </p>
               </div>
-              {connectionQuery.data.lastTestMessage ? (
-                <p className="mt-2">{connectionQuery.data.lastTestMessage}</p>
+              <div className="flex min-w-0 flex-col gap-2">
+                <Label htmlFor="model-connection-timeout-seconds">
+                  Timeout Seconds
+                </Label>
+                <Input
+                  id="model-connection-timeout-seconds"
+                  aria-label="Timeout Seconds"
+                  disabled={isSaving}
+                  inputMode="numeric"
+                  value={values.timeoutSeconds}
+                  onChange={(event) =>
+                    updateValue("timeoutSeconds", event.target.value)
+                  }
+                />
+              </div>
+              <div className="flex min-w-0 flex-col gap-2 md:col-span-2">
+                <Label htmlFor="model-connection-reasoning-effort">
+                  Reasoning Effort
+                </Label>
+                <Select
+                  value={values.reasoningEffort}
+                  disabled={isSaving}
+                  onValueChange={(value) =>
+                    updateValue(
+                      "reasoningEffort",
+                      value as ReasoningEffortSelection,
+                    )
+                  }
+                >
+                  <SelectTrigger
+                    id="model-connection-reasoning-effort"
+                    aria-label="Reasoning Effort"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={REASONING_EFFORT_OMIT_VALUE}>
+                        Omit reasoning parameter
+                      </SelectItem>
+                      {REASONING_EFFORT_PRESETS.map((preset) => (
+                        <SelectItem key={preset} value={preset}>
+                          {preset}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value={REASONING_EFFORT_CUSTOM_VALUE}>
+                        Custom...
+                      </SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                {values.reasoningEffort === REASONING_EFFORT_CUSTOM_VALUE ? (
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <Label htmlFor="model-connection-custom-reasoning-effort">
+                      Custom Reasoning Effort
+                    </Label>
+                    <Input
+                      id="model-connection-custom-reasoning-effort"
+                      aria-label="Custom Reasoning Effort"
+                      disabled={isSaving}
+                      maxLength={CUSTOM_REASONING_EFFORT_MAX_LENGTH + 1}
+                      value={values.customReasoningEffort}
+                      onChange={(event) =>
+                        updateValue("customReasoningEffort", event.target.value)
+                      }
+                    />
+                  </div>
+                ) : null}
+                <p className="text-xs text-muted-foreground">
+                  Choose Omit for providers that reject reasoning.
+                </p>
+              </div>
+            </div>
+          </ConsoleSection>
+
+          <ConsoleSection
+            title="Credential rotation"
+            description={
+              currentConnectionKind === "deterministic_smoke"
+                ? "Deterministic smoke connections run offline; provider API keys remain optional and hidden."
+                : "Existing secrets are never shown again. Save a new value only when you want to rotate it."
+            }
+          >
+            <SecretInput
+              aria-label="API Key"
+              disabled={isSaving}
+              helperText={apiKeyHelpText}
+              id="model-connection-api-key"
+              label="API Key"
+              placeholder={
+                isEditing ? "Enter a new key to rotate it" : "Enter an API key"
+              }
+              value={values.apiKey}
+              onValueChange={(value) => updateValue("apiKey", value)}
+            />
+          </ConsoleSection>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          {connectionFeedback || probeFeedback ? (
+            <div className="flex flex-col gap-2">
+              {connectionFeedback ? (
+                <Alert
+                  data-testid="model-connection-feedback"
+                  variant={connectionFeedback.variant}
+                >
+                  {connectionFeedback.variant === "default" ? (
+                    <CheckCircle2 />
+                  ) : (
+                    <XCircle />
+                  )}
+                  <AlertTitle>{connectionFeedback.title}</AlertTitle>
+                  <AlertDescription>{connectionFeedback.message}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              {probeFeedback ? (
+                <Alert
+                  data-testid="model-connection-probe-feedback"
+                  variant={probeFeedback.variant}
+                >
+                  {probeFeedback.variant === "default" ? (
+                    <CheckCircle2 />
+                  ) : (
+                    <XCircle />
+                  )}
+                  <AlertTitle>{probeFeedback.title}</AlertTitle>
+                  <AlertDescription>{probeFeedback.message}</AlertDescription>
+                </Alert>
               ) : null}
             </div>
-          ) : (
-            <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-              No reachability test has been recorded yet.
+          ) : null}
+
+          <ConsoleSection
+            title="Compatibility evidence"
+            description="Read-only test, probe, credential, and runtime evidence resolved by the backend. Save before refreshing it."
+          >
+            <div className="flex min-w-0 flex-col gap-3">
+              <EvidenceCluster items={connectionEvidenceItems} layout="grid" />
+              <EvidenceCluster items={summaryCapabilityItems} layout="grid" />
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </ConsoleSection>
+
+          <ConsoleSection
+            title="Capability matrix"
+            description="Backend-owned capability support is displayed here but never submitted from the editor form."
+          >
+            <EvidenceCluster items={capabilityEvidenceItems} layout="grid" />
+          </ConsoleSection>
+
+          <ConsoleSection
+            title="Backend runtime policies"
+            description="Policy truth remains server-derived and is excluded from create/edit payloads."
+          >
+            <EvidenceCluster items={runtimePolicyEvidenceItems} layout="grid" />
+          </ConsoleSection>
+        </div>
+      </div>
     </div>
   );
 }
