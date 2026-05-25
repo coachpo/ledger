@@ -1074,7 +1074,7 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         CONSTRAINT uq_agent_memory_entries_memory_id UNIQUE (memory_id),
         CONSTRAINT ck_agent_memory_entries_scope_type CHECK (
-            scope_type IN ('workspace', 'package', 'workflow', 'run', 'agent')
+            scope_type IN ('workspace', 'package', 'workflow', 'run', 'agent', 'namespace')
         ),
         CONSTRAINT ck_agent_memory_entries_status CHECK (
             status IN ('pending', 'resolved', 'expired')
@@ -2863,6 +2863,17 @@ def _ensure_core_memory_tables(engine: Engine, table_names: set[str]) -> None:
     with engine.begin() as connection:
         for statement in _CORE_MEMORY_TABLE_STATEMENTS:
             connection.exec_driver_sql(statement)
+        _drop_constraint_if_exists(
+            connection,
+            "agent_memory_entries",
+            "ck_agent_memory_entries_scope_type",
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE agent_memory_entries "
+            "ADD CONSTRAINT ck_agent_memory_entries_scope_type "
+            "CHECK (scope_type IN "
+            "('workspace', 'package', 'workflow', 'run', 'agent', 'namespace'))"
+        )
     table_names.update(_CORE_MEMORY_TABLE_NAMES)
 
     if not _ensure_pgvector_extension(engine):

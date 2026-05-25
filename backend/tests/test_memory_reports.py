@@ -5,6 +5,8 @@ from decimal import Decimal
 from typing import cast
 
 import pytest
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -287,3 +289,19 @@ def test_agent_memory_report_metadata_remains_valid_for_historical_audit() -> No
     assert analysis["resolvedStatus"] == "pending"
     assert created_by["type"] == "agent"
     assert created_by["runId"] == 101
+
+
+def test_core_memory_route_surface_is_platform_core_not_finance_owned(
+    app: FastAPI,
+    client: TestClient,
+) -> None:
+    route_paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
+    openapi_paths = set(cast(dict[str, object], app.openapi()["paths"]))
+
+    assert "/api/memory" in route_paths
+    assert "/api/memory" in openapi_paths
+    assert not any(path.startswith("/api/v1/memory") for path in route_paths)
+    assert not any(path.startswith("/api/v1/memory") for path in openapi_paths)
+    assert client.get("/api/memory").status_code == 405
+    assert client.post("/api/memory", json={}).status_code == 422
+    assert client.post("/api/v1/memory", json={}).status_code == 404

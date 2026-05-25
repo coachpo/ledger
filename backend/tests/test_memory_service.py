@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -29,8 +30,12 @@ from app.repositories.agent_memory import (
 )
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.memory import (
+    MEMORY_NAMESPACE_ACCESS_DENIED_CODE,
+    MEMORY_NAMESPACE_ACCESS_DENIED_MESSAGE,
     MemoryDecision,
     MemoryLifecycleStatus,
+    MemoryNamespaceGrant,
+    MemoryNamespaceSelector,
     MemoryOutcome,
     MemoryProvenance,
     MemoryQuery,
@@ -190,6 +195,33 @@ def _write_request_for_context(
     )
 
 
+def _namespace_selector() -> MemoryNamespaceSelector:
+    return MemoryNamespaceSelector(
+        owner_package_key="pkg_alpha",
+        namespace_key="shared_research",
+    )
+
+
+def _namespace_grant(
+    *,
+    package_key: str,
+    actions: list[str],
+    workflow_key: str | None = None,
+    agent_key: str | None = None,
+) -> MemoryNamespaceGrant:
+    return MemoryNamespaceGrant.model_validate(
+        {
+            "namespace": _namespace_selector().model_dump(mode="json", by_alias=True),
+            "subject": {
+                "packageKey": package_key,
+                "workflowKey": workflow_key,
+                "agentKey": agent_key,
+            },
+            "actions": actions,
+        }
+    )
+
+
 def test_package_runtime_broader_scopes_are_package_isolated(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -273,6 +305,215 @@ def test_package_runtime_broader_scopes_are_package_isolated(
     assert entries[beta_created.memory_id].scope_key == "pkg_beta:shared_agent"
     assert [snippet.memory_id for snippet in alpha_snippets] == [alpha_created.memory_id]
     assert [snippet.memory_id for snippet in beta_snippets] == [beta_created.memory_id]
+
+
+def test_shared_namespace_owner_and_grant_read_write_semantics(
+    session_factory: sessionmaker[Session],
+) -> None:
+    namespace = _namespace_selector()
+    with session_factory() as session:
+        owner_run = _seed_run(session)
+        reader_run = _seed_run(session)
+        writer_run = _seed_run(session)
+        owner_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=owner_run.id,
+                package_key="pkg_alpha",
+                workflow_key="shared_review",
+                agent_key="owner_agent",
+                namespace_declarations=(namespace,),
+            ),
+        )
+        owner_created = owner_service.write_memory(
+            capability_references=[],
+            payload=_write_request_for_context(
+                owner_run.id,
+                workflow_key="shared_review",
+                agent_key="owner_agent",
+                scope=namespace.to_scope(),
+                summary="Shared namespace owner memory.",
+                content="shared namespace signal from the owner package.",
+            ),
+        )
+        _ = owner_service.resolve_memory(
+            owner_created.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Owner resolved"),
+        )
+        reader_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=reader_run.id,
+                package_key="pkg_beta",
+                workflow_key="shared_review",
+                agent_key="reader_agent",
+                namespace_grants=(_namespace_grant(package_key="pkg_beta", actions=["read"]),),
+            ),
+        )
+        reader_snippets = reader_service.query_memory(
+            MemoryQuery(
+                scope=namespace.to_scope(),
+                query="shared namespace",
+                status=MemoryLifecycleStatus.RESOLVED,
+                limit=5,
+            ),
+            record_event=False,
+        )
+        writer_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=writer_run.id,
+                package_key="pkg_gamma",
+                workflow_key="shared_review",
+                agent_key="writer_agent",
+                namespace_grants=(_namespace_grant(package_key="pkg_gamma", actions=["write"]),),
+            ),
+        )
+        writer_created = writer_service.write_memory(
+            capability_references=[],
+            payload=_write_request_for_context(
+                writer_run.id,
+                workflow_key="shared_review",
+                agent_key="writer_agent",
+                scope=namespace.to_scope(),
+                summary="Shared namespace writer memory.",
+                content="write-only grant can add but not read shared namespace memory.",
+            ),
+        )
+        with pytest.raises(RuntimeToolGrantError) as read_denied:
+            _ = writer_service.query_memory(
+                MemoryQuery(scope=namespace.to_scope(), query="shared namespace"),
+                record_event=False,
+            )
+        entries = list(session.scalars(select(AgentMemoryEntry).order_by(AgentMemoryEntry.id)))
+
+    assert [snippet.memory_id for snippet in reader_snippets] == [owner_created.memory_id]
+    assert read_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
+    assert read_denied.value.message == MEMORY_NAMESPACE_ACCESS_DENIED_MESSAGE
+    assert {entry.memory_id for entry in entries} == {
+        owner_created.memory_id,
+        writer_created.memory_id,
+    }
+    assert {entry.scope_type for entry in entries} == {"namespace"}
+    assert {entry.scope_key for entry in entries} == {namespace.qualified_key}
+
+
+def test_shared_namespace_access_denied_without_grant_and_global_search_denied(
+    session_factory: sessionmaker[Session],
+) -> None:
+    namespace = _namespace_selector()
+    with session_factory() as session:
+        owner_run = _seed_run(session)
+        other_run = _seed_run(session)
+        owner_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=owner_run.id,
+                package_key="pkg_alpha",
+                workflow_key="shared_review",
+                agent_key="owner_agent",
+                namespace_declarations=(namespace,),
+            ),
+        )
+        created = owner_service.write_memory(
+            capability_references=[],
+            payload=_write_request_for_context(
+                owner_run.id,
+                workflow_key="shared_review",
+                agent_key="owner_agent",
+                scope=namespace.to_scope(),
+                summary="Shared namespace denial memory.",
+                content="missing grants must not reveal this namespace memory.",
+            ),
+        )
+        unauthorized_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=other_run.id,
+                package_key="pkg_beta",
+                workflow_key="shared_review",
+                agent_key="reader_agent",
+            ),
+        )
+
+        with pytest.raises(RuntimeToolGrantError) as namespace_denied:
+            _ = unauthorized_service.query_memory(
+                MemoryQuery(scope=namespace.to_scope(), query="denial"),
+                record_event=False,
+            )
+        with pytest.raises(RuntimeToolGrantError) as ownerless_denied:
+            _ = MemoryService(
+                session,
+                current_context=MemoryLookupContext(
+                    run_id=other_run.id,
+                    package_key="pkg_alpha",
+                    workflow_key="shared_review",
+                    agent_key="owner_agent",
+                ),
+            ).write_memory(
+                capability_references=[],
+                payload=_write_request_for_context(
+                    other_run.id,
+                    workflow_key="shared_review",
+                    agent_key="owner_agent",
+                    scope=namespace.to_scope(),
+                    summary="Undeclared namespace write.",
+                    content="owner packages must declare shared namespaces before writing.",
+                ),
+            )
+        with pytest.raises(RuntimeToolGrantError) as global_denied:
+            _ = MemoryService(session).query_memory(MemoryQuery(query="denial"))
+
+    assert created.memory_id.startswith("memory_")
+    assert namespace_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
+    assert ownerless_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
+    assert global_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
+
+
+def test_namespace_validation_rejects_wildcard_grants_ownerless_and_private_cross_package_writes(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with pytest.raises(ValidationError):
+        _ = MemoryNamespaceSelector(owner_package_key="*", namespace_key="shared_research")
+    with pytest.raises(ValidationError):
+        _ = MemoryNamespaceSelector(owner_package_key="", namespace_key="shared_research")
+    with pytest.raises(ValidationError):
+        _ = MemoryNamespaceGrant.model_validate(
+            {
+                "namespace": _namespace_selector().model_dump(mode="json", by_alias=True),
+                "subject": {"packageKey": "pkg_beta"},
+                "actions": ["*"],
+            }
+        )
+
+    with session_factory() as session:
+        run = _seed_run(session)
+        service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=run.id,
+                package_key="pkg_alpha",
+                workflow_key="private_workflow",
+                agent_key="private_agent",
+            ),
+        )
+        with pytest.raises(RuntimeToolGrantError) as private_denied:
+            _ = service.write_memory(
+                capability_references=[],
+                payload=_write_request_for_context(
+                    run.id,
+                    workflow_key="private_workflow",
+                    agent_key="private_agent",
+                    scope=MemoryScope(
+                        scope_type=MemoryScopeType.PACKAGE,
+                        scope_key="pkg_beta",
+                    ),
+                    summary="Cross-package private memory.",
+                    content="private writes must not target another package scope.",
+                ),
+            )
+
+    assert private_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
 
 
 def test_package_runtime_run_scope_default_remains_run_scoped(
@@ -934,3 +1175,23 @@ def test_memory_report_service_boundary_has_no_new_direct_production_create_call
             direct_call_sites.add(relative)
 
     assert direct_call_sites == allowed
+
+
+def test_post_run_memory_write_seam_uses_canonical_memory_dtos_only() -> None:
+    backend_root = Path(__file__).resolve().parents[1]
+    seam_files = (
+        backend_root / "app/services/run_service.py",
+        backend_root / "app/services/memory_service.py",
+    )
+    forbidden_tokens = (
+        "AgentMemoryReportCreateMetadata",
+        "AgentMemoryTrustedCreateContext",
+        "write_request_from_report_create",
+        "app.schemas.memory_report",
+    )
+
+    for path in seam_files:
+        source = path.read_text(encoding="utf-8")
+        relative = path.relative_to(backend_root)
+        for token in forbidden_tokens:
+            assert token not in source, f"{relative} still leaks report-shaped memory DTO {token}"

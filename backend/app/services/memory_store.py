@@ -7,6 +7,7 @@ from typing import Any, Final, Literal, Protocol, cast
 from uuid import uuid4
 
 from fastapi import status
+from sqlalchemy import or_, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -20,7 +21,11 @@ from app.repositories.agent_memory import (
     RunMemoryEventRepository,
 )
 from app.schemas.memory import (
+    MEMORY_API_MAX_EVENTS,
+    MEMORY_API_MAX_REVISIONS,
     MEMORY_IDEMPOTENCY_FALLBACK_FIELDS,
+    MemoryApiEventRead,
+    MemoryApiRevisionRead,
     MemoryArtifactRead,
     MemoryAttributes,
     MemoryAuditLinks,
@@ -54,6 +59,7 @@ _SCOPE_SPECIFICITY: Final[dict[str, int]] = {
     "agent": 5,
     "run": 4,
     "workflow": 3,
+    "namespace": 2,
     "package": 2,
     "workspace": 1,
 }
@@ -114,6 +120,26 @@ class MemoryStore(Protocol):
 
     def get(self, memory_id: str) -> MemoryEntryRead:
         """Return a memory entry by opaque memory id."""
+        ...
+
+    def list_revisions(
+        self,
+        memory_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[MemoryApiRevisionRead]:
+        """Return bounded canonical revisions for a memory entry."""
+        ...
+
+    def list_events(
+        self,
+        memory_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[MemoryApiEventRead]:
+        """Return bounded canonical events for a memory entry."""
         ...
 
     def query(self, query: MemoryQuery) -> list[MemoryPromptSnippet]:
@@ -250,6 +276,47 @@ class PostgresMemoryStore:
         entry = self._entry_by_memory_id(memory_id)
         revision = self._latest_revision(entry)
         return self._entry_read(entry, revision)
+
+    def list_revisions(
+        self,
+        memory_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[MemoryApiRevisionRead]:
+        entry = self._entry_by_memory_id(memory_id)
+        bounded_limit = min(limit, MEMORY_API_MAX_REVISIONS)
+        statement = (
+            select(AgentMemoryRevision)
+            .where(AgentMemoryRevision.memory_entry_id == entry.id)
+            .order_by(AgentMemoryRevision.version.asc(), AgentMemoryRevision.id.asc())
+            .offset(offset)
+            .limit(bounded_limit)
+        )
+        return [self._api_revision_read(revision) for revision in self.session.scalars(statement)]
+
+    def list_events(
+        self,
+        memory_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[MemoryApiEventRead]:
+        entry = self._entry_by_memory_id(memory_id)
+        bounded_limit = min(limit, MEMORY_API_MAX_EVENTS)
+        statement = (
+            select(RunMemoryEvent)
+            .where(
+                or_(
+                    RunMemoryEvent.memory_entry_id == entry.id,
+                    RunMemoryEvent.memory_id == entry.memory_id,
+                )
+            )
+            .order_by(RunMemoryEvent.created_at.asc(), RunMemoryEvent.id.asc())
+            .offset(offset)
+            .limit(bounded_limit)
+        )
+        return [self._api_event_read(event) for event in self.session.scalars(statement)]
 
     def query(self, query: MemoryQuery) -> list[MemoryPromptSnippet]:
         if not self._has_lookup_selector(query):
@@ -807,6 +874,48 @@ class PostgresMemoryStore:
             content_hash=revision.content_hash,
             created_at=revision.created_at,
             supersedes_revision_id=revision.supersedes_revision_id,
+        )
+
+    @classmethod
+    def _api_revision_read(cls, revision: AgentMemoryRevision) -> MemoryApiRevisionRead:
+        return MemoryApiRevisionRead(
+            revision_id=revision.revision_id,
+            version=revision.version,
+            status=MemoryLifecycleStatus(revision.status),
+            revision_action=MemoryRevisionAction(revision.revision_action),
+            summary=revision.summary,
+            content=revision.content,
+            content_hash=revision.content_hash,
+            subject_refs=cls._subject_ref_models(revision.subject_refs),
+            attributes=cls._public_attributes(cls._attributes_payload(revision.attributes)),
+            supersedes_revision_id=revision.supersedes_revision_id,
+            source_run_id=revision.source_run_id,
+            source_agent_key=revision.source_agent_key,
+            source_step_id=revision.source_step_id,
+            source_slot=revision.source_slot,
+            trace_span_id=revision.trace_span_id,
+            created_at=revision.created_at,
+        )
+
+    @classmethod
+    def _api_event_read(cls, event: RunMemoryEvent) -> MemoryApiEventRead:
+        return MemoryApiEventRead(
+            event_id=event.id,
+            run_id=event.run_id,
+            event_type=event.event_type,
+            memory_id=event.memory_id,
+            revision_id=event.revision_id,
+            retrieval_mode=event.retrieval_mode,
+            filters=cast(dict[str, object], cls._attributes_payload(event.filters)),
+            budget=cast(dict[str, object], cls._attributes_payload(event.budget)),
+            excerpt=event.excerpt,
+            injected_text=event.injected_text,
+            result_snapshot=cast(dict[str, object], cls._attributes_payload(event.result_snapshot)),
+            status_snapshot=cast(dict[str, object], cls._attributes_payload(event.status_snapshot)),
+            step_id=event.step_id,
+            invocation_id=event.invocation_id,
+            trace_span_id=event.trace_span_id,
+            created_at=event.created_at,
         )
 
     @staticmethod

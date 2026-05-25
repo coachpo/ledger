@@ -4,18 +4,33 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.agents import get_default_tool_catalog
+from app.core.errors import ApiError
 from app.repositories.agent_memory import RunMemoryEventRepository
 from app.schemas.memory import (
+    MEMORY_NAMESPACE_ACCESS_DENIED_CODE,
+    MEMORY_NAMESPACE_ACCESS_DENIED_MESSAGE,
+    MemoryApiAccessContext,
+    MemoryApiAccessRequest,
+    MemoryApiEntryRead,
+    MemoryApiEventListRead,
+    MemoryApiListItemRead,
+    MemoryApiListRead,
+    MemoryApiListRequest,
+    MemoryApiReflectRequest,
+    MemoryApiResolveRequest,
+    MemoryApiRevisionListRead,
     MemoryArtifactRead,
     MemoryAuditLinks,
-    MemoryDecision,
     MemoryEntryRead,
+    MemoryNamespaceAction,
+    MemoryNamespaceGrant,
+    MemoryNamespaceSelector,
     MemoryOutcome,
     MemoryPromptSnippet,
-    MemoryProvenance,
     MemoryQuery,
     MemoryReflection,
     MemoryScope,
@@ -23,11 +38,11 @@ from app.schemas.memory import (
     MemoryWriteRequest,
     MemoryWriteResult,
 )
-from app.schemas.memory_report import (
-    AgentMemoryReportCreateMetadata,
-    AgentMemoryTrustedCreateContext,
+from app.services.capability_service import (
+    CapabilityService,
+    RuntimeToolGrantError,
+    RuntimeToolGrantPolicy,
 )
-from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
 from app.services.memory_store import (
     MemoryEventContext,
     MemoryStore,
@@ -51,6 +66,8 @@ class MemoryLookupContext:
     step_id: str | None = None
     invocation_id: str | None = None
     trace_span_id: str | None = None
+    namespace_declarations: tuple[MemoryNamespaceSelector, ...] = ()
+    namespace_grants: tuple[MemoryNamespaceGrant, ...] = ()
 
     def has_values(self) -> bool:
         return any(
@@ -125,10 +142,53 @@ class MemoryLookupContext:
             return None
         if package_key is None:
             return local_key
+        if local_key == package_key or local_key.startswith(f"{package_key}:"):
+            return local_key
         return canonical_package_qualified_scope_key(
             package_key=package_key,
             local_key=local_key,
         )
+
+    def declares_namespace(self, namespace: MemoryNamespaceSelector) -> bool:
+        return any(declaration == namespace for declaration in self.namespace_declarations)
+
+    def has_namespace_grant(
+        self,
+        namespace: MemoryNamespaceSelector,
+        action: MemoryNamespaceAction,
+    ) -> bool:
+        package_key = self.normalized_text(self.package_key)
+        workflow_key = self.normalized_text(self.workflow_key)
+        agent_key = self.normalized_text(self.agent_key)
+        return any(
+            grant.allows(
+                namespace,
+                action,
+                package_key=package_key,
+                workflow_key=workflow_key,
+                agent_key=agent_key,
+            )
+            for grant in self.namespace_grants
+        )
+
+    def readable_namespaces(self) -> tuple[MemoryNamespaceSelector, ...]:
+        package_key = self.normalized_text(self.package_key)
+        workflow_key = self.normalized_text(self.workflow_key)
+        agent_key = self.normalized_text(self.agent_key)
+        namespaces: dict[str, MemoryNamespaceSelector] = {}
+        for declaration in self.namespace_declarations:
+            if declaration.owner_package_key == package_key:
+                namespaces[declaration.qualified_key] = declaration
+        for grant in self.namespace_grants:
+            if grant.allows(
+                grant.namespace,
+                "read",
+                package_key=package_key,
+                workflow_key=workflow_key,
+                agent_key=agent_key,
+            ):
+                namespaces[grant.namespace.qualified_key] = grant.namespace
+        return tuple(namespaces.values())
 
     @staticmethod
     def normalized_text(value: str | None) -> str | None:
@@ -168,7 +228,7 @@ class MemoryService:
                 capability_references=capability_references,
                 grant_policy=grant_policy,
             )
-        effective_payload = self._canonicalize_write_payload(payload)
+        effective_payload = self._authorize_and_canonicalize_write_payload(payload)
         try:
             result = self.store.create_pending(
                 effective_payload,
@@ -259,6 +319,91 @@ class MemoryService:
     def list_run_artifacts(self, run_id: int) -> list[MemoryArtifactRead]:
         return self.store.list_artifacts_for_run(run_id)
 
+    def list_api_memory(self, payload: MemoryApiListRequest) -> MemoryApiListRead:
+        context = self._lookup_context_from_api_access(payload.access_context)
+        try:
+            snippets = self._query_api_memory(payload, current_context=context)
+        except RuntimeToolGrantError as exc:
+            raise self._api_access_denied(exc) from exc
+        items = [MemoryApiListItemRead.from_snippet(snippet) for snippet in snippets]
+        return MemoryApiListRead(
+            items=items,
+            count=len(items),
+            limit=payload.limit,
+            offset=payload.offset,
+            visibility=payload.visibility,
+            scope=payload.scope,
+        )
+
+    def get_api_memory(self, memory_id: str, payload: MemoryApiAccessRequest) -> MemoryApiEntryRead:
+        context = self._lookup_context_from_api_access(payload.access_context)
+        try:
+            entry = self._authorized_entry(memory_id, action="read", current_context=context)
+        except RuntimeToolGrantError as exc:
+            raise self._api_access_denied(exc) from exc
+        return MemoryApiEntryRead.from_entry(entry)
+
+    def list_api_memory_revisions(
+        self,
+        memory_id: str,
+        payload: MemoryApiAccessRequest,
+        *,
+        limit: int,
+        offset: int,
+    ) -> MemoryApiRevisionListRead:
+        context = self._lookup_context_from_api_access(payload.access_context)
+        try:
+            _ = self._authorized_entry(memory_id, action="read", current_context=context)
+        except RuntimeToolGrantError as exc:
+            raise self._api_access_denied(exc) from exc
+        revisions = self.store.list_revisions(memory_id, limit=limit, offset=offset)
+        return MemoryApiRevisionListRead(
+            items=revisions,
+            count=len(revisions),
+            limit=limit,
+            offset=offset,
+        )
+
+    def list_api_memory_events(
+        self,
+        memory_id: str,
+        payload: MemoryApiAccessRequest,
+        *,
+        limit: int,
+        offset: int,
+    ) -> MemoryApiEventListRead:
+        context = self._lookup_context_from_api_access(payload.access_context)
+        try:
+            _ = self._authorized_entry(memory_id, action="read", current_context=context)
+        except RuntimeToolGrantError as exc:
+            raise self._api_access_denied(exc) from exc
+        events = self.store.list_events(memory_id, limit=limit, offset=offset)
+        return MemoryApiEventListRead(items=events, count=len(events), limit=limit, offset=offset)
+
+    def resolve_api_memory(
+        self,
+        memory_id: str,
+        payload: MemoryApiResolveRequest,
+    ) -> MemoryApiEntryRead:
+        context = self._lookup_context_from_api_access(payload.access_context)
+        try:
+            _ = self._authorized_entry(memory_id, action="write", current_context=context)
+        except RuntimeToolGrantError as exc:
+            raise self._api_access_denied(exc) from exc
+        return MemoryApiEntryRead.from_entry(self.resolve_memory(memory_id, payload.outcome))
+
+    def reflect_api_memory(
+        self,
+        memory_id: str,
+        payload: MemoryApiReflectRequest,
+    ) -> MemoryApiEntryRead:
+        context = self._lookup_context_from_api_access(payload.access_context)
+        try:
+            _ = self._authorized_entry(memory_id, action="write", current_context=context)
+        except RuntimeToolGrantError as exc:
+            raise self._api_access_denied(exc) from exc
+        return MemoryApiEntryRead.from_entry(self.append_reflection(memory_id, payload.reflection))
+
     def query_memory(
         self,
         query: MemoryQuery,
@@ -268,7 +413,7 @@ class MemoryService:
         commit_event: bool = True,
     ) -> list[MemoryPromptSnippet]:
         context = current_context or self.current_context
-        effective_query = self._canonicalize_query(query, current_context=context)
+        effective_query = self._authorize_and_canonicalize_query(query, current_context=context)
         lookup_queries = self._lookup_queries(effective_query, current_context=context)
         if len(lookup_queries) == 1:
             snippets = self.store.query(lookup_queries[0])
@@ -341,6 +486,51 @@ class MemoryService:
 
     def get_audit_links(self, memory_id: str) -> MemoryAuditLinks:
         return self.store.audit_links(memory_id)
+
+    def _query_api_memory(
+        self,
+        payload: MemoryApiListRequest,
+        *,
+        current_context: MemoryLookupContext,
+    ) -> list[MemoryPromptSnippet]:
+        return self.query_memory(
+            payload.to_query(),
+            current_context=current_context,
+            record_event=False,
+        )
+
+    def _authorized_entry(
+        self,
+        memory_id: str,
+        *,
+        action: MemoryNamespaceAction,
+        current_context: MemoryLookupContext,
+    ) -> MemoryEntryRead:
+        entry = self.get_memory(memory_id)
+        _ = self._authorize_and_canonicalize_scope(
+            entry.scope,
+            action=action,
+            current_context=current_context,
+        )
+        return entry
+
+    @staticmethod
+    def _lookup_context_from_api_access(access: MemoryApiAccessContext) -> MemoryLookupContext:
+        return MemoryLookupContext(
+            run_id=access.run_id,
+            package_key=access.package_key,
+            workflow_key=access.workflow_key,
+            agent_key=access.agent_key,
+        )
+
+    @staticmethod
+    def _api_access_denied(error: RuntimeToolGrantError) -> ApiError:
+        return ApiError(
+            status_code=status.HTTP_403_FORBIDDEN,
+            code=error.code,
+            message=error.message,
+            details=error.details,
+        )
 
     def _record_retrieval_event(
         self,
@@ -569,26 +759,119 @@ class MemoryService:
             return text
         return f"{text[: max_characters - 1]}…"
 
-    def _canonicalize_write_payload(self, payload: MemoryWriteRequest) -> MemoryWriteRequest:
-        if self.current_context is None:
+    def _authorize_and_canonicalize_write_payload(
+        self,
+        payload: MemoryWriteRequest,
+    ) -> MemoryWriteRequest:
+        scope = self._authorize_and_canonicalize_scope(
+            payload.scope,
+            action="write",
+            current_context=self.current_context,
+        )
+        if scope == payload.scope:
             return payload
-        canonical_scope = self.current_context.canonicalize_scope(payload.scope)
-        if canonical_scope == payload.scope:
-            return payload
-        return payload.model_copy(update={"scope": canonical_scope})
+        return payload.model_copy(update={"scope": scope})
 
-    @staticmethod
-    def _canonicalize_query(
+    def _authorize_and_canonicalize_query(
+        self,
         query: MemoryQuery,
         *,
         current_context: MemoryLookupContext | None,
     ) -> MemoryQuery:
-        if current_context is None or query.scope is None:
+        if query.scope is None:
+            if current_context is None or not current_context.has_values():
+                raise self._namespace_access_denied(
+                    "Global memory search is not supported; provide a scope or current context."
+                )
             return query
-        canonical_scope = current_context.canonicalize_scope(query.scope)
-        if canonical_scope == query.scope:
+        scope = self._authorize_and_canonicalize_scope(
+            query.scope,
+            action="read",
+            current_context=current_context,
+        )
+        if scope == query.scope:
             return query
-        return query.model_copy(update={"scope": canonical_scope})
+        return query.model_copy(update={"scope": scope})
+
+    def _authorize_and_canonicalize_scope(
+        self,
+        scope: MemoryScope,
+        *,
+        action: MemoryNamespaceAction,
+        current_context: MemoryLookupContext | None,
+    ) -> MemoryScope:
+        if scope.scope_type == MemoryScopeType.NAMESPACE:
+            namespace = MemoryNamespaceSelector.from_scope(scope)
+            self._authorize_namespace(namespace, action=action, current_context=current_context)
+            return scope
+        if scope.scope_type == MemoryScopeType.WORKSPACE:
+            raise self._namespace_access_denied(
+                "Ownerless workspace memory scope is not supported."
+            )
+        if current_context is None:
+            return scope
+        self._reject_cross_context_private_scope(scope, current_context=current_context)
+        canonical_scope = current_context.canonicalize_scope(scope)
+        return canonical_scope
+
+    def _authorize_namespace(
+        self,
+        namespace: MemoryNamespaceSelector,
+        *,
+        action: MemoryNamespaceAction,
+        current_context: MemoryLookupContext | None,
+    ) -> None:
+        package_key = (
+            None
+            if current_context is None
+            else current_context.normalized_text(current_context.package_key)
+        )
+        if package_key is None:
+            raise self._namespace_access_denied(
+                "Shared memory namespace access requires package runtime context."
+            )
+        if package_key == namespace.owner_package_key and current_context is not None:
+            if current_context.declares_namespace(namespace):
+                return
+            raise self._namespace_access_denied(
+                "Shared memory namespace must be declared by the owner package."
+            )
+        if current_context is not None and current_context.has_namespace_grant(namespace, action):
+            return
+        raise self._namespace_access_denied(
+            f"Package {package_key!r} is not authorized for {action} access to memory namespace "
+            f"{namespace.qualified_key!r}."
+        )
+
+    @classmethod
+    def _reject_cross_context_private_scope(
+        cls,
+        scope: MemoryScope,
+        *,
+        current_context: MemoryLookupContext,
+    ) -> None:
+        package_key = current_context.normalized_text(current_context.package_key)
+        if scope.scope_type == MemoryScopeType.RUN and current_context.run_id is not None:
+            if scope.scope_key != str(current_context.run_id):
+                raise cls._namespace_access_denied(
+                    "Cross-run private memory access is not allowed."
+                )
+        if package_key is None:
+            return
+        if scope.scope_type == MemoryScopeType.PACKAGE and scope.scope_key != package_key:
+            raise cls._namespace_access_denied(
+                "Cross-package private memory access must use an explicit shared namespace grant."
+            )
+        if scope.scope_type not in {MemoryScopeType.WORKFLOW, MemoryScopeType.AGENT}:
+            return
+        foreign_prefix = ":" in scope.scope_key and not scope.scope_key.startswith(
+            f"{package_key}:"
+        )
+        namespace_like = "/" in scope.scope_key
+        if foreign_prefix or namespace_like:
+            raise cls._namespace_access_denied(
+                "Cross-package private memory access must use an explicit shared namespace grant."
+            )
 
     def _lookup_queries(
         self,
@@ -596,11 +879,13 @@ class MemoryService:
         *,
         current_context: MemoryLookupContext | None,
     ) -> list[MemoryQuery]:
-        if self._has_explicit_selectors(query):
+        if query.scope is not None:
             return [query]
         context = current_context or self.current_context
         if context is None or not context.has_values():
-            return [query]
+            raise self._namespace_access_denied(
+                "Global memory search is not supported; provide a scope or current context."
+            )
 
         context_updates = self._context_filter_updates(query, context)
         scopes = context.scopes()
@@ -618,8 +903,12 @@ class MemoryService:
         ]
 
     @staticmethod
-    def _has_explicit_selectors(query: MemoryQuery) -> bool:
-        return query.scope is not None or bool(query.subject_refs) or query.kind is not None
+    def _namespace_access_denied(message: str) -> RuntimeToolGrantError:
+        return RuntimeToolGrantError(
+            code=MEMORY_NAMESPACE_ACCESS_DENIED_CODE,
+            message=MEMORY_NAMESPACE_ACCESS_DENIED_MESSAGE,
+            details=[{"field": "namespace", "issue": message}],
+        )
 
     @staticmethod
     def _context_filter_updates(
@@ -657,39 +946,6 @@ class MemoryService:
             windowed.append(snippet)
             used_characters = next_size
         return windowed
-
-    @staticmethod
-    def write_request_from_report_create(
-        *,
-        payload: AgentMemoryReportCreateMetadata,
-        trusted_context: AgentMemoryTrustedCreateContext,
-    ) -> MemoryWriteRequest:
-        analysis = payload.analysis
-        return MemoryWriteRequest(
-            ticker=analysis.ticker,
-            portfolio_slug=analysis.portfolio_slug,
-            horizon_days=analysis.horizon_days,
-            confidence=analysis.confidence,
-            decision_summary=analysis.decision_summary,
-            benchmark_symbol=analysis.benchmark_symbol,
-            decision=MemoryDecision(
-                action=analysis.decision.action,
-                rationale=analysis.decision.rationale,
-                risk_summary=analysis.decision.risk_summary,
-                execution_plan=analysis.decision.execution_plan,
-            ),
-            provenance=MemoryProvenance(
-                run_id=trusted_context.run_id,
-                agent_key=trusted_context.agent_key,
-                agent_version=trusted_context.agent_version,
-                agent_name=trusted_context.agent_name,
-                workflow_key=trusted_context.workflow_key,
-                workflow_version=trusted_context.workflow_version,
-                step_id=trusted_context.step_id,
-                slot=trusted_context.slot,
-                trace_id=trusted_context.trace_id,
-            ),
-        )
 
 
 __all__ = ["MemoryLookupContext", "MemoryService"]

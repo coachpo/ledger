@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
@@ -21,13 +22,19 @@ from app.schemas.common import CamelModel, ensure_timezone
 
 INVALID_MEMORY_ID_CODE: Final = "invalid_memory_id"
 MEMORY_NOT_FOUND_CODE: Final = "memory_not_found"
+MEMORY_NAMESPACE_ACCESS_DENIED_CODE: Final = "memory_namespace_access_denied"
+MEMORY_NAMESPACE_ACCESS_DENIED_MESSAGE: Final = "Memory namespace access denied."
+MEMORY_NAMESPACE_SCOPE_SEPARATOR: Final = "/"
 
 MemoryProjection = Literal["model-visible", "api-visible", "ui-visible"]
+MemoryNamespaceAction = Literal["read", "write"]
 
 MEMORY_LOOKUP_DEFAULT_LIMIT: Final = 5
 MEMORY_LOOKUP_MAX_LIMIT: Final = 20
 MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS: Final = 4_000
 MEMORY_LOOKUP_MAX_CHARACTERS: Final = 8_000
+MEMORY_API_MAX_REVISIONS: Final = 50
+MEMORY_API_MAX_EVENTS: Final = 100
 MEMORY_QUERY_EMBEDDING_MAX_DIMENSIONS: Final = 4_096
 MEMORY_LOOKUP_CURRENT_CONTEXT_FALLBACK: Final = "current-run-package-agent"
 MEMORY_REVISION_WRITE_MODE: Final = "immutable-revision-per-content-change"
@@ -128,6 +135,7 @@ _MEMORY_COMPATIBILITY_EXCLUDE: Final[set[str]] = {
     "reflections",
     "ticker",
 }
+_NAMESPACE_KEY_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
 
 
 def invalid_memory_id_error() -> ApiError:
@@ -180,6 +188,36 @@ def _normalize_optional_text(
     return normalized
 
 
+def _normalize_namespace_key(value: object, *, field_name: str) -> str:
+    normalized = _normalize_required_text(value, field_name=field_name, max_length=120)
+    if "*" in normalized:
+        raise ValueError(f"{field_name} does not support wildcards")
+    if _NAMESPACE_KEY_RE.fullmatch(normalized) is None:
+        raise ValueError(
+            f"{field_name} must start with a lowercase letter and use only lowercase "
+            "letters, numbers, and underscores"
+        )
+    return normalized
+
+
+def _normalize_namespace_actions(value: object) -> tuple[MemoryNamespaceAction, ...]:
+    if not isinstance(value, (list, tuple, set)):
+        raise ValueError("actions must be an array of read/write values")
+    actions: list[MemoryNamespaceAction] = []
+    for item in cast(list[object] | tuple[object, ...] | set[object], value):
+        if not isinstance(item, str):
+            raise ValueError("actions must be an array of read/write values")
+        normalized = item.strip().lower()
+        if normalized not in {"read", "write"}:
+            raise ValueError("actions may only contain read or write")
+        action = cast(MemoryNamespaceAction, normalized)
+        if action not in actions:
+            actions.append(action)
+    if not actions:
+        raise ValueError("actions must include read or write")
+    return tuple(actions)
+
+
 def _normalize_kind(value: object, *, field_name: str = "kind") -> str:
     normalized = _normalize_required_text(value, field_name=field_name, max_length=80)
     return normalized.lower()
@@ -230,6 +268,111 @@ class MemoryScopeType(str, Enum):  # noqa: UP042
     WORKFLOW = "workflow"
     RUN = "run"
     AGENT = "agent"
+    NAMESPACE = "namespace"
+
+
+class MemoryNamespaceSelector(CamelModel):
+    owner_package_key: str = Field(min_length=1, max_length=120)
+    namespace_key: str = Field(min_length=1, max_length=120)
+
+    @field_validator("owner_package_key", mode="before")
+    @classmethod
+    def validate_owner_package_key(cls, value: object) -> str:
+        return _normalize_namespace_key(value, field_name="ownerPackageKey")
+
+    @field_validator("namespace_key", mode="before")
+    @classmethod
+    def validate_namespace_key(cls, value: object) -> str:
+        return _normalize_namespace_key(value, field_name="namespaceKey")
+
+    @model_validator(mode="after")
+    def validate_qualified_key_length(self) -> Self:
+        if len(self.qualified_key) > 160:
+            raise ValueError("Namespace identity must be at most 160 characters")
+        return self
+
+    @property
+    def qualified_key(self) -> str:
+        return f"{self.owner_package_key}{MEMORY_NAMESPACE_SCOPE_SEPARATOR}" f"{self.namespace_key}"
+
+    def to_scope(self) -> MemoryScope:
+        return MemoryScope(scope_type=MemoryScopeType.NAMESPACE, scope_key=self.qualified_key)
+
+    @classmethod
+    def from_scope_key(cls, scope_key: str) -> Self:
+        if MEMORY_NAMESPACE_SCOPE_SEPARATOR not in scope_key:
+            raise ValueError("Namespace scope keys must use ownerPackageKey/namespaceKey")
+        owner_package_key, namespace_key = scope_key.split(MEMORY_NAMESPACE_SCOPE_SEPARATOR, 1)
+        return cls(owner_package_key=owner_package_key, namespace_key=namespace_key)
+
+    @classmethod
+    def from_scope(cls, scope: MemoryScope) -> Self:
+        if scope.scope_type != MemoryScopeType.NAMESPACE:
+            raise ValueError("Memory scope is not a namespace scope")
+        return cls.from_scope_key(scope.scope_key)
+
+
+class MemoryNamespaceGrantSubject(CamelModel):
+    package_key: str = Field(min_length=1, max_length=120)
+    workflow_key: str | None = Field(default=None, max_length=120)
+    agent_key: str | None = Field(default=None, max_length=120)
+
+    @field_validator("package_key", mode="before")
+    @classmethod
+    def validate_package_key(cls, value: object) -> str:
+        return _normalize_namespace_key(value, field_name="subject.packageKey")
+
+    @field_validator("workflow_key", "agent_key", mode="before")
+    @classmethod
+    def validate_optional_subject_key(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return _normalize_namespace_key(value, field_name="subject ref")
+
+    def matches(
+        self,
+        *,
+        package_key: str | None,
+        workflow_key: str | None,
+        agent_key: str | None,
+    ) -> bool:
+        if package_key != self.package_key:
+            return False
+        if self.workflow_key is not None and workflow_key != self.workflow_key:
+            return False
+        if self.agent_key is not None and agent_key != self.agent_key:
+            return False
+        return True
+
+
+class MemoryNamespaceGrant(CamelModel):
+    namespace: MemoryNamespaceSelector
+    subject: MemoryNamespaceGrantSubject
+    actions: tuple[MemoryNamespaceAction, ...] = Field(min_length=1, max_length=2)
+
+    @field_validator("actions", mode="before")
+    @classmethod
+    def validate_actions(cls, value: object) -> tuple[MemoryNamespaceAction, ...]:
+        return _normalize_namespace_actions(value)
+
+    def allows(
+        self,
+        namespace: MemoryNamespaceSelector,
+        action: MemoryNamespaceAction,
+        *,
+        package_key: str | None,
+        workflow_key: str | None,
+        agent_key: str | None,
+    ) -> bool:
+        return (
+            self.namespace == namespace
+            and action in self.actions
+            and self.subject.matches(
+                package_key=package_key,
+                workflow_key=workflow_key,
+                agent_key=agent_key,
+            )
+        )
 
 
 class MemoryLifecycleStatus(str, Enum):  # noqa: UP042
@@ -261,6 +404,12 @@ class MemoryScope(CamelModel):
     @classmethod
     def validate_scope_key(cls, value: object) -> str:
         return _normalize_required_text(value, field_name="scopeKey", max_length=160)
+
+    @model_validator(mode="after")
+    def validate_namespace_scope_key(self) -> Self:
+        if self.scope_type == MemoryScopeType.NAMESPACE:
+            _ = MemoryNamespaceSelector.from_scope_key(self.scope_key)
+        return self
 
 
 class MemorySubjectRef(CamelModel):
@@ -1130,8 +1279,222 @@ class MemoryArtifactRead(_MemoryProjectionMixin):
         return ensure_timezone(value)
 
 
+class MemoryApiAccessContext(CamelModel):
+    run_id: int | None = Field(default=None, ge=1)
+    package_key: str = Field(min_length=1, max_length=120)
+    workflow_key: str | None = Field(default=None, max_length=120)
+    agent_key: str | None = Field(default=None, max_length=120)
+
+    @field_validator("package_key", mode="before")
+    @classmethod
+    def validate_package_key(cls, value: object) -> str:
+        return _normalize_namespace_key(value, field_name="accessContext.packageKey")
+
+    @field_validator("workflow_key", "agent_key", mode="before")
+    @classmethod
+    def validate_optional_context_key(cls, value: object) -> str | None:
+        normalized = _normalize_optional_text(
+            value,
+            field_name="accessContext ref",
+            max_length=120,
+        )
+        if normalized is None:
+            return None
+        return _normalize_namespace_key(normalized, field_name="accessContext ref")
+
+
+class MemoryApiAccessRequest(CamelModel):
+    access_context: MemoryApiAccessContext
+
+
+class MemoryApiListRequest(MemoryApiAccessRequest):
+    visibility: Literal["explicit-scope"] = "explicit-scope"
+    scope: MemoryScope
+    query: str | None = Field(default=None, max_length=1_000)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    kind: str | None = Field(default=None, max_length=80)
+    status: MemoryLifecycleStatus | None = None
+    tags: list[str] = Field(default_factory=list)
+    limit: int = Field(default=MEMORY_LOOKUP_DEFAULT_LIMIT, ge=1, le=MEMORY_LOOKUP_MAX_LIMIT)
+    offset: int = Field(default=0, ge=0)
+    max_characters: int = Field(
+        default=MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS,
+        ge=1,
+        le=MEMORY_LOOKUP_MAX_CHARACTERS,
+    )
+
+    @field_validator("query", mode="before")
+    @classmethod
+    def normalize_query(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="query", max_length=1_000)
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def normalize_kind(cls, value: object) -> str | None:
+        return _normalize_optional_kind(value)
+
+    @field_validator("subject_refs", "tags", mode="before")
+    @classmethod
+    def coerce_lists(cls, value: object) -> object:
+        return [] if value is None else value
+
+    def to_query(self) -> MemoryQuery:
+        return MemoryQuery(
+            query=self.query,
+            scope=self.scope,
+            subject_refs=self.subject_refs,
+            kind=self.kind,
+            status=self.status,
+            tags=self.tags,
+            limit=self.limit,
+            offset=self.offset,
+            max_characters=self.max_characters,
+        )
+
+
+class MemoryApiResolveRequest(MemoryApiAccessRequest):
+    outcome: MemoryOutcome
+
+
+class MemoryApiReflectRequest(MemoryApiAccessRequest):
+    reflection: MemoryReflection
+
+
+class MemoryApiListItemRead(CamelModel):
+    memory_id: str = Field(min_length=1, max_length=160)
+    revision_id: str = Field(min_length=1, max_length=160)
+    kind: str = Field(min_length=1, max_length=80)
+    summary: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    scope: MemoryScope
+    provenance: MemoryProvenance
+    created_at: datetime
+    retrieval_score: MemoryRetrievalScore | None = None
+
+    @classmethod
+    def from_snippet(cls, snippet: MemoryPromptSnippet) -> Self:
+        return cls(
+            memory_id=snippet.memory_id,
+            revision_id=snippet.revision_id,
+            kind=snippet.kind,
+            summary=snippet.summary,
+            content=snippet.content,
+            subject_refs=snippet.subject_refs,
+            scope=snippet.scope,
+            provenance=snippet.provenance,
+            created_at=snippet.created_at,
+            retrieval_score=snippet.retrieval_score,
+        )
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+class MemoryApiEntryRead(CamelModel):
+    memory_id: str = Field(min_length=1, max_length=160)
+    revision_id: str = Field(min_length=1, max_length=160)
+    status: MemoryLifecycleStatus
+    kind: str = Field(min_length=1, max_length=80)
+    summary: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    attributes: MemoryAttributes = Field(default_factory=dict)
+    scope: MemoryScope
+    provenance: MemoryProvenance
+    revision: MemoryRevisionRead
+    created_at: datetime
+    updated_at: datetime | None = None
+
+    @classmethod
+    def from_entry(cls, entry: MemoryEntryRead) -> Self:
+        return cls.model_validate(entry.dump_for_projection("api-visible"))
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_timezone(value)
+
+
+class MemoryApiListRead(CamelModel):
+    items: list[MemoryApiListItemRead]
+    count: int = Field(ge=0)
+    limit: int = Field(ge=1, le=MEMORY_LOOKUP_MAX_LIMIT)
+    offset: int = Field(ge=0)
+    visibility: Literal["explicit-scope"]
+    scope: MemoryScope
+
+
+class MemoryApiRevisionRead(CamelModel):
+    revision_id: str = Field(min_length=1, max_length=160)
+    version: int = Field(ge=1)
+    status: MemoryLifecycleStatus
+    revision_action: MemoryRevisionAction
+    summary: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    content_hash: str = Field(min_length=64, max_length=64)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    attributes: MemoryAttributes = Field(default_factory=dict)
+    supersedes_revision_id: str | None = Field(default=None, max_length=160)
+    source_run_id: int = Field(ge=1)
+    source_agent_key: str = Field(min_length=1, max_length=120)
+    source_step_id: str | None = Field(default=None, max_length=120)
+    source_slot: str | None = Field(default=None, max_length=120)
+    trace_span_id: str | None = Field(default=None, max_length=255)
+    created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+class MemoryApiRevisionListRead(CamelModel):
+    items: list[MemoryApiRevisionRead]
+    count: int = Field(ge=0)
+    limit: int = Field(ge=1, le=MEMORY_API_MAX_REVISIONS)
+    offset: int = Field(ge=0)
+
+
+class MemoryApiEventRead(CamelModel):
+    event_id: int = Field(ge=1)
+    run_id: int = Field(ge=1)
+    event_type: str = Field(min_length=1, max_length=40)
+    memory_id: str | None = Field(default=None, max_length=160)
+    revision_id: str | None = Field(default=None, max_length=160)
+    retrieval_mode: str | None = Field(default=None, max_length=40)
+    filters: dict[str, object] = Field(default_factory=dict)
+    budget: dict[str, object] = Field(default_factory=dict)
+    excerpt: str | None = None
+    injected_text: str | None = None
+    result_snapshot: dict[str, object] = Field(default_factory=dict)
+    status_snapshot: dict[str, object] = Field(default_factory=dict)
+    step_id: str | None = Field(default=None, max_length=120)
+    invocation_id: str | None = Field(default=None, max_length=160)
+    trace_span_id: str | None = Field(default=None, max_length=255)
+    created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+class MemoryApiEventListRead(CamelModel):
+    items: list[MemoryApiEventRead]
+    count: int = Field(ge=0)
+    limit: int = Field(ge=1, le=MEMORY_API_MAX_EVENTS)
+    offset: int = Field(ge=0)
+
+
 __all__ = [
     "INVALID_MEMORY_ID_CODE",
+    "MEMORY_API_MAX_EVENTS",
+    "MEMORY_API_MAX_REVISIONS",
     "MEMORY_CORE_RUNTIME_TOOL_KEYS",
     "MEMORY_DEFERRED_GET_DECISION",
     "MEMORY_DUPLICATE_REVISION_BEHAVIOR",
@@ -1142,10 +1505,25 @@ __all__ = [
     "MEMORY_LOOKUP_MAX_CHARACTERS",
     "MEMORY_LOOKUP_MAX_LIMIT",
     "MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS",
+    "MEMORY_NAMESPACE_ACCESS_DENIED_CODE",
+    "MEMORY_NAMESPACE_ACCESS_DENIED_MESSAGE",
+    "MEMORY_NAMESPACE_SCOPE_SEPARATOR",
     "MEMORY_NOT_FOUND_CODE",
     "MEMORY_PROJECTION_MATRIX",
     "MEMORY_QUERY_EMBEDDING_MAX_DIMENSIONS",
     "MEMORY_REVISION_WRITE_MODE",
+    "MemoryApiAccessContext",
+    "MemoryApiAccessRequest",
+    "MemoryApiEntryRead",
+    "MemoryApiEventListRead",
+    "MemoryApiEventRead",
+    "MemoryApiListItemRead",
+    "MemoryApiListRead",
+    "MemoryApiListRequest",
+    "MemoryApiReflectRequest",
+    "MemoryApiResolveRequest",
+    "MemoryApiRevisionListRead",
+    "MemoryApiRevisionRead",
     "MemoryArtifactRead",
     "MemoryAuditLinks",
     "MemoryAuditReportLink",
@@ -1155,6 +1533,10 @@ __all__ = [
     "MemoryEntryRead",
     "MemoryId",
     "MemoryLifecycleStatus",
+    "MemoryNamespaceAction",
+    "MemoryNamespaceGrant",
+    "MemoryNamespaceGrantSubject",
+    "MemoryNamespaceSelector",
     "MemoryOutcome",
     "MemoryProjection",
     "MemoryPromptSnippet",

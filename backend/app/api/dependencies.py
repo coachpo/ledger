@@ -12,6 +12,7 @@ from app.core.errors import ApiError
 from app.db.session import get_db_session, get_session_factory
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.extension_service import ExtensionService, ResolvedExtensionState
+from app.services.memory_service import MemoryService
 from app.services.model_connection_probe_service import ModelConnectionProbeService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.quote_provider import QuoteProvider
@@ -36,6 +37,12 @@ def get_extension_service(
     session: Annotated[Session, Depends(get_session)],
 ) -> ExtensionService:
     return ExtensionService(session)
+
+
+def get_memory_service(
+    session: Annotated[Session, Depends(get_session)],
+) -> MemoryService:
+    return MemoryService(session)
 
 
 def require_extension_enabled(
@@ -111,6 +118,7 @@ def get_run_service(
 __all__ = [
     "get_execution_provider_bundle",
     "get_extension_service",
+    "get_memory_service",
     "get_model_connection_probe_service",
     "get_model_connection_service",
     "get_quote_provider",

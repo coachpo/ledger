@@ -61,7 +61,7 @@ _MEMORY_SCOPE_SCHEMA: dict[str, object] = {
     "properties": {
         "scopeType": {
             "type": "string",
-            "enum": ["workspace", "package", "workflow", "run", "agent"],
+            "enum": ["workspace", "package", "workflow", "run", "agent", "namespace"],
         },
         "scopeKey": {"type": "string", "minLength": 1, "maxLength": 160},
     },
@@ -219,10 +219,13 @@ class RuntimeMemoryLookupArguments(CamelModel):
     def default_max_characters(cls, value: object) -> object:
         return MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS if value is None else value
 
+    def _selected_scope(self) -> MemoryScope | None:
+        return self.scope
+
     def to_query(self) -> MemoryQuery:
         return MemoryQuery(
             query=self.query,
-            scope=self.scope,
+            scope=self._selected_scope(),
             subject_refs=self.subject_refs,
             kind=self.kind,
             status=self.status,
@@ -362,7 +365,7 @@ def execute_memory_write(
         content=payload.content,
         subject_refs=payload.subject_refs,
         attributes=payload.attributes,
-        scope=payload.scope or _default_run_scope(provenance),
+        scope=_selected_write_scope(payload, provenance),
         provenance=provenance,
         revision=MemoryRevisionPolicy(
             supersedes_revision_id=payload.supersedes_revision_id,
@@ -558,6 +561,13 @@ def _default_run_scope(provenance: MemoryProvenance) -> MemoryScope:
     return MemoryScope(scope_type=MemoryScopeType.RUN, scope_key=str(provenance.run_id))
 
 
+def _selected_write_scope(
+    payload: RuntimeMemoryWriteArguments,
+    provenance: MemoryProvenance,
+) -> MemoryScope:
+    return payload.scope or _default_run_scope(provenance)
+
+
 def _lookup_context(context: RuntimeToolContext) -> MemoryLookupContext:
     package_key = None
     workflow_key = context.workflow_key
@@ -662,17 +672,18 @@ _MEMORY_WRITE_DESCRIPTION = "Write a bounded, platform-core memory entry for thi
 _MEMORY_WRITE_GUIDANCE = (
     "When a durable, platform-neutral memory should be persisted, call "
     "signaldeck_memory_write with kind, summary, content, optional subjectRefs, "
-    "attributes, scope, and idempotencyKey. Do not include report ids, report "
-    "slugs, URLs, downloads, or trusted run/agent fields."
+    "attributes, optional private scope, and idempotencyKey. Do not include "
+    "report ids, report slugs, URLs, downloads, or trusted run/agent fields."
 )
 _MEMORY_LOOKUP_DESCRIPTION = (
     "Look up bounded, scoped platform-core memory snippets for the current run context."
 )
 _MEMORY_LOOKUP_GUIDANCE = (
     "When historical SignalDeck memory is needed, call signaldeck_memory_lookup "
-    "with explicit scope, subjectRefs, or kind. If no selector is provided, the "
-    "server restricts lookup to the current run, package, workflow, and agent "
-    "context. Keep limit at or below 20 and maxCharacters at or below 8000."
+    "with explicit private scope, subjectRefs, or kind. If no selector "
+    "is provided, the server restricts lookup to the current run, package, "
+    "workflow, and agent context. Keep limit at or below 20 and maxCharacters "
+    "at or below 8000."
 )
 
 MEMORY_WRITE_TOOL_SPEC = RuntimeToolSpec(
@@ -721,6 +732,7 @@ __all__ = [
     "MEMORY_WRITE_OPENAI_FUNCTION_NAME",
     "MEMORY_WRITE_TOOL_KEY",
     "MEMORY_WRITE_TOOL_SPEC",
+    "RuntimeMemoryLookupArguments",
     "RuntimeMemoryLookupItem",
     "RuntimeMemoryLookupResult",
     "RuntimeMemoryWriteArguments",
