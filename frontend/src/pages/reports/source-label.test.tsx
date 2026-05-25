@@ -182,6 +182,31 @@ describe("report source labels", () => {
     expect(within(table).queryByText("External")).not.toBeInTheDocument();
   });
 
+  it("renders Uploaded source badge consistently across list views", () => {
+    useReportsMock.mockReturnValue(
+      queryResult([
+        buildReport({
+          id: 43,
+          name: "Uploaded Snapshot",
+          slug: "uploaded_snapshot",
+          source: "uploaded",
+        }),
+      ]),
+    );
+
+    renderReportRoute("/reports");
+
+    expect(screen.getByText("Uploaded Snapshot")).toBeVisible();
+    expect(screen.getByText("Uploaded")).toBeVisible();
+    expect(screen.queryByText("Agent")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Uploaded")).toBeVisible();
+    expect(within(table).queryByText("Agent")).not.toBeInTheDocument();
+  });
+
   it("keeps single report delete in an overflow confirmation path", () => {
     renderReportRoute("/reports");
 

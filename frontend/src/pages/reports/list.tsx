@@ -4,11 +4,8 @@ import {
   ChevronRight,
   Download,
   Eye,
-  LayoutGrid,
-  List,
   MoreHorizontal,
   Plus,
-  Search,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -27,19 +24,18 @@ import { formatDateTime } from "@/lib/format";
 import { downloadReportUrl } from "@/lib/api/reports";
 import type { ReportRead } from "@/lib/types/report";
 import type { TextTemplateRead } from "@/lib/types/text-template";
+import { ReportUploadDialog } from "@/components/forms/report-upload-dialog";
+import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { PageContextBar } from "@/components/shared/page-context-bar";
 import { GroupedListCard } from "@/components/shared/resource-row-card";
+import {
+  ResourceStatusStrip,
+  type ResourceStatusStripItem,
+} from "@/components/shared/resource-status-strip";
+import { ResourceToolbar } from "@/components/shared/resource-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,9 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GenerateReportDialog } from "@/components/forms/generate-report-dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Collapsible,
   CollapsibleContent,
@@ -62,7 +56,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Table,
   TableBody,
@@ -98,212 +91,43 @@ function getTemplateItems(
 
 type ReportViewMode = "cards" | "table";
 
-function ReportListHeader({
-  onGenerate,
-  onUpload,
-}: {
-  onGenerate: () => void;
-  onUpload: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div className="space-y-1">
-        <h1 className="text-xl font-semibold tracking-tight">Reports</h1>
-        <p className="text-sm text-muted-foreground">
-          Compiled template snapshots — point-in-time deliverables.
-        </p>
-      </div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Button size="sm" onClick={onGenerate}>
-          <Plus data-icon="inline-start" /> Generate Report
-        </Button>
-        <Button size="sm" variant="outline" onClick={onUpload}>
-          <Upload data-icon="inline-start" /> Upload Report
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function ReportListToolbar({
-  groupBy,
-  search,
-  viewMode,
-  onGroupByChange,
-  onSearchChange,
-  onViewModeChange,
-}: {
-  groupBy: GroupByOption;
-  search: string;
-  viewMode: ReportViewMode;
-  onGroupByChange: (value: GroupByOption) => void;
-  onSearchChange: (value: string) => void;
-  onViewModeChange: (value: ReportViewMode) => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative max-w-sm flex-1" role="search">
-        <Label htmlFor="report-search" className="sr-only">
-          Search reports
-        </Label>
-        <Search
-          className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <Input
-          id="report-search"
-          name="reportSearch"
-          placeholder="Search reports..."
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          className="h-8 pl-8 text-xs"
-        />
-      </div>
-      <div className="w-36">
-        <Label htmlFor="report-group-by" className="sr-only">
-          Group reports
-        </Label>
-        <Select
-          value={groupBy}
-          onValueChange={(value) => onGroupByChange(value as GroupByOption)}
-        >
-          <SelectTrigger id="report-group-by" className="h-8 text-xs">
-            <SelectValue placeholder="Group by" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(GROUP_BY_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value} className="text-xs">
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <ToggleGroup
-        type="single"
-        value={viewMode}
-        onValueChange={(value) => {
-          if (value) {
-            onViewModeChange(value as ReportViewMode);
-          }
-        }}
-      >
-        <ToggleGroupItem
-          value="cards"
-          aria-label="Cards view"
-          className="h-8 w-8 px-0"
-        >
-          <LayoutGrid className="size-3.5" />
-        </ToggleGroupItem>
-        <ToggleGroupItem
-          value="table"
-          aria-label="Table view"
-          className="h-8 w-8 px-0"
-        >
-          <List className="size-3.5" />
-        </ToggleGroupItem>
-      </ToggleGroup>
-    </div>
-  );
-}
-
-function UploadReportDialog({
-  author,
-  description,
+function buildReportStatusItems({
+  filteredCount,
+  isError,
   isPending,
-  open,
-  slug,
-  tags,
-  uploadFile,
-  onAuthorChange,
-  onDescriptionChange,
-  onFileChange,
-  onOpenChange,
-  onSlugChange,
-  onTagsChange,
-  onUpload,
+  selectedCount,
+  totalCount,
+  viewMode,
 }: {
-  author: string;
-  description: string;
+  filteredCount: number;
+  isError: boolean;
   isPending: boolean;
-  open: boolean;
-  slug: string;
-  tags: string;
-  uploadFile: File | null;
-  onAuthorChange: (value: string) => void;
-  onDescriptionChange: (value: string) => void;
-  onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onOpenChange: (open: boolean) => void;
-  onSlugChange: (value: string) => void;
-  onTagsChange: (value: string) => void;
-  onUpload: () => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Upload Report</DialogTitle>
-          <DialogDescription>
-            Upload a markdown file to create a new report.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="file">Markdown File</Label>
-            <Input id="file" type="file" accept=".md" onChange={onFileChange} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="slug">Slug</Label>
-            <Input
-              id="slug"
-              value={slug}
-              onChange={(event) => onSlugChange(event.target.value)}
-              placeholder="my_report_slug"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="author">Author (optional)</Label>
-            <Input
-              id="author"
-              value={author}
-              onChange={(event) => onAuthorChange(event.target.value)}
-              placeholder="John Doe"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="description">Description (optional)</Label>
-            <Textarea
-              id="description"
-              value={description}
-              onChange={(event) => onDescriptionChange(event.target.value)}
-              placeholder="Brief description of the report..."
-              rows={3}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tags">Tags (optional)</Label>
-            <Input
-              id="tags"
-              value={tags}
-              onChange={(event) => onTagsChange(event.target.value)}
-              placeholder="q1, finance, summary (comma-separated)"
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={onUpload}
-            disabled={!uploadFile || !slug || isPending}
-          >
-            {isPending ? "Uploading…" : "Upload"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+  selectedCount: number;
+  totalCount: number;
+  viewMode: ReportViewMode;
+}): ResourceStatusStripItem[] {
+  if (isPending) {
+    return [{ label: "Loading", tone: "muted", value: "Reports" }];
+  }
+
+  if (isError) {
+    return [{ label: "Error", tone: "danger", value: "Reports" }];
+  }
+
+  const items: ResourceStatusStripItem[] = [
+    { label: "Total", value: totalCount },
+    {
+      label: "Shown",
+      tone: totalCount > 0 && filteredCount === 0 ? "warning" : "neutral",
+      value: filteredCount,
+    },
+  ];
+
+  if (viewMode === "table" && selectedCount > 0) {
+    items.push({ label: "Selected", tone: "success", value: selectedCount });
+  }
+
+  return items;
 }
 
 export function ReportListPage() {
@@ -350,6 +174,14 @@ export function ReportListPage() {
     [filtered, selectedSlugs],
   );
   const selectedCount = selectedReports.length;
+  const statusItems = buildReportStatusItems({
+    filteredCount: filtered.length,
+    isError: reportsQuery.isError,
+    isPending: reportsQuery.isPending,
+    selectedCount,
+    totalCount: reports.length,
+    viewMode,
+  });
   const toggleGroup = (label: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -463,18 +295,18 @@ export function ReportListPage() {
     );
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setUploadFile(file);
-      const nameWithoutExt = file.name.replace(/\.md$/i, "");
-      const generatedSlug = nameWithoutExt
-        .replace(/[^a-zA-Z0-9]/g, "_")
-        .toLowerCase();
-      setUploadSlug(generatedSlug);
-    } else {
+  const handleFileChange = (file: File | null) => {
+    if (!file) {
       setUploadFile(null);
+      return;
     }
+
+    setUploadFile(file);
+    const nameWithoutExt = file.name.replace(/\.md$/i, "");
+    const generatedSlug = nameWithoutExt
+      .replace(/[^a-zA-Z0-9]/g, "_")
+      .toLowerCase();
+    setUploadSlug(generatedSlug);
   };
 
   const handleUpload = () => {
@@ -513,58 +345,105 @@ export function ReportListPage() {
 
   return (
     <div className="space-y-4 p-4">
-      <ReportListHeader
-        onGenerate={() => setGenerateOpen(true)}
-        onUpload={() => setUploadOpen(true)}
+      <PageContextBar
+        actions={
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button size="sm" onClick={() => setGenerateOpen(true)}>
+              <Plus data-icon="inline-start" /> Generate Report
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setUploadOpen(true)}
+            >
+              <Upload data-icon="inline-start" /> Upload Report
+            </Button>
+          </div>
+        }
+        description="Compiled template snapshots — point-in-time deliverables."
+        status={<ResourceStatusStrip items={statusItems} />}
+        title="Reports"
       />
-      <ReportListToolbar
-        groupBy={groupBy}
-        search={search}
+      <ResourceToolbar
+        resultSummary={
+          reportsQuery.isPending || reportsQuery.isError
+            ? undefined
+            : `Showing ${filtered.length} of ${reports.length} reports`
+        }
+        search={{
+          id: "report-search",
+          label: "Search reports",
+          name: "reportSearch",
+          placeholder: "Search reports...",
+          value: search,
+          onChange: setSearch,
+        }}
+        filters={
+          <div className="w-36">
+            <Label htmlFor="report-group-by" className="sr-only">
+              Group reports
+            </Label>
+            <Select
+              value={groupBy}
+              onValueChange={(value) => setGroupBy(value as GroupByOption)}
+            >
+              <SelectTrigger id="report-group-by" className="h-8 text-xs">
+                <SelectValue placeholder="Group by" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(GROUP_BY_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value} className="text-xs">
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        }
+        selectionSummary={
+          viewMode === "table" && selectedCount > 0
+            ? `${selectedCount} selected`
+            : undefined
+        }
         viewMode={viewMode}
-        onGroupByChange={setGroupBy}
-        onSearchChange={setSearch}
         onViewModeChange={(value) => {
-          setViewMode(value);
-          if (value === "cards") setSelectedSlugs(new Set());
+          const nextViewMode = value as ReportViewMode;
+          setViewMode(nextViewMode);
+          if (nextViewMode === "cards") setSelectedSlugs(new Set());
         }}
       />
 
       <div className="space-y-4">
         {reportsQuery.isPending ? (
-          <Card>
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              Loading reports...
-            </CardContent>
-          </Card>
+          <EmptyStatePanel
+            description="Fetching report inventory."
+            title="Loading reports..."
+          />
         ) : null}
         {reportsQuery.isError ? (
-          <Card role="alert">
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              {reportsQuery.error instanceof Error
+          <EmptyStatePanel
+            description={
+              reportsQuery.error instanceof Error
                 ? reportsQuery.error.message
-                : "Failed to load reports."}
-            </CardContent>
-          </Card>
+                : "Failed to load reports."
+            }
+            title="Reports could not be loaded"
+            tone="danger"
+          />
         ) : null}
         {!reportsQuery.isPending &&
         !reportsQuery.isError &&
         reports.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              No reports yet. Generate one from a template or upload a markdown
-              file.
-            </CardContent>
-          </Card>
+          <EmptyStatePanel
+            description="Generate one from a template or upload a markdown file."
+            title="No reports yet."
+          />
         ) : null}
         {!reportsQuery.isPending &&
         !reportsQuery.isError &&
         reports.length > 0 &&
         filtered.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              No reports match your search.
-            </CardContent>
-          </Card>
+          <EmptyStatePanel title="No reports match your search." />
         ) : null}
 
         {Array.from(grouped.entries()).map(([groupLabel, groupReports]) => {
@@ -871,7 +750,7 @@ export function ReportListPage() {
         onGenerate={handleGenerate}
       />
 
-      <UploadReportDialog
+      <ReportUploadDialog
         author={uploadAuthor}
         description={uploadDescription}
         isPending={uploadMutation.isPending}
