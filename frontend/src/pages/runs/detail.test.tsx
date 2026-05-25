@@ -974,30 +974,43 @@ describe("RunsDetailPage", () => {
       usageRow.getByText(/^Executed tokens$/i).parentElement,
     ).toHaveTextContent(/30/i);
     const runtimeProfile = screen.getByTestId("runs-runtime-profile");
-    expect(runtimeProfile).toHaveTextContent(/effective runtime profile/i);
-    expect(runtimeProfile).toHaveTextContent(/sanitized launch-time model profile/i);
+    expect(runtimeProfile).toHaveTextContent(/runtime snapshot summary/i);
+    expect(runtimeProfile).toHaveTextContent(/frozen run provenance/i);
+    expect(runtimeProfile).toHaveTextContent(/frozen provenance/i);
     const primaryProfile = screen.getByTestId(
       "runs-runtime-profile-connection-primary_openai",
     );
     expect(primaryProfile).toHaveTextContent(/Primary OpenAI/i);
+    expect(primaryProfile).toHaveTextContent(/Snapshot key: primary_openai/i);
     expect(primaryProfile).toHaveTextContent(/Responses-compatible/i);
-    expect(primaryProfile).toHaveTextContent(/Selected strategies/i);
-    expect(primaryProfile).toHaveTextContent(/Supported/i);
-    expect(primaryProfile).toHaveTextContent(/Last probed/i);
+    expect(primaryProfile).toHaveTextContent(/Credential was present/i);
+    expect(primaryProfile).toHaveTextContent(/Capability summary/i);
+    expect(primaryProfile).toHaveTextContent(/Unsupported snapshot capabilities/i);
+    expect(primaryProfile).not.toHaveTextContent(/Selected strategies/i);
+    expect(primaryProfile).not.toHaveTextContent(/Last probed/i);
     const smokeProfile = screen.getByTestId(
       "runs-runtime-profile-connection-smoke_model",
     );
     expect(smokeProfile).toHaveTextContent(/Smoke Model/i);
     expect(smokeProfile).toHaveTextContent(/Chat Completions-compatible/i);
-    expect(smokeProfile).toHaveTextContent(/No stored credential/i);
-    expect(smokeProfile).toHaveTextContent(/Unsupported/i);
+    expect(smokeProfile).toHaveTextContent(/No credential captured/i);
+    expect(screen.queryByTestId("runs-runtime-selected-strategies")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-runtime-strategy-2-1002")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /audit evidence/i }));
+
     const selectedStrategies = screen.getByTestId(
       "runs-runtime-selected-strategies",
     );
-    expect(selectedStrategies).toHaveTextContent(/Adapter-selected strategies/i);
+    expect(selectedStrategies).toHaveTextContent(
+      /Adapter-selected strategy evidence/i,
+    );
     expect(selectedStrategies).toHaveTextContent(
       /compatibility degradation decisions/i,
     );
+    expect(
+      screen.getByTestId("runs-runtime-audit-connection-primary_openai"),
+    ).toHaveTextContent(/Last probed/i);
     const decisionStrategy = screen.getByTestId("runs-runtime-strategy-2-1002");
     expect(decisionStrategy).toHaveTextContent(/consumer_agent@2/i);
     expect(decisionStrategy).toHaveTextContent(/json object validation/i);
@@ -1289,6 +1302,10 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-runtime-profile")).toHaveTextContent(
       /unsupported/i,
     );
+    expect(screen.queryByTestId("runs-runtime-strategy-1-1001")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /audit evidence/i }));
+
     expect(screen.getByTestId("runs-runtime-strategy-1-1001")).toHaveTextContent(
       /strictJsonSchema/i,
     );
@@ -1351,6 +1368,7 @@ describe("RunsDetailPage", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
+          packageProvenance: buildPackageProvenance(),
           memoryArtifacts: [
             {
               memoryId: "memory_701",
@@ -1457,6 +1475,12 @@ describe("RunsDetailPage", () => {
     expect(artifact).toHaveTextContent(/slot decision/i);
     expect(artifact).toHaveTextContent(/run #42/i);
     expect(artifact).toHaveTextContent(/loop review_loop.*iteration 2/i);
+    expect(
+      within(artifact).getByRole("link", { name: /open canonical memory/i }),
+    ).toHaveAttribute(
+      "href",
+      "/memory?memoryId=memory_701&packageKey=market_review_package&runId=42&workflowKey=market_review&agentKey=portfolio_manager",
+    );
     expect(
       within(artifact).getByRole("link", { name: /open report/i }),
     ).toHaveAttribute("href", "/reports/memory_aapl_decision");

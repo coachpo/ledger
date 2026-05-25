@@ -4,6 +4,7 @@ import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/layout";
 import { assembleFinanceWorkspaceRoutes } from "./extensions/runtime-helpers";
 import { ExtensionsListPage } from "./pages/extensions/list";
+import { MemoryListPage } from "./pages/memory/list";
 import { ModelConnectionsEditorPage } from "./pages/model-connections/editor";
 import { ModelConnectionsListPage } from "./pages/model-connections/list";
 import { NotFoundPage } from "./pages/not-found";
@@ -36,6 +37,7 @@ const platformRoutes: AppRouteDefinition[] = [
     path: "model-connections/:modelConnectionId/edit",
     Component: ModelConnectionsEditorPage,
   },
+  { path: "memory", Component: MemoryListPage },
   { path: "runs", Component: RunsListPage },
   { path: "runs/:runId", Component: RunsDetailPage },
 ];

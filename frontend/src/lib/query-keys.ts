@@ -168,8 +168,21 @@ const workflowPackagesQueryKeys = {
     [...workflowPackagesRoot, "secretBindings", normalizeId(packageId)] as const,
   validation: () => [...workflowPackagesRoot, "validation"] as const,
 } as const;
+const memoryQueryKeys = {
+  all: [...platformApiRoot, "memory"] as const,
+  detail: (memoryId: IdParam) =>
+    [...platformApiRoot, "memory", "detail", normalizeId(memoryId)] as const,
+  events: (memoryId: IdParam) =>
+    [...platformApiRoot, "memory", "events", normalizeId(memoryId)] as const,
+  list: (params: object = {}) =>
+    [...platformApiRoot, "memory", "list", params] as const,
+  revisions: (memoryId: IdParam) =>
+    [...platformApiRoot, "memory", "revisions", normalizeId(memoryId)] as const,
+} as const;
+
 const platformQueryKeys = {
   all: [...platformApiRoot] as const,
+  memory: memoryQueryKeys,
   modelConnections: {
     all: [...platformApiRoot, "modelConnections"] as const,
     detail: (modelConnectionId: IdParam) =>

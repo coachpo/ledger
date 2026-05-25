@@ -101,8 +101,29 @@ describe("query keys", () => {
       "signaldeck.finance",
     ]);
 
+    expect(queryKeys.platform.memory.detail("memory_1")).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "detail",
+      "memory_1",
+    ]);
+    expect(
+      queryKeys.platform.memory.list({
+        scope: { scopeKey: "42", scopeType: "run" },
+        visibility: "explicit-scope",
+      }),
+    ).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "list",
+      { scope: { scopeKey: "42", scopeType: "run" }, visibility: "explicit-scope" },
+    ]);
+
     expect(Object.keys(queryKeys.platform)).toEqual([
       "all",
+      "memory",
       "modelConnections",
       "extensions",
       "tools",

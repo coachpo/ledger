@@ -34,6 +34,7 @@ import { queryKeys } from "./lib/query-keys";
 import type { ExtensionListRead } from "./lib/types/extension";
 import { NotFoundPage } from "./pages/not-found";
 import { RouteErrorPage } from "./pages/route-error";
+import { MemoryListPage } from "./pages/memory/list";
 import { WorkflowPackageEditorPage } from "./pages/workflow-packages/editor";
 import { WorkflowPackageLaunchPage } from "./pages/workflow-packages/launch";
 import { router } from "./routes";
@@ -198,6 +199,12 @@ describe("router", () => {
       owner: { kind: "platform" },
       stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
       testId: "route-model-connections-list",
+    });
+    expect(getRouteMetadataByPattern("/memory")).toMatchObject({
+      archetype: "inventory",
+      owner: { kind: "platform" },
+      stateVariants: ["loading", "ready", "error", "empty", "unauthorized"],
+      testId: "route-memory-list",
     });
     expect(getRouteMetadataByPattern("/runs")).toMatchObject({
       archetype: "inventory",
@@ -390,14 +397,53 @@ describe("router", () => {
     }
   });
 
-  it("keeps global model connection and run routes", () => {
+  it("keeps global model connection, canonical memory, and run routes", () => {
     expect(matchRoutes(router.routes, "/model-connections")).not.toBeNull();
     expect(matchRoutes(router.routes, "/model-connections/new")).not.toBeNull();
     expect(
       matchRoutes(router.routes, "/model-connections/123/edit"),
     ).not.toBeNull();
+    expect(matchedRouteComponent("/memory")).toBe(MemoryListPage);
+    expect(getRouteMetadataForPathname("/memory")?.testId).toBe(
+      "route-memory-list",
+    );
+    expect(matchedRouteComponent("/api/memory")).toBe(NotFoundPage);
+    expect(getRouteMetadataForPathname("/api/memory")).toBe(unknownRouteMetadata);
     expect(matchRoutes(router.routes, "/runs")).not.toBeNull();
     expect(matchRoutes(router.routes, "/runs/123")).not.toBeNull();
+  });
+
+  it("renders deterministic private-scope access state for /memory", async () => {
+    const testRouter = createMemoryRouter(router.routes, {
+      initialEntries: ["/memory"],
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(
+      queryKeys.platform.extensions.list(),
+      extensionList(true),
+    );
+
+    render(
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={testRouter} />
+        </QueryClientProvider>
+      </ThemeProvider>,
+    );
+
+    expect(await screen.findByTestId("route-memory-list")).toHaveAttribute(
+      "data-route-shell-mode",
+      "scroll",
+    );
+    expect(screen.getByTestId("memory-list-page")).toBeVisible();
+    expect(screen.getByTestId("memory-access-required")).toHaveTextContent(
+      "Access context required",
+    );
+    expect(screen.getByText(/explicit private scopes only/i)).toBeVisible();
+    expect(screen.queryByLabelText("Namespace declarations")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Namespace grants")).not.toBeInTheDocument();
   });
 
   it("renders a product-owned catch-all 404 inside the app shell", async () => {

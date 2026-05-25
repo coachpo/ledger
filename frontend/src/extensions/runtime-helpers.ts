@@ -2,6 +2,7 @@ import { createElement, type ComponentType } from "react";
 import {
   Briefcase,
   ClipboardList,
+  Database,
   FileText,
   LayoutDashboard,
   Link2,
@@ -61,6 +62,7 @@ const financeRouteComponents: Record<string, ComponentType> = {
 const navIconByName: Record<RouteNavIconName, LucideIcon> = {
   Briefcase,
   ClipboardList,
+  Database,
   FileText,
   LayoutDashboard,
   Link2,

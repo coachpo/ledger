@@ -36,6 +36,7 @@ export const SIDEBAR_NAV_GROUP_ORDER = [
 export type RouteNavIconName =
   | "Briefcase"
   | "ClipboardList"
+  | "Database"
   | "FileText"
   | "LayoutDashboard"
   | "Link2"
@@ -50,6 +51,7 @@ export type RouteStateVariant =
   | "empty"
   | "filteredEmpty"
   | "disabledExtension"
+  | "unauthorized"
   | "notFound"
   | "creating"
   | "editing"
@@ -456,6 +458,23 @@ const platformAndSystemRouteMetadata = [
     shellMode: "fullHeight",
     stateVariants: ["loading", "editing", "saving", "error", "notFound"],
     testId: "route-model-connection-edit",
+  },
+  {
+    archetype: "inventory",
+    breadcrumb: { title: "Memory" },
+    nav: {
+      group: AGENT_PLATFORM_NAV_GROUP,
+      iconName: "Database",
+      label: "Memory",
+      path: "/memory",
+      sidebar: true,
+      testId: "nav-memory",
+    },
+    owner: { kind: "platform" },
+    pattern: "/memory",
+    shellMode: "scroll",
+    stateVariants: ["loading", "ready", "error", "empty", "unauthorized"],
+    testId: "route-memory-list",
   },
   {
     archetype: "inventory",
