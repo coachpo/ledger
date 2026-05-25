@@ -1,12 +1,16 @@
 import { Link, isRouteErrorResponse, useRouteError } from "react-router";
 import { AlertTriangle, Home } from "lucide-react";
 
+import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import { ProvenanceBadge } from "@/components/shared/provenance-badge";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 
 type RouteErrorDetails = {
   description: string;
   eyebrow: string;
+  statusLabel: string;
   title: string;
 };
 
@@ -17,6 +21,7 @@ function routeErrorDetails(error: unknown): RouteErrorDetails {
         description:
           "The route request could not find the resource it expected. Return to a known workspace route to continue.",
         eyebrow: "Route error 404",
+        statusLabel: "404",
         title: "Route resource not found",
       };
     }
@@ -25,6 +30,7 @@ function routeErrorDetails(error: unknown): RouteErrorDetails {
       description:
         "SignalDeck could not finish loading this route. Return to a known workspace route or retry after the service recovers.",
       eyebrow: `Route error ${error.status}`,
+      statusLabel: String(error.status),
       title: error.statusText || "Route failed to load",
     };
   }
@@ -34,6 +40,7 @@ function routeErrorDetails(error: unknown): RouteErrorDetails {
       description:
         "SignalDeck hit an unexpected routed failure before this workspace could render safely.",
       eyebrow: "Route error",
+      statusLabel: "Render failure",
       title: "Route failed to render",
     };
   }
@@ -42,6 +49,7 @@ function routeErrorDetails(error: unknown): RouteErrorDetails {
     description:
       "SignalDeck received an unknown routed failure before this workspace could render safely.",
     eyebrow: "Route error",
+    statusLabel: "Unknown failure",
     title: "Route failed to load",
   };
 }
@@ -52,26 +60,40 @@ export function RouteErrorPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-6" data-testid="route-error-page">
-      <Card className="w-full max-w-2xl">
-        <CardContent className="flex flex-col items-start gap-5 p-8">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
-            <AlertTriangle aria-hidden="true" className="size-6" />
-          </div>
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
-              {details.eyebrow}
-            </p>
-            <h1 className="text-2xl font-semibold tracking-tight">{details.title}</h1>
-            <p className="max-w-xl text-sm text-muted-foreground">{details.description}</p>
-          </div>
-          <Button asChild size="sm">
-            <Link to="/workflow-packages">
-              <Home aria-hidden="true" className="size-4" />
-              Open workflow packages
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="flex w-full max-w-2xl flex-col gap-3">
+        <PageContextBar
+          description="React Router redirected this route into SignalDeck's product-owned error boundary."
+          meta={
+            <div className="flex flex-wrap items-center gap-2">
+              <ProvenanceBadge detail="error boundary" label="Surface" tone="destructive" />
+              <ProvenanceBadge detail={details.eyebrow} label="Failure" tone="warning" />
+            </div>
+          }
+          status={
+            <ResourceStatusStrip
+              items={[
+                { label: "State", tone: "danger", value: details.statusLabel },
+                { label: "Fallback", tone: "neutral", value: "Workflow packages" },
+              ]}
+            />
+          }
+          title="Route error boundary"
+        />
+        <EmptyStatePanel
+          action={
+            <Button asChild size="sm">
+              <Link to="/workflow-packages">
+                <Home data-icon="inline-start" />
+                Open workflow packages
+              </Link>
+            </Button>
+          }
+          description={details.description}
+          icon={<AlertTriangle className="size-4 text-destructive" />}
+          title={<h1 className="text-2xl font-semibold tracking-tight">{details.title}</h1>}
+          tone="danger"
+        />
+      </div>
     </main>
   );
 }

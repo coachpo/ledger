@@ -1,34 +1,49 @@
 import { Link } from "react-router";
 import { ArrowLeft, SearchX } from "lucide-react";
 
+import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import { ProvenanceBadge } from "@/components/shared/provenance-badge";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 
 export function NotFoundPage() {
   return (
     <section className="p-4" data-testid="not-found-page">
-      <Card className="mx-auto max-w-2xl">
-        <CardContent className="flex flex-col items-center gap-4 px-6 py-12 text-center">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-            <SearchX aria-hidden="true" className="size-6" />
-          </div>
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
-              SignalDeck route
-            </p>
-            <h1 className="text-2xl font-semibold tracking-tight">Page not found</h1>
-            <p className="max-w-md text-sm text-muted-foreground">
-              The workspace path you requested is not registered in SignalDeck. Return to a known route to continue your workflow.
-            </p>
-          </div>
-          <Button asChild size="sm">
-            <Link to="/workflow-packages">
-              <ArrowLeft aria-hidden="true" className="size-4" />
-              Open workflow packages
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="mx-auto flex max-w-2xl flex-col gap-3">
+        <PageContextBar
+          description="The requested path did not match any registered SignalDeck route metadata."
+          meta={
+            <div className="flex flex-wrap items-center gap-2">
+              <ProvenanceBadge detail="catch-all" label="Route owner" />
+              <ProvenanceBadge detail="product fallback" label="Shell" tone="verified" />
+            </div>
+          }
+          status={
+            <ResourceStatusStrip
+              items={[
+                { label: "State", tone: "warning", value: "Not found" },
+                { label: "Fallback", tone: "neutral", value: "Workflow packages" },
+              ]}
+            />
+          }
+          title="Unknown route"
+        />
+        <EmptyStatePanel
+          action={
+            <Button asChild size="sm">
+              <Link to="/workflow-packages">
+                <ArrowLeft data-icon="inline-start" />
+                Open workflow packages
+              </Link>
+            </Button>
+          }
+          description="The workspace path you requested is not registered in SignalDeck. Return to a known route to continue your workflow."
+          icon={<SearchX className="size-4" />}
+          title={<h1 className="text-2xl font-semibold tracking-tight">Page not found</h1>}
+          tone="warning"
+        />
+      </div>
     </section>
   );
 }

@@ -707,8 +707,9 @@ describe("router", () => {
     const disabledState = await screen.findByTestId("extension-disabled-state");
     expect(disabledState).toHaveTextContent("Finance Workspace disabled");
     expect(disabledState).toHaveTextContent(
-      "This workspace is unavailable while its bundled extension is disabled.",
+      "Finance-owned routes, navigation, and tools are paused while this bundled extension is disabled.",
     );
+    expect(disabledState).toHaveTextContent("Blast radius");
     expect(disabledState).not.toHaveTextContent("signaldeck.finance");
     expect(
       screen.getByRole("link", { name: "Open core workflow packages" }),
