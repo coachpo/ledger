@@ -1,8 +1,8 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-05-22
-**Commit:** f9ae90d
-**Branch:** main
+**Generated:** 2026-05-25
+**Commit:** 51d748b
+**Branch:** feature/memory
 
 ## OVERVIEW
 
@@ -18,13 +18,14 @@ Future upgrade work must keep the platform-core versus extension-owned boundary 
 
 ## CHILD DOCS
 
-- `backend/AGENTS.md`, `backend/app/*/AGENTS.md`, `backend/tests/AGENTS.md` — backend layer, runtime, persistence, schema, and test rules
+- `backend/AGENTS.md`, `backend/app/*/AGENTS.md`, `backend/tests/AGENTS.md` — backend layer, runtime, persistence, schema, worker, and test rules
 - `backend/app/extensions/signaldeck_finance/AGENTS.md` — first-party Finance Workspace extension ownership
+- `.github/workflows/AGENTS.md` — CI gates, container publishing, and cleanup workflow rules
 - `docs/AGENTS.md` — live docs ownership, obsolete-content rules, and platform/extension documentation boundary
 - `frontend/AGENTS.md`, `frontend/e2e/AGENTS.md` — frontend shell, browser tests, and startup conventions
 - `frontend/src/extensions/AGENTS.md`, `frontend/src/hooks/AGENTS.md`, `frontend/src/lib/**/AGENTS.md` — extension runtime, query hooks, API/type/platform-authoring contracts
 - `frontend/src/components/**/AGENTS.md`, `frontend/src/pages/AGENTS.md` — reusable UI, feature UI, and routed page-family rules
-- `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md` — deeper route-family hotspots
+- `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/memory/AGENTS.md`, `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md` — deeper route-family hotspots
 
 ## STRUCTURE
 
@@ -32,7 +33,7 @@ Future upgrade work must keep the platform-core versus extension-owned boundary 
 signaldeck/
 ├── backend/              # FastAPI app, SQLAlchemy models, services, pytest suite
 ├── frontend/             # React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
-├── docs/                 # prd, spec, API, data-model, test, run-input, platform, and memory design docs
+├── docs/                 # six canonical owner docs plus historical pending-design notes
 ├── demo/                 # grounded example Workflow Package YAML
 ├── .github/workflows/    # CI quality gates, Docker image publish, cleanup
 └── start.sh              # local orchestrator for db/backend/scheduler/frontend with fallback ports
@@ -47,13 +48,13 @@ signaldeck/
 | Sample Workflow Package YAML | `demo/tradingagents_advisory_research.yaml` | grounded example package input for manual import/testing |
 | Cross-app E2E startup | `frontend/e2e/AGENTS.md`, `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with dedicated startup helpers |
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory plus extension-gated `/api/v1` and current `/api/*` composition |
-| Backend agent-platform flow | `backend/app/api/workflow_packages.py`, `backend/app/api/model_connections.py`, `backend/app/api/extensions.py`, `backend/app/api/tools.py`, `backend/app/api/runs.py` | Workflow Packages, Model Connections, Extensions, Tools, and Runs |
+| Backend agent-platform flow | `backend/app/api/workflow_packages.py`, `backend/app/api/model_connections.py`, `backend/app/api/extensions.py`, `backend/app/api/memory.py`, `backend/app/api/tools.py`, `backend/app/api/runs.py` | Workflow Packages, Model Connections, Extensions, Memory, Tools metadata, and Runs |
 | Backend extension ownership | `backend/app/extensions/AGENTS.md`, `backend/app/extensions/signaldeck_finance/AGENTS.md`, `backend/app/services/extension_service.py` | statically resident extension registry/state and private `signaldeck.finance` registrar ownership |
-| Backend runtime tools, MCP, and traces | `backend/app/agents/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py`, `backend/app/core/telemetry.py` | server-declared tools, native runtime tools, MCP snapshots/dispatch, Logfire trace ids/spans, memory writes |
+| Backend runtime tools, MCP, memory, and traces | `backend/app/agents/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py`, `backend/app/api/memory.py`, `backend/app/core/telemetry.py` | server-declared tools, native runtime tools, MCP snapshots/dispatch, platform-core memory API, Logfire trace ids/spans, and memory writes |
 | Backend preserved v1 flow | `backend/app/extensions/signaldeck_finance/api_routers.py`, `backend/app/api/portfolios.py`, `backend/app/api/balances.py`, `backend/app/api/positions.py`, `backend/app/api/trading_operations.py`, `backend/app/api/market_data.py`, `backend/app/api/templates.py`, `backend/app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
 | Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/extensions/runtime-helpers.ts`, `frontend/src/components/layout.tsx` | query client, router provider, extension route/nav assembly, layout shell, theme toggle |
 | Frontend extension runtime | `frontend/src/extensions/AGENTS.md`, `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/extensions/runtime.tsx`, `frontend/src/extensions/runtime-helpers.ts`, `frontend/src/hooks/use-extensions.ts` | frontend route/nav/tool filtering plus statically resident extension state UI |
-| Frontend agent-platform UI | `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md` | Workflow Packages, Model Connections, and Runs |
+| Frontend agent-platform UI | `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md`, `frontend/src/pages/memory/AGENTS.md` | Workflow Packages, Model Connections, Runs, and Memory; Tools appear as package-authoring metadata, not a standalone browser route |
 | Frontend preserved product UI | `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md` | preserved portfolio, template, and report routes |
 | Frontend reports and templates | `frontend/src/components/templates/AGENTS.md`, `frontend/src/components/forms/generate-report-dialog.tsx`, `frontend/src/lib/runtime-inputs.ts`, `frontend/src/lib/report-grouping.ts` | runtime inputs, placeholder browsing, grouping, and report generation UI |
 | Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_workflow_package_preflight.py`, `backend/tests/test_workflow_package_runtime_api.py`, `backend/tests/test_workflow_package_run_contracts.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_mcp_runtime.py`, `backend/tests/test_runtime_db_upgrades.py`, `backend/tests/test_legacy_backend_cutover.py` | preserved v1 CRUD plus package validation, runtime, MCP, rerun/fork, DB-upgrade, and cutover regression coverage |
@@ -65,10 +66,10 @@ signaldeck/
 |---|---|---|
 | `create_app` | `backend/app/main.py` | FastAPI app factory, exception handlers, CORS, healthcheck |
 | `api_router` | `backend/app/api/router.py` | mounts `signaldeck.finance` route registrations under `/api/v1` |
-| `platform_router` | `backend/app/api/platform_router.py` | mounts live `/api/*` routers for workflow packages, model connections, extensions, tools, and runs |
+| `platform_router` | `backend/app/api/platform_router.py` | mounts live `/api/*` routers for extensions, memory, model connections, tools, workflow packages, and runs |
 | `get_bundled_extension_registry` | `backend/app/extensions/registry.py` | declares statically resident extension identity, initial enabled seeding, and private registrar paths |
 | `ExtensionService` | `backend/app/services/extension_service.py` | resolves slim extension state, toggles `/api/extensions`, and filters ToolCatalog/runtime tool registries |
-| `router` | `frontend/src/routes.ts` | flat route table with finance routes assembled from `src/extensions/runtime-helpers.ts` plus platform/system routes |
+| `router` | `frontend/src/routes.ts` | flat route table for `/`, `/extensions`, finance routes, `/workflow-packages`, `/model-connections`, `/memory`, and `/runs` |
 | `assembleFinanceWorkspaceRoutes` | `frontend/src/extensions/runtime-helpers.ts` | converts Finance Workspace route entries into guarded React Router entries |
 | `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, extension-aware nav groups, template/package editor full-height layout |
 | `configure_logfire` | `backend/app/core/telemetry.py` | optional Logfire setup plus trace/span id formatting used by package run execution |
@@ -82,7 +83,7 @@ signaldeck/
 - Template placeholder paths are a cross-stack contract spanning backend services/schemas and frontend types/editor code; the live roots are `inputs`, `portfolios`, and `reports`.
 - Reports are point-in-time markdown snapshots keyed by unique `slug`; canonical `source` origins are `compiled`, `uploaded`, `external`, and `agent`. `external` stays limited to true external user/API-created reports. Historical agent-memory reports are report-domain history only; canonical memory writes and lookup use platform-core memory tables and tools.
 - Logfire is configured in `backend/app/core/telemetry.py` with `send_to_logfire="if-token-present"`; run execution stores formatted trace ids and per-invocation span ids but still works without a Logfire token.
-- Legacy orchestration, Studio, Tryout, runtime-v2 routes, and retired legacy global authoring routes are not mounted live. Keep docs aligned with the package-first routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
+- Legacy orchestration, Studio, Tryout, runtime-v2 routes, and retired legacy global authoring routes are not mounted live. Keep docs aligned with the package-first browser routes for Workflow Packages, Model Connections, Extensions, Memory, and Runs, plus backend Tools metadata at `/api/tools`.
 - `signaldeck.finance` is the statically resident first-party Finance Workspace extension. It is enabled by default, owns the preserved `/api/v1` finance route families, and gates finance route/nav/tool visibility through backend and frontend extension state. Public `/api/extensions` state is only `key`, `label`, and `enabled`; registry and scaffold details stay private wiring.
 - When planning upgrades, decide explicitly whether behavior belongs in platform core or in extension-owned seams, then update registries, route gates, runtime tools, docs, and tests together instead of letting finance-specific behavior silently redefine shared contracts.
 - Workflow Packages are the canonical platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside package artifacts; persistence is artifact-only, while launch/preflight/rerun/fork readiness is evaluated late against live Model Connections, extension state, and package secret bindings.
@@ -135,4 +136,4 @@ signaldeck/
 - Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing and cleanup live in separate workflows.
 - Root CI uses `uv sync --frozen` for backend jobs and `pnpm install --frozen-lockfile` for frontend jobs; `version-sync` checks `backend/VERSION` against `backend/pyproject.toml` and `frontend/VERSION` against `frontend/package.json`.
 - Docker image publishing builds backend and frontend linux/arm64 images for GHCR; cleanup keeps at least 3 recent workflow runs and deletes untagged backend/frontend container package versions.
-- `docs/AGENTS.md` governs the surviving docs set: `prd.md`, `requirements.md`, `spec.md`, `api-design.md`, `data-model.md`, `test-plan.md`, `run-input-schema-helptext.md`, `signaldeck-agent-platform.md`, phase-1 `signaldeck-memory-layer-design.md`, and the research/design note `advisory-research-signaldeck-upgrade-design.md`. Live code remains source of truth for docs updates.
+- `docs/AGENTS.md` governs the six canonical owner docs: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and `docs/AGENTS.md`. Pending design notes under `docs/pending-design/` are historical context only. Live code remains source of truth for docs updates.
