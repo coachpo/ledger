@@ -38,8 +38,19 @@ export function EmptyStatePanel({
   return (
     <Card className={cn("border-dashed", panelClassByTone[tone], className)}>
       <CardContent className="p-4">
-        <Alert className="border-0 bg-transparent p-0" data-tone={tone} variant={alertVariantByTone[tone]}>
-          {icon ? <div aria-hidden="true">{icon}</div> : null}
+        <Alert
+          className={cn(
+            "border-0 bg-transparent p-0",
+            icon ? "grid-cols-[calc(var(--spacing)*4)_1fr] gap-x-3" : null,
+          )}
+          data-tone={tone}
+          variant={alertVariantByTone[tone]}
+        >
+          {icon ? (
+            <div aria-hidden="true" className="col-start-1 row-start-1 size-4 translate-y-0.5 text-current [&>svg]:size-4">
+              {icon}
+            </div>
+          ) : null}
           <AlertTitle>{title}</AlertTitle>
           {description ? <AlertDescription>{description}</AlertDescription> : null}
         </Alert>
