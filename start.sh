@@ -78,13 +78,13 @@ normalize_loopback_aliases() {
 
   case "$host" in
     127.0.0.1)
-      printf '%s\n%s' '127.0.0.1' 'localhost'
+      printf '%s\n%s\n' '127.0.0.1' 'localhost'
       ;;
     localhost)
-      printf '%s\n%s' 'localhost' '127.0.0.1'
+      printf '%s\n%s\n' 'localhost' '127.0.0.1'
       ;;
     *)
-      printf '%s' "$host"
+      printf '%s\n' "$host"
       ;;
   esac
 }
