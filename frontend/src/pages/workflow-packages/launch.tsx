@@ -1,6 +1,5 @@
 import {
   AlertCircle,
-  CheckCircle2,
   FileCheck2,
   Loader2,
   PlayCircle,
@@ -11,6 +10,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
+import { ConsoleSection } from "@/components/shared/console-section";
+import { ConstraintInspector } from "@/components/shared/constraint-inspector";
+import { EvidenceCluster } from "@/components/shared/evidence-cluster";
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -257,69 +261,66 @@ function RuntimeInputValidationAlert({
   );
 }
 
-function DiagnosticGroup({
+function DiagnosticConstraintItem({
+  diagnostic,
+}: {
+  diagnostic: PackageDiagnostic;
+}) {
+  return (
+    <div className="grid min-w-0 gap-2 rounded-lg border bg-background/70 p-3 text-sm md:grid-cols-[auto_minmax(0,12rem)_minmax(0,1fr)] md:items-center">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        {diagnosticBadge(diagnostic)}
+        {diagnostic.connectionKind ? (
+          <Badge
+            variant={
+              diagnostic.connectionKind === "deterministic_smoke"
+                ? "secondary"
+                : "outline"
+            }
+          >
+            {connectionKindLabel(diagnostic.connectionKind)}
+          </Badge>
+        ) : null}
+      </div>
+      <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">
+        {diagnostic.field}
+      </code>
+      <span className="min-w-0 break-words text-muted-foreground">
+        {diagnostic.issue}
+      </span>
+    </div>
+  );
+}
+
+function diagnosticConstraintSection({
   diagnostics,
   emptyCopy,
-  severity,
   testId,
-  title,
 }: {
   diagnostics: readonly PackageDiagnostic[];
-  emptyCopy: string;
-  severity: "error" | "warning";
+  emptyCopy?: string;
   testId: string;
-  title: string;
 }) {
-  const isBlocking = severity === "error";
+  if (diagnostics.length === 0 && !emptyCopy) {
+    return [];
+  }
 
-  return (
-    <section className="space-y-2" data-testid={testId}>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <h4 className="text-sm font-medium text-foreground">{title}</h4>
-        <Badge variant={isBlocking ? "destructive" : "outline"}>
-          {diagnostics.length}
-        </Badge>
-        <Badge variant={isBlocking ? "destructive" : "secondary"}>
-          {isBlocking ? "Blocking" : "Warning"}
-        </Badge>
-      </div>
+  return [
+    <div className="min-w-0 space-y-2" data-testid={testId} key={testId}>
       {diagnostics.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+        <p className="rounded-lg border border-dashed bg-background/60 p-3 text-sm text-muted-foreground">
           {emptyCopy}
         </p>
       ) : (
-        <div className="space-y-2">
-          {diagnostics.map((diagnostic, diagnosticIndex) => (
-            <div
-              key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}-${diagnosticIndex}`}
-              className="grid min-w-0 gap-2 rounded-lg border bg-background/60 p-3 text-sm md:grid-cols-[auto_minmax(0,12rem)_minmax(0,1fr)] md:items-center"
-            >
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                {diagnosticBadge(diagnostic)}
-                {diagnostic.connectionKind ? (
-                  <Badge
-                    variant={
-                      diagnostic.connectionKind === "deterministic_smoke"
-                        ? "secondary"
-                        : "outline"
-                    }
-                  >
-                    {connectionKindLabel(diagnostic.connectionKind)}
-                  </Badge>
-                ) : null}
-              </div>
-              <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">
-                {diagnostic.field}
-              </code>
-              <span className="min-w-0 break-words text-muted-foreground">
-                {diagnostic.issue}
-              </span>
-            </div>
-          ))}
-        </div>
+        diagnostics.map((diagnostic, diagnosticIndex) => (
+          <DiagnosticConstraintItem
+            diagnostic={diagnostic}
+            key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}-${diagnosticIndex}`}
+          />
+        ))
       )}
-    </section>
-  );
+    </div>,
+  ];
 }
 
 function ModelConnectionModeSummary({
@@ -338,12 +339,12 @@ function ModelConnectionModeSummary({
   ).length;
   return (
     <div
-      className="min-w-0 rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground"
+      className="min-w-0 space-y-2 rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground"
       data-testid="workflow-package-model-connection-modes"
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="font-medium text-foreground">
-          Model connection modes:
+          Model connection modes
         </span>
         <Badge variant="outline">{connectionKindLabel("provider")}</Badge>
         {smokeCount > 0 ? (
@@ -352,7 +353,27 @@ function ModelConnectionModeSummary({
           </Badge>
         ) : null}
       </div>
-      <p className="mt-2">
+      <EvidenceCluster
+        items={[
+          {
+            description: "Saved model connections remain the primary launch path.",
+            label: "Provider",
+            tone: "neutral",
+            value: connectionKindLabel("provider"),
+          },
+          {
+            description:
+              smokeCount > 0
+                ? "Offline deterministic launch paths are visible as warnings, not blockers."
+                : "No deterministic smoke warnings were reported for this launch metadata.",
+            label: "Smoke",
+            tone: smokeCount > 0 ? "warning" : "verified",
+            value: smokeCount,
+          },
+        ]}
+        layout="grid"
+      />
+      <p>
         {smokeCount > 0
           ? `${smokeCount} deterministic smoke connection${smokeCount === 1 ? "" : "s"} will run offline; remaining saved model connections stay provider-backed.`
           : "No deterministic smoke warnings were reported; saved model connections are provider-backed for this launch metadata."}
@@ -474,65 +495,93 @@ function SavedInputEntryRow(props: {
   );
 }
 
-function LaunchHeroSection({
+function LaunchIdentityContextBar({
   blockingCount,
   packageId,
-  workflowPackage,
   ready,
+  warningCount,
+  workflowPackage,
 }: {
   blockingCount: number;
   packageId: string;
-  workflowPackage: WorkflowPackageRead;
   ready: boolean;
+  warningCount: number;
+  workflowPackage: WorkflowPackageRead;
 }) {
+  const readinessLabel = ready
+    ? "Ready to launch"
+    : blockingCount > 0
+      ? "Blocked"
+      : "Review warnings";
+
   return (
-    <Card className="min-w-0 border-border/70 bg-card/80 shadow-sm backdrop-blur">
-      <CardContent className="flex min-w-0 flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">Saved package launch</Badge>
-            {ready ? (
-              <Badge
-                className="border-positive/30 bg-positive/10 text-positive"
-                variant="outline"
-              >
-                Ready
-              </Badge>
-            ) : null}
-            {blockingCount > 0 ? (
-              <Badge variant="destructive">{blockingCount} blocking</Badge>
-            ) : null}
-          </div>
-          <div className="space-y-1">
-            <h1 className="text-xl font-semibold tracking-tight">
-              Launch Workflow Package
-            </h1>
-            <p className="font-mono text-xs text-muted-foreground">
-              {workflowPackage.key}
-            </p>
-            <p className="max-w-3xl text-sm text-muted-foreground">
-              {workflowPackage.description ||
-                "Queue a run from the currently persisted workflow package."}
-            </p>
-          </div>
-        </div>
-        <div
-          className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row lg:justify-end"
-          data-testid="workflow-package-launch-actions"
-        >
-          <Button
-            asChild
-            className="w-full sm:w-auto"
-            size="sm"
-            variant="outline"
+    <div
+      className="sticky top-0 z-20 min-w-0"
+      data-testid="workflow-package-launch-identity"
+    >
+      <PageContextBar
+        actions={
+          <div
+            className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row lg:justify-end"
+            data-testid="workflow-package-launch-actions"
           >
-            <Link to={`/workflow-packages/${packageId}`}>
-              Open authoring editor
-            </Link>
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+            <Button
+              asChild
+              className="w-full sm:w-auto"
+              size="sm"
+              variant="outline"
+            >
+              <Link to={`/workflow-packages/${packageId}`}>
+                Open authoring editor
+              </Link>
+            </Button>
+          </div>
+        }
+        className="border-border/70 bg-card/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/85"
+        description={
+          workflowPackage.description ||
+          "Queue a run from the currently persisted workflow package."
+        }
+        meta={
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Badge variant="secondary">Saved package launch</Badge>
+            <span className="font-medium text-foreground">
+              {workflowPackage.name}
+            </span>
+            <span className="min-w-0 break-all font-mono">
+              {workflowPackage.key}
+            </span>
+            <span>Package #{workflowPackage.id}</span>
+          </div>
+        }
+        status={
+          <ResourceStatusStrip
+            items={[
+              {
+                label: "Readiness",
+                tone: ready
+                  ? "success"
+                  : blockingCount > 0
+                    ? "danger"
+                    : "warning",
+                value: readinessLabel,
+              },
+              {
+                label: "Blocking",
+                tone: blockingCount > 0 ? "danger" : "success",
+                value: blockingCount,
+              },
+              {
+                label: "Warnings",
+                tone: warningCount > 0 ? "warning" : "success",
+                value: warningCount,
+              },
+            ]}
+          />
+        }
+        title="Launch Workflow Package"
+      />
+    </div>
   );
 }
 
@@ -542,39 +591,61 @@ function LaunchContextCard({
   workflowPackage: WorkflowPackageRead;
 }) {
   return (
-    <Card
-      className="min-w-0 border-border/70 bg-card/80 shadow-sm backdrop-blur"
-      data-testid="workflow-package-launch-context"
-    >
-      <CardHeader className="border-b pb-4">
-        <CardTitle>{workflowPackage.name}</CardTitle>
-        <CardDescription>
-          Read-only launch context for package #{workflowPackage.id}.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid min-w-0 gap-3 p-4 text-sm text-muted-foreground md:grid-cols-2 xl:grid-cols-4">
-        <div className="min-w-0 break-words">
-          <span className="font-medium text-foreground">Manifest:</span>{" "}
-          <span className="font-mono text-xs break-all">
-            {workflowPackage.manifestHash ?? "Not recorded"}
-          </span>
-        </div>
-        <div className="min-w-0 break-words">
-          <span className="font-medium text-foreground">Compiled:</span>{" "}
-          <span className="font-mono text-xs break-all">
-            {workflowPackage.compiledHash ?? "Not recorded"}
-          </span>
-        </div>
-        <div className="min-w-0 break-words">
-          <span className="font-medium text-foreground">Updated:</span>{" "}
-          {formatDateTime(workflowPackage.updatedAt)}
-        </div>
-        <div className="min-w-0 break-words">
-          <span className="font-medium text-foreground">Created:</span>{" "}
-          {formatDateTime(workflowPackage.createdAt)}
-        </div>
-      </CardContent>
-    </Card>
+    <div data-testid="workflow-package-launch-context">
+      <ConsoleSection
+        description={`Read-only package identity and artifact context for package #${workflowPackage.id}.`}
+        title="Package identity"
+      >
+        <EvidenceCluster
+          items={[
+            {
+              description: "Persisted package key used for run provenance.",
+              label: "Key",
+              value: (
+                <span className="break-all font-mono text-xs">
+                  {workflowPackage.key}
+                </span>
+              ),
+            },
+            {
+              description: "Saved package record selected by the route.",
+              label: "Package",
+              value: workflowPackage.name,
+            },
+            {
+              description: "Manifest snapshot available for launch evidence.",
+              label: "Manifest",
+              tone: workflowPackage.manifestHash ? "verified" : "warning",
+              value: (
+                <span className="break-all font-mono text-xs">
+                  {workflowPackage.manifestHash ?? "Not recorded"}
+                </span>
+              ),
+            },
+            {
+              description: "Compiled artifact snapshot available for launch evidence.",
+              label: "Compiled",
+              tone: workflowPackage.compiledHash ? "verified" : "warning",
+              value: (
+                <span className="break-all font-mono text-xs">
+                  {workflowPackage.compiledHash ?? "Not recorded"}
+                </span>
+              ),
+            },
+            {
+              description: "Latest persisted package update.",
+              label: "Updated",
+              value: formatDateTime(workflowPackage.updatedAt),
+            },
+            {
+              description: "Original package creation time.",
+              label: "Created",
+              value: formatDateTime(workflowPackage.createdAt),
+            },
+          ]}
+        />
+      </ConsoleSection>
+    </div>
   );
 }
 
@@ -605,20 +676,23 @@ function LaunchReadinessCard({
   const warningDiagnostics = diagnostics.filter(
     (diagnostic) => diagnostic.severity === "warning",
   );
+  const readinessLabel = ready
+    ? "Ready to launch"
+    : blockingCount > 0
+      ? "Needs attention"
+      : warningCount > 0
+        ? "Ready with warnings"
+        : "Awaiting launch metadata";
+  const readinessDescription = readinessRead
+    ? blockingCount > 0
+      ? `${readinessRead.packageKey} · Blocked by launch diagnostics`
+      : readinessRead.packageKey
+    : "Launch metadata has not loaded yet.";
+
   return (
-    <Card
-      className="min-w-0 border-border/70 bg-card/80 shadow-sm backdrop-blur"
-      data-testid="workflow-package-preflight-panel"
-    >
-      <CardHeader className="border-b pb-4">
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 space-y-1">
-            <CardTitle>Launch readiness</CardTitle>
-            <CardDescription>
-              Load launch metadata, preflight the saved package, and review
-              launch-only diagnostics before queueing a run.
-            </CardDescription>
-          </div>
+    <div data-testid="workflow-package-preflight-panel">
+      <ConsoleSection
+        actions={
           <Button
             className="w-full sm:w-auto"
             disabled={preflightPending}
@@ -634,77 +708,133 @@ function LaunchReadinessCard({
             )}
             Run preflight
           </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="min-w-0 space-y-4 p-4">
-        {isLoadingMetadata ? (
-          <div className="min-w-0 rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
-            Loading launch metadata...
+        }
+        description="Load launch metadata, preflight the saved package, and review launch-only diagnostics before queueing a run."
+        title="Readiness console"
+        tone={blockingCount > 0 ? "danger" : warningCount > 0 ? "warning" : "default"}
+      >
+        <div className="min-w-0 space-y-4">
+          {isLoadingMetadata ? (
+            <div className="min-w-0 rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
+              Loading launch metadata...
+            </div>
+          ) : null}
+          {metadataError ? (
+            <Alert
+              data-testid="workflow-package-launch-metadata-error"
+              variant="destructive"
+            >
+              <AlertCircle />
+              <AlertTitle>Launch metadata unavailable</AlertTitle>
+              <AlertDescription>
+                {errorMessage(metadataError, "Failed to load launch metadata.")}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <div data-testid="workflow-package-preflight-status">
+            <ResourceStatusStrip
+              density="comfortable"
+              items={[
+                {
+                  description: readinessDescription,
+                  label: "Readiness",
+                  tone: ready
+                    ? "success"
+                    : blockingCount > 0
+                      ? "danger"
+                      : "warning",
+                  value: readinessLabel,
+                },
+                {
+                  description: "Stops run creation until resolved.",
+                  label: "Blocking",
+                  tone: blockingCount > 0 ? "danger" : "success",
+                  value: blockingCount,
+                },
+                {
+                  description: "Visible but non-blocking launch evidence.",
+                  label: "Warnings",
+                  tone: warningCount > 0 ? "warning" : "success",
+                  value: warningCount,
+                },
+              ]}
+            />
           </div>
-        ) : null}
-        {metadataError ? (
-          <Alert
-            data-testid="workflow-package-launch-metadata-error"
-            variant="destructive"
+          <div data-testid="workflow-package-preflight-evidence">
+            <EvidenceCluster
+              items={[
+                {
+                  description: preflightPending
+                    ? "Preflight request is running."
+                    : "Displayed metadata is the latest launch read or preflight result.",
+                  label: "Preflight",
+                  tone: ready ? "verified" : blockingCount > 0 ? "danger" : "warning",
+                  value: readinessRead ? "Loaded" : "Pending",
+                },
+                {
+                  description: "Workflow selected for metadata and run creation.",
+                  label: "Workflow",
+                  value: readinessRead?.workflowKey ?? "Not selected",
+                },
+                {
+                  description: "Manifest hash returned with launch metadata.",
+                  label: "Manifest",
+                  tone: readinessRead?.manifestHash ? "verified" : "warning",
+                  value: readinessRead?.manifestHash ? (
+                    <span className="break-all font-mono text-xs">
+                      {readinessRead.manifestHash}
+                    </span>
+                  ) : (
+                    "Not recorded"
+                  ),
+                },
+                {
+                  description: "Backend-provided workflow input schema is kept as the JSON editor source.",
+                  label: "Input schema",
+                  tone: readinessRead?.inputSchema ? "verified" : "warning",
+                  value: readinessRead?.inputSchema ? "Available" : "Unavailable",
+                },
+              ]}
+            />
+          </div>
+          <ModelConnectionModeSummary
+            diagnostics={[...diagnostics]}
+            read={readinessRead}
+          />
+          <div
+            className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground"
+            data-testid="workflow-package-capability-readiness-note"
           >
-            <AlertCircle />
-            <AlertTitle>Launch metadata unavailable</AlertTitle>
-            <AlertDescription>
-              {errorMessage(metadataError, "Failed to load launch metadata.")}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <Alert
-          className={
-            ready
-              ? "min-w-0 border-positive/30 bg-positive/10"
-              : blockingCount > 0
-                ? "min-w-0 border-destructive/30"
-                : "min-w-0 border-chart-3/30 bg-chart-3/10"
-          }
-          data-testid="workflow-package-preflight-status"
-          variant={blockingCount > 0 ? "destructive" : "default"}
-        >
-          {ready ? <CheckCircle2 /> : <AlertCircle />}
-          <AlertTitle>
-            {ready ? "Ready to launch" : "Needs attention"}
-          </AlertTitle>
-          <AlertDescription>
-            {readinessRead
-              ? `${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} and ${warningCount} warning${warningCount === 1 ? "" : "s"} for ${readinessRead.packageKey}.`
-              : "Launch metadata has not loaded yet."}
-          </AlertDescription>
-        </Alert>
-        <ModelConnectionModeSummary
-          diagnostics={[...diagnostics]}
-          read={readinessRead}
-        />
-        <div
-          className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground"
-          data-testid="workflow-package-capability-readiness-note"
-        >
-          Capability blockers prevent run creation. Warnings stay launch-visible
-          as degraded capability or probe-status notes so operators can decide
-          whether to continue before queueing a run.
+            Capability blockers prevent run creation. Warnings stay
+            launch-visible as degraded capability or probe-status notes so
+            operators can decide whether to continue before queueing a run.
+          </div>
+          <div data-testid="workflow-package-constraint-inspector">
+            <ConstraintInspector
+              blocking={diagnosticConstraintSection({
+                diagnostics: blockingDiagnostics,
+                testId: "workflow-package-launch-blockers",
+              })}
+              requirements={[
+                "Run preflight uses the selected workflow key and server-side package metadata.",
+                "Launch creates a run only after preflight returns ready.",
+              ]}
+              summary={
+                readinessRead
+                  ? `${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} and ${warningCount} warning${warningCount === 1 ? "" : "s"} for ${readinessRead.packageKey}.`
+                  : "Launch metadata has not loaded yet."
+              }
+              title="Capability constraints"
+              warnings={diagnosticConstraintSection({
+                diagnostics: warningDiagnostics,
+                emptyCopy: "No warnings reported.",
+                testId: "workflow-package-launch-warnings",
+              })}
+            />
+          </div>
         </div>
-        <div className="grid gap-4 xl:grid-cols-2">
-          <DiagnosticGroup
-            diagnostics={blockingDiagnostics}
-            emptyCopy="No capability blockers reported."
-            severity="error"
-            testId="workflow-package-launch-blockers"
-            title="Capability blockers"
-          />
-          <DiagnosticGroup
-            diagnostics={warningDiagnostics}
-            emptyCopy="No warnings reported."
-            severity="warning"
-            testId="workflow-package-launch-warnings"
-            title="Warnings"
-          />
-        </div>
-      </CardContent>
-    </Card>
+      </ConsoleSection>
+    </div>
   );
 }
 
@@ -1193,177 +1323,184 @@ export function WorkflowPackageLaunchPage() {
       className="flex h-full min-w-0 flex-col gap-4 overflow-x-hidden overflow-y-auto p-4 font-sans"
       data-testid="workflow-package-launch-page"
     >
-      <LaunchHeroSection
+      <LaunchIdentityContextBar
         blockingCount={blockingCount}
         packageId={packageId}
-        workflowPackage={packageQuery.data}
-        ready={ready}
-      />
-      <LaunchContextCard workflowPackage={packageQuery.data} />
-      <LaunchReadinessCard
-        blockingCount={blockingCount}
-        diagnostics={diagnostics}
-        isLoadingMetadata={launchQuery.isPending}
-        metadataError={launchQuery.isError ? launchQuery.error : null}
-        readinessRead={readinessRead}
         ready={ready}
         warningCount={warningCount}
-        onPreflight={() => void runLaunchPreflight()}
-        preflightPending={preflightPackage.isPending}
+        workflowPackage={packageQuery.data}
       />
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <LaunchContextCard workflowPackage={packageQuery.data} />
+          <LaunchReadinessCard
+            blockingCount={blockingCount}
+            diagnostics={diagnostics}
+            isLoadingMetadata={launchQuery.isPending}
+            metadataError={launchQuery.isError ? launchQuery.error : null}
+            readinessRead={readinessRead}
+            ready={ready}
+            warningCount={warningCount}
+            onPreflight={() => void runLaunchPreflight()}
+            preflightPending={preflightPackage.isPending}
+          />
+        </div>
 
-      <Card
-        className="min-w-0 border-border/70 bg-card/80 shadow-sm backdrop-blur"
-        data-testid="workflow-package-launch-tab"
-      >
-        <CardHeader className="border-b pb-4">
-          <CardTitle>Launch package run</CardTitle>
-          <CardDescription>
-            Select a workflow, provide inputs, and queue a run.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="min-w-0 space-y-4 p-4">
-          <div className="min-w-0 space-y-2">
-            <Label htmlFor="workflow-key">Workflow key</Label>
-            <Input
-              id="workflow-key"
-              aria-label="Workflow key"
-              placeholder="Workflow key"
-              value={workflowKey}
-              onChange={(event) => updateWorkflowKey(event.target.value)}
-            />
-          </div>
-          <Card className="min-w-0 bg-background/60">
-            <CardHeader>
-              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 space-y-1">
-                  <CardTitle className="text-base">Runtime inputs</CardTitle>
-                  <CardDescription>
-                    Runtime inputs must be a JSON object.
-                  </CardDescription>
-                </div>
-                <Button
-                  className="w-full sm:w-auto"
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                  onClick={resetParameters}
-                >
-                  Reset to template
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="min-w-0 space-y-4">
-              {!inputTemplate.schemaSupported ? (
-                <Alert className="border-chart-3/30 bg-chart-3/10">
-                  <AlertCircle />
-                  <AlertTitle>Schema template started empty</AlertTitle>
-                  <AlertDescription>
-                    <p>{inputTemplate.reason}</p>
-                    {inputTemplate.issues.length > 0 ? (
-                      <ul className="list-disc pl-5">
-                        {inputTemplate.issues.map((issue) => (
-                          <li key={`${issue.field}-${issue.issue}`}>
-                            {issue.field}: {issue.issue}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-              <RuntimeInputValidationAlert errors={runtimeInputErrors} />
-              <div
-                className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]"
-                data-testid="runtime-input-console-grid"
-              >
-                <div
-                  className="min-w-0 space-y-2"
-                  data-testid="runtime-input-json-panel"
-                >
-                  <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
-                  <Textarea
-                    id="runtime-json"
-                    aria-label="Runtime inputs JSON"
-                    className="min-h-72 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
-                    rows={14}
-                    value={parametersText}
-                    onChange={(event) =>
-                      updateParametersText(event.target.value)
-                    }
-                  />
-                </div>
-                <SavedInputsHelper
-                  createDisabled={
-                    !resolvedWorkflowKey ||
-                    runtimeInputRegistry.isPending ||
-                    runtimeInputRegistry.isFetching ||
-                    !personalPresetName.trim()
-                  }
-                  createPending={createPersonalEntry.isPending}
-                  deletePending={deletePersonalEntry.isPending}
-                  error={
-                    runtimeInputRegistry.isError
-                      ? runtimeInputRegistry.error
-                      : null
-                  }
-                  historyEntries={runtimeInputRegistry.data?.history ?? []}
-                  loading={
-                    runtimeInputRegistry.isPending ||
-                    runtimeInputRegistry.isFetching
-                  }
-                  personalEntries={runtimeInputRegistry.data?.personal ?? []}
-                  presetName={personalPresetName}
-                  updatePending={updatePersonalEntry.isPending}
-                  workflowKey={resolvedWorkflowKey}
-                  onCreate={() => void savePersonalInput()}
-                  onDelete={(entry) => void deletePersonalInput(entry)}
-                  onLoad={loadSavedInput}
-                  onPresetNameChange={setPersonalPresetName}
-                  onUpdate={(entry) => void overwritePersonalInput(entry)}
+        <div data-testid="workflow-package-launch-tab">
+          <ConsoleSection
+            description="Select a workflow, provide runtime input JSON, manage saved inputs, and queue a run from this package snapshot."
+            title="Run configuration"
+          >
+            <div className="min-w-0 space-y-4">
+              <div className="min-w-0 space-y-2">
+                <Label htmlFor="workflow-key">Workflow key</Label>
+                <Input
+                  id="workflow-key"
+                  aria-label="Workflow key"
+                  placeholder="Workflow key"
+                  value={workflowKey}
+                  onChange={(event) => updateWorkflowKey(event.target.value)}
                 />
               </div>
-            </CardContent>
-          </Card>
-          <div
-            className="flex min-w-0 flex-col gap-2 sm:flex-row sm:justify-end"
-            data-testid="workflow-package-run-actions"
-          >
-            <Button
-              className="w-full sm:w-auto"
-              disabled={preflightPackage.isPending || launchQuery.isPending}
-              type="button"
-              variant="outline"
-              onClick={() => void runLaunchPreflight()}
-            >
-              {preflightPackage.isPending ? (
-                <Loader2 className="animate-spin" data-icon="inline-start" />
-              ) : (
-                <FileCheck2 data-icon="inline-start" />
-              )}
-              Run preflight
-            </Button>
-            <Button
-              className="w-full sm:w-auto"
-              disabled={
-                createLaunch.isPending ||
-                preflightPackage.isPending ||
-                launchQuery.isPending ||
-                launchQuery.isError
-              }
-              type="button"
-              onClick={() => void launchPackage()}
-            >
-              {createLaunch.isPending ? (
-                <Loader2 className="animate-spin" data-icon="inline-start" />
-              ) : (
-                <PlayCircle data-icon="inline-start" />
-              )}
-              Launch Run
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+              <Card className="min-w-0 bg-background/60">
+                <CardHeader>
+                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 space-y-1">
+                      <CardTitle className="text-base">Runtime inputs</CardTitle>
+                      <CardDescription>
+                        Runtime inputs must be a JSON object.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      className="w-full sm:w-auto"
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                      onClick={resetParameters}
+                    >
+                      Reset to template
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="min-w-0 space-y-4">
+                  {!inputTemplate.schemaSupported ? (
+                    <Alert className="border-chart-3/30 bg-chart-3/10">
+                      <AlertCircle />
+                      <AlertTitle>Schema template started empty</AlertTitle>
+                      <AlertDescription>
+                        <p>{inputTemplate.reason}</p>
+                        {inputTemplate.issues.length > 0 ? (
+                          <ul className="list-disc pl-5">
+                            {inputTemplate.issues.map((issue) => (
+                              <li key={`${issue.field}-${issue.issue}`}>
+                                {issue.field}: {issue.issue}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </AlertDescription>
+                    </Alert>
+                  ) : null}
+                  <RuntimeInputValidationAlert errors={runtimeInputErrors} />
+                  <div
+                    className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]"
+                    data-testid="runtime-input-console-grid"
+                  >
+                    <div
+                      className="min-w-0 space-y-2"
+                      data-testid="runtime-input-json-panel"
+                    >
+                      <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
+                      <Textarea
+                        id="runtime-json"
+                        aria-label="Runtime inputs JSON"
+                        className="min-h-72 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
+                        rows={14}
+                        value={parametersText}
+                        onChange={(event) =>
+                          updateParametersText(event.target.value)
+                        }
+                      />
+                    </div>
+                    <SavedInputsHelper
+                      createDisabled={
+                        !resolvedWorkflowKey ||
+                        runtimeInputRegistry.isPending ||
+                        runtimeInputRegistry.isFetching ||
+                        !personalPresetName.trim()
+                      }
+                      createPending={createPersonalEntry.isPending}
+                      deletePending={deletePersonalEntry.isPending}
+                      error={
+                        runtimeInputRegistry.isError
+                          ? runtimeInputRegistry.error
+                          : null
+                      }
+                      historyEntries={runtimeInputRegistry.data?.history ?? []}
+                      loading={
+                        runtimeInputRegistry.isPending ||
+                        runtimeInputRegistry.isFetching
+                      }
+                      personalEntries={runtimeInputRegistry.data?.personal ?? []}
+                      presetName={personalPresetName}
+                      updatePending={updatePersonalEntry.isPending}
+                      workflowKey={resolvedWorkflowKey}
+                      onCreate={() => void savePersonalInput()}
+                      onDelete={(entry) => void deletePersonalInput(entry)}
+                      onLoad={loadSavedInput}
+                      onPresetNameChange={setPersonalPresetName}
+                      onUpdate={(entry) => void overwritePersonalInput(entry)}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+              <div
+                className="flex min-w-0 flex-col gap-2 sm:flex-row sm:justify-end"
+                data-testid="workflow-package-run-actions"
+              >
+                <Button
+                  className="w-full sm:w-auto"
+                  disabled={preflightPackage.isPending || launchQuery.isPending}
+                  type="button"
+                  variant="outline"
+                  onClick={() => void runLaunchPreflight()}
+                >
+                  {preflightPackage.isPending ? (
+                    <Loader2
+                      className="animate-spin"
+                      data-icon="inline-start"
+                    />
+                  ) : (
+                    <FileCheck2 data-icon="inline-start" />
+                  )}
+                  Run preflight
+                </Button>
+                <Button
+                  className="w-full sm:w-auto"
+                  disabled={
+                    createLaunch.isPending ||
+                    preflightPackage.isPending ||
+                    launchQuery.isPending ||
+                    launchQuery.isError
+                  }
+                  type="button"
+                  onClick={() => void launchPackage()}
+                >
+                  {createLaunch.isPending ? (
+                    <Loader2
+                      className="animate-spin"
+                      data-icon="inline-start"
+                    />
+                  ) : (
+                    <PlayCircle data-icon="inline-start" />
+                  )}
+                  Launch Run
+                </Button>
+              </div>
+            </div>
+          </ConsoleSection>
+        </div>
+      </div>
     </div>
   );
 }

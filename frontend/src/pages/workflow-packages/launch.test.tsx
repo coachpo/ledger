@@ -181,12 +181,17 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByTestId("workflow-package-launch-page")).toBeVisible();
     expect(screen.getByTestId("workflow-package-launch-page")).toHaveClass("min-w-0", "overflow-x-hidden");
     expect(screen.getByRole("heading", { name: "Launch Workflow Package" })).toBeVisible();
+    expect(screen.getByTestId("workflow-package-launch-identity")).toHaveClass("sticky", "top-0");
     expect(screen.getByText("Saved package launch")).toBeVisible();
-    expect(screen.getByText("Market Review Package")).toBeVisible();
+    expect(within(screen.getByTestId("workflow-package-launch-identity")).getByText("Market Review Package")).toBeVisible();
+    expect(screen.getByTestId("workflow-package-launch-context")).toHaveTextContent("Package identity");
     expect(screen.getAllByText("market_review_package").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "Open authoring editor" })).toHaveAttribute("href", "/workflow-packages/42");
     expect(screen.getByTestId("workflow-package-launch-actions")).toHaveClass("flex", "w-full", "sm:w-auto");
     expect(screen.getByTestId("workflow-package-preflight-status")).toHaveTextContent(/ready to launch/i);
+    expect(screen.getByTestId("workflow-package-preflight-evidence")).toHaveTextContent("Preflight");
+    expect(screen.getByTestId("workflow-package-constraint-inspector")).toHaveTextContent("Capability constraints");
+    expect(screen.getByTestId("workflow-package-launch-tab")).toHaveTextContent("Run configuration");
     expect(screen.getByTestId("runtime-input-console-grid")).toHaveClass("grid", "min-w-0");
     expect(screen.getByTestId("runtime-input-json-panel")).toHaveClass("min-w-0");
     expect(screen.getByLabelText("Runtime inputs JSON")).toHaveClass("max-w-full", "overflow-x-auto", "whitespace-pre");
@@ -235,18 +240,18 @@ describe("WorkflowPackageLaunchPage", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Workflow key")).toHaveValue("market_review"),
     );
-    const blockers = screen.getByTestId("workflow-package-launch-blockers");
-    const warnings = screen.getByTestId("workflow-package-launch-warnings");
+    const inspector = screen.getByTestId("workflow-package-constraint-inspector");
     expect(
       screen.getByTestId("workflow-package-capability-readiness-note"),
     ).toHaveTextContent(/blockers prevent run creation/i);
-    expect(blockers).toHaveTextContent(/Capability blockers/i);
-    expect(blockers).toHaveTextContent(/This workflow requires native tool calls/i);
-    expect(blockers).toHaveTextContent(/Blocking/i);
-    expect(warnings).toHaveTextContent(/Warnings/i);
-    expect(warnings).toHaveTextContent(/This connection will degrade to plain text output/i);
-    expect(warnings).toHaveTextContent(/omits usage metadata/i);
-    expect(warnings).toHaveTextContent(/Warning/i);
+    expect(screen.getByTestId("workflow-package-preflight-status")).toHaveTextContent(/blocked by launch diagnostics/i);
+    expect(inspector).toHaveTextContent(/Capability constraints/i);
+    expect(inspector).toHaveTextContent(/Blocking/i);
+    expect(inspector).toHaveTextContent(/This workflow requires native tool calls/i);
+    expect(inspector).toHaveTextContent(/Warnings/i);
+    expect(inspector).toHaveTextContent(/This connection will degrade to plain text output/i);
+    expect(inspector).toHaveTextContent(/omits usage metadata/i);
+    expect(within(inspector).getAllByText("Warning").length).toBeGreaterThan(0);
   });
 
   it("renders launch-specific invalid and not-found states", () => {
