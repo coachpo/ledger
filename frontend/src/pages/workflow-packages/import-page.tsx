@@ -1,23 +1,12 @@
-import {
-  AlertCircle,
-  ArrowLeft,
-  CheckCircle2,
-  FileUp,
-  Loader2,
-} from "lucide-react";
+import { AlertCircle, ArrowLeft, FileUp, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useBeforeUnload, useBlocker, useNavigate } from "react-router";
 import { toast } from "sonner";
 
+import { ConstraintInspector } from "@/components/shared/constraint-inspector";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -91,6 +80,17 @@ metadata:
   name: Imported Package
 spec:
   agents: []`;
+const IMPORT_REQUIREMENTS = [
+  "apiVersion must be signaldeck.workflowPackage/v1.",
+  "kind must be WorkflowPackage.",
+  "metadata.key must be stable and unused by active packages.",
+  "Package-local agents, workflows, capabilities, schemas, and private MCP config stay inside this manifest.",
+] as const;
+const IMPORT_WARNINGS = [
+  "The pasted YAML is submitted unchanged to the existing import API.",
+  "Duplicate active package keys and invalid package-local references are rejected by the backend.",
+  "Private MCP env, headers, and query values remain inline in the imported manifest.",
+] as const;
 
 export function WorkflowPackageImportPage() {
   const navigate = useNavigate();
@@ -108,6 +108,32 @@ export function WorkflowPackageImportPage() {
   const blocker = useBlocker(
     () => shouldBlockNavigation && !skipNavigationBlockRef.current,
   );
+  const importBlockingConstraints = hasUnsavedManifest
+    ? []
+    : ["Paste a Workflow Package manifest before importing."];
+  const importWarningConstraints = [
+    ...IMPORT_WARNINGS,
+    failure
+      ? "Backend rejection details are shown in this route and remain visible until the next import attempt."
+      : "Backend rejection details will render in this route if validation fails.",
+  ];
+  const importStatusItems = [
+    {
+      label: "Input",
+      tone: hasUnsavedManifest ? ("warning" as const) : ("muted" as const),
+      value: hasUnsavedManifest ? "Pasted YAML" : "Required",
+    },
+    {
+      label: "Validation",
+      tone: failure ? ("danger" as const) : ("neutral" as const),
+      value: failure ? "Rejected" : "Backend-owned",
+    },
+    {
+      label: "Guards",
+      tone: shouldBlockNavigation ? ("warning" as const) : ("success" as const),
+      value: shouldBlockNavigation ? "Active" : "Clear",
+    },
+  ];
 
   useEffect(() => {
     return () => {
@@ -275,35 +301,24 @@ export function WorkflowPackageImportPage() {
           </div>
         </section>
 
-        <aside className="min-h-0 bg-muted/20" aria-label="Import guidance">
+        <aside
+          className="min-h-0 bg-muted/20"
+          aria-label="Import constraint inspector"
+        >
           <ScrollArea className="h-full">
-            <div className="space-y-4 p-4">
+            <div
+              className="flex min-w-0 flex-col gap-4 p-4"
+              data-testid="workflow-package-import-inspector"
+            >
               <ImportFailureAlert failure={failure} />
-              <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
-                <CardHeader>
-                  <CardTitle>Before importing</CardTitle>
-                  <CardDescription>
-                    The YAML is sent unchanged to the existing Workflow Package
-                    import API.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm text-muted-foreground">
-                  <div className="flex gap-2">
-                    <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-positive" />
-                    <p>
-                      Imports create a new package only when the manifest key is
-                      unused. Existing active keys are rejected.
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-chart-3" />
-                    <p>
-                      Review long manifests here before import; validation
-                      details remain visible if the backend rejects the YAML.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+              <ResourceStatusStrip items={importStatusItems} />
+              <ConstraintInspector
+                blocking={importBlockingConstraints}
+                requirements={IMPORT_REQUIREMENTS}
+                summary="Import keeps pasted YAML route-owned and sends it unchanged to the Workflow Package import API."
+                title="Import constraints"
+                warnings={importWarningConstraints}
+              />
             </div>
           </ScrollArea>
         </aside>
