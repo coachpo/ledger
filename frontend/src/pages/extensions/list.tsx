@@ -1,10 +1,13 @@
+import { Puzzle } from "lucide-react";
 import { toast } from "sonner";
 
+import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import { ProvenanceBadge } from "@/components/shared/provenance-badge";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
+import { Switch } from "@/components/ui/switch";
 import { useExtensions, useToggleExtension } from "@/hooks/use-extensions";
 import type { ExtensionRead } from "@/lib/types/extension";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
 
 import {
   PlatformResourceCard,
@@ -25,10 +28,6 @@ function toExtensionTestSegment(extensionKey: string) {
     .toLowerCase();
 }
 
-function ExtensionStatusBadge({ enabled }: { enabled: boolean }) {
-  return <Badge variant="secondary">{enabled ? "Enabled" : "Disabled"}</Badge>;
-}
-
 type ExtensionRowProps = {
   extension: ExtensionRead;
   onToggle: (extension: ExtensionRead, nextEnabled: boolean) => void;
@@ -41,14 +40,10 @@ function ExtensionRow({
   togglePending,
 }: ExtensionRowProps) {
   const testSegment = toExtensionTestSegment(extension.key);
+  const enabledLabel = extension.enabled ? "Enabled" : "Disabled";
 
   return (
     <PlatformResourceCard
-      badges={<ExtensionStatusBadge enabled={extension.enabled} />}
-      density="compactPlus"
-      testId={`extension-row-${testSegment}`}
-      title={extension.label}
-      subtitle={extension.key}
       actions={
         <Switch
           aria-label={`${extension.enabled ? "Disable" : "Enable"} ${extension.label} extension`}
@@ -58,7 +53,70 @@ function ExtensionRow({
           onCheckedChange={(checked) => onToggle(extension, checked)}
         />
       }
+      badges={
+        <ProvenanceBadge
+          detail="statically resident"
+          label="Bundled"
+          tone="verified"
+        />
+      }
+      density="compactPlus"
+      description="System control row for bundled route, navigation, and tool availability."
+      metadata="Ownership: SignalDeck Core plus Finance Workspace extension"
+      statusStrip={
+        <ResourceStatusStrip
+          items={[
+            { label: "State", tone: extension.enabled ? "success" : "muted", value: enabledLabel },
+            { label: "Contract", tone: "neutral", value: "key, label, enabled" },
+            {
+              label: "Blast radius",
+              tone: extension.enabled ? "neutral" : "warning",
+              value: "Finance routes, nav, tools",
+            },
+          ]}
+        />
+      }
+      subtitle={extension.key}
+      testId={`extension-row-${testSegment}`}
+      title={extension.label}
     />
+  );
+}
+
+function ExtensionsHeader({
+  enabledCount,
+  totalCount,
+}: {
+  enabledCount: number;
+  totalCount: number;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-xl font-semibold tracking-tight">Extensions</h1>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Manage bundled extension availability from the slim system-state contract only.
+        </p>
+      </div>
+      <PageContextBar
+        description="This surface reflects only the backend extension contract: key, label, and enabled. Runtime gates own route and tool visibility."
+        meta={
+          <div className="flex flex-wrap items-center gap-2">
+            <ProvenanceBadge detail="system state" label="Surface" />
+            <ProvenanceBadge detail="slim contract" label="Backend" tone="verified" />
+          </div>
+        }
+        status={
+          <ResourceStatusStrip
+            items={[
+              { label: "Bundled", tone: totalCount ? "success" : "muted", value: String(totalCount) },
+              { label: "Enabled", tone: enabledCount ? "success" : "muted", value: String(enabledCount) },
+            ]}
+          />
+        }
+        title="Extension system state"
+      />
+    </div>
   );
 }
 
@@ -66,6 +124,7 @@ export function ExtensionsListPage() {
   const extensionsQuery = useExtensions();
   const toggleExtension = useToggleExtension();
   const extensions = sortExtensions(extensionsQuery.data?.items ?? []);
+  const enabledCount = extensions.filter((extension) => extension.enabled).length;
 
   const handleToggle = async (
     extension: ExtensionRead,
@@ -91,49 +150,38 @@ export function ExtensionsListPage() {
   };
 
   return (
-    <div className="space-y-4 p-4" data-testid="extensions-list-page">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">Extensions</h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Manage bundled extension availability.
-          </p>
-        </div>
-      </div>
+    <div className="flex flex-col gap-4 p-4" data-testid="extensions-list-page">
+      <ExtensionsHeader enabledCount={enabledCount} totalCount={extensions.length} />
 
       {extensionsQuery.isPending ? (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            Loading extensions...
-          </CardContent>
-        </Card>
+        <EmptyStatePanel
+          description="Loading the slim bundled-extension state before route gates and tool discovery update."
+          icon={<Puzzle className="size-4" />}
+          title="Loading extension state"
+        />
       ) : null}
 
       {extensionsQuery.isError ? (
-        <Card role="alert" aria-live="polite">
-          <CardContent className="space-y-1 py-8 text-center text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">
-              Unable to load extension state.
-            </p>
-            <p className="text-xs">
-              {extensionsQuery.error instanceof Error
-                ? extensionsQuery.error.message
-                : "Failed to load extensions."}
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyStatePanel
+          description={
+            extensionsQuery.error instanceof Error
+              ? extensionsQuery.error.message
+              : "Failed to load extensions."
+          }
+          icon={<Puzzle className="size-4" />}
+          title="Unable to load extension state."
+          tone="danger"
+        />
       ) : null}
 
       {!extensionsQuery.isPending &&
       !extensionsQuery.isError &&
       extensions.length === 0 ? (
-        <Card>
-          <CardContent className="space-y-1 py-8 text-center text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">
-              No bundled extensions are registered.
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyStatePanel
+          description="The backend returned an empty bundled-extension list. This route remains limited to bundled extension state."
+          icon={<Puzzle className="size-4" />}
+          title="No bundled extensions are registered."
+        />
       ) : null}
 
       {!extensionsQuery.isPending &&

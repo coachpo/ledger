@@ -2,14 +2,14 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { AlertCircle, RefreshCw } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import { ProvenanceBadge } from "@/components/shared/provenance-badge";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  ResourceStatusStrip,
+  type ResourceStatusStripItem,
+} from "@/components/shared/resource-status-strip";
+import { Button } from "@/components/ui/button";
 import { useExtension } from "@/hooks/use-extensions";
 import type { ExtensionRead } from "@/lib/types/extension";
 
@@ -18,76 +18,109 @@ import {
   FINANCE_WORKSPACE_LABEL,
 } from "./signaldeck-finance";
 
-function DisabledShell({
-  children,
+function GateStateShell({
+  action,
+  description,
+  icon,
+  statusItems,
   testId,
+  title,
+  tone = "neutral",
 }: {
-  children: ReactNode;
+  action?: ReactNode;
+  description: ReactNode;
+  icon?: ReactNode;
+  statusItems: readonly ResourceStatusStripItem[];
   testId: string;
+  title: ReactNode;
+  tone?: "neutral" | "warning" | "danger";
 }) {
   return (
     <div
       className="flex min-h-full items-center justify-center p-4"
       data-testid={testId}
     >
-      <Card className="w-full max-w-2xl border-border/70 bg-card/90 shadow-sm backdrop-blur">
-        {children}
-      </Card>
+      <div className="flex w-full max-w-2xl flex-col gap-3">
+        <PageContextBar
+          description="Extension-owned routes render only after backend state confirms the bundled workspace is enabled."
+          meta={
+            <div className="flex flex-wrap items-center gap-2">
+              <ProvenanceBadge detail="runtime gate" label="Surface" />
+              <ProvenanceBadge detail="bundled extension" label={FINANCE_WORKSPACE_LABEL} />
+            </div>
+          }
+          status={<ResourceStatusStrip items={statusItems} />}
+          title="Finance Workspace gate"
+        />
+        <EmptyStatePanel
+          action={action}
+          description={description}
+          icon={icon}
+          title={title}
+          tone={tone}
+        />
+      </div>
     </div>
   );
 }
 
 function ExtensionStateUnavailable({ onRetry }: { onRetry: () => void }) {
   return (
-    <DisabledShell testId="extension-state-unavailable">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <AlertCircle className="size-5 text-destructive" />
-          Extension state unavailable
-        </CardTitle>
-        <CardDescription>
-          SignalDeck could not load backend extension state, so extension-owned
-          routes are paused.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <GateStateShell
+      action={
         <Button size="sm" type="button" variant="outline" onClick={onRetry}>
           <RefreshCw data-icon="inline-start" />
           Retry extension state
         </Button>
-      </CardContent>
-    </DisabledShell>
+      }
+      description="SignalDeck could not load backend extension state, so extension-owned routes are paused until the state read succeeds."
+      icon={<AlertCircle className="size-4 text-destructive" />}
+      statusItems={[
+        { label: "State", tone: "danger", value: "Unavailable" },
+        { label: "Core routes", tone: "success", value: "Available" },
+      ]}
+      testId="extension-state-unavailable"
+      title="Extension state unavailable"
+      tone="danger"
+    />
   );
 }
 
 function ExtensionDisabled({ extension }: { extension: ExtensionRead }) {
   return (
-    <DisabledShell testId="extension-disabled-state">
-      <CardHeader>
-        <CardTitle>{extension.label} disabled</CardTitle>
-        <CardDescription>
-          This workspace is unavailable while its bundled extension is disabled.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <GateStateShell
+      action={
         <Button asChild size="sm" variant="outline">
           <Link to="/workflow-packages">Open core workflow packages</Link>
         </Button>
-      </CardContent>
-    </DisabledShell>
+      }
+      description="Finance-owned routes, navigation, and tools are paused while this bundled extension is disabled. Core workflow package routes remain available."
+      icon={<AlertCircle className="size-4" />}
+      statusItems={[
+        { label: "State", tone: "muted", value: "Disabled" },
+        { label: "Blast radius", tone: "warning", value: "Finance routes, nav, tools" },
+        { label: "Core routes", tone: "success", value: "Available" },
+      ]}
+      testId="extension-disabled-state"
+      title={`${extension.label} disabled`}
+      tone="warning"
+    />
   );
 }
 
 function ExtensionLoading() {
   return (
-    <DisabledShell testId="extension-state-loading">
-      <CardHeader>
-        <CardTitle>Checking {FINANCE_WORKSPACE_LABEL}</CardTitle>
-        <CardDescription>
-          Loading backend extension state before opening this workspace route.
-        </CardDescription>
-      </CardHeader>
-    </DisabledShell>
+    <GateStateShell
+      description="Loading backend extension state before opening this workspace route."
+      icon={<RefreshCw className="size-4" />}
+      statusItems={[
+        { label: "State", tone: "warning", value: "Checking" },
+        { label: "Workspace", tone: "neutral", value: FINANCE_WORKSPACE_LABEL },
+      ]}
+      testId="extension-state-loading"
+      title={`Checking ${FINANCE_WORKSPACE_LABEL}`}
+      tone="warning"
+    />
   );
 }
 

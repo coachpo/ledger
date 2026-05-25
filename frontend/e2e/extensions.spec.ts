@@ -93,6 +93,11 @@ test.describe("Extension lifecycle browser matrix", () => {
     const row = page.getByTestId(`extension-row-${FINANCE_EXTENSION_SEGMENT}`);
     await expect(row).toContainText("Finance Workspace");
     await expect(row).toContainText("Enabled");
+    await expect(row).toContainText("Blast radius");
+    await expect(row).toContainText("Finance routes, nav, tools");
+    await expect(page.getByText(/marketplace/i)).toHaveCount(0);
+    await expect(page.getByText(/install/i)).toHaveCount(0);
+    await expect(page.getByText(/remove/i)).toHaveCount(0);
     await page
       .getByTestId(`extension-toggle-${FINANCE_EXTENSION_SEGMENT}`)
       .click();
@@ -109,7 +114,10 @@ test.describe("Extension lifecycle browser matrix", () => {
       "Finance Workspace disabled",
     );
     await expect(page.getByTestId("extension-disabled-state")).toContainText(
-      "This workspace is unavailable while its bundled extension is disabled.",
+      "Finance-owned routes, navigation, and tools are paused while this bundled extension is disabled.",
+    );
+    await expect(page.getByTestId("extension-disabled-state")).toContainText(
+      "Blast radius",
     );
     const disabledToolPicker = await openCapabilityToolPicker(page);
     await expect(disabledToolPicker).not.toContainText("Report Lookup");

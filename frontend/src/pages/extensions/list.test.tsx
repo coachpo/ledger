@@ -74,18 +74,18 @@ describe("ExtensionsListPage", () => {
     expect(screen.getByTestId("extensions-list-page")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Extensions" })).toBeVisible();
     expect(
-      screen.getByText(/manage bundled extension availability/i),
+      screen.getByText(/slim system-state contract only/i),
     ).toBeVisible();
     const row = screen.getByTestId("extension-row-signaldeck-finance");
     expect(row).toHaveTextContent("Finance Workspace");
     expect(row).toHaveTextContent("signaldeck.finance");
     expect(row).toHaveTextContent("Enabled");
-    expect(
-      screen.queryByText(
-        "Toggle whether this bundled extension is available in the app.",
-      ),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("Enable or disable")).not.toBeInTheDocument();
+    expect(row).toHaveTextContent("Ownership: SignalDeck Core plus Finance Workspace extension");
+    expect(row).toHaveTextContent("Blast radius");
+    expect(row).toHaveTextContent("Finance routes, nav, tools");
+    expect(screen.queryByText(/marketplace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/install/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/remove/i)).not.toBeInTheDocument();
     expect(
       within(row).getByRole("switch", {
         name: "Disable Finance Workspace extension",
