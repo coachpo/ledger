@@ -35,7 +35,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/format";
 import type {
   ModelConnectionCapabilities,
-  ModelConnectionCapabilityStatus,
   ModelConnectionCreateInput,
   ModelConnectionOutputStrategyPolicy,
   ModelConnectionParallelToolCallsPolicy,
@@ -55,25 +54,18 @@ import {
   CAPABILITY_DEFINITIONS,
   CAPABILITY_LABEL_BY_KEY,
   CAPABILITY_STATUS_LABELS,
-  CAPABILITY_STATUS_OPTIONS,
   OUTPUT_STRATEGY_POLICY_LABELS,
-  OUTPUT_STRATEGY_POLICY_OPTIONS,
   PARALLEL_TOOL_CALLS_POLICY_LABELS,
-  PARALLEL_TOOL_CALLS_POLICY_OPTIONS,
   PROBE_CAPABILITY_KEYS,
   PROTOCOL_PROFILE_DESCRIPTIONS,
   PROTOCOL_PROFILE_LABELS,
   REASONING_POLICY_LABELS,
-  REASONING_POLICY_OPTIONS,
   STREAMING_POLICY_LABELS,
-  STREAMING_POLICY_OPTIONS,
   SUMMARY_CAPABILITY_KEYS,
   capabilitiesForProtocolProfile,
   createDefaultCapabilities,
   formatCapabilitySummary,
   normalizeCapabilities,
-  toCapabilityWritePayload,
-  validatePolicyCompatibility,
 } from "./model-connection-ui";
 
 type ConnectionFeedback = {
@@ -109,9 +101,10 @@ type ModelConnectionEditorValues = {
   key: string;
   modelId: string;
   name: string;
+  lastProbedAt: string | null;
   outputStrategyPolicy: ModelConnectionOutputStrategyPolicy;
   parallelToolCallsPolicy: ModelConnectionParallelToolCallsPolicy;
-  probeCacheTtlSeconds: string;
+  probeCacheTtlSeconds: number;
   protocolProfile: ModelConnectionProtocolProfile;
   reasoningEffort: ReasoningEffortSelection;
   reasoningPolicy: ModelConnectionReasoningPolicy;
@@ -131,9 +124,10 @@ const initialValues: ModelConnectionEditorValues = {
   key: "",
   modelId: "",
   name: "",
+  lastProbedAt: null,
   outputStrategyPolicy: "prefer_strict_schema",
   parallelToolCallsPolicy: "serialize",
-  probeCacheTtlSeconds: "900",
+  probeCacheTtlSeconds: 900,
   protocolProfile: DEFAULT_PROTOCOL_PROFILE,
   reasoningEffort: "medium",
   reasoningPolicy: "allow",
@@ -178,9 +172,10 @@ function buildValuesFromConnection(
     key: connection.key,
     modelId: connection.modelId,
     name: connection.name,
+    lastProbedAt: connection.lastProbedAt ?? null,
     outputStrategyPolicy: connection.outputStrategyPolicy,
     parallelToolCallsPolicy: connection.parallelToolCallsPolicy,
-    probeCacheTtlSeconds: String(connection.probeCacheTtlSeconds),
+    probeCacheTtlSeconds: connection.probeCacheTtlSeconds,
     protocolProfile: connection.protocolProfile,
     reasoningEffort: getReasoningEffortSelection(connection.reasoningEffort),
     reasoningPolicy: connection.reasoningPolicy,
@@ -204,10 +199,6 @@ function parsePositiveInteger(fieldName: string, value: string) {
 
 function parseTimeoutSeconds(value: string) {
   return parsePositiveInteger("Timeout seconds", value);
-}
-
-function parseProbeCacheTtlSeconds(value: string) {
-  return parsePositiveInteger("Probe cache TTL seconds", value);
 }
 
 function getReasoningEffortValue(
@@ -241,22 +232,10 @@ function parseReasoningEffort(value: string | null): string | null {
   return trimmedValue;
 }
 
-function assertPolicyCompatibility(values: ModelConnectionEditorValues) {
-  const policyError = validatePolicyCompatibility(
-    values.capabilities,
-    values.outputStrategyPolicy,
-  );
-
-  if (policyError) {
-    throw new Error(policyError);
-  }
-}
-
 function buildCreatePayload(
   values: ModelConnectionEditorValues,
 ): ModelConnectionCreateInput {
   const apiKey = values.apiKey.trim();
-  assertPolicyCompatibility(values);
 
   return {
     key: parseRequiredText("Key", values.key).toLowerCase(),
@@ -266,12 +245,6 @@ function buildCreatePayload(
     baseUrl: parseRequiredText("Base URL", values.baseUrl),
     modelId: parseRequiredText("Model ID", values.modelId),
     reasoningEffort: parseReasoningEffort(getReasoningEffortValue(values)),
-    capabilities: toCapabilityWritePayload(values.capabilities),
-    outputStrategyPolicy: values.outputStrategyPolicy,
-    parallelToolCallsPolicy: values.parallelToolCallsPolicy,
-    reasoningPolicy: values.reasoningPolicy,
-    streamingPolicy: values.streamingPolicy,
-    probeCacheTtlSeconds: parseProbeCacheTtlSeconds(values.probeCacheTtlSeconds),
     timeoutSeconds: parseTimeoutSeconds(values.timeoutSeconds),
     ...(apiKey ? { apiKey } : {}),
   };
@@ -281,7 +254,6 @@ function buildUpdatePayload(
   values: ModelConnectionEditorValues,
 ): ModelConnectionUpdateInput {
   const apiKey = values.apiKey.trim();
-  assertPolicyCompatibility(values);
 
   return {
     name: parseRequiredText("Name", values.name),
@@ -290,12 +262,6 @@ function buildUpdatePayload(
     baseUrl: parseRequiredText("Base URL", values.baseUrl),
     modelId: parseRequiredText("Model ID", values.modelId),
     reasoningEffort: parseReasoningEffort(getReasoningEffortValue(values)),
-    capabilities: toCapabilityWritePayload(values.capabilities),
-    outputStrategyPolicy: values.outputStrategyPolicy,
-    parallelToolCallsPolicy: values.parallelToolCallsPolicy,
-    reasoningPolicy: values.reasoningPolicy,
-    streamingPolicy: values.streamingPolicy,
-    probeCacheTtlSeconds: parseProbeCacheTtlSeconds(values.probeCacheTtlSeconds),
     timeoutSeconds: parseTimeoutSeconds(values.timeoutSeconds),
     ...(apiKey ? { apiKey } : {}),
   };
@@ -353,23 +319,13 @@ export function ModelConnectionsEditorPage() {
         current.capabilities,
         protocolProfile,
       ),
+      lastProbedAt: null,
+      outputStrategyPolicy: "prefer_strict_schema",
+      parallelToolCallsPolicy: "serialize",
+      probeCacheTtlSeconds: 900,
       protocolProfile,
-    }));
-  };
-
-  const updateCapabilityStatus = (
-    capabilityKey: keyof ModelConnectionCapabilities,
-    status: ModelConnectionCapabilityStatus,
-  ) => {
-    setValues((current) => ({
-      ...current,
-      capabilities: {
-        ...current.capabilities,
-        [capabilityKey]: {
-          ...current.capabilities[capabilityKey],
-          status,
-        },
-      },
+      reasoningPolicy: "allow",
+      streamingPolicy: "allow",
     }));
   };
 
@@ -452,7 +408,8 @@ export function ModelConnectionsEditorPage() {
           current.protocolProfile,
           result.capabilities,
         ),
-        probeCacheTtlSeconds: String(result.probeCacheTtlSeconds),
+        lastProbedAt: result.lastProbedAt,
+        probeCacheTtlSeconds: result.probeCacheTtlSeconds,
       }));
       setProbeFeedback({
         message: `${formatCapabilitySummary(result.capabilities)} · ${
@@ -516,8 +473,8 @@ export function ModelConnectionsEditorPage() {
             {isEditing ? "Edit Model Connection" : "Create Model Connection"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Save protocol profiles, capability declarations, and runtime
-            policies for workflow packages.
+            Save endpoint settings and credentials. Compatibility evidence and
+            runtime policy truth are derived by the backend.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -553,8 +510,8 @@ export function ModelConnectionsEditorPage() {
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
           Test Connection checks reachability on the saved endpoint only.
-          Probe Required Capabilities refreshes the capability summary and
-          policy readiness separately.
+          Probe Required Capabilities refreshes backend-owned capability
+          evidence separately.
         </p>
       </div>
 
@@ -763,13 +720,14 @@ export function ModelConnectionsEditorPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Capability summary</CardTitle>
+          <CardTitle>Compatibility evidence</CardTitle>
           <CardDescription>
-            Summarize what this endpoint can support. Probe results and manual
-            overrides stay separate from the reachability test.
+            Read-only capability and runtime policy evidence resolved by the
+            backend. Use the probe action to refresh capability evidence after
+            saving endpoint changes.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4">
+        <CardContent className="grid gap-5">
           <div className="grid gap-3 md:grid-cols-3">
             {SUMMARY_CAPABILITY_KEYS.map((capabilityKey) => {
               const capability = values.capabilities[capabilityKey];
@@ -804,178 +762,91 @@ export function ModelConnectionsEditorPage() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {CAPABILITY_DEFINITIONS.map(({ key, label }) => (
-              <div key={key} className="space-y-2">
-                <Label htmlFor={`model-connection-capability-${key}`}>
-                  {label}
-                </Label>
-                <Select
-                  value={values.capabilities[key].status}
-                  disabled={isSaving}
-                  onValueChange={(status: ModelConnectionCapabilityStatus) =>
-                    updateCapabilityStatus(key, status)
-                  }
-                >
-                  <SelectTrigger
-                    id={`model-connection-capability-${key}`}
-                    aria-label={`${label} capability`}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {CAPABILITY_STATUS_OPTIONS.map((status) => (
-                        <SelectItem key={status} value={status}>
-                          {CAPABILITY_STATUS_LABELS[status]}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+            {CAPABILITY_DEFINITIONS.map(({ key, label }) => {
+              const capability = values.capabilities[key];
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Policy controls</CardTitle>
-          <CardDescription>
-            Choose how strictly runtime should require structured output, tools,
-            reasoning hints, and streaming support.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="model-connection-output-policy">
-              Output Strategy Policy
-            </Label>
-            <Select
-              value={values.outputStrategyPolicy}
-              disabled={isSaving}
-              onValueChange={(value: ModelConnectionOutputStrategyPolicy) =>
-                updateValue("outputStrategyPolicy", value)
-              }
-            >
-              <SelectTrigger
-                id="model-connection-output-policy"
-                aria-label="Output Strategy Policy"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {OUTPUT_STRATEGY_POLICY_OPTIONS.map((policy) => (
-                    <SelectItem key={policy} value={policy}>
-                      {OUTPUT_STRATEGY_POLICY_LABELS[policy]}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="model-connection-parallel-tools-policy">
-              Parallel Tool Calls Policy
-            </Label>
-            <Select
-              value={values.parallelToolCallsPolicy}
-              disabled={isSaving}
-              onValueChange={(value: ModelConnectionParallelToolCallsPolicy) =>
-                updateValue("parallelToolCallsPolicy", value)
-              }
-            >
-              <SelectTrigger
-                id="model-connection-parallel-tools-policy"
-                aria-label="Parallel Tool Calls Policy"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {PARALLEL_TOOL_CALLS_POLICY_OPTIONS.map((policy) => (
-                    <SelectItem key={policy} value={policy}>
-                      {PARALLEL_TOOL_CALLS_POLICY_LABELS[policy]}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+              return (
+                <div key={key} className="rounded-lg border bg-muted/30 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium text-foreground">
+                      {label}
+                    </p>
+                    <Badge
+                      variant={
+                        capability.status === "unsupported"
+                          ? "destructive"
+                          : "secondary"
+                      }
+                    >
+                      {CAPABILITY_STATUS_LABELS[capability.status]}
+                    </Badge>
+                  </div>
+                  {capability.detail ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {capability.detail}
+                    </p>
+                  ) : null}
+                  {capability.lastProbedAt ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Probed {formatDateTime(capability.lastProbedAt)}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="model-connection-reasoning-policy">
-              Reasoning Policy
-            </Label>
-            <Select
-              value={values.reasoningPolicy}
-              disabled={isSaving}
-              onValueChange={(value: ModelConnectionReasoningPolicy) =>
-                updateValue("reasoningPolicy", value)
-              }
-            >
-              <SelectTrigger
-                id="model-connection-reasoning-policy"
-                aria-label="Reasoning Policy"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {REASONING_POLICY_OPTIONS.map((policy) => (
-                    <SelectItem key={policy} value={policy}>
-                      {REASONING_POLICY_LABELS[policy]}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="model-connection-streaming-policy">
-              Streaming Policy
-            </Label>
-            <Select
-              value={values.streamingPolicy}
-              disabled={isSaving}
-              onValueChange={(value: ModelConnectionStreamingPolicy) =>
-                updateValue("streamingPolicy", value)
-              }
-            >
-              <SelectTrigger
-                id="model-connection-streaming-policy"
-                aria-label="Streaming Policy"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {STREAMING_POLICY_OPTIONS.map((policy) => (
-                    <SelectItem key={policy} value={policy}>
-                      {STREAMING_POLICY_LABELS[policy]}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="model-connection-probe-cache-ttl">
-              Probe Cache TTL Seconds
-            </Label>
-            <Input
-              id="model-connection-probe-cache-ttl"
-              aria-label="Probe Cache TTL Seconds"
-              disabled={isSaving}
-              inputMode="numeric"
-              value={values.probeCacheTtlSeconds}
-              onChange={(event) =>
-                updateValue("probeCacheTtlSeconds", event.target.value)
-              }
-            />
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Output strategy policy
+              </p>
+              <p className="mt-1 text-sm text-foreground">
+                {OUTPUT_STRATEGY_POLICY_LABELS[values.outputStrategyPolicy]}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Parallel tool calls policy
+              </p>
+              <p className="mt-1 text-sm text-foreground">
+                {PARALLEL_TOOL_CALLS_POLICY_LABELS[values.parallelToolCallsPolicy]}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Reasoning policy
+              </p>
+              <p className="mt-1 text-sm text-foreground">
+                {REASONING_POLICY_LABELS[values.reasoningPolicy]}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Streaming policy
+              </p>
+              <p className="mt-1 text-sm text-foreground">
+                {STREAMING_POLICY_LABELS[values.streamingPolicy]}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Probe cache TTL
+              </p>
+              <p className="mt-1 text-sm text-foreground">
+                {values.probeCacheTtlSeconds}s
+              </p>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Last capability probe
+              </p>
+              <p className="mt-1 text-sm text-foreground">
+                {values.lastProbedAt
+                  ? formatDateTime(values.lastProbedAt)
+                  : "No capability probe recorded."}
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>

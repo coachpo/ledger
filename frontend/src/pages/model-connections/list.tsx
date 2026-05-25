@@ -95,7 +95,7 @@ function filterConnections(
       PROTOCOL_PROFILE_DESCRIPTIONS[connection.protocolProfile],
       formatCapabilitySummary(connection.capabilities),
       formatCapabilityDetails(connection),
-      formatPolicySummary(connection),
+      formatRuntimePolicyEvidence(connection),
       connection.lastTestMessage ?? "",
     ]
       .join(" ")
@@ -122,7 +122,7 @@ function formatReasoningEffort(
   return value ?? "Omitted";
 }
 
-function formatPolicySummary(connection: ModelConnectionListItemRead): string {
+function formatRuntimePolicyEvidence(connection: ModelConnectionListItemRead): string {
   return [
     OUTPUT_STRATEGY_POLICY_LABELS[connection.outputStrategyPolicy],
     PARALLEL_TOOL_CALLS_POLICY_LABELS[connection.parallelToolCallsPolicy],
@@ -166,12 +166,14 @@ function ModelConnectionMetadata({
         <span>{formatReasoningEffort(connection.reasoningEffort)}</span>
       </div>
       <div className="min-w-0 sm:col-span-2 xl:col-span-1">
-        <span className="font-medium text-foreground">Capability summary:</span>{" "}
+        <span className="font-medium text-foreground">Compatibility evidence:</span>{" "}
         <span className="break-words">{formatCapabilityDetails(connection)}</span>
       </div>
       <div className="min-w-0 sm:col-span-2 xl:col-span-1">
-        <span className="font-medium text-foreground">Policy controls:</span>{" "}
-        <span className="break-words">{formatPolicySummary(connection)}</span>
+        <span className="font-medium text-foreground">Runtime policy evidence:</span>{" "}
+        <span className="break-words">
+          {formatRuntimePolicyEvidence(connection)}
+        </span>
       </div>
       <div className="min-w-0">
         <span className="font-medium text-foreground">Reachability:</span>{" "}
@@ -201,8 +203,8 @@ function ModelConnectionsHeader() {
           Model Connections
         </h1>
         <p className="text-sm text-muted-foreground">
-          Manage live model endpoints, credentials, protocol profiles,
-          capabilities, and runtime policies by stable key.
+          Manage live model endpoints, credentials, protocol profiles, and
+          backend-derived compatibility evidence by stable key.
         </p>
       </div>
       <Button asChild data-testid="model-connections-new" size="sm">
@@ -236,7 +238,7 @@ function ModelConnectionsToolbar({
         <Input
           aria-label="Search model connections"
           className="h-8 pl-8 text-xs"
-          placeholder="Search by name, key, model, protocol, capability, or policy..."
+          placeholder="Search by name, key, model, protocol, or compatibility evidence..."
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
         />
@@ -459,8 +461,8 @@ function ModelConnectionsTable({
           <TableHead>Model</TableHead>
           <TableHead>Base URL</TableHead>
           <TableHead>Protocol Profile</TableHead>
-          <TableHead>Capability Summary</TableHead>
-          <TableHead>Policy Controls</TableHead>
+          <TableHead>Compatibility Evidence</TableHead>
+          <TableHead>Runtime Policy Evidence</TableHead>
           <TableHead>Reachability Test</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
@@ -514,7 +516,7 @@ function ModelConnectionsTable({
                 </span>
               </TableCell>
               <TableCell className="min-w-72 whitespace-normal text-xs text-muted-foreground">
-                {formatPolicySummary(connection)}
+                {formatRuntimePolicyEvidence(connection)}
               </TableCell>
               <TableCell className="min-w-56 whitespace-normal text-xs text-muted-foreground">
                 <span>{formatLastTestStatus(connection)}</span>{" "}

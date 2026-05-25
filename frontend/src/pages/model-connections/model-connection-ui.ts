@@ -35,13 +35,6 @@ export const CAPABILITY_STATUS_LABELS: Record<
   unsupported: "Unsupported",
 };
 
-export const CAPABILITY_STATUS_OPTIONS = [
-  "supported",
-  "unsupported",
-  "unknown",
-  "notApplicable",
-] as const satisfies readonly ModelConnectionCapabilityStatus[];
-
 export const CAPABILITY_DEFINITIONS = [
   { key: "textGeneration", label: "Text generation" },
   { key: "chatCompletions", label: "Chat Completions protocol" },
@@ -109,28 +102,6 @@ export const STREAMING_POLICY_LABELS: Record<
   forbid: "Forbid streaming",
 };
 
-export const OUTPUT_STRATEGY_POLICY_OPTIONS = [
-  "require_strict_schema",
-  "prefer_strict_schema",
-  "allow_json_object_validation",
-  "allow_plain_text",
-] as const satisfies readonly ModelConnectionOutputStrategyPolicy[];
-
-export const PARALLEL_TOOL_CALLS_POLICY_OPTIONS = [
-  "allow",
-  "serialize",
-  "forbid",
-] as const satisfies readonly ModelConnectionParallelToolCallsPolicy[];
-
-export const REASONING_POLICY_OPTIONS = [
-  "allow",
-  "forbid",
-] as const satisfies readonly ModelConnectionReasoningPolicy[];
-export const STREAMING_POLICY_OPTIONS = [
-  "allow",
-  "forbid",
-] as const satisfies readonly ModelConnectionStreamingPolicy[];
-
 export function defaultCapabilityState(
   status: ModelConnectionCapabilityStatus = "unknown",
 ): ModelConnectionCapabilityState {
@@ -191,20 +162,6 @@ export function capabilitiesForProtocolProfile(
   };
 }
 
-export function toCapabilityWritePayload(
-  capabilities: ModelConnectionCapabilities,
-) {
-  return Object.fromEntries(
-    CAPABILITY_DEFINITIONS.map(({ key }) => [
-      key,
-      {
-        detail: capabilities[key].detail?.trim() || null,
-        status: capabilities[key].status,
-      },
-    ]),
-  ) as Partial<Record<keyof ModelConnectionCapabilities, ModelConnectionCapabilityState>>;
-}
-
 export function getCapabilityCounts(capabilities: ModelConnectionCapabilities) {
   return CAPABILITY_DEFINITIONS.reduce(
     (counts, { key }) => {
@@ -226,18 +183,4 @@ export function formatCapabilitySummary(
     `${counts.unsupported} unsupported`,
     `${counts.unknown} unknown`,
   ].join(" · ");
-}
-
-export function validatePolicyCompatibility(
-  capabilities: ModelConnectionCapabilities,
-  outputStrategyPolicy: ModelConnectionOutputStrategyPolicy,
-): string | null {
-  if (
-    outputStrategyPolicy === "require_strict_schema" &&
-    capabilities.strictJsonSchemaOutput.status === "unsupported"
-  ) {
-    return "Strict schema output is required by policy, but strictJsonSchemaOutput is marked unsupported.";
-  }
-
-  return null;
 }

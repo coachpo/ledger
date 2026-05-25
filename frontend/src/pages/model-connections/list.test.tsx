@@ -226,7 +226,7 @@ describe("ModelConnectionsListPage", () => {
     render(<ModelConnectionsListPage />);
 
     expect(
-      screen.getByText(/manage live model endpoints, credentials, protocol profiles/i),
+      screen.getByText(/backend-derived compatibility evidence/i),
     ).toBeVisible();
     expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
@@ -281,7 +281,7 @@ describe("ModelConnectionsListPage", () => {
       screen.getByRole("textbox", { name: "Search model connections" }),
     ).toHaveAttribute(
       "placeholder",
-      "Search by name, key, model, protocol, capability, or policy...",
+      "Search by name, key, model, protocol, or compatibility evidence...",
     );
     expect(screen.getByLabelText("Cards view")).toHaveAttribute(
       "data-state",
@@ -326,8 +326,8 @@ describe("ModelConnectionsListPage", () => {
       "Model",
       "Base URL",
       "Protocol Profile",
-      "Capability Summary",
-      "Policy Controls",
+      "Compatibility Evidence",
+      "Runtime Policy Evidence",
       "Reachability Test",
       "Actions",
     ]) {

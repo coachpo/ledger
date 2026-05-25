@@ -160,12 +160,6 @@ describe("ModelConnectionsEditorPage", () => {
       "Protocol Profile",
       "Timeout Seconds",
       "Reasoning Effort",
-      "Strict JSON schema output capability",
-      "Output Strategy Policy",
-      "Parallel Tool Calls Policy",
-      "Reasoning Policy",
-      "Streaming Policy",
-      "Probe Cache TTL Seconds",
       "API Key",
     ]) {
       expect(screen.getByLabelText(label)).toBeVisible();
@@ -185,6 +179,18 @@ describe("ModelConnectionsEditorPage", () => {
         /test connection checks reachability on the saved endpoint only/i,
       ),
     ).toBeVisible();
+    expect(screen.getByText("Compatibility evidence")).toBeVisible();
+    expect(screen.getAllByText("Strict JSON schema output")[0]).toBeVisible();
+    expect(screen.getByText("Output strategy policy")).toBeVisible();
+    expect(
+      screen.queryByLabelText(/^Strict JSON schema output capability$/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/^Output Strategy Policy$/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/^Probe Cache TTL Seconds$/i),
+    ).not.toBeInTheDocument();
   });
 
   it("submits a create body without apiKey until one is entered", async () => {
@@ -209,22 +215,27 @@ describe("ModelConnectionsEditorPage", () => {
         key: "primary_compatible",
         modelId: "fake-tools-disabled",
         name: "Primary Compatible",
-        outputStrategyPolicy: "prefer_strict_schema",
-        parallelToolCallsPolicy: "serialize",
-        probeCacheTtlSeconds: 900,
         protocolProfile: "openai_responses",
         reasoningEffort: "medium",
-        reasoningPolicy: "allow",
-        streamingPolicy: "allow",
         timeoutSeconds: 60,
       }),
     );
     expect(createModelConnectionMock.mock.calls[0][0]).not.toHaveProperty(
       "apiKey",
     );
-    expect(createModelConnectionMock.mock.calls[0][0]).not.toHaveProperty(
+    for (const backendOwnedField of [
       "apiStyle",
-    );
+      "capabilities",
+      "outputStrategyPolicy",
+      "parallelToolCallsPolicy",
+      "probeCacheTtlSeconds",
+      "reasoningPolicy",
+      "streamingPolicy",
+    ]) {
+      expect(createModelConnectionMock.mock.calls[0][0]).not.toHaveProperty(
+        backendOwnedField,
+      );
+    }
     expect(navigateMock).toHaveBeenCalledWith("/model-connections/9/edit");
   });
 
@@ -417,6 +428,10 @@ describe("ModelConnectionsEditorPage", () => {
       screen.getByText(/optional for deterministic smoke\./i),
     ).toBeVisible();
     expect(screen.getByText(/last reachability test passed/i)).toBeVisible();
+    expect(screen.getAllByText(/tool calls rejected by fixture/i)[0]).toBeVisible();
+    expect(screen.getAllByText(/strict schema accepted/i)[0]).toBeVisible();
+    expect(screen.getByText("Serialize tool calls")).toBeVisible();
+    expect(screen.getByText("900s")).toBeVisible();
     expect(screen.getByLabelText(/^Protocol Profile$/i)).toHaveTextContent(
       "Chat Completions-compatible",
     );
@@ -434,21 +449,25 @@ describe("ModelConnectionsEditorPage", () => {
     expect(updateCall.modelConnectionId).toBe("4");
     expect(updateCall.payload).toMatchObject({
       baseUrl: "https://provider.example.test/v1/",
-      capabilities: expect.any(Object),
       description: "Production compatible endpoint.",
       modelId: "fake-tools-disabled",
       name: "Primary Compatible Updated",
-      outputStrategyPolicy: "prefer_strict_schema",
-      parallelToolCallsPolicy: "serialize",
-      probeCacheTtlSeconds: 900,
       protocolProfile: "openai_chat_completions",
       reasoningEffort: "high",
-      reasoningPolicy: "allow",
-      streamingPolicy: "allow",
       timeoutSeconds: 90,
     });
-    expect(updateCall.payload).not.toHaveProperty("apiStyle");
-    expect(updateCall.payload).not.toHaveProperty("apiKey");
+    for (const backendOwnedField of [
+      "apiStyle",
+      "apiKey",
+      "capabilities",
+      "outputStrategyPolicy",
+      "parallelToolCallsPolicy",
+      "probeCacheTtlSeconds",
+      "reasoningPolicy",
+      "streamingPolicy",
+    ]) {
+      expect(updateCall.payload).not.toHaveProperty(backendOwnedField);
+    }
   });
 
   it("surfaces successful connection feedback inline", async () => {
@@ -529,48 +548,27 @@ describe("ModelConnectionsEditorPage", () => {
     );
   });
 
-  it("blocks impossible strict schema policy combinations", async () => {
-    createModelConnectionMock.mockResolvedValue({ id: 14 });
+  it("keeps compatibility evidence read-only when saving endpoint edits", async () => {
+    paramsMock.modelConnectionId = "4";
+    updateModelConnectionMock.mockResolvedValue({ id: 4 });
 
     render(<ModelConnectionsEditorPage />);
-    fillRequiredCreateFields();
-    const profileSelect = screen.getByLabelText(/^Protocol Profile$/i);
-    profileSelect.focus();
-    fireEvent.keyDown(profileSelect, { key: "ArrowDown" });
-    fireEvent.click(
-      await screen.findByRole("option", {
-        name: /^Chat Completions-compatible$/i,
-      }),
-    );
-    const outputPolicySelect = screen.getByLabelText(
-      /^Output Strategy Policy$/i,
-    );
-    outputPolicySelect.focus();
-    fireEvent.keyDown(outputPolicySelect, { key: "ArrowDown" });
-    fireEvent.click(
-      await screen.findByRole("option", {
-        name: /^Require strict schema$/i,
-      }),
-    );
-    const strictCapabilitySelect = screen.getByLabelText(
-      /^Strict JSON schema output capability$/i,
-    );
-    strictCapabilitySelect.focus();
-    fireEvent.keyDown(strictCapabilitySelect, { key: "ArrowDown" });
-    fireEvent.click(
-      await screen.findByRole("option", {
-        name: /^Unsupported$/i,
-      }),
-    );
+    fireEvent.change(screen.getByLabelText(/^Model ID$/i), {
+      target: { value: "fake-strict-schema-disabled" },
+    });
     fireEvent.click(
       screen.getByRole("button", { name: /save model connection/i }),
     );
 
     await waitFor(() =>
-      expect(toastErrorMock).toHaveBeenCalledWith(
-        expect.stringContaining("Strict schema output is required by policy"),
-      ),
+      expect(updateModelConnectionMock).toHaveBeenCalledTimes(1),
     );
-    expect(createModelConnectionMock).not.toHaveBeenCalled();
+    expect(updateModelConnectionMock.mock.calls[0][0].payload).toMatchObject({
+      modelId: "fake-strict-schema-disabled",
+      protocolProfile: "openai_chat_completions",
+    });
+    expect(updateModelConnectionMock.mock.calls[0][0].payload).not.toHaveProperty(
+      "capabilities",
+    );
   });
 });

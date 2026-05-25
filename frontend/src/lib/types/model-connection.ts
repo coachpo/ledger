@@ -48,14 +48,6 @@ export interface ModelConnectionCreateInput {
   baseUrl: string;
   modelId: string;
   reasoningEffort?: ModelConnectionReasoningEffort | null;
-  capabilities?: Partial<
-    Record<keyof ModelConnectionCapabilities, ModelConnectionCapabilityState>
-  >;
-  outputStrategyPolicy?: ModelConnectionOutputStrategyPolicy;
-  parallelToolCallsPolicy?: ModelConnectionParallelToolCallsPolicy;
-  reasoningPolicy?: ModelConnectionReasoningPolicy;
-  streamingPolicy?: ModelConnectionStreamingPolicy;
-  probeCacheTtlSeconds?: number;
   timeoutSeconds?: number;
   apiKey?: string;
 }
@@ -68,14 +60,6 @@ export interface ModelConnectionUpdateInput {
   baseUrl?: string;
   modelId?: string;
   reasoningEffort?: ModelConnectionReasoningEffort | null;
-  capabilities?: Partial<
-    Record<keyof ModelConnectionCapabilities, ModelConnectionCapabilityState>
-  >;
-  outputStrategyPolicy?: ModelConnectionOutputStrategyPolicy;
-  parallelToolCallsPolicy?: ModelConnectionParallelToolCallsPolicy;
-  reasoningPolicy?: ModelConnectionReasoningPolicy;
-  streamingPolicy?: ModelConnectionStreamingPolicy;
-  probeCacheTtlSeconds?: number;
   timeoutSeconds?: number;
   apiKey?: string;
 }
