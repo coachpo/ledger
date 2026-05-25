@@ -72,26 +72,31 @@ describe("PortfolioListPage", () => {
     });
   });
 
-  it("renders the empty state with compact typography and preserved page actions", () => {
+  it("renders the inline empty state inside the inventory hierarchy with preserved page actions", () => {
     render(<PortfolioListPage />);
 
-    const emptyState = screen.getByText("No portfolios yet.");
+    const inventory = screen.getByRole("region", {
+      name: "Portfolio inventory",
+    });
+    const emptyState = within(inventory).getByText("No portfolios yet.");
     expect(emptyState).toBeVisible();
-    expect(emptyState).toHaveClass(
-      "py-8",
-      "text-center",
-      "text-xs",
-      "text-muted-foreground",
+    expect(emptyState.closest("[data-slot='card']")).toHaveClass(
+      "border-dashed",
     );
-    expect(emptyState).not.toHaveClass("text-sm");
     expect(screen.queryByText("Loading portfolios...")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Search portfolios")).toBeVisible();
     expect(
-      screen.getByRole("button", { name: /new portfolio/i }),
+      screen.getByRole("textbox", { name: "Search portfolios" }),
+    ).toHaveClass("h-8", "pl-8", "text-xs");
+    expect(screen.getByText("0 of 0 portfolios shown")).toBeVisible();
+    expect(
+      within(inventory).getByRole("button", { name: /new portfolio/i }),
     ).toBeVisible();
+    expect(
+      screen.getAllByRole("button", { name: /new portfolio/i }),
+    ).toHaveLength(2);
   });
 
-  it("renders a filtered-empty state while preserving the full empty-state copy", () => {
+  it("renders a filtered-empty state inside the inventory region with filter controls", () => {
     usePortfoliosMock.mockReturnValue({
       data: [
         {
@@ -115,9 +120,26 @@ describe("PortfolioListPage", () => {
       target: { value: "missing" },
     });
 
-    expect(screen.getByText("No portfolios match your search.")).toBeVisible();
+    const inventory = screen.getByRole("region", {
+      name: "Portfolio inventory",
+    });
+    expect(
+      within(inventory).getByText("No portfolios match your search."),
+    ).toBeVisible();
+    expect(screen.getByTestId("portfolios-active-filters")).toHaveTextContent(
+      "missing",
+    );
     expect(screen.queryByText("No portfolios yet.")).not.toBeInTheDocument();
     expect(screen.queryByText("Growth Fund")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(inventory).getByRole("button", { name: "Clear search" }),
+    );
+
+    expect(
+      screen.queryByTestId("portfolios-active-filters"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Growth Fund")).toBeVisible();
   });
 
   it("renders portfolio card navigation as links and keeps menu actions isolated", () => {
@@ -140,7 +162,10 @@ describe("PortfolioListPage", () => {
 
     render(<PortfolioListPage />);
 
-    const primaryLink = screen.getByRole("link", {
+    const inventory = screen.getByRole("region", {
+      name: "Portfolio inventory",
+    });
+    const primaryLink = within(inventory).getByRole("link", {
       name: "Open portfolio Growth Fund",
     });
     const card = primaryLink.closest("[data-slot='card']");
@@ -195,12 +220,12 @@ describe("PortfolioListPage", () => {
     render(<PortfolioListPage />);
 
     fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
-    expect(screen.getByRole("table").parentElement?.parentElement).toHaveClass(
-      "min-w-0",
-      "max-w-full",
-      "rounded-md",
-      "border",
-    );
+    const inventory = screen.getByRole("region", {
+      name: "Portfolio inventory",
+    });
+    expect(
+      within(inventory).getByRole("table").parentElement?.parentElement,
+    ).toHaveClass("min-w-0", "max-w-full", "rounded-md", "border");
     fireEvent.click(
       screen.getByRole("checkbox", { name: /select all shown portfolios/i }),
     );

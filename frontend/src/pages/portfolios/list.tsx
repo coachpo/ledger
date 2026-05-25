@@ -1,16 +1,33 @@
-import { useMemo, useState } from "react";
-import {
-  LayoutGrid,
-  List,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
+import { PortfolioFormDialog } from "@/components/forms/portfolio-form-dialog";
+import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import { ResourceRowCard } from "@/components/shared/resource-row-card";
+import { ResourceToolbar } from "@/components/shared/resource-toolbar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useResourceFilterState } from "@/hooks/use-resource-filter-state";
+import { useResourceSelectionState } from "@/hooks/use-resource-selection-state";
 import {
   useCreatePortfolio,
   useDeletePortfolio,
@@ -25,31 +42,7 @@ import type {
   PortfolioWriteInput,
 } from "@/lib/types/portfolio";
 
-import { EntityListCard } from "@/components/shared/resource-row-card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-
-import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
-import { PortfolioFormDialog } from "@/components/forms/portfolio-form-dialog";
+type PortfolioViewMode = "cards" | "table";
 
 export function PortfolioListPage() {
   const navigate = useNavigate();
@@ -61,11 +54,7 @@ export function PortfolioListPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<PortfolioRead | null>(null);
   const [deleting, setDeleting] = useState<PortfolioRead | null>(null);
-  const [search, setSearch] = useState("");
-  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
-  const [selectedPortfolioIds, setSelectedPortfolioIds] = useState<
-    Set<PortfolioRead["id"]>
-  >(new Set());
+  const [viewMode, setViewMode] = useState<PortfolioViewMode>("cards");
 
   const portfolios = useMemo(
     () =>
@@ -74,58 +63,62 @@ export function PortfolioListPage() {
       ),
     [portfoliosQuery.data],
   );
-  const filteredPortfolios = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) {
-      return portfolios;
-    }
-
-    return portfolios.filter((portfolio) =>
+  const portfolioSearchText = useCallback(
+    (portfolio: PortfolioRead) =>
       [
         portfolio.name,
         portfolio.description,
         portfolio.baseCurrency,
         String(portfolio.positionCount),
         String(portfolio.balanceCount),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
-    );
-  }, [portfolios, search]);
-  const selectedPortfolios = useMemo(
-    () =>
-      filteredPortfolios.filter((portfolio) =>
-        selectedPortfolioIds.has(portfolio.id),
-      ),
-    [filteredPortfolios, selectedPortfolioIds],
+      ].join(" "),
+    [],
   );
-  const selectedCount = selectedPortfolios.length;
-  const allFilteredSelected =
-    filteredPortfolios.length > 0 &&
-    filteredPortfolios.every((portfolio) =>
-      selectedPortfolioIds.has(portfolio.id),
-    );
-  const someFilteredSelected = filteredPortfolios.some((portfolio) =>
-    selectedPortfolioIds.has(portfolio.id),
+  const {
+    filteredItems: filteredPortfolios,
+    hasActiveFilters,
+    search,
+    resetAll: resetPortfolioFilters,
+    setSearch,
+  } = useResourceFilterState<PortfolioRead>({
+    items: portfolios,
+    searchText: portfolioSearchText,
+  });
+  const getPortfolioId = useCallback(
+    (portfolio: PortfolioRead) => portfolio.id,
+    [],
   );
+  const {
+    allSelected: allFilteredSelected,
+    selectedCount,
+    selectedItems: selectedPortfolios,
+    someSelected: someFilteredSelected,
+    clearSelection,
+    isSelected,
+    setIdsSelected,
+    setItemsSelected,
+  } = useResourceSelectionState<PortfolioRead, PortfolioRead["id"]>({
+    getId: getPortfolioId,
+    items: filteredPortfolios,
+  });
 
-  const setPortfoliosSelected = (
-    portfoliosToUpdate: readonly PortfolioRead[],
-    selected: boolean,
-  ) => {
-    setSelectedPortfolioIds((previous) => {
-      const next = new Set(previous);
-      portfoliosToUpdate.forEach((portfolio) => {
-        if (selected) {
-          next.add(portfolio.id);
-        } else {
-          next.delete(portfolio.id);
-        }
-      });
-      return next;
-    });
-  };
+  const openCreateDialog = useCallback(() => {
+    setEditing(null);
+    setShowForm(true);
+  }, []);
+
+  const handleViewModeChange = useCallback(
+    (value: string) => {
+      if (value !== "cards" && value !== "table") {
+        return;
+      }
+      setViewMode(value);
+      if (value === "cards") {
+        clearSelection();
+      }
+    },
+    [clearSelection],
+  );
 
   const handleDeleteSelected = () => {
     if (selectedPortfolios.length === 0) {
@@ -145,7 +138,7 @@ export function PortfolioListPage() {
         toast.success(
           `${count} ${count === 1 ? "portfolio" : "portfolios"} deleted`,
         );
-        setSelectedPortfolioIds(new Set());
+        clearSelection();
       },
     });
   };
@@ -160,100 +153,104 @@ export function PortfolioListPage() {
             balance, and trade views.
           </p>
         </div>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditing(null);
-            setShowForm(true);
-          }}
-        >
+        <Button size="sm" type="button" onClick={openCreateDialog}>
           <Plus data-icon="inline-start" /> New Portfolio
         </Button>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative max-w-sm flex-1" role="search">
-          <Label htmlFor="portfolio-search" className="sr-only">
-            Search portfolios
-          </Label>
-          <Search
-            className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            id="portfolio-search"
-            name="portfolioSearch"
-            placeholder="Search portfolios by name, currency, or holdings..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
-        <ToggleGroup
-          type="single"
-          value={viewMode}
-          onValueChange={(value) => {
-            if (!value) return;
-            setViewMode(value as "cards" | "table");
-            if (value === "cards") setSelectedPortfolioIds(new Set());
-          }}
-        >
-          <ToggleGroupItem
-            value="cards"
-            aria-label="Cards view"
-            className="h-8 w-8 px-0"
-          >
-            <LayoutGrid className="size-3.5" />
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="table"
-            aria-label="Table view"
-            className="h-8 w-8 px-0"
-          >
-            <List className="size-3.5" />
-          </ToggleGroupItem>
-        </ToggleGroup>
-      </div>
+      <ResourceToolbar
+        resultSummary={
+          portfoliosQuery.isPending || portfoliosQuery.isError
+            ? undefined
+            : `${filteredPortfolios.length} of ${portfolios.length} portfolios shown`
+        }
+        search={{
+          id: "portfolio-search",
+          label: "Search portfolios",
+          name: "portfolioSearch",
+          placeholder: "Search portfolios by name, currency, or holdings...",
+          value: search,
+          onChange: setSearch,
+        }}
+        viewMode={viewMode}
+        onViewModeChange={handleViewModeChange}
+      />
 
-      <div className="grid gap-2 sm:gap-3">
+      {hasActiveFilters ? (
+        <ResourceFilterBar
+          testId="portfolios-active-filters"
+          items={[
+            {
+              active: true,
+              clearLabel: "Clear portfolio search",
+              id: "search",
+              label: "Search",
+              value: search.trim(),
+              onClear: resetPortfolioFilters,
+            },
+          ]}
+          onClearAll={resetPortfolioFilters}
+        />
+      ) : null}
+
+      <section
+        aria-label="Portfolio inventory"
+        className="grid gap-2 sm:gap-3"
+        data-testid="portfolios-inventory"
+      >
         {portfoliosQuery.isPending ? (
-          <Card>
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              Loading portfolios...
-            </CardContent>
-          </Card>
+          <EmptyStatePanel
+            title="Loading portfolios..."
+            description="Fetching the latest portfolio records."
+          />
         ) : null}
         {portfoliosQuery.isError ? (
-          <Card role="alert">
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              {portfoliosQuery.error instanceof Error
+          <EmptyStatePanel
+            tone="danger"
+            title="Failed to load portfolios."
+            description={
+              portfoliosQuery.error instanceof Error
                 ? portfoliosQuery.error.message
-                : "Failed to load portfolios."}
-            </CardContent>
-          </Card>
+                : "Failed to load portfolios."
+            }
+          />
         ) : null}
         {!portfoliosQuery.isPending &&
         !portfoliosQuery.isError &&
         portfolios.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              No portfolios yet.
-            </CardContent>
-          </Card>
+          <EmptyStatePanel
+            title="No portfolios yet."
+            description="Create a portfolio to start tracking positions, balances, and trades."
+            action={
+              <Button size="sm" type="button" onClick={openCreateDialog}>
+                <Plus data-icon="inline-start" /> New Portfolio
+              </Button>
+            }
+          />
         ) : null}
         {!portfoliosQuery.isPending &&
         !portfoliosQuery.isError &&
         portfolios.length > 0 &&
         filteredPortfolios.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              No portfolios match your search.
-            </CardContent>
-          </Card>
+          <EmptyStatePanel
+            title="No portfolios match your search."
+            description="Clear the search to return to the full portfolio inventory."
+            action={
+              <Button
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={resetPortfolioFilters}
+              >
+                Clear search
+              </Button>
+            }
+          />
         ) : null}
-        {viewMode === "cards"
+        {viewMode === "cards" && filteredPortfolios.length > 0
           ? filteredPortfolios.map((portfolio) => (
-              <EntityListCard
+              <ResourceRowCard
+                density="compactPlus"
                 key={portfolio.id}
                 title={portfolio.name}
                 badges={
@@ -287,7 +284,7 @@ export function PortfolioListPage() {
                           type="button"
                           variant="ghost"
                         >
-                          <MoreHorizontal className="size-4" />
+                          <MoreHorizontal aria-hidden="true" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -330,10 +327,7 @@ export function PortfolioListPage() {
                             : false
                       }
                       onCheckedChange={(checked) =>
-                        setPortfoliosSelected(
-                          filteredPortfolios,
-                          checked === true,
-                        )
+                        setItemsSelected(filteredPortfolios, checked === true)
                       }
                     />
                   </TableHead>
@@ -346,19 +340,19 @@ export function PortfolioListPage() {
               </TableHeader>
               <TableBody>
                 {filteredPortfolios.map((portfolio) => {
-                  const isSelected = selectedPortfolioIds.has(portfolio.id);
+                  const isPortfolioSelected = isSelected(portfolio.id);
 
                   return (
                     <TableRow
                       key={portfolio.id}
-                      data-state={isSelected ? "selected" : undefined}
+                      data-state={isPortfolioSelected ? "selected" : undefined}
                     >
                       <TableCell>
                         <Checkbox
                           aria-label={`Select portfolio ${portfolio.name}`}
-                          checked={isSelected}
+                          checked={isPortfolioSelected}
                           onCheckedChange={(checked) =>
-                            setPortfoliosSelected([portfolio], checked === true)
+                            setItemsSelected([portfolio], checked === true)
                           }
                         />
                       </TableCell>
@@ -426,34 +420,34 @@ export function PortfolioListPage() {
             </Table>
           </div>
         ) : null}
-      </div>
+      </section>
 
       {viewMode === "table" && selectedCount > 0 ? (
-        <div
-          data-testid="portfolios-bulk-actions"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
-        >
-          <span className="text-xs text-muted-foreground">
-            {selectedCount} of {filteredPortfolios.length} portfolios selected
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={deletePortfoliosMutation.isPending}
-              onClick={handleDeleteSelected}
-            >
-              <Trash2 className="size-3.5" /> Delete selected
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setSelectedPortfolioIds(new Set())}
-            >
-              Clear
-            </Button>
-          </div>
-        </div>
+        <ResourceFilterBar
+          actions={
+            <>
+              <Button
+                size="sm"
+                type="button"
+                variant="destructive"
+                disabled={deletePortfoliosMutation.isPending}
+                onClick={handleDeleteSelected}
+              >
+                <Trash2 data-icon="inline-start" /> Delete selected
+              </Button>
+              <Button
+                size="sm"
+                type="button"
+                variant="ghost"
+                onClick={clearSelection}
+              >
+                Clear
+              </Button>
+            </>
+          }
+          summary={`${selectedCount} of ${filteredPortfolios.length} portfolios selected`}
+          testId="portfolios-bulk-actions"
+        />
       ) : null}
 
       <PortfolioFormDialog
@@ -529,11 +523,7 @@ export function PortfolioListPage() {
             onSuccess: () => {
               toast.success("Portfolio deleted");
               setDeleting(null);
-              setSelectedPortfolioIds((previous) => {
-                const next = new Set(previous);
-                next.delete(deleting.id);
-                return next;
-              });
+              setIdsSelected([deleting.id], false);
             },
           });
         }}
