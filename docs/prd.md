@@ -1,10 +1,10 @@
 # Product Requirements Document
 
-> Status: Live product-scope reference for branch `main` at `9d9a7ec`.
+> Status: Live product-scope reference for branch `feature/memory` at `51d748b`.
 
 ## Product Summary
 
-SignalDeck is a trusted single-user portfolio workspace and universal agents workflow/pipeline platform. The shipped browser surface covers the Finance Workspace, Templates, Reports, Workflow Packages, Model Connections, Extensions, Tools, Runs, and explicit-private-scope canonical Memory.
+SignalDeck is a trusted single-user portfolio workspace and universal agents workflow/pipeline platform. The shipped browser surface covers the Finance Workspace, Templates, Reports, Workflow Packages, Model Connections, Extensions, Runs, and explicit-private-scope canonical Memory. Tools are shipped as backend metadata at `/api/tools` and as package-authoring choices, not as a standalone browser page.
 
 Executable agent workflows enter the system only as Workflow Packages. Preserved portfolio, template, report, market-data, and finance-owned runtime-tool behavior is supplied by the statically resident first-party `signaldeck.finance` extension, which is enabled by default and exposed through state gates rather than marketplace installation or plugin hot-loading.
 
@@ -14,7 +14,7 @@ Executable agent workflows enter the system only as Workflow Packages. Preserved
 - Let users author reusable text templates and compile them against live portfolio, report, and runtime-input data.
 - Preserve point-in-time markdown reports that can be generated, uploaded, edited, filtered, and downloaded by slug.
 - Let users author Workflow Packages without code changes, then launch saved packages from a dedicated `Launch Workflow Package` page.
-- Keep Model Connections, Extensions, Tools, Runs, and Memory as global platform surfaces around package-owned workflows.
+- Keep Model Connections, Extensions, Runs, and Memory as global browser platform surfaces around package-owned workflows, with Tools available as server-declared metadata for package authoring and runtime grants.
 - Persist package runs with inspectable inputs, package provenance, per-step outputs, operation evidence, final output, status, progress, queue state, token usage, trace metadata, memory evidence, typed tool-failure taxonomy, and bounded retry evidence.
 - Keep local persistence authoritative when quote providers, model providers, tracing, or optional external data sources are unavailable.
 
@@ -34,7 +34,7 @@ Executable agent workflows enter the system only as Workflow Packages. Preserved
 4. Workflow Packages: YAML manifest authoring for package-local agents, output schemas, capability profiles, private MCP configs, workflow graphs, HTTP operation nodes, validation, import, export, and package-local secret binding management. The editor is authoring-only; launch runtime state lives outside it.
 5. Model Connections: global saved OpenAI-family endpoint/model bindings, `protocolProfile` selection, backend-owned compatibility evidence, capability probes, reachability tests, encrypted secrets, and secret-safe reads. Public writes no longer author capability, policy, probe-cache, or derived API-style truth.
 6. Extensions: slim enable/disable state for statically resident extensions. Public state is only `key`, `label`, and `enabled`.
-7. Tools: global read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles. Finance-owned entries cover market data, indicators, fundamentals, news, social sentiment, insider data, positions, and report lookup; platform-core entries cover memory write/lookup. Retired report-write tooling is fail-closed, not a live tool.
+7. Tools metadata: global read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles. Finance-owned entries cover market data, indicators, fundamentals, news, social sentiment, insider data, positions, and report lookup; platform-core entries cover memory write/lookup. Retired report-write tooling is fail-closed, not a live tool. There is no standalone `/tools` browser route.
 8. Runs: global run list/detail, dedicated package launch, backend-owned progress and queue state, run-owned package snapshots, operation invocation evidence, memory evidence, root-parameter reruns, invocation-input forks, historical replay lineage reads, typed tool-failure taxonomy, and bounded model-feedback retry evidence.
 9. Memory: platform-core `/api/memory` and `/memory` surfaces for explicit-private-scope canonical memory list, detail, revisions, events, resolve, and reflect workflows. These surfaces require package access context and a concrete private scope, and they do not expose finance report history as memory.
 

@@ -2,7 +2,7 @@
 
 > Inherits `/AGENTS.md`. This file governs the live reference docs in `docs/`.
 >
-> Status: Docs consolidation reference for branch `main` at `9d9a7ec`.
+> Status: Docs consolidation reference for branch `feature/memory` at `51d748b`.
 
 ## OVERVIEW
 
@@ -27,7 +27,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 ## PENDING DESIGN NOTES
 
-`docs/pending-design/` may keep research and upgrade-design notes that are not live contracts. Do not treat pending-design files as canonical over the six owner docs or live code, even when a historical note names removed root docs such as `api-design.md`, `signaldeck-agent-platform.md`, `signaldeck-memory-layer-design.md`, or `run-input-schema-helptext.md`.
+`docs/pending-design/` may keep research and upgrade-design notes that are not live contracts. Do not treat pending-design files, older root-doc references, or implementation sketches as canonical over the six owner docs or live code.
 
 ## CONVENTIONS
 

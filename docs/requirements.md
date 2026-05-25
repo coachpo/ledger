@@ -1,6 +1,6 @@
 # Requirements Document
 
-> Status: Live requirements reference for branch `main` at `9d9a7ec`.
+> Status: Live requirements reference for branch `feature/memory` at `51d748b`.
 
 ## Purpose
 
@@ -100,7 +100,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 ## Acceptance Criteria
 
 - A user can manage portfolio records, templates, and reports without provider availability.
-- A user can author Workflow Packages, configure Model Connections, view Tools, launch saved package runs from `/workflow-packages/:packageId/run`, inspect Runs, and review explicit-private-scope canonical Memory from the browser.
+- A user can author Workflow Packages, configure Model Connections, select server-declared Tools metadata during package authoring, launch saved package runs from `/workflow-packages/:packageId/run`, inspect Runs, and review explicit-private-scope canonical Memory from the browser.
 - Package HTTP operations can be authored, bound to package-local secrets, launched, and inspected without exposing raw secret values.
 - Run detail exposes backend-owned progress, queue state, agent invocations, operation invocations, package provenance, extension dependencies, memory artifacts, memory events, typed failure taxonomy, and bounded retry evidence.
 - `/api/memory` and `/memory` require package access context and explicit private scope selection, do not act as global memory search, and do not surface finance report history as platform memory.
