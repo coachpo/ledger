@@ -8,6 +8,11 @@ from typing import TYPE_CHECKING, Protocol
 from pydantic import Field, field_validator
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.agents.runtime_tools.failure_taxonomy import (
+    ToolFailureClassification,
+    classification_for_error_code,
+    runtime_failure_metadata,
+)
 from app.schemas.common import CamelModel
 
 if TYPE_CHECKING:
@@ -23,11 +28,26 @@ class RuntimeToolError(Exception):
         code: str,
         message: str,
         details: list[dict[str, object]] | None = None,
+        failure_classification: ToolFailureClassification | None = None,
     ) -> None:
         super().__init__(message)
         self.code: str = code
         self.message: str = message
         self.details: list[dict[str, object]] = list(details or [])
+        self.failure_classification: ToolFailureClassification = (
+            failure_classification or classification_for_error_code(code)
+        )
+
+    @property
+    def failure_class(self) -> str:
+        return self.failure_classification.failure_class.value
+
+    @property
+    def retryable(self) -> bool:
+        return self.failure_classification.retryable
+
+    def runtime_metadata(self) -> dict[str, object]:
+        return runtime_failure_metadata(self.failure_classification)
 
 
 @dataclass(frozen=True)

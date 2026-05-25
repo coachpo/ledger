@@ -7,10 +7,10 @@ from typing import Any
 import openai
 
 from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
+from app.agents.runtime_tools.types import RuntimeToolError
 from app.services.model_gateway_dto import (
     ModelExecutionRequest,
     ModelExecutionResult,
-    ModelExecutionStrategies,
     ModelExecutionUsage,
     ModelGatewayError,
     ModelToolCall,
@@ -24,6 +24,10 @@ from app.services.model_gateway_output_validation import (
     validation_retry_input,
 )
 from app.services.model_gateway_policy_strategy import select_model_execution_strategies
+from app.services.model_gateway_tool_retry import (
+    ModelToolCallRetryState,
+    is_retryable_tool_call_failure,
+)
 from app.services.model_gateway_tool_strategy import build_model_tool_call, select_tool_strategy
 
 _MAX_SERVER_TOOL_CALL_ROUNDS = 5
@@ -54,6 +58,7 @@ class OpenAIResponsesAdapter:
         )
         text_format = self._build_text_format(request, output_strategy.strategy)
         validation_attempt = 0
+        tool_retry_state = ModelToolCallRetryState()
         for _ in range(_MAX_SERVER_TOOL_CALL_ROUNDS + output_strategy.max_validation_attempts - 1):
             request_kwargs: dict[str, Any] = {
                 "model": request.connection.model_id,
@@ -78,7 +83,21 @@ class OpenAIResponsesAdapter:
                 manual_replay_mode=manual_replay_mode,
             )
             usage = self._merge_usage(usage, self._extract_usage(response))
-            pending_tool_calls = self._extract_pending_tool_calls(response)
+            try:
+                pending_tool_calls = self._extract_pending_tool_calls(response)
+            except ModelGatewayError as exc:
+                if tool_retry_state.can_retry(exc):
+                    response_input = self._tool_retry_input(
+                        request.input_text,
+                        tool_retry_state.record_retry(exc),
+                    )
+                    previous_response_id = None
+                    previous_tool_calls = None
+                    manual_replay_mode = False
+                    continue
+                if is_retryable_tool_call_failure(exc):
+                    raise tool_retry_state.exhausted_error(exc) from exc
+                raise
             if not pending_tool_calls:
                 duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
                 response_text = self._extract_text(response)
@@ -111,6 +130,7 @@ class OpenAIResponsesAdapter:
                         usage=usage,
                         selected_strategies=selected_strategies,
                         duration_ms=duration_ms,
+                        tool_retry_metadata=tool_retry_state.metadata(),
                     )
                 validation_attempt += 1
                 if validation_attempt >= output_strategy.max_validation_attempts:
@@ -125,16 +145,28 @@ class OpenAIResponsesAdapter:
                 previous_tool_calls = None
                 manual_replay_mode = False
                 continue
-            previous_response_id = self._extract_response_id(response)
-            previous_tool_calls = pending_tool_calls
-            response_input = self._build_function_call_outputs(
+            function_call_outputs, retry_feedback = self._build_function_call_outputs(
                 pending_tool_calls=pending_tool_calls,
                 tool_executor=tool_executor,
+                tool_retry_state=tool_retry_state,
             )
+            if retry_feedback is not None:
+                response_input = self._tool_retry_input(request.input_text, retry_feedback)
+                previous_response_id = None
+                previous_tool_calls = None
+                manual_replay_mode = False
+                continue
+            previous_response_id = self._extract_response_id(response)
+            previous_tool_calls = pending_tool_calls
+            response_input = function_call_outputs
         raise ModelGatewayError(
             code="agent_tool_round_limit_exceeded",
             message="Agent exceeded the supported server tool call round limit.",
         )
+
+    @staticmethod
+    def _tool_retry_input(original_input: str, retry_feedback: str) -> str:
+        return "\n\n".join((original_input, retry_feedback))
 
     def create_connection_test_response(
         self,
@@ -318,10 +350,21 @@ class OpenAIResponsesAdapter:
         *,
         pending_tool_calls: list[ModelToolCall],
         tool_executor: ModelToolExecutor,
-    ) -> list[dict[str, str]]:
+        tool_retry_state: ModelToolCallRetryState,
+    ) -> tuple[list[dict[str, str]], str | None]:
         items: list[dict[str, str]] = []
         for tool_call in pending_tool_calls:
-            tool_result = tool_executor(tool_call)
+            try:
+                tool_result = tool_executor(tool_call)
+            except RuntimeToolError as exc:
+                if tool_retry_state.can_retry(
+                    exc,
+                    prior_successful_tool_results=len(items),
+                ):
+                    return [], tool_retry_state.record_retry(exc, tool_call=tool_call)
+                if is_retryable_tool_call_failure(exc):
+                    raise tool_retry_state.exhausted_error(exc, tool_call=tool_call) from exc
+                raise
             items.append(
                 {
                     "type": "function_call_output",
@@ -333,7 +376,7 @@ class OpenAIResponsesAdapter:
                     ),
                 }
             )
-        return items
+        return items, None
 
     @classmethod
     def _extract_text(cls, response: Any) -> str:

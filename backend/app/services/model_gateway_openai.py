@@ -9,6 +9,12 @@ import openai
 from openai import OpenAI
 
 from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
+from app.agents.runtime_tools.types import RuntimeToolError
+from app.agents.runtime_tools.failure_taxonomy import (
+    PROVIDER_NETWORK_FAILURE,
+    PROVIDER_TRANSPORT_FAILURE,
+    provider_status_failure_classification,
+)
 from app.schemas.model_connection import build_model_connection_openai_base_url
 from app.services.model_gateway_dto import (
     ModelCapabilityProbeOutcome,
@@ -34,6 +40,10 @@ from app.services.model_gateway_output_validation import (
     validation_retry_input,
 )
 from app.services.model_gateway_policy_strategy import select_model_execution_strategies
+from app.services.model_gateway_tool_retry import (
+    ModelToolCallRetryState,
+    is_retryable_tool_call_failure,
+)
 from app.services.model_gateway_tool_strategy import build_model_tool_call, select_tool_strategy
 
 DEFAULT_OPENAI_CLIENT_FACTORY = OpenAI
@@ -155,14 +165,17 @@ class OpenAIProtocolAdapter:
                 code="agent_provider_timeout",
                 message="OpenAI request timed out.",
                 selected_strategies=selected_strategies,
+                failure_classification=PROVIDER_NETWORK_FAILURE,
             ) from exc
         except openai.APIConnectionError as exc:
             raise ModelGatewayError(
                 code="agent_provider_connection_error",
                 message="OpenAI request could not reach the API.",
                 selected_strategies=selected_strategies,
+                failure_classification=PROVIDER_NETWORK_FAILURE,
             ) from exc
         except openai.APIStatusError as exc:
+            status_code = getattr(exc, "status_code", None)
             raise ModelGatewayError(
                 code="agent_provider_status_error",
                 message=self._format_api_status_error(
@@ -170,6 +183,9 @@ class OpenAIProtocolAdapter:
                     api_key=request.connection.api_key,
                 ),
                 selected_strategies=selected_strategies,
+                failure_classification=provider_status_failure_classification(
+                    status_code if isinstance(status_code, int) else None
+                ),
             ) from exc
         except openai.APIError as exc:
             raise ModelGatewayError(
@@ -179,6 +195,7 @@ class OpenAIProtocolAdapter:
                     api_key=request.connection.api_key,
                 ),
                 selected_strategies=selected_strategies,
+                failure_classification=PROVIDER_TRANSPORT_FAILURE,
             ) from exc
 
     def test_connection(
@@ -705,10 +722,11 @@ class OpenAIProtocolAdapter:
         response_format = self._build_chat_response_format(request, output_strategy.strategy)
         usage = ModelExecutionUsage()
         validation_attempt = 0
+        tool_retry_state = ModelToolCallRetryState()
         for _ in range(_MAX_SERVER_TOOL_CALL_ROUNDS + output_strategy.max_validation_attempts - 1):
             request_kwargs: dict[str, Any] = {
                 "model": request.connection.model_id,
-                "messages": messages,
+                "messages": list(messages),
             }
             if response_format is not None:
                 request_kwargs["response_format"] = response_format
@@ -720,7 +738,17 @@ class OpenAIProtocolAdapter:
             response = client.chat.completions.create(**request_kwargs)
             usage = self._merge_usage(usage, self._extract_usage(response))
             message = self._extract_first_chat_choice_message(response)
-            pending_tool_calls = self._extract_pending_chat_tool_calls(message)
+            try:
+                pending_tool_calls = self._extract_pending_chat_tool_calls(message)
+            except ModelGatewayError as exc:
+                if tool_retry_state.can_retry(exc):
+                    messages.append(
+                        {"role": "user", "content": tool_retry_state.record_retry(exc)}
+                    )
+                    continue
+                if is_retryable_tool_call_failure(exc):
+                    raise tool_retry_state.exhausted_error(exc) from exc
+                raise
             if not pending_tool_calls:
                 duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
                 response_text = self._extract_chat_message_content(message)
@@ -756,6 +784,7 @@ class OpenAIProtocolAdapter:
                         usage=usage,
                         selected_strategies=selected_strategies,
                         duration_ms=duration_ms,
+                        tool_retry_metadata=tool_retry_state.metadata(),
                     )
                 validation_attempt += 1
                 if validation_attempt >= output_strategy.max_validation_attempts:
@@ -773,18 +802,21 @@ class OpenAIProtocolAdapter:
                     }
                 )
                 continue
+            tool_result_messages, retry_feedback = self._build_chat_tool_result_messages(
+                pending_tool_calls=pending_tool_calls,
+                tool_executor=tool_executor,
+                tool_retry_state=tool_retry_state,
+            )
+            if retry_feedback is not None:
+                messages.append({"role": "user", "content": retry_feedback})
+                continue
             messages.append(
                 self._build_chat_assistant_tool_call_message(
                     message=message,
                     pending_tool_calls=pending_tool_calls,
                 )
             )
-            messages.extend(
-                self._build_chat_tool_result_messages(
-                    pending_tool_calls=pending_tool_calls,
-                    tool_executor=tool_executor,
-                )
-            )
+            messages.extend(tool_result_messages)
         raise ModelGatewayError(
             code="agent_tool_round_limit_exceeded",
             message="Agent exceeded the supported server tool call round limit.",
@@ -931,10 +963,21 @@ class OpenAIProtocolAdapter:
         *,
         pending_tool_calls: list[ModelToolCall],
         tool_executor: ModelToolExecutor,
-    ) -> list[dict[str, str]]:
+        tool_retry_state: ModelToolCallRetryState,
+    ) -> tuple[list[dict[str, str]], str | None]:
         messages: list[dict[str, str]] = []
         for tool_call in pending_tool_calls:
-            tool_result = tool_executor(tool_call)
+            try:
+                tool_result = tool_executor(tool_call)
+            except RuntimeToolError as exc:
+                if tool_retry_state.can_retry(
+                    exc,
+                    prior_successful_tool_results=len(messages),
+                ):
+                    return [], tool_retry_state.record_retry(exc, tool_call=tool_call)
+                if is_retryable_tool_call_failure(exc):
+                    raise tool_retry_state.exhausted_error(exc, tool_call=tool_call) from exc
+                raise
             messages.append(
                 {
                     "role": "tool",
@@ -946,7 +989,7 @@ class OpenAIProtocolAdapter:
                     ),
                 }
             )
-        return messages
+        return messages, None
 
     @classmethod
     def _extract_chat_message_content(cls, message: Any) -> str:

@@ -5,6 +5,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from app.agents.runtime_tools.failure_taxonomy import (
+    PROVIDER_TOOL_ARGUMENT_JSON_INVALID,
+    PROVIDER_TOOL_ARGUMENT_OBJECT_INVALID,
+    ToolFailureClassification,
+)
 from app.services.model_gateway_dto import ModelExecutionRequest, ModelGatewayError, ModelToolCall
 
 _NATIVE_TOOL_CAPABILITY = "nativeToolCalls"
@@ -96,19 +101,27 @@ def _validate_arguments_json(arguments: str, *, context: str, tool_name: str) ->
         raise _invalid_tool_call(
             context=context,
             issue=f"Tool call {tool_name!r} arguments are not valid JSON.",
+            failure_classification=PROVIDER_TOOL_ARGUMENT_JSON_INVALID,
         ) from exc
     if not isinstance(payload, Mapping):
         raise _invalid_tool_call(
             context=context,
             issue=f"Tool call {tool_name!r} arguments must be a JSON object.",
+            failure_classification=PROVIDER_TOOL_ARGUMENT_OBJECT_INVALID,
         )
 
 
-def _invalid_tool_call(*, context: str, issue: str) -> ModelGatewayError:
+def _invalid_tool_call(
+    *,
+    context: str,
+    issue: str,
+    failure_classification: ToolFailureClassification | None = None,
+) -> ModelGatewayError:
     return ModelGatewayError(
         code="model_tool_call_payload_invalid",
         message=f"{context} returned a malformed tool call payload.",
         details=[{"field": "toolCall", "issue": issue}],
+        failure_classification=failure_classification,
     )
 
 

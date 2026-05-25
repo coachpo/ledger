@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import cast
+from typing import NoReturn, cast
 
 from pydantic import ValidationError
 
@@ -218,11 +218,7 @@ def parse_report_memory_write_arguments(arguments_json: str) -> dict[str, object
     return {"payload": payload}
 
 
-def execute_report_memory_write(
-    context: RuntimeToolContext,
-    arguments: dict[str, object],
-) -> dict[str, object]:
-    del context, arguments
+def raise_report_memory_write_retired() -> NoReturn:
     raise RuntimeToolError(
         code="report_memory_write_retired",
         message=(
@@ -230,6 +226,14 @@ def execute_report_memory_write(
             "canonical platform memory writes."
         ),
     )
+
+
+def execute_report_memory_write(
+    context: RuntimeToolContext,
+    arguments: dict[str, object],
+) -> dict[str, object]:
+    del context, arguments
+    raise_report_memory_write_retired()
 
 
 def _parse_json_object(arguments_json: str, *, function_name: str) -> dict[str, object]:
@@ -355,6 +359,7 @@ __all__ = [
     "REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME",
     "REPORT_MEMORY_WRITE_TOOL_SPEC",
     "execute_report_lookup",
+    "raise_report_memory_write_retired",
     "execute_report_memory_write",
     "parse_report_lookup_arguments",
     "parse_report_memory_write_arguments",

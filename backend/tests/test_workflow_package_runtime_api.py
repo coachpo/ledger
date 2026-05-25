@@ -105,6 +105,8 @@ class _RuntimeRecordingChatCompletionsClient:
     final_output_text = '{"summary": "package chat runtime output"}'
     return_empty_choices = False
     malformed_tool_arguments = False
+    tool_argument_sequence: list[str] | None = None
+    tool_name_sequence: list[str] | None = None
     reasoning_content: str | None = None
 
     def __init__(self, **kwargs: Any) -> None:
@@ -126,21 +128,41 @@ class _RuntimeRecordingChatCompletionsClient:
                 "choices": [],
                 "usage": self._usage(prompt_tokens=1, completion_tokens=0),
             }
-        if len(type(self).create_calls) == 1:
+        call_index = len(type(self).create_calls)
+        tool_argument_sequence = type(self).tool_argument_sequence
+        should_emit_tool_call = (
+            call_index <= len(tool_argument_sequence)
+            if tool_argument_sequence is not None
+            else call_index == 1
+        )
+        if should_emit_tool_call:
+            tool_name_sequence = type(self).tool_name_sequence or []
+            tool_name = (
+                tool_name_sequence[call_index - 1]
+                if call_index <= len(tool_name_sequence)
+                else "signaldeck_memory_lookup"
+            )
+            arguments = (
+                tool_argument_sequence[call_index - 1]
+                if tool_argument_sequence is not None
+                else (
+                    "{"
+                    if type(self).malformed_tool_arguments
+                    else self._memory_lookup_arguments()
+                )
+            )
+            call_id = (
+                "call_memory_lookup"
+                if tool_argument_sequence is None and tool_name == "signaldeck_memory_lookup"
+                else f"call_{call_index}"
+            )
             message: dict[str, Any] = {
                 "content": None,
                 "tool_calls": [
                     {
-                        "id": "call_memory_lookup",
+                        "id": call_id,
                         "type": "function",
-                        "function": {
-                            "name": "signaldeck_memory_lookup",
-                            "arguments": (
-                                "{"
-                                if type(self).malformed_tool_arguments
-                                else self._memory_lookup_arguments()
-                            ),
-                        },
+                        "function": {"name": tool_name, "arguments": arguments},
                     }
                 ],
             }
@@ -186,6 +208,8 @@ class _RuntimeRecordingChatCompletionsClient:
         cls.final_output_text = '{"summary": "package chat runtime output"}'
         cls.return_empty_choices = False
         cls.malformed_tool_arguments = False
+        cls.tool_argument_sequence = None
+        cls.tool_name_sequence = None
         cls.reasoning_content = None
 
 
@@ -213,6 +237,47 @@ class _RuntimeMalformedResponsesToolClient:
                     "name": "signaldeck_memory_lookup",
                     "call_id": "call_memory_lookup",
                     "arguments": "{",
+                }
+            ],
+            "usage": {"total_tokens": 3},
+        }
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.create_calls = []
+
+
+class _RuntimeRetryingResponsesToolClient:
+    create_calls: list[dict[str, Any]] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        del kwargs
+        self.responses = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create(self, **kwargs: Any) -> dict[str, Any]:
+        type(self).create_calls.append(kwargs)
+        call_index = len(type(self).create_calls)
+        if call_index == 1:
+            arguments = "{"
+        elif call_index == 2:
+            arguments = _RuntimeRecordingChatCompletionsClient._memory_lookup_arguments()
+        else:
+            return {"id": "resp_final", "output_text": '{"summary": "responses retry output"}'}
+        return {
+            "id": f"resp_tool_{call_index}",
+            "output": [
+                {
+                    "type": "function_call",
+                    "name": "signaldeck_memory_lookup",
+                    "call_id": f"call_{call_index}",
+                    "arguments": arguments,
                 }
             ],
             "usage": {"total_tokens": 3},
@@ -1986,13 +2051,118 @@ def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_a
         }
 
 
-def test_workflow_package_runtime_chat_completions_adapter_normalizes_malformed_tool_call(
+def test_workflow_package_runtime_chat_tool_parser_retry_success_records_accounting(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeRecordingChatCompletionsClient.reset()
-    _RuntimeRecordingChatCompletionsClient.malformed_tool_arguments = True
+    _RuntimeRecordingChatCompletionsClient.tool_argument_sequence = [
+        "{",
+        _RuntimeRecordingChatCompletionsClient._memory_lookup_arguments(),
+    ]
+    _RuntimeRecordingChatCompletionsClient.final_output_text = (
+        '{"summary": "chat parser retry output"}'
+    )
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeRecordingChatCompletionsClient,
+    )
+
+    _seed_model_connection(session_factory, api_style="chat_completions")
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_memory_lookup(
+            package_key="runtime_chat_parser_retry_success_package"
+        ),
+    )
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "chat parser retry output"}
+    assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 3
+    retry_prompt = _RuntimeRecordingChatCompletionsClient.create_calls[1]["messages"][-1]
+    assert retry_prompt["role"] == "user"
+    assert "toolCallRetry" in retry_prompt["content"]
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["toolCallRetries"]["attemptsUsed"] == 1
+    assert gateway_metadata["toolCallRetries"]["maxAttempts"] == 1
+    assert gateway_metadata["toolCallRetries"]["exhausted"] is False
+    retry_failure = gateway_metadata["toolCallRetries"]["failures"][0]
+    assert retry_failure["failureTaxonomy"]["failureClass"] == (
+        "provider_tool_argument_json_invalid"
+    )
+    assert retry_failure["failureTaxonomy"]["retryable"] is True
+
+
+def test_workflow_package_runtime_native_parser_retry_success_records_accounting(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    invalid_arguments = json.loads(_RuntimeRecordingChatCompletionsClient._memory_lookup_arguments())
+    invalid_arguments["limit"] = 0
+    _RuntimeRecordingChatCompletionsClient.tool_argument_sequence = [
+        json.dumps(invalid_arguments, sort_keys=True),
+        _RuntimeRecordingChatCompletionsClient._memory_lookup_arguments(),
+    ]
+    _RuntimeRecordingChatCompletionsClient.final_output_text = (
+        '{"summary": "native parser retry output"}'
+    )
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeRecordingChatCompletionsClient,
+    )
+
+    _seed_model_connection(session_factory, api_style="chat_completions")
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_memory_lookup(
+            package_key="runtime_native_parser_retry_success_package"
+        ),
+    )
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "native parser retry output"}
+    assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 3
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    retry_failure = gateway_metadata["toolCallRetries"]["failures"][0]
+    assert retry_failure["failureTaxonomy"]["failureClass"] == (
+        "native_tool_argument_validation"
+    )
+    assert retry_failure["toolName"] == "signaldeck_memory_lookup"
+    assert "limit" in retry_failure["details"][0]["field"]
+
+
+def test_workflow_package_runtime_chat_tool_parser_retry_exhaustion_fails_stably(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    _RuntimeRecordingChatCompletionsClient.tool_argument_sequence = ["{", "{"]
     monkeypatch.setattr(
         "app.services.run_service.OpenAI",
         _RuntimeRecordingChatCompletionsClient,
@@ -2018,12 +2188,63 @@ def test_workflow_package_runtime_chat_completions_adapter_normalizes_malformed_
 
     assert detail["status"] == "failed"
     invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
-    assert invocation["errorCode"] == "model_tool_call_payload_invalid"
-    assert "malformed tool call" in invocation["errorMessage"]
-    assert invocation["errorDetails"][0]["field"] == "toolCall"
+    assert invocation["errorCode"] == "model_tool_call_retry_exhausted"
+    assert invocation["errorDetails"][0]["lastFailureClass"] == (
+        "provider_tool_argument_json_invalid"
+    )
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["failureTaxonomy"]["failureClass"] == "retry_bound_exhausted"
+    assert gateway_metadata["failureTaxonomy"]["retryable"] is False
+    assert gateway_metadata["toolCallRetries"]["attemptsUsed"] == 1
+    assert gateway_metadata["toolCallRetries"]["exhausted"] is True
+    assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 2
 
 
-def test_workflow_package_runtime_responses_adapter_normalizes_malformed_tool_call(
+def test_workflow_package_runtime_responses_tool_parser_retry_success_records_accounting(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRetryingResponsesToolClient.reset()
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeRetryingResponsesToolClient,
+    )
+
+    _seed_model_connection(session_factory)
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_memory_lookup(
+            package_key="runtime_responses_parser_retry_success_package"
+        ),
+    )
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "responses retry output"}
+    assert len(_RuntimeRetryingResponsesToolClient.create_calls) == 3
+    retry_input = _RuntimeRetryingResponsesToolClient.create_calls[1]["input"]
+    assert isinstance(retry_input, str)
+    assert "toolCallRetry" in retry_input
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["toolCallRetries"]["attemptsUsed"] == 1
+    retry_failure = gateway_metadata["toolCallRetries"]["failures"][0]
+    assert retry_failure["failureTaxonomy"]["failureClass"] == (
+        "provider_tool_argument_json_invalid"
+    )
+
+
+def test_workflow_package_runtime_responses_tool_parser_retry_exhaustion_fails_stably(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -2054,10 +2275,15 @@ def test_workflow_package_runtime_responses_adapter_normalizes_malformed_tool_ca
 
     assert detail["status"] == "failed"
     invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
-    assert invocation["errorCode"] == "model_tool_call_payload_invalid"
-    assert invocation["errorDetails"][0]["issue"] == (
-        "Tool call 'signaldeck_memory_lookup' arguments are not valid JSON."
+    assert invocation["errorCode"] == "model_tool_call_retry_exhausted"
+    assert invocation["errorDetails"][0]["lastFailureClass"] == (
+        "provider_tool_argument_json_invalid"
     )
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["failureTaxonomy"]["failureClass"] == "retry_bound_exhausted"
+    assert gateway_metadata["toolCallRetries"]["attemptsUsed"] == 1
+    assert gateway_metadata["toolCallRetries"]["exhausted"] is True
+    assert len(_RuntimeMalformedResponsesToolClient.create_calls) == 2
     assert _RuntimeMalformedResponsesToolClient.create_calls[0]["parallel_tool_calls"] is False
 
 
@@ -2095,6 +2321,9 @@ def test_workflow_package_runtime_tool_policy_forbid_blocks_tool_dependent_packa
     assert {
         "field": "spec.capabilityProfiles.memory_context_tools.toolKeys",
         "code": "model_capability_required_missing",
+        "agentKey": "package_analyst",
+        "modelConnectionKey": "package_runtime_model",
+        "requirement": "nativeToolCalls",
         "issue": (
             "This workflow requires native tool calls, but the selected model connection "
             "forbids tool calls."

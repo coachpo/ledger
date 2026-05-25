@@ -17,7 +17,16 @@ from app.agents.runtime_tools import (
     RuntimeToolRegistry,
     SignalDeckToolDeclaration,
 )
+from app.agents.runtime_tools.failure_taxonomy import (
+    ToolFailureClassification,
+    classification_for_error_code,
+    runtime_failure_metadata,
+)
 from app.core.config import get_settings
+from app.extensions.signaldeck_finance.runtime_reports import (
+    REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+    raise_report_memory_write_retired,
+)
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
@@ -26,6 +35,7 @@ from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import PackageResolvedModelBinding, PackageRuntimeAgentSpec
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.extension_service import ExtensionService
+from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_dto import (
     ModelCapabilityProbeRequest,
@@ -57,13 +67,26 @@ class RunExecutionError(Exception):
         details: list[dict[str, Any]] | None = None,
         trace_span_id: str | None = None,
         runtime_metadata: dict[str, Any] | None = None,
+        failure_classification: ToolFailureClassification | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.details = list(details or [])
         self.trace_span_id = trace_span_id
-        self.runtime_metadata = runtime_metadata
+        self.failure_classification: ToolFailureClassification = (
+            failure_classification or classification_for_error_code(code)
+        )
+        taxonomy_metadata = runtime_failure_metadata(self.failure_classification)
+        self.runtime_metadata = {**taxonomy_metadata, **(runtime_metadata or {})} or None
+
+    @property
+    def failure_class(self) -> str:
+        return self.failure_classification.failure_class.value
+
+    @property
+    def retryable(self) -> bool:
+        return self.failure_classification.retryable
 
 
 @dataclass
@@ -120,6 +143,7 @@ class AgentExecutionService:
             self.provider_bundle.social_sentiment_adapters
         )
         self.model_gateway = model_gateway or ModelExecutionGateway()
+        self.compatibility_resolution_service = CompatibilityResolutionService()
         self.mcp_tool_client: McpToolClient | None = mcp_tool_client
 
     @staticmethod
@@ -256,9 +280,12 @@ class AgentExecutionService:
                 binding=binding,
                 connection=connection,
             )
-            return self._to_runtime_model_connection_from_package_binding(
-                binding=binding,
-                live_connection=connection,
+            return (
+                self.compatibility_resolution_service
+                .to_gateway_connection_config_from_package_binding(
+                    binding,
+                    live_connection=connection,
+                )
             )
 
         if agent.model_connection_id is None:
@@ -275,7 +302,7 @@ class AgentExecutionService:
                     f"{agent.model_connection_id}"
                 ),
             )
-        return self._to_runtime_model_connection(connection)
+        return self.compatibility_resolution_service.to_gateway_connection_config(connection)
 
     @staticmethod
     def _assert_package_model_connection_available(
@@ -299,52 +326,6 @@ class AgentExecutionService:
                     }
                 ],
             )
-
-    def _to_runtime_model_connection_from_package_binding(
-        self,
-        *,
-        binding: PackageResolvedModelBinding,
-        live_connection: ModelConnection,
-    ) -> _ResolvedModelConnectionConfig:
-        return _ResolvedModelConnectionConfig(
-            id=live_connection.id,
-            name=binding.name,
-            connection_kind=binding.connection_kind,
-            base_url=binding.base_url,
-            model_id=binding.model_id,
-            reasoning_effort=binding.reasoning_effort,
-            api_style=binding.api_style,
-            timeout_seconds=binding.timeout_seconds,
-            api_key=self._extract_model_connection_api_key(live_connection),
-            capabilities=binding.capabilities,
-            output_strategy_policy=binding.output_strategy_policy,
-            parallel_tool_calls_policy=binding.parallel_tool_calls_policy,
-            reasoning_policy=binding.reasoning_policy,
-            streaming_policy=binding.streaming_policy,
-        )
-
-    def _to_runtime_model_connection(
-        self,
-        connection: ModelConnection,
-    ) -> _ResolvedModelConnectionConfig:
-        return _ResolvedModelConnectionConfig(
-            id=connection.id,
-            name=connection.name,
-            connection_kind=connection.connection_kind,
-            base_url=connection.base_url,
-            model_id=connection.model_id,
-            reasoning_effort=connection.reasoning_effort,
-            api_style=connection.api_style,
-            timeout_seconds=connection.timeout_seconds,
-            api_key=self._extract_model_connection_api_key(connection),
-            capabilities=(
-                connection.capabilities if isinstance(connection.capabilities, dict) else None
-            ),
-            output_strategy_policy=connection.output_strategy_policy,
-            parallel_tool_calls_policy=connection.parallel_tool_calls_policy,
-            reasoning_policy=connection.reasoning_policy,
-            streaming_policy=connection.streaming_policy,
-        )
 
     def _runtime_granted_tool_keys(
         self,
@@ -408,15 +389,6 @@ class AgentExecutionService:
     def _runtime_tool_registry(self) -> RuntimeToolRegistry:
         with self.session_factory() as session:
             return ExtensionService(session).get_runtime_tool_registry()
-
-    @staticmethod
-    def _extract_model_connection_api_key(connection: ModelConnection) -> str | None:
-        payload = connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
-        raw_api_key = payload.get("apiKey")
-        if raw_api_key is None:
-            return None
-        normalized = str(raw_api_key).strip()
-        return normalized or None
 
     def _invoke_saved_model_connection_agent(
         self,
@@ -715,10 +687,18 @@ class AgentExecutionService:
         except RuntimeToolError as exc:
             if exc.code != "agent_tool_call_unsupported":
                 raise
+            if tool_call.tool_name == REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME:
+                raise_report_memory_write_retired()
+            if AgentExecutionService._is_reserved_native_function_name(tool_call.tool_name):
+                raise
         return mcp_dispatcher.dispatch(
             name=tool_call.tool_name,
             arguments_json=tool_call.arguments_json,
         )
+
+    @staticmethod
+    def _is_reserved_native_function_name(name: str) -> bool:
+        return name.startswith("signaldeck_")
 
     @staticmethod
     def _runtime_tool_error_to_run_execution_error(exc: RuntimeToolError) -> RunExecutionError:
@@ -726,6 +706,8 @@ class AgentExecutionService:
             code=exc.code,
             message=exc.message,
             details=[dict(detail) for detail in exc.details],
+            runtime_metadata=exc.runtime_metadata(),
+            failure_classification=exc.failure_classification,
         )
 
     @staticmethod
@@ -737,6 +719,7 @@ class AgentExecutionService:
             runtime_metadata=(
                 dict(exc.runtime_metadata()) if hasattr(exc, "runtime_metadata") else None
             ),
+            failure_classification=exc.failure_classification,
         )
 
 

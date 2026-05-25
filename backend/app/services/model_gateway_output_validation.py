@@ -6,6 +6,10 @@ from typing import Any, Literal
 
 from pydantic import ValidationError
 
+from app.agents.runtime_tools.failure_taxonomy import (
+    OUTPUT_SCHEMA_FAILURE,
+    RETRY_BOUND_EXHAUSTED_FAILURE,
+)
 from app.services.model_gateway_dto import ModelExecutionRequest, ModelGatewayError
 
 OutputStrategy = Literal["strictJsonSchema", "jsonObjectWithValidation", "plainText"]
@@ -120,6 +124,7 @@ def exhausted_validation_error(details: list[dict[str, str]]) -> ModelGatewayErr
         code="model_output_retry_exhausted",
         message="Model output failed server-side schema validation after one retry.",
         details=details,
+        failure_classification=RETRY_BOUND_EXHAUSTED_FAILURE,
     )
 
 
@@ -128,6 +133,7 @@ def validation_failed_error(details: list[dict[str, str]]) -> ModelGatewayError:
         code="model_output_validation_failed",
         message="Model output failed server-side schema validation.",
         details=details,
+        failure_classification=OUTPUT_SCHEMA_FAILURE,
     )
 
 

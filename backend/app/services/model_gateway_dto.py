@@ -7,6 +7,11 @@ from typing import Any, Protocol
 from pydantic import BaseModel
 
 from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
+from app.agents.runtime_tools.failure_taxonomy import (
+    ToolFailureClassification,
+    classification_for_error_code,
+    runtime_failure_metadata,
+)
 
 
 def _metadata_without_none(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -119,6 +124,7 @@ class ModelExecutionResult:
     usage: ModelExecutionUsage = field(default_factory=ModelExecutionUsage)
     selected_strategies: ModelExecutionStrategies = field(default_factory=ModelExecutionStrategies)
     duration_ms: int | None = None
+    tool_retry_metadata: Mapping[str, Any] | None = None
 
     def runtime_metadata(self) -> dict[str, Any]:
         metadata: dict[str, Any] = {}
@@ -128,6 +134,8 @@ class ModelExecutionResult:
         selected_strategies = self.selected_strategies.to_metadata()
         if selected_strategies:
             metadata["selectedStrategies"] = selected_strategies
+        if self.tool_retry_metadata is not None:
+            metadata["toolCallRetries"] = dict(self.tool_retry_metadata)
         return metadata
 
 
@@ -171,6 +179,8 @@ class ModelGatewayError(Exception):
         usage: ModelExecutionUsage | None = None,
         selected_strategies: ModelExecutionStrategies | None = None,
         duration_ms: int | None = None,
+        failure_classification: ToolFailureClassification | None = None,
+        tool_retry_metadata: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -179,6 +189,10 @@ class ModelGatewayError(Exception):
         self.usage = usage
         self.selected_strategies = selected_strategies
         self.duration_ms = duration_ms
+        self.tool_retry_metadata = dict(tool_retry_metadata) if tool_retry_metadata else None
+        self.failure_classification: ToolFailureClassification = (
+            failure_classification or classification_for_error_code(code)
+        )
 
     def with_execution_context(
         self,
@@ -195,8 +209,16 @@ class ModelGatewayError(Exception):
             self.duration_ms = duration_ms
         return self
 
+    @property
+    def failure_class(self) -> str:
+        return self.failure_classification.failure_class.value
+
+    @property
+    def retryable(self) -> bool:
+        return self.failure_classification.retryable
+
     def runtime_metadata(self) -> dict[str, Any]:
-        metadata: dict[str, Any] = {}
+        metadata: dict[str, Any] = runtime_failure_metadata(self.failure_classification)
         usage = self.usage.to_metadata() if self.usage is not None else {}
         if usage:
             metadata["usage"] = usage
@@ -205,6 +227,8 @@ class ModelGatewayError(Exception):
         )
         if selected_strategies:
             metadata["selectedStrategies"] = selected_strategies
+        if self.tool_retry_metadata is not None:
+            metadata["toolCallRetries"] = dict(self.tool_retry_metadata)
         return metadata
 
 

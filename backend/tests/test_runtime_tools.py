@@ -6,7 +6,7 @@ from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from types import TracebackType
-from typing import cast, override
+from typing import Any, cast, override
 
 import pytest
 from pydantic import ValidationError
@@ -14,6 +14,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import get_default_tool_catalog
+from app.agents.mcp.boundaries import McpClientBoundary
+from app.agents.mcp.runtime import McpRuntimeDispatcher, McpRuntimeTool
+from app.agents.mcp.tool_adapter import (
+    build_mcp_tool_snapshot,
+    mcp_snapshot_to_execution_descriptor,
+)
 from app.agents.runtime_tools import (
     RUNTIME_TOOL_SPECS,
     RuntimeToolContext,
@@ -21,6 +27,12 @@ from app.agents.runtime_tools import (
     RuntimeToolRegistry,
     RuntimeToolSpec,
     get_default_runtime_tool_registry,
+)
+from app.agents.runtime_tools.failure_taxonomy import (
+    RETRYABLE_FAILURE_CLASSES,
+    ToolFailureClass,
+    classification_for_error_code,
+    provider_status_failure_classification,
 )
 from app.agents.runtime_tools.memory import (
     MEMORY_LOOKUP_ACCESS_DENIED_MESSAGE,
@@ -135,15 +147,24 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.schemas.market_data import MarketHistoryPointRead, MarketHistorySeriesRead, MarketQuoteRead
-from app.schemas.memory import MemoryLifecycleStatus, MemoryProvenance, MemoryRevisionAction
+from app.schemas.memory import (
+    MemoryLifecycleStatus,
+    MemoryProvenance,
+    MemoryRevisionAction,
+)
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
+from app.services.agent_execution_service import AgentExecutionService
 from app.services.capability_service import (
     CapabilityService,
     RuntimeToolGrantError,
     RuntimeToolGrantPolicy,
 )
+from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.market_data_service import MarketDataService
+from app.services.model_gateway_dto import ModelGatewayError, ModelToolCall
+from app.services.model_gateway_tool_retry import ModelToolCallRetryState
+from app.services.model_gateway_tool_strategy import build_model_tool_call
 from app.services.position_service import PositionService
 from app.services.quote_provider import (
     ProviderFinancialStatement,
@@ -239,6 +260,69 @@ def _failing_session_factory() -> _SessionScope:
     raise AssertionError("invalid runtime tool arguments should not open a session")
 
 
+class _RecordingMcpDispatcher:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    def dispatch(self, *, name: str, arguments_json: str) -> dict[str, object]:
+        self.calls.append({"arguments_json": arguments_json, "name": name})
+        return {"output": {"ok": True}, "toolKey": "mcp.fake"}
+
+
+class _RecordingMcpToolClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def call_tool(
+        self,
+        *,
+        boundary: McpClientBoundary,
+        tool_name: str,
+        arguments: dict[str, object],
+        timeout_seconds: float,
+    ) -> object:
+        self.calls.append(
+            {
+                "boundary": boundary,
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        return {"ok": True}
+
+
+def _failure_taxonomy_mcp_dispatcher(
+    client: _RecordingMcpToolClient,
+) -> McpRuntimeDispatcher:
+    snapshot = build_mcp_tool_snapshot(
+        server_key="taxonomy",
+        server_version=1,
+        original_tool_name="vendor.lookup",
+        input_schema={
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"],
+            "additionalProperties": False,
+        },
+    )
+    descriptor = mcp_snapshot_to_execution_descriptor(snapshot, owner_extension_key=None)
+    boundary = McpClientBoundary(
+        server_id=None,
+        key="taxonomy",
+        version=1,
+        name="Taxonomy MCP",
+        transport="stdio",
+        enabled=True,
+        command=("npx",),
+    )
+    return McpRuntimeDispatcher(
+        tools=[McpRuntimeTool(boundary=boundary, snapshot=snapshot, descriptor=descriptor)],
+        client=client,
+        timeout_seconds=1.0,
+    )
+
+
 def _runtime_context(
     *,
     capability_references: Sequence[dict[str, object]] | None = None,
@@ -259,6 +343,7 @@ def _runtime_context(
     trace_id: str | None = None,
     trace_span_id: str | None = None,
     invocation_id: str | None = None,
+    package_ownership: PackageExecutionOwnership | None = None,
 ) -> RuntimeToolContext:
     selected_session_factory = session_factory_override or (
         _failing_session_factory if fail_on_session else _session_factory
@@ -282,6 +367,7 @@ def _runtime_context(
         agent_key=agent_key,
         agent_version=agent_version,
         agent_name=agent_name,
+        package_ownership=package_ownership,
         workflow_key=workflow_key,
         workflow_version=workflow_version,
         step_id=step_id,
@@ -453,10 +539,21 @@ def _memory_write_arguments_json(
     return json.dumps(payload)
 
 
+def _runtime_package_ownership(*, package_key: str) -> PackageExecutionOwnership:
+    return PackageExecutionOwnership(
+        package_id=9001,
+        package_key=package_key,
+        manifest_hash=f"manifest-{package_key}",
+        compiled_hash=f"compiled-{package_key}",
+        workflow_key="platform_graph_daily_review",
+    )
+
+
 def _reports_write_runtime_context(
     session_factory: sessionmaker[Session],
     *,
     capability_key: str = "runtime_tool_test_capability",
+    package_ownership: PackageExecutionOwnership | None = None,
 ) -> RuntimeToolContext:
     return _runtime_context(
         capability_references=[{"capabilityKey": capability_key, "capabilityVersion": 1}],
@@ -468,6 +565,7 @@ def _reports_write_runtime_context(
         agent_key="portfolio_manager",
         agent_version=3,
         agent_name="Portfolio Manager",
+        package_ownership=package_ownership,
         workflow_key="platform_graph_daily_review",
         workflow_version=5,
         step_id="portfolio_decision",
@@ -2251,6 +2349,248 @@ def test_runtime_tool_registry_rejects_unknown_and_ungranted_names_before_parsin
     assert ungranted_error.value.message == POSITION_LOOKUP_ACCESS_DENIED_MESSAGE
 
 
+def test_agent_execution_native_to_mcp_fallback_only_for_unsupported_tool_calls() -> None:
+    registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC])
+    context = _runtime_context(fail_on_session=True)
+    mcp_dispatcher = _RecordingMcpDispatcher()
+
+    output = AgentExecutionService._dispatch_function_call(
+        tool_call=ModelToolCall(
+            tool_name="mcp_external_lookup",
+            arguments_json='{"ticker":"NVDA"}',
+            call_id="call-mcp",
+        ),
+        granted_tool_keys={POSITION_LOOKUP_TOOL_KEY},
+        runtime_tool_registry=registry,
+        runtime_tool_context=context,
+        mcp_dispatcher=cast(Any, mcp_dispatcher),
+    )
+
+    assert output == {"output": {"ok": True}, "toolKey": "mcp.fake"}
+    assert mcp_dispatcher.calls == [
+        {"arguments_json": '{"ticker":"NVDA"}', "name": "mcp_external_lookup"}
+    ]
+
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = AgentExecutionService._dispatch_function_call(
+            tool_call=ModelToolCall(
+                tool_name=POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
+                arguments_json="not-json",
+                call_id="call-denied",
+            ),
+            granted_tool_keys=set(),
+            runtime_tool_registry=registry,
+            runtime_tool_context=context,
+            mcp_dispatcher=cast(Any, mcp_dispatcher),
+        )
+
+    assert exc_info.value.code == POSITION_LOOKUP_ACCESS_DENIED_CODE
+    assert exc_info.value.message == POSITION_LOOKUP_ACCESS_DENIED_MESSAGE
+    assert mcp_dispatcher.calls == [
+        {"arguments_json": '{"ticker":"NVDA"}', "name": "mcp_external_lookup"}
+    ]
+
+    with pytest.raises(RuntimeToolError) as native_unknown_error:
+        _ = AgentExecutionService._dispatch_function_call(
+            tool_call=ModelToolCall(
+                tool_name="signaldeck_unknown_lookup",
+                arguments_json='{"ticker":"NVDA"}',
+                call_id="call-native-unknown",
+            ),
+            granted_tool_keys={POSITION_LOOKUP_TOOL_KEY},
+            runtime_tool_registry=registry,
+            runtime_tool_context=context,
+            mcp_dispatcher=cast(Any, mcp_dispatcher),
+        )
+
+    assert native_unknown_error.value.code == "agent_tool_call_unsupported"
+    assert native_unknown_error.value.retryable is False
+    assert mcp_dispatcher.calls == [
+        {"arguments_json": '{"ticker":"NVDA"}', "name": "mcp_external_lookup"}
+    ]
+
+
+def test_retired_reports_write_error_does_not_fall_through_to_mcp(
+    session_factory: sessionmaker[Session],
+) -> None:
+    registry = get_default_runtime_tool_registry()
+    context = _reports_write_runtime_context(session_factory)
+    mcp_dispatcher = _RecordingMcpDispatcher()
+
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = AgentExecutionService._dispatch_function_call(
+            tool_call=ModelToolCall(
+                tool_name=REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+                arguments_json=_reports_write_arguments_json(),
+                call_id="call-retired-report-write",
+            ),
+            granted_tool_keys=set(),
+            runtime_tool_registry=registry,
+            runtime_tool_context=context,
+            mcp_dispatcher=cast(Any, mcp_dispatcher),
+        )
+
+    assert exc_info.value.code == "report_memory_write_retired"
+    assert mcp_dispatcher.calls == []
+
+
+def test_failure_taxonomy_retryable_allowlist_is_closed_to_parser_schema_failures() -> None:
+    assert RETRYABLE_FAILURE_CLASSES == {
+        ToolFailureClass.PROVIDER_TOOL_ARGUMENT_JSON_INVALID,
+        ToolFailureClass.PROVIDER_TOOL_ARGUMENT_OBJECT_INVALID,
+        ToolFailureClass.NATIVE_TOOL_ARGUMENT_VALIDATION,
+        ToolFailureClass.MCP_TOOL_ARGUMENT_JSON_INVALID,
+        ToolFailureClass.MCP_TOOL_ARGUMENT_SCHEMA_INVALID,
+    }
+    assert ToolFailureClass.PROVIDER_NETWORK not in RETRYABLE_FAILURE_CLASSES
+    assert ToolFailureClass.MCP_TRANSPORT not in RETRYABLE_FAILURE_CLASSES
+
+
+def test_failure_taxonomy_marks_provider_payload_invalid_json_as_retryable() -> None:
+    with pytest.raises(ModelGatewayError) as exc_info:
+        _ = build_model_tool_call(
+            name="signaldeck_memory_lookup",
+            arguments="{",
+            call_id="call-invalid-json",
+            context="OpenAI response",
+        )
+
+    exc = exc_info.value
+    assert exc.code == "model_tool_call_payload_invalid"
+    assert exc.failure_class == ToolFailureClass.PROVIDER_TOOL_ARGUMENT_JSON_INVALID.value
+    assert exc.retryable is True
+    assert exc.runtime_metadata()["failureTaxonomy"] == {
+        "failureClass": "provider_tool_argument_json_invalid",
+        "retryable": True,
+        "disposition": "retryable",
+        "phase": "pre_dispatch",
+        "source": "provider",
+    }
+
+
+def test_failure_taxonomy_marks_provider_payload_non_object_arguments_as_retryable() -> None:
+    with pytest.raises(ModelGatewayError) as exc_info:
+        _ = build_model_tool_call(
+            name="signaldeck_memory_lookup",
+            arguments="[]",
+            call_id="call-non-object",
+            context="OpenAI response",
+        )
+
+    exc = exc_info.value
+    assert exc.failure_class == ToolFailureClass.PROVIDER_TOOL_ARGUMENT_OBJECT_INVALID.value
+    assert exc.retryable is True
+
+
+def test_failure_taxonomy_marks_native_argument_validation_retryable_before_execution() -> None:
+    registry = RuntimeToolRegistry([REPORT_LOOKUP_TOOL_SPEC])
+    context = _runtime_context(fail_on_session=True)
+
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = registry.dispatch(
+            name=REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json='{"limit":51}',
+            granted_tool_keys={REPORT_LOOKUP_TOOL_KEY},
+            context=context,
+        )
+
+    exc = exc_info.value
+    assert exc.code == "agent_tool_call_invalid"
+    assert exc.failure_class == ToolFailureClass.NATIVE_TOOL_ARGUMENT_VALIDATION.value
+    assert exc.retryable is True
+
+
+def test_failure_taxonomy_marks_mcp_invalid_json_and_schema_retryable_before_transport() -> None:
+    client = _RecordingMcpToolClient()
+    dispatcher = _failure_taxonomy_mcp_dispatcher(client)
+
+    with pytest.raises(RuntimeToolError) as invalid_json:
+        _ = dispatcher.dispatch(name="mcp_taxonomy_vendor_lookup", arguments_json="{")
+    assert invalid_json.value.failure_class == (
+        ToolFailureClass.MCP_TOOL_ARGUMENT_JSON_INVALID.value
+    )
+    assert invalid_json.value.retryable is True
+    assert client.calls == []
+
+    with pytest.raises(RuntimeToolError) as schema_error:
+        _ = dispatcher.dispatch(
+            name="mcp_taxonomy_vendor_lookup",
+            arguments_json='{"ticker":123,"extra":true}',
+        )
+    assert schema_error.value.failure_class == (
+        ToolFailureClass.MCP_TOOL_ARGUMENT_SCHEMA_INVALID.value
+    )
+    assert schema_error.value.retryable is True
+    assert schema_error.value.details == [
+        {"field": "arguments.extra", "issue": "Field is not allowed"},
+        {"field": "arguments.ticker", "issue": "Expected string value"},
+    ]
+    retry_state = ModelToolCallRetryState()
+    assert retry_state.can_retry(schema_error.value) is True
+    assert retry_state.record_retry(schema_error.value)
+    assert retry_state.metadata() == {
+        "attemptsUsed": 1,
+        "maxAttempts": 1,
+        "exhausted": False,
+        "failures": [
+            {
+                "code": "mcp_tool_arguments_invalid",
+                "failureTaxonomy": {
+                    "failureClass": "mcp_tool_argument_schema_invalid",
+                    "retryable": True,
+                    "disposition": "retryable",
+                    "phase": "pre_dispatch",
+                    "source": "mcp_tool",
+                },
+                "details": [
+                    {"field": "arguments.extra", "issue": "Field is not allowed"},
+                    {"field": "arguments.ticker", "issue": "Expected string value"},
+                ],
+            }
+        ],
+    }
+    assert client.calls == []
+
+
+def test_failure_taxonomy_auth_secret_extension_disabled_provider_network_classes_are_fatal() -> (
+    None
+):
+    expected = {
+        "agent_model_connection_api_key_missing": ToolFailureClass.SECRET_CONTEXT,
+        "extension_disabled": ToolFailureClass.EXTENSION_DISABLED,
+        "agent_execution_access_denied": ToolFailureClass.PERMISSION,
+        "agent_provider_connection_error": ToolFailureClass.PROVIDER_NETWORK,
+        "mcp_runtime_transport_unavailable": ToolFailureClass.MCP_TRANSPORT,
+        "report_memory_write_retired": ToolFailureClass.UNSUPPORTED_TOOL,
+        "agent_result_invalid": ToolFailureClass.EXECUTOR,
+    }
+    for code, expected_class in expected.items():
+        classification = classification_for_error_code(code)
+        assert classification.failure_class is expected_class
+        assert classification.retryable is False
+        assert classification.disposition.value == "fatal"
+
+    auth_classification = provider_status_failure_classification(401)
+    assert auth_classification.failure_class is ToolFailureClass.AUTH
+    assert auth_classification.retryable is False
+    assert provider_status_failure_classification(429).failure_class is (
+        ToolFailureClass.PROVIDER_TRANSPORT
+    )
+
+    retry_state = ModelToolCallRetryState()
+    provider_network_error = ModelGatewayError(
+        code="agent_provider_connection_error",
+        message="OpenAI request could not reach the API.",
+    )
+    mcp_transport_error = RuntimeToolError(
+        code="mcp_runtime_transport_error",
+        message="MCP runtime transport failed while calling a server tool.",
+    )
+    assert retry_state.can_retry(provider_network_error) is False
+    assert retry_state.can_retry(mcp_transport_error) is False
+    assert retry_state.metadata() is None
+
+
 def test_market_data_runtime_tool_registry_denies_ungranted_tools_before_parsing() -> None:
     registry = RuntimeToolRegistry(
         [MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC, MARKET_DATA_HISTORY_LOOKUP_TOOL_SPEC]
@@ -2698,6 +3038,48 @@ def test_memory_lookup_runtime_tool_uses_current_context_with_finance_disabled(
     assert injected_event.status_snapshot == {"status": "injected"}
     assert injected_event.injected_text is not None
     assert "Keep this insight" in injected_event.injected_text
+
+
+def test_memory_runtime_tools_reject_shared_namespace_without_trusted_runtime_source() -> None:
+    registry = RuntimeToolRegistry(
+        [MEMORY_WRITE_TOOL_SPEC, MEMORY_LOOKUP_TOOL_SPEC],
+        enabled_extension_keys=set(),
+    )
+    context = _runtime_context(fail_on_session=True)
+    namespace_payload = {"ownerPackageKey": "pkg_alpha", "namespaceKey": "shared_research"}
+
+    with pytest.raises(RuntimeToolError) as write_denied:
+        _ = registry.dispatch(
+            name=MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+            arguments_json=_memory_write_arguments_json({"sharedNamespace": namespace_payload}),
+            granted_tool_keys={MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY},
+            context=context,
+        )
+    with pytest.raises(RuntimeToolError) as lookup_denied:
+        _ = registry.dispatch(
+            name=MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json=json.dumps(
+                {
+                    "query": "shared namespace runtime",
+                    "scope": None,
+                    "sharedNamespace": namespace_payload,
+                    "subjectRefs": None,
+                    "kind": None,
+                    "status": "pending",
+                    "tags": None,
+                    "limit": None,
+                    "offset": None,
+                    "maxCharacters": None,
+                }
+            ),
+            granted_tool_keys={MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY},
+            context=context,
+        )
+
+    assert write_denied.value.code == "agent_tool_call_invalid"
+    assert lookup_denied.value.code == "agent_tool_call_invalid"
+    assert "sharedNamespace" in write_denied.value.message
+    assert "sharedNamespace" in lookup_denied.value.message
 
 
 def test_memory_lookup_runtime_tool_rejects_unscoped_call_without_context() -> None:
