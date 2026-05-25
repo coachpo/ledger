@@ -1,12 +1,9 @@
 import {
   Box,
   FileUp,
-  LayoutGrid,
-  List,
   MoreHorizontal,
   PackagePlus,
   PlayCircle,
-  Search,
   SquarePen,
   Trash2,
   TriangleAlert,
@@ -23,6 +20,12 @@ import {
 import { formatDateTime } from "@/lib/format";
 import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { EvidenceCluster } from "@/components/shared/evidence-cluster";
+import { ProvenanceBadge } from "@/components/shared/provenance-badge";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
+import { ResourceToolbar } from "@/components/shared/resource-toolbar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,7 +35,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -42,8 +44,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-
 import {
   PlatformResourceCard,
   PlatformResourceList,
@@ -51,6 +51,29 @@ import {
 
 function formatNullableHash(value: string | null): string {
   return value ? value.slice(0, 12) : "Not recorded";
+}
+
+function hasRecordedHash(value: string | null): boolean {
+  return Boolean(value?.trim());
+}
+
+function getPackageReadiness(workflowPackage: WorkflowPackageRead) {
+  const hasManifest = hasRecordedHash(workflowPackage.manifestHash);
+  const hasCompiledPlan = hasRecordedHash(workflowPackage.compiledHash);
+
+  if (hasManifest && hasCompiledPlan) {
+    return {
+      description: "Manifest and compiled artifact recorded",
+      label: "Ready for preflight",
+      tone: "success" as const,
+    };
+  }
+
+  return {
+    description: "Missing manifest or compiled artifact evidence",
+    label: "Needs validation",
+    tone: "warning" as const,
+  };
 }
 
 function sortPackages(items: readonly WorkflowPackageRead[]) {
@@ -73,6 +96,9 @@ function filterPackages(items: readonly WorkflowPackageRead[], search: string) {
       item.description,
       item.manifestHash ?? "",
       item.compiledHash ?? "",
+      formatNullableHash(item.manifestHash),
+      formatNullableHash(item.compiledHash),
+      getPackageReadiness(item).label,
     ]
       .join(" ")
       .toLowerCase()
@@ -83,7 +109,7 @@ function filterPackages(items: readonly WorkflowPackageRead[], search: string) {
 function LoadingTable() {
   return (
     <Card>
-      <CardContent className="space-y-3 p-4">
+      <CardContent className="flex flex-col gap-3 p-4">
         {Array.from({ length: 4 }).map((_, index) => (
           <Skeleton className="h-12 w-full" key={index} />
         ))}
@@ -93,26 +119,25 @@ function LoadingTable() {
 }
 
 function EmptyState({ search }: { search: string }) {
+  const hasSearch = Boolean(search.trim());
+
   return (
-    <Card className="border-dashed bg-card/70">
-      <CardContent className="flex flex-col items-center gap-3 px-4 py-12 text-center">
-        <div className="flex size-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
-          <Box className="size-5" aria-hidden="true" />
+    <EmptyStatePanel
+      className="bg-card/70"
+      description={
+        hasSearch
+          ? "Refine the search by package name, key, manifest hash, or readiness cue."
+          : "Create or import a package manifest to author private agents, schemas, capabilities, MCP bindings, and launch flows."
+      }
+      icon={
+        <div className="flex size-9 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+          <Box aria-hidden="true" />
         </div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium text-foreground">
-            {search.trim()
-              ? "No packages match this search."
-              : "No workflow packages yet."}
-          </p>
-          <p className="max-w-md text-sm text-muted-foreground">
-            {search.trim()
-              ? "Refine the search by package name, key, or manifest hash."
-              : "Create or import a package manifest to author private agents, schemas, capabilities, MCP bindings, and launch flows."}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
+      }
+      title={
+        hasSearch ? "No packages match this search." : "No workflow packages yet."
+      }
+    />
   );
 }
 
@@ -165,56 +190,34 @@ function WorkflowPackagesHeader() {
 }
 
 function WorkflowPackagesToolbar({
+  filteredCount,
   search,
+  totalCount,
   viewMode,
   onSearchChange,
   onViewModeChange,
 }: {
+  filteredCount: number;
   search: string;
+  totalCount: number;
   viewMode: ViewMode;
   onSearchChange: (value: string) => void;
   onViewModeChange: (value: ViewMode) => void;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className="relative max-w-sm flex-1" role="search">
-        <Search
-          className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <Input
-          aria-label="Search workflow packages"
-          className="h-8 pl-8 text-xs"
-          placeholder="Search packages by name, key, or hash..."
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-        />
-      </div>
-      <ToggleGroup
-        type="single"
-        value={viewMode}
-        onValueChange={(value) => {
-          if (value) {
-            onViewModeChange(value as ViewMode);
-          }
-        }}
-      >
-        <ToggleGroupItem
-          value="cards"
-          aria-label="Cards view"
-          className="h-8 w-8 px-0"
-        >
-          <LayoutGrid className="size-3.5" />
-        </ToggleGroupItem>
-        <ToggleGroupItem
-          value="table"
-          aria-label="Table view"
-          className="h-8 w-8 px-0"
-        >
-          <List className="size-3.5" />
-        </ToggleGroupItem>
-      </ToggleGroup>
-    </div>
+    <ResourceToolbar
+      resultSummary={`${filteredCount} of ${totalCount} packages shown`}
+      search={{
+        id: "workflow-package-search",
+        label: "Search workflow packages",
+        name: "workflowPackageSearch",
+        placeholder: "Search packages by name, key, hash, or readiness...",
+        value: search,
+        onChange: onSearchChange,
+      }}
+      viewMode={viewMode}
+      onViewModeChange={(value) => onViewModeChange(value as ViewMode)}
+    />
   );
 }
 
@@ -256,24 +259,86 @@ function WorkflowPackagesStateCards({
   return filteredCount === 0 ? <EmptyState search={search} /> : null;
 }
 
-function WorkflowPackageMetadata({
+function WorkflowPackageStatusStrip({
+  workflowPackage,
+}: {
+  workflowPackage: WorkflowPackageRead;
+}) {
+  const readiness = getPackageReadiness(workflowPackage);
+  const hasManifest = hasRecordedHash(workflowPackage.manifestHash);
+  const hasCompiledPlan = hasRecordedHash(workflowPackage.compiledHash);
+
+  return (
+    <ResourceStatusStrip
+      density="compact"
+      items={[
+        {
+          description: readiness.description,
+          label: "Readiness",
+          tone: readiness.tone,
+          value: readiness.label,
+        },
+        {
+          label: "Manifest",
+          tone: hasManifest ? "success" : "warning",
+          value: hasManifest ? "Recorded" : "Missing",
+        },
+        {
+          label: "Compiled",
+          tone: hasCompiledPlan ? "success" : "warning",
+          value: hasCompiledPlan ? "Recorded" : "Missing",
+        },
+      ]}
+    />
+  );
+}
+
+function WorkflowPackageProvenance({
   workflowPackage,
 }: {
   workflowPackage: WorkflowPackageRead;
 }) {
   return (
-    <div className="grid min-w-0 gap-x-5 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2">
-      <div className="min-w-0">
-        <span className="font-medium text-foreground">Manifest Hash:</span>{" "}
-        <span className="font-mono">
-          {formatNullableHash(workflowPackage.manifestHash)}
-        </span>
-      </div>
-      <div className="min-w-0">
-        <span className="font-medium text-foreground">Updated:</span>{" "}
-        <span>{formatDateTime(workflowPackage.updatedAt)}</span>
-      </div>
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <ProvenanceBadge
+        detail={formatNullableHash(workflowPackage.manifestHash)}
+        label="Manifest"
+        tone={hasRecordedHash(workflowPackage.manifestHash) ? "verified" : "warning"}
+      />
+      <ProvenanceBadge
+        detail={formatNullableHash(workflowPackage.compiledHash)}
+        label="Compiled"
+        tone={hasRecordedHash(workflowPackage.compiledHash) ? "verified" : "warning"}
+      />
+      <ProvenanceBadge
+        detail={formatDateTime(workflowPackage.updatedAt)}
+        label="Updated"
+      />
     </div>
+  );
+}
+
+function WorkflowPackageEvidence({
+  workflowPackage,
+}: {
+  workflowPackage: WorkflowPackageRead;
+}) {
+  return (
+    <EvidenceCluster
+      layout="inline"
+      items={[
+        {
+          label: "Package key",
+          tone: "neutral",
+          value: <span className="font-mono">{workflowPackage.key}</span>,
+        },
+        {
+          label: "Created",
+          tone: "neutral",
+          value: formatDateTime(workflowPackage.createdAt),
+        },
+      ]}
+    />
   );
 }
 
@@ -357,9 +422,13 @@ function WorkflowPackageCards({
           description={
             workflowPackage.description || "No description provided."
           }
-          metadata={
-            <WorkflowPackageMetadata workflowPackage={workflowPackage} />
+          statusStrip={
+            <WorkflowPackageStatusStrip workflowPackage={workflowPackage} />
           }
+          provenance={
+            <WorkflowPackageProvenance workflowPackage={workflowPackage} />
+          }
+          evidence={<WorkflowPackageEvidence workflowPackage={workflowPackage} />}
           actions={
             <WorkflowPackageActions
               deletePending={deletePending}
@@ -407,9 +476,9 @@ function WorkflowPackagesTable({
               }
             />
           </TableHead>
-          <TableHead>Name</TableHead>
-          <TableHead>Key</TableHead>
-          <TableHead>Manifest Hash</TableHead>
+          <TableHead>Package</TableHead>
+          <TableHead>Readiness</TableHead>
+          <TableHead>Provenance</TableHead>
           <TableHead>Updated</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
@@ -417,6 +486,7 @@ function WorkflowPackagesTable({
       <TableBody>
         {packages.map((workflowPackage) => {
           const isSelected = selectedPackageIds.has(workflowPackage.id);
+          const readiness = getPackageReadiness(workflowPackage);
 
           return (
             <TableRow
@@ -433,21 +503,32 @@ function WorkflowPackagesTable({
                   }
                 />
               </TableCell>
-              <TableCell className="min-w-56 whitespace-normal">
-                <div className="space-y-1">
+              <TableCell className="min-w-64 whitespace-normal">
+                <div className="flex flex-col gap-1">
                   <p className="font-medium text-foreground">
                     {workflowPackage.name}
+                  </p>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {workflowPackage.key}
                   </p>
                   <p className="line-clamp-2 text-xs text-muted-foreground">
                     {workflowPackage.description || "No description provided."}
                   </p>
                 </div>
               </TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">
-                {workflowPackage.key}
+              <TableCell className="min-w-64 whitespace-normal">
+                <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+                  <Badge
+                    data-tone={readiness.tone}
+                    variant={readiness.tone === "success" ? "secondary" : "outline"}
+                  >
+                    {readiness.label}
+                  </Badge>
+                  <span>{readiness.description}</span>
+                </div>
               </TableCell>
-              <TableCell className="font-mono text-xs">
-                {formatNullableHash(workflowPackage.manifestHash)}
+              <TableCell className="min-w-72 whitespace-normal">
+                <WorkflowPackageProvenance workflowPackage={workflowPackage} />
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">
                 {formatDateTime(workflowPackage.updatedAt)}
@@ -661,7 +742,9 @@ export function WorkflowPackagesListPage() {
     <div className="space-y-4 p-4" data-testid="workflow-packages-list-page">
       <WorkflowPackagesHeader />
       <WorkflowPackagesToolbar
+        filteredCount={filteredPackages.length}
         search={search}
+        totalCount={packages.length}
         viewMode={viewMode}
         onSearchChange={setSearch}
         onViewModeChange={handleViewModeChange}

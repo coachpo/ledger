@@ -152,9 +152,11 @@ describe("WorkflowPackagesListPage", () => {
             updatedAt: "2026-05-04T10:00:00Z",
           }),
           packageFixture({
+            compiledHash: null,
             description: "Draft allocation bundle",
             id: 4,
             key: "allocation_draft",
+            manifestHash: null,
             name: "Allocation Draft",
             updatedAt: "2026-05-02T10:00:00Z",
           }),
@@ -179,7 +181,7 @@ describe("WorkflowPackagesListPage", () => {
       screen.getByRole("textbox", { name: "Search workflow packages" }),
     ).toHaveAttribute(
       "placeholder",
-      "Search packages by name, key, or hash...",
+      "Search packages by name, key, hash, or readiness...",
     );
     expect(
       screen.queryByRole("checkbox", {
@@ -201,16 +203,28 @@ describe("WorkflowPackagesListPage", () => {
 
     const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
     expect(riskRow).toHaveTextContent("Risk Review");
-    const packageKey = within(riskRow).getByText("risk_review");
-    expect(packageKey).toHaveClass("font-mono");
-    expect(packageKey.parentElement).toHaveClass("text-xs");
+    const packageKeys = within(riskRow).getAllByText("risk_review");
+    expect(packageKeys).toHaveLength(2);
+    expect(packageKeys[0]).toHaveClass("font-mono");
+    expect(packageKeys[0].parentElement).toHaveClass("text-xs");
     expect(
       within(riskRow).getByText("Risk review workflow bundle"),
     ).toHaveClass("text-sm");
-    const metadataGrid =
-      within(riskRow).getByText("Manifest Hash:").parentElement?.parentElement;
-    expect(metadataGrid).toHaveClass("text-xs", "text-muted-foreground");
-    expect(riskRow).toHaveTextContent("manifest-has");
+    expect(riskRow).toHaveTextContent("Readiness");
+    expect(riskRow).toHaveTextContent("Ready for preflight");
+    expect(riskRow).toHaveTextContent(
+      "Manifest and compiled artifact recorded",
+    );
+    expect(
+      within(riskRow).getByLabelText("Manifest: manifest-has"),
+    ).toBeVisible();
+    expect(
+      within(riskRow).getByLabelText("Compiled: compiled-has"),
+    ).toBeVisible();
+    expect(
+      within(riskRow).getByLabelText(/Updated: May 4, 2026/),
+    ).toBeVisible();
+    expect(riskRow).toHaveTextContent("Package key");
     expect(riskRow).not.toHaveTextContent("Active");
     expect(riskRow).not.toHaveTextContent("Draft");
     expect(riskRow).toHaveTextContent("May 4, 2026");
@@ -250,6 +264,13 @@ describe("WorkflowPackagesListPage", () => {
     );
     expect(allocationRow).toHaveTextContent("Allocation Draft");
     expect(allocationRow).toHaveTextContent("allocation_draft");
+    expect(allocationRow).toHaveTextContent("Needs validation");
+    expect(allocationRow).toHaveTextContent(
+      "Missing manifest or compiled artifact evidence",
+    );
+    expect(
+      within(allocationRow).getByLabelText("Manifest: Not recorded"),
+    ).toBeVisible();
     expect(allocationRow).not.toHaveTextContent("Active");
     expect(
       screen.queryByRole("columnheader", { name: "Status" }),
@@ -278,9 +299,9 @@ describe("WorkflowPackagesListPage", () => {
     ).toBeVisible();
 
     for (const column of [
-      "Name",
-      "Key",
-      "Manifest Hash",
+      "Package",
+      "Readiness",
+      "Provenance",
       "Updated",
       "Actions",
     ]) {
