@@ -10,34 +10,34 @@ The data model follows two boundaries. Finance-owned product tables support pres
 
 ## Preserved Finance Product Tables
 
-| Table | Role |
-|---|---|
-| `portfolios` | Isolated workspaces with slug, name, description, base currency, and timestamps. |
-| `balances` | Portfolio-scoped deposit/withdrawal cash rows with non-negative amounts. |
-| `positions` | Aggregate holdings keyed by `(portfolio_id, symbol)`. |
-| `trading_operations` | Append-only BUY, SELL, DIVIDEND, and SPLIT history with balance-label snapshots. |
-| `market_quotes` | Rebuildable quote cache keyed by provider, symbol, and `as_of`. |
-| `symbol_name_cache` | Rebuildable symbol display-name cache. |
-| `text_templates` | Global reusable template documents. |
-| `reports` | Markdown snapshots keyed by unique `name` and `slug` with source and JSONB metadata. |
+| Table                | Role                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `portfolios`         | Isolated workspaces with slug, name, description, base currency, and timestamps.     |
+| `balances`           | Portfolio-scoped deposit/withdrawal cash rows with non-negative amounts.             |
+| `positions`          | Aggregate holdings keyed by `(portfolio_id, symbol)`.                                |
+| `trading_operations` | Append-only BUY, SELL, DIVIDEND, and SPLIT history with balance-label snapshots.     |
+| `market_quotes`      | Rebuildable quote cache keyed by provider, symbol, and `as_of`.                      |
+| `symbol_name_cache`  | Rebuildable symbol display-name cache.                                               |
+| `text_templates`     | Global reusable template documents.                                                  |
+| `reports`            | Markdown snapshots keyed by unique `name` and `slug` with source and JSONB metadata. |
 
 ## Platform Tables
 
-| Table | Role |
-|---|---|
-| `workflow_packages` | One mutable current package per stable key, including manifest source, package definition, compiled plan, hashes, dependency keys, and timestamps. Live package rows do not store lifecycle status. |
-| `workflow_package_secret_bindings` | Package-local encrypted secret values keyed by package and binding key; reads expose only presence/timestamps, never raw values. |
-| `run_workflow_package_snapshots` | One immutable executable package snapshot per run, including copied package identity, workflow identity, hashes, manifest/export material, compiled plan, launch inputs, resolved non-secret model runtime profiles, and preflight summary. |
-| `model_connections` | Global saved provider/model endpoint config, selected `protocol_profile`, backend-owned capability-status JSONB, policy fields, probe cache metadata, encrypted API keys, reachability-test metadata, and archive state. Public writes select protocol and endpoint settings only; compatibility truth is resolved by backend services. |
-| `extension_states` | Operational bundled-extension state keyed by `extension_key`, storing only `enabled`. |
-| `runs` | Global persisted package execution input/output, lifecycle state, progress/queue source data, scheduler lane and lease metadata, totals, optional trace ids, rerun metadata, historical replay lineage, package provenance, and dependency-only extension requirements. |
-| `run_forks` | First-class runtime fork artifact for descendant runs, keyed by `run_id`, with source run lineage, source invocation id, source/resume step indexes, and edited invocation input. |
-| `run_steps` | Persisted workflow step status, copied rerun/fork context, graph metadata, typed tool-failure taxonomy, bounded retry metadata, errors, and timestamps. |
-| `run_agent_invocations` | Persisted agent invocation lineage, resolved inputs, outputs, token usage, durations, optional span ids, copied context, and edited fork target provenance. |
-| `run_operation_invocations` | Persisted non-agent operation invocation lineage for `kind: http`, redacted request metadata, bounded response metadata, outputs, errors, optional span ids, and copied context. |
-| `agent_memory_entries` | Canonical platform-core memory entries keyed by opaque `memory_id`, with package-qualified scope, kind, subject refs, status, content hash, idempotency key, and trusted provenance. |
-| `agent_memory_revisions` | Immutable content revisions keyed by opaque `revision_id`, with model-safe summary/content, attributes, revision action, supersession links, and content hash. |
-| `run_memory_events` | Append-only run-scoped memory evidence for retrieval, injection, writes/reuse, supersession, review, and failure facts. |
+| Table                              | Role                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workflow_packages`                | One mutable current package per stable key, including manifest source, package definition, compiled plan, hashes, dependency keys, and timestamps. Live package rows do not store lifecycle status.                                                                                                                                     |
+| `workflow_package_secret_bindings` | Package-local encrypted secret values keyed by package and binding key; reads expose only presence/timestamps, never raw values.                                                                                                                                                                                                        |
+| `run_workflow_package_snapshots`   | One immutable executable package snapshot per run, including copied package identity, workflow identity, hashes, manifest/export material, compiled plan, launch inputs, resolved non-secret model runtime profiles, and preflight summary.                                                                                             |
+| `model_connections`                | Global saved provider/model endpoint config, selected `protocol_profile`, backend-owned capability-status JSONB, policy fields, probe cache metadata, encrypted API keys, reachability-test metadata, and archive state. Public writes select protocol and endpoint settings only; compatibility truth is resolved by backend services. |
+| `extension_states`                 | Operational bundled-extension state keyed by `extension_key`, storing only `enabled`.                                                                                                                                                                                                                                                   |
+| `runs`                             | Global persisted package execution input/output, lifecycle state, progress/queue source data, scheduler lane and lease metadata, totals, optional trace ids, rerun metadata, historical replay lineage, package provenance, and dependency-only extension requirements.                                                                 |
+| `run_forks`                        | First-class runtime fork artifact for descendant runs, keyed by `run_id`, with source run lineage, source invocation id, source/resume step indexes, and edited invocation input.                                                                                                                                                       |
+| `run_steps`                        | Persisted workflow step status, copied rerun/fork context, graph metadata, typed tool-failure taxonomy, bounded retry metadata, errors, and timestamps.                                                                                                                                                                                 |
+| `run_agent_invocations`            | Persisted agent invocation lineage, resolved inputs, outputs, token usage, durations, optional span ids, copied context, and edited fork target provenance.                                                                                                                                                                             |
+| `run_operation_invocations`        | Persisted non-agent operation invocation lineage for `kind: http`, redacted request metadata, bounded response metadata, outputs, errors, optional span ids, and copied context.                                                                                                                                                        |
+| `agent_memory_entries`             | Canonical platform-core memory entries keyed by opaque `memory_id`, with package-qualified scope, kind, subject refs, status, content hash, idempotency key, and trusted provenance.                                                                                                                                                    |
+| `agent_memory_revisions`           | Immutable content revisions keyed by opaque `revision_id`, with model-safe summary/content, attributes, revision action, supersession links, and content hash.                                                                                                                                                                          |
+| `run_memory_events`                | Append-only run-scoped memory evidence for retrieval, injection, writes/reuse, supersession, review, and failure facts.                                                                                                                                                                                                                 |
 
 Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes are stored inside the current package artifact. Runs copy the executable artifact into their own snapshot at launch. These resources are not normalized into global authoring tables.
 

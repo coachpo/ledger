@@ -16,14 +16,14 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 ## WHERE TO LOOK
 
-| Task | Location | Notes |
-|---|---|---|
-| Product scope | `prd.md` | Goals, non-goals, product areas, success criteria, and package-first platform framing. |
-| Requirements | `requirements.md` | Functional/nonfunctional requirements and acceptance criteria. |
-| Technical behavior | `spec.md` | Runtime topology, API conventions, backend/frontend architecture, validation gates, platform contracts, memory, and removed-surface boundaries. |
-| Data model | `data-model.md` | Current tables, JSONB contracts, persistence boundaries, memory tables, and schema-repair rules. |
-| Test strategy | `test-plan.md` | Quality gates, coverage matrix, E2E ports, route-family coverage, and stale-claim guards. |
-| Docs governance | `AGENTS.md` | Ownership rules, obsolete-content rules, anti-patterns, and consolidation policy. |
+| Task               | Location          | Notes                                                                                                                                           |
+| ------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product scope      | `prd.md`          | Goals, non-goals, product areas, success criteria, and package-first platform framing.                                                          |
+| Requirements       | `requirements.md` | Functional/nonfunctional requirements and acceptance criteria.                                                                                  |
+| Technical behavior | `spec.md`         | Runtime topology, API conventions, backend/frontend architecture, validation gates, platform contracts, memory, and removed-surface boundaries. |
+| Data model         | `data-model.md`   | Current tables, JSONB contracts, persistence boundaries, memory tables, and schema-repair rules.                                                |
+| Test strategy      | `test-plan.md`    | Quality gates, coverage matrix, E2E ports, route-family coverage, and stale-claim guards.                                                       |
+| Docs governance    | `AGENTS.md`       | Ownership rules, obsolete-content rules, anti-patterns, and consolidation policy.                                                               |
 
 ## PENDING DESIGN NOTES
 

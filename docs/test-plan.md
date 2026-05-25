@@ -24,19 +24,19 @@ Frontend coverage must prove API helpers, query keys, formatting helpers, portfo
 
 ## Contract Coverage Matrix
 
-| Surface | Required coverage |
-|---|---|
-| API conventions | Error envelope shape, camelCase aliases, decimal string serialization, multipart upload routes, and `422` validation behavior. |
-| Preserved finance routes | Portfolio, balance, position, CSV import, trade, quote/history, template, and report route families under `/api/v1`. |
-| Extension state | `GET/PATCH /api/extensions` exposes only `key`, `label`, and `enabled`; finance-owned routes/nav/tools are hidden when disabled while platform-core memory tools remain visible. |
-| Workflow Packages | YAML parser rejects aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate refs, raw ids, and unsupported `spec.skills`; package reads/writes do not expose live status. |
-| Package secrets and HTTP ops | Secret binding CRUD masks values; HTTP nodes allow only supported methods, keep secrets in request fields only, redact metadata, validate responses, and persist operation invocation rows. |
-| Model Connections | Protocol profile validation, strict rejection of public compatibility/policy writes, backend-owned compatibility resolution, secret preservation/rotation, reachability test, capability probe cache, policy defaults, and secret-safe reads/errors. |
-| Tools | Server-declared `/api/tools` catalog, extension filtering, OpenAI function names, finance-owned data tools, social sentiment, report lookup, retired `signaldeck_reports_write` fail-closed behavior, typed failure taxonomy, bounded retry metadata, and platform memory tools. |
-| Runs | Launch, scheduler queue semantics, progress read model, run-owned package snapshots, resolved model runtime profile provenance, rerun, fork, operation cards, extension dependencies, trace/span ids, memory evidence, typed failure taxonomy, and bounded retry evidence. |
-| Runtime inputs | JSON Schema `title` and `description` render as display metadata only; unsupported help-text/schema mechanisms remain rejected or ignored according to schema rules. |
-| Memory | Core schemas, write/reuse/supersede semantics, scoped lookup fallback, namespace grants, conflict handling, runtime tools, `/api/memory`, `/memory`, run memory events, and report-domain separation. |
-| Removed surfaces | Backend and frontend absence for `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtests, and removed global authoring routes. |
+| Surface                      | Required coverage                                                                                                                                                                                                                                                                |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API conventions              | Error envelope shape, camelCase aliases, decimal string serialization, multipart upload routes, and `422` validation behavior.                                                                                                                                                   |
+| Preserved finance routes     | Portfolio, balance, position, CSV import, trade, quote/history, template, and report route families under `/api/v1`.                                                                                                                                                             |
+| Extension state              | `GET/PATCH /api/extensions` exposes only `key`, `label`, and `enabled`; finance-owned routes/nav/tools are hidden when disabled while platform-core memory tools remain visible.                                                                                                 |
+| Workflow Packages            | YAML parser rejects aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate refs, raw ids, and unsupported `spec.skills`; package reads/writes do not expose live status.                                                                                  |
+| Package secrets and HTTP ops | Secret binding CRUD masks values; HTTP nodes allow only supported methods, keep secrets in request fields only, redact metadata, validate responses, and persist operation invocation rows.                                                                                      |
+| Model Connections            | Protocol profile validation, strict rejection of public compatibility/policy writes, backend-owned compatibility resolution, secret preservation/rotation, reachability test, capability probe cache, policy defaults, and secret-safe reads/errors.                             |
+| Tools                        | Server-declared `/api/tools` catalog, extension filtering, OpenAI function names, finance-owned data tools, social sentiment, report lookup, retired `signaldeck_reports_write` fail-closed behavior, typed failure taxonomy, bounded retry metadata, and platform memory tools. |
+| Runs                         | Launch, scheduler queue semantics, progress read model, run-owned package snapshots, resolved model runtime profile provenance, rerun, fork, operation cards, extension dependencies, trace/span ids, memory evidence, typed failure taxonomy, and bounded retry evidence.       |
+| Runtime inputs               | JSON Schema `title` and `description` render as display metadata only; unsupported help-text/schema mechanisms remain rejected or ignored according to schema rules.                                                                                                             |
+| Memory                       | Core schemas, write/reuse/supersede semantics, scoped lookup fallback, namespace grants, conflict handling, runtime tools, `/api/memory`, `/memory`, run memory events, and report-domain separation.                                                                            |
+| Removed surfaces             | Backend and frontend absence for `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtests, and removed global authoring routes.                                                                                                              |
 
 ## Backend Test Scope
 
