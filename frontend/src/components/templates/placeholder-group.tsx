@@ -29,36 +29,44 @@ export function PlaceholderGroup({
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="min-w-[260px]">
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="min-w-0">
       <CollapsibleTrigger asChild>
-        <button className="flex w-full items-center gap-1 py-1 text-left text-xs font-medium text-foreground hover:text-primary">
+        <button className="flex h-7 w-full min-w-0 items-center gap-1 rounded-md px-1 text-left text-xs font-medium text-foreground hover:bg-accent hover:text-accent-foreground">
           {isOpen ? (
-            <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
           ) : (
-            <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
           )}
-          {title}
-          <Badge variant="outline" className="ml-1 h-4 px-1 text-[9px]">
+          <span className="truncate">{title}</span>
+          <Badge variant="outline" className="ml-auto h-4 px-1 text-[9px]">
             {items.length}
           </Badge>
         </button>
       </CollapsibleTrigger>
-      <CollapsibleContent className="flex flex-col pb-1 pl-4">
+      <CollapsibleContent className="flex min-w-0 flex-col gap-0.5 pb-1 pl-4">
         {description ? (
-          <p className="px-1 pb-1 text-[10px] leading-4 text-muted-foreground">{description}</p>
+          <p className="px-1 pb-1 text-[10px] leading-4 text-muted-foreground">
+            {description}
+          </p>
         ) : null}
         {items.map((item) => (
-          <div
+          <button
             key={item.path}
-            className="group flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 hover:bg-accent"
+            type="button"
+            className="group flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-accent"
             onClick={() => onInsert(item.path)}
           >
-            <code className="flex-1 truncate text-[11px] text-primary">{item.path}</code>
-            <Badge variant="outline" className="h-3.5 shrink-0 px-1 text-[8px] uppercase leading-none">
+            <code className="flex-1 truncate text-[11px] text-primary">
+              {item.path}
+            </code>
+            <Badge
+              variant="outline"
+              className="h-3.5 shrink-0 px-1 text-[8px] uppercase leading-none"
+            >
               {item.type}
             </Badge>
-            <Copy className="h-2.5 w-2.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
-          </div>
+            <Copy className="size-2.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
+          </button>
         ))}
       </CollapsibleContent>
     </Collapsible>

@@ -6,6 +6,7 @@ import {
 } from "@/components/templates/placeholder-group";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/components/ui/utils";
 import type { PlaceholderTree } from "@/lib/types/text-template";
 
 type PlaceholderReferenceGroup = {
@@ -128,6 +129,7 @@ const STATIC_PLACEHOLDER_GROUPS: PlaceholderReferenceGroup[] = [
 ];
 
 type TemplatePlaceholderReferenceProps = {
+  className?: string;
   isLoading: boolean;
   onClose: () => void;
   onInsert: (path: string) => void;
@@ -136,6 +138,7 @@ type TemplatePlaceholderReferenceProps = {
 };
 
 export function TemplatePlaceholderReference({
+  className,
   isLoading,
   onClose,
   onInsert,
@@ -147,26 +150,35 @@ export function TemplatePlaceholderReference({
   }
 
   return (
-    <div className="border-t border-border">
-      <div className="flex items-center gap-2 bg-muted/50 px-4 py-2">
-        <Braces className="h-3 w-3 text-muted-foreground" />
+    <div
+      className={cn(
+        "shrink-0 overflow-hidden rounded-xl border border-border bg-card",
+        className,
+      )}
+    >
+      <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5">
+        <Braces className="size-3 text-muted-foreground" />
         <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
           Placeholder Reference
         </span>
+        <span className="hidden text-xs text-muted-foreground sm:inline">
+          Click a path to insert it into the markdown pane.
+        </span>
         {isLoading ? (
-          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+          <Loader2 className="size-3 animate-spin text-muted-foreground" />
         ) : null}
         <Button
           variant="ghost"
           size="icon"
-          className="ml-auto h-5 w-5"
+          className="ml-auto size-6"
           onClick={onClose}
+          aria-label="Collapse placeholder reference"
         >
-          <ChevronDown className="h-3 w-3" />
+          <ChevronDown className="size-3" />
         </Button>
       </div>
-      <ScrollArea className="h-[220px] lg:h-[240px]">
-        <div className="flex flex-wrap gap-x-8 gap-y-1 px-4 py-2">
+      <ScrollArea className="h-[150px] lg:h-[160px]">
+        <div className="grid grid-cols-1 gap-x-4 gap-y-1 px-3 py-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {STATIC_PLACEHOLDER_GROUPS.map((group) => (
             <PlaceholderGroup
               key={group.title}
