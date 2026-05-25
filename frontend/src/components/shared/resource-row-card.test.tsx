@@ -3,7 +3,10 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
+import { EvidenceCluster } from "./evidence-cluster";
+import { ProvenanceBadge } from "./provenance-badge";
 import { EntityListCard, ResourceRowCard } from "./resource-row-card";
+import { ResourceStatusStrip } from "./resource-status-strip";
 
 function renderResourceRowCard(element: ReactElement) {
   return render(<MemoryRouter>{element}</MemoryRouter>);
@@ -125,6 +128,9 @@ describe("ResourceRowCard", () => {
       <ResourceRowCard
         actions={<button type="button">Run</button>}
         density="compactPlus"
+        description="Compact plus description"
+        metadata="Compact plus metadata"
+        subtitle="Compact plus subtitle"
         testId="compact-plus-row"
         title="Compact Plus Row"
       />,
@@ -152,6 +158,9 @@ describe("ResourceRowCard", () => {
       "sm:justify-end",
       "[&_button]:cursor-pointer",
     );
+    expect(screen.getByText("Compact plus subtitle")).toHaveClass("text-xs", "text-muted-foreground");
+    expect(screen.getByText("Compact plus description")).toHaveClass("text-sm", "text-muted-foreground");
+    expect(screen.getByText("Compact plus metadata")).toHaveClass("text-xs", "text-muted-foreground");
   });
 
   it("preserves row and primary action test id contracts", () => {
@@ -184,5 +193,29 @@ describe("ResourceRowCard", () => {
       "text-muted-foreground",
     );
     expect(screen.getByText("Created by SignalDeck")).toHaveClass("text-[11px]", "text-muted-foreground");
+  });
+
+  it("renders shared status, provenance, evidence, and footer slots without wrapping actions", () => {
+    renderResourceRowCard(
+      <ResourceRowCard
+        actions={<button type="button">Archive</button>}
+        evidence={<EvidenceCluster items={[{ label: "Trace", value: "trace-123" }]} layout="inline" />}
+        footer="Footer metadata"
+        provenance={<ProvenanceBadge detail="snapshot" label="Imported" />}
+        primaryAction={{ kind: "link", label: "Open Evidence", to: "/resources/evidence" }}
+        statusStrip={<ResourceStatusStrip items={[{ label: "Ready", tone: "success" }]} />}
+        title="Evidence Resource"
+      />,
+    );
+
+    const primaryLink = screen.getByRole("link", { name: "Open Evidence" });
+    const archiveButton = screen.getByRole("button", { name: "Archive" });
+
+    expect(screen.getByText("Ready").closest("[data-slot='badge']")).toHaveAttribute("data-tone", "success");
+    expect(screen.getByLabelText("Imported: snapshot")).toBeInTheDocument();
+    expect(screen.getByText("Trace")).toBeInTheDocument();
+    expect(screen.getByText("Footer metadata")).toHaveClass("text-[11px]", "text-muted-foreground");
+    expect(primaryLink).not.toContainElement(archiveButton);
+    expect(archiveButton.closest("a")).toBeNull();
   });
 });

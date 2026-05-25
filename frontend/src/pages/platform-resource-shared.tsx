@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import {
-  EntityListCard,
+  ResourceRowCard,
   type ResourceRowCardDensity,
   type ResourceRowCardPrimaryAction,
 } from "@/components/shared/resource-row-card";
@@ -18,10 +18,14 @@ type PlatformResourceCardProps = {
   badges?: ReactNode;
   density?: ResourceRowCardDensity;
   description?: ReactNode;
+  evidence?: ReactNode;
+  footer?: ReactNode;
   leading?: ReactNode;
   metadata?: ReactNode;
   primaryAction?: ResourceRowCardPrimaryAction;
+  provenance?: ReactNode;
   selected?: boolean;
+  statusStrip?: ReactNode;
   subtitle?: ReactNode;
   testId: string;
   title: ReactNode;
@@ -37,25 +41,35 @@ export function PlatformResourceCard(props: PlatformResourceCardProps) {
   const {
     actions,
     badges,
+    density = "compactPlus",
     description,
+    evidence,
+    footer,
     leading,
     metadata,
     primaryAction,
+    provenance,
     selected = false,
+    statusStrip,
     subtitle,
     testId,
     title,
   } = props;
 
   return (
-    <EntityListCard
+    <ResourceRowCard
       actions={actions}
       badges={badges}
       bodyAction={primaryAction}
+      density={density}
       description={description}
+      evidence={evidence}
+      footer={footer}
       leading={leading}
       metadata={metadata}
+      provenance={provenance}
       selected={selected}
+      statusStrip={statusStrip}
       subtitle={subtitle}
       testId={testId}
       title={title}

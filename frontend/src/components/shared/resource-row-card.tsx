@@ -21,10 +21,14 @@ export type EntityListCardProps = {
   bodyAction?: ResourceRowCardPrimaryAction;
   className?: string;
   description?: ReactNode;
+  evidence?: ReactNode;
+  footer?: ReactNode;
   leading?: ReactNode;
   metadata?: ReactNode;
   primaryAction?: ResourceRowCardPrimaryAction;
+  provenance?: ReactNode;
   selected?: boolean;
+  statusStrip?: ReactNode;
   subtitle?: ReactNode;
   testId?: string;
   title: ReactNode;
@@ -77,6 +81,26 @@ const actionsClassByDensity: Record<ResourceRowCardDensity, string> = {
     "flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0 sm:justify-end [&_button]:cursor-pointer",
 };
 
+const subtitleClassByDensity: Record<ResourceRowCardDensity, string> = {
+  compact: "min-w-0 break-words text-[11px] text-muted-foreground",
+  compactPlus: "min-w-0 break-words text-xs text-muted-foreground",
+};
+
+const descriptionClassByDensity: Record<ResourceRowCardDensity, string> = {
+  compact: "min-w-0 break-words text-[11px] text-muted-foreground",
+  compactPlus: "min-w-0 break-words text-sm text-muted-foreground",
+};
+
+const metadataClassByDensity: Record<ResourceRowCardDensity, string> = {
+  compact: "min-w-0 break-words text-[11px] text-muted-foreground",
+  compactPlus: "min-w-0 break-words text-xs text-muted-foreground",
+};
+
+const footerClassByDensity: Record<ResourceRowCardDensity, string> = {
+  compact: "min-w-0 pt-1 text-[11px] text-muted-foreground",
+  compactPlus: "min-w-0 pt-1 text-xs text-muted-foreground",
+};
+
 const titleActionLinkClassName =
   "rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
@@ -102,7 +126,15 @@ function renderTitleAction(
 
 type ListCardBodyProps = Pick<
   EntityListCardProps,
-  "badges" | "description" | "metadata" | "subtitle" | "title"
+  | "badges"
+  | "description"
+  | "evidence"
+  | "footer"
+  | "metadata"
+  | "provenance"
+  | "statusStrip"
+  | "subtitle"
+  | "title"
 > & {
   className?: string;
   titleAction?: ResourceRowCardPrimaryAction;
@@ -113,7 +145,11 @@ function ListCardBody({
   badges,
   className,
   description,
+  evidence,
+  footer,
   metadata,
+  provenance,
+  statusStrip,
   subtitle,
   title,
   titleAction,
@@ -146,6 +182,14 @@ function ListCardBody({
           {metadata}
         </div>
       ) : null}
+      {(statusStrip || provenance) ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {statusStrip}
+          {provenance}
+        </div>
+      ) : null}
+      {evidence ? <div className="min-w-0">{evidence}</div> : null}
+      {footer ? <div className="min-w-0 text-xs text-muted-foreground">{footer}</div> : null}
     </div>
   );
 }
@@ -162,17 +206,31 @@ function renderBody(props: EntityListCardProps, variant: ListCardVariant) {
 
 type ResourceRowCardBodyProps = Pick<
   ResourceRowCardProps,
-  "badges" | "description" | "metadata" | "subtitle" | "title"
+  | "badges"
+  | "description"
+  | "evidence"
+  | "footer"
+  | "metadata"
+  | "provenance"
+  | "statusStrip"
+  | "subtitle"
+  | "title"
 > & {
   className?: string;
+  density: ResourceRowCardDensity;
   titleAction?: ResourceRowCardPrimaryAction;
 };
 
 function ResourceRowCardBody({
   badges,
   className,
+  density,
   description,
+  evidence,
+  footer,
   metadata,
+  provenance,
+  statusStrip,
   subtitle,
   title,
   titleAction,
@@ -189,31 +247,30 @@ function ResourceRowCardBody({
           </div>
         ) : null}
       </div>
-      {subtitle ? (
-        <div className="min-w-0 break-words text-[11px] text-muted-foreground">
-          {subtitle}
+      {subtitle ? <div className={subtitleClassByDensity[density]}>{subtitle}</div> : null}
+      {description ? <div className={descriptionClassByDensity[density]}>{description}</div> : null}
+      {metadata ? <div className={metadataClassByDensity[density]}>{metadata}</div> : null}
+      {(statusStrip || provenance) ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2 pt-1">
+          {statusStrip}
+          {provenance}
         </div>
       ) : null}
-      {description ? (
-        <div className="min-w-0 break-words text-[11px] text-muted-foreground">
-          {description}
-        </div>
-      ) : null}
-      {metadata ? (
-        <div className="min-w-0 break-words text-[11px] text-muted-foreground">
-          {metadata}
-        </div>
-      ) : null}
+      {evidence ? <div className="min-w-0 pt-1">{evidence}</div> : null}
+      {footer ? <div className={footerClassByDensity[density]}>{footer}</div> : null}
     </div>
   );
 }
 
-function renderResourceRowBody(props: ResourceRowCardProps) {
+function renderResourceRowBody(
+  props: ResourceRowCardProps,
+  density: ResourceRowCardDensity,
+) {
   const action = props.bodyAction ?? props.primaryAction;
 
   return (
     <div className="min-w-0 flex-1 text-left">
-      <ResourceRowCardBody {...props} titleAction={action} />
+      <ResourceRowCardBody {...props} density={density} titleAction={action} />
     </div>
   );
 }
@@ -278,7 +335,7 @@ export function ResourceRowCard({
       <CardContent className={contentClassByDensity[density]}>
         <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
           {leading ? <div className="shrink-0 pt-0.5 sm:pt-0">{leading}</div> : null}
-          {renderResourceRowBody(bodyProps)}
+          {renderResourceRowBody(bodyProps, density)}
         </div>
         {actions ? (
           <div className={actionsClassByDensity[density]}>{actions}</div>
