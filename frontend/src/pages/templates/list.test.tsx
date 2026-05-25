@@ -1,0 +1,201 @@
+import type { ComponentProps } from "react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { TemplateListPage } from "./list";
+
+const deleteTemplateMutateMock = vi.fn();
+const deleteTemplatesMutateMock = vi.fn();
+const useTemplatesListMock = vi.fn();
+
+vi.mock("react-router", () => ({
+  Link: ({ children, to, ...props }: ComponentProps<"a"> & { to: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+  },
+}));
+
+vi.mock("@/hooks/use-templates", () => ({
+  useTemplates: () => useTemplatesListMock(),
+  useDeleteTemplate: () => ({
+    isPending: false,
+    mutate: deleteTemplateMutateMock,
+  }),
+  useDeleteTemplates: () => ({
+    isPending: false,
+    mutate: deleteTemplatesMutateMock,
+  }),
+}));
+
+function queryResult<T>(data: T) {
+  return {
+    data,
+    error: null,
+    isError: false,
+    isPending: false,
+  };
+}
+
+const quarterlyTemplate = {
+  id: 7,
+  name: "Quarterly Review",
+  content: "Portfolio summary {{inputs.ticker}}",
+  createdAt: "2026-05-01T10:00:00Z",
+  updatedAt: "2026-05-02T10:00:00Z",
+};
+
+const monthlyTemplate = {
+  id: 8,
+  name: "Monthly Snapshot",
+  content: "Risk summary",
+  createdAt: "2026-05-03T10:00:00Z",
+  updatedAt: "2026-05-04T10:00:00Z",
+};
+
+describe("TemplateListPage", () => {
+  beforeEach(() => {
+    deleteTemplateMutateMock.mockReset();
+    deleteTemplatesMutateMock.mockReset();
+    useTemplatesListMock.mockReset();
+    useTemplatesListMock.mockReturnValue(queryResult([]));
+  });
+
+  it("keeps compact route controls and the new-template entry visible in the empty state", () => {
+    render(<TemplateListPage />);
+
+    expect(screen.getByRole("heading", { name: "Templates" })).toBeVisible();
+    const newTemplateLink = screen.getByRole("link", {
+      name: /new template/i,
+    });
+    expect(newTemplateLink).toBeVisible();
+    expect(newTemplateLink).toHaveAttribute("href", "/templates/new");
+    expect(screen.getByLabelText("Search templates")).toBeVisible();
+    expect(screen.getByRole("radio", { name: /cards view/i })).toBeVisible();
+    expect(screen.getByRole("radio", { name: /table view/i })).toBeVisible();
+
+    const inventory = screen.getByTestId("templates-inventory");
+    expect(within(inventory).getByText("No templates yet.")).toBeVisible();
+    expect(
+      within(inventory).getByText(/Create a reusable markdown template/i),
+    ).toBeVisible();
+  });
+
+  it("keeps filtered-empty deterministic while preserving search and new-template controls", () => {
+    useTemplatesListMock.mockReturnValue(
+      queryResult({ items: [quarterlyTemplate] }),
+    );
+
+    render(<TemplateListPage />);
+
+    fireEvent.change(screen.getByLabelText("Search templates"), {
+      target: { value: "missing" },
+    });
+
+    expect(screen.getByLabelText("Search templates")).toBeVisible();
+    expect(screen.getByRole("link", { name: /new template/i })).toBeVisible();
+    expect(screen.getByText("No templates match your search.")).toBeVisible();
+    expect(screen.getByText("Showing 0 templates of 1 template")).toBeVisible();
+    expect(screen.queryByText("No templates yet.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Quarterly Review")).not.toBeInTheDocument();
+  });
+
+  it("renders dense card editor links and keeps row delete confirmation route-owned", () => {
+    useTemplatesListMock.mockReturnValue(
+      queryResult({ items: [quarterlyTemplate] }),
+    );
+
+    render(<TemplateListPage />);
+
+    expect(
+      screen.getByRole("link", {
+        name: "Open template Quarterly Review in editor",
+      }),
+    ).toHaveAttribute("href", "/templates/7/edit");
+    expect(
+      screen.getByRole("link", { name: "Open editor for Quarterly Review" }),
+    ).toHaveAttribute("href", "/templates/7/edit");
+
+    fireEvent.keyDown(
+      screen.getByRole("button", {
+        name: "Open actions for Quarterly Review",
+      }),
+      { key: "Enter" },
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(
+      "Delete Quarterly Review?",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(deleteTemplateMutateMock).toHaveBeenCalledWith(
+      7,
+      expect.any(Object),
+    );
+  });
+
+  it("keeps table navigation explicit while preserving table-only bulk selection", () => {
+    useTemplatesListMock.mockReturnValue(
+      queryResult({ items: [quarterlyTemplate, monthlyTemplate] }),
+    );
+
+    render(<TemplateListPage />);
+
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+
+    const table = screen.getByRole("table");
+    expect(table.parentElement?.parentElement).toHaveClass(
+      "min-w-0",
+      "max-w-full",
+      "rounded-md",
+      "border",
+    );
+    expect(
+      within(table).getByRole("link", { name: "Quarterly Review" }),
+    ).toHaveAttribute("href", "/templates/7/edit");
+    expect(
+      within(table).getByRole("link", {
+        name: "Open editor for Quarterly Review",
+      }),
+    ).toHaveAttribute("href", "/templates/7/edit");
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all shown templates/i }),
+    );
+    expect(
+      within(screen.getByTestId("templates-bulk-actions")).getByText(
+        "2 of 2 templates selected",
+      ),
+    ).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Search templates"), {
+      target: { value: "Monthly" },
+    });
+
+    const bulkActions = screen.getByTestId("templates-bulk-actions");
+    expect(
+      within(bulkActions).getByText("1 of 1 templates selected"),
+    ).toBeVisible();
+    fireEvent.click(
+      within(bulkActions).getByRole("button", { name: /delete selected/i }),
+    );
+
+    expect(deleteTemplatesMutateMock).toHaveBeenCalledWith(
+      [8],
+      expect.any(Object),
+    );
+    fireEvent.click(within(bulkActions).getByRole("button", { name: "Clear" }));
+    expect(
+      screen.queryByTestId("templates-bulk-actions"),
+    ).not.toBeInTheDocument();
+  });
+});

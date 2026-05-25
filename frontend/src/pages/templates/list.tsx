@@ -1,15 +1,10 @@
 import { useMemo, useState } from "react";
-import {
-  LayoutGrid,
-  List,
-  MoreHorizontal,
-  Plus,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { FileText, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
+import { useResourceFilterState } from "@/hooks/use-resource-filter-state";
+import { useResourceSelectionState } from "@/hooks/use-resource-selection-state";
 import {
   useDeleteTemplate,
   useDeleteTemplates,
@@ -19,7 +14,10 @@ import { formatDateTime } from "@/lib/format";
 import type { TextTemplateRead } from "@/lib/types/text-template";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
-import { EntityListCard } from "@/components/shared/resource-row-card";
+import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import { ResourceRowCard } from "@/components/shared/resource-row-card";
+import { ResourceToolbar } from "@/components/shared/resource-toolbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,8 +27,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -39,7 +35,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 type TemplateListData = TextTemplateRead[] | { items?: TextTemplateRead[] };
 
@@ -53,56 +48,50 @@ function getTemplateItems(
   return data?.items ?? [];
 }
 
+function getTemplateId(template: TextTemplateRead) {
+  return template.id;
+}
+
+function getTemplateSearchText(template: TextTemplateRead) {
+  return `${template.name} ${template.content}`;
+}
+
+function formatTemplateCount(count: number) {
+  return `${count} ${count === 1 ? "template" : "templates"}`;
+}
+
 export function TemplateListPage() {
   const templatesQuery = useTemplates();
   const deleteMutation = useDeleteTemplate();
   const deleteTemplatesMutation = useDeleteTemplates();
   const [deleting, setDeleting] = useState<TextTemplateRead | null>(null);
-  const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
-  const [selectedTemplateIds, setSelectedTemplateIds] = useState<
-    Set<TextTemplateRead["id"]>
-  >(new Set());
 
-  const templates = getTemplateItems(templatesQuery.data);
-  const query = search.trim().toLowerCase();
-  const filteredTemplates = !query
-    ? templates
-    : templates.filter(
-        (template) =>
-          template.name.toLowerCase().includes(query) ||
-          template.content.toLowerCase().includes(query),
-      );
-  const selectedTemplates = useMemo(
-    () =>
-      filteredTemplates.filter((template) =>
-        selectedTemplateIds.has(template.id),
-      ),
-    [filteredTemplates, selectedTemplateIds],
+  const templates = useMemo(
+    () => getTemplateItems(templatesQuery.data),
+    [templatesQuery.data],
   );
-  const selectedCount = selectedTemplates.length;
-  const allFilteredSelected =
-    filteredTemplates.length > 0 &&
-    filteredTemplates.every((template) => selectedTemplateIds.has(template.id));
-  const someFilteredSelected = filteredTemplates.some((template) =>
-    selectedTemplateIds.has(template.id),
-  );
-
-  const setTemplatesSelected = (
-    templatesToUpdate: readonly TextTemplateRead[],
-    selected: boolean,
-  ) => {
-    setSelectedTemplateIds((previous) => {
-      const next = new Set(previous);
-      templatesToUpdate.forEach((template) => {
-        if (selected) {
-          next.add(template.id);
-        } else {
-          next.delete(template.id);
-        }
-      });
-      return next;
+  const { filteredItems: filteredTemplates, search, setSearch } =
+    useResourceFilterState({
+      items: templates,
+      searchText: getTemplateSearchText,
     });
+  const templateSelection = useResourceSelectionState({
+    getId: getTemplateId,
+    items: filteredTemplates,
+  });
+  const selectedTemplates = templateSelection.selectedItems;
+  const selectedCount = templateSelection.selectedCount;
+
+  const handleViewModeChange = (value: string) => {
+    if (value !== "cards" && value !== "table") {
+      return;
+    }
+
+    setViewMode(value);
+    if (value === "cards") {
+      templateSelection.clearSelection();
+    }
   };
 
   const handleDeleteSelected = () => {
@@ -118,10 +107,8 @@ export function TemplateListPage() {
           error instanceof Error ? error.message : "Failed to delete templates",
         ),
       onSuccess: () => {
-        toast.success(
-          `${count} ${count === 1 ? "template" : "templates"} deleted`,
-        );
-        setSelectedTemplateIds(new Set());
+        toast.success(`${formatTemplateCount(count)} deleted`);
+        templateSelection.clearSelection();
       },
     });
   };
@@ -145,51 +132,29 @@ export function TemplateListPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative max-w-sm flex-1" role="search">
-          <Label htmlFor="template-search" className="sr-only">
-            Search templates
-          </Label>
-          <Search
-            className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            id="template-search"
-            name="templateSearch"
-            placeholder="Search templates..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
-        <ToggleGroup
-          type="single"
-          value={viewMode}
-          onValueChange={(value) => {
-            if (!value) return;
-            setViewMode(value as "cards" | "table");
-            if (value === "cards") setSelectedTemplateIds(new Set());
-          }}
-        >
-          <ToggleGroupItem
-            value="cards"
-            aria-label="Cards view"
-            className="h-8 w-8 px-0"
-          >
-            <LayoutGrid className="size-3.5" />
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="table"
-            aria-label="Table view"
-            className="h-8 w-8 px-0"
-          >
-            <List className="size-3.5" />
-          </ToggleGroupItem>
-        </ToggleGroup>
-      </div>
+      <ResourceToolbar
+        resultSummary={
+          templates.length > 0
+            ? `Showing ${formatTemplateCount(filteredTemplates.length)} of ${formatTemplateCount(templates.length)}`
+            : "No templates loaded"
+        }
+        search={{
+          id: "template-search",
+          label: "Search templates",
+          name: "templateSearch",
+          placeholder: "Search templates...",
+          value: search,
+          onChange: setSearch,
+        }}
+        viewMode={viewMode}
+        onViewModeChange={handleViewModeChange}
+      />
 
-      <div className="grid gap-2 sm:gap-3">
+      <section
+        aria-label="Template inventory"
+        className="grid gap-2 sm:gap-3"
+        data-testid="templates-inventory"
+      >
         {templatesQuery.isPending ? (
           <Card>
             <CardContent className="py-8 text-center text-xs text-muted-foreground">
@@ -209,69 +174,71 @@ export function TemplateListPage() {
         {!templatesQuery.isPending &&
         !templatesQuery.isError &&
         templates.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              No templates yet.
-            </CardContent>
-          </Card>
+          <EmptyStatePanel
+            description="Create a reusable markdown template with portfolio, report, and runtime-input placeholders."
+            icon={<FileText className="size-4" />}
+            title="No templates yet."
+          />
         ) : null}
         {!templatesQuery.isPending &&
         !templatesQuery.isError &&
         templates.length > 0 &&
         filteredTemplates.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              No templates match your search.
-            </CardContent>
-          </Card>
+          <EmptyStatePanel
+            description="Refine the search by template name or placeholder content."
+            icon={<FileText className="size-4" />}
+            title="No templates match your search."
+          />
         ) : null}
-        {viewMode === "cards" ? (
-          filteredTemplates.map((template) => (
-            <EntityListCard
-              key={template.id}
-              title={template.name}
-              metadata={<>Updated {formatDateTime(template.updatedAt)}</>}
-              primaryAction={{
-                kind: "link",
-                label: `Open editor for ${template.name}`,
-                to: `/templates/${template.id}/edit`,
-              }}
-              actions={
-                <>
-                  <Button asChild size="sm">
-                    <Link
-                      aria-label={`Open editor for ${template.name}`}
-                      to={`/templates/${template.id}/edit`}
-                    >
-                      Open Editor
-                    </Link>
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        aria-label={`Open actions for ${template.name}`}
-                        size="icon"
-                        type="button"
-                        variant="ghost"
+        {viewMode === "cards"
+          ? filteredTemplates.map((template) => (
+              <ResourceRowCard
+                density="compact"
+                key={template.id}
+                metadata={<>Updated {formatDateTime(template.updatedAt)}</>}
+                primaryAction={{
+                  kind: "link",
+                  label: `Open template ${template.name} in editor`,
+                  to: `/templates/${template.id}/edit`,
+                }}
+                title={template.name}
+                actions={
+                  <>
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        aria-label={`Open editor for ${template.name}`}
+                        to={`/templates/${template.id}/edit`}
                       >
-                        <MoreHorizontal className="size-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onSelect={() => setDeleting(template)}
-                        variant="destructive"
-                      >
-                        <Trash2 className="size-3.5" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </>
-              }
-            />
-          ))
-        ) : filteredTemplates.length > 0 ? (
+                        Open Editor
+                      </Link>
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          aria-label={`Open actions for ${template.name}`}
+                          size="icon"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <MoreHorizontal />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onSelect={() => setDeleting(template)}
+                          variant="destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </>
+                }
+              />
+            ))
+          : null}
+        {viewMode === "table" && filteredTemplates.length > 0 ? (
           <div className="min-w-0 max-w-full rounded-md border">
             <Table>
               <TableHeader>
@@ -280,14 +247,14 @@ export function TemplateListPage() {
                     <Checkbox
                       aria-label="Select all shown templates"
                       checked={
-                        allFilteredSelected
+                        templateSelection.allSelected
                           ? true
-                          : someFilteredSelected
+                          : templateSelection.someSelected
                             ? "indeterminate"
                             : false
                       }
                       onCheckedChange={(checked) =>
-                        setTemplatesSelected(
+                        templateSelection.setItemsSelected(
                           filteredTemplates,
                           checked === true,
                         )
@@ -303,7 +270,7 @@ export function TemplateListPage() {
               </TableHeader>
               <TableBody>
                 {filteredTemplates.map((template) => {
-                  const isSelected = selectedTemplateIds.has(template.id);
+                  const isSelected = templateSelection.isSelected(template.id);
 
                   return (
                     <TableRow
@@ -315,19 +282,27 @@ export function TemplateListPage() {
                           aria-label={`Select template ${template.name}`}
                           checked={isSelected}
                           onCheckedChange={(checked) =>
-                            setTemplatesSelected([template], checked === true)
+                            templateSelection.setItemsSelected(
+                              [template],
+                              checked === true,
+                            )
                           }
                         />
                       </TableCell>
                       <TableCell className="font-medium">
-                        {template.name}
+                        <Link
+                          className="rounded-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          to={`/templates/${template.id}/edit`}
+                        >
+                          {template.name}
+                        </Link>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {formatDateTime(template.updatedAt)}
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1.5">
-                          <Button asChild size="sm">
+                          <Button asChild size="sm" variant="outline">
                             <Link
                               aria-label={`Open editor for ${template.name}`}
                               to={`/templates/${template.id}/edit`}
@@ -344,7 +319,7 @@ export function TemplateListPage() {
                                 type="button"
                                 variant="ghost"
                               >
-                                <MoreHorizontal className="size-3.5" />
+                                <MoreHorizontal />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -366,34 +341,33 @@ export function TemplateListPage() {
             </Table>
           </div>
         ) : null}
-      </div>
+      </section>
 
       {viewMode === "table" && selectedCount > 0 ? (
-        <div
-          data-testid="templates-bulk-actions"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
-        >
-          <span className="text-xs text-muted-foreground">
-            {selectedCount} of {filteredTemplates.length} templates selected
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={deleteTemplatesMutation.isPending}
-              onClick={handleDeleteSelected}
-            >
-              <Trash2 className="size-3.5" /> Delete selected
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setSelectedTemplateIds(new Set())}
-            >
-              Clear
-            </Button>
-          </div>
-        </div>
+        <ResourceFilterBar
+          actions={
+            <>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={deleteTemplatesMutation.isPending}
+                onClick={handleDeleteSelected}
+              >
+                <Trash2 data-icon="inline-start" />
+                Delete selected
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={templateSelection.clearSelection}
+              >
+                Clear
+              </Button>
+            </>
+          }
+          summary={`${selectedCount} of ${filteredTemplates.length} templates selected`}
+          testId="templates-bulk-actions"
+        />
       ) : null}
 
       <ConfirmDeleteDialog
@@ -420,12 +394,8 @@ export function TemplateListPage() {
               ),
             onSuccess: () => {
               toast.success("Template deleted");
+              templateSelection.setIdsSelected([deleting.id], false);
               setDeleting(null);
-              setSelectedTemplateIds((previous) => {
-                const next = new Set(previous);
-                next.delete(deleting.id);
-                return next;
-              });
             },
           });
         }}
