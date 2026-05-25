@@ -118,12 +118,13 @@ describe("PortfolioDetailPage", () => {
     useMarketQuotesMock.mockReturnValue(queryResult({ quotes: [], warnings: [] }));
   });
 
-  it("renders a detail workspace heading with consistent back and action hierarchy", () => {
+  it("renders a named detail identity block with consistent back and action hierarchy", () => {
     render(<PortfolioDetailPage />);
 
     const heading = screen.getByRole("heading", {
       name: "Growth Fund With A Very Long Workspace Name",
     });
+    expect(heading).toHaveAttribute("id", "portfolio-detail-title");
     expect(heading).toHaveClass("break-words", "text-xl", "font-semibold", "tracking-tight");
     expect(heading).not.toHaveClass("truncate", "text-lg");
 
@@ -137,14 +138,25 @@ describe("PortfolioDetailPage", () => {
     expect(within(actions).getByRole("button", { name: /delete/i })).toBeVisible();
   });
 
-  it("keeps detail metadata readable without borrowing inventory shell chrome", () => {
+  it("keeps detail metadata readable with explicit evidence and tab rhythm", () => {
     render(<PortfolioDetailPage />);
 
     const header = screen.getByTestId("portfolio-detail-header");
     const identity = screen.getByTestId("portfolio-detail-identity");
-    expect(header).toHaveClass("flex-col", "lg:flex-row");
+    expect(header).toHaveClass("rounded-xl", "border", "bg-card");
     expect(identity).toHaveClass("min-w-0");
+    expect(within(identity).getByText("Portfolio workspace")).toHaveClass("uppercase", "tracking-wide");
     expect(screen.getByText(/Long-term allocation/)).toHaveClass("break-words", "text-sm");
-    expect(screen.getByText(/Updated/)).toHaveClass("text-xs", "text-muted-foreground");
+    expect(within(header).getByText("Scope")).toBeVisible();
+    expect(within(header).getByText("Finance Workspace")).toBeVisible();
+    expect(within(header).getByText("Last updated")).toBeVisible();
+    expect(within(header).getByText("Quotes")).toBeVisible();
+    expect(within(header).getByText("Ready")).toBeVisible();
+
+    const tabs = screen.getByTestId("portfolio-detail-tabs");
+    expect(within(tabs).getByRole("tab", { name: "Positions" })).toBeVisible();
+    expect(within(tabs).getByRole("tab", { name: "Balances" })).toBeVisible();
+    expect(within(tabs).getByRole("tab", { name: "Trades" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Portfolio sections" })).toBeVisible();
   });
 });

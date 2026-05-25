@@ -17,7 +17,10 @@ import {
 } from "@/lib/portfolio-analytics";
 import type { PortfolioUpdateInput } from "@/lib/types/portfolio";
 
+import { ConsoleSection } from "@/components/shared/console-section";
+import { EvidenceCluster, type EvidenceClusterItem } from "@/components/shared/evidence-cluster";
 import { MetricCard } from "@/components/shared/metric-card";
+import { ResourceStatusStrip, type ResourceStatusStripItem } from "@/components/shared/resource-status-strip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -57,6 +60,7 @@ export function PortfolioDetailPage() {
     0,
   );
   const latestOperation = [...operations].sort((left, right) => right.executedAt.localeCompare(left.executedAt))[0];
+  const quoteWarnings = quotesQuery.data?.warnings ?? [];
 
   if (!portfolioId) {
     return <div className="p-4 text-xs text-muted-foreground">Portfolio route is missing an id.</div>;
@@ -81,33 +85,72 @@ export function PortfolioDetailPage() {
     );
   }
 
+  const portfolioEvidenceItems = [
+    {
+      label: "Scope",
+      value: "Finance Workspace",
+      description: "Portfolio detail route",
+    },
+    {
+      label: "Base currency",
+      value: portfolio.baseCurrency,
+    },
+    {
+      label: "Portfolio ID",
+      value: `#${portfolio.id}`,
+    },
+    {
+      label: "Last updated",
+      value: formatDateTime(portfolio.updatedAt),
+      tone: "verified",
+    },
+  ] satisfies EvidenceClusterItem[];
+  const portfolioStatusItems = [
+    { label: "Positions", value: positions.length },
+    { label: "Balances", value: balances.length },
+    { label: "Trades", value: operations.length },
+    {
+      label: "Quotes",
+      tone: quoteWarnings.length > 0 ? "warning" : "success",
+      value: quoteWarnings.length > 0 ? `${quoteWarnings.length} warnings` : "Ready",
+    },
+  ] satisfies ResourceStatusStripItem[];
+
   return (
     <div className="max-w-7xl space-y-3 p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between" data-testid="portfolio-detail-header">
-        <div className="min-w-0 space-y-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="-ml-2 h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => navigate("/portfolios")}
-          >
-            <ArrowLeft className="mr-1 size-3.5" /> Portfolios
-          </Button>
-          <div className="min-w-0 space-y-1" data-testid="portfolio-detail-identity">
-            <h1 className="break-words text-xl font-semibold tracking-tight">{portfolio.name}</h1>
-            <p className="max-w-4xl break-words text-sm text-muted-foreground">{portfolio.description || "No description"}</p>
-            <p className="text-xs text-muted-foreground">Updated {formatDateTime(portfolio.updatedAt)}</p>
+      <section
+        aria-labelledby="portfolio-detail-title"
+        className="rounded-xl border bg-card p-4 text-card-foreground"
+        data-testid="portfolio-detail-header"
+      >
+        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-3">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="-ml-2 h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => navigate("/portfolios")}
+            >
+              <ArrowLeft className="mr-1 size-3.5" /> Portfolios
+            </Button>
+            <div className="min-w-0 space-y-1" data-testid="portfolio-detail-identity">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Portfolio workspace</p>
+              <h1 id="portfolio-detail-title" className="break-words text-xl font-semibold tracking-tight">{portfolio.name}</h1>
+              <p className="max-w-4xl break-words text-sm text-muted-foreground">{portfolio.description || "No description"}</p>
+            </div>
+          </div>
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end" data-testid="portfolio-detail-actions">
+            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setShowEditForm(true)}>
+              <Pencil className="mr-1 size-3" /> Edit
+            </Button>
+            <Button size="sm" variant="destructive" className="h-8 text-xs" onClick={() => setShowDeleteDialog(true)}>
+              <Trash2 className="mr-1 size-3" /> Delete
+            </Button>
           </div>
         </div>
-        <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end" data-testid="portfolio-detail-actions">
-          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setShowEditForm(true)}>
-            <Pencil className="mr-1 size-3" /> Edit
-          </Button>
-          <Button size="sm" variant="destructive" className="h-8 text-xs" onClick={() => setShowDeleteDialog(true)}>
-            <Trash2 className="mr-1 size-3" /> Delete
-          </Button>
-        </div>
-      </div>
+        <EvidenceCluster className="mt-3" items={portfolioEvidenceItems} layout="inline" />
+        <ResourceStatusStrip className="mt-3" items={portfolioStatusItems} />
+      </section>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Total Value" value={formatCurrency(totalValue, portfolio.baseCurrency)} note="Balances plus marked positions" />
@@ -124,32 +167,39 @@ export function PortfolioDetailPage() {
         </Card>
       ) : null}
 
-      <Tabs defaultValue="positions" className="space-y-3">
-        <TabsList className="h-8">
-          <TabsTrigger value="positions" className="text-xs">Positions</TabsTrigger>
-          <TabsTrigger value="balances" className="text-xs">Balances</TabsTrigger>
-          <TabsTrigger value="trades" className="text-xs">Trades</TabsTrigger>
-        </TabsList>
-        <TabsContent value="positions">
-          <PortfolioPositionsSection
-            balances={balances}
-            portfolioId={portfolio.id}
-            positions={enrichedPositions}
-            quoteWarnings={quotesQuery.data?.warnings ?? []}
-          />
-        </TabsContent>
-        <TabsContent value="balances">
-          <PortfolioBalancesSection portfolioId={portfolio.id} balances={balances} />
-        </TabsContent>
-        <TabsContent value="trades">
-          <PortfolioTradesSection
-            portfolioId={portfolio.id}
-            balances={balances}
-            operations={operations}
-            hasPositions={positions.length > 0}
-            positions={positions}
-          />
-        </TabsContent>
+      <Tabs defaultValue="positions" className="min-w-0">
+        <ConsoleSection
+          actions={(
+            <TabsList className="h-8" data-testid="portfolio-detail-tabs">
+              <TabsTrigger value="positions" className="text-xs">Positions</TabsTrigger>
+              <TabsTrigger value="balances" className="text-xs">Balances</TabsTrigger>
+              <TabsTrigger value="trades" className="text-xs">Trades</TabsTrigger>
+            </TabsList>
+          )}
+          description="Positions, balances, and trades keep their own mutation controls inside each tabbed section."
+          title="Portfolio sections"
+        >
+          <TabsContent value="positions" className="mt-0 min-w-0">
+            <PortfolioPositionsSection
+              balances={balances}
+              portfolioId={portfolio.id}
+              positions={enrichedPositions}
+              quoteWarnings={quoteWarnings}
+            />
+          </TabsContent>
+          <TabsContent value="balances" className="mt-0 min-w-0">
+            <PortfolioBalancesSection portfolioId={portfolio.id} balances={balances} />
+          </TabsContent>
+          <TabsContent value="trades" className="mt-0 min-w-0">
+            <PortfolioTradesSection
+              portfolioId={portfolio.id}
+              balances={balances}
+              operations={operations}
+              hasPositions={positions.length > 0}
+              positions={positions}
+            />
+          </TabsContent>
+        </ConsoleSection>
       </Tabs>
 
       <PortfolioFormDialog

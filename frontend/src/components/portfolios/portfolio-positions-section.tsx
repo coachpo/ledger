@@ -13,8 +13,10 @@ import {
 import type { BalanceRead } from "@/lib/types/balance";
 import type { PositionRead, PositionUpdateInput, PositionWriteInput } from "@/lib/types/position";
 
+import { ConsoleSection } from "@/components/shared/console-section";
+import { DataTable } from "@/components/shared/data-table";
 import { DataTableColumnHeader } from "@/components/shared/data-table-column-header";
-import { Badge } from "@/components/ui/badge";
+import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -24,7 +26,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { ConfirmDeleteDialog } from "./confirm-delete-dialog";
-import { PortfolioTableSection } from "./portfolio-table-section";
 import { PositionFormDialog } from "./position-form-dialog";
 import { RecordTradingOperationDialog } from "./record-trading-operation-dialog";
 
@@ -169,25 +170,39 @@ export function PortfolioPositionsSection({
   );
 
   return (
-    <PortfolioTableSection
-      action={(
-        <Button onClick={() => { setEditing(null); setShowForm(true); }}>
-          <Plus className="mr-1 size-4" /> Add Position
-        </Button>
-      )}
-      columns={columns}
-      data={sortedPositions}
-      emptyMessage="No positions yet."
-      headerContent={quoteWarnings.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {quoteWarnings.map((warning) => (
-            <Badge key={warning} variant="outline">{warning}</Badge>
-          ))}
+    <>
+      <ConsoleSection
+        actions={(
+          <Button
+            className="h-8 text-xs"
+            onClick={() => { setEditing(null); setShowForm(true); }}
+            size="sm"
+          >
+            <Plus data-icon="inline-start" /> Add Position
+          </Button>
+        )}
+        description="Quote-enriched holdings remain usable even when market data degrades."
+        title="Positions"
+      >
+        <div className="flex flex-col gap-3">
+          {quoteWarnings.length > 0 ? (
+            <EvidenceCluster
+              items={quoteWarnings.map((warning) => ({
+                label: "Quote warning",
+                tone: "warning" as const,
+                value: warning,
+              }))}
+              layout="inline"
+            />
+          ) : null}
+          <DataTable
+            columns={columns}
+            data={sortedPositions}
+            emptyMessage="No positions yet."
+            initialSorting={[{ desc: false, id: "symbol" }]}
+          />
         </div>
-      ) : null}
-      initialSorting={[{ desc: false, id: "symbol" }]}
-      title="Positions"
-    >
+      </ConsoleSection>
 
       <PositionFormDialog
         portfolioId={portfolioId}
@@ -263,6 +278,6 @@ export function PortfolioPositionsSection({
         portfolioId={portfolioId}
         positions={positions}
       />
-    </PortfolioTableSection>
+    </>
   );
 }

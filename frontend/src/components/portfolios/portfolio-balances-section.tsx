@@ -8,6 +8,8 @@ import { formatCurrency, formatDateTime } from "@/lib/format";
 import { getSignedBalanceAmount } from "@/lib/portfolio-analytics";
 import type { BalanceRead, BalanceUpdateInput, BalanceWriteInput } from "@/lib/types/balance";
 
+import { ConsoleSection } from "@/components/shared/console-section";
+import { DataTable } from "@/components/shared/data-table";
 import { DataTableColumnHeader } from "@/components/shared/data-table-column-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +22,6 @@ import {
 
 import { BalanceFormDialog } from "./balance-form-dialog";
 import { ConfirmDeleteDialog } from "./confirm-delete-dialog";
-import { PortfolioTableSection } from "./portfolio-table-section";
 
 type PortfolioBalancesSectionProps = {
   portfolioId: number | string;
@@ -108,18 +109,27 @@ export function PortfolioBalancesSection({
   );
 
   return (
-    <PortfolioTableSection
-      action={(
-        <Button onClick={() => { setEditing(null); setShowForm(true); }}>
-          <Plus className="mr-1 size-4" /> Add Balance
-        </Button>
-      )}
-      columns={columns}
-      data={sortedBalances}
-      emptyMessage="No balances yet."
-      initialSorting={[{ desc: true, id: "updatedAt" }]}
-      title="Balances"
-    >
+    <>
+      <ConsoleSection
+        actions={(
+          <Button
+            className="h-8 text-xs"
+            onClick={() => { setEditing(null); setShowForm(true); }}
+            size="sm"
+          >
+            <Plus data-icon="inline-start" /> Add Balance
+          </Button>
+        )}
+        description="Cash and liability entries stay account-scoped while trade history remains unchanged."
+        title="Balances"
+      >
+        <DataTable
+          columns={columns}
+          data={sortedBalances}
+          emptyMessage="No balances yet."
+          initialSorting={[{ desc: true, id: "updatedAt" }]}
+        />
+      </ConsoleSection>
 
       <BalanceFormDialog
         open={showForm}
@@ -181,6 +191,6 @@ export function PortfolioBalancesSection({
           });
         }}
       />
-    </PortfolioTableSection>
+    </>
   );
 }

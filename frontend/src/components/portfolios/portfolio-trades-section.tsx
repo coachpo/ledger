@@ -7,11 +7,13 @@ import type { BalanceRead } from "@/lib/types/balance";
 import type { PositionRead } from "@/lib/types/position";
 import type { TradingOperationRead } from "@/lib/types/trading";
 
+import { ConsoleSection } from "@/components/shared/console-section";
+import { DataTable } from "@/components/shared/data-table";
 import { DataTableColumnHeader } from "@/components/shared/data-table-column-header";
+import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-import { PortfolioTableSection } from "./portfolio-table-section";
 import { RecordTradingOperationDialog } from "./record-trading-operation-dialog";
 
 type PortfolioTradesSectionProps = {
@@ -88,25 +90,47 @@ export function PortfolioTradesSection({
   );
 
   return (
-    <PortfolioTableSection
-      action={(
-        <Button onClick={() => setShowForm(true)} disabled={depositBalances.length === 0 && !hasPositions}>
-          <Plus className="mr-1 size-4" /> Add Operation
-        </Button>
-      )}
-      columns={columns}
-      contentTop={depositBalances.length === 0 ? (
-        <div className="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-          {hasPositions
-            ? "Add a deposit balance for BUY, SELL, or DIVIDEND operations. SPLIT remains available for existing positions."
-            : "Add a deposit balance before recording BUY, SELL, or DIVIDEND operations. SPLIT requires an existing position."}
+    <>
+      <ConsoleSection
+        actions={(
+          <Button
+            className="h-8 text-xs"
+            disabled={depositBalances.length === 0 && !hasPositions}
+            onClick={() => setShowForm(true)}
+            size="sm"
+          >
+            <Plus data-icon="inline-start" /> Add Operation
+          </Button>
+        )}
+        description="Executed operations stay append-only in history while new records use the existing trade form."
+        title="Trading Operations"
+      >
+        <div className="flex flex-col gap-3">
+          {depositBalances.length === 0 ? (
+            <EvidenceCluster
+              items={[
+                {
+                  description: hasPositions
+                    ? "SPLIT remains available for existing positions."
+                    : "SPLIT requires an existing position.",
+                  label: "Funding scope",
+                  tone: "warning",
+                  value: hasPositions
+                    ? "Add a deposit balance for BUY, SELL, or DIVIDEND operations."
+                    : "Add a deposit balance before recording BUY, SELL, or DIVIDEND operations.",
+                },
+              ]}
+              layout="list"
+            />
+          ) : null}
+          <DataTable
+            columns={columns}
+            data={sortedOperations}
+            emptyMessage="No operations recorded yet."
+            initialSorting={[{ desc: true, id: "executedAt" }]}
+          />
         </div>
-      ) : null}
-      data={sortedOperations}
-      emptyMessage="No operations recorded yet."
-      initialSorting={[{ desc: true, id: "executedAt" }]}
-      title="Trading Operations"
-    >
+      </ConsoleSection>
       <RecordTradingOperationDialog
         balances={balances}
         open={showForm}
@@ -114,6 +138,6 @@ export function PortfolioTradesSection({
         portfolioId={portfolioId}
         positions={positions}
       />
-    </PortfolioTableSection>
+    </>
   );
 }
