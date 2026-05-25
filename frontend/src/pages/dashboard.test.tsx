@@ -20,13 +20,14 @@ vi.mock("react-router", () => ({
 vi.mock("@/hooks/use-portfolios", () => ({
   usePortfolios: () => usePortfoliosMock(),
 }));
+
 describe("Dashboard", () => {
   beforeEach(() => {
     refetchMock.mockReset();
     usePortfoliosMock.mockReset();
   });
 
-  it("renders the singleton landing summary with explicit KPI hierarchy", () => {
+  it("renders grouped KPI and operational sections from the portfolio query", () => {
     usePortfoliosMock.mockReturnValue({
       data: [
         {
@@ -57,20 +58,12 @@ describe("Dashboard", () => {
 
     expect(screen.getByTestId("dashboard-page")).toBeVisible();
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
-    expect(
-      screen.getByText(/singleton landing summary for portfolio inventory/i),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("heading", { level: 2, name: "Portfolio summary" }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("heading", { level: 2, name: "Operational context" }),
-    ).toBeVisible();
+    expect(screen.getByText(/dashboard context/i)).toBeVisible();
+    expect(screen.getByText(/portfolio api/i)).toBeVisible();
+    expect(screen.getByText("Portfolio summary")).toBeVisible();
+    expect(screen.getByText("Operational context")).toBeVisible();
 
-    const summarySection = screen.getByRole("heading", {
-      level: 2,
-      name: "Portfolio summary",
-    }).closest("section");
+    const summarySection = screen.getByText("Portfolio summary").closest('[data-slot="card"]');
     expect(summarySection).not.toBeNull();
     expect(within(summarySection as HTMLElement).getByText("Active Portfolios")).toBeVisible();
     expect(within(summarySection as HTMLElement).getByText("2")).toBeVisible();
@@ -83,7 +76,7 @@ describe("Dashboard", () => {
     ).toHaveAttribute("href", "/portfolios");
   });
 
-  it("keeps the same singleton summary identity while loading", () => {
+  it("keeps the same dashboard identity while loading", () => {
     usePortfoliosMock.mockReturnValue({
       data: undefined,
       error: null,
@@ -97,12 +90,26 @@ describe("Dashboard", () => {
 
     expect(screen.getByTestId("dashboard-page")).toBeVisible();
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
-    expect(
-      screen.getByRole("heading", { level: 2, name: "Portfolio summary" }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("heading", { level: 2, name: "Operational context" }),
-    ).toBeVisible();
+    expect(screen.getByText("Dashboard context")).toBeVisible();
+    expect(screen.getByText("Portfolio summary")).toBeVisible();
+    expect(screen.getByText("Operational context")).toBeVisible();
+    expect(screen.getByText("Loading")).toBeVisible();
+  });
+
+  it("renders the shared empty-state panel for an empty portfolio list", () => {
+    usePortfoliosMock.mockReturnValue({
+      data: [],
+      error: null,
+      isError: false,
+      isFetching: false,
+      isPending: false,
+      refetch: refetchMock,
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByText("No portfolio records are available yet.")).toBeVisible();
+    expect(screen.getByText("Empty")).toBeVisible();
   });
 
   it("renders stable dashboard retry behavior for API errors", () => {
@@ -122,6 +129,7 @@ describe("Dashboard", () => {
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("Unable to load the dashboard summary.");
     expect(alert).toHaveTextContent("Portfolio API unavailable");
+    expect(screen.getByText("Unavailable")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetchMock).toHaveBeenCalledTimes(1);

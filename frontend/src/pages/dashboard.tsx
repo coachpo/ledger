@@ -7,12 +7,15 @@ import {
   TriangleAlert,
 } from "lucide-react";
 
-import { usePortfolios } from "@/hooks/use-portfolios";
-
+import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { MetricCard } from "@/components/shared/metric-card";
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import { ProvenanceBadge } from "@/components/shared/provenance-badge";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
+import { ConsoleSection } from "@/components/shared/console-section";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { usePortfolios } from "@/hooks/use-portfolios";
 
 function formatDateLabel(value: string | null) {
   if (!value) {
@@ -31,60 +34,103 @@ function formatDateLabel(value: string | null) {
   }).format(date);
 }
 
-function DashboardHeader() {
+function DashboardHeader({
+  isFetching = false,
+  portfolioCount,
+  state,
+}: {
+  isFetching?: boolean;
+  portfolioCount?: number;
+  state: "loading" | "ready" | "error";
+}) {
+  const statusItems =
+    state === "loading"
+      ? [
+          { label: "Portfolio API", tone: "warning" as const, value: "Loading" },
+          { label: "Workspace", tone: "neutral" as const, value: "Finance owned" },
+        ]
+      : state === "error"
+        ? [
+            { label: "Portfolio API", tone: "danger" as const, value: "Unavailable" },
+            { label: "Workspace", tone: "warning" as const, value: "Retry required" },
+          ]
+        : [
+            {
+              label: "Portfolios",
+              tone: portfolioCount ? ("success" as const) : ("muted" as const),
+              value: String(portfolioCount ?? 0),
+            },
+            {
+              label: "Refresh",
+              tone: isFetching ? ("warning" as const) : ("neutral" as const),
+              value: isFetching ? "Syncing" : "Ready",
+            },
+          ];
+
   return (
-    <div className="space-y-0.5">
-      <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-      <p className="text-sm text-muted-foreground">
-        Singleton landing summary for portfolio inventory, position coverage, and
-        workspace health.
-      </p>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-0.5">
+        <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="text-sm text-muted-foreground">
+          Singleton landing summary for portfolio inventory, position coverage, and workspace health.
+        </p>
+      </div>
+      <PageContextBar
+        description="Finance Workspace portfolio telemetry, grouped into compact KPI and operational status bands."
+        meta={
+          <div className="flex flex-wrap items-center gap-2">
+            <ProvenanceBadge detail="portfolio API" label="Data source" tone="verified" />
+            <ProvenanceBadge detail="extension-owned" label="Route owner" />
+          </div>
+        }
+        status={<ResourceStatusStrip items={statusItems} />}
+        title="Dashboard context"
+      />
     </div>
   );
 }
 
 function DashboardSkeleton() {
   return (
-    <div className="max-w-7xl space-y-4 p-4" data-testid="dashboard-page">
-      <DashboardHeader />
+    <div className="flex max-w-7xl flex-col gap-4 p-4" data-testid="dashboard-page">
+      <DashboardHeader state="loading" />
 
-      <section className="space-y-2" aria-labelledby="dashboard-kpi-heading">
-        <h2 id="dashboard-kpi-heading" className="text-sm font-medium text-foreground">
-          Portfolio summary
-        </h2>
+      <ConsoleSection
+        description="Loading the portfolio KPI band without introducing additional data sources."
+        title="Portfolio summary"
+      >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, index) => (
-            <Card key={index}>
-              <CardContent className="space-y-3 p-4">
+            <div className="rounded-xl border bg-card p-3" key={index}>
+              <div className="flex flex-col gap-3">
                 <Skeleton className="h-4 w-28" />
                 <Skeleton className="h-7 w-24" />
                 <Skeleton className="h-3 w-32" />
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ))}
         </div>
-      </section>
+      </ConsoleSection>
 
-      <section className="space-y-2" aria-labelledby="dashboard-context-heading">
-        <h2 id="dashboard-context-heading" className="text-sm font-medium text-foreground">
-          Operational context
-        </h2>
+      <ConsoleSection
+        description="Preparing compact operating-status cues for the dashboard shell."
+        title="Operational context"
+        tone="muted"
+      >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {Array.from({ length: 3 }).map((_, index) => (
-            <Card key={index}>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <Skeleton className="size-8 rounded-md" />
-                  <div className="space-y-1.5">
-                    <Skeleton className="h-3 w-24" />
-                    <Skeleton className="h-6 w-16" />
-                  </div>
+            <div className="rounded-xl border bg-card p-3" key={index}>
+              <div className="flex items-center gap-3">
+                <Skeleton className="size-8 rounded-md" />
+                <div className="flex flex-col gap-1.5">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-6 w-16" />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ))}
         </div>
-      </section>
+      </ConsoleSection>
     </div>
   );
 }
@@ -122,70 +168,78 @@ export function Dashboard() {
     },
     null,
   );
-  const mostRecentlyUpdatedPortfolio = [...portfolios].sort((left, right) =>
-    right.updatedAt.localeCompare(left.updatedAt),
-  )[0] ?? null;
+  const mostRecentlyUpdatedPortfolio = portfolios.reduce<(typeof portfolios)[number] | null>(
+    (current, portfolio) => {
+      if (!current || portfolio.updatedAt.localeCompare(current.updatedAt) > 0) {
+        return portfolio;
+      }
+
+      return current;
+    },
+    null,
+  );
+
   if (isPending) {
     return <DashboardSkeleton />;
   }
 
   if (isError) {
     return (
-      <div className="max-w-7xl space-y-4 p-4" data-testid="dashboard-page">
-        <DashboardHeader />
+      <div className="flex max-w-7xl flex-col gap-4 p-4" data-testid="dashboard-page">
+        <DashboardHeader state="error" />
 
-        <Card role="alert" aria-live="polite">
-          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <TriangleAlert
-                className="mt-0.5 size-4 shrink-0 text-destructive"
-                aria-hidden="true"
-              />
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-foreground">
-                  Unable to load the dashboard summary.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {error instanceof Error
-                    ? error.message
-                    : "Check the backend connection and try again."}
-                </p>
-              </div>
-            </div>
+        <EmptyStatePanel
+          action={
             <Button
               className="cursor-pointer"
               disabled={isFetching}
-              variant="outline"
-              size="sm"
               onClick={() => void refetch()}
+              size="sm"
+              variant="outline"
             >
-              <RefreshCw className="mr-1.5 size-3.5" />
+              <RefreshCw data-icon="inline-start" />
               {isFetching ? "Retrying" : "Retry"}
             </Button>
-          </CardContent>
-        </Card>
+          }
+          description={
+            error instanceof Error
+              ? error.message
+              : "Check the backend connection and try again."
+          }
+          icon={<TriangleAlert className="size-4 text-destructive" />}
+          title="Unable to load the dashboard summary."
+          tone="danger"
+        />
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl space-y-4 p-4" data-testid="dashboard-page">
-      <DashboardHeader />
+    <div className="flex max-w-7xl flex-col gap-4 p-4" data-testid="dashboard-page">
+      <DashboardHeader
+        isFetching={isFetching}
+        portfolioCount={portfolioCount}
+        state="ready"
+      />
 
-      <section className="space-y-2" aria-labelledby="dashboard-kpi-heading">
-        <h2 id="dashboard-kpi-heading" className="text-sm font-medium text-foreground">
-          Portfolio summary
-        </h2>
+      <ConsoleSection
+        description="Portfolio counts, position coverage, and latest update from the existing portfolio query."
+        title="Portfolio summary"
+      >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
+            density="compact"
             icon={Briefcase}
             iconClassName="bg-primary/10 text-primary"
             note="Portfolio records syncing from the API"
+            provenance={<ProvenanceBadge detail="live query" label="Source" tone="verified" />}
+            status={<ResourceStatusStrip items={[{ label: "State", tone: portfolioCount ? "success" : "muted", value: portfolioCount ? "Ready" : "Empty" }]} />}
             title="Active Portfolios"
             to="/portfolios"
             value={String(portfolioCount)}
           />
           <MetricCard
+            density="compact"
             icon={BarChart3}
             iconClassName="bg-primary/10 text-primary"
             note={`${averagePositions} positions per portfolio on average`}
@@ -193,6 +247,7 @@ export function Dashboard() {
             value={String(totalPositions)}
           />
           <MetricCard
+            density="compact"
             icon={DollarSign}
             iconClassName="bg-primary/10 text-primary"
             note="Cash and settlement balances tracked across portfolios"
@@ -200,6 +255,7 @@ export function Dashboard() {
             value={String(totalBalances)}
           />
           <MetricCard
+            density="compact"
             icon={ArrowUpRight}
             iconClassName="bg-primary/10 text-primary"
             note={formatDateLabel(mostRecentlyUpdatedPortfolio?.updatedAt ?? null)}
@@ -209,33 +265,45 @@ export function Dashboard() {
             valueClassName="text-lg leading-tight"
           />
         </div>
-      </section>
+        {portfolioCount === 0 ? (
+          <EmptyStatePanel
+            className="mt-3"
+            description="Create or import a portfolio from the Finance Workspace to populate this dashboard band."
+            icon={<Briefcase className="size-4" />}
+            title="No portfolio records are available yet."
+          />
+        ) : null}
+      </ConsoleSection>
 
-      <section className="space-y-2" aria-labelledby="dashboard-context-heading">
-        <h2 id="dashboard-context-heading" className="text-sm font-medium text-foreground">
-          Operational context
-        </h2>
+      <ConsoleSection
+        description="Operational cues derived from the same portfolio list; no separate health endpoint is queried."
+        title="Operational context"
+        tone="muted"
+      >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <MetricCard
+            density="compact"
             icon={Briefcase}
             iconClassName="bg-muted text-muted-foreground"
             title="Tracked Currencies"
             value={String(currencies.size)}
           />
           <MetricCard
+            density="compact"
             icon={BarChart3}
             iconClassName="bg-muted text-muted-foreground"
             title="Average Position Load"
             value={String(averagePositions)}
           />
           <MetricCard
+            density="compact"
             icon={ArrowUpRight}
             iconClassName="bg-muted text-muted-foreground"
             title="Largest Portfolio Footprint"
             value={`${mostPositionedPortfolio?.positionCount ?? 0} positions`}
           />
         </div>
-      </section>
+      </ConsoleSection>
     </div>
   );
 }
