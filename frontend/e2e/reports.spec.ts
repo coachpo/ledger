@@ -34,6 +34,22 @@ async function expectNoDocumentOverflow(page: Page) {
   expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
 }
 
+async function expectSharedDialogShell(page: Page) {
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.locator('[data-slot="entity-dialog-constraint-strip"]'),
+  ).toBeVisible();
+  await expect(
+    dialog.locator('[data-slot="entity-dialog-body"]'),
+  ).toBeVisible();
+  await expect(dialog.locator('[data-slot="dialog-footer"]')).toBeVisible();
+  await expect(
+    dialog
+      .locator('[data-slot="dialog-footer"]')
+      .getByRole("button", { name: "Cancel" }),
+  ).toBeVisible();
+}
+
 test.describe("Reports", () => {
   test("navigate to reports page from sidebar", async ({ page }) => {
     await page.goto("/");
@@ -60,6 +76,8 @@ test.describe("Reports", () => {
     await expect(
       page.getByRole("heading", { name: "Generate Report" }),
     ).toBeVisible();
+    await expectSharedDialogShell(page);
+    await expect(page.getByRole("dialog")).toContainText("Runtime inputs");
 
     await page.getByRole("combobox").click();
     await page.getByRole("option", { name: new RegExp(template.name) }).click();
@@ -76,17 +94,41 @@ test.describe("Reports", () => {
     expect(reportResponse.ok()).toBeTruthy();
     const report = await reportResponse.json();
 
+    const detailHeader = page.getByTestId("report-detail-header");
     await expect(
-      page.getByRole("heading", { name: "E2E Report" }),
+      detailHeader.getByText("Immutable report snapshot"),
+    ).toBeVisible();
+    await expect(detailHeader.getByText("Source")).toBeVisible();
+    await expect(detailHeader.getByText(generatedSlug)).toHaveCount(2);
+
+    const detailActions = page.getByTestId("report-detail-actions");
+    await expect(
+      detailActions.getByRole("link", { name: /download/i }),
+    ).toBeVisible();
+    await expect(
+      detailActions.getByRole("button", { name: /edit/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Report content" }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByTestId("report-detail-identity")
+        .getByRole("heading", { name: report.name }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByTestId("report-content-pane")
+        .getByRole("heading", { name: "E2E Report" }),
     ).toBeVisible();
     await expect(page.getByText("Hello world.")).toBeVisible();
     await expect(page.getByText("Item one")).toBeVisible();
 
-    await page.getByRole("button", { name: /edit/i }).click();
+    await detailActions.getByRole("button", { name: /edit/i }).click();
     const textarea = page.locator("textarea");
     await expect(textarea).toBeVisible();
     await textarea.fill("# Edited E2E Report\n\nEdited content.");
-    await page.getByRole("button", { name: /save/i }).click();
+    await page.getByRole("button", { name: /save/i }).click({ force: true });
     await expect(page.getByText("Report updated")).toBeVisible();
 
     await expect(
@@ -131,6 +173,8 @@ test.describe("Reports", () => {
     await expect(
       page.getByRole("heading", { name: "Upload Report" }),
     ).toBeVisible();
+    await expectSharedDialogShell(page);
+    await expect(page.getByRole("dialog")).toContainText("Required markdown");
 
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles({
@@ -139,11 +183,13 @@ test.describe("Reports", () => {
       buffer: Buffer.from("# Uploaded E2E\n\nUpload body."),
     });
 
-    await expect(page.locator("#slug")).toHaveValue(uploadSlug);
+    await expect(page.getByLabel("Slug")).toHaveValue(uploadSlug);
 
-    await page.locator("#author").fill("E2E Author");
-    await page.locator("#description").fill("Automated upload test");
-    await page.locator("#tags").fill("e2e, upload");
+    await page.getByLabel("Author (optional)").fill("E2E Author");
+    await page
+      .getByLabel("Description (optional)")
+      .fill("Automated upload test");
+    await page.getByLabel("Tags (optional)").fill("e2e, upload");
 
     await page.getByRole("button", { name: /^upload$/i }).click();
     await page.waitForURL(new RegExp(`/reports/${uploadSlug}$`));
@@ -191,6 +237,8 @@ test.describe("Reports", () => {
     await expect(
       dialog.getByRole("heading", { name: "Generate Report" }),
     ).toBeVisible();
+    await expectSharedDialogShell(page);
+    await expect(dialog).toContainText("Selection");
     await dialog.getByRole("button", { name: /add input/i }).click();
     await dialog.getByPlaceholder("ticker").fill("ticker");
     await dialog.getByPlaceholder("AAPL").fill("AAPL");
