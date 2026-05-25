@@ -80,10 +80,15 @@ function packageManifest(
 }
 
 function compatibilityPackageManifest(packageKey: string, modelKey: string) {
-  return packageManifest(packageKey, modelKey).replace(
-    "  capabilityProfiles:\n    - key: quote_tools\n      name: Quote Tools\n      toolKeys:\n        - signaldeck.market_data.quote_lookup\n",
-    "  capabilityProfiles: []\n",
-  ).replace("      capabilityProfiles: [quote_tools]", "      capabilityProfiles: []");
+  return packageManifest(packageKey, modelKey)
+    .replace(
+      "  capabilityProfiles:\n    - key: quote_tools\n      name: Quote Tools\n      toolKeys:\n        - signaldeck.market_data.quote_lookup\n",
+      "  capabilityProfiles: []\n",
+    )
+    .replace(
+      "      capabilityProfiles: [quote_tools]",
+      "      capabilityProfiles: []",
+    );
 }
 
 function wideOutputPackageManifest(
@@ -158,6 +163,19 @@ async function seedModelConnectionPayload(
   request: APIRequestContext,
   payload: Record<string, unknown> & { key: string },
 ) {
+  const {
+    capabilities,
+    outputStrategyPolicy: _outputStrategyPolicy,
+    parallelToolCallsPolicy: _parallelToolCallsPolicy,
+    reasoningPolicy: _reasoningPolicy,
+    streamingPolicy: _streamingPolicy,
+    ...connectionPayload
+  } = payload;
+  const capabilityKeys =
+    capabilities && typeof capabilities === "object" && !Array.isArray(capabilities)
+      ? Object.keys(capabilities)
+      : [];
+
   const list = await request.get(`${PLATFORM_API_BASE}/model-connections`, {
     params: { status: "active" },
   });
@@ -165,21 +183,32 @@ async function seedModelConnectionPayload(
   const existing = (await list.json()).items.find(
     (item: { id: number; key: string }) => item.key === payload.key,
   );
+  let connectionId: number;
   if (existing) {
-    const { key: _key, ...updatePayload } = payload;
+    const { key: _key, ...updatePayload } = connectionPayload;
     const response = await request.patch(
       `${PLATFORM_API_BASE}/model-connections/${existing.id}`,
       { data: updatePayload },
     );
     expect(response.ok()).toBeTruthy();
-    return existing.id;
+    connectionId = existing.id;
+  } else {
+    const response = await request.post(
+      `${PLATFORM_API_BASE}/model-connections`,
+      { data: connectionPayload },
+    );
+    expect(response.ok()).toBeTruthy();
+    connectionId = Number((await response.json()).id);
   }
-  const response = await request.post(
-    `${PLATFORM_API_BASE}/model-connections`,
-    { data: payload },
-  );
-  expect(response.ok()).toBeTruthy();
-  return Number((await response.json()).id);
+
+  if (capabilityKeys.length > 0) {
+    const probe = await request.post(
+      `${PLATFORM_API_BASE}/model-connections/${connectionId}/capability-probe`,
+      { data: { capabilityKeys, refresh: true } },
+    );
+    expect(probe.ok()).toBeTruthy();
+  }
+  return connectionId;
 }
 
 function capability(status: string, detail: string) {
@@ -207,6 +236,22 @@ async function openPackageEditor(page: Page, packageId: number) {
   await expect(page.getByTestId("workflow-package-editor-shell")).toBeVisible();
 }
 
+async function expectSharedDialogShell(page: Page) {
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.locator('[data-slot="entity-dialog-constraint-strip"]'),
+  ).toBeVisible();
+  await expect(
+    dialog.locator('[data-slot="entity-dialog-body"]'),
+  ).toBeVisible();
+  await expect(dialog.locator('[data-slot="dialog-footer"]')).toBeVisible();
+  await expect(
+    dialog
+      .locator('[data-slot="dialog-footer"]')
+      .getByRole("button", { name: "Cancel" }),
+  ).toBeVisible();
+}
+
 async function launchPackageFromDedicatedPage(
   page: Page,
   packageId: number,
@@ -217,6 +262,18 @@ async function launchPackageFromDedicatedPage(
   await expect(page.getByTestId("workflow-package-launch-page")).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Launch Workflow Package" }),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("workflow-package-launch-identity"),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("workflow-package-preflight-status"),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("workflow-package-constraint-inspector"),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("workflow-package-preflight-evidence"),
   ).toBeVisible();
   await expect(page.getByTestId("workflow-package-launch-tab")).toBeVisible();
 
@@ -269,6 +326,56 @@ test.describe("Workflow packages", () => {
     expect(detail.finalOutput).toMatchObject({
       summary: "deterministic summary",
     });
+  });
+
+  test("shows inventory readiness and provenance actions", async ({
+    page,
+    request,
+  }) => {
+    const suffix = Date.now();
+    const packageKey = `e2e_inventory_${suffix}`;
+    const modelKey = `e2e_inventory_model_${suffix}`;
+
+    await seedModelConnection(request, modelKey);
+    const createResponse = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      {
+        data: { manifestSource: packageManifest(packageKey, modelKey) },
+      },
+    );
+    expect(createResponse.status()).toBe(201);
+    const created = await createResponse.json();
+
+    await page.goto("/workflow-packages");
+    await expect(page.getByTestId("workflow-packages-list-page")).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Import workflow package manifest" }),
+    ).toHaveAttribute("href", "/workflow-packages/import");
+    await expect(
+      page.getByRole("link", { name: "Create new workflow package" }),
+    ).toHaveAttribute("href", "/workflow-packages/new");
+    await page.getByLabel("Search workflow packages").fill(packageKey);
+
+    const packageRow = page.getByTestId(`workflow-packages-row-${packageKey}`);
+    await expect(packageRow).toBeVisible();
+    await expect(packageRow).toContainText(`E2E Package ${packageKey}`);
+    await expect(packageRow).toContainText("Ready for preflight");
+    await expect(packageRow).toContainText(
+      "Manifest and compiled artifact recorded",
+    );
+    await expect(packageRow.getByLabel(/Manifest: /)).toBeVisible();
+    await expect(packageRow.getByLabel(/Compiled: /)).toBeVisible();
+    await expect(packageRow.getByLabel(/Updated: /)).toBeVisible();
+    await expect(
+      packageRow.getByRole("link", {
+        name: `Open package E2E Package ${packageKey}`,
+      }),
+    ).toHaveAttribute("href", `/workflow-packages/${created.id}`);
+    await expect(
+      packageRow.getByRole("link", {
+        name: `Launch package E2E Package ${packageKey}`,
+      }),
+    ).toHaveAttribute("href", `/workflow-packages/${created.id}/run`);
   });
 
   test("launches workflow package from dedicated run page", async ({
@@ -466,34 +573,40 @@ test.describe("Workflow packages", () => {
       packageKey,
     );
     await expect(
-      page.getByText(`Captured package id: ${created.id}`),
-    ).toBeVisible();
-    await expect(page.getByTestId("runs-detail-package-link")).toHaveAttribute(
-      "href",
-      `/workflow-packages/${created.id}`,
-    );
+      page.getByRole("link", { name: "Open current package" }),
+    ).toHaveAttribute("href", `/workflow-packages/${created.id}`);
 
     await page.getByTestId("runs-detail-rerun").click();
-    await expect(
-      page.getByRole("dialog", { name: /run snapshot again/i }),
-    ).toBeVisible();
+    const rerunDialog = page.getByRole("dialog", {
+      name: /run snapshot again/i,
+    });
+    await expect(rerunDialog).toBeVisible();
+    await expectSharedDialogShell(page);
+    await expect(rerunDialog).toContainText("Source run");
+    await expect(rerunDialog).toContainText("Readiness");
     await page.getByTestId("run-rerun-submit").click();
     await expect(page).toHaveURL(/\/runs\/\d+$/);
 
-    await page.goto(`/runs/${runId}`);
+    await page.goto(`/runs/${runId}?inspect=invocation:${forkInvocationId}`);
     const forkAction = page.getByTestId(
       `runs-invocation-${forkInvocationId}-fork-entry`,
     );
     await expect(forkAction).toContainText("Fork from this invocation");
     await forkAction.evaluate((node) => {
-      node.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      node.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
     });
     const forkDialog = page.getByRole("dialog", {
       name: /fork from .+ invocation/i,
     });
     await expect(forkDialog).toBeVisible();
-    await expect(forkDialog.getByText(`Resume at Step ${forkStepIndex}`)).toBeVisible();
-    await expect(forkDialog.getByText(`Invocation #${forkInvocationId}`)).toBeVisible();
+    await expect(
+      forkDialog.getByText(`Resume at Step ${forkStepIndex}`),
+    ).toBeVisible();
+    await expect(
+      forkDialog.getByText(`Invocation #${forkInvocationId}`),
+    ).toBeVisible();
     await expect(
       forkDialog.getByText(/edits only the selected agent invocation input/i),
     ).toBeVisible();
@@ -525,9 +638,18 @@ test.describe("Workflow packages", () => {
       reasoningEffort: null,
       protocolProfile: "openai_responses",
       capabilities: {
-        nativeToolCalls: capability("unsupported", "Fake provider rejects tools."),
-        strictJsonSchemaOutput: capability("unsupported", "Strict schema is unavailable."),
-        jsonObjectOutput: capability("supported", "JSON object mode is available."),
+        nativeToolCalls: capability(
+          "unsupported",
+          "Fake provider rejects tools.",
+        ),
+        strictJsonSchemaOutput: capability(
+          "unsupported",
+          "Strict schema is unavailable.",
+        ),
+        jsonObjectOutput: capability(
+          "supported",
+          "JSON object mode is available.",
+        ),
       },
       outputStrategyPolicy: "allow_json_object_validation",
       parallelToolCallsPolicy: "serialize",
@@ -538,22 +660,31 @@ test.describe("Workflow packages", () => {
     });
     const blockedPackage = await request.post(
       `${PLATFORM_API_BASE}/workflow-packages`,
-      { data: { manifestSource: packageManifest(`e2e_fake_blocked_${suffix}`, noToolsModelKey) } },
+      {
+        data: {
+          manifestSource: packageManifest(
+            `e2e_fake_blocked_${suffix}`,
+            noToolsModelKey,
+          ),
+        },
+      },
     );
     expect(blockedPackage.status()).toBe(201);
     const blocked = await blockedPackage.json();
 
     await page.goto(`/workflow-packages/${blocked.id}/run`);
-    await expect(page.getByTestId("workflow-package-launch-page")).toBeVisible();
-    await expect(page.getByTestId("workflow-package-launch-blockers")).toContainText(
-      "This workflow requires native tool calls",
-    );
-    await expect(page.getByTestId("workflow-package-launch-warnings")).toContainText(
-      "No warnings reported",
-    );
-    await expect(page.getByTestId("workflow-package-model-connection-modes")).toContainText(
-      "No deterministic smoke warnings were reported",
-    );
+    await expect(
+      page.getByTestId("workflow-package-launch-page"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("workflow-package-constraint-inspector"),
+    ).toContainText("This workflow requires native tool calls");
+    await expect(
+      page.getByTestId("workflow-package-launch-warnings"),
+    ).toContainText("No warnings reported");
+    await expect(
+      page.getByTestId("workflow-package-model-connection-modes"),
+    ).toContainText("No deterministic smoke warnings were reported");
 
     await seedModelConnectionPayload(request, {
       key: strictModelKey,
@@ -565,9 +696,18 @@ test.describe("Workflow packages", () => {
       reasoningEffort: null,
       protocolProfile: "openai_responses",
       capabilities: {
-        strictJsonSchemaOutput: capability("supported", "Strict schema is supported."),
-        jsonObjectOutput: capability("supported", "JSON object mode is supported."),
-        nativeToolCalls: capability("unsupported", "No tools required by this package."),
+        strictJsonSchemaOutput: capability(
+          "supported",
+          "Strict schema is supported.",
+        ),
+        jsonObjectOutput: capability(
+          "supported",
+          "JSON object mode is supported.",
+        ),
+        nativeToolCalls: capability(
+          "unsupported",
+          "No tools required by this package.",
+        ),
       },
       outputStrategyPolicy: "require_strict_schema",
       parallelToolCallsPolicy: "serialize",
@@ -578,7 +718,14 @@ test.describe("Workflow packages", () => {
     });
     const strictPackage = await request.post(
       `${PLATFORM_API_BASE}/workflow-packages`,
-      { data: { manifestSource: compatibilityPackageManifest(`e2e_fake_strict_${suffix}`, strictModelKey) } },
+      {
+        data: {
+          manifestSource: compatibilityPackageManifest(
+            `e2e_fake_strict_${suffix}`,
+            strictModelKey,
+          ),
+        },
+      },
     );
     expect(strictPackage.status()).toBe(201);
     const strictCreated = await strictPackage.json();
@@ -602,9 +749,18 @@ test.describe("Workflow packages", () => {
       reasoningEffort: null,
       protocolProfile: "openai_responses",
       capabilities: {
-        strictJsonSchemaOutput: capability("unsupported", "Strict schema is rejected."),
-        jsonObjectOutput: capability("supported", "JSON object mode is supported."),
-        nativeToolCalls: capability("unsupported", "No tools required by this package."),
+        strictJsonSchemaOutput: capability(
+          "unsupported",
+          "Strict schema is rejected.",
+        ),
+        jsonObjectOutput: capability(
+          "supported",
+          "JSON object mode is supported.",
+        ),
+        nativeToolCalls: capability(
+          "unsupported",
+          "No tools required by this package.",
+        ),
       },
       outputStrategyPolicy: "allow_json_object_validation",
       parallelToolCallsPolicy: "serialize",
@@ -615,7 +771,14 @@ test.describe("Workflow packages", () => {
     });
     const jsonPackage = await request.post(
       `${PLATFORM_API_BASE}/workflow-packages`,
-      { data: { manifestSource: compatibilityPackageManifest(`e2e_fake_json_${suffix}`, jsonModelKey) } },
+      {
+        data: {
+          manifestSource: compatibilityPackageManifest(
+            `e2e_fake_json_${suffix}`,
+            jsonModelKey,
+          ),
+        },
+      },
     );
     expect(jsonPackage.status()).toBe(201);
     const jsonCreated = await jsonPackage.json();
@@ -639,7 +802,10 @@ test.describe("Workflow packages", () => {
       reasoningEffort: null,
       protocolProfile: "openai_responses",
       capabilities: {
-        strictJsonSchemaOutput: capability("supported", "Strict schema is supported."),
+        strictJsonSchemaOutput: capability(
+          "supported",
+          "Strict schema is supported.",
+        ),
         usageReporting: capability("unsupported", "Usage metadata is omitted."),
       },
       outputStrategyPolicy: "require_strict_schema",
@@ -651,7 +817,14 @@ test.describe("Workflow packages", () => {
     });
     const usagePackage = await request.post(
       `${PLATFORM_API_BASE}/workflow-packages`,
-      { data: { manifestSource: compatibilityPackageManifest(`e2e_fake_usage_${suffix}`, noUsageModelKey) } },
+      {
+        data: {
+          manifestSource: compatibilityPackageManifest(
+            `e2e_fake_usage_${suffix}`,
+            noUsageModelKey,
+          ),
+        },
+      },
     );
     expect(usagePackage.status()).toBe(201);
     const usageCreated = await usagePackage.json();
@@ -675,8 +848,14 @@ test.describe("Workflow packages", () => {
       reasoningEffort: "high",
       protocolProfile: "openai_responses",
       capabilities: {
-        reasoningHints: capability("unsupported", "Reasoning hints are rejected."),
-        strictJsonSchemaOutput: capability("supported", "Strict schema is supported."),
+        reasoningHints: capability(
+          "unsupported",
+          "Reasoning hints are rejected.",
+        ),
+        strictJsonSchemaOutput: capability(
+          "supported",
+          "Strict schema is supported.",
+        ),
       },
       outputStrategyPolicy: "require_strict_schema",
       parallelToolCallsPolicy: "serialize",
@@ -687,23 +866,37 @@ test.describe("Workflow packages", () => {
     });
     const reasoningPackage = await request.post(
       `${PLATFORM_API_BASE}/workflow-packages`,
-      { data: { manifestSource: compatibilityPackageManifest(`e2e_fake_reasoning_${suffix}`, reasoningModelKey) } },
+      {
+        data: {
+          manifestSource: compatibilityPackageManifest(
+            `e2e_fake_reasoning_${suffix}`,
+            reasoningModelKey,
+          ),
+        },
+      },
     );
     expect(reasoningPackage.status()).toBe(201);
     const reasoningCreated = await reasoningPackage.json();
     const reasoningLaunch = await request.post(
       `${PLATFORM_API_BASE}/workflow-packages/${reasoningCreated.id}/launches`,
-      { data: { workflowKey: "advisory_flow", parameters: { ticker: "AAPL" } } },
+      {
+        data: { workflowKey: "advisory_flow", parameters: { ticker: "AAPL" } },
+      },
     );
     expect(reasoningLaunch.status()).toBe(201);
-    const reasoningRun = await waitForRun(request, Number((await reasoningLaunch.json()).id));
+    const reasoningRun = await waitForRun(
+      request,
+      Number((await reasoningLaunch.json()).id),
+    );
     expect(reasoningRun.status).toBe("failed");
-    expect(JSON.stringify(reasoningRun)).toContain("model_reasoning_unsupported");
+    expect(JSON.stringify(reasoningRun)).toContain(
+      "model_reasoning_unsupported",
+    );
 
     await page.goto(`/runs/${usageRunId}`);
     await expect(page.getByTestId("runs-detail-page")).toBeVisible();
     await expect(page.getByTestId("runs-runtime-profile")).toContainText(
-      "Effective runtime profile",
+      "Runtime profile",
     );
     await expect(page.getByTestId("runs-runtime-profile")).toContainText(
       "Usage reporting",
@@ -711,9 +904,13 @@ test.describe("Workflow packages", () => {
     await expect(page.getByTestId("runs-runtime-profile")).toContainText(
       "Unsupported",
     );
-    await expect(page.getByTestId("runs-runtime-selected-strategies")).toContainText(
-      "Adapter-selected strategies",
-    );
+    await page.getByRole("button", { name: "Audit evidence" }).click();
+    await expect(
+      page.getByTestId("runs-runtime-selected-strategies"),
+    ).toContainText("Selected strategies");
+    await expect(
+      page.getByTestId("runs-runtime-selected-strategies"),
+    ).toContainText("Output strategy");
     await expect(page.getByText(/sk-e2e-fake/i)).toHaveCount(0);
   });
 
