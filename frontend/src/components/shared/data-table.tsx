@@ -7,6 +7,7 @@ import {
   useReactTable,
   type ColumnDef,
   type PaginationState,
+  type Row,
   type SortingState,
 } from "@tanstack/react-table";
 
@@ -28,24 +29,42 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/components/ui/utils";
 
+export type DataTableDensity = "comfortable" | "compact";
+
 type DataTableProps<TData, TValue> = {
   className?: string;
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
+  density?: DataTableDensity;
   emptyMessage: string;
+  getRowTestId?: (row: Row<TData>) => string | undefined;
   initialSorting?: SortingState;
   initialPageSize?: number;
   pageSizeOptions?: number[];
+  tableLabel?: string;
+};
+
+const tableContainerClassByDensity: Record<DataTableDensity, string> = {
+  comfortable: "overflow-x-auto rounded-xl border",
+  compact: "min-w-0 max-w-full overflow-x-auto rounded-md border",
+};
+
+const tableCellClassByDensity: Record<DataTableDensity, string> = {
+  comfortable: "",
+  compact: "py-2 text-xs",
 };
 
 export function DataTable<TData, TValue>({
   className,
   columns,
   data,
+  density = "comfortable",
   emptyMessage,
+  getRowTestId,
   initialSorting = [],
   initialPageSize = 10,
   pageSizeOptions = [10, 20, 50],
+  tableLabel,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
   const [pagination, setPagination] = useState<PaginationState>({
@@ -69,8 +88,8 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className={cn("space-y-4", className)}>
-      <div className="overflow-x-auto rounded-xl border">
-        <Table>
+      <div className={tableContainerClassByDensity[density]}>
+        <Table aria-label={tableLabel}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -90,9 +109,16 @@ export function DataTable<TData, TValue>({
           <TableBody>
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() ? "selected" : undefined}
+                  data-testid={getRowTestId?.(row)}
+                >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
+                    <TableCell
+                      className={tableCellClassByDensity[density]}
+                      key={cell.id}
+                    >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
