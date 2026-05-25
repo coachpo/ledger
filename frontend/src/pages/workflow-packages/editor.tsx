@@ -3,10 +3,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import { ProvenanceBadge } from "@/components/shared/provenance-badge";
+import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ import {
   useWorkflowPackageManifest,
   useWorkflowPackageSecretBindings,
 } from "@/hooks/use-workflow-packages";
+import { formatDateTime } from "@/lib/format";
 import {
   createWorkflowPackageDraft,
   mapBackendDiagnostics,
@@ -210,6 +212,27 @@ export function WorkflowPackageEditorPage() {
             }
           : null;
   const isEditorBlocked = editorBlocker !== null;
+  const manifestHash = workflowPackage?.manifestHash?.slice(0, 12) ?? "Draft";
+  const compiledHash = workflowPackage?.compiledHash?.slice(0, 12) ?? "Pending";
+  const contextStatusItems = [
+    {
+      label: "Mode",
+      tone: isNew ? ("warning" as const) : ("success" as const),
+      value: isNew ? "New draft" : "Saved package",
+    },
+    {
+      label: "Draft",
+      tone: isDirty ? ("warning" as const) : ("neutral" as const),
+      value: isDirty ? "Unsaved" : "Clean",
+    },
+    {
+      label: "Diagnostics",
+      tone:
+        combinedIssues.length > 0 ? ("danger" as const) : ("success" as const),
+      value:
+        combinedIssues.length > 0 ? String(combinedIssues.length) : "Clear",
+    },
+  ];
 
   const updateDraft = (nextDraft: WorkflowPackageDraft) => {
     setIsDirty(true);
@@ -387,70 +410,82 @@ export function WorkflowPackageEditorPage() {
       className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto overflow-x-hidden p-4 font-sans"
       data-testid="workflow-package-editor-shell"
     >
-      <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
-        <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {combinedIssues.length > 0 ? (
-                <Badge variant="destructive">
-                  {combinedIssues.length} diagnostics
-                </Badge>
+      <div
+        className="sticky top-0 z-20"
+        data-testid="workflow-package-context-bar"
+      >
+        <PageContextBar
+          actions={
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <Button
+                aria-label="Save package"
+                className="cursor-pointer"
+                disabled={isSaving || isEditorBlocked}
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void savePackage()}
+              >
+                <Save data-icon="inline-start" />
+                Save
+              </Button>
+              <Button
+                aria-label="Validate package"
+                className="cursor-pointer"
+                disabled={validatePackage.isPending || isEditorBlocked}
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void validateCurrentDraft()}
+              >
+                <FileCheck2 data-icon="inline-start" />
+                Validate
+              </Button>
+              <Button
+                aria-label="Launch workflow package"
+                className="cursor-pointer"
+                disabled={isNew || isEditorBlocked}
+                type="button"
+                size="sm"
+                onClick={requestLaunchSavedPackage}
+              >
+                <PlayCircle data-icon="inline-start" />
+                Launch
+              </Button>
+            </div>
+          }
+          className="border-border/70 bg-card/95 shadow-sm backdrop-blur"
+          description={
+            <span className="flex min-w-0 flex-col gap-1">
+              <span className="break-all font-mono text-xs">
+                {packageSubtitle(workflowPackage, isNew)}
+              </span>
+              <span>{headerDescription}</span>
+            </span>
+          }
+          meta={
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <ProvenanceBadge detail={manifestHash} label="Manifest" />
+              <ProvenanceBadge detail={compiledHash} label="Compiled" />
+              {workflowPackage ? (
+                <ProvenanceBadge
+                  detail={formatDateTime(workflowPackage.updatedAt)}
+                  label="Updated"
+                />
               ) : null}
             </div>
-            <div className="space-y-1">
-              <h1
-                id="workflow-package-editor-title"
-                className="text-xl font-semibold tracking-tight"
-              >
-                {packageTitle(workflowPackage, isNew)}
-              </h1>
-              <p className="font-mono text-xs text-muted-foreground">
-                {packageSubtitle(workflowPackage, isNew)}
-              </p>
-              <p className="max-w-3xl text-sm text-muted-foreground">
-                {headerDescription}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row lg:justify-end">
-            <Button
-              aria-label="Save package"
-              className="cursor-pointer"
-              disabled={isSaving || isEditorBlocked}
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => void savePackage()}
+          }
+          status={<ResourceStatusStrip items={contextStatusItems} />}
+          title={
+            <span
+              id="workflow-package-editor-title"
+              className="block text-xl font-semibold tracking-tight"
             >
-              <Save data-icon="inline-start" />
-              Save
-            </Button>
-            <Button
-              aria-label="Validate package"
-              className="cursor-pointer"
-              disabled={validatePackage.isPending || isEditorBlocked}
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => void validateCurrentDraft()}
-            >
-              <FileCheck2 data-icon="inline-start" />
-              Validate
-            </Button>
-            <Button
-              aria-label="Launch workflow package"
-              className="cursor-pointer"
-              disabled={isNew || isEditorBlocked}
-              type="button"
-              size="sm"
-              onClick={requestLaunchSavedPackage}
-            >
-              <PlayCircle data-icon="inline-start" />
-              Launch
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+              {packageTitle(workflowPackage, isNew)}
+            </span>
+          }
+        />
+      </div>
       <Dialog
         open={launchConfirmationOpen}
         onOpenChange={setLaunchConfirmationOpen}
@@ -503,30 +538,49 @@ export function WorkflowPackageEditorPage() {
             onValueChange={(value) =>
               selectEditorTab(value as WorkflowPackageEditorTab)
             }
-            className="min-h-0 flex-1 gap-4 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)] lg:items-start"
+            className="min-h-0 flex-1 gap-4 lg:grid lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start"
           >
-            <div className="shrink-0">
-              <TabsList
-                aria-label="Workflow package editor sections"
-                className="relative z-10 h-auto w-full justify-start bg-muted/60 p-1"
-              >
-                {editorTabs.map((tab) => {
-                  const Icon = tab.icon;
-                  return (
-                    <TabsTrigger
-                      key={tab.value}
-                      value={tab.value}
-                      aria-label={`${tab.label} tab`}
-                      className="px-3 py-2"
-                      onClick={() => selectEditorTab(tab.value)}
-                    >
-                      <Icon className="size-4" aria-hidden="true" />
-                      {tab.label}
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-            </div>
+            <aside
+              className="min-w-0 shrink-0 lg:sticky lg:top-36"
+              data-testid="workflow-package-section-nav"
+            >
+              <div className="flex max-h-64 min-w-0 flex-col gap-2 overflow-y-auto rounded-xl border bg-card/80 p-2 shadow-sm lg:max-h-[calc(100vh-12rem)]">
+                <div className="px-2 py-1">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Authoring Sections
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Package-local resources only; import and launch stay on
+                    their dedicated routes.
+                  </p>
+                </div>
+                <TabsList
+                  aria-label="Workflow package editor sections"
+                  className="h-auto w-full justify-start bg-transparent p-0"
+                >
+                  {editorTabs.map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                      <TabsTrigger
+                        key={tab.value}
+                        value={tab.value}
+                        aria-label={`${tab.label} tab`}
+                        className="h-auto justify-start gap-3 whitespace-normal px-3 py-2 text-left"
+                        onClick={() => selectEditorTab(tab.value)}
+                      >
+                        <Icon aria-hidden="true" />
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span>{tab.label}</span>
+                          <span className="line-clamp-2 text-[11px] font-normal leading-4 text-muted-foreground">
+                            {tab.description}
+                          </span>
+                        </span>
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </div>
+            </aside>
             <div className="min-w-0">
               <TabsContent value="overview" className="mt-0">
                 <OverviewEditor

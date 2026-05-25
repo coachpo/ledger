@@ -7,13 +7,14 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
+import { ConsoleSection } from "@/components/shared/console-section";
 import { SearchableSelect } from "@/components/shared/searchable-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +83,7 @@ import {
 import type { WorkflowPackageSecretBindingRead } from "@/lib/types/workflow-package";
 
 import {
+  getEditorTabDefinition,
   issueMessagesForPrefix,
   type DiagnosticTarget,
   type WorkflowPackageEditorTab,
@@ -255,6 +257,40 @@ function ResourceChecks({
   );
 }
 
+function AuthoringSection({
+  actions,
+  children,
+  description,
+  issues,
+  tab,
+  testId,
+  title,
+}: {
+  actions?: ReactNode;
+  children: ReactNode;
+  description?: ReactNode;
+  issues: readonly WorkflowPackageEditorIssue[];
+  tab: WorkflowPackageEditorTab;
+  testId: string;
+  title?: ReactNode;
+}) {
+  const definition = getEditorTabDefinition(tab);
+
+  return (
+    <ConsoleSection
+      actions={actions}
+      className="border-border/70 bg-card/80 shadow-sm backdrop-blur"
+      description={description ?? definition.description}
+      title={title ?? definition.label}
+    >
+      <div className="flex min-w-0 flex-col gap-4" data-testid={testId}>
+        <ResourceChecks issues={issues} tab={tab} />
+        {children}
+      </div>
+    </ConsoleSection>
+  );
+}
+
 function updateArrayItem<T>(
   items: readonly T[],
   index: number,
@@ -294,13 +330,15 @@ export function OverviewEditor({
     onChange({ ...draft, metadata: { ...draft.metadata, [key]: value } });
   };
   return (
-    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
-      <CardHeader>
-        <CardTitle>Package overview</CardTitle>
-        <CardDescription>Package identity and inputs.</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
+    <AuthoringSection
+      description="Package overview: identity, immutable key behavior, and package input schema."
+      issues={issues}
+      tab="overview"
+      testId="workflow-package-overview-tab"
+      title="Overview"
+    >
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-2">
           <Label htmlFor="metadata-key">Local package key</Label>
           <Input
             id="metadata-key"
@@ -321,7 +359,7 @@ export function OverviewEditor({
             </p>
           )}
         </div>
-        <div className="space-y-2">
+        <div className="flex min-w-0 flex-col gap-2">
           <Label htmlFor="metadata-name">Name</Label>
           <Input
             id="metadata-name"
@@ -332,7 +370,7 @@ export function OverviewEditor({
           />
           <FieldMessage message={issueForField(issues, "metadata.name")} />
         </div>
-        <div className="space-y-2 md:col-span-2">
+        <div className="flex min-w-0 flex-col gap-2 md:col-span-2">
           <Label htmlFor="metadata-description">Description</Label>
           <Textarea
             id="metadata-description"
@@ -342,7 +380,7 @@ export function OverviewEditor({
             onChange={(event) => setMetadata("description", event.target.value)}
           />
         </div>
-        <div className="space-y-2 md:col-span-2">
+        <div className="flex min-w-0 flex-col gap-2 md:col-span-2">
           <Label>Package input schema</Label>
           <SchemaComposer
             label="Package inputs"
@@ -352,8 +390,8 @@ export function OverviewEditor({
             }
           />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </AuthoringSection>
   );
 }
 
@@ -748,120 +786,112 @@ export function AgentsTab(props: {
   }, [diagnosticTarget, draft.spec.agents]);
 
   return (
-    <Card
-      className="border-border/70 bg-card/80 shadow-sm backdrop-blur"
-      data-testid="workflow-package-agents-tab"
+    <AuthoringSection
+      actions={
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => {
+            updateAgents([
+              ...draft.spec.agents,
+              createPackageAgentDraft({
+                outputSchema: outputSchemaKeys[0] ?? "",
+              }),
+            ]);
+            setEditingIndex(draft.spec.agents.length);
+          }}
+        >
+          <Plus data-icon="inline-start" />
+          Add Agent
+        </Button>
+      }
+      description="Manifest-local agent entries with model, schema, capability, MCP, timeout, and prompt bindings."
+      issues={issues}
+      tab="agents"
+      testId="workflow-package-agents-tab"
+      title="Agents"
     >
-      <CardHeader className="border-b pb-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle>Package-local agents</CardTitle>
-            <CardDescription>Manifest-local agent entries.</CardDescription>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              updateAgents([
-                ...draft.spec.agents,
-                createPackageAgentDraft({
-                  outputSchema: outputSchemaKeys[0] ?? "",
-                }),
-              ]);
-              setEditingIndex(draft.spec.agents.length);
-            }}
-          >
-            <Plus data-icon="inline-start" />
-            Add Agent
-          </Button>
+      {draft.spec.agents.length === 0 ? (
+        <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+          No package-local agents yet.
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4">
-        <ResourceChecks issues={issues} tab="agents" />
-        {draft.spec.agents.length === 0 ? (
-          <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-            No package-local agents yet.
-          </div>
-        ) : null}
-        <div className="grid gap-3">
-          {draft.spec.agents.map((agent, index) => (
-            <div
-              key={`${agent.key}-${index}`}
-              className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
-              data-testid={`package-agent-row-${agent.key}`}
-            >
-              <div className="min-w-0 space-y-1">
-                <p className="font-medium">{agent.name || "Untitled agent"}</p>
-                <p className="break-all font-mono text-xs text-muted-foreground">
-                  {agent.key || "missing_key"}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">
-                    model: {agent.modelConnection || "missing"}
-                  </Badge>
-                  <Badge variant="outline">
-                    schema: {agent.outputSchema || "missing"}
-                  </Badge>
-                  <Badge variant="secondary">
-                    {agent.capabilityProfiles.length} profiles
-                  </Badge>
-                  <Badge variant="secondary">
-                    {agent.mcpServers.length} MCP
-                  </Badge>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  aria-label={`Edit agent ${agent.name}`}
-                  onClick={() => setEditingIndex(index)}
-                >
-                  Edit
-                </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="outline"
-                  aria-label={`Remove agent ${agent.name}`}
-                  onClick={() =>
-                    updateAgents(
-                      draft.spec.agents.filter(
-                        (_, itemIndex) => itemIndex !== index,
-                      ),
-                    )
-                  }
-                >
-                  <Trash2 />
-                </Button>
+      ) : null}
+      <div className="grid gap-3">
+        {draft.spec.agents.map((agent, index) => (
+          <div
+            key={`${agent.key}-${index}`}
+            className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
+            data-testid={`package-agent-row-${agent.key}`}
+          >
+            <div className="min-w-0 space-y-1">
+              <p className="font-medium">{agent.name || "Untitled agent"}</p>
+              <p className="break-all font-mono text-xs text-muted-foreground">
+                {agent.key || "missing_key"}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline">
+                  model: {agent.modelConnection || "missing"}
+                </Badge>
+                <Badge variant="outline">
+                  schema: {agent.outputSchema || "missing"}
+                </Badge>
+                <Badge variant="secondary">
+                  {agent.capabilityProfiles.length} profiles
+                </Badge>
+                <Badge variant="secondary">{agent.mcpServers.length} MCP</Badge>
               </div>
             </div>
-          ))}
-        </div>
-        <AgentSheet
-          agent={editingAgent}
-          agentIndex={editingIndex}
-          capabilityProfileKeys={capabilityProfileKeys}
-          issues={issues}
-          mcpServerKeys={mcpServerKeys}
-          modelConnectionOptions={modelConnectionOptions}
-          open={editingIndex !== null}
-          outputSchemaKeys={outputSchemaKeys}
-          targetField={
-            diagnosticTarget?.tab === "agents" ? diagnosticTarget.field : null
-          }
-          onOpenChange={(open) => (!open ? setEditingIndex(null) : undefined)}
-          onChange={(agent) =>
-            editingIndex !== null
-              ? updateAgents(
-                  updateArrayItem(draft.spec.agents, editingIndex, () => agent),
-                )
-              : undefined
-          }
-        />
-      </CardContent>
-    </Card>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label={`Edit agent ${agent.name}`}
+                onClick={() => setEditingIndex(index)}
+              >
+                Edit
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                aria-label={`Remove agent ${agent.name}`}
+                onClick={() =>
+                  updateAgents(
+                    draft.spec.agents.filter(
+                      (_, itemIndex) => itemIndex !== index,
+                    ),
+                  )
+                }
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <AgentSheet
+        agent={editingAgent}
+        agentIndex={editingIndex}
+        capabilityProfileKeys={capabilityProfileKeys}
+        issues={issues}
+        mcpServerKeys={mcpServerKeys}
+        modelConnectionOptions={modelConnectionOptions}
+        open={editingIndex !== null}
+        outputSchemaKeys={outputSchemaKeys}
+        targetField={
+          diagnosticTarget?.tab === "agents" ? diagnosticTarget.field : null
+        }
+        onOpenChange={(open) => (!open ? setEditingIndex(null) : undefined)}
+        onChange={(agent) =>
+          editingIndex !== null
+            ? updateAgents(
+                updateArrayItem(draft.spec.agents, editingIndex, () => agent),
+              )
+            : undefined
+        }
+      />
+    </AuthoringSection>
   );
 }
 
@@ -877,153 +907,147 @@ export function OutputSchemasTab({
   const updateSchemas = (outputSchemas: PackageOutputSchemaDraft[]) =>
     onChange({ ...draft, spec: { ...draft.spec, outputSchemas } });
   return (
-    <Card
-      className="border-border/70 bg-card/80 shadow-sm backdrop-blur"
-      data-testid="workflow-package-output-schemas-tab"
+    <AuthoringSection
+      actions={
+        <Button
+          type="button"
+          size="sm"
+          onClick={() =>
+            updateSchemas([
+              ...draft.spec.outputSchemas,
+              createPackageOutputSchemaDraft(),
+            ])
+          }
+        >
+          <Plus data-icon="inline-start" />
+          Add Schema
+        </Button>
+      }
+      description="Local output contracts are authored inside the package boundary with stable schema keys."
+      issues={issues}
+      tab="output-schemas"
+      testId="workflow-package-output-schemas-tab"
+      title="Output Schemas"
     >
-      <CardHeader className="border-b pb-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle>Package-local output schemas</CardTitle>
-            <CardDescription>Local schema keys and shapes.</CardDescription>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() =>
-              updateSchemas([
-                ...draft.spec.outputSchemas,
-                createPackageOutputSchemaDraft(),
-              ])
-            }
-          >
-            <Plus data-icon="inline-start" />
-            Add Schema
-          </Button>
+      {draft.spec.outputSchemas.length === 0 ? (
+        <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+          No package-local output schemas yet.
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4">
-        <ResourceChecks issues={issues} tab="output-schemas" />
-        {draft.spec.outputSchemas.length === 0 ? (
-          <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-            No package-local output schemas yet.
-          </div>
-        ) : null}
-        <div className="grid gap-4 xl:grid-cols-2">
-          {draft.spec.outputSchemas.map((schema, index) => (
-            <Card
-              key={`${schema.key}-${index}`}
-              className="bg-background/60"
-              data-field={`spec.outputSchemas[${index}]`}
-              tabIndex={-1}
-              data-testid={`package-output-schema-card-${schema.key}`}
-            >
-              <CardHeader>
-                <CardTitle>{schema.name || "Untitled schema"}</CardTitle>
-                <CardDescription className="font-mono text-xs">
-                  {schema.key || "missing_key"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Local key</Label>
-                    <Input
-                      aria-label={`Output schema ${index + 1} local key`}
-                      data-field={`spec.outputSchemas[${index}].key`}
-                      value={schema.key}
-                      onChange={(event) =>
-                        updateSchemas(
-                          updateArrayItem(
-                            draft.spec.outputSchemas,
-                            index,
-                            (item) => ({ ...item, key: event.target.value }),
-                          ),
-                        )
-                      }
-                    />
-                    <FieldMessage
-                      message={
-                        issueMessageForField(
-                          issues,
-                          `spec.outputSchemas[${index}].key`,
-                        ) ??
-                        issueMessageForField(
-                          issues,
-                          `spec.outputSchemas[${index}]`,
-                        )
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Name</Label>
-                    <Input
-                      aria-label={`Output schema ${index + 1} name`}
-                      value={schema.name}
-                      onChange={(event) =>
-                        updateSchemas(
-                          updateArrayItem(
-                            draft.spec.outputSchemas,
-                            index,
-                            (item) => ({ ...item, name: event.target.value }),
-                          ),
-                        )
-                      }
-                    />
-                  </div>
-                </div>
+      ) : null}
+      <div className="grid gap-4 xl:grid-cols-2">
+        {draft.spec.outputSchemas.map((schema, index) => (
+          <Card
+            key={`${schema.key}-${index}`}
+            className="bg-background/60"
+            data-field={`spec.outputSchemas[${index}]`}
+            tabIndex={-1}
+            data-testid={`package-output-schema-card-${schema.key}`}
+          >
+            <CardHeader>
+              <CardTitle>{schema.name || "Untitled schema"}</CardTitle>
+              <CardDescription className="font-mono text-xs">
+                {schema.key || "missing_key"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Description</Label>
+                  <Label>Local key</Label>
                   <Input
-                    aria-label={`Output schema ${index + 1} description`}
-                    value={schema.description}
+                    aria-label={`Output schema ${index + 1} local key`}
+                    data-field={`spec.outputSchemas[${index}].key`}
+                    value={schema.key}
                     onChange={(event) =>
                       updateSchemas(
                         updateArrayItem(
                           draft.spec.outputSchemas,
                           index,
-                          (item) => ({
-                            ...item,
-                            description: event.target.value,
-                          }),
+                          (item) => ({ ...item, key: event.target.value }),
+                        ),
+                      )
+                    }
+                  />
+                  <FieldMessage
+                    message={
+                      issueMessageForField(
+                        issues,
+                        `spec.outputSchemas[${index}].key`,
+                      ) ??
+                      issueMessageForField(
+                        issues,
+                        `spec.outputSchemas[${index}]`,
+                      )
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Name</Label>
+                  <Input
+                    aria-label={`Output schema ${index + 1} name`}
+                    value={schema.name}
+                    onChange={(event) =>
+                      updateSchemas(
+                        updateArrayItem(
+                          draft.spec.outputSchemas,
+                          index,
+                          (item) => ({ ...item, name: event.target.value }),
                         ),
                       )
                     }
                   />
                 </div>
-                <SchemaComposer
-                  label="Output schema root"
-                  node={schema.jsonSchema}
-                  onChange={(jsonSchema) =>
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Input
+                  aria-label={`Output schema ${index + 1} description`}
+                  value={schema.description}
+                  onChange={(event) =>
                     updateSchemas(
                       updateArrayItem(
                         draft.spec.outputSchemas,
                         index,
-                        (item) => ({ ...item, jsonSchema }),
+                        (item) => ({
+                          ...item,
+                          description: event.target.value,
+                        }),
                       ),
                     )
                   }
                 />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    updateSchemas(
-                      draft.spec.outputSchemas.filter(
-                        (_, itemIndex) => itemIndex !== index,
-                      ),
-                    )
-                  }
-                >
-                  Remove schema
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+              </div>
+              <SchemaComposer
+                label="Output schema root"
+                node={schema.jsonSchema}
+                onChange={(jsonSchema) =>
+                  updateSchemas(
+                    updateArrayItem(
+                      draft.spec.outputSchemas,
+                      index,
+                      (item) => ({ ...item, jsonSchema }),
+                    ),
+                  )
+                }
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  updateSchemas(
+                    draft.spec.outputSchemas.filter(
+                      (_, itemIndex) => itemIndex !== index,
+                    ),
+                  )
+                }
+              >
+                Remove schema
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </AuthoringSection>
   );
 }
 
@@ -1040,153 +1064,168 @@ export function CapabilityProfilesTab(props: {
     capabilityProfiles: PackageCapabilityProfileDraft[],
   ) => onChange({ ...draft, spec: { ...draft.spec, capabilityProfiles } });
   return (
-    <Card
-      className="border-border/70 bg-card/80 shadow-sm backdrop-blur"
-      data-testid="workflow-package-capability-profiles-tab"
+    <AuthoringSection
+      actions={
+        <Button
+          type="button"
+          size="sm"
+          onClick={() =>
+            updateProfiles([
+              ...draft.spec.capabilityProfiles,
+              createPackageCapabilityProfileDraft(),
+            ])
+          }
+        >
+          <Plus data-icon="inline-start" />
+          Add Profile
+        </Button>
+      }
+      description="Local capability profiles collect extension-filtered server-declared tool keys for package agents."
+      issues={issues}
+      tab="capability-profiles"
+      testId="workflow-package-capability-profiles-tab"
+      title="Capability Profiles"
     >
-      <CardHeader className="border-b pb-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle>Capability profiles</CardTitle>
-            <CardDescription>Local profiles and tool keys.</CardDescription>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() =>
-              updateProfiles([
-                ...draft.spec.capabilityProfiles,
-                createPackageCapabilityProfileDraft(),
-              ])
-            }
-          >
-            <Plus data-icon="inline-start" />
-            Add Profile
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4">
-        <ResourceChecks issues={issues} tab="capability-profiles" />
-        {toolsError ? (
-          <Alert variant="destructive">
-            <AlertTitle>Tool catalog unavailable</AlertTitle>
-            <AlertDescription>{toolsError}</AlertDescription>
-          </Alert>
-        ) : null}
-        {draft.spec.capabilityProfiles.map((profile, index) => (
-          <Card
-            key={`${profile.key}-${index}`}
-            className="bg-background/60"
-            data-field={`spec.capabilityProfiles[${index}]`}
-            tabIndex={-1}
-            data-testid={`package-capability-profile-card-${profile.key}`}
-          >
-            <CardHeader>
-              <CardTitle>{profile.name || "Untitled profile"}</CardTitle>
-              <CardDescription className="font-mono text-xs">
-                {profile.key || "missing_key"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label>Local key</Label>
-                  <Input
-                    aria-label={`Capability profile ${index + 1} local key`}
-                    data-field={`spec.capabilityProfiles[${index}].key`}
-                    value={profile.key}
-                    onChange={(event) =>
-                      updateProfiles(
-                        updateArrayItem(
-                          draft.spec.capabilityProfiles,
-                          index,
-                          (item) => ({ ...item, key: event.target.value }),
-                        ),
-                      )
-                    }
-                  />
-                  <FieldMessage
-                    message={issueMessageForField(
-                      issues,
-                      `spec.capabilityProfiles[${index}].key`,
-                    )}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Name</Label>
-                  <Input
-                    aria-label={`Capability profile ${index + 1} name`}
-                    value={profile.name}
-                    onChange={(event) =>
-                      updateProfiles(
-                        updateArrayItem(
-                          draft.spec.capabilityProfiles,
-                          index,
-                          (item) => ({ ...item, name: event.target.value }),
-                        ),
-                      )
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Textarea
-                    aria-label={`Capability profile ${index + 1} description`}
-                    rows={3}
-                    value={profile.description}
-                    onChange={(event) =>
-                      updateProfiles(
-                        updateArrayItem(
-                          draft.spec.capabilityProfiles,
-                          index,
-                          (item) => ({
-                            ...item,
-                            description: event.target.value,
-                          }),
-                        ),
-                      )
-                    }
-                  />
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
+      {toolsError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Tool catalog unavailable</AlertTitle>
+          <AlertDescription>{toolsError}</AlertDescription>
+        </Alert>
+      ) : null}
+      {draft.spec.capabilityProfiles.map((profile, index) => (
+        <Card
+          key={`${profile.key}-${index}`}
+          className="bg-background/60"
+          data-field={`spec.capabilityProfiles[${index}]`}
+          tabIndex={-1}
+          data-testid={`package-capability-profile-card-${profile.key}`}
+        >
+          <CardHeader>
+            <CardTitle>{profile.name || "Untitled profile"}</CardTitle>
+            <CardDescription className="font-mono text-xs">
+              {profile.key || "missing_key"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Local key</Label>
+                <Input
+                  aria-label={`Capability profile ${index + 1} local key`}
+                  data-field={`spec.capabilityProfiles[${index}].key`}
+                  value={profile.key}
+                  onChange={(event) =>
                     updateProfiles(
-                      draft.spec.capabilityProfiles.filter(
-                        (_, itemIndex) => itemIndex !== index,
+                      updateArrayItem(
+                        draft.spec.capabilityProfiles,
+                        index,
+                        (item) => ({ ...item, key: event.target.value }),
                       ),
                     )
                   }
-                >
-                  Remove profile
-                </Button>
+                />
+                <FieldMessage
+                  message={issueMessageForField(
+                    issues,
+                    `spec.capabilityProfiles[${index}].key`,
+                  )}
+                />
               </div>
               <div className="space-y-2">
-                <Label>Global tool catalog</Label>
-                <div
-                  data-field={`spec.capabilityProfiles[${index}].toolKeys[0]`}
-                  tabIndex={-1}
+                <Label>Name</Label>
+                <Input
+                  aria-label={`Capability profile ${index + 1} name`}
+                  value={profile.name}
+                  onChange={(event) =>
+                    updateProfiles(
+                      updateArrayItem(
+                        draft.spec.capabilityProfiles,
+                        index,
+                        (item) => ({ ...item, name: event.target.value }),
+                      ),
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Textarea
+                  aria-label={`Capability profile ${index + 1} description`}
+                  rows={3}
+                  value={profile.description}
+                  onChange={(event) =>
+                    updateProfiles(
+                      updateArrayItem(
+                        draft.spec.capabilityProfiles,
+                        index,
+                        (item) => ({
+                          ...item,
+                          description: event.target.value,
+                        }),
+                      ),
+                    )
+                  }
+                />
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  updateProfiles(
+                    draft.spec.capabilityProfiles.filter(
+                      (_, itemIndex) => itemIndex !== index,
+                    ),
+                  )
+                }
+              >
+                Remove profile
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <Label>Global tool catalog</Label>
+              <div
+                data-field={`spec.capabilityProfiles[${index}].toolKeys[0]`}
+                tabIndex={-1}
+              >
+                <Command
+                  className="rounded-lg border"
+                  data-testid="capability-tool-command"
                 >
-                  <Command
-                    className="rounded-lg border"
-                    data-testid="capability-tool-command"
-                  >
-                    <CommandInput placeholder="Search server-declared tools..." />
-                    <CommandList>
-                      <CommandEmpty>
-                        {toolsLoading
-                          ? "Loading tools..."
-                          : "No catalog tools match."}
-                      </CommandEmpty>
-                      <CommandGroup>
-                        {tools.map((tool) => (
-                          <CommandItem
-                            className="data-[selected=true]:bg-transparent data-[selected=true]:text-foreground data-[selected=true]:hover:bg-accent data-[selected=true]:hover:text-accent-foreground"
-                            key={tool.key}
-                            value={`${tool.displayName} ${tool.key} ${tool.description}`}
-                            onSelect={() =>
+                  <CommandInput placeholder="Search server-declared tools..." />
+                  <CommandList>
+                    <CommandEmpty>
+                      {toolsLoading
+                        ? "Loading tools..."
+                        : "No catalog tools match."}
+                    </CommandEmpty>
+                    <CommandGroup>
+                      {tools.map((tool) => (
+                        <CommandItem
+                          className="data-[selected=true]:bg-transparent data-[selected=true]:text-foreground data-[selected=true]:hover:bg-accent data-[selected=true]:hover:text-accent-foreground"
+                          key={tool.key}
+                          value={`${tool.displayName} ${tool.key} ${tool.description}`}
+                          onSelect={() =>
+                            updateProfiles(
+                              updateArrayItem(
+                                draft.spec.capabilityProfiles,
+                                index,
+                                (item) => ({
+                                  ...item,
+                                  toolKeys: toggleString(
+                                    item.toolKeys,
+                                    tool.key,
+                                    !item.toolKeys.includes(tool.key),
+                                  ),
+                                }),
+                              ),
+                            )
+                          }
+                        >
+                          <Checkbox
+                            aria-label={`Select tool ${tool.displayName}`}
+                            checked={profile.toolKeys.includes(tool.key)}
+                            onCheckedChange={(checked) =>
                               updateProfiles(
                                 updateArrayItem(
                                   draft.spec.capabilityProfiles,
@@ -1196,78 +1235,57 @@ export function CapabilityProfilesTab(props: {
                                     toolKeys: toggleString(
                                       item.toolKeys,
                                       tool.key,
-                                      !item.toolKeys.includes(tool.key),
+                                      checked === true,
                                     ),
                                   }),
                                 ),
                               )
                             }
-                          >
-                            <Checkbox
-                              aria-label={`Select tool ${tool.displayName}`}
-                              checked={profile.toolKeys.includes(tool.key)}
-                              onCheckedChange={(checked) =>
-                                updateProfiles(
-                                  updateArrayItem(
-                                    draft.spec.capabilityProfiles,
-                                    index,
-                                    (item) => ({
-                                      ...item,
-                                      toolKeys: toggleString(
-                                        item.toolKeys,
-                                        tool.key,
-                                        checked === true,
-                                      ),
-                                    }),
-                                  ),
-                                )
-                              }
-                            />
-                            <div className="min-w-0">
-                              <p className="truncate text-sm">
-                                {tool.displayName}
-                              </p>
-                              <p className="break-all text-xs text-muted-foreground">
-                                {tool.key}
-                              </p>
-                            </div>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </div>
-                <FieldMessage
-                  message={
-                    issueMessagesForPrefix(
-                      issues,
-                      `spec.capabilityProfiles[${index}].toolKeys`,
-                    )[0]?.issue ??
-                    issueMessagesForPrefix(
-                      issues,
-                      `spec.capabilityProfiles.${profile.key}.toolKeys`,
-                    )[0]?.issue ??
-                    null
-                  }
-                />
-                <div className="flex flex-wrap gap-2">
-                  {profile.toolKeys.map((key) => (
-                    <Badge key={key} variant="secondary">
-                      {key}
-                    </Badge>
-                  ))}
-                </div>
+                          />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm">
+                              {tool.displayName}
+                            </p>
+                            <p className="break-all text-xs text-muted-foreground">
+                              {tool.key}
+                            </p>
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
               </div>
-            </CardContent>
-          </Card>
-        ))}
-        {draft.spec.capabilityProfiles.length === 0 ? (
-          <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-            No local capability profiles yet.
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
+              <FieldMessage
+                message={
+                  issueMessagesForPrefix(
+                    issues,
+                    `spec.capabilityProfiles[${index}].toolKeys`,
+                  )[0]?.issue ??
+                  issueMessagesForPrefix(
+                    issues,
+                    `spec.capabilityProfiles.${profile.key}.toolKeys`,
+                  )[0]?.issue ??
+                  null
+                }
+              />
+              <div className="flex flex-wrap gap-2">
+                {profile.toolKeys.map((key) => (
+                  <Badge key={key} variant="secondary">
+                    {key}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+      {draft.spec.capabilityProfiles.length === 0 ? (
+        <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+          No local capability profiles yet.
+        </div>
+      ) : null}
+    </AuthoringSection>
   );
 }
 
@@ -1283,265 +1301,253 @@ export function PrivateMcpTab({
   const updateServers = (mcpServers: PackageMcpServerDraft[]) =>
     onChange({ ...draft, spec: { ...draft.spec, mcpServers } });
   return (
-    <Card
-      className="border-border/70 bg-card/80 shadow-sm backdrop-blur"
-      data-testid="workflow-package-private-mcp-tab"
+    <AuthoringSection
+      actions={
+        <Button
+          type="button"
+          size="sm"
+          onClick={() =>
+            updateServers([
+              ...draft.spec.mcpServers,
+              createPackageMcpServerDraft(),
+            ])
+          }
+        >
+          <Plus data-icon="inline-start" />
+          Add Private MCP
+        </Button>
+      }
+      description="Private MCP servers use package-local transport values. Inline env, header, and query secret references stay package-local."
+      issues={issues}
+      tab="private-mcp"
+      testId="workflow-package-private-mcp-tab"
+      title="Private MCP"
     >
-      <CardHeader className="border-b pb-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle>Private MCP servers</CardTitle>
-            <CardDescription>Package-local transport values.</CardDescription>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() =>
-              updateServers([
-                ...draft.spec.mcpServers,
-                createPackageMcpServerDraft(),
-              ])
-            }
-          >
-            <Plus data-icon="inline-start" />
-            Add Private MCP
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4">
-        <ResourceChecks issues={issues} tab="private-mcp" />
-        {draft.spec.mcpServers.map((server, index) => (
-          <Card
-            key={`${server.key}-${index}`}
-            className="bg-background/60"
-            data-field={`spec.mcpServers[${index}]`}
-            tabIndex={-1}
-            data-testid={`package-private-mcp-card-${server.key}`}
-          >
-            <CardHeader>
-              <CardTitle>{server.name || "Untitled MCP"}</CardTitle>
-              <CardDescription className="font-mono text-xs">
-                {server.key || "missing_key"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label>Local key</Label>
-                  <Input
-                    aria-label={`Private MCP ${index + 1} local key`}
-                    data-field={`spec.mcpServers[${index}].key`}
-                    value={server.key}
-                    onChange={(event) =>
-                      updateServers(
-                        updateArrayItem(
-                          draft.spec.mcpServers,
-                          index,
-                          (item) => ({ ...item, key: event.target.value }),
-                        ),
-                      )
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Name</Label>
-                  <Input
-                    aria-label={`Private MCP ${index + 1} name`}
-                    value={server.name}
-                    onChange={(event) =>
-                      updateServers(
-                        updateArrayItem(
-                          draft.spec.mcpServers,
-                          index,
-                          (item) => ({ ...item, name: event.target.value }),
-                        ),
-                      )
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Transport</Label>
-                  <Select
-                    value={server.transport}
-                    onValueChange={(transport: "stdio" | "http-sse") =>
-                      updateServers(
-                        updateArrayItem(
-                          draft.spec.mcpServers,
-                          index,
-                          (item) => ({ ...item, transport }),
-                        ),
-                      )
-                    }
-                  >
-                    <SelectTrigger
-                      aria-label={`Private MCP ${index + 1} transport`}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="stdio">stdio</SelectItem>
-                      <SelectItem value="http-sse">http-sse</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+      {draft.spec.mcpServers.map((server, index) => (
+        <Card
+          key={`${server.key}-${index}`}
+          className="bg-background/60"
+          data-field={`spec.mcpServers[${index}]`}
+          tabIndex={-1}
+          data-testid={`package-private-mcp-card-${server.key}`}
+        >
+          <CardHeader>
+            <CardTitle>{server.name || "Untitled MCP"}</CardTitle>
+            <CardDescription className="font-mono text-xs">
+              {server.key || "missing_key"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
               <div className="space-y-2">
-                <Label>Description</Label>
+                <Label>Local key</Label>
                 <Input
-                  aria-label={`Private MCP ${index + 1} description`}
-                  value={server.description}
+                  aria-label={`Private MCP ${index + 1} local key`}
+                  data-field={`spec.mcpServers[${index}].key`}
+                  value={server.key}
                   onChange={(event) =>
                     updateServers(
                       updateArrayItem(draft.spec.mcpServers, index, (item) => ({
                         ...item,
-                        description: event.target.value,
+                        key: event.target.value,
                       })),
                     )
                   }
                 />
               </div>
-              {server.transport === "stdio" ? (
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Command</Label>
-                    <Input
-                      aria-label={`Private MCP ${index + 1} command`}
-                      value={server.command}
-                      onChange={(event) =>
-                        updateServers(
-                          updateArrayItem(
-                            draft.spec.mcpServers,
-                            index,
-                            (item) => ({
-                              ...item,
-                              command: event.target.value,
-                            }),
-                          ),
-                        )
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Args JSON array</Label>
-                    <Textarea
-                      aria-label={`Private MCP ${index + 1} args`}
-                      rows={3}
-                      value={server.argsText}
-                      onChange={(event) =>
-                        updateServers(
-                          updateArrayItem(
-                            draft.spec.mcpServers,
-                            index,
-                            (item) => ({
-                              ...item,
-                              argsText: event.target.value,
-                            }),
-                          ),
-                        )
-                      }
-                    />
-                  </div>
-                </div>
-              ) : (
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input
+                  aria-label={`Private MCP ${index + 1} name`}
+                  value={server.name}
+                  onChange={(event) =>
+                    updateServers(
+                      updateArrayItem(draft.spec.mcpServers, index, (item) => ({
+                        ...item,
+                        name: event.target.value,
+                      })),
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Transport</Label>
+                <Select
+                  value={server.transport}
+                  onValueChange={(transport: "stdio" | "http-sse") =>
+                    updateServers(
+                      updateArrayItem(draft.spec.mcpServers, index, (item) => ({
+                        ...item,
+                        transport,
+                      })),
+                    )
+                  }
+                >
+                  <SelectTrigger
+                    aria-label={`Private MCP ${index + 1} transport`}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="stdio">stdio</SelectItem>
+                    <SelectItem value="http-sse">http-sse</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Input
+                aria-label={`Private MCP ${index + 1} description`}
+                value={server.description}
+                onChange={(event) =>
+                  updateServers(
+                    updateArrayItem(draft.spec.mcpServers, index, (item) => ({
+                      ...item,
+                      description: event.target.value,
+                    })),
+                  )
+                }
+              />
+            </div>
+            {server.transport === "stdio" ? (
+              <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>URL</Label>
+                  <Label>Command</Label>
                   <Input
-                    aria-label={`Private MCP ${index + 1} URL`}
-                    value={server.url}
+                    aria-label={`Private MCP ${index + 1} command`}
+                    value={server.command}
                     onChange={(event) =>
                       updateServers(
                         updateArrayItem(
                           draft.spec.mcpServers,
                           index,
-                          (item) => ({ ...item, url: event.target.value }),
+                          (item) => ({
+                            ...item,
+                            command: event.target.value,
+                          }),
                         ),
                       )
                     }
                   />
                 </div>
-              )}
-              {server.transport === "stdio" ? (
-                <StringMapEditor
-                  addLabel="Add Env"
-                  emptyLabel="No environment values configured."
-                  issues={issues}
-                  label="Environment values"
-                  map={server.env}
-                  name="env"
-                  onChange={(env) =>
+                <div className="space-y-2">
+                  <Label>Args JSON array</Label>
+                  <Textarea
+                    aria-label={`Private MCP ${index + 1} args`}
+                    rows={3}
+                    value={server.argsText}
+                    onChange={(event) =>
+                      updateServers(
+                        updateArrayItem(
+                          draft.spec.mcpServers,
+                          index,
+                          (item) => ({
+                            ...item,
+                            argsText: event.target.value,
+                          }),
+                        ),
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>URL</Label>
+                <Input
+                  aria-label={`Private MCP ${index + 1} URL`}
+                  value={server.url}
+                  onChange={(event) =>
                     updateServers(
                       updateArrayItem(draft.spec.mcpServers, index, (item) => ({
                         ...item,
-                        env,
+                        url: event.target.value,
+                      })),
+                    )
+                  }
+                />
+              </div>
+            )}
+            {server.transport === "stdio" ? (
+              <StringMapEditor
+                addLabel="Add Env"
+                emptyLabel="No environment values configured."
+                issues={issues}
+                label="Environment values"
+                map={server.env}
+                name="env"
+                onChange={(env) =>
+                  updateServers(
+                    updateArrayItem(draft.spec.mcpServers, index, (item) => ({
+                      ...item,
+                      env,
+                    })),
+                  )
+                }
+                serverIndex={index}
+              />
+            ) : (
+              <div className="grid gap-3 xl:grid-cols-2">
+                <StringMapEditor
+                  addLabel="Add Header"
+                  emptyLabel="No header values configured."
+                  issues={issues}
+                  label="Header values"
+                  map={server.headers}
+                  name="headers"
+                  onChange={(headers) =>
+                    updateServers(
+                      updateArrayItem(draft.spec.mcpServers, index, (item) => ({
+                        ...item,
+                        headers,
                       })),
                     )
                   }
                   serverIndex={index}
                 />
-              ) : (
-                <div className="grid gap-3 xl:grid-cols-2">
-                  <StringMapEditor
-                    addLabel="Add Header"
-                    emptyLabel="No header values configured."
-                    issues={issues}
-                    label="Header values"
-                    map={server.headers}
-                    name="headers"
-                    onChange={(headers) =>
-                      updateServers(
-                        updateArrayItem(
-                          draft.spec.mcpServers,
-                          index,
-                          (item) => ({ ...item, headers }),
-                        ),
-                      )
-                    }
-                    serverIndex={index}
-                  />
-                  <StringMapEditor
-                    addLabel="Add Query"
-                    emptyLabel="No query values configured."
-                    issues={issues}
-                    label="Query values"
-                    map={server.query}
-                    name="query"
-                    onChange={(query) =>
-                      updateServers(
-                        updateArrayItem(
-                          draft.spec.mcpServers,
-                          index,
-                          (item) => ({ ...item, query }),
-                        ),
-                      )
-                    }
-                    serverIndex={index}
-                  />
-                </div>
-              )}
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  updateServers(
-                    draft.spec.mcpServers.filter(
-                      (_, itemIndex) => itemIndex !== index,
-                    ),
-                  )
-                }
-              >
-                Remove private MCP
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-        {draft.spec.mcpServers.length === 0 ? (
-          <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-            No package-private MCP servers yet.
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
+                <StringMapEditor
+                  addLabel="Add Query"
+                  emptyLabel="No query values configured."
+                  issues={issues}
+                  label="Query values"
+                  map={server.query}
+                  name="query"
+                  onChange={(query) =>
+                    updateServers(
+                      updateArrayItem(draft.spec.mcpServers, index, (item) => ({
+                        ...item,
+                        query,
+                      })),
+                    )
+                  }
+                  serverIndex={index}
+                />
+              </div>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                updateServers(
+                  draft.spec.mcpServers.filter(
+                    (_, itemIndex) => itemIndex !== index,
+                  ),
+                )
+              }
+            >
+              Remove private MCP
+            </Button>
+          </CardContent>
+        </Card>
+      ))}
+      {draft.spec.mcpServers.length === 0 ? (
+        <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+          No package-private MCP servers yet.
+        </div>
+      ) : null}
+    </AuthoringSection>
   );
 }
 
@@ -1690,44 +1696,40 @@ export function WorkflowYamlTab({
   };
 
   return (
-    <Card
-      className="border-border/70 bg-card/80 shadow-sm backdrop-blur"
-      data-testid="workflow-package-workflow-yaml-tab"
+    <AuthoringSection
+      description="Workflow graph nodes in YAML, including package-local agent steps and kind:http operations."
+      issues={issues}
+      tab="workflow-yaml"
+      testId="workflow-package-workflow-yaml-tab"
+      title={<span id="workflow-yaml-title">Workflow YAML</span>}
     >
-      <CardHeader className="border-b pb-4">
-        <CardTitle id="workflow-yaml-title">Workflow YAML</CardTitle>
-        <CardDescription>Workflow graph nodes in YAML.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4">
-        <ResourceChecks issues={issues} tab="workflow-yaml" />
-        {parseErrors.length > 0 ? (
-          <Alert variant="destructive">
-            <AlertCircle />
-            <AlertTitle>Workflow YAML could not be parsed</AlertTitle>
-            <AlertDescription>
-              <ul className="list-disc pl-5">
-                {parseErrors.map((error) => (
-                  <li key={error}>{error}</li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <div className="space-y-2" data-field="spec.workflows" tabIndex={-1}>
-          <Textarea
-            id="workflow-yaml"
-            aria-labelledby="workflow-yaml-title"
-            className="min-h-96 font-mono text-xs"
-            spellCheck={false}
-            value={workflowYaml}
-            onChange={(event) => updateWorkflowYaml(event.target.value)}
-          />
-          <p className="text-xs text-muted-foreground">
-            Use an array of workflow objects.
-          </p>
-        </div>
-      </CardContent>
-    </Card>
+      {parseErrors.length > 0 ? (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Workflow YAML could not be parsed</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc pl-5">
+              {parseErrors.map((error) => (
+                <li key={error}>{error}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <div className="space-y-2" data-field="spec.workflows" tabIndex={-1}>
+        <Textarea
+          id="workflow-yaml"
+          aria-labelledby="workflow-yaml-title"
+          className="min-h-96 font-mono text-xs"
+          spellCheck={false}
+          value={workflowYaml}
+          onChange={(event) => updateWorkflowYaml(event.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          Use an array of workflow objects.
+        </p>
+      </div>
+    </AuthoringSection>
   );
 }
 
@@ -1770,131 +1772,128 @@ export function SecretBindingsTab(props: {
   };
 
   return (
-    <Card
-      className="border-border/70 bg-card/80 shadow-sm backdrop-blur"
-      data-testid="workflow-package-secret-bindings-tab"
-    >
-      <CardHeader className="border-b pb-4">
-        <CardTitle>Secret bindings</CardTitle>
-        <CardDescription>
+    <AuthoringSection
+      description={
+        <>
           Bind package-local{" "}
           <code className="rounded bg-muted/40 px-1">{"${{ secrets.* }}"}</code>{" "}
           references. Stored secret values are never returned or echoed by the
           UI.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4">
-        {!packageId ? (
-          <Alert>
-            <AlertCircle />
-            <AlertTitle>Save the package first</AlertTitle>
-            <AlertDescription>
-              Secret bindings are stored against a saved package id, outside the
-              YAML manifest.
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        {bindingsError ? (
-          <Alert variant="destructive">
-            <AlertCircle />
-            <AlertTitle>Secret bindings unavailable</AlertTitle>
-            <AlertDescription>{bindingsError}</AlertDescription>
-          </Alert>
-        ) : null}
-        <div className="rounded-lg border bg-muted/20 p-3 text-sm">
-          <p className="font-medium">Referenced by workflow YAML</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {referencedSecretKeys.length === 0 ? (
-              <span className="text-muted-foreground">
-                No {"${{ secrets.* }}"} references found in workflows.
-              </span>
-            ) : null}
-            {referencedSecretKeys.map((key) => (
-              <Badge
-                key={key}
-                variant={configuredKeys.has(key) ? "secondary" : "outline"}
-              >
-                {key}
-                {configuredKeys.has(key) ? " bound" : " missing"}
-              </Badge>
-            ))}
-          </div>
-        </div>
-        <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto]">
-          <div className="space-y-2">
-            <Label htmlFor="secret-binding-key">Secret binding key</Label>
-            <Input
-              id="secret-binding-key"
-              aria-label="Secret binding key"
-              placeholder="slack_webhook_token"
-              value={secretKey}
-              onChange={(event) => setSecretKey(event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="secret-binding-value">Secret binding value</Label>
-            <Input
-              id="secret-binding-value"
-              aria-label="Secret binding value"
-              placeholder="Paste new value; never echoed"
-              type="password"
-              value={secretValue}
-              onChange={(event) => setSecretValue(event.target.value)}
-            />
-          </div>
-          <div className="flex items-end">
-            <Button
-              disabled={!packageId || saving}
-              type="button"
-              onClick={() => void submit()}
-            >
-              {saving ? (
-                <Loader2 className="animate-spin" data-icon="inline-start" />
-              ) : null}
-              Save secret binding
-            </Button>
-          </div>
-        </div>
-        <div className="grid gap-2">
-          {bindingsLoading ? (
-            <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
-              Loading secret bindings...
-            </div>
+        </>
+      }
+      issues={[]}
+      tab="secret-bindings"
+      testId="workflow-package-secret-bindings-tab"
+      title="Secret Bindings"
+    >
+      {!packageId ? (
+        <Alert>
+          <AlertCircle />
+          <AlertTitle>Save the package first</AlertTitle>
+          <AlertDescription>
+            Secret bindings are stored against a saved package id, outside the
+            YAML manifest.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {bindingsError ? (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Secret bindings unavailable</AlertTitle>
+          <AlertDescription>{bindingsError}</AlertDescription>
+        </Alert>
+      ) : null}
+      <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+        <p className="font-medium">Referenced by workflow YAML</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {referencedSecretKeys.length === 0 ? (
+            <span className="text-muted-foreground">
+              No {"${{ secrets.* }}"} references found in workflows.
+            </span>
           ) : null}
-          {sortedBindings.length === 0 && !bindingsLoading ? (
-            <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-              No package secret bindings configured.
-            </div>
-          ) : null}
-          {sortedBindings.map((binding) => (
-            <div
-              key={binding.key}
-              className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+          {referencedSecretKeys.map((key) => (
+            <Badge
+              key={key}
+              variant={configuredKeys.has(key) ? "secondary" : "outline"}
             >
-              <div className="min-w-0">
-                <p className="font-medium">{binding.key}</p>
-                <p className="text-xs text-muted-foreground">
-                  {binding.hasValue
-                    ? "Stored value redacted"
-                    : "No value stored"}{" "}
-                  · updated {formatDateTime(binding.updatedAt)}
-                </p>
-              </div>
-              <Button
-                disabled={deleting}
-                size="sm"
-                type="button"
-                variant="outline"
-                aria-label={`Delete secret binding ${binding.key}`}
-                onClick={() => void onDelete(binding.key)}
-              >
-                Delete
-              </Button>
-            </div>
+              {key}
+              {configuredKeys.has(key) ? " bound" : " missing"}
+            </Badge>
           ))}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+      <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto]">
+        <div className="space-y-2">
+          <Label htmlFor="secret-binding-key">Secret binding key</Label>
+          <Input
+            id="secret-binding-key"
+            aria-label="Secret binding key"
+            placeholder="slack_webhook_token"
+            value={secretKey}
+            onChange={(event) => setSecretKey(event.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="secret-binding-value">Secret binding value</Label>
+          <Input
+            id="secret-binding-value"
+            aria-label="Secret binding value"
+            placeholder="Paste new value; never echoed"
+            type="password"
+            value={secretValue}
+            onChange={(event) => setSecretValue(event.target.value)}
+          />
+        </div>
+        <div className="flex items-end">
+          <Button
+            disabled={!packageId || saving}
+            type="button"
+            onClick={() => void submit()}
+          >
+            {saving ? (
+              <Loader2 className="animate-spin" data-icon="inline-start" />
+            ) : null}
+            Save secret binding
+          </Button>
+        </div>
+      </div>
+      <div className="grid gap-2">
+        {bindingsLoading ? (
+          <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+            Loading secret bindings...
+          </div>
+        ) : null}
+        {sortedBindings.length === 0 && !bindingsLoading ? (
+          <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+            No package secret bindings configured.
+          </div>
+        ) : null}
+        {sortedBindings.map((binding) => (
+          <div
+            key={binding.key}
+            className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="min-w-0">
+              <p className="font-medium">{binding.key}</p>
+              <p className="text-xs text-muted-foreground">
+                {binding.hasValue ? "Stored value redacted" : "No value stored"}{" "}
+                · updated {formatDateTime(binding.updatedAt)}
+              </p>
+            </div>
+            <Button
+              disabled={deleting}
+              size="sm"
+              type="button"
+              variant="outline"
+              aria-label={`Delete secret binding ${binding.key}`}
+              onClick={() => void onDelete(binding.key)}
+            >
+              Delete
+            </Button>
+          </div>
+        ))}
+      </div>
+    </AuthoringSection>
   );
 }
 
@@ -1955,47 +1954,40 @@ export function ExportsTab(props: {
   }, [exportHref, generatedManifestSource]);
 
   return (
-    <Card
-      className="border-border/70 bg-card/80 shadow-sm backdrop-blur"
-      data-testid="workflow-package-exports-tab"
-    >
-      <CardHeader className="border-b pb-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle>Package import / export</CardTitle>
-            <CardDescription>
-              Download YAML or import a pasted manifest.
-            </CardDescription>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {exportHref ? (
-              <Button asChild size="sm">
-                <a href={exportHref} download>
-                  <Download data-icon="inline-start" />
-                  Download YAML
-                </a>
-              </Button>
-            ) : null}
-            <Button
-              size="sm"
-              type="button"
-              variant="outline"
-              onClick={onOpenImportWorkspace}
-            >
-              <FileUp data-icon="inline-start" />
-              Import Package
+    <AuthoringSection
+      actions={
+        <div className="flex flex-wrap gap-2">
+          {exportHref ? (
+            <Button asChild size="sm">
+              <a href={exportHref} download>
+                <Download data-icon="inline-start" />
+                Download YAML
+              </a>
             </Button>
-          </div>
+          ) : null}
+          <Button
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={onOpenImportWorkspace}
+          >
+            <FileUp data-icon="inline-start" />
+            Import Package
+          </Button>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4">
-        <Textarea
-          aria-label="Package YAML preview"
-          className="min-h-96 font-mono text-xs"
-          readOnly
-          value={exportPreview}
-        />
-      </CardContent>
-    </Card>
+      }
+      description="Download clean package YAML or hand off to the dedicated pasted-manifest import workspace."
+      issues={[]}
+      tab="exports"
+      testId="workflow-package-exports-tab"
+      title="Import / Export"
+    >
+      <Textarea
+        aria-label="Package YAML preview"
+        className="min-h-96 font-mono text-xs"
+        readOnly
+        value={exportPreview}
+      />
+    </AuthoringSection>
   );
 }
