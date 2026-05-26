@@ -21,16 +21,15 @@ export type RunInspectionPane =
   | "wiring";
 
 export type RunInspectionMode =
-  | "overview"
-  | "output"
-  | "input"
-  | "steps"
+  | "summary"
+  | "execution"
+  | "diagnostics"
+  | "inputs"
+  | "outputs"
   | "runtime"
-  | "audit"
-  | "lineage"
   | "memory"
-  | "tokens"
-  | "diagnostics";
+  | "lineage"
+  | "metadata";
 
 export type RunInspectionState = {
   mode: RunInspectionMode;
@@ -46,23 +45,41 @@ type RunInspectionIndex = {
 };
 
 export const RUN_INSPECTION_MODES = [
-  "overview",
-  "output",
-  "input",
-  "steps",
-  "runtime",
-  "audit",
-  "lineage",
-  "memory",
-  "tokens",
+  "summary",
+  "execution",
   "diagnostics",
+  "inputs",
+  "outputs",
+  "runtime",
+  "memory",
+  "lineage",
+  "metadata",
 ] as const satisfies readonly RunInspectionMode[];
+
+const RUN_INSPECTION_MODE_ALIASES: Record<string, RunInspectionMode> = {
+  audit: "metadata",
+  diagnostics: "diagnostics",
+  execution: "execution",
+  input: "inputs",
+  inputs: "inputs",
+  lineage: "lineage",
+  memory: "memory",
+  metadata: "metadata",
+  output: "outputs",
+  outputs: "outputs",
+  overview: "summary",
+  runtime: "runtime",
+  steps: "execution",
+  summary: "summary",
+  tokens: "runtime",
+};
 
 const RUN_PANES: RunInspectionPane[] = [
   "finalOutput",
   "input",
   "lineage",
   "memory",
+  "error",
 ];
 const STEP_PANES: RunInspectionPane[] = ["details", "lineage", "error"];
 const AGENT_INVOCATION_PANES: RunInspectionPane[] = [
@@ -116,23 +133,20 @@ function parsePositiveInteger(value: string | undefined): number | null {
 }
 
 function parseRunInspectionMode(raw: string | null): RunInspectionMode | null {
-  if (!raw) {
+  if (!raw || !Object.hasOwn(RUN_INSPECTION_MODE_ALIASES, raw)) {
     return null;
   }
-  return RUN_INSPECTION_MODES.includes(raw as RunInspectionMode)
-    ? (raw as RunInspectionMode)
-    : null;
+  return RUN_INSPECTION_MODE_ALIASES[raw];
 }
 
 export function defaultRunInspectionMode(run: RunRead): RunInspectionMode {
-  const status = String(run.status);
-  if (status === "succeeded") {
-    return "output";
+  if (run.status === "succeeded") {
+    return "outputs";
   }
-  if (status === "running") {
-    return "steps";
+  if (run.status === "running" || run.status === "failed") {
+    return "execution";
   }
-  return "overview";
+  return "summary";
 }
 
 function modeForPane(
@@ -143,14 +157,14 @@ function modeForPane(
     return "memory";
   }
   if (target.type !== "run") {
-    return pane === "error" ? "diagnostics" : "steps";
+    return pane === "error" ? "diagnostics" : "execution";
   }
 
   if (pane === "finalOutput" || pane === "output") {
-    return "output";
+    return "outputs";
   }
   if (pane === "input") {
-    return "input";
+    return "inputs";
   }
   if (pane === "lineage") {
     return "lineage";
@@ -171,7 +185,7 @@ function defaultPaneForMode(
   if (target.type !== "run") {
     return defaultPaneForTarget(target);
   }
-  if (mode === "input") {
+  if (mode === "inputs") {
     return "input";
   }
   if (mode === "lineage") {
@@ -179,6 +193,9 @@ function defaultPaneForMode(
   }
   if (mode === "memory") {
     return "memory";
+  }
+  if (mode === "diagnostics") {
+    return "error";
   }
   return "finalOutput";
 }
@@ -300,6 +317,80 @@ function canonicalTarget(
   return { type: "run" };
 }
 
+function hasExplicitInspectionState(
+  searchParams: URLSearchParams,
+  hash: string,
+): boolean {
+  return Boolean(
+    searchParams.has("mode") ||
+      searchParams.has("inspect") ||
+      searchParams.has("pane") ||
+      parseAnchorTarget(hash),
+  );
+}
+
+function hasFailureEvidence(value: {
+  errorCode: string | null;
+  errorDetails: unknown[];
+  errorMessage: string | null;
+  status: string;
+}): boolean {
+  return Boolean(
+    value.status === "failed" ||
+      value.errorCode ||
+      value.errorMessage ||
+      value.errorDetails.length > 0,
+  );
+}
+
+function defaultFailedInspectionState(
+  run: RunRead,
+  steps: RunStepRead[],
+): Pick<RunInspectionState, "mode" | "pane" | "target"> | null {
+  if (run.status !== "failed") {
+    return null;
+  }
+
+  for (const step of steps) {
+    const invocation = step.invocations.find(hasFailureEvidence);
+    if (invocation) {
+      return {
+        mode: "execution",
+        pane: "error",
+        target: { type: "agentInvocation", invocationId: invocation.id },
+      };
+    }
+  }
+
+  for (const step of steps) {
+    const invocation = step.operationInvocations.find(hasFailureEvidence);
+    if (invocation) {
+      return {
+        mode: "execution",
+        pane: "error",
+        target: { type: "operationInvocation", invocationId: invocation.id },
+      };
+    }
+  }
+
+  const failedStep = steps.find(
+    (step) => step.status === "failed" || Boolean(step.error),
+  );
+  if (failedStep) {
+    return {
+      mode: "execution",
+      pane: "error",
+      target: { type: "step", stepIndex: failedStep.index },
+    };
+  }
+
+  if (run.error) {
+    return { mode: "execution", pane: "error", target: { type: "run" } };
+  }
+
+  return null;
+}
+
 export function resolveRunInspectionState({
   hash,
   run,
@@ -311,7 +402,11 @@ export function resolveRunInspectionState({
   searchParams: URLSearchParams;
   steps: RunStepRead[];
 }): RunInspectionState {
-  const target = canonicalTarget(run, steps, searchParams, hash);
+  const failedDefault = hasExplicitInspectionState(searchParams, hash)
+    ? null
+    : defaultFailedInspectionState(run, steps);
+  const target =
+    failedDefault?.target ?? canonicalTarget(run, steps, searchParams, hash);
   const requestedMode = parseRunInspectionMode(searchParams.get("mode"));
   const requestedPane = searchParams.get("pane") as RunInspectionPane | null;
   const validPanes = inspectionPanesForTarget(target);
@@ -321,16 +416,18 @@ export function resolveRunInspectionState({
   const targetMode = modeForPane(target, defaultPaneForTarget(target));
   const fallbackMode =
     requestedMode ??
+    failedDefault?.mode ??
     (target.type === "run" ? defaultRunInspectionMode(run) : targetMode) ??
     defaultRunInspectionMode(run);
   const pane = requestedPaneIsValid
     ? (requestedPane as RunInspectionPane)
-    : defaultPaneForMode(target, fallbackMode);
+    : (failedDefault?.pane ?? defaultPaneForMode(target, fallbackMode));
   const inferredMode = modeForPane(target, pane);
 
   return {
     mode:
       requestedMode ??
+      failedDefault?.mode ??
       (requestedPaneIsValid || target.type !== "run" ? inferredMode : null) ??
       defaultRunInspectionMode(run),
     pane,
