@@ -986,7 +986,7 @@ describe("RunsDetailPage", () => {
     );
   });
 
-  it("updates mode URL state without clearing rerun state", () => {
+  it("updates mode URL state without clearing modal state or writing run inspection params", () => {
     searchParamsMock = new URLSearchParams("rerun=1");
     useRunMock.mockReturnValue(queryResult(buildRun()));
 
@@ -998,12 +998,26 @@ describe("RunsDetailPage", () => {
     const updater = setSearchParamsMock.mock.calls.at(-1)?.[0] as (
       current: URLSearchParams,
     ) => URLSearchParams;
-    const nextParams = updater(new URLSearchParams("rerun=1"));
+    const nextParams = updater(
+      new URLSearchParams("rerun=1&inspect=run&pane=finalOutput"),
+    );
 
     expect(nextParams.get("mode")).toBe("inputs");
-    expect(nextParams.get("inspect")).toBe("run");
-    expect(nextParams.get("pane")).toBe("input");
+    expect(nextParams.has("inspect")).toBe(false);
+    expect(nextParams.has("pane")).toBe(false);
     expect(nextParams.get("rerun")).toBe("1");
+
+    const forkParams = updater(
+      new URLSearchParams(
+        "fork=1&resumeStepIndex=1&invocationId=1001&inspect=run&pane=input",
+      ),
+    );
+    expect(forkParams.get("mode")).toBe("inputs");
+    expect(forkParams.has("inspect")).toBe(false);
+    expect(forkParams.has("pane")).toBe(false);
+    expect(forkParams.get("fork")).toBe("1");
+    expect(forkParams.get("resumeStepIndex")).toBe("1");
+    expect(forkParams.get("invocationId")).toBe("1001");
   });
 
   it("renders normalized lineage, step origins, invocation origins, and trace summaries", () => {

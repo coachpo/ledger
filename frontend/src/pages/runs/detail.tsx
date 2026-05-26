@@ -87,25 +87,6 @@ const RUN_TAB_LABELS: Record<
   },
 };
 
-function paneForRunMode(mode: RunInspectionMode): RunInspectionPane | null {
-  if (mode === "outputs") {
-    return "finalOutput";
-  }
-  if (mode === "inputs") {
-    return "input";
-  }
-  if (mode === "lineage") {
-    return "lineage";
-  }
-  if (mode === "memory") {
-    return "memory";
-  }
-  if (mode === "diagnostics") {
-    return "error";
-  }
-  return null;
-}
-
 export function RunsDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const location = useLocation();
@@ -309,12 +290,9 @@ export function RunsDetailPage() {
   const selectMode = (mode: RunInspectionMode) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      const pane = paneForRunMode(mode);
       next.set("mode", mode);
-      if (pane) {
-        next.set("inspect", "run");
-        next.set("pane", pane);
-      } else if (next.get("inspect") === "run") {
+      if (activeInspection.target.type === "run") {
+        next.delete("inspect");
         next.delete("pane");
       }
       return next;
