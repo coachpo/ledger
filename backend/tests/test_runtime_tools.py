@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
@@ -17,6 +17,7 @@ from app.agents import get_default_tool_catalog
 from app.agents.mcp.boundaries import McpClientBoundary
 from app.agents.mcp.runtime import McpRuntimeDispatcher, McpRuntimeTool
 from app.agents.mcp.tool_adapter import (
+    McpToolAdapterError,
     build_mcp_tool_snapshot,
     mcp_snapshot_to_execution_descriptor,
 )
@@ -528,8 +529,7 @@ def _memory_write_arguments_json(
         "kind": "research.note",
         "summary": "Durable model-safe memory.",
         "content": "Prior run found durable evidence.",
-        "subjectRefs": [{"kind": "instrument", "id": "NVDA", "label": None, "attributes": None}],
-        "attributes": {"tags": ["earnings"], "confidence": "high"},
+        "subjectRefs": [{"kind": "instrument", "id": "NVDA", "label": None}],
         "scope": None,
         "idempotencyKey": "runtime-core-memory-write",
         "supersedesRevisionId": None,
@@ -590,6 +590,39 @@ def _reports_write_provenance() -> MemoryProvenance:
     )
 
 
+def _assert_recursive_strict_schema(schema: object, *, path: str) -> None:
+    assert isinstance(schema, Mapping), f"{path} must be an object schema"
+    payload = cast(dict[object, object], schema)
+    raw_type = payload.get("type")
+    if isinstance(raw_type, str):
+        type_values = {raw_type}
+    else:
+        assert isinstance(raw_type, list), f"{path}.type must be a string or list"
+        type_values = {cast(str, value) for value in raw_type}
+
+    if "object" in type_values:
+        properties = payload.get("properties")
+        assert isinstance(properties, Mapping), f"{path}.properties must be an object"
+        property_mapping = cast(dict[object, object], properties)
+        required = payload.get("required")
+        assert isinstance(required, list), f"{path}.required must be a list"
+        required_names = [cast(str, value) for value in required]
+        property_names = [cast(str, key) for key in property_mapping]
+        assert payload.get("additionalProperties") is False, (
+            f"{path}.additionalProperties must be false"
+        )
+        assert set(required_names) == set(property_names), (
+            f"{path}.required must match properties"
+        )
+        for key, value in property_mapping.items():
+            _assert_recursive_strict_schema(value, path=f"{path}.properties.{key}")
+
+    if "array" in type_values:
+        assert "items" in payload, f"{path}.items is required for arrays"
+        _assert_recursive_strict_schema(payload["items"], path=f"{path}.items")
+
+
+
 def _assert_strict_openai_tool_schema(tool: dict[str, object]) -> None:
     assert "displayName" not in tool
     assert "display_name" not in tool
@@ -599,6 +632,7 @@ def _assert_strict_openai_tool_schema(tool: dict[str, object]) -> None:
     properties = cast(dict[str, object], parameters["properties"])
     assert parameters["additionalProperties"] is False
     assert parameters["required"] == list(properties)
+    _assert_recursive_strict_schema(parameters, path="$.parameters")
 
 
 def _assert_native_runtime_payload_is_json_safe_and_camel(
@@ -2117,6 +2151,60 @@ def test_runtime_tool_registry_returns_signaldeck_declarations_in_sort_order() -
     ]
 
 
+
+def test_core_memory_runtime_tools_expose_recursively_strict_schemas() -> None:
+    registry = RuntimeToolRegistry([MEMORY_WRITE_TOOL_SPEC, MEMORY_LOOKUP_TOOL_SPEC])
+
+    tools = registry.get_openai_tools({MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY})
+    tools_by_name = {cast(str, tool["name"]): tool for tool in tools}
+
+    for tool in tools:
+        _assert_strict_openai_tool_schema(tool)
+
+    write_parameters = cast(
+        dict[str, object], tools_by_name[MEMORY_WRITE_OPENAI_FUNCTION_NAME]["parameters"]
+    )
+    write_properties = cast(dict[str, object], write_parameters["properties"])
+    assert "attributes" not in write_properties
+    write_subject_refs = cast(dict[str, object], write_properties["subjectRefs"])
+    write_subject_ref_properties = cast(
+        dict[str, object], cast(dict[str, object], write_subject_refs["items"])["properties"]
+    )
+    assert "attributes" not in write_subject_ref_properties
+
+    lookup_parameters = cast(
+        dict[str, object], tools_by_name[MEMORY_LOOKUP_OPENAI_FUNCTION_NAME]["parameters"]
+    )
+    lookup_properties = cast(dict[str, object], lookup_parameters["properties"])
+    lookup_subject_refs = cast(dict[str, object], lookup_properties["subjectRefs"])
+    lookup_subject_ref_properties = cast(
+        dict[str, object], cast(dict[str, object], lookup_subject_refs["items"])["properties"]
+    )
+    assert "attributes" not in lookup_subject_ref_properties
+
+
+
+def test_runtime_tool_registry_rejects_nested_open_object_schema() -> None:
+    invalid_spec = replace(
+        _runtime_tool_spec(),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "payload": {
+                    "type": "object",
+                    "properties": {"value": {"type": "string"}},
+                    "required": ["value"],
+                }
+            },
+            "required": ["payload"],
+            "additionalProperties": False,
+        },
+    )
+
+    with pytest.raises(McpToolAdapterError, match="additionalProperties must be false"):
+        _ = RuntimeToolRegistry([invalid_spec])
+
+
 def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None:
     registry = get_default_runtime_tool_registry()
 
@@ -2746,6 +2834,10 @@ def test_report_memory_write_rejects_created_by_argument() -> None:
             '{"summary":"Memory","content":"Body","reportId":"rpt_1"}',
             "signaldeck_memory_write arguments contained unsupported fields: reportId",
         ),
+        (
+            '{"summary":"Memory","content":"Body","attributes":{"confidence":"high"}}',
+            "signaldeck_memory_write arguments contained unsupported fields: attributes",
+        ),
         ('{"summary":"Memory"}', "signaldeck_memory_write arguments failed validation."),
     ],
 )
@@ -2772,6 +2864,34 @@ def test_memory_write_runtime_tool_parser_normalizes_happy_path() -> None:
     assert payload.subject_refs[0].kind == "instrument"
     assert payload.scope is None
     assert payload.idempotency_key == "runtime-core-memory-write"
+
+
+
+def test_memory_write_runtime_tool_parser_rejects_subject_ref_attributes() -> None:
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = parse_memory_write_arguments(
+            json.dumps(
+                {
+                    "kind": "research.note",
+                    "summary": "Durable model-safe memory.",
+                    "content": "Prior run found durable evidence.",
+                    "subjectRefs": [
+                        {
+                            "kind": "instrument",
+                            "id": "NVDA",
+                            "label": None,
+                            "attributes": {"confidence": "high"},
+                        }
+                    ],
+                    "scope": None,
+                    "idempotencyKey": "runtime-core-memory-write",
+                    "supersedesRevisionId": None,
+                }
+            )
+        )
+
+    assert exc_info.value.code == "agent_tool_call_invalid"
+    assert exc_info.value.message == "signaldeck_memory_write arguments failed validation."
 
 
 @pytest.mark.parametrize(
@@ -2965,8 +3085,7 @@ def test_memory_lookup_runtime_tool_uses_current_context_with_finance_disabled(
             "content": (
                 "## Report [download](https://example.test/reports/1/download)\n"
                 "- Keep this insight."
-            ),
-            "attributes": {"reportId": 7, "safe": "kept"},
+            )
         }
     )
     _ = registry.dispatch(

@@ -16,7 +16,6 @@ from app.schemas.memory import (
     MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS,
     MEMORY_LOOKUP_MAX_CHARACTERS,
     MEMORY_LOOKUP_MAX_LIMIT,
-    MemoryAttributes,
     MemoryLifecycleStatus,
     MemoryPromptSnippet,
     MemoryProvenance,
@@ -68,15 +67,14 @@ _MEMORY_SCOPE_SCHEMA: dict[str, object] = {
     "required": ["scopeType", "scopeKey"],
     "additionalProperties": False,
 }
-_MEMORY_SUBJECT_REF_SCHEMA: dict[str, object] = {
+_MEMORY_SUBJECT_REF_INPUT_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
         "kind": {"type": "string", "minLength": 1, "maxLength": 80},
         "id": {"type": "string", "minLength": 1, "maxLength": 160},
         "label": {"type": ["string", "null"], "maxLength": 160},
-        "attributes": {"type": ["object", "null"]},
     },
-    "required": ["kind", "id", "label", "attributes"],
+    "required": ["kind", "id", "label"],
     "additionalProperties": False,
 }
 _MEMORY_WRITE_PARAMETERS_SCHEMA: dict[str, object] = {
@@ -87,9 +85,8 @@ _MEMORY_WRITE_PARAMETERS_SCHEMA: dict[str, object] = {
         "content": {"type": "string", "minLength": 1},
         "subjectRefs": {
             "type": ["array", "null"],
-            "items": _MEMORY_SUBJECT_REF_SCHEMA,
+            "items": _MEMORY_SUBJECT_REF_INPUT_SCHEMA,
         },
-        "attributes": {"type": ["object", "null"]},
         "scope": _MEMORY_SCOPE_SCHEMA,
         "idempotencyKey": {"type": ["string", "null"], "maxLength": 160},
         "supersedesRevisionId": {"type": ["string", "null"], "maxLength": 160},
@@ -99,7 +96,6 @@ _MEMORY_WRITE_PARAMETERS_SCHEMA: dict[str, object] = {
         "summary",
         "content",
         "subjectRefs",
-        "attributes",
         "scope",
         "idempotencyKey",
         "supersedesRevisionId",
@@ -113,7 +109,7 @@ _MEMORY_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
         "scope": _MEMORY_SCOPE_SCHEMA,
         "subjectRefs": {
             "type": ["array", "null"],
-            "items": _MEMORY_SUBJECT_REF_SCHEMA,
+            "items": _MEMORY_SUBJECT_REF_INPUT_SCHEMA,
         },
         "kind": {"type": ["string", "null"], "maxLength": 80},
         "status": {
@@ -148,12 +144,40 @@ _MEMORY_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
 }
 
 
+class RuntimeMemorySubjectRefArguments(CamelModel):
+    kind: str = Field(min_length=1, max_length=80)
+    id: str = Field(min_length=1, max_length=160)
+    label: str | None = Field(default=None, max_length=160)
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def validate_kind(cls, value: object) -> str:
+        return _required_text(value).lower()
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def validate_id(cls, value: object) -> str:
+        return _required_text(value)
+
+    @field_validator("label", mode="before")
+    @classmethod
+    def normalize_label(cls, value: object) -> str | None:
+        return _optional_text(value)
+
+    def to_memory_subject_ref(self) -> MemorySubjectRef:
+        return MemorySubjectRef(
+            kind=self.kind,
+            id=self.id,
+            label=self.label,
+            attributes={},
+        )
+
+
 class RuntimeMemoryWriteArguments(CamelModel):
     kind: str | None = Field(default=None, max_length=80)
     summary: str = Field(min_length=1)
     content: str = Field(min_length=1)
-    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
-    attributes: MemoryAttributes = Field(default_factory=dict)
+    subject_refs: list[RuntimeMemorySubjectRefArguments] = Field(default_factory=list)
     scope: MemoryScope | None = None
     idempotency_key: str | None = Field(default=None, max_length=160)
     supersedes_revision_id: str | None = Field(default=None, max_length=160)
@@ -173,16 +197,11 @@ class RuntimeMemoryWriteArguments(CamelModel):
     def coerce_subject_refs(cls, value: object) -> object:
         return [] if value is None else value
 
-    @field_validator("attributes", mode="before")
-    @classmethod
-    def coerce_attributes(cls, value: object) -> object:
-        return {} if value is None else value
-
 
 class RuntimeMemoryLookupArguments(CamelModel):
     query: str | None = Field(default=None, max_length=1000)
     scope: MemoryScope | None = None
-    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    subject_refs: list[RuntimeMemorySubjectRefArguments] = Field(default_factory=list)
     kind: str | None = Field(default=None, max_length=80)
     status: MemoryLifecycleStatus | None = None
     tags: list[str] = Field(default_factory=list)
@@ -226,7 +245,7 @@ class RuntimeMemoryLookupArguments(CamelModel):
         return MemoryQuery(
             query=self.query,
             scope=self._selected_scope(),
-            subject_refs=self.subject_refs,
+            subject_refs=[ref.to_memory_subject_ref() for ref in self.subject_refs],
             kind=self.kind,
             status=self.status,
             tags=self.tags,
@@ -332,7 +351,6 @@ def parse_memory_write_arguments(arguments_json: str) -> dict[str, object]:
             "summary",
             "content",
             "subjectRefs",
-            "attributes",
             "scope",
             "idempotencyKey",
             "supersedesRevisionId",
@@ -363,8 +381,8 @@ def execute_memory_write(
         kind=payload.kind or "memory",
         summary=payload.summary,
         content=payload.content,
-        subject_refs=payload.subject_refs,
-        attributes=payload.attributes,
+        subject_refs=[ref.to_memory_subject_ref() for ref in payload.subject_refs],
+        attributes={},
         scope=_selected_write_scope(payload, provenance),
         provenance=provenance,
         revision=MemoryRevisionPolicy(
@@ -672,8 +690,8 @@ _MEMORY_WRITE_DESCRIPTION = "Write a bounded, platform-core memory entry for thi
 _MEMORY_WRITE_GUIDANCE = (
     "When a durable, platform-neutral memory should be persisted, call "
     "signaldeck_memory_write with kind, summary, content, optional subjectRefs, "
-    "attributes, optional private scope, and idempotencyKey. Do not include "
-    "report ids, report slugs, URLs, downloads, or trusted run/agent fields."
+    "optional private scope, and idempotencyKey. Do not include report ids, "
+    "report slugs, URLs, downloads, trusted run/agent fields, or free-form metadata maps."
 )
 _MEMORY_LOOKUP_DESCRIPTION = (
     "Look up bounded, scoped platform-core memory snippets for the current run context."
