@@ -2,7 +2,7 @@
 
 > Inherits `/AGENTS.md`. This file governs the live reference docs in `docs/`.
 >
-> Status: Docs consolidation reference for branch `feature/memory` at `51d748b`.
+> Status: Docs consolidation reference for branch `feature/ui` at `a6aeea0`.
 
 ## OVERVIEW
 
