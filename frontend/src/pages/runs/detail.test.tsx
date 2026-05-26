@@ -642,11 +642,11 @@ describe("RunsDetailPage", () => {
   });
 
   it.each([
-    ["succeeded", "output"],
-    ["running", "steps"],
-    ["queued", "overview"],
-    ["failed", "overview"],
-    ["canceled", "overview"],
+    ["succeeded", "outputs"],
+    ["running", "execution"],
+    ["queued", "summary"],
+    ["failed", "execution"],
+    ["canceled", "summary"],
   ])("defaults %s runs to %s mode", (status, expectedMode) => {
     useRunMock.mockReturnValue(
       queryResult(buildRun({ status: status as RunRead["status"] })),
@@ -654,19 +654,78 @@ describe("RunsDetailPage", () => {
 
     const rendered = render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("runs-mode-rail")).toHaveAttribute(
+    expect(screen.getByTestId("runs-tab-console")).toHaveAttribute(
       "data-active-mode",
       expectedMode,
     );
     expect(
-      screen.getByTestId(`runs-mode-trigger-${expectedMode}`),
-    ).toHaveAttribute("aria-current", "page");
+      screen.getByTestId(`runs-tab-trigger-${expectedMode}`),
+    ).toHaveAttribute("data-state", "active");
     expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
       "data-run-mode",
       expectedMode,
     );
 
     rendered.unmount();
+  });
+
+  it("defaults failed runs to execution and the first failing context", () => {
+    const failedInvocation = buildInvocation({
+      errorCode: "model_error",
+      errorDetails: [{ type: "rate_limit" }],
+      errorMessage: "Provider failed",
+      id: 1002,
+      position: 2,
+      slot: "decision",
+      status: "failed",
+    });
+    useRunMock.mockReturnValue(
+      queryResult(
+        buildRun({
+          error: "Run failed after decision.",
+          finalOutput: null,
+          status: "failed",
+          steps: [
+            buildStep({
+              invocations: [buildInvocation(), failedInvocation],
+              status: "failed",
+            }),
+          ],
+        }),
+      ),
+    );
+
+    const failedRender = render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-tab-console")).toHaveAttribute(
+      "data-active-mode",
+      "execution",
+    );
+    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
+      "data-run-mode",
+      "execution",
+    );
+    expect(screen.getByTestId("runs-invocation-1002-outline-entry"))
+      .toHaveAttribute("data-state", "selected");
+    expect(screen.getByTestId("runs-active-evidence-viewer")).toHaveTextContent(
+      /provider failed/i,
+    );
+    expect(screen.getByTestId("runs-detail-state-summary")).toHaveTextContent(
+      /decision agent invocation #1002/i,
+    );
+
+    failedRender.unmount();
+    searchParamsMock = new URLSearchParams("mode=summary");
+    setSearchParamsMock.mockReset();
+    render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-tab-console")).toHaveAttribute(
+      "data-active-mode",
+      "summary",
+    );
+    expect(screen.getByTestId("runs-overview-workspace")).toBeVisible();
+    expect(screen.queryByTestId("runs-execution-outline-frame"))
+      .not.toBeInTheDocument();
   });
 
   it("renders dedicated secondary modes with compact empty states", () => {
@@ -705,7 +764,7 @@ describe("RunsDetailPage", () => {
     memoryRender.unmount();
 
     useRunMock.mockReturnValue(queryResult(tokenlessRun));
-    searchParamsMock = new URLSearchParams("mode=tokens");
+    searchParamsMock = new URLSearchParams("mode=runtime");
     const tokensRender = render(<RunsDetailPage />);
     const tokensWorkspace = screen.getByTestId("runs-tokens-workspace");
     expect(tokensWorkspace).toBeVisible();
@@ -808,7 +867,7 @@ describe("RunsDetailPage", () => {
       .toHaveTextContent(/Compact safe memory/i);
     memoryRender.unmount();
 
-    searchParamsMock = new URLSearchParams("mode=tokens");
+    searchParamsMock = new URLSearchParams("mode=runtime");
     render(<RunsDetailPage />);
     const tokensWorkspace = screen.getByTestId("runs-tokens-workspace");
     expect(tokensWorkspace).toHaveTextContent(/token accounting/i);
@@ -900,19 +959,48 @@ describe("RunsDetailPage", () => {
       .toBeInTheDocument();
   });
 
+  it("resolves legacy mode aliases to canonical tabs", () => {
+    useRunMock.mockReturnValue(queryResult(buildRun()));
+
+    searchParamsMock = new URLSearchParams("mode=steps");
+    const executionRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-tab-console")).toHaveAttribute(
+      "data-active-mode",
+      "execution",
+    );
+    executionRender.unmount();
+
+    searchParamsMock = new URLSearchParams("mode=tokens");
+    const runtimeRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-tab-console")).toHaveAttribute(
+      "data-active-mode",
+      "runtime",
+    );
+    runtimeRender.unmount();
+
+    searchParamsMock = new URLSearchParams("mode=audit");
+    render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-tab-console")).toHaveAttribute(
+      "data-active-mode",
+      "metadata",
+    );
+  });
+
   it("updates mode URL state without clearing rerun state", () => {
     searchParamsMock = new URLSearchParams("rerun=1");
     useRunMock.mockReturnValue(queryResult(buildRun()));
 
     render(<RunsDetailPage />);
 
-    fireEvent.click(screen.getByTestId("runs-mode-trigger-input"));
+    fireEvent.mouseDown(screen.getByTestId("runs-tab-trigger-inputs"), {
+      button: 0,
+    });
     const updater = setSearchParamsMock.mock.calls.at(-1)?.[0] as (
       current: URLSearchParams,
     ) => URLSearchParams;
     const nextParams = updater(new URLSearchParams("rerun=1"));
 
-    expect(nextParams.get("mode")).toBe("input");
+    expect(nextParams.get("mode")).toBe("inputs");
     expect(nextParams.get("inspect")).toBe("run");
     expect(nextParams.get("pane")).toBe("input");
     expect(nextParams.get("rerun")).toBe("1");
@@ -1142,20 +1230,22 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("workspace-page-shell-context")).toContainElement(
       screen.getByTestId("runs-detail-header"),
     );
-    expect(screen.getByTestId("workspace-page-shell-left-rail")).toContainElement(
-      screen.getByTestId("runs-mode-rail"),
+    expect(screen.queryByTestId("workspace-page-shell-left-rail"))
+      .not.toBeInTheDocument();
+    expect(screen.getByTestId("workspace-page-shell-context")).toContainElement(
+      screen.getByTestId("runs-tab-console"),
     );
-    expect(screen.getByTestId("runs-mode-rail")).toHaveAttribute(
+    expect(screen.getByTestId("runs-tab-console")).toHaveAttribute(
       "data-active-mode",
-      "output",
+      "outputs",
     );
-    expect(screen.getByTestId("runs-mode-trigger-output")).toHaveAttribute(
-      "aria-current",
-      "page",
+    expect(screen.getByTestId("runs-tab-trigger-outputs")).toHaveAttribute(
+      "data-state",
+      "active",
     );
     expect(screen.getByTestId("runs-mode-workspace")).toHaveAttribute(
       "data-run-mode",
-      "output",
+      "outputs",
     );
     expect(
       screen.getByTestId("runs-inspection-split-layout"),
@@ -1243,11 +1333,11 @@ describe("RunsDetailPage", () => {
       ),
     ).not.toBeInTheDocument();
     defaultRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=steps");
+    searchParamsMock = new URLSearchParams("mode=execution");
     const stepsModeRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-mode-rail")).toHaveAttribute(
+    expect(screen.getByTestId("runs-tab-console")).toHaveAttribute(
       "data-active-mode",
-      "steps",
+      "execution",
     );
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(
       /analysis\/span-1/i,
@@ -1285,7 +1375,7 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
 
     stepsModeRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=overview");
+    searchParamsMock = new URLSearchParams("mode=summary");
     const overviewRender = render(<RunsDetailPage />);
     const overview = screen.getByTestId("runs-overview-workspace");
     expect(overview).toHaveClass("grid", "gap-3");
@@ -1349,7 +1439,7 @@ describe("RunsDetailPage", () => {
     expect(screen.queryByText(/executed cost/i)).not.toBeInTheDocument();
 
     runtimeModeRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=audit");
+    searchParamsMock = new URLSearchParams("mode=metadata");
     const auditModeRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-audit-table")).toBeVisible();
     expect(screen.getByTestId("runs-audit-row-trace-root")).toHaveTextContent(
@@ -1360,7 +1450,7 @@ describe("RunsDetailPage", () => {
     ).toHaveTextContent(/decision\/span-2/i);
 
     auditModeRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=steps");
+    searchParamsMock = new URLSearchParams("mode=execution");
     const stepSelectionRender = render(<RunsDetailPage />);
     const stepOneButton = within(
       screen.getByTestId("runs-step-1"),
@@ -1804,7 +1894,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
-    searchParamsMock = new URLSearchParams("mode=steps");
+    searchParamsMock = new URLSearchParams("mode=execution");
     const defaultRender = render(<RunsDetailPage />);
 
     expect(screen.queryByTestId("runs-graph-summary")).not.toBeInTheDocument();
@@ -2137,7 +2227,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
-    searchParamsMock = new URLSearchParams("mode=steps");
+    searchParamsMock = new URLSearchParams("mode=execution");
     render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-header")).toHaveTextContent(
@@ -2274,22 +2364,50 @@ describe("RunsDetailPage", () => {
     expect(aggregatedOutput.querySelector("table")).toBeInTheDocument();
   });
 
-  it("renders completed null final output instead of the pending-state copy", () => {
+  it("renders terminal null final output instead of the pending-state copy", () => {
     useRunMock.mockReturnValue(
       queryResult(buildRun({ finalOutput: null, status: "succeeded" })),
     );
 
-    render(<RunsDetailPage />);
+    const succeededRender = render(<RunsDetailPage />);
 
-    const finalOutput = screen.getByTestId("runs-detail-final-output");
+    const succeededFinalOutput = screen.getByTestId("runs-detail-final-output");
 
-    expect(finalOutput).toHaveTextContent("null");
+    expect(succeededFinalOutput).toHaveTextContent("null");
     expect(
-      finalOutput.querySelector("[data-structured-string-view]"),
+      succeededFinalOutput.querySelector("[data-structured-string-view]"),
     ).toBeNull();
-    expect(finalOutput).not.toHaveTextContent(
+    expect(succeededFinalOutput).not.toHaveTextContent(
       "Final output is not available yet.",
     );
+    succeededRender.unmount();
+
+    useRunMock.mockReturnValue(
+      queryResult(
+        buildRun({
+          error: "Provider failed before final output.",
+          finalOutput: null,
+          status: "failed",
+          steps: [buildStep({ status: "failed" })],
+        }),
+      ),
+    );
+
+    searchParamsMock = new URLSearchParams("mode=outputs");
+    render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-detail-state-summary")).toHaveTextContent(
+      /failure/i,
+    );
+    expect(screen.getAllByText("Not produced").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(
+      /run failed before final output was produced/i,
+    );
+    expect(screen.getByTestId("runs-active-evidence-viewer")).toHaveTextContent(
+      /select an output field or metadata row to inspect raw detail/i,
+    );
+    expect(screen.queryByText("Final output is not available yet."))
+      .not.toBeInTheDocument();
   });
 
   it("handles empty, running, skipped, and invalid pane URL state", () => {
@@ -2330,9 +2448,9 @@ describe("RunsDetailPage", () => {
     searchParamsMock = new URLSearchParams("pane=request");
     const stepsRender = render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("runs-mode-rail")).toHaveAttribute(
+    expect(screen.getByTestId("runs-tab-console")).toHaveAttribute(
       "data-active-mode",
-      "steps",
+      "execution",
     );
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/running/i);
     expect(
@@ -2344,7 +2462,7 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
 
     stepsRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=overview&pane=request");
+    searchParamsMock = new URLSearchParams("mode=summary&pane=request");
     const overviewRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-summary-execution-row")).toHaveTextContent(
       /0 of 0 invocation\(s\) terminal/i,
@@ -2354,7 +2472,7 @@ describe("RunsDetailPage", () => {
     );
 
     overviewRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=output&pane=request");
+    searchParamsMock = new URLSearchParams("mode=outputs&pane=request");
     const outputRender = render(<RunsDetailPage />);
     const pendingFinalOutputCard = screen.getByTestId(
       "runs-detail-final-output-card",
@@ -2401,7 +2519,7 @@ describe("RunsDetailPage", () => {
     useRunMock.mockReturnValue(
       queryResult(buildRun({ steps: [], traceId: null })),
     );
-    searchParamsMock = new URLSearchParams("mode=steps");
+    searchParamsMock = new URLSearchParams("mode=execution");
 
     render(<RunsDetailPage />);
 

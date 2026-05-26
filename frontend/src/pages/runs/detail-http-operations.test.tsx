@@ -159,7 +159,7 @@ describe("RunsDetailPage HTTP operation invocations", () => {
       isPending: false,
     });
 
-    searchParamsMock = new URLSearchParams("mode=steps");
+    searchParamsMock = new URLSearchParams("mode=execution");
     const outlineRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-page")).toHaveClass("h-full", "overflow-hidden");
@@ -167,17 +167,19 @@ describe("RunsDetailPage HTTP operation invocations", () => {
       "data-slot",
       "resizable-panel-group",
     );
-    expect(screen.getByTestId("workspace-page-shell-left-rail")).toContainElement(
-      screen.getByTestId("runs-mode-rail"),
+    expect(screen.queryByTestId("workspace-page-shell-left-rail"))
+      .not.toBeInTheDocument();
+    expect(screen.getByTestId("workspace-page-shell-context")).toContainElement(
+      screen.getByTestId("runs-tab-console"),
     );
     expect(screen.getByTestId("runs-mode-workspace")).toContainElement(
       screen.getByTestId("runs-execution-outline-frame"),
     );
     expect(screen.getByTestId("runs-execution-outline-frame")).toHaveClass("min-h-96", "overflow-hidden");
     outlineRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=audit");
+    searchParamsMock = new URLSearchParams("mode=metadata");
     const auditRender = render(<RunsDetailPage />);
-    expect(screen.getByRole("heading", { name: "Audit evidence" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Metadata" })).toBeVisible();
     expect(screen.getByTestId("runs-audit-row-trace-root")).toHaveTextContent(
       /trace-http/i,
     );
@@ -195,14 +197,14 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     );
 
     auditRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=overview");
+    searchParamsMock = new URLSearchParams("mode=summary");
     const overviewRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-summary-execution-row")).toHaveTextContent(
       /2 of 2 invocation\(s\) terminal/i,
     );
 
     overviewRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=steps");
+    searchParamsMock = new URLSearchParams("mode=execution");
     const stepsRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/0 agent invocation/i);
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/2 operation invocation/i);

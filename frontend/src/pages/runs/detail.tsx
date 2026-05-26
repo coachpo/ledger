@@ -1,4 +1,4 @@
-import { AlertCircle, GitBranch, PlayCircle } from "lucide-react";
+import { AlertCircle, GitBranch, PlayCircle, Timer } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 
@@ -12,11 +12,13 @@ import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { useRun } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
 
 import {
+  finalOutputState,
   findForkTargetContext,
   formatQueueReasonTitle,
   formatTargetKindLabel,
@@ -30,17 +32,8 @@ import {
 } from "./detail-helpers";
 import {
   EvidenceViewer,
-  ExecutionOutline,
-  RunAuditEvidenceSection,
-  RunDiagnosticsWorkspace,
+  RunDetailTabPanel,
   RunForkDialog,
-  RunInputWorkspace,
-  RunLineageWorkspace,
-  RunMemoryWorkspace,
-  RunOutputWorkspace,
-  RunOverviewWorkspace,
-  RunRuntimeProfileSection,
-  RunTokensWorkspace,
 } from "./detail-sections";
 import {
   RUN_INSPECTION_MODES,
@@ -52,57 +45,53 @@ import {
 } from "./inspection-state";
 import { RunRerunDialog } from "./rerun-dialog";
 
-const RUN_MODE_LABELS: Record<
+const RUN_TAB_LABELS: Record<
   RunInspectionMode,
   { description: string; label: string }
 > = {
-  overview: {
+  summary: {
     description: "Run metrics, queue, progress, and availability",
-    label: "Overview",
+    label: "Summary",
   },
-  output: {
-    description: "Final output and provenance",
-    label: "Output",
-  },
-  input: {
-    description: "Launch input and source context",
-    label: "Input",
-  },
-  steps: {
+  execution: {
     description: "Execution steps and invocation flow",
-    label: "Steps",
-  },
-  runtime: {
-    description: "Provider and model runtime profile",
-    label: "Runtime",
-  },
-  audit: {
-    description: "Trace, payload, memory, and report evidence",
-    label: "Audit",
-  },
-  lineage: {
-    description: "Fork, snapshot, and historical lineage",
-    label: "Lineage",
-  },
-  memory: {
-    description: "Memory events and artifacts",
-    label: "Memory",
-  },
-  tokens: {
-    description: "Token accounting and boundaries",
-    label: "Tokens",
+    label: "Execution",
   },
   diagnostics: {
     description: "Warnings, failures, and safety checks",
     label: "Diagnostics",
   },
+  inputs: {
+    description: "Launch input and source context",
+    label: "Inputs",
+  },
+  outputs: {
+    description: "Final output and provenance",
+    label: "Outputs",
+  },
+  runtime: {
+    description: "Provider, model, and token runtime profile",
+    label: "Runtime",
+  },
+  memory: {
+    description: "Memory events and artifacts",
+    label: "Memory",
+  },
+  lineage: {
+    description: "Fork, snapshot, and historical lineage",
+    label: "Lineage",
+  },
+  metadata: {
+    description: "Trace, payload, memory, and report evidence",
+    label: "Metadata",
+  },
 };
 
 function paneForRunMode(mode: RunInspectionMode): RunInspectionPane | null {
-  if (mode === "output") {
+  if (mode === "outputs") {
     return "finalOutput";
   }
-  if (mode === "input") {
+  if (mode === "inputs") {
     return "input";
   }
   if (mode === "lineage") {
@@ -110,6 +99,9 @@ function paneForRunMode(mode: RunInspectionMode): RunInspectionPane | null {
   }
   if (mode === "memory") {
     return "memory";
+  }
+  if (mode === "diagnostics") {
+    return "error";
   }
   return null;
 }
@@ -340,112 +332,151 @@ export function RunsDetailPage() {
   const finishedLabel = run.finishedAt
     ? `Finished ${formatDateTime(run.finishedAt)}`
     : formatUnfinishedRunStatus(run.status).replace(/^ · /, "");
+  const durationLabel =
+    run.startedAt && run.finishedAt
+      ? `${Math.max(0, new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()).toLocaleString()} ms`
+      : run.startedAt
+        ? "In progress"
+        : "Not started";
+  const outputState = finalOutputState(run);
+  const failedAgent = steps
+    .flatMap((step) =>
+      sortedInvocations(step.invocations).map((invocation) => ({
+        invocation,
+        step,
+      })),
+    )
+    .find(
+      ({ invocation }) =>
+        invocation.status === "failed" ||
+        Boolean(
+          invocation.errorCode ||
+            invocation.errorMessage ||
+            invocation.errorDetails.length > 0,
+        ),
+    );
+  const failedOperation = steps
+    .flatMap((step) =>
+      sortedOperationInvocations(step.operationInvocations).map((invocation) => ({
+        invocation,
+        step,
+      })),
+    )
+    .find(
+      ({ invocation }) =>
+        invocation.status === "failed" ||
+        Boolean(
+          invocation.errorCode ||
+            invocation.errorMessage ||
+            invocation.errorDetails.length > 0,
+        ),
+    );
+  const failedStep = steps.find(
+    (step) => step.status === "failed" || Boolean(step.error),
+  );
+  const currentStateSummary = failedAgent
+    ? `Failure: Step ${failedAgent.step.index} · ${failedAgent.invocation.slot} agent invocation #${failedAgent.invocation.id}`
+    : failedOperation
+      ? `Failure: Step ${failedOperation.step.index} · ${failedOperation.invocation.slot} operation invocation #${failedOperation.invocation.id}`
+      : failedStep
+        ? `Failure: Step ${failedStep.index}`
+        : run.error
+          ? "Failure: run-level error"
+          : run.status === "running"
+            ? `Running: ${run.progress.terminalCount} of ${run.progress.totalCount} invocation(s) terminal`
+            : run.status === "queued"
+              ? run.queue?.message ?? "Queued for execution"
+              : `Output ${outputState.label.toLowerCase()}`;
 
-  const modeRail = (
-    <nav
-      aria-label="Run inspection modes"
-      className="flex max-h-48 min-w-0 gap-1 overflow-x-auto rounded-xl border bg-card/80 p-2 shadow-sm lg:max-h-full lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden"
+  const runTabs = (
+    <Tabs
+      className="min-w-0 gap-2"
       data-active-mode={activeInspection.mode}
-      data-testid="runs-mode-rail"
+      data-testid="runs-tab-console"
+      onValueChange={(value) => selectMode(value as RunInspectionMode)}
+      value={activeInspection.mode}
     >
-      {RUN_INSPECTION_MODES.map((mode) => {
-        const modeLabel = RUN_MODE_LABELS[mode];
-        const isActive = activeInspection.mode === mode;
-        return (
-          <Button
-            aria-current={isActive ? "page" : undefined}
-            aria-label={`${modeLabel.label} mode`}
-            className="h-auto min-w-24 shrink-0 cursor-pointer justify-start px-3 py-2 text-left lg:min-w-0"
-            data-mode={mode}
-            data-testid={`runs-mode-trigger-${mode}`}
-            key={mode}
-            onClick={() => selectMode(mode)}
-            size="sm"
-            type="button"
-            variant={isActive ? "secondary" : "ghost"}
-          >
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <span className="truncate text-xs font-medium">
-                {modeLabel.label}
-              </span>
-              <span className="hidden truncate text-[11px] font-normal text-muted-foreground lg:block">
-                {modeLabel.description}
-              </span>
-            </span>
-          </Button>
-        );
-      })}
-    </nav>
+      <div className="max-w-full overflow-x-auto pb-1" data-testid="runs-tab-scroll">
+        <TabsList
+          aria-label="Run inspection tabs"
+          className="h-9 min-w-max justify-start rounded-xl"
+          data-testid="runs-tab-list"
+        >
+          {RUN_INSPECTION_MODES.map((mode) => {
+            const tabLabel = RUN_TAB_LABELS[mode];
+            return (
+              <TabsTrigger
+                aria-label={`${tabLabel.label} tab`}
+                className="px-3 text-xs"
+                data-mode={mode}
+                data-testid={`runs-tab-trigger-${mode}`}
+                key={mode}
+                title={tabLabel.description}
+                value={mode}
+              >
+                {tabLabel.label}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </div>
+    </Tabs>
   );
 
-  const primaryModeWorkspace = (() => {
-    if (activeInspection.mode === "output") {
-      return <RunOutputWorkspace run={run} />;
-    }
-    if (activeInspection.mode === "input") {
-      return <RunInputWorkspace run={run} />;
-    }
-    if (activeInspection.mode === "steps") {
-      return (
-        <div
-          className="min-h-96 min-w-0 overflow-hidden rounded-xl border"
-          data-testid="runs-execution-outline-frame"
+  const primaryModeWorkspace = (
+    <RunDetailTabPanel
+      activeInspection={activeInspection}
+      allInvocationsCount={allInvocations.length}
+      copiedInvocations={copiedInvocations}
+      copiedSteps={copiedSteps}
+      isCurrentFork={isCurrentFork}
+      onSelect={selectInspection}
+      plannedInvocations={plannedInvocations}
+      plannedSteps={plannedSteps}
+      run={run}
+      runProgress={runProgress}
+      steps={steps}
+      targetKindLabel={targetKindLabel}
+      terminalInvocationsCount={terminalInvocationsCount}
+      traceSpanEntries={traceSpanEntries}
+    />
+  );
+
+  const runActions = (
+    <div
+      className="flex min-w-0 flex-wrap items-center gap-2"
+      data-testid="runs-detail-actions"
+    >
+      {run.targetKind === "workflowPackage" &&
+      run.packageProvenance?.currentPackage?.available ? (
+        <Button
+          asChild
+          data-testid="runs-detail-package-link"
+          size="sm"
+          variant="outline"
         >
-          <ExecutionOutline
-            activeInspection={activeInspection}
-            onSelect={selectInspection}
-            run={run}
-            steps={steps}
-            traceSpanEntries={traceSpanEntries}
-          />
-        </div>
-      );
-    }
-    if (activeInspection.mode === "runtime") {
-      return <RunRuntimeProfileSection run={run} />;
-    }
-    if (activeInspection.mode === "audit") {
-      return (
-        <RunAuditEvidenceSection
-          activeInspection={activeInspection}
-          onSelect={selectInspection}
-          run={run}
-          traceSpanEntries={traceSpanEntries}
-        />
-      );
-    }
-    if (activeInspection.mode === "lineage") {
-      return (
-        <RunLineageWorkspace
-          copiedInvocations={copiedInvocations}
-          copiedSteps={copiedSteps}
-          isCurrentFork={isCurrentFork}
-          plannedInvocations={plannedInvocations}
-          plannedSteps={plannedSteps}
-          run={run}
-        />
-      );
-    }
-    if (activeInspection.mode === "memory") {
-      return <RunMemoryWorkspace run={run} />;
-    }
-    if (activeInspection.mode === "tokens") {
-      return <RunTokensWorkspace run={run} />;
-    }
-    if (activeInspection.mode === "diagnostics") {
-      return <RunDiagnosticsWorkspace run={run} steps={steps} />;
-    }
-    return (
-      <RunOverviewWorkspace
-        allInvocationsCount={allInvocations.length}
-        run={run}
-        runProgress={runProgress}
-        targetKindLabel={targetKindLabel}
-        terminalInvocationsCount={terminalInvocationsCount}
-        traceSpanEntries={traceSpanEntries}
-      />
-    );
-  })();
+          <Link to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>
+            Open current package
+          </Link>
+        </Button>
+      ) : null}
+      {canRerunRun ? (
+        <Button
+          className="cursor-pointer"
+          data-testid="runs-detail-rerun"
+          onClick={openRerunDialog}
+          size="sm"
+          type="button"
+        >
+          <PlayCircle data-icon="inline-start" />
+          Run snapshot again
+        </Button>
+      ) : null}
+      <Button asChild size="sm" variant="outline">
+        <Link to="/runs">Back to runs</Link>
+      </Button>
+    </div>
+  );
 
   const evidenceViewer = (
     <EvidenceViewer
@@ -525,50 +556,45 @@ export function RunsDetailPage() {
         bodyAriaLabel="Run inspection workspace"
         bodyClassName="overflow-hidden"
         contextBar={
-          <div data-testid="runs-detail-header">
+          <div className="space-y-3" data-testid="runs-detail-header">
             <PageContextBar
-              actions={
-                <div
-                  className="flex min-w-0 flex-wrap items-center gap-2"
-                  data-testid="runs-detail-actions"
-                >
-                  {run.targetKind === "workflowPackage" &&
-                  run.packageProvenance?.currentPackage?.available ? (
-                    <Button
-                      asChild
-                      data-testid="runs-detail-package-link"
-                      size="sm"
-                      variant="outline"
-                    >
-                      <Link
-                        to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}
-                      >
-                        Open current package
-                      </Link>
-                    </Button>
-                  ) : null}
-                  {canRerunRun ? (
-                    <Button
-                      className="cursor-pointer"
-                      data-testid="runs-detail-rerun"
-                      onClick={openRerunDialog}
-                      size="sm"
-                      type="button"
-                    >
-                      <PlayCircle data-icon="inline-start" />
-                      Run snapshot again
-                    </Button>
-                  ) : null}
-                  <Button asChild size="sm" variant="outline">
-                    <Link to="/runs">Back to runs</Link>
-                  </Button>
-                </div>
-              }
               className="border-0 bg-transparent shadow-none"
               description={
+                <span className="flex min-w-0 flex-col gap-1">
+                  <span className="flex min-w-0 flex-wrap items-center gap-2">
+                    <Badge
+                      className="max-w-full min-w-0 break-all"
+                      data-testid="runs-detail-target-identity"
+                      variant="outline"
+                    >
+                      {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
+                    </Badge>
+                    {run.packageProvenance ? (
+                      <Badge
+                        className="max-w-full min-w-0 break-all"
+                        variant="secondary"
+                      >
+                        {run.packageProvenance.workflowPackageName}
+                      </Badge>
+                    ) : null}
+                    <Badge variant="outline">{targetKindLabel}</Badge>
+                  </span>
+                  <span
+                    className="break-words text-xs text-muted-foreground"
+                    data-testid="runs-detail-state-summary"
+                  >
+                    {currentStateSummary}
+                  </span>
+                </span>
+              }
+              meta={
                 <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
                   <span>{startedLabel}</span>
                   <span>{finishedLabel}</span>
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <Timer className="size-3.5 shrink-0" />
+                    {durationLabel}
+                  </span>
                   <span
                     className="inline-flex min-w-0 items-center gap-1.5"
                     data-testid="runs-detail-lineage-indicator"
@@ -580,25 +606,6 @@ export function RunsDetailPage() {
                   </span>
                 </span>
               }
-              meta={
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Badge
-                    className="max-w-full min-w-0 break-all"
-                    data-testid="runs-detail-target-identity"
-                    variant="outline"
-                  >
-                    {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
-                  </Badge>
-                  {run.packageProvenance ? (
-                    <Badge
-                      className="max-w-full min-w-0 break-all"
-                      variant="secondary"
-                    >
-                      {run.packageProvenance.workflowPackageName}
-                    </Badge>
-                  ) : null}
-                </div>
-              }
               status={
                 <ResourceStatusStrip
                   items={[
@@ -607,19 +614,22 @@ export function RunsDetailPage() {
                       value: run.status,
                       tone: runStatusTone(run.status),
                     },
-                    { label: "Target", value: targetKindLabel },
                     { label: "Progress", value: `${runProgress}%` },
+                    {
+                      label: "Output",
+                      value: outputState.label,
+                      tone: outputState.tone,
+                    },
                     { label: "Tokens", value: run.totalTokens.toLocaleString() },
                   ]}
                 />
               }
               title={`Run #${run.id}`}
             />
+            {runActions}
+            {runTabs}
           </div>
         }
-        leftRail={modeRail}
-        leftRailAriaLabel="Run inspection modes"
-        leftRailClassName="lg:sticky lg:top-3 lg:w-52 xl:w-56"
         testId="runs-detail-page"
       >
         <div

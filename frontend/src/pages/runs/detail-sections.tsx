@@ -98,6 +98,7 @@ import { stringifyJson } from "../platform-resource-helpers";
 import {
   DEFAULT_FORK_UNAVAILABLE_REASON,
   diagnosticsFromDraftReadiness,
+  finalOutputState,
   formatQueueReasonTitle,
   getRunForkAvailability,
   progressForInvocations,
@@ -623,15 +624,14 @@ function RunPayloadPane({
   );
 }
 
-function RunFinalOutputPane({ run }: { run: RunRead }) {
-  const isPendingFinalOutput =
-    (run.status === "queued" || run.status === "running") &&
-    run.finalOutput === null;
+export function RunFinalOutputPane({ run }: { run: RunRead }) {
+  const outputState = finalOutputState(run);
+  const showPayload = !outputState.isPending && outputState.label === "Captured";
 
   return (
     <Card data-testid="runs-detail-final-output-card">
       <CardContent className="min-w-0 space-y-5 pt-6">
-        {!isPendingFinalOutput ? (
+        {showPayload ? (
           <RunPayloadPane
             headingId="runs-final-output-heading"
             label="Final output"
@@ -653,7 +653,7 @@ function RunFinalOutputPane({ run }: { run: RunRead }) {
               className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground"
               data-testid="runs-detail-final-output"
             >
-              Final output is not available yet.
+              {outputState.description}
             </div>
           </section>
         )}
@@ -664,6 +664,7 @@ function RunFinalOutputPane({ run }: { run: RunRead }) {
 
 export function RunOutputWorkspace({ run }: { run: RunRead }) {
   const provenance = run.packageProvenance;
+  const outputState = finalOutputState(run);
 
   return (
     <div className="grid min-w-0 gap-3" data-testid="runs-output-workspace">
@@ -682,17 +683,14 @@ export function RunOutputWorkspace({ run }: { run: RunRead }) {
             },
             {
               label: "Availability",
-              value:
-                run.finalOutput === null &&
-                (run.status === "queued" || run.status === "running")
-                  ? "Pending"
-                  : "Captured",
-              description: "Rendered and raw views use the same immutable payload.",
+              value: outputState.label,
+              description: outputState.description,
               tone:
-                run.finalOutput === null &&
-                (run.status === "queued" || run.status === "running")
-                  ? "warning"
-                  : "verified",
+                outputState.tone === "danger"
+                  ? "danger"
+                  : outputState.tone === "warning"
+                    ? "warning"
+                    : "verified",
             },
           ]}
           layout="grid"
@@ -768,6 +766,7 @@ export function RunOverviewWorkspace({
     : run.status === "queued"
       ? "Queued without queue detail"
       : "No queue hold";
+  const outputState = finalOutputState(run);
   const providerCount =
     run.packageProvenance?.resolvedModelConnections.length ?? 0;
 
@@ -799,8 +798,8 @@ export function RunOverviewWorkspace({
               },
               {
                 label: "Output",
-                value: run.finalOutput === null ? "Pending" : "Captured",
-                tone: run.finalOutput === null ? "warning" : "success",
+                value: outputState.label,
+                tone: outputState.tone,
               },
               {
                 label: "Trace",
@@ -2755,6 +2754,7 @@ export function RunAuditEvidenceSection({
   traceSpanEntries: TraceSpanEntry[];
 }) {
   const groupedEvents = groupedMemoryEvents(run.memoryEvents ?? []);
+  const outputState = finalOutputState(run);
   const reportAuditLinks = run.memoryArtifacts.filter(
     (artifact) => artifact.auditLinks?.report,
   ).length;
@@ -2780,11 +2780,15 @@ export function RunAuditEvidenceSection({
       category: "Payload",
       id: "payload-output",
       pane: "finalOutput",
-      summary:
-        run.finalOutput === null ? "Final output pending" : "Final output captured",
+      summary: `Final output ${outputState.label.toLowerCase()}`,
       target: { type: "run" },
       title: "Final output",
-      tone: run.finalOutput === null ? "outline" : "secondary",
+      tone:
+        outputState.tone === "danger"
+          ? "destructive"
+          : outputState.tone === "warning"
+            ? "outline"
+            : "secondary",
     },
     {
       category: "Payload",
@@ -2842,7 +2846,7 @@ export function RunAuditEvidenceSection({
   return (
     <ConsoleSection
       description="Trace, payload, memory, and report evidence rows open contextual raw detail in the right inspector."
-      title="Audit evidence"
+      title="Metadata"
     >
       <div className="grid min-w-0 gap-3">
         <ResourceStatusStrip
@@ -4008,6 +4012,107 @@ function OperationEvidence({
   );
 }
 
+export function RunDetailTabPanel({
+  activeInspection,
+  allInvocationsCount,
+  copiedInvocations,
+  copiedSteps,
+  isCurrentFork,
+  onSelect,
+  plannedInvocations,
+  plannedSteps,
+  run,
+  runProgress,
+  steps,
+  targetKindLabel,
+  terminalInvocationsCount,
+  traceSpanEntries,
+}: {
+  activeInspection: RunInspectionState;
+  allInvocationsCount: number;
+  copiedInvocations: number;
+  copiedSteps: number;
+  isCurrentFork: boolean;
+  onSelect: (target: RunInspectionTarget, pane?: RunInspectionPane) => void;
+  plannedInvocations: number;
+  plannedSteps: number;
+  run: RunRead;
+  runProgress: number;
+  steps: RunStepRead[];
+  targetKindLabel: string;
+  terminalInvocationsCount: number;
+  traceSpanEntries: TraceSpanEntry[];
+}) {
+  if (activeInspection.mode === "outputs") {
+    return <RunOutputWorkspace run={run} />;
+  }
+  if (activeInspection.mode === "inputs") {
+    return <RunInputWorkspace run={run} />;
+  }
+  if (activeInspection.mode === "execution") {
+    return (
+      <div
+        className="min-h-96 min-w-0 overflow-hidden rounded-xl border"
+        data-testid="runs-execution-outline-frame"
+      >
+        <ExecutionOutline
+          activeInspection={activeInspection}
+          onSelect={onSelect}
+          run={run}
+          steps={steps}
+          traceSpanEntries={traceSpanEntries}
+        />
+      </div>
+    );
+  }
+  if (activeInspection.mode === "runtime") {
+    return (
+      <div className="grid min-w-0 gap-3" data-testid="runs-runtime-workspace">
+        <RunRuntimeProfileSection run={run} />
+        <RunTokensWorkspace run={run} />
+      </div>
+    );
+  }
+  if (activeInspection.mode === "metadata") {
+    return (
+      <RunAuditEvidenceSection
+        activeInspection={activeInspection}
+        onSelect={onSelect}
+        run={run}
+        traceSpanEntries={traceSpanEntries}
+      />
+    );
+  }
+  if (activeInspection.mode === "lineage") {
+    return (
+      <RunLineageWorkspace
+        copiedInvocations={copiedInvocations}
+        copiedSteps={copiedSteps}
+        isCurrentFork={isCurrentFork}
+        plannedInvocations={plannedInvocations}
+        plannedSteps={plannedSteps}
+        run={run}
+      />
+    );
+  }
+  if (activeInspection.mode === "memory") {
+    return <RunMemoryWorkspace run={run} />;
+  }
+  if (activeInspection.mode === "diagnostics") {
+    return <RunDiagnosticsWorkspace run={run} steps={steps} />;
+  }
+  return (
+    <RunOverviewWorkspace
+      allInvocationsCount={allInvocationsCount}
+      run={run}
+      runProgress={runProgress}
+      targetKindLabel={targetKindLabel}
+      terminalInvocationsCount={terminalInvocationsCount}
+      traceSpanEntries={traceSpanEntries}
+    />
+  );
+}
+
 export function EvidenceViewer({
   activeInspection,
   copiedInvocations,
@@ -4077,11 +4182,23 @@ export function EvidenceViewer({
     content = artifact ? (
       <MemoryArtifactEvidence artifact={artifact} run={run} />
     ) : null;
+  } else if (activeInspection.pane === "error") {
+    content = run.error ? (
+      <Alert variant="destructive">
+        <AlertCircle />
+        <AlertTitle>Run failed</AlertTitle>
+        <AlertDescription>{run.error}</AlertDescription>
+      </Alert>
+    ) : (
+      <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+        No run-level error recorded.
+      </div>
+    );
   } else if (activeInspection.pane === "input") {
     content =
-      activeInspection.mode === "input" ? (
+      activeInspection.mode === "inputs" ? (
         <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
-          Select an input field or audit row to inspect raw detail.
+          Select an input field or metadata row to inspect raw detail.
         </div>
       ) : (
         <RunPayloadPane
@@ -4118,9 +4235,9 @@ export function EvidenceViewer({
       );
   } else {
     content =
-      activeInspection.mode === "output" ? (
+      activeInspection.mode === "outputs" ? (
         <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
-          Select an output field or audit row to inspect raw detail.
+          Select an output field or metadata row to inspect raw detail.
         </div>
       ) : (
         <RunFinalOutputPane run={run} />
