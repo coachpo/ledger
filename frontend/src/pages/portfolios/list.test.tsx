@@ -75,6 +75,17 @@ describe("PortfolioListPage", () => {
   it("renders the inline empty state inside the inventory hierarchy with preserved page actions", () => {
     render(<PortfolioListPage />);
 
+    const shellRegions = Array.from(
+      screen
+        .getByTestId("portfolios-list-page")
+        .querySelectorAll("[data-inventory-shell-region]"),
+    ).map((region) => region.getAttribute("data-inventory-shell-region"));
+    expect(shellRegions).toEqual(["context", "toolbar", "content"]);
+    expect(screen.getByRole("radio", { name: /cards view/i })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+
     const inventory = screen.getByRole("region", {
       name: "Portfolio inventory",
     });

@@ -140,7 +140,7 @@ describe("WorkflowPackagesListPage", () => {
     expect(screen.getByText("No workflow packages yet.")).toBeVisible();
   });
 
-  it("renders package cards by default, search controls, and table columns after toggling", () => {
+  it("renders package table by default, search controls, and secondary cards", () => {
     useWorkflowPackagesMock.mockReturnValue({
       data: {
         items: [
@@ -183,56 +183,58 @@ describe("WorkflowPackagesListPage", () => {
       "placeholder",
       "Search packages by name, key, hash, or readiness...",
     );
-    expect(
-      screen.queryByRole("checkbox", {
-        name: "Select all shown workflow packages",
-      }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("Select all shown")).not.toBeInTheDocument();
     expect(screen.queryByText("Package Inventory")).not.toBeInTheDocument();
     expect(screen.queryByText("Total Packages")).not.toBeInTheDocument();
     expect(screen.queryByText("Validation Warnings")).not.toBeInTheDocument();
 
-    expect(screen.getByLabelText("Cards view")).toHaveAttribute(
+    expect(screen.getByLabelText("Table view")).toHaveAttribute(
       "data-state",
       "on",
     );
+    expect(screen.getByRole("table").parentElement).toHaveClass(
+      "min-w-0",
+      "overflow-x-auto",
+    );
     expect(
-      screen.queryByRole("columnheader", { name: "Name" }),
-    ).not.toBeInTheDocument();
+      screen.getAllByRole("checkbox", {
+        name: "Select all shown workflow packages",
+      }),
+    ).toHaveLength(1);
+
+    for (const column of [
+      "Name",
+      "Key",
+      "Readiness",
+      "Manifest hash",
+      "Compiled hash",
+      "Updated",
+      "Actions",
+    ]) {
+      expect(screen.getByRole("columnheader", { name: column })).toBeVisible();
+    }
+    for (const removedColumn of ["Package", "Provenance", "Status"]) {
+      expect(
+        screen.queryByRole("columnheader", { name: removedColumn }),
+      ).not.toBeInTheDocument();
+    }
 
     const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
     expect(riskRow).toHaveTextContent("Risk Review");
-    const packageKeys = within(riskRow).getAllByText("risk_review");
-    expect(packageKeys).toHaveLength(2);
-    expect(packageKeys[0]).toHaveClass("font-mono");
-    expect(packageKeys[0].parentElement).toHaveClass("text-xs");
-    expect(
-      within(riskRow).getByText("Risk review workflow bundle"),
-    ).toHaveClass("text-sm");
-    expect(riskRow).toHaveTextContent("Readiness");
+    expect(riskRow).toHaveTextContent("risk_review");
+    expect(within(riskRow).getByText("risk_review")).toHaveClass("font-mono");
+    expect(riskRow).toHaveTextContent("Risk review workflow bundle");
     expect(riskRow).toHaveTextContent("Ready for preflight");
     expect(riskRow).toHaveTextContent(
       "Manifest and compiled artifact recorded",
     );
-    expect(
-      within(riskRow).getByLabelText("Manifest: manifest-has"),
-    ).toBeVisible();
-    expect(
-      within(riskRow).getByLabelText("Compiled: compiled-has"),
-    ).toBeVisible();
-    expect(
-      within(riskRow).getByLabelText(/Updated: May 4, 2026/),
-    ).toBeVisible();
-    expect(riskRow).toHaveTextContent("Package key");
-    expect(riskRow).not.toHaveTextContent("Active");
-    expect(riskRow).not.toHaveTextContent("Draft");
+    expect(riskRow).toHaveTextContent("manifest-has");
+    expect(riskRow).toHaveTextContent("compiled-has");
     expect(riskRow).toHaveTextContent("May 4, 2026");
     expect(
-      within(riskRow).queryByRole("checkbox", {
+      within(riskRow).getByRole("checkbox", {
         name: "Select workflow package Risk Review",
       }),
-    ).not.toBeInTheDocument();
+    ).toBeVisible();
     expect(
       within(riskRow).getByRole("link", {
         name: "Open package Risk Review",
@@ -245,19 +247,9 @@ describe("WorkflowPackagesListPage", () => {
     ).toHaveAttribute("href", "/workflow-packages/9/run");
     expect(
       within(riskRow).getByRole("button", {
-        name: "Open actions for package Risk Review",
-      }),
-    ).toBeVisible();
-    expect(
-      within(riskRow).queryByRole("button", {
-        name: "Open package details for Risk Review",
-      }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(riskRow).queryByRole("button", {
         name: "Delete package Risk Review",
       }),
-    ).not.toBeInTheDocument();
+    ).toBeVisible();
 
     const allocationRow = screen.getByTestId(
       "workflow-packages-row-allocation_draft",
@@ -268,48 +260,33 @@ describe("WorkflowPackagesListPage", () => {
     expect(allocationRow).toHaveTextContent(
       "Missing manifest or compiled artifact evidence",
     );
-    expect(
-      within(allocationRow).getByLabelText("Manifest: Not recorded"),
-    ).toBeVisible();
+    expect(allocationRow).toHaveTextContent("Not recorded");
     expect(allocationRow).not.toHaveTextContent("Active");
-    expect(
-      screen.queryByRole("columnheader", { name: "Status" }),
-    ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText("Table view"));
-    expect(screen.getByLabelText("Table view")).toHaveAttribute(
+    fireEvent.click(screen.getByLabelText("Cards view"));
+    expect(screen.getByLabelText("Cards view")).toHaveAttribute(
       "data-state",
       "on",
     );
-    expect(screen.getByRole("table").parentElement).toHaveClass(
-      "min-w-0",
-      "overflow-x-auto",
-    );
-    expect(screen.queryByText("Select all shown")).not.toBeInTheDocument();
     expect(
-      screen.getAllByRole("checkbox", {
+      screen.queryByRole("checkbox", {
         name: "Select all shown workflow packages",
       }),
-    ).toHaveLength(1);
-    expect(
-      within(screen.getByTestId("workflow-packages-row-risk_review")).getByRole(
-        "checkbox",
-        { name: "Select workflow package Risk Review" },
-      ),
-    ).toBeVisible();
-
-    for (const column of [
-      "Package",
-      "Readiness",
-      "Provenance",
-      "Updated",
-      "Actions",
-    ]) {
-      expect(screen.getByRole("columnheader", { name: column })).toBeVisible();
-    }
-    expect(
-      screen.queryByRole("columnheader", { name: "Status" }),
     ).not.toBeInTheDocument();
+    const cardRiskRow = screen.getByTestId("workflow-packages-row-risk_review");
+    expect(
+      within(cardRiskRow).getByRole("button", {
+        name: "Open actions for package Risk Review",
+      }),
+    ).toBeVisible();
+    expect(
+      within(cardRiskRow).queryByRole("button", {
+        name: "Delete package Risk Review",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(cardRiskRow).getByLabelText("Manifest: manifest-has"),
+    ).toBeVisible();
   });
 
   it("filters packages through search while keeping Open and Launch routes separate", () => {
@@ -556,13 +533,12 @@ describe("WorkflowPackagesListPage", () => {
 
     renderPage();
 
-    fireEvent.keyDown(
-      screen.getByRole("button", {
-        name: "Open actions for package Risk Review",
+    const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
+    fireEvent.click(
+      within(riskRow).getByRole("button", {
+        name: "Delete package Risk Review",
       }),
-      { key: "Enter" },
     );
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Permanently delete Risk Review?",
     );
@@ -577,13 +553,11 @@ describe("WorkflowPackagesListPage", () => {
     );
 
     deletePackageMock.mockRejectedValueOnce(new Error("Package not found"));
-    fireEvent.keyDown(
-      screen.getByRole("button", {
-        name: "Open actions for package Risk Review",
+    fireEvent.click(
+      within(riskRow).getByRole("button", {
+        name: "Delete package Risk Review",
       }),
-      { key: "Enter" },
     );
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete package" }));
 
     await waitFor(() =>

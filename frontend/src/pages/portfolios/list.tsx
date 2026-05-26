@@ -6,9 +6,9 @@ import { toast } from "sonner";
 import { PortfolioFormDialog } from "@/components/forms/portfolio-form-dialog";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
 import { ResourceRowCard } from "@/components/shared/resource-row-card";
-import { ResourceToolbar } from "@/components/shared/resource-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { useResourceFilterState } from "@/hooks/use-resource-filter-state";
 import { useResourceSelectionState } from "@/hooks/use-resource-selection-state";
 import {
@@ -42,8 +43,6 @@ import type {
   PortfolioWriteInput,
 } from "@/lib/types/portfolio";
 
-type PortfolioViewMode = "cards" | "table";
-
 export function PortfolioListPage() {
   const navigate = useNavigate();
   const portfoliosQuery = usePortfolios();
@@ -54,7 +53,6 @@ export function PortfolioListPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<PortfolioRead | null>(null);
   const [deleting, setDeleting] = useState<PortfolioRead | null>(null);
-  const [viewMode, setViewMode] = useState<PortfolioViewMode>("cards");
 
   const portfolios = useMemo(
     () =>
@@ -102,23 +100,14 @@ export function PortfolioListPage() {
     items: filteredPortfolios,
   });
 
+  const { viewMode, onViewModeChange } = useInventoryViewState({
+    onCardsMode: clearSelection,
+  });
+
   const openCreateDialog = useCallback(() => {
     setEditing(null);
     setShowForm(true);
   }, []);
-
-  const handleViewModeChange = useCallback(
-    (value: string) => {
-      if (value !== "cards" && value !== "table") {
-        return;
-      }
-      setViewMode(value);
-      if (value === "cards") {
-        clearSelection();
-      }
-    },
-    [clearSelection],
-  );
 
   const handleDeleteSelected = () => {
     if (selectedPortfolios.length === 0) {
@@ -144,55 +133,53 @@ export function PortfolioListPage() {
   };
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">Portfolios</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage live portfolio records and jump into detailed position,
-            balance, and trade views.
-          </p>
-        </div>
-        <Button size="sm" type="button" onClick={openCreateDialog}>
-          <Plus data-icon="inline-start" /> New Portfolio
-        </Button>
-      </div>
-
-      <ResourceToolbar
-        resultSummary={
+    <InventoryPageShell
+      filterBar={
+        hasActiveFilters
+          ? {
+              testId: "portfolios-active-filters",
+              items: [
+                {
+                  active: true,
+                  clearLabel: "Clear portfolio search",
+                  id: "search",
+                  label: "Search",
+                  value: search.trim(),
+                  onClear: resetPortfolioFilters,
+                },
+              ],
+              onClearAll: resetPortfolioFilters,
+            }
+          : null
+      }
+      pageContext={{
+        actions: (
+          <Button size="sm" type="button" onClick={openCreateDialog}>
+            <Plus data-icon="inline-start" /> New Portfolio
+          </Button>
+        ),
+        description:
+          "Manage live portfolio records and jump into detailed position, balance, and trade views.",
+        title: "Portfolios",
+      }}
+      testId="portfolios-list-page"
+      toolbar={{
+        resultSummary:
           portfoliosQuery.isPending || portfoliosQuery.isError
             ? undefined
-            : `${filteredPortfolios.length} of ${portfolios.length} portfolios shown`
-        }
-        search={{
+            : `${filteredPortfolios.length} of ${portfolios.length} portfolios shown`,
+        search: {
           id: "portfolio-search",
           label: "Search portfolios",
           name: "portfolioSearch",
           placeholder: "Search portfolios by name, currency, or holdings...",
           value: search,
           onChange: setSearch,
-        }}
-        viewMode={viewMode}
-        onViewModeChange={handleViewModeChange}
-      />
-
-      {hasActiveFilters ? (
-        <ResourceFilterBar
-          testId="portfolios-active-filters"
-          items={[
-            {
-              active: true,
-              clearLabel: "Clear portfolio search",
-              id: "search",
-              label: "Search",
-              value: search.trim(),
-              onClear: resetPortfolioFilters,
-            },
-          ]}
-          onClearAll={resetPortfolioFilters}
-        />
-      ) : null}
-
+        },
+        viewMode,
+        onViewModeChange,
+      }}
+    >
       <section
         aria-label="Portfolio inventory"
         className="grid gap-2 sm:gap-3"
@@ -528,6 +515,6 @@ export function PortfolioListPage() {
           });
         }}
       />
-    </div>
+    </InventoryPageShell>
   );
 }

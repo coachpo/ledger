@@ -99,6 +99,16 @@ describe("ReportListPage", () => {
   it("renders shared inventory chrome and empty-state copy", () => {
     renderReportsList();
 
+    const shellRegions = Array.from(
+      screen
+        .getByTestId("reports-list-page")
+        .querySelectorAll("[data-inventory-shell-region]"),
+    ).map((region) => region.getAttribute("data-inventory-shell-region"));
+    expect(shellRegions).toEqual(["context", "toolbar", "content"]);
+    expect(screen.getByRole("radio", { name: /cards view/i })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
     expect(screen.getByRole("heading", { name: "Reports" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Generate Report" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Upload Report" })).toBeVisible();

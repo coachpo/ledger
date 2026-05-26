@@ -3,10 +3,8 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
-import { EvidenceCluster } from "@/components/shared/evidence-cluster";
-import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
-import { ResourceToolbar } from "@/components/shared/resource-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -18,6 +16,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useRuns } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
 import type {
@@ -26,11 +32,6 @@ import type {
   RunStatus,
   RunTargetKind,
 } from "@/lib/types/run";
-
-import {
-  PlatformResourceCard,
-  PlatformResourceList,
-} from "../platform-resource-shared";
 
 const ALL_STATUSES = "__all__";
 const ALL_TARGET_KINDS = "__all_target_kinds__";
@@ -58,7 +59,8 @@ function formatQueueReasonTitle(reason: RunQueueReason): string {
 }
 
 function formatProgressValue(run: RunListItemRead): string {
-  const unit = run.progress.totalCount === 1 ? run.progress.unit : `${run.progress.unit}s`;
+  const unit =
+    run.progress.totalCount === 1 ? run.progress.unit : `${run.progress.unit}s`;
   return `${run.progress.terminalCount}/${run.progress.totalCount} ${unit} · ${run.progress.percent}%`;
 }
 
@@ -66,7 +68,9 @@ function formatOptionalDate(value: string | null, fallback: string): string {
   return value ? formatDateTime(value) : fallback;
 }
 
-function statusTone(status: RunStatus): "neutral" | "success" | "warning" | "danger" {
+function statusTone(
+  status: RunStatus,
+): "neutral" | "success" | "warning" | "danger" {
   if (status === "succeeded") {
     return "success";
   }
@@ -85,7 +89,9 @@ function targetIdentity(run: RunListItemRead): string {
 
 function queueStateLabel(run: RunListItemRead): string {
   if (!run.queue) {
-    return run.status === "queued" ? "Queued without queue details" : "No queue hold";
+    return run.status === "queued"
+      ? "Queued without queue details"
+      : "No queue hold";
   }
   return `${run.queue.state} · ${formatQueueReasonTitle(run.queue.reason)}`;
 }
@@ -130,7 +136,9 @@ function RunMonitorFilters({
       <Select
         value={status ?? ALL_STATUSES}
         onValueChange={(value) =>
-          onStatusChange(value === ALL_STATUSES ? undefined : (value as RunStatus))
+          onStatusChange(
+            value === ALL_STATUSES ? undefined : (value as RunStatus),
+          )
         }
       >
         <SelectTrigger
@@ -154,35 +162,25 @@ function RunMonitorFilters({
   );
 }
 
-function RunQueueNotice({ run }: { run: RunListItemRead }) {
-  if (run.status !== "queued" || !run.queue) {
-    return null;
+function getStatusBadgeVariant(
+  status: RunStatus,
+): "secondary" | "outline" | "destructive" {
+  if (status === "succeeded") {
+    return "secondary";
   }
-
-  return (
-    <div
-      className="rounded-md border bg-muted/20 p-2"
-      data-testid={`runs-row-queue-${run.id}`}
-    >
-      <p className="font-medium text-foreground">
-        {formatQueueReasonTitle(run.queue.reason)}
-      </p>
-      <p>{run.queue.message}</p>
-      {run.queue.blockingRunId ? (
-        <p className="mt-1">Blocking run: #{run.queue.blockingRunId}</p>
-      ) : null}
-    </div>
-  );
+  return status === "failed" ? "destructive" : "outline";
 }
 
-function RunProgressBar({ run }: { run: RunListItemRead }) {
+function RunProgressCell({ run }: { run: RunListItemRead }) {
   return (
     <div
-      className="flex min-w-0 flex-col gap-1"
+      className="flex min-w-44 flex-col gap-1.5 text-xs text-muted-foreground"
       data-testid={`runs-row-progress-${run.id}`}
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="font-medium text-foreground">Progress</span>
+        <span className="font-medium text-foreground">
+          {formatProgressValue(run)}
+        </span>
         <span>{run.progress.percent}%</span>
       </div>
       <Progress value={run.progress.percent} />
@@ -190,112 +188,123 @@ function RunProgressBar({ run }: { run: RunListItemRead }) {
   );
 }
 
-function RunEvidence({ run }: { run: RunListItemRead }) {
+function RunQueueCell({ run }: { run: RunListItemRead }) {
   return (
-    <EvidenceCluster
-      layout="grid"
-      items={[
-        {
-          label: "Progress",
-          value: formatProgressValue(run),
-          description: `Backend progress unit: ${run.progress.unit}`,
-        },
-        {
-          label: "Tokens",
-          value: run.totalTokens.toLocaleString(),
-          description: "Total tokens reported by the run read model",
-        },
-        {
-          label: "Queued",
-          value: formatDateTime(run.queuedAt),
-          description: "Queue timestamp from backend state",
-        },
-        {
-          label: "Started",
-          value: formatOptionalDate(run.startedAt, "Not started"),
-          description: "Execution start timestamp",
-        },
-        {
-          label: "Finished",
-          value: formatOptionalDate(run.finishedAt, "Not finished"),
-          description: "Terminal timestamp when available",
-        },
-      ]}
-    />
+    <div
+      className="flex min-w-56 flex-col gap-1 whitespace-normal text-xs text-muted-foreground"
+      data-testid={`runs-row-queue-${run.id}`}
+    >
+      <span className="font-medium text-foreground">
+        {queueStateLabel(run)}
+      </span>
+      {run.queue ? <span>{run.queue.message}</span> : null}
+      {run.queue?.blockingRunId ? (
+        <span>Blocking run: #{run.queue.blockingRunId}</span>
+      ) : null}
+    </div>
   );
 }
 
-function RunStatusStrip({ run }: { run: RunListItemRead }) {
+function RunTimestampCell({ run }: { run: RunListItemRead }) {
   return (
-    <ResourceStatusStrip
-      density="compact"
-      items={[
-        { label: "Status", value: run.status, tone: statusTone(run.status) },
-        { label: "Progress", value: `${run.progress.percent}%` },
-        { label: "Tokens", value: run.totalTokens.toLocaleString() },
-        { label: "Queue", value: queueStateLabel(run) },
-      ]}
-    />
+    <div className="flex min-w-52 flex-col gap-1 text-xs text-muted-foreground">
+      <span>
+        <span className="font-medium text-foreground">Queued:</span>{" "}
+        {formatDateTime(run.queuedAt)}
+      </span>
+      <span>
+        <span className="font-medium text-foreground">Started:</span>{" "}
+        {formatOptionalDate(run.startedAt, "Not started")}
+      </span>
+      <span>
+        <span className="font-medium text-foreground">Finished:</span>{" "}
+        {formatOptionalDate(run.finishedAt, "Not finished")}
+      </span>
+    </div>
   );
 }
 
-function RunMonitorRow({ run }: { run: RunListItemRead }) {
-  const runPath = `/runs/${run.id}`;
-
+function RunsTable({ runs }: { runs: readonly RunListItemRead[] }) {
   return (
-    <PlatformResourceCard
-      density="compactPlus"
-      testId={`runs-row-${run.id}`}
-      title={`Run #${run.id}`}
-      subtitle={<span className="font-mono">{run.targetKey}</span>}
-      description={describeRunTarget(run.targetKind)}
-      badges={
-        <>
-          <Badge variant="secondary">{run.status}</Badge>
-          <Badge variant="outline">{formatTargetKindLabel(run.targetKind)}</Badge>
-          <Badge variant="outline">{run.targetKey}</Badge>
-        </>
-      }
-      primaryAction={{
-        kind: "link",
-        label: `Open run #${run.id}`,
-        testId: `runs-row-primary-${run.id}`,
-        to: runPath,
-      }}
-      metadata={
-        <div className="grid min-w-0 gap-x-5 gap-y-1.5 sm:grid-cols-2">
-          <div className="min-w-0">
-            <span className="font-medium text-foreground">Target:</span>{" "}
-            <span className="break-words">{targetIdentity(run)}</span>
-          </div>
-          <div className="min-w-0">
-            <span className="font-medium text-foreground">Trace:</span>{" "}
-            <span className="break-all">{run.traceId ?? "Not recorded"}</span>
-          </div>
-        </div>
-      }
-      statusStrip={<RunStatusStrip run={run} />}
-      evidence={<RunEvidence run={run} />}
-      footer={
-        <div className="flex flex-col gap-2">
-          <RunQueueNotice run={run} />
-          <RunProgressBar run={run} />
-        </div>
-      }
-      actions={
-        <Button
-          asChild
-          className="w-full cursor-pointer sm:w-auto"
-          data-testid={`runs-row-action-${run.id}`}
-          size="sm"
-        >
-          <Link to={runPath}>
-            Open Run
-            <ArrowRight data-icon="inline-end" />
-          </Link>
-        </Button>
-      }
-    />
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-muted/30 hover:bg-muted/30">
+          <TableHead>Run</TableHead>
+          <TableHead>Target</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Progress</TableHead>
+          <TableHead>Queue</TableHead>
+          <TableHead>Tokens</TableHead>
+          <TableHead>Timestamps</TableHead>
+          <TableHead className="text-right">Open</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {runs.map((run) => {
+          const runPath = `/runs/${run.id}`;
+
+          return (
+            <TableRow key={run.id} data-testid={`runs-row-${run.id}`}>
+              <TableCell className="min-w-40 whitespace-normal">
+                <div className="flex flex-col gap-1">
+                  <p className="font-medium text-foreground">Run #{run.id}</p>
+                  <p className="break-all font-mono text-xs text-muted-foreground">
+                    Trace: {run.traceId ?? "Not recorded"}
+                  </p>
+                </div>
+              </TableCell>
+              <TableCell className="min-w-64 whitespace-normal">
+                <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <Badge variant="outline">
+                      {formatTargetKindLabel(run.targetKind)}
+                    </Badge>
+                    <span className="break-all font-mono">{run.targetKey}</span>
+                  </div>
+                  <span>{describeRunTarget(run.targetKind)}</span>
+                  <span>{targetIdentity(run)}</span>
+                </div>
+              </TableCell>
+              <TableCell>
+                <Badge
+                  data-tone={statusTone(run.status)}
+                  variant={getStatusBadgeVariant(run.status)}
+                >
+                  {run.status}
+                </Badge>
+              </TableCell>
+              <TableCell className="whitespace-normal">
+                <RunProgressCell run={run} />
+              </TableCell>
+              <TableCell className="whitespace-normal">
+                <RunQueueCell run={run} />
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                {run.totalTokens.toLocaleString()}
+              </TableCell>
+              <TableCell className="whitespace-normal">
+                <RunTimestampCell run={run} />
+              </TableCell>
+              <TableCell>
+                <div className="flex justify-end">
+                  <Button
+                    asChild
+                    data-testid={`runs-row-action-${run.id}`}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <Link aria-label={`Open run #${run.id}`} to={runPath}>
+                      Open
+                      <ArrowRight data-icon="inline-end" />
+                    </Link>
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -306,7 +315,8 @@ export function RunsListPage() {
   const [targetKey, setTargetKey] = useState("");
   const [status, setStatus] = useState<RunStatus | undefined>(undefined);
   const normalizedTargetKey = targetKey.trim();
-  const appliedTargetKey = targetKind && normalizedTargetKey ? normalizedTargetKey : undefined;
+  const appliedTargetKey =
+    targetKind && normalizedTargetKey ? normalizedTargetKey : undefined;
   const targetKeyFilterValue = normalizedTargetKey
     ? targetKind
       ? normalizedTargetKey
@@ -328,6 +338,10 @@ export function RunsListPage() {
   const activeFilterCount = [targetKind, normalizedTargetKey, status].filter(
     Boolean,
   ).length;
+  const activeRunCount = runs.filter(
+    (run) => run.status === "queued" || run.status === "running",
+  ).length;
+  const queuedRunCount = runs.filter((run) => run.status === "queued").length;
 
   const clearFilters = () => {
     setTargetKind(undefined);
@@ -336,20 +350,24 @@ export function RunsListPage() {
   };
 
   return (
-    <div className="flex flex-col gap-4 p-4" data-testid="runs-list-page">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-xl font-semibold tracking-tight">Runs</h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Live monitor for recent agent and workflow package executions with
-            route-owned polling, backend progress, queue state, token usage, and
-            direct run inspection.
-          </p>
-        </div>
-      </div>
-
-      <ResourceToolbar
-        actions={
+    <InventoryPageShell
+      pageContext={{
+        description:
+          "Live monitor for recent agent and workflow package executions with route-owned polling, backend progress, queue state, token usage, and direct run inspection.",
+        status: (
+          <ResourceStatusStrip
+            items={[
+              { label: "Returned", value: String(runs.length) },
+              { label: "Active", value: String(activeRunCount) },
+              { label: "Queued", value: String(queuedRunCount) },
+            ]}
+          />
+        ),
+        title: "Runs",
+      }}
+      testId="runs-list-page"
+      toolbar={{
+        actions: (
           <Button
             className="cursor-pointer"
             size="sm"
@@ -359,35 +377,37 @@ export function RunsListPage() {
             <RefreshCcw data-icon="inline-start" />
             Refresh
           </Button>
-        }
-        filters={
+        ),
+        filters: (
           <RunMonitorFilters
             status={status}
             targetKind={targetKind}
             onStatusChange={setStatus}
             onTargetKindChange={setTargetKind}
           />
-        }
-        resultSummary={`${runs.length} recent ${runs.length === 1 ? "run" : "runs"} returned`}
-        search={{
+        ),
+        resultSummary: `${runs.length} recent ${runs.length === 1 ? "run" : "runs"} returned`,
+        search: {
           id: "runs-target-key",
           label: "Target key",
           placeholder: "Filter by package, workflow, or agent key...",
           testId: "runs-target-key-filter",
           value: targetKey,
           onChange: setTargetKey,
-        }}
-      />
-
-      <ResourceFilterBar
-        testId="runs-monitor-filter-card"
-        summary="Polling every 2 seconds while queued or running rows are present."
-        items={[
+        },
+      }}
+      filterBar={{
+        testId: "runs-monitor-filter-card",
+        summary:
+          "Polling every 2 seconds while queued or running rows are present.",
+        items: [
           {
             active: Boolean(targetKind),
             id: "target-kind",
             label: "Target kind",
-            value: targetKind ? formatTargetKindLabel(targetKind) : "All targets",
+            value: targetKind
+              ? formatTargetKindLabel(targetKind)
+              : "All targets",
             onClear: targetKind ? () => setTargetKind(undefined) : undefined,
           },
           {
@@ -404,10 +424,10 @@ export function RunsListPage() {
             value: status ?? "All statuses",
             onClear: status ? () => setStatus(undefined) : undefined,
           },
-        ]}
-        onClearAll={activeFilterCount > 0 ? clearFilters : undefined}
-      />
-
+        ],
+        onClearAll: activeFilterCount > 0 ? clearFilters : undefined,
+      }}
+    >
       {runsQuery.isPending ? (
         <EmptyStatePanel
           title="Loading runs"
@@ -435,12 +455,8 @@ export function RunsListPage() {
       ) : null}
 
       {!runsQuery.isPending && !runsQuery.isError && runs.length > 0 ? (
-        <PlatformResourceList>
-          {runs.map((run) => (
-            <RunMonitorRow key={run.id} run={run} />
-          ))}
-        </PlatformResourceList>
+        <RunsTable runs={runs} />
       ) : null}
-    </div>
+    </InventoryPageShell>
   );
 }

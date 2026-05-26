@@ -71,6 +71,16 @@ describe("TemplateListPage", () => {
   it("keeps compact route controls and the new-template entry visible in the empty state", () => {
     render(<TemplateListPage />);
 
+    const shellRegions = Array.from(
+      screen
+        .getByTestId("templates-list-page")
+        .querySelectorAll("[data-inventory-shell-region]"),
+    ).map((region) => region.getAttribute("data-inventory-shell-region"));
+    expect(shellRegions).toEqual(["context", "toolbar", "content"]);
+    expect(screen.getByRole("radio", { name: /cards view/i })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
     expect(screen.getByRole("heading", { name: "Templates" })).toBeVisible();
     const newTemplateLink = screen.getByRole("link", {
       name: /new template/i,

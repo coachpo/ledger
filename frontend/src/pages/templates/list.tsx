@@ -3,6 +3,7 @@ import { FileText, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
+import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { useResourceFilterState } from "@/hooks/use-resource-filter-state";
 import { useResourceSelectionState } from "@/hooks/use-resource-selection-state";
 import {
@@ -15,9 +16,9 @@ import type { TextTemplateRead } from "@/lib/types/text-template";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
 import { ResourceRowCard } from "@/components/shared/resource-row-card";
-import { ResourceToolbar } from "@/components/shared/resource-toolbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -65,7 +66,6 @@ export function TemplateListPage() {
   const deleteMutation = useDeleteTemplate();
   const deleteTemplatesMutation = useDeleteTemplates();
   const [deleting, setDeleting] = useState<TextTemplateRead | null>(null);
-  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
 
   const templates = useMemo(
     () => getTemplateItems(templatesQuery.data),
@@ -82,17 +82,9 @@ export function TemplateListPage() {
   });
   const selectedTemplates = templateSelection.selectedItems;
   const selectedCount = templateSelection.selectedCount;
-
-  const handleViewModeChange = (value: string) => {
-    if (value !== "cards" && value !== "table") {
-      return;
-    }
-
-    setViewMode(value);
-    if (value === "cards") {
-      templateSelection.clearSelection();
-    }
-  };
+  const { viewMode, onViewModeChange } = useInventoryViewState({
+    onCardsMode: templateSelection.clearSelection,
+  });
 
   const handleDeleteSelected = () => {
     if (selectedTemplates.length === 0) {
@@ -114,42 +106,37 @@ export function TemplateListPage() {
   };
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">Templates</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage text templates with portfolio data placeholders.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <InventoryPageShell
+      pageContext={{
+        actions: (
           <Button asChild size="sm">
             <Link to="/templates/new">
               <Plus data-icon="inline-start" />
               New Template
             </Link>
           </Button>
-        </div>
-      </div>
-
-      <ResourceToolbar
-        resultSummary={
+        ),
+        description: "Manage text templates with portfolio data placeholders.",
+        title: "Templates",
+      }}
+      testId="templates-list-page"
+      toolbar={{
+        resultSummary:
           templates.length > 0
             ? `Showing ${formatTemplateCount(filteredTemplates.length)} of ${formatTemplateCount(templates.length)}`
-            : "No templates loaded"
-        }
-        search={{
+            : "No templates loaded",
+        search: {
           id: "template-search",
           label: "Search templates",
           name: "templateSearch",
           placeholder: "Search templates...",
           value: search,
           onChange: setSearch,
-        }}
-        viewMode={viewMode}
-        onViewModeChange={handleViewModeChange}
-      />
-
+        },
+        viewMode,
+        onViewModeChange,
+      }}
+    >
       <section
         aria-label="Template inventory"
         className="grid gap-2 sm:gap-3"
@@ -400,6 +387,6 @@ export function TemplateListPage() {
           });
         }}
       />
-    </div>
+    </InventoryPageShell>
   );
 }

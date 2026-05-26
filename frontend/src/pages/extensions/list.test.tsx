@@ -71,16 +71,29 @@ describe("ExtensionsListPage", () => {
   it("renders bundled extension state", () => {
     render(<ExtensionsListPage />);
 
-    expect(screen.getByTestId("extensions-list-page")).toBeVisible();
+    const page = screen.getByTestId("extensions-list-page");
+    expect(page).toBeVisible();
     expect(screen.getByRole("heading", { name: "Extensions" })).toBeVisible();
+    expect(screen.getByText(/slim system-state contract only/i)).toBeVisible();
     expect(
-      screen.getByText(/slim system-state contract only/i),
-    ).toBeVisible();
+      page.querySelector('[data-inventory-shell-region="context"]'),
+    ).toBeInTheDocument();
+    expect(
+      page.querySelector('[data-inventory-shell-region="toolbar"]'),
+    ).toBeInTheDocument();
+    expect(
+      page.querySelector('[data-inventory-shell-region="filters"]'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
     const row = screen.getByTestId("extension-row-signaldeck-finance");
     expect(row).toHaveTextContent("Finance Workspace");
     expect(row).toHaveTextContent("signaldeck.finance");
     expect(row).toHaveTextContent("Enabled");
-    expect(row).toHaveTextContent("Ownership: SignalDeck Core plus Finance Workspace extension");
+    expect(row).toHaveTextContent(
+      "Ownership: SignalDeck Core plus Finance Workspace extension",
+    );
     expect(row).toHaveTextContent("Blast radius");
     expect(row).toHaveTextContent("Finance routes, nav, tools");
     expect(screen.queryByText(/marketplace/i)).not.toBeInTheDocument();

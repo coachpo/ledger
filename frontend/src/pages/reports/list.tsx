@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -19,6 +19,7 @@ import {
   useReports,
   useUploadReport,
 } from "@/hooks/use-reports";
+import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { useTemplates } from "@/hooks/use-templates";
 import { formatDateTime } from "@/lib/format";
 import { downloadReportUrl } from "@/lib/api/reports";
@@ -26,13 +27,12 @@ import type { ReportRead } from "@/lib/types/report";
 import type { TextTemplateRead } from "@/lib/types/text-template";
 import { ReportUploadDialog } from "@/components/forms/report-upload-dialog";
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
-import { PageContextBar } from "@/components/shared/page-context-bar";
+import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { GroupedListCard } from "@/components/shared/resource-row-card";
 import {
   ResourceStatusStrip,
   type ResourceStatusStripItem,
 } from "@/components/shared/resource-status-strip";
-import { ResourceToolbar } from "@/components/shared/resource-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -150,7 +150,6 @@ export function ReportListPage() {
 
   const [search, setSearch] = useState("");
   const [groupBy, setGroupBy] = useState<GroupByOption>("tags");
-  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set(),
   );
@@ -174,6 +173,12 @@ export function ReportListPage() {
     [filtered, selectedSlugs],
   );
   const selectedCount = selectedReports.length;
+  const clearReportSelection = useCallback(() => {
+    setSelectedSlugs(new Set());
+  }, []);
+  const { viewMode, onViewModeChange } = useInventoryViewState({
+    onCardsMode: clearReportSelection,
+  });
   const statusItems = buildReportStatusItems({
     filteredCount: filtered.length,
     isError: reportsQuery.isError,
@@ -344,9 +349,9 @@ export function ReportListPage() {
   };
 
   return (
-    <div className="space-y-4 p-4">
-      <PageContextBar
-        actions={
+    <InventoryPageShell
+      pageContext={{
+        actions: (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Button size="sm" onClick={() => setGenerateOpen(true)}>
               <Plus data-icon="inline-start" /> Generate Report
@@ -359,26 +364,26 @@ export function ReportListPage() {
               <Upload data-icon="inline-start" /> Upload Report
             </Button>
           </div>
-        }
-        description="Compiled template snapshots — point-in-time deliverables."
-        status={<ResourceStatusStrip items={statusItems} />}
-        title="Reports"
-      />
-      <ResourceToolbar
-        resultSummary={
+        ),
+        description: "Compiled template snapshots — point-in-time deliverables.",
+        status: <ResourceStatusStrip items={statusItems} />,
+        title: "Reports",
+      }}
+      testId="reports-list-page"
+      toolbar={{
+        resultSummary:
           reportsQuery.isPending || reportsQuery.isError
             ? undefined
-            : `Showing ${filtered.length} of ${reports.length} reports`
-        }
-        search={{
+            : `Showing ${filtered.length} of ${reports.length} reports`,
+        search: {
           id: "report-search",
           label: "Search reports",
           name: "reportSearch",
           placeholder: "Search reports...",
           value: search,
           onChange: setSearch,
-        }}
-        filters={
+        },
+        filters: (
           <div className="w-36">
             <Label htmlFor="report-group-by" className="sr-only">
               Group reports
@@ -399,20 +404,15 @@ export function ReportListPage() {
               </SelectContent>
             </Select>
           </div>
-        }
-        selectionSummary={
+        ),
+        selectionSummary:
           viewMode === "table" && selectedCount > 0
             ? `${selectedCount} selected`
-            : undefined
-        }
-        viewMode={viewMode}
-        onViewModeChange={(value) => {
-          const nextViewMode = value as ReportViewMode;
-          setViewMode(nextViewMode);
-          if (nextViewMode === "cards") setSelectedSlugs(new Set());
-        }}
-      />
-
+            : undefined,
+        viewMode,
+        onViewModeChange,
+      }}
+    >
       <div className="space-y-4">
         {reportsQuery.isPending ? (
           <EmptyStatePanel
@@ -766,6 +766,6 @@ export function ReportListPage() {
         onTagsChange={setUploadTags}
         onUpload={handleUpload}
       />
-    </div>
+    </InventoryPageShell>
   );
 }

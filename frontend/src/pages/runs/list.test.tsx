@@ -67,7 +67,8 @@ describe("RunsListPage", () => {
             },
             queue: {
               blockingRunId: 14,
-              message: "Backend queue read model: run #14 is holding package serial lane.",
+              message:
+                "Backend queue read model: run #14 is holding package serial lane.",
               reason: "blocked-by-package-serial-policy",
               state: "blocked",
             },
@@ -154,12 +155,27 @@ describe("RunsListPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Runs API unavailable");
   });
 
-  it("renders run monitor rows, refreshes, and routes to detail", () => {
+  it("renders dense run monitor rows, refreshes, and routes to detail", () => {
     render(<RunsListPage />);
 
+    const page = screen.getByTestId("runs-list-page");
     expect(
-      screen.getByText(/live monitor for recent agent and workflow package executions/i),
+      within(page).getByText(
+        /live monitor for recent agent and workflow package executions/i,
+      ),
     ).toBeVisible();
+    expect(
+      page.querySelector('[data-inventory-shell-region="context"]'),
+    ).toBeInTheDocument();
+    expect(
+      page.querySelector('[data-inventory-shell-region="toolbar"]'),
+    ).toBeInTheDocument();
+    expect(
+      page.querySelector('[data-inventory-shell-region="filters"]'),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Returned")).toBeVisible();
+    expect(screen.getByText("Active")).toBeVisible();
+    expect(screen.getByText("Queued")).toBeVisible();
     expect(screen.getByLabelText("Target key")).toBeVisible();
     expect(screen.getByLabelText("Target kind")).toBeVisible();
     expect(screen.getByLabelText("Run status")).toBeVisible();
@@ -169,6 +185,22 @@ describe("RunsListPage", () => {
     expect(screen.getByTestId("runs-monitor-filter-card")).toHaveTextContent(
       "All statuses",
     );
+
+    const table = screen.getByRole("table");
+    for (const column of [
+      "Run",
+      "Target",
+      "Status",
+      "Progress",
+      "Queue",
+      "Tokens",
+      "Timestamps",
+      "Open",
+    ]) {
+      expect(
+        within(table).getByRole("columnheader", { name: column }),
+      ).toBeVisible();
+    }
 
     expect(screen.getByTestId("runs-row-14")).toBeVisible();
     expect(screen.getByTestId("runs-row-17")).toBeVisible();
@@ -180,31 +212,39 @@ describe("RunsListPage", () => {
     expect(screen.getAllByText(/^market_review_package$/i)[0]).toBeVisible();
     expect(screen.getAllByText(/^macro_agent$/i)[0]).toBeVisible();
     expect(screen.getByText(/workflow id: 40/i)).toBeVisible();
-    expect(screen.getByText(/captured snapshot: market_review_package/i)).toBeVisible();
+    expect(
+      screen.getByText(/captured snapshot: market_review_package/i),
+    ).toBeVisible();
     expect(screen.getByText(/package id at launch: #41/i)).toBeVisible();
     expect(screen.getByText(/agent id: 12/i)).toBeVisible();
     expect(screen.getByText(/trace-15/i)).toBeVisible();
-    expect(screen.queryByRole("link", { name: /package:/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /package:/i }),
+    ).not.toBeInTheDocument();
 
     const queuedRow = screen.getByTestId("runs-row-14");
-    expect(queuedRow).toHaveTextContent(/status/i);
+    expect(queuedRow).toHaveTextContent(/run #14/i);
     expect(queuedRow).toHaveTextContent(/queued/i);
-    expect(queuedRow).toHaveTextContent(/progress/i);
     expect(queuedRow).toHaveTextContent(/1\/8 invocations · 12%/i);
-    expect(queuedRow).toHaveTextContent(/tokens/i);
-    expect(queuedRow).toHaveTextContent(/total tokens reported by the run read model/i);
-    expect(queuedRow).toHaveTextContent(/queued/i);
-    expect(queuedRow).toHaveTextContent(/started/i);
+    expect(queuedRow).toHaveTextContent(/0/i);
+    expect(queuedRow).toHaveTextContent(/queued:/i);
+    expect(queuedRow).toHaveTextContent(/started:/i);
     expect(queuedRow).toHaveTextContent(/not started/i);
-    expect(queuedRow).toHaveTextContent(/finished/i);
+    expect(queuedRow).toHaveTextContent(/finished:/i);
     expect(queuedRow).toHaveTextContent(/not finished/i);
     expect(queuedRow).toHaveTextContent(/awaiting worker capacity/i);
-    expect(queuedRow).toHaveTextContent(/backend queue read model: waiting on worker capacity/i);
-    expect(screen.getByTestId("runs-row-progress-14")).toHaveTextContent(/12%/i);
+    expect(queuedRow).toHaveTextContent(
+      /backend queue read model: waiting on worker capacity/i,
+    );
+    expect(screen.getByTestId("runs-row-progress-14")).toHaveTextContent(
+      /12%/i,
+    );
 
     const blockedRow = screen.getByTestId("runs-row-17");
     expect(blockedRow).toHaveTextContent(/blocked by package serial policy/i);
-    expect(blockedRow).toHaveTextContent(/backend queue read model: run #14 is holding package serial lane/i);
+    expect(blockedRow).toHaveTextContent(
+      /backend queue read model: run #14 is holding package serial lane/i,
+    );
     expect(blockedRow).toHaveTextContent(/blocking run: #14/i);
     expect(blockedRow).toHaveTextContent(/0\/3 invocations · 0%/i);
     expect(screen.queryByText(/awaiting execution/i)).not.toBeInTheDocument();
@@ -212,7 +252,6 @@ describe("RunsListPage", () => {
     expect(screen.getByTestId("runs-row-15")).toHaveTextContent(
       /2\/5 invocations · 37%/i,
     );
-    expect(screen.getByTestId("runs-row-15")).toHaveTextContent(/tokens/i);
     expect(screen.getByTestId("runs-row-15")).toHaveTextContent(/21/i);
     expect(screen.getByTestId("runs-row-16")).toHaveTextContent(
       /3\/3 invocations · 100%/i,
@@ -223,15 +262,12 @@ describe("RunsListPage", () => {
     expect(refetchMock).toHaveBeenCalled();
 
     const runsRow = screen.getByTestId("runs-row-15");
-    const primaryLink = within(runsRow).getByTestId("runs-row-primary-15");
-    const visibleOpen = within(runsRow).getByTestId("runs-row-action-15");
+    const openAction = within(runsRow).getByTestId("runs-row-action-15");
 
-    expect(primaryLink).toHaveAccessibleName("Open run #15");
-    expect(primaryLink).toHaveAttribute("href", "/runs/15");
-    expect(visibleOpen).toHaveAccessibleName("Open Run");
-    expect(visibleOpen).toHaveAttribute("href", "/runs/15");
+    expect(openAction).toHaveAccessibleName("Open run #15");
+    expect(openAction).toHaveAttribute("href", "/runs/15");
     expect(
-      within(runsRow).queryByRole("button", { name: "Open Run" }),
+      within(runsRow).queryByRole("button", { name: /open run #15/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -239,7 +275,12 @@ describe("RunsListPage", () => {
     render(<RunsListPage />);
 
     expect(useRunsMock).toHaveBeenLastCalledWith(
-      { limit: 50, status: undefined, targetKey: undefined, targetKind: undefined },
+      {
+        limit: 50,
+        status: undefined,
+        targetKey: undefined,
+        targetKind: undefined,
+      },
       { refetchInterval: 2000 },
     );
 
@@ -263,7 +304,12 @@ describe("RunsListPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
 
     expect(useRunsMock).toHaveBeenLastCalledWith(
-      { limit: 50, status: undefined, targetKey: undefined, targetKind: undefined },
+      {
+        limit: 50,
+        status: undefined,
+        targetKey: undefined,
+        targetKind: undefined,
+      },
       { refetchInterval: 2000 },
     );
   });

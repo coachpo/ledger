@@ -2,7 +2,7 @@ import { Puzzle } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
-import { PageContextBar } from "@/components/shared/page-context-bar";
+import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ProvenanceBadge } from "@/components/shared/provenance-badge";
 import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Switch } from "@/components/ui/switch";
@@ -60,14 +60,22 @@ function ExtensionRow({
           tone="verified"
         />
       }
-      density="compactPlus"
+      density="compact"
       description="System control row for bundled route, navigation, and tool availability."
       metadata="Ownership: SignalDeck Core plus Finance Workspace extension"
       statusStrip={
         <ResourceStatusStrip
           items={[
-            { label: "State", tone: extension.enabled ? "success" : "muted", value: enabledLabel },
-            { label: "Contract", tone: "neutral", value: "key, label, enabled" },
+            {
+              label: "State",
+              tone: extension.enabled ? "success" : "muted",
+              value: enabledLabel,
+            },
+            {
+              label: "Contract",
+              tone: "neutral",
+              value: "key, label, enabled",
+            },
             {
               label: "Blast radius",
               tone: extension.enabled ? "neutral" : "warning",
@@ -83,48 +91,13 @@ function ExtensionRow({
   );
 }
 
-function ExtensionsHeader({
-  enabledCount,
-  totalCount,
-}: {
-  enabledCount: number;
-  totalCount: number;
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Extensions</h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Manage bundled extension availability from the slim system-state contract only.
-        </p>
-      </div>
-      <PageContextBar
-        description="This surface reflects only the backend extension contract: key, label, and enabled. Runtime gates own route and tool visibility."
-        meta={
-          <div className="flex flex-wrap items-center gap-2">
-            <ProvenanceBadge detail="system state" label="Surface" />
-            <ProvenanceBadge detail="slim contract" label="Backend" tone="verified" />
-          </div>
-        }
-        status={
-          <ResourceStatusStrip
-            items={[
-              { label: "Bundled", tone: totalCount ? "success" : "muted", value: String(totalCount) },
-              { label: "Enabled", tone: enabledCount ? "success" : "muted", value: String(enabledCount) },
-            ]}
-          />
-        }
-        title="Extension system state"
-      />
-    </div>
-  );
-}
-
 export function ExtensionsListPage() {
   const extensionsQuery = useExtensions();
   const toggleExtension = useToggleExtension();
   const extensions = sortExtensions(extensionsQuery.data?.items ?? []);
-  const enabledCount = extensions.filter((extension) => extension.enabled).length;
+  const enabledCount = extensions.filter(
+    (extension) => extension.enabled,
+  ).length;
 
   const handleToggle = async (
     extension: ExtensionRead,
@@ -150,9 +123,45 @@ export function ExtensionsListPage() {
   };
 
   return (
-    <div className="flex flex-col gap-4 p-4" data-testid="extensions-list-page">
-      <ExtensionsHeader enabledCount={enabledCount} totalCount={extensions.length} />
-
+    <InventoryPageShell
+      className="gap-3 p-3 sm:p-4"
+      pageContext={{
+        description:
+          "Manage bundled extension availability from the slim system-state contract only. Runtime gates own route and tool visibility.",
+        meta: (
+          <div className="flex flex-wrap items-center gap-2">
+            <ProvenanceBadge detail="system state" label="Surface" />
+            <ProvenanceBadge
+              detail="slim contract"
+              label="Backend"
+              tone="verified"
+            />
+          </div>
+        ),
+        status: (
+          <ResourceStatusStrip
+            items={[
+              {
+                label: "Bundled",
+                tone: extensions.length ? "success" : "muted",
+                value: String(extensions.length),
+              },
+              {
+                label: "Enabled",
+                tone: enabledCount ? "success" : "muted",
+                value: String(enabledCount),
+              },
+            ]}
+          />
+        ),
+        title: "Extensions",
+      }}
+      testId="extensions-list-page"
+      toolbar={{
+        className: "gap-0",
+        resultSummary: `${extensions.length} bundled ${extensions.length === 1 ? "extension" : "extensions"} returned`,
+      }}
+    >
       {extensionsQuery.isPending ? (
         <EmptyStatePanel
           description="Loading the slim bundled-extension state before route gates and tool discovery update."
@@ -198,6 +207,6 @@ export function ExtensionsListPage() {
           ))}
         </PlatformResourceList>
       ) : null}
-    </div>
+    </InventoryPageShell>
   );
 }

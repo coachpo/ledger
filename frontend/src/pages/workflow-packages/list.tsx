@@ -17,14 +17,15 @@ import {
   useDeleteWorkflowPackages,
   useWorkflowPackages,
 } from "@/hooks/use-workflow-packages";
+import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { formatDateTime } from "@/lib/format";
 import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { EvidenceCluster } from "@/components/shared/evidence-cluster";
+import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ProvenanceBadge } from "@/components/shared/provenance-badge";
 import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
-import { ResourceToolbar } from "@/components/shared/resource-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -141,8 +142,6 @@ function EmptyState({ search }: { search: string }) {
   );
 }
 
-type ViewMode = "cards" | "table";
-
 type PackageSelectionHandlers = {
   onDelete: (workflowPackage: WorkflowPackageRead) => void;
   onSelect: (
@@ -151,73 +150,30 @@ type PackageSelectionHandlers = {
   ) => void;
 };
 
-function WorkflowPackagesHeader() {
+function WorkflowPackagesPageActions() {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div className="space-y-1">
-        <h1 className="text-xl font-semibold tracking-tight">
-          Workflow Packages
-        </h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Package-first authoring for private agents, output schemas, capability
-          profiles, MCP bindings, artifact updates, and controlled launches.
-        </p>
-      </div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Button asChild size="sm" variant="outline">
-          <Link
-            aria-label="Import workflow package manifest"
-            data-testid="workflow-packages-import"
-            to="/workflow-packages/import"
-          >
-            <FileUp data-icon="inline-start" />
-            Import Package
-          </Link>
-        </Button>
-        <Button asChild size="sm">
-          <Link
-            aria-label="Create new workflow package"
-            data-testid="workflow-packages-new"
-            to="/workflow-packages/new"
-          >
-            <PackagePlus data-icon="inline-start" />
-            New Package
-          </Link>
-        </Button>
-      </div>
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <Button asChild size="sm" variant="outline">
+        <Link
+          aria-label="Import workflow package manifest"
+          data-testid="workflow-packages-import"
+          to="/workflow-packages/import"
+        >
+          <FileUp data-icon="inline-start" />
+          Import Package
+        </Link>
+      </Button>
+      <Button asChild size="sm">
+        <Link
+          aria-label="Create new workflow package"
+          data-testid="workflow-packages-new"
+          to="/workflow-packages/new"
+        >
+          <PackagePlus data-icon="inline-start" />
+          New Package
+        </Link>
+      </Button>
     </div>
-  );
-}
-
-function WorkflowPackagesToolbar({
-  filteredCount,
-  search,
-  totalCount,
-  viewMode,
-  onSearchChange,
-  onViewModeChange,
-}: {
-  filteredCount: number;
-  search: string;
-  totalCount: number;
-  viewMode: ViewMode;
-  onSearchChange: (value: string) => void;
-  onViewModeChange: (value: ViewMode) => void;
-}) {
-  return (
-    <ResourceToolbar
-      resultSummary={`${filteredCount} of ${totalCount} packages shown`}
-      search={{
-        id: "workflow-package-search",
-        label: "Search workflow packages",
-        name: "workflowPackageSearch",
-        placeholder: "Search packages by name, key, hash, or readiness...",
-        value: search,
-        onChange: onSearchChange,
-      }}
-      viewMode={viewMode}
-      onViewModeChange={(value) => onViewModeChange(value as ViewMode)}
-    />
   );
 }
 
@@ -476,9 +432,11 @@ function WorkflowPackagesTable({
               }
             />
           </TableHead>
-          <TableHead>Package</TableHead>
+          <TableHead>Name</TableHead>
+          <TableHead>Key</TableHead>
           <TableHead>Readiness</TableHead>
-          <TableHead>Provenance</TableHead>
+          <TableHead>Manifest hash</TableHead>
+          <TableHead>Compiled hash</TableHead>
           <TableHead>Updated</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
@@ -503,20 +461,20 @@ function WorkflowPackagesTable({
                   }
                 />
               </TableCell>
-              <TableCell className="min-w-64 whitespace-normal">
+              <TableCell className="min-w-56 whitespace-normal">
                 <div className="flex flex-col gap-1">
                   <p className="font-medium text-foreground">
                     {workflowPackage.name}
-                  </p>
-                  <p className="font-mono text-xs text-muted-foreground">
-                    {workflowPackage.key}
                   </p>
                   <p className="line-clamp-2 text-xs text-muted-foreground">
                     {workflowPackage.description || "No description provided."}
                   </p>
                 </div>
               </TableCell>
-              <TableCell className="min-w-64 whitespace-normal">
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                {workflowPackage.key}
+              </TableCell>
+              <TableCell className="min-w-56 whitespace-normal">
                 <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
                   <Badge
                     data-tone={readiness.tone}
@@ -527,8 +485,11 @@ function WorkflowPackagesTable({
                   <span>{readiness.description}</span>
                 </div>
               </TableCell>
-              <TableCell className="min-w-72 whitespace-normal">
-                <WorkflowPackageProvenance workflowPackage={workflowPackage} />
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                {formatNullableHash(workflowPackage.manifestHash)}
+              </TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                {formatNullableHash(workflowPackage.compiledHash)}
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">
                 {formatDateTime(workflowPackage.updatedAt)}
@@ -631,7 +592,10 @@ export function WorkflowPackagesListPage() {
   const [selectedPackageIds, setSelectedPackageIds] = useState<
     Set<WorkflowPackageRead["id"]>
   >(new Set());
-  const [viewMode, setViewMode] = useState<ViewMode>("cards");
+  const { viewMode, onViewModeChange } = useInventoryViewState({
+    initialViewMode: "table",
+    onCardsMode: () => setSelectedPackageIds(new Set()),
+  });
   const filteredPackages = useMemo(
     () => filterPackages(packages, search),
     [packages, search],
@@ -680,13 +644,6 @@ export function WorkflowPackagesListPage() {
       });
       return next;
     });
-  };
-
-  const handleViewModeChange = (value: ViewMode) => {
-    setViewMode(value);
-    if (value === "cards") {
-      setSelectedPackageIds(new Set());
-    }
   };
 
   const deleteSelectedPackage = async () => {
@@ -739,16 +696,28 @@ export function WorkflowPackagesListPage() {
   };
 
   return (
-    <div className="space-y-4 p-4" data-testid="workflow-packages-list-page">
-      <WorkflowPackagesHeader />
-      <WorkflowPackagesToolbar
-        filteredCount={filteredPackages.length}
-        search={search}
-        totalCount={packages.length}
-        viewMode={viewMode}
-        onSearchChange={setSearch}
-        onViewModeChange={handleViewModeChange}
-      />
+    <InventoryPageShell
+      pageContext={{
+        actions: <WorkflowPackagesPageActions />,
+        description:
+          "Package-first authoring for private agents, output schemas, capability profiles, MCP bindings, artifact updates, and controlled launches.",
+        title: "Workflow Packages",
+      }}
+      testId="workflow-packages-list-page"
+      toolbar={{
+        resultSummary: `${filteredPackages.length} of ${packages.length} packages shown`,
+        search: {
+          id: "workflow-package-search",
+          label: "Search workflow packages",
+          name: "workflowPackageSearch",
+          placeholder: "Search packages by name, key, hash, or readiness...",
+          value: search,
+          onChange: setSearch,
+        },
+        viewMode,
+        onViewModeChange,
+      }}
+    >
       <WorkflowPackagesStateCards
         error={packagesQuery.error}
         filteredCount={filteredPackages.length}
@@ -805,6 +774,6 @@ export function WorkflowPackagesListPage() {
         }}
         onConfirm={deleteSelectedPackage}
       />
-    </div>
+    </InventoryPageShell>
   );
 }

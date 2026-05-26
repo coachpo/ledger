@@ -8,11 +8,12 @@ import {
   useDeleteModelConnections,
   useModelConnections,
 } from "@/hooks/use-model-connections";
+import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { EvidenceCluster } from "@/components/shared/evidence-cluster";
+import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ProvenanceBadge } from "@/components/shared/provenance-badge";
 import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
-import { ResourceToolbar } from "@/components/shared/resource-toolbar";
 import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -44,8 +45,6 @@ import {
   getModelConnectionEvidenceItems,
   getModelConnectionStatusItems,
 } from "./model-connection-ui";
-
-type ViewMode = "cards" | "table";
 
 type ModelConnectionSelectionHandlers = {
   onDelete: (connection: ModelConnectionListItemRead) => void;
@@ -108,60 +107,14 @@ function ModelConnectionEvidence({
   return <EvidenceCluster items={items} layout={layout} />;
 }
 
-function ModelConnectionsHeader() {
+function ModelConnectionsPageActions() {
   return (
-    <div
-      className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
-      data-testid="model-connections-list"
-    >
-      <div className="space-y-1">
-        <h1 className="text-xl font-semibold tracking-tight">
-          Model Connections
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Manage live model endpoints, credentials, protocol profiles, and
-          backend-derived compatibility evidence by stable key.
-        </p>
-      </div>
-      <Button asChild data-testid="model-connections-new" size="sm">
-        <Link to="/model-connections/new">
-          <Plus data-icon="inline-start" />
-          New Model Connection
-        </Link>
-      </Button>
-    </div>
-  );
-}
-
-function ModelConnectionsToolbar({
-  filteredCount,
-  search,
-  totalCount,
-  viewMode,
-  onSearchChange,
-  onViewModeChange,
-}: {
-  filteredCount: number;
-  search: string;
-  totalCount: number;
-  viewMode: ViewMode;
-  onSearchChange: (value: string) => void;
-  onViewModeChange: (value: ViewMode) => void;
-}) {
-  return (
-    <ResourceToolbar
-      resultSummary={`${filteredCount} of ${totalCount} model connections shown`}
-      search={{
-        id: "model-connections-search",
-        label: "Search model connections",
-        placeholder:
-          "Search by name, key, model, protocol, or compatibility evidence...",
-        value: search,
-        onChange: onSearchChange,
-      }}
-      viewMode={viewMode}
-      onViewModeChange={(value) => onViewModeChange(value as ViewMode)}
-    />
+    <Button asChild data-testid="model-connections-new" size="sm">
+      <Link to="/model-connections/new">
+        <Plus data-icon="inline-start" />
+        New Model Connection
+      </Link>
+    </Button>
   );
 }
 
@@ -347,13 +300,12 @@ function ModelConnectionsTable({
             />
           </TableHead>
           <TableHead>Name</TableHead>
-          <TableHead>Model</TableHead>
-          <TableHead>Base URL</TableHead>
-          <TableHead>Protocol Profile</TableHead>
-          <TableHead>Compatibility Evidence</TableHead>
-          <TableHead>Runtime Policy Evidence</TableHead>
-          <TableHead>Reachability Test</TableHead>
-          <TableHead>Credential State</TableHead>
+          <TableHead>Stable key</TableHead>
+          <TableHead>Model ID</TableHead>
+          <TableHead>Protocol profile</TableHead>
+          <TableHead>Capability summary</TableHead>
+          <TableHead>Test state</TableHead>
+          <TableHead>Runtime policy</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
@@ -377,7 +329,7 @@ function ModelConnectionsTable({
                 />
               </TableCell>
               <TableCell className="min-w-56 whitespace-normal">
-                <div className="space-y-1">
+                <div className="flex flex-col gap-1">
                   <p className="font-medium text-foreground">
                     {connection.name}
                   </p>
@@ -386,46 +338,31 @@ function ModelConnectionsTable({
                   </p>
                 </div>
               </TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                {connection.key}
+              </TableCell>
               <TableCell className="text-xs text-muted-foreground">
                 {connection.modelId}
               </TableCell>
-              <TableCell className="max-w-72 whitespace-normal break-all text-xs text-muted-foreground">
-                {connection.baseUrl}
-              </TableCell>
-              <TableCell className="min-w-72 whitespace-normal text-xs text-muted-foreground">
+              <TableCell className="min-w-64 whitespace-normal text-xs text-muted-foreground">
                 <ModelConnectionEvidence
                   connection={connection}
                   labels={["Protocol profile"]}
                   layout="list"
                 />
               </TableCell>
-              <TableCell className="min-w-80 whitespace-normal text-xs text-muted-foreground">
-                <ModelConnectionEvidence
-                  connection={connection}
-                  labels={["Capability support"]}
-                  layout="list"
-                />
+              <TableCell className="min-w-64 whitespace-normal text-xs text-muted-foreground">
+                {formatCapabilitySummary(connection.capabilities)}
               </TableCell>
-              <TableCell className="min-w-80 whitespace-normal text-xs text-muted-foreground">
-                <ModelConnectionEvidence
-                  connection={connection}
-                  labels={["Runtime policy"]}
-                  layout="list"
-                />
-              </TableCell>
-              <TableCell className="min-w-72 whitespace-normal text-xs text-muted-foreground">
+              <TableCell className="min-w-64 whitespace-normal text-xs text-muted-foreground">
                 <ModelConnectionEvidence
                   connection={connection}
                   labels={["Test state", "Reachability"]}
                   layout="list"
                 />
               </TableCell>
-              <TableCell className="min-w-56 whitespace-normal text-xs text-muted-foreground">
-                <ModelConnectionEvidence
-                  connection={connection}
-                  labels={["Credential state"]}
-                  layout="list"
-                />
+              <TableCell className="min-w-72 whitespace-normal text-xs text-muted-foreground">
+                {formatRuntimePolicyEvidence(connection)}
               </TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2">
@@ -510,10 +447,13 @@ export function ModelConnectionsListPage() {
     [connectionsQuery.data?.items],
   );
   const [search, setSearch] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [selectedConnectionIds, setSelectedConnectionIds] = useState<
     Set<ModelConnectionListItemRead["id"]>
   >(new Set());
+  const { viewMode, onViewModeChange } = useInventoryViewState({
+    initialViewMode: "table",
+    onCardsMode: () => setSelectedConnectionIds(new Set()),
+  });
   const [deleting, setDeleting] = useState<ModelConnectionListItemRead | null>(
     null,
   );
@@ -568,13 +508,6 @@ export function ModelConnectionsListPage() {
     });
   };
 
-  const handleViewModeChange = (value: ViewMode) => {
-    setViewMode(value);
-    if (value === "cards") {
-      setSelectedConnectionIds(new Set());
-    }
-  };
-
   const handleDelete = async () => {
     if (!deleting) {
       return;
@@ -626,19 +559,28 @@ export function ModelConnectionsListPage() {
   };
 
   return (
-    <div
-      className="space-y-4 p-4"
-      data-testid="platform-model-connections-page"
+    <InventoryPageShell
+      pageContext={{
+        actions: <ModelConnectionsPageActions />,
+        description:
+          "Manage live model endpoints, credentials, protocol profiles, and backend-derived compatibility evidence by stable key.",
+        title: "Model Connections",
+      }}
+      testId="platform-model-connections-page"
+      toolbar={{
+        resultSummary: `${filteredConnections.length} of ${connections.length} model connections shown`,
+        search: {
+          id: "model-connections-search",
+          label: "Search model connections",
+          placeholder:
+            "Search by name, key, model, protocol, or compatibility evidence...",
+          value: search,
+          onChange: setSearch,
+        },
+        viewMode,
+        onViewModeChange,
+      }}
     >
-      <ModelConnectionsHeader />
-      <ModelConnectionsToolbar
-        filteredCount={filteredConnections.length}
-        search={search}
-        totalCount={connections.length}
-        viewMode={viewMode}
-        onSearchChange={setSearch}
-        onViewModeChange={handleViewModeChange}
-      />
       <ModelConnectionsStateCards
         error={connectionsQuery.error}
         filteredCount={filteredConnections.length}
@@ -686,6 +628,6 @@ export function ModelConnectionsListPage() {
         }}
         onConfirm={handleDelete}
       />
-    </div>
+    </InventoryPageShell>
   );
 }
