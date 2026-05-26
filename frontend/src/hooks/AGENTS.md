@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/hooks/`.
 
 ## OVERVIEW
-`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, Extensions, Workflow Packages, extension-filtered read-only Tools metadata for package authoring, Model Connections, Memory, Runs, and one small UI debounce helper.
+`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, Extensions, Workflow Packages, extension-filtered read-only Tools metadata for package authoring, Model Connections, Memory, Runs, plus lightweight route-shell UI state helpers for inventory view mode, filters, selection, split-inspector panes, and one small debounce helper.
 
 Extension model: statically resident extension state flows.
 
@@ -26,7 +26,11 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, delete, connection-test helpers |
 | Memory flows | `use-memory.ts` | explicit-scope memory list/detail/revision/event reads with caller-owned access-context gating |
 | Run flows | `use-runs.ts` | run list/detail reads with package provenance, backend progress/queue payloads, active queued/running polling, plus rerun/fork drafts and create mutations |
-| Hook test hotspots | `use-workflow-packages.test.ts`, `use-model-connections.test.ts`, `use-runs.test.ts` | focused cache and mutation coverage |
+| Inventory view state | `use-inventory-view-state.ts` | cards/table mode state shared by inventory routes |
+| Resource filter state | `use-resource-filter-state.ts` | labeled search/filter text and derived filter helpers for shared inventory shells |
+| Resource selection state | `use-resource-selection-state.ts` | table-only selection, select-all, clear, and scoped bulk-action state |
+| Split inspector state | `use-split-inspector-state.ts` | workspace/run-detail inspector open state for shared split-pane layouts |
+| Hook test hotspots | `use-workflow-packages.test.ts`, `use-model-connections.test.ts`, `use-runs.test.ts`, `use-inventory-view-state.test.ts`, `use-resource-filter-state.test.ts`, `use-resource-selection-state.test.ts`, `use-split-inspector-state.test.ts` | focused cache, mutation, and shared route-shell state coverage |
 | Generic timing helper | `use-debounce.ts` | small debounce helper used by the template editor |
 
 ## CONVENTIONS
@@ -39,6 +43,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Memory hooks read through `queryKeys.platform.memory.*`; pages must pass explicit access context payloads and use `enabled` to avoid calling `/api/memory` before a package context and private scope exist.
 - Model-connection connection tests invalidate persisted last-test metadata after save/test flows.
 - `useToggleExtension()` invalidates extension state plus finance workspace caches so routes, nav, and package tool filters converge after enable/disable changes.
+- UI state hooks such as `useInventoryViewState()`, `useResourceFilterState()`, `useResourceSelectionState()`, and `useSplitInspectorState()` stay presentational and page-local; they coordinate shared shells but never fetch or invalidate server data.
 - `useCompileInline()` is a mutation because it represents explicit compile work rather than cached resource fetching; it accepts both template content and optional runtime inputs for `{{inputs...}}` preview resolution.
 - `useCompileReport()` is a mutation because report generation is a write that creates a persisted snapshot from a template and may include runtime inputs.
 - The template editor owns the 500 ms debounce for inline compile; hooks expose compile/query primitives but do not debounce internally.
@@ -67,3 +72,4 @@ pnpm test:run
 - Template and report hooks keep cache policy intentionally simple: list/detail invalidation in hooks, navigation and toasts in callers.
 - `invalidateWorkflowPackageScope()` and `invalidateWorkflowPackageRuntimeInputRegistryScope()` are the central package-side invalidation helpers; keep route surfaces aligned with them instead of inventing page-local refresh rules.
 - Package-first platform hooks follow the same split: cache policy, extension-state filtering, explicit Memory access payloads, and API wiring live here, while routed pages own draft UI, navigation, and feedback.
+- The route-shell state hooks are reusable across finance inventories and platform workspace/console pages; current cross-route usage varies by hook, so keep cards/table/filter/selection/inspector behavior aligned here instead of cloning page-local implementations.

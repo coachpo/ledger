@@ -30,9 +30,9 @@ src/components/
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| App shell / navigation | `layout.tsx`, `shared/error-boundary.tsx` | sidebar shell for dashboard, extension-aware finance routes, system routes, and agent-platform routes |
+| App shell / navigation | `layout.tsx`, `shared/error-boundary.tsx` | sidebar shell, metadata-driven shell/width framing, and route-safe fallback UI |
 | Theme behavior | `theme-provider.tsx`, `theme-toggle.tsx`, `theme.ts` | persisted theme state and system-sync logic |
-| Shared components | `shared/AGENTS.md` | reusable data tables, metrics, field schemas, and error boundaries |
+| Shared components | `shared/AGENTS.md` | reusable inventory/workspace shells, resource chrome, evidence helpers, tables, metrics, and field schemas |
 | Cross-route dialogs and form helpers | `forms/portfolio-form-dialog.tsx`, `forms/generate-report-dialog.tsx`, `forms/secret-input.tsx` | small shared dialogs and write-only secret input UI |
 | Platform authoring widgets | `platform-authoring/AGENTS.md` | schema composer, generated form, workflow builder, refs, inspectors |
 | Template-editor support UI | `templates/AGENTS.md` | placeholder reference and runtime-input surfaces used by template routes |
@@ -40,7 +40,7 @@ src/components/
 | Pure UI primitives | `ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
 
 ## CHILD DOCS
-- `shared/AGENTS.md` — reusable cross-feature components and schema helpers
+- `shared/AGENTS.md` — reusable inventory/workspace shells, resource chrome, evidence helpers, and schema rules
 - `platform-authoring/AGENTS.md` — schema composer, generated form, workflow builder, refs, and inspectors
 - `templates/AGENTS.md` — template-editor support components such as placeholder reference and runtime-input sections
 - `portfolios/AGENTS.md` — portfolio feature sections, dialogs, and trades UI
@@ -49,14 +49,15 @@ src/components/
 ## CONVENTIONS
 - Routed page components live in `src/pages/` and are thin route-layer components.
 - Shared components in `shared/` are reusable across multiple features and should not contain portfolio-specific request logic.
-- `shared/` is where the app keeps reusable data tables, metric cards, field schemas, and error boundaries; if a component only makes sense inside one feature route, keep it out of this folder.
+- `shared/` is where the app keeps reusable inventory/workspace shells, resource chrome, data tables, metric cards, field schemas, and error boundaries; if a component only makes sense inside one feature route, keep it out of this folder.
 - `forms/` is reserved for small cross-feature form surfaces such as portfolio creation/editing, shared report-generation dialogs reused by template/report routes, and write-only secret inputs used by model-connection flows.
 - Form/dialog components accept data and callbacks from parents; they should not own navigation, toasts, hooks, or direct API calls.
 - `platform-authoring/` is reserved for reusable agent-platform authoring widgets driven by `src/lib/platform-authoring/**`.
 - `templates/` is reserved for template-editor support widgets such as placeholder browsing and runtime-input row controls.
 - Feature-specific components in `portfolios/` own their domain logic and should not be reused outside that feature without a clear abstraction.
 - Preserved product and agent-platform routes stay page-centric and reuse shared components; platform-authoring widgets are the exception because schema/value/ref/workflow UIs are shared across package-local agents, output schemas, capability profiles, MCP configs, and workflow graphs.
-- `Layout` consumes extension runtime nav groups and extension state; do not mirror route visibility in sidebar primitives.
+- `Layout` consumes route metadata plus extension runtime nav groups/state; shell mode, width mode, breadcrumbs, and sidebar composition belong there, not in leaf pages or sidebar primitives.
+- Shared route-shell patterns such as inventory stacks, workspace shells, and split inspectors belong in `shared/`, not in `ui/` or copied page-local wrappers.
 - Shared field schemas in `shared/form-schemas.ts` should stay aligned with the current routed forms that consume them.
 - Theme state lives in `theme-provider.tsx`; leaf components should consume the existing context instead of creating new theme state.
 - `ui/` stays presentational; application state and request logic should stay in pages, shared, forms, or feature folders.
@@ -69,7 +70,7 @@ src/components/
 - Do not create one-off form helpers in feature folders when they should live in `forms/` or a shared dialog component.
 - Do not let form/dialog helpers own navigation, toasts, hooks, or API calls when the parent route should supply that behavior.
 - Do not move template-editor-only support widgets into `shared/` just because they render generic inputs or lists.
-- Do not hide current route ownership inside generic UI primitives.
+- Do not hide current route ownership, route metadata, or shell framing inside generic UI primitives.
 
 ## VALIDATION
 ```bash
@@ -81,7 +82,7 @@ pnpm build
 ```
 
 ## NOTES
-- `Layout` switches between the usual scroll container and a full-height outlet for template editor routes.
-- `Layout` owns the current sidebar entries and breadcrumb labels for dashboard, extension-gated finance routes, `/extensions`, and agent-platform routes.
+- `Layout` switches between scroll and full-height outlet treatment from route metadata, not hard-coded feature checks; template editor, workflow package editor/import/launch, run detail, and model-connection editor routes all rely on that contract.
+- `Layout` renders the current sidebar entries plus metadata-backed breadcrumb labels, shell mode, width mode, and routed main framing for dashboard, extension-gated finance routes, `/extensions`, and agent-platform routes.
 - `layout.tsx` owns route labels and nav composition; `ui/sidebar.tsx` and `ui/sidebar-context.ts` stay generic primitives.
 - Page components stay thin; the real complexity lives in hooks, shared components, forms, and feature folders.
