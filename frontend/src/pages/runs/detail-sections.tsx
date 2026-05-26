@@ -16,7 +16,6 @@ import "@xyflow/react/dist/style.css";
 import {
   Activity,
   AlertCircle,
-  Database,
   Download,
   FileText,
   GitBranch,
@@ -57,6 +56,14 @@ import {
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
@@ -320,6 +327,23 @@ function DetailGrid({ items }: { items: DetailItem[] }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+function CompactModeEmptyState({
+  children,
+  testId,
+}: {
+  children: ReactNode;
+  testId: string;
+}) {
+  return (
+    <div
+      className="rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground"
+      data-testid={testId}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -638,6 +662,199 @@ function RunFinalOutputPane({ run }: { run: RunRead }) {
   );
 }
 
+export function RunOutputWorkspace({ run }: { run: RunRead }) {
+  const provenance = run.packageProvenance;
+
+  return (
+    <div className="grid min-w-0 gap-3" data-testid="runs-output-workspace">
+      <RunFinalOutputPane run={run} />
+      <ConsoleSection
+        description="Output provenance stays beside the rendered payload while raw payload detail remains available in the right inspector."
+        title="Output provenance"
+      >
+        <EvidenceCluster
+          items={[
+            {
+              label: "Workflow",
+              value: provenance?.workflowName ?? "Snapshot workflow",
+              description:
+                provenance?.workflowKey ?? run.targetKey ?? "Not recorded",
+            },
+            {
+              label: "Availability",
+              value:
+                run.finalOutput === null &&
+                (run.status === "queued" || run.status === "running")
+                  ? "Pending"
+                  : "Captured",
+              description: "Rendered and raw views use the same immutable payload.",
+              tone:
+                run.finalOutput === null &&
+                (run.status === "queued" || run.status === "running")
+                  ? "warning"
+                  : "verified",
+            },
+          ]}
+          layout="grid"
+        />
+      </ConsoleSection>
+    </div>
+  );
+}
+
+export function RunInputWorkspace({ run }: { run: RunRead }) {
+  const provenance = run.packageProvenance;
+  const launchSnapshot = provenance?.launchSnapshot ?? null;
+
+  return (
+    <div className="grid min-w-0 gap-3" data-testid="runs-input-workspace">
+      <Card data-testid="runs-detail-input-card">
+        <CardContent className="min-w-0 space-y-5 pt-6">
+          <RunPayloadPane
+            headingId="runs-input-heading"
+            label="Run input"
+            testId="runs-detail-input"
+            value={run.input}
+          />
+        </CardContent>
+      </Card>
+      <ConsoleSection
+        description="Launch-time input context is owned by the center workspace; the inspector is reserved for selected raw detail."
+        title="Input provenance"
+      >
+        <EvidenceCluster
+          items={[
+            {
+              label: "Parameters",
+              value:
+                run.input && typeof run.input === "object"
+                  ? `${Object.keys(run.input as Record<string, unknown>).length} root field(s)`
+                  : "Scalar input",
+              description: "Root launch parameters captured with the run.",
+            },
+            {
+              label: "Schema",
+              value: launchSnapshot?.inputSchema
+                ? "Snapshot schema captured"
+                : "No schema snapshot",
+              description: launchSnapshot?.workflowKey ?? "Not recorded",
+              tone: launchSnapshot?.inputSchema ? "verified" : "warning",
+            },
+          ]}
+          layout="grid"
+        />
+      </ConsoleSection>
+    </div>
+  );
+}
+
+export function RunOverviewWorkspace({
+  allInvocationsCount,
+  run,
+  runProgress,
+  targetKindLabel,
+  terminalInvocationsCount,
+  traceSpanEntries,
+}: {
+  allInvocationsCount: number;
+  run: RunRead;
+  runProgress: number;
+  targetKindLabel: string;
+  terminalInvocationsCount: number;
+  traceSpanEntries: TraceSpanEntry[];
+}) {
+  const queueValue = run.queue
+    ? `${run.queue.state} · ${formatQueueReasonTitle(run.queue.reason)}`
+    : run.status === "queued"
+      ? "Queued without queue detail"
+      : "No queue hold";
+  const providerCount =
+    run.packageProvenance?.resolvedModelConnections.length ?? 0;
+
+  return (
+    <section className="grid min-w-0 gap-3" data-testid="runs-overview-workspace">
+      <ConsoleSection
+        description="Operational availability and progress cues for this immutable run snapshot."
+        title="Operational overview"
+      >
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="sr-only" data-testid="runs-summary-execution-row">
+            <span data-testid="runs-detail-status">{run.status}</span>
+            <span data-testid="runs-detail-target-kind">{targetKindLabel}</span>
+            <span>
+              {terminalInvocationsCount} of {allInvocationsCount} invocation(s)
+              terminal.
+            </span>
+          </div>
+          <ResourceStatusStrip
+            items={[
+              {
+                label: "Queue",
+                value: queueValue,
+                tone: run.queue ? "warning" : "muted",
+              },
+              {
+                label: "Invocations",
+                value: `${terminalInvocationsCount} of ${allInvocationsCount} invocation(s) terminal`,
+              },
+              {
+                label: "Output",
+                value: run.finalOutput === null ? "Pending" : "Captured",
+                tone: run.finalOutput === null ? "warning" : "success",
+              },
+              {
+                label: "Trace",
+                value: run.traceId ?? `${traceSpanEntries.length} span(s)`,
+                tone:
+                  run.traceId || traceSpanEntries.length > 0
+                    ? "success"
+                    : "warning",
+              },
+            ]}
+          />
+          <div
+            className="flex min-w-0 flex-col gap-2"
+            data-testid="runs-summary-progress-row"
+          >
+            <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+              <span>Run progress</span>
+              <span className="font-medium text-foreground">
+                {runProgress}%
+              </span>
+            </div>
+            <Progress className="min-w-0" value={runProgress} />
+          </div>
+        </div>
+      </ConsoleSection>
+      <ConsoleSection
+        description="Evidence availability without opening the secondary evidence modes."
+        title="Evidence availability"
+      >
+        <EvidenceCluster
+          items={[
+            {
+              label: "Runtime",
+              value: `${providerCount} provider/model row${providerCount === 1 ? "" : "s"}`,
+              description: "Open Runtime for provider and capability rows.",
+            },
+            {
+              label: "Audit",
+              value: `${run.memoryEvents.length} memory event${run.memoryEvents.length === 1 ? "" : "s"}`,
+              description: `${run.memoryArtifacts.length} artifact${run.memoryArtifacts.length === 1 ? "" : "s"} available for audit drill-down.`,
+            },
+            {
+              label: "Usage",
+              value: `${run.executedTokens.toLocaleString()} executed tokens`,
+              description: `${run.inheritedTokens.toLocaleString()} inherited tokens copied into this snapshot.`,
+            },
+          ]}
+          layout="grid"
+        />
+      </ConsoleSection>
+    </section>
+  );
+}
+
 function graphMetadataLabel(
   metadata: RunGraphMetadata | null | undefined,
 ): string {
@@ -890,8 +1107,6 @@ type RuntimeStrategySummary = {
   usage: RunModelGatewayUsageRead | null;
 };
 
-type RuntimeProfileMode = "summary" | "audit";
-
 type RuntimeCapabilityCounts = Record<ModelConnectionCapabilityStatus, number>;
 
 const RUNTIME_AUDIT_STRATEGY_LIMIT = 20;
@@ -984,6 +1199,22 @@ function runtimeStrategySummaries(run: RunRead): RuntimeStrategySummary[] {
   );
 }
 
+function runtimeInvocationTokenRows(run: RunRead) {
+  return run.steps.flatMap((step) =>
+    sortedInvocations(step.invocations)
+      .filter((invocation) => invocation.tokens > 0)
+      .map((invocation) => ({
+        agentLabel: `${invocation.agentKey}@${invocation.agentVersion}`,
+        invocationId: invocation.id,
+        key: `${step.index}-${invocation.id}`,
+        slot: invocation.slot,
+        status: invocation.status,
+        stepIndex: step.index,
+        tokens: invocation.tokens,
+      })),
+  );
+}
+
 function runtimeCapabilityCounts(
   connection: RunPackageResolvedModelConnectionRead,
 ): RuntimeCapabilityCounts {
@@ -1004,50 +1235,19 @@ function formatRuntimeCapabilitySummary(
   return `${counts.supported} supported · ${counts.unsupported} unsupported · ${counts.unknown} unknown · ${counts.notApplicable} not applicable`;
 }
 
-function runtimeSummaryItems(
-  connection: RunPackageResolvedModelConnectionRead,
-): DetailItem[] {
-  return [
-    { label: "Captured model", value: connection.modelId },
-    { label: "Endpoint", value: connection.baseUrl },
-    {
-      label: "Protocol",
-      value: PROTOCOL_PROFILE_LABELS[connection.protocolProfile],
-    },
-    {
-      label: "Runtime controls",
-      value: [
-        OUTPUT_STRATEGY_POLICY_LABELS[connection.outputStrategyPolicy],
-        PARALLEL_TOOL_CALLS_POLICY_LABELS[connection.parallelToolCallsPolicy],
-        REASONING_POLICY_LABELS[connection.reasoningPolicy],
-        STREAMING_POLICY_LABELS[connection.streamingPolicy],
-      ].join(" · "),
-    },
-    {
-      label: "Capability summary",
-      value: formatRuntimeCapabilitySummary(connection),
-    },
-    {
-      label: "Captured execution settings",
-      value: `${connection.timeoutSeconds}s timeout · reasoning ${connection.reasoningEffort ?? "omitted"}`,
-    },
-  ];
-}
-
-function unsupportedRuntimeCapabilities(
-  connection: RunPackageResolvedModelConnectionRead,
-): Array<keyof ModelConnectionCapabilities> {
-  return CAPABILITY_ORDER.filter(
-    (capabilityKey) =>
-      connection.capabilities[capabilityKey].status === "unsupported",
-  );
-}
-
-function RunRuntimeProfileSection({ run }: { run: RunRead }) {
-  const [profileMode, setProfileMode] = useState<RuntimeProfileMode>("summary");
+export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
   const provenance = run.packageProvenance;
   if (run.targetKind !== "workflowPackage" || !provenance) {
-    return null;
+    return (
+      <ConsoleSection
+        description="Runtime profile data is only recorded for Workflow Package runs."
+        title="Runtime profile"
+      >
+        <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+          No runtime profile was recorded for this run.
+        </div>
+      </ConsoleSection>
+    );
   }
 
   const resolvedModelConnections = provenance.resolvedModelConnections;
@@ -1062,34 +1262,9 @@ function RunRuntimeProfileSection({ run }: { run: RunRead }) {
   );
 
   return (
-    <div data-testid="runs-runtime-profile">
+    <div className="grid min-w-0 gap-3" data-testid="runs-runtime-profile">
       <ConsoleSection
-        actions={
-          <div
-            className="flex min-w-0 flex-wrap items-center gap-2"
-            data-testid="runs-runtime-profile-mode"
-          >
-            <Button
-              className="h-8 cursor-pointer"
-              onClick={() => setProfileMode("summary")}
-              size="sm"
-              type="button"
-              variant={profileMode === "summary" ? "secondary" : "outline"}
-            >
-              Summary
-            </Button>
-            <Button
-              className="h-8 cursor-pointer"
-              onClick={() => setProfileMode("audit")}
-              size="sm"
-              type="button"
-              variant={profileMode === "audit" ? "secondary" : "outline"}
-            >
-              Audit evidence
-            </Button>
-          </div>
-        }
-        description="Frozen model connections, compatibility probes, and adapter-selected strategies captured with the run."
+        description="Frozen provider, model, policy, and capability rows captured when the run executed."
         title="Runtime profile"
       >
         {resolvedModelConnections.length === 0 ? (
@@ -1097,253 +1272,199 @@ function RunRuntimeProfileSection({ run }: { run: RunRead }) {
             No resolved model connections were recorded for this run.
           </div>
         ) : (
-          <>
-            <div
-              className="grid gap-4 2xl:grid-cols-2"
-              data-testid="runs-runtime-summary"
-              hidden={profileMode !== "summary"}
-            >
-            {resolvedModelConnections.map((connection) => {
-              const capabilityCounts = runtimeCapabilityCounts(connection);
-              const unsupportedCapabilities =
-                unsupportedRuntimeCapabilities(connection);
-              return (
-                <article
-                  className="min-w-0 space-y-3 border-t border-border pt-3 first:border-t-0 first:pt-0"
-                  data-testid={`runs-runtime-profile-connection-${connection.key}`}
-                  key={connection.key}
-                >
-                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 space-y-1">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {connection.name}
-                      </p>
-                      <p className="break-all text-xs text-muted-foreground">
-                        {connection.key}
-                      </p>
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:justify-end">
-                      <Badge variant="outline">
-                        {runtimeConnectionKindLabel(connection.connectionKind)}
-                      </Badge>
-                      <Badge variant="secondary">
-                        {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
-                      </Badge>
-                      <Badge variant="outline">
-                        {capabilityCounts.supported} supported
-                      </Badge>
-                      <Badge
-                        variant={
-                          capabilityCounts.unsupported > 0
-                            ? "destructive"
-                            : "outline"
-                        }
-                      >
-                        {capabilityCounts.unsupported} unsupported
-                      </Badge>
-                      <Badge
-                        variant={connection.hasApiKey ? "secondary" : "outline"}
-                      >
-                        {connection.hasApiKey
-                          ? "Credential present"
-                          : "No credential"}
-                      </Badge>
-                    </div>
-                  </div>
-                  <DetailGrid items={runtimeSummaryItems(connection)} />
-                  {unsupportedCapabilities.length > 0 ? (
-                    <p className="break-words border-l border-border pl-3 text-sm text-muted-foreground">
-                      Unsupported:{" "}
-                      {unsupportedCapabilities
-                        .map(
-                          (capabilityKey) => CAPABILITY_LABELS[capabilityKey],
-                        )
-                        .join(", ")}
-                    </p>
-                  ) : null}
-                </article>
-              );
-            })}
-            </div>
-            <div
-              className="space-y-3"
-              data-testid="runs-runtime-audit-evidence"
-              hidden={profileMode !== "audit"}
-            >
-            {resolvedModelConnections.map((connection) => (
-              <article
-                className="space-y-3 rounded-md border bg-card/80 p-3"
-                data-testid={`runs-runtime-audit-connection-${connection.key}`}
-                key={connection.key}
-              >
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {connection.name}
-                    </p>
-                    <p className="break-all text-xs text-muted-foreground">
-                      {connection.key}
-                    </p>
-                  </div>
-                  <Badge variant="outline">
-                    {runtimeConnectionKindLabel(connection.connectionKind)}
-                  </Badge>
-                  <Badge variant="secondary">
-                    {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
-                  </Badge>
-                </div>
-                <DetailGrid
-                  items={[
-                    {
-                      label: "Protocol profile",
-                      value:
-                        PROTOCOL_PROFILE_LABELS[connection.protocolProfile],
-                    },
-                    { label: "Model id", value: connection.modelId },
-                    { label: "Base URL", value: connection.baseUrl },
-                    {
-                      label: "Reasoning effort",
-                      value: connection.reasoningEffort ?? "Not recorded",
-                    },
-                    {
-                      label: "Timeout",
-                      value: `${connection.timeoutSeconds}s`,
-                    },
-                    {
-                      label: "Probe cache TTL",
-                      value: `${connection.probeCacheTtlSeconds}s`,
-                    },
-                  ]}
-                />
-                <section className="space-y-2">
-                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Compatibility policies
-                  </h4>
-                  <DetailGrid
-                    items={[
-                      {
-                        label: "Output strategy",
-                        value:
-                          OUTPUT_STRATEGY_POLICY_LABELS[
-                            connection.outputStrategyPolicy
-                          ],
-                      },
-                      {
-                        label: "Parallel tool calls",
-                        value:
-                          PARALLEL_TOOL_CALLS_POLICY_LABELS[
-                            connection.parallelToolCallsPolicy
-                          ],
-                      },
-                      {
-                        label: "Reasoning",
-                        value:
-                          REASONING_POLICY_LABELS[connection.reasoningPolicy],
-                      },
-                      {
-                        label: "Streaming",
-                        value:
-                          STREAMING_POLICY_LABELS[connection.streamingPolicy],
-                      },
-                    ]}
-                  />
-                </section>
-                <section className="space-y-2">
-                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Capability probes
-                  </h4>
-                  <div className="grid gap-2 xl:grid-cols-2">
-                    {CAPABILITY_ORDER.map((capabilityKey) => {
-                      const state = connection.capabilities[capabilityKey];
-                      return (
-                        <div
-                          className="flex min-w-0 items-start justify-between gap-3 rounded-md border bg-background/70 p-3"
-                          key={capabilityKey}
-                        >
-                          <div className="min-w-0 space-y-1">
-                            <p className="text-sm font-medium text-foreground">
-                              {CAPABILITY_LABELS[capabilityKey]}
-                            </p>
-                            <p className="break-words text-xs text-muted-foreground">
-                              {state.detail || "No probe detail recorded."}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 flex-col items-end gap-1 text-right">
-                            <Badge
-                              variant={capabilityStatusVariant(state.status)}
-                            >
-                              {capabilityStatusLabel(state.status)}
-                            </Badge>
-                            {state.lastProbedAt ? (
-                              <p className="text-[11px] text-muted-foreground">
-                                Last probed {formatDateTime(state.lastProbedAt)}
-                              </p>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              </article>
-            ))}
-            <section
-              className="space-y-3 rounded-md border bg-card/70 p-3"
-              data-testid="runs-runtime-selected-strategies"
-            >
-              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Selected strategies
-                </h4>
-                <Badge variant="outline">
-                  {strategySummaries.length} invocation
-                  {strategySummaries.length === 1 ? "" : "s"}
-                </Badge>
-              </div>
-              {strategySummaries.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                  No adapter-selected strategy metadata was recorded for this
-                  run.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {hiddenStrategyCount > 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      Showing the first {visibleStrategySummaries.length} of{" "}
-                      {strategySummaries.length} invocation records.
-                    </p>
-                  ) : null}
-                  {visibleStrategySummaries.map((summary) => (
-                    <article
-                      className="space-y-3 rounded-md border bg-background/70 p-3"
-                      data-testid={`runs-runtime-strategy-${summary.key}`}
-                      key={summary.key}
-                    >
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div data-testid="runs-runtime-provider-rows">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider/model</TableHead>
+                  <TableHead>Protocol</TableHead>
+                  <TableHead>Capabilities</TableHead>
+                  <TableHead>Policies</TableHead>
+                  <TableHead>Execution settings</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {resolvedModelConnections.map((connection) => (
+                  <TableRow
+                    data-testid={`runs-runtime-profile-connection-${connection.key}`}
+                    key={connection.key}
+                  >
+                    <TableCell className="min-w-56 whitespace-normal align-top">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="font-medium text-foreground">
+                          {connection.name}
+                        </span>
+                        <span className="break-all text-xs text-muted-foreground">
+                          {connection.key}
+                        </span>
+                        <span className="break-all text-xs text-muted-foreground">
+                          {connection.modelId}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="whitespace-normal align-top">
+                      <div className="flex flex-wrap gap-1.5">
                         <Badge variant="outline">
-                          Step {summary.stepIndex}
+                          {runtimeConnectionKindLabel(connection.connectionKind)}
                         </Badge>
-                        <Badge variant={statusVariant(summary.status)}>
-                          {summary.status}
+                        <Badge variant="secondary">
+                          {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
                         </Badge>
-                        <span className="min-w-0 break-words text-sm font-medium text-foreground">
+                        <Badge
+                          variant={connection.hasApiKey ? "secondary" : "outline"}
+                        >
+                          {connection.hasApiKey
+                            ? "Credential present"
+                            : "No credential"}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell className="min-w-52 whitespace-normal align-top text-muted-foreground">
+                      {formatRuntimeCapabilitySummary(connection)}
+                    </TableCell>
+                    <TableCell className="min-w-64 whitespace-normal align-top text-muted-foreground">
+                      {[
+                        OUTPUT_STRATEGY_POLICY_LABELS[
+                          connection.outputStrategyPolicy
+                        ],
+                        PARALLEL_TOOL_CALLS_POLICY_LABELS[
+                          connection.parallelToolCallsPolicy
+                        ],
+                        REASONING_POLICY_LABELS[connection.reasoningPolicy],
+                        STREAMING_POLICY_LABELS[connection.streamingPolicy],
+                      ].join(" · ")}
+                    </TableCell>
+                    <TableCell className="min-w-48 whitespace-normal align-top text-muted-foreground">
+                      {connection.timeoutSeconds}s timeout · reasoning {connection.reasoningEffort ?? "omitted"} · probe TTL {connection.probeCacheTtlSeconds}s
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </ConsoleSection>
+
+      <ConsoleSection
+        description="Capability probes are row-first so repeated provider evidence stays comparable."
+        title="Capability matrix"
+      >
+        {resolvedModelConnections.length === 0 ? (
+          <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+            No capability probes were recorded.
+          </div>
+        ) : (
+          <div data-testid="runs-runtime-capability-matrix">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Capability</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Probe detail</TableHead>
+                  <TableHead>Last probed</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {resolvedModelConnections.flatMap((connection) =>
+                  CAPABILITY_ORDER.map((capabilityKey) => {
+                    const state = connection.capabilities[capabilityKey];
+                    return (
+                      <TableRow
+                        data-testid={`runs-runtime-capability-${connection.key}-${capabilityKey}`}
+                        key={`${connection.key}-${capabilityKey}`}
+                      >
+                        <TableCell className="whitespace-normal align-top font-medium">
+                          {connection.name}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top">
+                          {CAPABILITY_LABELS[capabilityKey]}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge variant={capabilityStatusVariant(state.status)}>
+                            {capabilityStatusLabel(state.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
+                          {state.detail || "No probe detail recorded."}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-muted-foreground">
+                          {state.lastProbedAt
+                            ? formatDateTime(state.lastProbedAt)
+                            : "Not recorded"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }),
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </ConsoleSection>
+
+      <ConsoleSection
+        description="Adapter-selected strategy metadata is repeated invocation evidence, so it stays in rows."
+        title="Selected strategies"
+      >
+        {strategySummaries.length === 0 ? (
+          <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+            No adapter-selected strategy metadata was recorded for this run.
+          </div>
+        ) : (
+          <div className="grid min-w-0 gap-2">
+            {hiddenStrategyCount > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Showing the first {visibleStrategySummaries.length} of {strategySummaries.length} invocation records.
+              </p>
+            ) : null}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invocation</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Strategies</TableHead>
+                  <TableHead>Usage</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visibleStrategySummaries.map((summary) => (
+                  <TableRow
+                    data-testid={`runs-runtime-strategy-${summary.key}`}
+                    key={summary.key}
+                  >
+                    <TableCell className="min-w-48 whitespace-normal align-top">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="font-medium text-foreground">
                           {summary.agentLabel}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          Invocation #{summary.invocationId}
+                          Step {summary.stepIndex} · Invocation #{summary.invocationId}
                         </span>
                       </div>
-                      <DetailGrid items={strategyItems(summary.strategies)} />
-                      {summary.usage ? (
-                        <DetailGrid items={usageItems(summary.usage)} />
-                      ) : null}
-                    </article>
-                  ))}
-                </div>
-              )}
-              </section>
-            </div>
-          </>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <Badge variant={statusVariant(summary.status)}>
+                        {summary.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="min-w-80 whitespace-normal align-top text-muted-foreground">
+                      {strategyItems(summary.strategies)
+                        .map((item) => `${item.label}: ${item.value}`)
+                        .join(" · ")}
+                    </TableCell>
+                    <TableCell className="min-w-52 whitespace-normal align-top text-muted-foreground">
+                      {summary.usage
+                        ? usageItems(summary.usage)
+                            .map((item) => `${item.label}: ${item.value}`)
+                            .join(" · ")
+                        : "Usage not recorded"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </ConsoleSection>
     </div>
@@ -1979,46 +2100,6 @@ function selectedTargetLabel(
   return `Run #${run.id}`;
 }
 
-function InspectionSelectorButton({
-  activeInspection,
-  children,
-  className,
-  onSelect,
-  pane,
-  target,
-  testId,
-}: {
-  activeInspection: RunInspectionState;
-  children: ReactNode;
-  className?: string;
-  onSelect: (target: RunInspectionTarget, pane?: RunInspectionPane) => void;
-  pane?: RunInspectionPane;
-  target: RunInspectionTarget;
-  testId?: string;
-}) {
-  const isActiveTarget = isInspectionTargetEqual(
-    activeInspection.target,
-    target,
-  );
-  const isActive = isActiveTarget && (!pane || activeInspection.pane === pane);
-
-  return (
-    <Button
-      className={cn(
-        "h-auto w-full cursor-pointer justify-start px-3 py-2 text-left",
-        className,
-      )}
-      data-testid={testId}
-      onClick={() => onSelect(target, pane)}
-      size="sm"
-      type="button"
-      variant={isActive ? "secondary" : "ghost"}
-    >
-      {children}
-    </Button>
-  );
-}
-
 export function RunContextStrip({
   allInvocationsCount,
   run,
@@ -2093,62 +2174,583 @@ export function RunContextStrip({
         </div>
       </ConsoleSection>
 
-      <ConsoleSection
-        description="Token accounting stays split between inherited fork context and freshly executed work."
-        title="Lineage and usage"
-      >
-        <EvidenceCluster
-          items={[
-            {
-              label: "Total tokens",
-              value: run.totalTokens.toLocaleString(),
-              description: "All tokens in the read model.",
-            },
-            {
-              label: "Inherited tokens",
-              value: run.inheritedTokens.toLocaleString(),
-              description: "Copied upstream context in forked lineage.",
-            },
-            {
-              label: "Executed tokens",
-              value: run.executedTokens.toLocaleString(),
-              description: "Tokens generated by this run execution.",
-            },
-            {
-              label: "Resume boundary",
-              value: `Step ${run.resumeStepIndex}`,
-              description: run.sourceRunId
-                ? `Source run #${run.sourceRunId}`
-                : "Original run boundary.",
-            },
-          ]}
-          layout="grid"
-        />
-        <dl className="sr-only" data-testid="runs-summary-usage-row">
-          <div>
-            <dt>Total tokens</dt>
-            <dd>{run.totalTokens}</dd>
-          </div>
-          <div>
-            <dt>Inherited tokens</dt>
-            <dd>{run.inheritedTokens}</dd>
-          </div>
-          <div>
-            <dt>Executed tokens</dt>
-            <dd>{run.executedTokens}</dd>
-          </div>
-        </dl>
-      </ConsoleSection>
-
+      <RunTokensWorkspace run={run} />
       <RunRuntimeProfileSection run={run} />
     </section>
   );
 }
 
+function hasRunLineageEvidence({
+  copiedInvocations,
+  copiedSteps,
+  run,
+}: {
+  copiedInvocations: number;
+  copiedSteps: number;
+  run: RunRead;
+}): boolean {
+  return Boolean(
+    run.sourceRunId ||
+      (run.lineageRootRunId && run.lineageRootRunId !== run.id) ||
+      run.replayStepIndex !== null ||
+      copiedSteps > 0 ||
+      copiedInvocations > 0,
+  );
+}
+
+export function RunLineageWorkspace({
+  copiedInvocations,
+  copiedSteps,
+  isCurrentFork,
+  plannedInvocations,
+  plannedSteps,
+  run,
+}: {
+  copiedInvocations: number;
+  copiedSteps: number;
+  isCurrentFork: boolean;
+  plannedInvocations: number;
+  plannedSteps: number;
+  run: RunRead;
+}) {
+  if (!hasRunLineageEvidence({ copiedInvocations, copiedSteps, run })) {
+    return (
+      <section className="grid min-w-0 gap-3" data-testid="runs-lineage-workspace">
+        <ConsoleSection
+          description="Fork, snapshot, and historical boundaries appear here when the run has upstream lineage."
+          title="Lineage"
+        >
+          <CompactModeEmptyState testId="runs-lineage-empty">
+            No fork, snapshot replay, copied-step, or historical lineage boundary is recorded for this run.
+          </CompactModeEmptyState>
+        </ConsoleSection>
+      </section>
+    );
+  }
+
+  return (
+    <section className="grid min-w-0 gap-3" data-testid="runs-lineage-workspace">
+      <ConsoleSection
+        description="Fork, snapshot, and historical boundaries stay isolated from execution rows."
+        title="Lineage boundaries"
+      >
+        <EvidenceCluster
+          items={[
+            {
+              label: "Source",
+              value: run.sourceRunId ? `Run #${run.sourceRunId}` : "Snapshot root",
+              description: isCurrentFork
+                ? "Current fork lineage"
+                : "Historical or original lineage boundary",
+            },
+            {
+              label: "Resume",
+              value: `Step ${run.resumeStepIndex}`,
+              description:
+                run.replayStepIndex === null
+                  ? "No replay source step recorded"
+                  : `Replay source step ${run.replayStepIndex}`,
+            },
+            {
+              label: "Steps",
+              value: `${copiedSteps} copied · ${plannedSteps} planned`,
+              description: "Snapshot copy versus executed run plan.",
+            },
+            {
+              label: "Invocations",
+              value: `${copiedInvocations} copied · ${plannedInvocations} planned/executed`,
+              description: "Invocation-level inherited output or input boundaries.",
+            },
+          ]}
+          layout="grid"
+        />
+      </ConsoleSection>
+      <RunLineageEvidence
+        copiedInvocations={copiedInvocations}
+        copiedSteps={copiedSteps}
+        isCurrentFork={isCurrentFork}
+        plannedInvocations={plannedInvocations}
+        plannedSteps={plannedSteps}
+        run={run}
+      />
+    </section>
+  );
+}
+
+export function RunTokensWorkspace({ run }: { run: RunRead }) {
+  const tokenRows = runtimeInvocationTokenRows(run);
+  const strategySummaries = runtimeStrategySummaries(run).filter(
+    (summary) => summary.usage,
+  );
+  const hasTokenAccounting = Boolean(
+    run.totalTokens ||
+      run.inheritedTokens ||
+      run.executedTokens ||
+      tokenRows.length > 0 ||
+      strategySummaries.length > 0,
+  );
+
+  if (!hasTokenAccounting) {
+    return (
+      <section className="grid min-w-0 gap-3" data-testid="runs-tokens-workspace">
+        <ConsoleSection
+          description="Token usage appears here when the backend reports run-level or invocation-level accounting."
+          title="Token accounting"
+        >
+          <CompactModeEmptyState testId="runs-tokens-empty">
+            No token accounting was reported for this run.
+          </CompactModeEmptyState>
+        </ConsoleSection>
+      </section>
+    );
+  }
+
+  return (
+    <section className="grid min-w-0 gap-3" data-testid="runs-tokens-workspace">
+      <ConsoleSection
+        description="Run-level accounting stays split across total, inherited, and newly executed usage."
+        title="Token accounting"
+      >
+        <div className="grid min-w-0 gap-3">
+          <ResourceStatusStrip
+            items={[
+              { label: "Total", value: run.totalTokens.toLocaleString() },
+              {
+                label: "Executed",
+                value: run.executedTokens.toLocaleString(),
+                tone: run.executedTokens > 0 ? "success" : "muted",
+              },
+              {
+                label: "Inherited",
+                value: run.inheritedTokens.toLocaleString(),
+                tone: run.inheritedTokens > 0 ? "warning" : "muted",
+              },
+            ]}
+          />
+          <EvidenceCluster
+            items={[
+              {
+                label: "Read model total",
+                value: run.totalTokens.toLocaleString(),
+                description: "All usage counted on the run read model.",
+              },
+              {
+                label: "Fresh execution",
+                value: run.executedTokens.toLocaleString(),
+                description: "Tokens generated by this run execution.",
+              },
+              {
+                label: "Inherited context",
+                value: run.inheritedTokens.toLocaleString(),
+                description: run.sourceRunId
+                  ? `Copied from upstream source run #${run.sourceRunId}.`
+                  : "No upstream source run boundary.",
+                tone: run.inheritedTokens > 0 ? "warning" : "neutral",
+              },
+            ]}
+            layout="grid"
+          />
+          <dl className="sr-only" data-testid="runs-summary-usage-row">
+            <div>
+              <dt>Total tokens</dt>
+              <dd>{run.totalTokens}</dd>
+            </div>
+            <div>
+              <dt>Inherited tokens</dt>
+              <dd>{run.inheritedTokens}</dd>
+            </div>
+            <div>
+              <dt>Executed tokens</dt>
+              <dd>{run.executedTokens}</dd>
+            </div>
+          </dl>
+        </div>
+      </ConsoleSection>
+
+      <ConsoleSection
+        description="Per-invocation token fields and provider usage metadata stay row-based for auditability."
+        title="Invocation usage rows"
+      >
+        {tokenRows.length === 0 && strategySummaries.length === 0 ? (
+          <CompactModeEmptyState testId="runs-tokens-rows-empty">
+            No invocation-level token rows were recorded; only run-level accounting is available.
+          </CompactModeEmptyState>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Invocation</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Run tokens</TableHead>
+                <TableHead>Gateway usage</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tokenRows.map((row) => {
+                const gatewayUsage = strategySummaries.find(
+                  (summary) => summary.key === row.key,
+                )?.usage;
+                return (
+                  <TableRow data-testid={`runs-token-row-${row.key}`} key={row.key}>
+                    <TableCell className="min-w-52 whitespace-normal align-top">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="font-medium text-foreground">
+                          {row.agentLabel}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Step {row.stepIndex} · {row.slot} · Invocation #{row.invocationId}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
+                    </TableCell>
+                    <TableCell className="align-top text-muted-foreground">
+                      {row.tokens.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="min-w-64 whitespace-normal align-top text-muted-foreground">
+                      {gatewayUsage
+                        ? usageItems(gatewayUsage)
+                            .map((item) => `${item.label}: ${item.value}`)
+                            .join(" · ")
+                        : "Gateway usage not recorded"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </ConsoleSection>
+    </section>
+  );
+}
+
+type RunDiagnosticSeverity = "error" | "warning";
+
+type RunDiagnosticRow = {
+  field: string;
+  issue: string;
+  key: string;
+  severity: RunDiagnosticSeverity;
+  source: string;
+  title: string;
+};
+
+function diagnosticBadge(severity: RunDiagnosticSeverity) {
+  return severity === "error" ? (
+    <Badge data-severity="error" variant="destructive">
+      Failure
+    </Badge>
+  ) : (
+    <Badge
+      className="border-chart-3/30 bg-chart-3/10 text-chart-3"
+      data-severity="warning"
+      variant="outline"
+    >
+      Warning
+    </Badge>
+  );
+}
+
+function packageReadinessDiagnostics(run: RunRead): RunDiagnosticRow[] {
+  const preflight = run.packageProvenance?.preflightSummary;
+  return diagnosticsFromDraftReadiness(preflight).map((diagnostic, index) => ({
+    field: diagnostic.field,
+    issue: diagnostic.issue,
+    key: `preflight-${diagnostic.severity}-${index}`,
+    severity: diagnostic.severity,
+    source: "Launch preflight",
+    title: diagnostic.severity === "error" ? "Preflight blocker" : "Preflight warning",
+  }));
+}
+
+function packageCurrentDiagnostics(run: RunRead): RunDiagnosticRow[] {
+  const currentPackage = run.packageProvenance?.currentPackage;
+  if (!currentPackage) {
+    return [];
+  }
+
+  const diagnostics: RunDiagnosticRow[] = [];
+  if (!currentPackage.available) {
+    diagnostics.push({
+      field: "package.currentPackage.available",
+      issue: currentPackage.unavailableReason ?? "Current package snapshot is unavailable.",
+      key: "current-package-unavailable",
+      severity: "warning",
+      source: "Current package",
+      title: "Current package unavailable",
+    });
+  }
+  if (currentPackage.manifestHashMatchesSnapshot === false) {
+    diagnostics.push({
+      field: "package.currentPackage.manifestHash",
+      issue: "Current manifest hash differs from the run snapshot.",
+      key: "manifest-hash-mismatch",
+      severity: "warning",
+      source: "Current package",
+      title: "Manifest hash drift",
+    });
+  }
+  if (currentPackage.compiledHashMatchesSnapshot === false) {
+    diagnostics.push({
+      field: "package.currentPackage.compiledHash",
+      issue: "Current compiled hash differs from the run snapshot.",
+      key: "compiled-hash-mismatch",
+      severity: "warning",
+      source: "Current package",
+      title: "Compiled hash drift",
+    });
+  }
+  return diagnostics;
+}
+
+function unsupportedCapabilityDiagnostics(run: RunRead): RunDiagnosticRow[] {
+  return (run.packageProvenance?.resolvedModelConnections ?? []).flatMap(
+    (connection) =>
+      CAPABILITY_ORDER.filter(
+        (capabilityKey) => connection.capabilities[capabilityKey].status === "unsupported",
+      ).map((capabilityKey) => ({
+        field: `runtime.${connection.key}.${capabilityKey}`,
+        issue:
+          connection.capabilities[capabilityKey].detail ||
+          `${CAPABILITY_LABELS[capabilityKey]} is unsupported for this frozen runtime profile.`,
+        key: `unsupported-${connection.key}-${capabilityKey}`,
+        severity: "warning" as const,
+        source: "Runtime capability",
+        title: `${connection.name}: ${CAPABILITY_LABELS[capabilityKey]}`,
+      })),
+  );
+}
+
+function runDiagnostics(run: RunRead, steps: RunStepRead[]): RunDiagnosticRow[] {
+  const stepDiagnostics = steps.flatMap((step) => {
+    const diagnostics: RunDiagnosticRow[] = [];
+    if (step.error) {
+      diagnostics.push({
+        field: `steps.${step.index}.error`,
+        issue: step.error,
+        key: `step-${step.index}-error`,
+        severity: "error",
+        source: "Step",
+        title: `Step ${step.index} failed`,
+      });
+    }
+    sortedInvocations(step.invocations).forEach((invocation) => {
+      const hasError = Boolean(
+        invocation.errorCode || invocation.errorMessage || invocation.errorDetails.length > 0,
+      );
+      if (!hasError) {
+        return;
+      }
+      diagnostics.push({
+        field: `steps.${step.index}.invocations.${invocation.id}`,
+        issue: invocation.errorMessage ?? "No invocation error message recorded.",
+        key: `agent-${invocation.id}-error`,
+        severity: "error",
+        source: "Agent invocation",
+        title: invocation.errorCode ?? `${invocation.slot} invocation failed`,
+      });
+    });
+    sortedOperationInvocations(step.operationInvocations).forEach((invocation) => {
+      const hasError = Boolean(
+        invocation.errorCode || invocation.errorMessage || invocation.errorDetails.length > 0,
+      );
+      if (!hasError) {
+        return;
+      }
+      diagnostics.push({
+        field: `steps.${step.index}.operations.${invocation.id}`,
+        issue: invocation.errorMessage ?? "No operation error message recorded.",
+        key: `operation-${invocation.id}-error`,
+        severity: "error",
+        source: "Operation invocation",
+        title: invocation.errorCode ?? `${invocation.slot} operation failed`,
+      });
+    });
+    return diagnostics;
+  });
+  const forkCandidates = steps.flatMap((step) =>
+    step.status === "succeeded"
+      ? sortedInvocations(step.invocations).filter(
+          (invocation) => invocation.status === "succeeded" && invocation.persistedAt,
+        )
+      : [],
+  );
+
+  return [
+    ...(run.error
+      ? [
+          {
+            field: "run.error",
+            issue: run.error,
+            key: "run-error",
+            severity: "error" as const,
+            source: "Run",
+            title: "Run failed",
+          },
+        ]
+      : []),
+    ...(run.queue
+      ? [
+          {
+            field: "run.queue",
+            issue: `${run.queue.message}${run.queue.blockingRunId ? ` Blocking run: #${run.queue.blockingRunId}.` : ""}`,
+            key: "run-queue",
+            severity: "warning" as const,
+            source: "Queue",
+            title: formatQueueReasonTitle(run.queue.reason),
+          },
+        ]
+      : []),
+    ...stepDiagnostics,
+    ...packageReadinessDiagnostics(run),
+    ...packageCurrentDiagnostics(run),
+    ...unsupportedCapabilityDiagnostics(run),
+    ...(run.targetKind === "workflowPackage" && run.status === "succeeded" && forkCandidates.length === 0
+      ? [
+          {
+            field: "fork.invocation",
+            issue: "No succeeded persisted agent invocation is available for invocation-specific fork creation.",
+            key: "fork-no-candidate",
+            severity: "warning" as const,
+            source: "Fork safety",
+            title: "Fork target unavailable",
+          },
+        ]
+      : []),
+  ];
+}
+
+export function RunDiagnosticsWorkspace({
+  run,
+  steps,
+}: {
+  run: RunRead;
+  steps: RunStepRead[];
+}) {
+  const diagnostics = runDiagnostics(run, steps);
+  const errorCount = diagnostics.filter((item) => item.severity === "error").length;
+  const warningCount = diagnostics.length - errorCount;
+
+  if (diagnostics.length === 0) {
+    return (
+      <section className="grid min-w-0 gap-3" data-testid="runs-diagnostics-workspace">
+        <ConsoleSection
+          description="Warnings, failures, unsupported capabilities, and retry/fork safety checks appear here."
+          title="Diagnostics"
+        >
+          <CompactModeEmptyState testId="runs-diagnostics-empty">
+            No run diagnostics, queue warnings, runtime capability warnings, or safety blockers are recorded.
+          </CompactModeEmptyState>
+        </ConsoleSection>
+      </section>
+    );
+  }
+
+  return (
+    <section className="grid min-w-0 gap-3" data-testid="runs-diagnostics-workspace">
+      <ConsoleSection
+        description="Warnings stay visually separate from destructive failures so degraded runs are not confused with failed ones."
+        title="Diagnostics"
+        tone={errorCount > 0 ? "danger" : "warning"}
+      >
+        <div className="grid min-w-0 gap-3">
+          <ResourceStatusStrip
+            items={[
+              {
+                label: "Failures",
+                value: errorCount,
+                tone: errorCount > 0 ? "danger" : "muted",
+              },
+              {
+                label: "Warnings",
+                value: warningCount,
+                tone: warningCount > 0 ? "warning" : "muted",
+              },
+            ]}
+          />
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Severity</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Diagnostic</TableHead>
+                <TableHead>Field</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {diagnostics.map((diagnostic) => (
+                <TableRow
+                  data-severity={diagnostic.severity}
+                  data-testid={`runs-diagnostic-${diagnostic.key}`}
+                  key={diagnostic.key}
+                >
+                  <TableCell className="align-top">
+                    {diagnosticBadge(diagnostic.severity)}
+                  </TableCell>
+                  <TableCell className="whitespace-normal align-top text-muted-foreground">
+                    {diagnostic.source}
+                  </TableCell>
+                  <TableCell className="min-w-80 whitespace-normal align-top">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="font-medium text-foreground">
+                        {diagnostic.title}
+                      </span>
+                      <span className="break-words text-muted-foreground">
+                        {diagnostic.issue}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="min-w-56 whitespace-normal align-top">
+                    <code className="break-all rounded bg-muted/40 px-2 py-1 text-xs">
+                      {diagnostic.field}
+                    </code>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </ConsoleSection>
+    </section>
+  );
+}
+
+export function RunMemoryWorkspace({ run }: { run: RunRead }) {
+  const hasEvents = run.memoryEvents.length > 0;
+  const hasArtifacts = run.memoryArtifacts.length > 0;
+
+  if (!hasEvents && !hasArtifacts) {
+    return (
+      <section className="grid min-w-0 gap-3" data-testid="runs-memory-workspace">
+        <ConsoleSection
+          description="Memory retrieval, write, review, audit, and compact artifact evidence appears here when recorded."
+          title="Memory"
+        >
+          <CompactModeEmptyState testId="runs-memory-empty">
+            No retrieval, write, review, audit, or compact memory artifact evidence was recorded for this run.
+          </CompactModeEmptyState>
+        </ConsoleSection>
+      </section>
+    );
+  }
+
+  return (
+    <section className="grid min-w-0 gap-3" data-testid="runs-memory-workspace">
+      <RunMemoryEvidence run={run} />
+    </section>
+  );
+}
+
 export function RunAuditEvidenceSection({
+  activeInspection,
+  onSelect,
   run,
   traceSpanEntries,
 }: {
+  activeInspection: RunInspectionState;
+  onSelect: (target: RunInspectionTarget, pane?: RunInspectionPane) => void;
   run: RunRead;
   traceSpanEntries: TraceSpanEntry[];
 }) {
@@ -2156,46 +2758,160 @@ export function RunAuditEvidenceSection({
   const reportAuditLinks = run.memoryArtifacts.filter(
     (artifact) => artifact.auditLinks?.report,
   ).length;
+  const rows: Array<{
+    category: string;
+    id: string;
+    pane?: RunInspectionPane;
+    summary: ReactNode;
+    target: RunInspectionTarget;
+    title: string;
+    tone?: "secondary" | "destructive" | "outline";
+  }> = [
+    {
+      category: "Trace",
+      id: "trace-root",
+      pane: "finalOutput",
+      summary: run.traceId ?? "Top-level trace missing",
+      target: { type: "run" },
+      title: "Trace root",
+      tone: run.traceId || traceSpanEntries.length > 0 ? "secondary" : "outline",
+    },
+    {
+      category: "Payload",
+      id: "payload-output",
+      pane: "finalOutput",
+      summary:
+        run.finalOutput === null ? "Final output pending" : "Final output captured",
+      target: { type: "run" },
+      title: "Final output",
+      tone: run.finalOutput === null ? "outline" : "secondary",
+    },
+    {
+      category: "Payload",
+      id: "payload-input",
+      pane: "input",
+      summary: "Launch input captured",
+      target: { type: "run" },
+      title: "Run input",
+      tone: "secondary",
+    },
+    {
+      category: "Memory",
+      id: "memory-groups",
+      pane: "memory",
+      summary: `${run.memoryEvents.length} event${run.memoryEvents.length === 1 ? "" : "s"} · ${groupedEvents.retrievedContext.length} retrieved · ${groupedEvents.memoryWrites.length} write/reuse · ${groupedEvents.reviewFollowUp.length} review · ${groupedEvents.auditTrail.length} audit`,
+      target: { type: "run" },
+      title: "Memory event groups",
+      tone: run.memoryEvents.length > 0 ? "secondary" : "outline",
+    },
+    ...traceSpanEntries.map((entry) => ({
+      category: "Trace span",
+      id: `trace-${entry.invocationKind}-${entry.invocationId}`,
+      pane: "output" as RunInspectionPane,
+      summary: `Step ${entry.stepIndex} · ${entry.slot}/${entry.spanId}`,
+      target:
+        entry.invocationKind === "operation"
+          ? ({
+              type: "operationInvocation",
+              invocationId: entry.invocationId,
+            } satisfies RunInspectionTarget)
+          : ({
+              type: "agentInvocation",
+              invocationId: entry.invocationId,
+            } satisfies RunInspectionTarget),
+      title:
+        entry.invocationKind === "operation"
+          ? `Operation invocation #${entry.invocationId}`
+          : `Agent invocation #${entry.invocationId}`,
+      tone: "secondary" as const,
+    })),
+    ...run.memoryArtifacts.map((artifact) => ({
+      category: artifact.auditLinks?.report ? "Report artifact" : "Artifact",
+      id: `artifact-${artifact.memoryId}`,
+      pane: "details" as RunInspectionPane,
+      summary: `${artifact.status} · ${memoryProvenanceLabel(artifact)}`,
+      target: {
+        type: "memoryArtifact" as const,
+        memoryId: artifact.memoryId,
+      },
+      title: artifact.summary,
+      tone: artifact.auditLinks?.report ? ("secondary" as const) : ("outline" as const),
+    })),
+  ];
 
   return (
     <ConsoleSection
-      description="Trace, payload, memory, and report audit breadcrumbs remain explicit before drilling into individual panes."
+      description="Trace, payload, memory, and report evidence rows open contextual raw detail in the right inspector."
       title="Audit evidence"
     >
-      <EvidenceCluster
-        items={[
-          {
-            label: "Trace",
-            value: run.traceId ?? "Top-level trace missing",
-            description: `${traceSpanEntries.length} invocation span${traceSpanEntries.length === 1 ? "" : "s"} captured.`,
-            tone:
-              run.traceId || traceSpanEntries.length > 0
-                ? "verified"
-                : "warning",
-          },
-          {
-            label: "Payloads",
-            value:
-              run.finalOutput === null
-                ? "Final output pending"
-                : "Input and final output captured",
-            description:
-              "Wide JSON payloads stay inside scrollable inspection panes.",
-            tone: run.finalOutput === null ? "warning" : "verified",
-          },
-          {
-            label: "Memory groups",
-            value: `${run.memoryEvents.length} event${run.memoryEvents.length === 1 ? "" : "s"}`,
-            description: `${groupedEvents.retrievedContext.length} retrieved · ${groupedEvents.memoryWrites.length} write/reuse · ${groupedEvents.reviewFollowUp.length} review · ${groupedEvents.auditTrail.length} audit`,
-          },
-          {
-            label: "Artifacts",
-            value: `${run.memoryArtifacts.length} compact artifact${run.memoryArtifacts.length === 1 ? "" : "s"}`,
-            description: `${reportAuditLinks} report audit action${reportAuditLinks === 1 ? "" : "s"} sourced from artifact audit links.`,
-          },
-        ]}
-        layout="grid"
-      />
+      <div className="grid min-w-0 gap-3">
+        <ResourceStatusStrip
+          items={[
+            {
+              label: "Trace spans",
+              value: traceSpanEntries.length,
+              tone: traceSpanEntries.length > 0 ? "success" : "warning",
+            },
+            {
+              label: "Memory events",
+              value: run.memoryEvents.length,
+            },
+            {
+              label: "Artifacts",
+              value: run.memoryArtifacts.length,
+            },
+            {
+              label: "Report links",
+              value: reportAuditLinks,
+            },
+          ]}
+        />
+        <div data-testid="runs-audit-table">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Evidence row</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Summary</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => {
+                const isActive =
+                  isInspectionTargetEqual(activeInspection.target, row.target) &&
+                  (!row.pane || activeInspection.pane === row.pane);
+                return (
+                  <TableRow
+                    data-state={isActive ? "selected" : undefined}
+                    data-testid={`runs-audit-row-${row.id}`}
+                    key={row.id}
+                  >
+                    <TableCell className="min-w-56 whitespace-normal align-top">
+                      <Button
+                        className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
+                        onClick={() => onSelect(row.target, row.pane)}
+                        size="sm"
+                        type="button"
+                        variant={isActive ? "secondary" : "ghost"}
+                      >
+                        {row.title}
+                      </Button>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <Badge variant={row.tone ?? "outline"}>
+                        {row.category}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="min-w-80 whitespace-normal align-top text-muted-foreground">
+                      {row.summary}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
     </ConsoleSection>
   );
 }
@@ -2267,7 +2983,6 @@ function StepTraceSummary({
 export function ExecutionOutline({
   activeInspection,
   onSelect,
-  run,
   steps,
   traceSpanEntries,
 }: {
@@ -2278,246 +2993,228 @@ export function ExecutionOutline({
   traceSpanEntries: TraceSpanEntry[];
 }) {
   return (
-    <aside
+    <section
       className="flex h-full min-h-0 min-w-0 flex-col bg-background"
       data-testid="runs-execution-outline"
     >
-      <div className="shrink-0 border-b border-border bg-background px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Activity className="size-4 text-muted-foreground" />
-          <h2 className="text-base font-semibold tracking-tight">
-            Execution outline
-          </h2>
-        </div>
-      </div>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-2 p-3">
-          <div id="run-context">
-            <InspectionSelectorButton
-              activeInspection={activeInspection}
-              className="px-2 py-1.5"
-              onSelect={onSelect}
-              pane="finalOutput"
-              target={{ type: "run" }}
-            >
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="font-medium">Run result</span>
-                <span className="text-xs text-muted-foreground">
-                  Final output, input, lineage, and memory
-                </span>
-              </span>
-            </InspectionSelectorButton>
+      <ConsoleSection
+        description="Step and invocation rows stay visible while the right inspector changes with the selected row."
+        title={
+          <span className="inline-flex items-center gap-2">
+            <Activity className="size-4 text-muted-foreground" />
+            Execution steps
+          </span>
+        }
+      >
+        {steps.length === 0 ? (
+          <div
+            className="rounded-md border border-dashed p-4 text-sm text-muted-foreground"
+            data-testid="runs-empty-steps"
+          >
+            No steps have been planned for this run yet.
           </div>
-          {steps.length === 0 ? (
-            <div
-              className="rounded-md border border-dashed p-4 text-sm text-muted-foreground"
-              data-testid="runs-empty-steps"
-            >
-              No steps have been planned for this run yet.
-            </div>
-          ) : null}
-          {steps.map((step) => {
-            const invocations = sortedInvocations(step.invocations);
-            const operationInvocations = sortedOperationInvocations(
-              step.operationInvocations,
-            );
-            const allInvocations = [...invocations, ...operationInvocations];
-            const firstAgentInvocation = invocations[0];
-            const stepProgress = progressForInvocations(
-              allInvocations,
-              step.status,
-            );
-            const stepTarget: RunInspectionTarget = {
-              type: "step",
-              stepIndex: step.index,
-            };
-            const indicatorState = stepIndicatorState(step.status);
-            const isStepActive = isInspectionTargetEqual(
-              activeInspection.target,
-              stepTarget,
-            );
-            const stepTraceEntries = traceSpanEntries.filter(
-              (entry) => entry.stepIndex === step.index,
-            );
-
-            return (
-              <div
-                className={cn(
-                  "min-w-0 border-l border-border pl-2 transition-colors",
-                  isStepActive && "border-primary",
-                  indicatorState === "executing" && "border-primary",
-                  indicatorState === "completed" &&
-                    !isStepActive &&
-                    "border-positive/60",
-                )}
-                data-testid={`runs-step-${step.index}`}
-                id={`step-${step.index}`}
-                key={step.id}
-              >
-                <InspectionSelectorButton
-                  activeInspection={activeInspection}
-                  className="px-2 py-1.5"
-                  onSelect={onSelect}
-                  target={stepTarget}
-                >
-                  <span className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <StepStatusIndicator
-                        state={indicatorState}
-                        stepIndex={step.index}
-                      />
-                      <span className="font-medium">Step {step.index}</span>
-                      <Badge variant={statusVariant(step.status)}>
-                        {step.status}
-                      </Badge>
-                      <Badge variant="outline">{step.origin} origin</Badge>
-                      <Badge variant="secondary">{stepProgress}%</Badge>
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {invocations.length} agent invocation(s) ·{" "}
-                      {operationInvocations.length} operation invocation(s)
-                      {firstAgentInvocation
-                        ? ` · first agent ${firstAgentInvocation.slot} #${firstAgentInvocation.id}`
-                        : ""}
-                    </span>
-                    <StepTraceSummary
-                      entries={stepTraceEntries}
-                      stepIndex={step.index}
-                    />
-                  </span>
-                </InspectionSelectorButton>
-                {allInvocations.length > 0 ? (
-                  <div
-                    className="mt-1 space-y-1 pl-2"
-                    data-testid={`runs-step-${step.index}-invocation-targets`}
-                  >
-                    {invocations.map((invocation) => {
-                      const invocationTarget: RunInspectionTarget = {
-                        type: "agentInvocation",
-                        invocationId: invocation.id,
-                      };
-
-                      return (
-                        <div
-                          className="min-w-0"
-                          data-testid={`runs-invocation-${invocation.id}-outline-entry`}
-                          id={`invocation-${invocation.id}`}
-                          key={invocation.id}
-                        >
-                          <InspectionSelectorButton
-                            activeInspection={activeInspection}
-                            className="px-2 py-1.5 text-xs"
-                            onSelect={onSelect}
-                            target={invocationTarget}
-                          >
-                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                              <span className="flex flex-wrap items-center gap-1.5">
-                                <Badge
-                                  variant={statusVariant(invocation.status)}
-                                >
-                                  {invocation.status}
-                                </Badge>
-                                <span className="font-medium">
-                                  {invocation.slot} agent
-                                </span>
-                                <span className="text-muted-foreground">
-                                  #{invocation.id}
-                                </span>
-                              </span>
-                              <span className="text-muted-foreground">
-                                {invocation.agentKey} v{invocation.agentVersion}{" "}
-                                · input {invocation.resolvedInputOrigin}
-                              </span>
-                            </span>
-                          </InspectionSelectorButton>
-                        </div>
-                      );
-                    })}
-                    {operationInvocations.map((invocation) => {
-                      const operationTarget: RunInspectionTarget = {
-                        type: "operationInvocation",
-                        invocationId: invocation.id,
-                      };
-
-                      return (
-                        <div
-                          className="min-w-0"
-                          data-testid={`runs-operation-${invocation.id}-outline-entry`}
-                          id={`operation-invocation-${invocation.id}`}
-                          key={invocation.id}
-                        >
-                          <InspectionSelectorButton
-                            activeInspection={activeInspection}
-                            className="px-2 py-1.5 text-xs"
-                            onSelect={onSelect}
-                            target={operationTarget}
-                          >
-                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                              <span className="flex flex-wrap items-center gap-1.5">
-                                <Badge
-                                  variant={statusVariant(invocation.status)}
-                                >
-                                  {invocation.status}
-                                </Badge>
-                                <span className="font-medium">
-                                  {invocation.slot} operation
-                                </span>
-                                <span className="text-muted-foreground">
-                                  #{invocation.id}
-                                </span>
-                              </span>
-                              <span className="text-muted-foreground">
-                                {invocation.operationKey} · operation forks are
-                                not supported in this phase
-                              </span>
-                            </span>
-                          </InspectionSelectorButton>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-          {run.memoryArtifacts.length > 0 ? (
-            <div className="border-l border-border pl-2">
-              <p className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Compact memory artifacts
-              </p>
-              <div className="space-y-1">
-                {run.memoryArtifacts.map((artifact) => (
-                  <InspectionSelectorButton
-                    activeInspection={activeInspection}
-                    className="px-2 py-1.5 text-xs"
-                    key={artifact.memoryId}
-                    onSelect={onSelect}
-                    target={{
-                      type: "memoryArtifact",
-                      memoryId: artifact.memoryId,
-                    }}
-                    testId={`runs-memory-outline-${artifact.memoryId}`}
-                  >
-                    <span
-                      className="flex min-w-0 flex-col gap-0.5"
-                      id={`memory-${artifact.memoryId}`}
+        ) : (
+          <div data-testid="runs-execution-table">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Timeline row</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Origin</TableHead>
+                  <TableHead>Progress</TableHead>
+                  <TableHead>Trace</TableHead>
+                  <TableHead>Context</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {steps.flatMap((step) => {
+                  const invocations = sortedInvocations(step.invocations);
+                  const operationInvocations = sortedOperationInvocations(
+                    step.operationInvocations,
+                  );
+                  const allInvocations = [
+                    ...invocations,
+                    ...operationInvocations,
+                  ];
+                  const stepProgress = progressForInvocations(
+                    allInvocations,
+                    step.status,
+                  );
+                  const stepTarget: RunInspectionTarget = {
+                    type: "step",
+                    stepIndex: step.index,
+                  };
+                  const indicatorState = stepIndicatorState(step.status);
+                  const isStepActive = isInspectionTargetEqual(
+                    activeInspection.target,
+                    stepTarget,
+                  );
+                  const stepTraceEntries = traceSpanEntries.filter(
+                    (entry) => entry.stepIndex === step.index,
+                  );
+                  const stepRow = (
+                    <TableRow
+                      data-state={isStepActive ? "selected" : undefined}
+                      data-testid={`runs-step-${step.index}`}
+                      id={`step-${step.index}`}
+                      key={`step-${step.id}`}
                     >
-                      <span className="flex items-center gap-2">
-                        <Database className="size-3.5" />
-                        {artifact.summary}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {artifact.status} · {memoryProvenanceLabel(artifact)}
-                      </span>
-                    </span>
-                  </InspectionSelectorButton>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </ScrollArea>
-    </aside>
+                      <TableCell className="min-w-56 whitespace-normal align-top">
+                        <Button
+                          className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
+                          onClick={() => onSelect(stepTarget)}
+                          size="sm"
+                          type="button"
+                          variant={isStepActive ? "secondary" : "ghost"}
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <StepStatusIndicator
+                              state={indicatorState}
+                              stepIndex={step.index}
+                            />
+                            <span className="font-medium">Step {step.index}</span>
+                          </span>
+                        </Button>
+                      </TableCell>
+                      <TableCell className="align-top">
+                        <Badge variant={statusVariant(step.status)}>
+                          {step.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="align-top">
+                        <Badge variant="outline">{step.origin} origin</Badge>
+                      </TableCell>
+                      <TableCell className="align-top">
+                        <Badge variant="secondary">{stepProgress}%</Badge>
+                      </TableCell>
+                      <TableCell className="min-w-64 whitespace-normal align-top">
+                        <StepTraceSummary
+                          entries={stepTraceEntries}
+                          stepIndex={step.index}
+                        />
+                      </TableCell>
+                      <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
+                        {invocations.length} agent invocation(s) · {operationInvocations.length} operation invocation(s)
+                      </TableCell>
+                    </TableRow>
+                  );
+                  const agentRows = invocations.map((invocation) => {
+                    const invocationTarget: RunInspectionTarget = {
+                      type: "agentInvocation",
+                      invocationId: invocation.id,
+                    };
+                    const isActive = isInspectionTargetEqual(
+                      activeInspection.target,
+                      invocationTarget,
+                    );
+                    return (
+                      <TableRow
+                        data-state={isActive ? "selected" : undefined}
+                        data-testid={`runs-invocation-${invocation.id}-outline-entry`}
+                        id={`invocation-${invocation.id}`}
+                        key={`agent-${invocation.id}`}
+                      >
+                        <TableCell className="min-w-56 whitespace-normal align-top">
+                          <Button
+                            className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
+                            onClick={() => onSelect(invocationTarget)}
+                            size="sm"
+                            type="button"
+                            variant={isActive ? "secondary" : "ghost"}
+                          >
+                            <span className="flex min-w-0 flex-col gap-0.5">
+                              <span className="font-medium">
+                                {invocation.slot} agent
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                Invocation #{invocation.id}
+                              </span>
+                            </span>
+                          </Button>
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge variant={statusVariant(invocation.status)}>
+                            {invocation.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-muted-foreground">
+                          input {invocation.resolvedInputOrigin}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-muted-foreground">
+                          {invocation.outputOrigin ?? "pending"}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-muted-foreground">
+                          {invocation.traceSpanId ?? "Not recorded"}
+                        </TableCell>
+                        <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
+                          {invocation.agentKey} v{invocation.agentVersion}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  });
+                  const operationRows = operationInvocations.map((invocation) => {
+                    const operationTarget: RunInspectionTarget = {
+                      type: "operationInvocation",
+                      invocationId: invocation.id,
+                    };
+                    const isActive = isInspectionTargetEqual(
+                      activeInspection.target,
+                      operationTarget,
+                    );
+                    return (
+                      <TableRow
+                        data-state={isActive ? "selected" : undefined}
+                        data-testid={`runs-operation-${invocation.id}-outline-entry`}
+                        id={`operation-invocation-${invocation.id}`}
+                        key={`operation-${invocation.id}`}
+                      >
+                        <TableCell className="min-w-56 whitespace-normal align-top">
+                          <Button
+                            className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
+                            onClick={() => onSelect(operationTarget)}
+                            size="sm"
+                            type="button"
+                            variant={isActive ? "secondary" : "ghost"}
+                          >
+                            <span className="flex min-w-0 flex-col gap-0.5">
+                              <span className="font-medium">
+                                {invocation.slot} operation
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                Invocation #{invocation.id}
+                              </span>
+                            </span>
+                          </Button>
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge variant={statusVariant(invocation.status)}>
+                            {invocation.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-muted-foreground">
+                          {invocation.operationKind}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-muted-foreground">
+                          {invocation.outputOrigin ?? "pending"}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-muted-foreground">
+                          {invocation.traceSpanId ?? "Not recorded"}
+                        </TableCell>
+                        <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
+                          {invocation.operationKey} · operation forks are not supported in this phase
+                        </TableCell>
+                      </TableRow>
+                    );
+                  });
+
+                  return [stepRow, ...agentRows, ...operationRows];
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </ConsoleSection>
+    </section>
   );
 }
 
@@ -2806,9 +3503,7 @@ function MemoryEventGroupSection({
           ))}
         </div>
       ) : (
-        <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
-          {definition.emptyCopy}
-        </div>
+        <p className="text-sm text-muted-foreground">{definition.emptyCopy}</p>
       )}
     </section>
   );
@@ -2851,45 +3546,44 @@ function RunMemoryEvidence({ run }: { run: RunRead }) {
       <CardHeader>
         <CardTitle className="text-base">Run memory evidence</CardTitle>
         <CardDescription>
-          Run-scoped memory events and artifacts.
+          Run-scoped memory events and compact artifacts.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        {!hasEvents ? (
-          <div
-            className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground"
-            data-testid="runs-memory-evidence-empty"
-          >
-            No run memory evidence recorded.
-          </div>
-        ) : (
-          MEMORY_EVENT_GROUPS.map((definition) => (
-            <MemoryEventGroupSection
-              definition={definition}
-              events={groupedEvents[definition.key]}
-              key={definition.key}
-            />
-          ))
-        )}
+        {!hasEvents && !hasArtifacts ? (
+          <CompactModeEmptyState testId="runs-memory-evidence-empty">
+            No retrieval, write, review, audit, or compact memory artifact evidence was recorded for this run.
+          </CompactModeEmptyState>
+        ) : null}
 
-        <section
-          aria-labelledby="runs-memory-compact-artifacts-heading"
-          className="space-y-3"
-          data-testid="runs-memory-compact-artifacts"
-        >
-          <div>
-            <h3
-              className="text-base font-medium leading-none"
-              id="runs-memory-compact-artifacts-heading"
-            >
-              Compact artifact slice
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              These artifacts summarize memory rows written for human audit;
-              they do not replace the event groups above.
-            </p>
-          </div>
-          {hasArtifacts ? (
+        {hasEvents
+          ? MEMORY_EVENT_GROUPS.map((definition) => (
+              <MemoryEventGroupSection
+                definition={definition}
+                events={groupedEvents[definition.key]}
+                key={definition.key}
+              />
+            ))
+          : null}
+
+        {hasArtifacts ? (
+          <section
+            aria-labelledby="runs-memory-compact-artifacts-heading"
+            className="space-y-3"
+            data-testid="runs-memory-compact-artifacts"
+          >
+            <div>
+              <h3
+                className="text-base font-medium leading-none"
+                id="runs-memory-compact-artifacts-heading"
+              >
+                Compact artifact slice
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                These artifacts summarize memory rows written for human audit;
+                they do not replace the event groups above.
+              </p>
+            </div>
             <div className="grid gap-3">
               {run.memoryArtifacts.map((artifact) => (
                 <MemoryArtifactSummaryCard
@@ -2898,15 +3592,8 @@ function RunMemoryEvidence({ run }: { run: RunRead }) {
                 />
               ))}
             </div>
-          ) : (
-            <div
-              className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground"
-              data-testid="runs-memory-artifacts-empty"
-            >
-              No compact memory artifacts were written by this run.
-            </div>
-          )}
-        </section>
+          </section>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -3391,29 +4078,53 @@ export function EvidenceViewer({
       <MemoryArtifactEvidence artifact={artifact} run={run} />
     ) : null;
   } else if (activeInspection.pane === "input") {
-    content = (
-      <RunPayloadPane
-        headingId="runs-input-heading"
-        label="Run input"
-        testId="runs-detail-input"
-        value={run.input}
-      />
-    );
+    content =
+      activeInspection.mode === "input" ? (
+        <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+          Select an input field or audit row to inspect raw detail.
+        </div>
+      ) : (
+        <RunPayloadPane
+          headingId="runs-input-heading"
+          label="Run input"
+          testId="runs-detail-input"
+          value={run.input}
+        />
+      );
   } else if (activeInspection.pane === "lineage") {
-    content = (
-      <RunLineageEvidence
-        copiedInvocations={copiedInvocations}
-        copiedSteps={copiedSteps}
-        isCurrentFork={isCurrentFork}
-        plannedInvocations={plannedInvocations}
-        plannedSteps={plannedSteps}
-        run={run}
-      />
-    );
+    content =
+      activeInspection.mode === "lineage" ? (
+        <CompactModeEmptyState testId="runs-lineage-inspector-empty">
+          Select lineage evidence from the center workspace to inspect raw detail.
+        </CompactModeEmptyState>
+      ) : (
+        <RunLineageEvidence
+          copiedInvocations={copiedInvocations}
+          copiedSteps={copiedSteps}
+          isCurrentFork={isCurrentFork}
+          plannedInvocations={plannedInvocations}
+          plannedSteps={plannedSteps}
+          run={run}
+        />
+      );
   } else if (activeInspection.pane === "memory") {
-    content = <RunMemoryEvidence run={run} />;
+    content =
+      activeInspection.mode === "memory" ? (
+        <CompactModeEmptyState testId="runs-memory-inspector-empty">
+          Select a memory artifact or audit row to inspect raw detail.
+        </CompactModeEmptyState>
+      ) : (
+        <RunMemoryEvidence run={run} />
+      );
   } else {
-    content = <RunFinalOutputPane run={run} />;
+    content =
+      activeInspection.mode === "output" ? (
+        <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+          Select an output field or audit row to inspect raw detail.
+        </div>
+      ) : (
+        <RunFinalOutputPane run={run} />
+      );
   }
 
   return (

@@ -641,6 +641,283 @@ describe("RunsDetailPage", () => {
     useRunMock.mockReset();
   });
 
+  it.each([
+    ["succeeded", "output"],
+    ["running", "steps"],
+    ["queued", "overview"],
+    ["failed", "overview"],
+    ["canceled", "overview"],
+  ])("defaults %s runs to %s mode", (status, expectedMode) => {
+    useRunMock.mockReturnValue(
+      queryResult(buildRun({ status: status as RunRead["status"] })),
+    );
+
+    const rendered = render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-mode-rail")).toHaveAttribute(
+      "data-active-mode",
+      expectedMode,
+    );
+    expect(
+      screen.getByTestId(`runs-mode-trigger-${expectedMode}`),
+    ).toHaveAttribute("aria-current", "page");
+    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
+      "data-run-mode",
+      expectedMode,
+    );
+
+    rendered.unmount();
+  });
+
+  it("renders dedicated secondary modes with compact empty states", () => {
+    const tokenlessRun = buildRun({
+      executedTokens: 0,
+      inheritedTokens: 0,
+      totalTokens: 0,
+      steps: [
+        buildStep({
+          invocations: [buildInvocation({ graphMetadata: null, tokens: 0 })],
+        }),
+      ],
+    });
+
+    useRunMock.mockReturnValue(queryResult(buildRun()));
+    searchParamsMock = new URLSearchParams("mode=lineage");
+    const lineageRender = render(<RunsDetailPage />);
+    const lineageWorkspace = screen.getByTestId("runs-lineage-workspace");
+    expect(lineageWorkspace).toBeVisible();
+    expect(within(lineageWorkspace).getByTestId("runs-lineage-empty"))
+      .toHaveTextContent(/no fork, snapshot replay, copied-step, or historical lineage/i);
+    expect(screen.getByTestId("runs-lineage-inspector-empty")).toHaveTextContent(
+      /select lineage evidence/i,
+    );
+    lineageRender.unmount();
+
+    searchParamsMock = new URLSearchParams("mode=memory");
+    const memoryRender = render(<RunsDetailPage />);
+    const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
+    expect(memoryWorkspace).toBeVisible();
+    expect(within(memoryWorkspace).getByTestId("runs-memory-empty"))
+      .toHaveTextContent(/no retrieval, write, review, audit, or compact memory artifact/i);
+    expect(screen.getByTestId("runs-memory-inspector-empty")).toHaveTextContent(
+      /select a memory artifact/i,
+    );
+    memoryRender.unmount();
+
+    useRunMock.mockReturnValue(queryResult(tokenlessRun));
+    searchParamsMock = new URLSearchParams("mode=tokens");
+    const tokensRender = render(<RunsDetailPage />);
+    const tokensWorkspace = screen.getByTestId("runs-tokens-workspace");
+    expect(tokensWorkspace).toBeVisible();
+    expect(within(tokensWorkspace).getByTestId("runs-tokens-empty"))
+      .toHaveTextContent(/no token accounting was reported/i);
+    tokensRender.unmount();
+
+    useRunMock.mockReturnValue(queryResult(buildRun()));
+    searchParamsMock = new URLSearchParams("mode=diagnostics");
+    render(<RunsDetailPage />);
+    const diagnosticsWorkspace = screen.getByTestId("runs-diagnostics-workspace");
+    expect(diagnosticsWorkspace).toBeVisible();
+    expect(within(diagnosticsWorkspace).getByTestId("runs-diagnostics-empty"))
+      .toHaveTextContent(/no run diagnostics, queue warnings, runtime capability warnings/i);
+  });
+
+  it("renders secondary lineage, memory, and token accounting evidence", () => {
+    const copiedInvocation = buildInvocation({
+      outputOrigin: "copied",
+      resolvedInputOrigin: "copied",
+      sourceInvocationId: 501,
+      tokens: 21,
+    });
+    const executedInvocation = buildInvocation({
+      graphMetadata: {
+        modelGateway: {
+          selectedStrategies: null,
+          usage: { inputTokens: 18, outputTokens: 12, totalTokens: 30 },
+        },
+      },
+      id: 1002,
+      position: 2,
+      slot: "decision",
+      tokens: 30,
+    });
+    const run = buildRun({
+      executedTokens: 30,
+      inheritedTokens: 21,
+      lineageRootRunId: 40,
+      memoryArtifacts: [
+        {
+          memoryId: "memory_safe",
+          summary: "Compact safe memory",
+          status: "active",
+          createdAt: NOW,
+          provenance: {
+            agentKey: "portfolio_manager",
+            agentVersion: 3,
+            createdByType: "agent",
+            runId: 42,
+            slot: "decision",
+            workflowKey: "market_review",
+          },
+          sourceGraphMetadata: null,
+        },
+      ],
+      memoryEvents: [
+        buildMemoryEvent({ id: 9101, eventType: "retrieved" }),
+        buildMemoryEvent({ id: 9102, eventType: "written", memoryId: "memory_safe" }),
+      ],
+      packageProvenance: buildPackageProvenance(),
+      replayStepIndex: 1,
+      resumeStepIndex: 2,
+      sourceRunId: 41,
+      steps: [
+        buildStep({
+          invocations: [copiedInvocation],
+          origin: "copied",
+          sourceRunId: 41,
+          sourceRunStepId: 401,
+          sourceStepIndex: 1,
+        }),
+        buildStep({
+          id: 102,
+          index: 2,
+          invocations: [executedInvocation],
+        }),
+      ],
+      totalTokens: 51,
+    });
+
+    useRunMock.mockReturnValue(queryResult(run));
+    searchParamsMock = new URLSearchParams("mode=lineage");
+    const lineageRender = render(<RunsDetailPage />);
+    const lineageWorkspace = screen.getByTestId("runs-lineage-workspace");
+    expect(lineageWorkspace).toHaveTextContent(/lineage boundaries/i);
+    expect(lineageWorkspace).toHaveTextContent(/Run #41/i);
+    expect(lineageWorkspace).toHaveTextContent(/1 copied · 1 planned/i);
+    expect(within(lineageWorkspace).getByTestId("runs-lineage-summary"))
+      .toBeVisible();
+    lineageRender.unmount();
+
+    searchParamsMock = new URLSearchParams("mode=memory");
+    const memoryRender = render(<RunsDetailPage />);
+    const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
+    expect(memoryWorkspace).toHaveTextContent(/retrieved context/i);
+    expect(memoryWorkspace).toHaveTextContent(/memory written and reused/i);
+    expect(memoryWorkspace).toHaveTextContent(/compact artifact slice/i);
+    expect(within(memoryWorkspace).getByTestId("runs-memory-compact-artifact-memory_safe"))
+      .toHaveTextContent(/Compact safe memory/i);
+    memoryRender.unmount();
+
+    searchParamsMock = new URLSearchParams("mode=tokens");
+    render(<RunsDetailPage />);
+    const tokensWorkspace = screen.getByTestId("runs-tokens-workspace");
+    expect(tokensWorkspace).toHaveTextContent(/token accounting/i);
+    expect(tokensWorkspace).toHaveTextContent(/51/);
+    expect(tokensWorkspace).toHaveTextContent(/30/);
+    expect(tokensWorkspace).toHaveTextContent(/21/);
+    expect(screen.getByTestId("runs-token-row-2-1002")).toHaveTextContent(
+      /Input tokens: 18/i,
+    );
+  });
+
+  it("keeps warning-only diagnostics distinct from destructive failures", () => {
+    const warningOnlyRun = buildRun({
+      packageProvenance: buildPackageProvenance({
+        currentPackage: {
+          available: true,
+          compiledHash: "compiled-hash-new",
+          compiledHashMatchesSnapshot: false,
+          manifestHash: "manifest-hash-abc",
+          manifestHashMatchesSnapshot: true,
+        },
+        preflightSummary: {
+          ready: true,
+          blockingErrors: [],
+          warnings: [
+            {
+              field: "extensions.signaldeck.finance",
+              issue: "Finance extension was enabled at launch.",
+            },
+          ],
+        },
+        resolvedModelConnections: [
+          buildResolvedModelConnection({
+            capabilities: buildCapabilities({
+              nativeToolCalls: buildCapabilityState(
+                "unsupported",
+                "Native tool calls are unavailable.",
+                "2026-05-08T07:22:00Z",
+              ),
+            }),
+          }),
+        ],
+      }),
+    });
+    useRunMock.mockReturnValue(queryResult(warningOnlyRun));
+    searchParamsMock = new URLSearchParams("mode=diagnostics");
+    const warningRender = render(<RunsDetailPage />);
+    const warningDiagnostics = screen.getByTestId("runs-diagnostics-workspace");
+    expect(warningDiagnostics).toHaveTextContent(/warnings/i);
+    expect(screen.getByTestId("runs-diagnostic-preflight-warning-0"))
+      .toHaveAttribute("data-severity", "warning");
+    expect(screen.getByTestId("runs-diagnostic-compiled-hash-mismatch"))
+      .toHaveAttribute("data-severity", "warning");
+    expect(screen.getByTestId("runs-diagnostic-unsupported-primary_openai-nativeToolCalls"))
+      .toHaveAttribute("data-severity", "warning");
+    expect(warningDiagnostics.querySelector('[data-severity="error"]'))
+      .not.toBeInTheDocument();
+    expect(warningDiagnostics.querySelector('[data-slot="badge"].bg-destructive'))
+      .not.toBeInTheDocument();
+    warningRender.unmount();
+
+    useRunMock.mockReturnValue(
+      queryResult(
+        buildRun({
+          error: "Provider failed after retries.",
+          status: "failed",
+          steps: [
+            buildStep({
+              invocations: [
+                buildInvocation({
+                  errorCode: "model_error",
+                  errorMessage: "Provider failed",
+                  status: "failed",
+                }),
+              ],
+              status: "failed",
+            }),
+          ],
+        }),
+      ),
+    );
+    searchParamsMock = new URLSearchParams("mode=diagnostics");
+    render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-diagnostic-run-error"))
+      .toHaveAttribute("data-severity", "error");
+    expect(screen.getByTestId("runs-diagnostic-agent-1001-error"))
+      .toHaveAttribute("data-severity", "error");
+    expect(screen.getByTestId("runs-diagnostics-workspace").querySelector('[data-severity="error"]'))
+      .toBeInTheDocument();
+  });
+
+  it("updates mode URL state without clearing rerun state", () => {
+    searchParamsMock = new URLSearchParams("rerun=1");
+    useRunMock.mockReturnValue(queryResult(buildRun()));
+
+    render(<RunsDetailPage />);
+
+    fireEvent.click(screen.getByTestId("runs-mode-trigger-input"));
+    const updater = setSearchParamsMock.mock.calls.at(-1)?.[0] as (
+      current: URLSearchParams,
+    ) => URLSearchParams;
+    const nextParams = updater(new URLSearchParams("rerun=1"));
+
+    expect(nextParams.get("mode")).toBe("input");
+    expect(nextParams.get("inspect")).toBe("run");
+    expect(nextParams.get("pane")).toBe("input");
+    expect(nextParams.get("rerun")).toBe("1");
+  });
+
   it("renders normalized lineage, step origins, invocation origins, and trace summaries", () => {
     const copiedInvocation = buildInvocation({
       id: 1001,
@@ -862,19 +1139,36 @@ describe("RunsDetailPage", () => {
       "overflow-hidden",
     );
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("runs-evidence-console-rail"),
-    ).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-page-shell-context")).toContainElement(
+      screen.getByTestId("runs-detail-header"),
+    );
+    expect(screen.getByTestId("workspace-page-shell-left-rail")).toContainElement(
+      screen.getByTestId("runs-mode-rail"),
+    );
+    expect(screen.getByTestId("runs-mode-rail")).toHaveAttribute(
+      "data-active-mode",
+      "output",
+    );
+    expect(screen.getByTestId("runs-mode-trigger-output")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByTestId("runs-mode-workspace")).toHaveAttribute(
+      "data-run-mode",
+      "output",
+    );
     expect(
       screen.getByTestId("runs-inspection-split-layout"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /^summary$/i })).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: /lineage and usage/i }),
+      screen.getByRole("heading", { name: /final output/i }),
     ).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: /audit evidence/i }),
+      screen.getByRole("heading", { name: /output provenance/i }),
     ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: /operational overview/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-context-frame")).toHaveClass(
       "min-h-0",
       "overflow-y-auto",
@@ -894,10 +1188,10 @@ describe("RunsDetailPage", () => {
       "split",
     );
     expect(screen.getByTestId("runs-evidence-viewer")).toBeInTheDocument();
-    expect(screen.getByTestId("runs-detail-status")).toHaveTextContent(
+    expect(screen.getByTestId("runs-detail-header")).toHaveTextContent(
       /succeeded/i,
     );
-    expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(
+    expect(screen.getByTestId("runs-detail-header")).toHaveTextContent(
       /workflow package/i,
     );
     expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(
@@ -948,6 +1242,13 @@ describe("RunsDetailPage", () => {
         { name: /trace/i },
       ),
     ).not.toBeInTheDocument();
+    defaultRender.unmount();
+    searchParamsMock = new URLSearchParams("mode=steps");
+    const stepsModeRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-mode-rail")).toHaveAttribute(
+      "data-active-mode",
+      "steps",
+    );
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(
       /analysis\/span-1/i,
     );
@@ -960,15 +1261,6 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByTestId("runs-step-2-completed-indicator"),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-workspace-context")).toHaveClass(
-      "grid",
-      "gap-3",
-    );
-    expect(
-      within(screen.getByTestId("runs-workspace-context")).getAllByTestId(
-        /runs-summary-.*-row/,
-      ),
-    ).toHaveLength(3);
     expect(screen.getByTestId("runs-inspection-split-layout")).toHaveAttribute(
       "data-slot",
       "resizable-panel-group",
@@ -976,70 +1268,6 @@ describe("RunsDetailPage", () => {
     expect(
       screen.getByTestId("split-inspector-resize-handle"),
     ).toBeInTheDocument();
-    const usageRow = within(screen.getByTestId("runs-summary-usage-row"));
-    expect(
-      usageRow.getByText(/^Total tokens$/i).parentElement,
-    ).toHaveTextContent(/51/i);
-    expect(
-      usageRow.getByText(/^Inherited tokens$/i).parentElement,
-    ).toHaveTextContent(/21/i);
-    expect(
-      usageRow.getByText(/^Executed tokens$/i).parentElement,
-    ).toHaveTextContent(/30/i);
-    const runtimeProfile = screen.getByTestId("runs-runtime-profile");
-    expect(runtimeProfile).toHaveTextContent(/runtime profile/i);
-    expect(runtimeProfile).not.toHaveTextContent(/runtime snapshot summary/i);
-    expect(runtimeProfile).not.toHaveTextContent(/frozen run provenance/i);
-    const primaryProfile = screen.getByTestId(
-      "runs-runtime-profile-connection-primary_openai",
-    );
-    expect(primaryProfile).toHaveTextContent(/Primary OpenAI/i);
-    expect(primaryProfile).toHaveTextContent(/primary_openai/i);
-    expect(primaryProfile).toHaveTextContent(/Responses-compatible/i);
-    expect(primaryProfile).toHaveTextContent(/Credential present/i);
-    expect(primaryProfile).toHaveTextContent(/Capability summary/i);
-    expect(primaryProfile).toHaveTextContent(/Unsupported:/i);
-    expect(primaryProfile).not.toHaveTextContent(/Snapshot key/i);
-    expect(primaryProfile).not.toHaveTextContent(/Selected strategies/i);
-    expect(primaryProfile).not.toHaveTextContent(/Last probed/i);
-    const smokeProfile = screen.getByTestId(
-      "runs-runtime-profile-connection-smoke_model",
-    );
-    expect(smokeProfile).toHaveTextContent(/Smoke Model/i);
-    expect(smokeProfile).toHaveTextContent(/Chat Completions-compatible/i);
-    expect(smokeProfile).toHaveTextContent(/No credential/i);
-    expect(
-      screen.getByTestId("runs-runtime-selected-strategies"),
-    ).not.toBeVisible();
-    expect(
-      screen.getByTestId("runs-runtime-strategy-2-1002"),
-    ).not.toBeVisible();
-
-    fireEvent.click(screen.getByRole("button", { name: /audit evidence/i }));
-
-    const selectedStrategies = screen.getByTestId(
-      "runs-runtime-selected-strategies",
-    );
-    expect(selectedStrategies).toBeVisible();
-    expect(selectedStrategies).toHaveTextContent(/Selected strategies/i);
-    expect(selectedStrategies).not.toHaveTextContent(
-      /compatibility degradation decisions/i,
-    );
-    expect(
-      screen.getByTestId("runs-runtime-audit-connection-primary_openai"),
-    ).toHaveTextContent(/Last probed/i);
-    const decisionStrategy = screen.getByTestId("runs-runtime-strategy-2-1002");
-    expect(decisionStrategy).toBeVisible();
-    expect(decisionStrategy).toHaveTextContent(/consumer_agent@2/i);
-    expect(decisionStrategy).toHaveTextContent(/json object validation/i);
-    expect(decisionStrategy).toHaveTextContent(/native tool calls/i);
-    expect(decisionStrategy).toHaveTextContent(/Disabled/i);
-    expect(decisionStrategy).toHaveTextContent(/disabled by policy/i);
-    expect(decisionStrategy).toHaveTextContent(/Input tokens/i);
-    expect(decisionStrategy).toHaveTextContent(/30/i);
-    expect(screen.queryByText(/total cost/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/inherited cost/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/executed cost/i)).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(
       /copied origin/i,
     );
@@ -1056,6 +1284,84 @@ describe("RunsDetailPage", () => {
       screen.queryByTestId("runs-step-2-slot-decision"),
     ).not.toBeInTheDocument();
 
+    stepsModeRender.unmount();
+    searchParamsMock = new URLSearchParams("mode=overview");
+    const overviewRender = render(<RunsDetailPage />);
+    const overview = screen.getByTestId("runs-overview-workspace");
+    expect(overview).toHaveClass("grid", "gap-3");
+    expect(
+      within(overview).getByRole("heading", { name: /operational overview/i }),
+    ).toBeVisible();
+    expect(
+      within(overview).getByRole("heading", { name: /evidence availability/i }),
+    ).toBeVisible();
+    expect(screen.getByTestId("runs-summary-execution-row")).toHaveTextContent(
+      /2 of 2 invocation\(s\) terminal/i,
+    );
+    expect(screen.getByTestId("runs-summary-progress-row")).toHaveTextContent(
+      /100%/i,
+    );
+    expect(overview).toHaveTextContent(/30 executed tokens/i);
+    expect(overview).toHaveTextContent(/21 inherited tokens/i);
+
+    overviewRender.unmount();
+    searchParamsMock = new URLSearchParams("mode=runtime");
+    const runtimeModeRender = render(<RunsDetailPage />);
+    const runtimeProfile = screen.getByTestId("runs-runtime-profile");
+    expect(runtimeProfile).toBeVisible();
+    expect(runtimeProfile).toHaveTextContent(/runtime profile/i);
+    expect(runtimeProfile).not.toHaveTextContent(/runtime snapshot summary/i);
+    expect(runtimeProfile).not.toHaveTextContent(/frozen run provenance/i);
+    const primaryProfile = screen.getByTestId(
+      "runs-runtime-profile-connection-primary_openai",
+    );
+    expect(primaryProfile).toHaveTextContent(/Primary OpenAI/i);
+    expect(primaryProfile).toHaveTextContent(/primary_openai/i);
+    expect(primaryProfile).toHaveTextContent(/Responses-compatible/i);
+    expect(primaryProfile).toHaveTextContent(/Credential present/i);
+    expect(primaryProfile).toHaveTextContent(
+      /9 supported · 2 unsupported · 0 unknown · 0 not applicable/i,
+    );
+    expect(primaryProfile).not.toHaveTextContent(/Snapshot key/i);
+    expect(primaryProfile).not.toHaveTextContent(/Selected strategies/i);
+    expect(primaryProfile).not.toHaveTextContent(/Last probed/i);
+    const smokeProfile = screen.getByTestId(
+      "runs-runtime-profile-connection-smoke_model",
+    );
+    expect(smokeProfile).toHaveTextContent(/Smoke Model/i);
+    expect(smokeProfile).toHaveTextContent(/Chat Completions-compatible/i);
+    expect(smokeProfile).toHaveTextContent(/No credential/i);
+    expect(smokeProfile).toHaveTextContent(
+      /5 supported · 3 unsupported · 0 unknown · 3 not applicable/i,
+    );
+    expect(screen.getByRole("heading", { name: /selected strategies/i })).toBeVisible();
+    const decisionStrategy = screen.getByTestId("runs-runtime-strategy-2-1002");
+    expect(decisionStrategy).toBeVisible();
+    expect(decisionStrategy).toHaveTextContent(/consumer_agent@2/i);
+    expect(decisionStrategy).toHaveTextContent(/json object validation/i);
+    expect(decisionStrategy).toHaveTextContent(/native tool calls/i);
+    expect(decisionStrategy).toHaveTextContent(/Disabled/i);
+    expect(decisionStrategy).toHaveTextContent(/disabled by policy/i);
+    expect(decisionStrategy).toHaveTextContent(/Input tokens/i);
+    expect(decisionStrategy).toHaveTextContent(/30/i);
+    expect(screen.queryByText(/total cost/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/inherited cost/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/executed cost/i)).not.toBeInTheDocument();
+
+    runtimeModeRender.unmount();
+    searchParamsMock = new URLSearchParams("mode=audit");
+    const auditModeRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-audit-table")).toBeVisible();
+    expect(screen.getByTestId("runs-audit-row-trace-root")).toHaveTextContent(
+      /trace-42/i,
+    );
+    expect(
+      screen.getByTestId("runs-audit-row-trace-agent-1002"),
+    ).toHaveTextContent(/decision\/span-2/i);
+
+    auditModeRender.unmount();
+    searchParamsMock = new URLSearchParams("mode=steps");
+    const stepSelectionRender = render(<RunsDetailPage />);
     const stepOneButton = within(
       screen.getByTestId("runs-step-1"),
     ).getAllByRole("button", { name: /step 1/i })[0];
@@ -1072,7 +1378,7 @@ describe("RunsDetailPage", () => {
     expect(selectedStepParams.get("inspect")).toBe("step:1");
     expect(selectedStepParams.has("pane")).toBe(false);
 
-    defaultRender.unmount();
+    stepSelectionRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=run&pane=input");
     const runInputRender = render(<RunsDetailPage />);
     const runInput = screen.getByTestId("runs-detail-input");
@@ -1269,9 +1575,10 @@ describe("RunsDetailPage", () => {
       "inspect=invocation:1002&pane=error",
     );
     render(<RunsDetailPage />);
-    expect(screen.getByText("model_error")).toBeVisible();
-    expect(screen.getByText("Provider failed")).toBeVisible();
-    expect(screen.getByText(/rate_limit/i)).toBeVisible();
+    const activeEvidence = screen.getByTestId("runs-active-evidence-viewer");
+    expect(within(activeEvidence).getByText("model_error")).toBeVisible();
+    expect(within(activeEvidence).getByText("Provider failed")).toBeVisible();
+    expect(within(activeEvidence).getByText(/rate_limit/i)).toBeVisible();
   });
 
   it("renders missing usage metadata without hiding selected strategies", () => {
@@ -1318,6 +1625,15 @@ describe("RunsDetailPage", () => {
       ),
     );
 
+    const defaultRender = render(<RunsDetailPage />);
+
+    expect(screen.queryByTestId("runs-runtime-profile")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-runtime-strategy-1-1001"),
+    ).not.toBeInTheDocument();
+
+    defaultRender.unmount();
+    searchParamsMock = new URLSearchParams("mode=runtime");
     render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-runtime-profile")).toHaveTextContent(
@@ -1326,11 +1642,6 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-runtime-profile")).toHaveTextContent(
       /unsupported/i,
     );
-    expect(
-      screen.getByTestId("runs-runtime-strategy-1-1001"),
-    ).not.toBeVisible();
-
-    fireEvent.click(screen.getByRole("button", { name: /audit evidence/i }));
 
     expect(
       screen.getByTestId("runs-runtime-strategy-1-1001"),
@@ -1346,12 +1657,12 @@ describe("RunsDetailPage", () => {
         /^Input tokens$/i,
       ),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-summary-usage-row")).toHaveTextContent(
-      /0/i,
+    expect(screen.getByTestId("runs-runtime-strategy-1-1001")).toHaveTextContent(
+      /Usage not recorded/i,
     );
   });
 
-  it("stacks the inspection console and keeps raw payloads scrollable on mobile", async () => {
+  it("opens the evidence inspector as a sheet and keeps raw payloads scrollable on mobile", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       value: 390,
@@ -1364,15 +1675,15 @@ describe("RunsDetailPage", () => {
 
     const workspace = screen.getByTestId("runs-inspection-workspace");
     await waitFor(() =>
-      expect(workspace).toHaveAttribute("data-console-layout", "stacked"),
+      expect(workspace).toHaveAttribute("data-console-layout", "sheet"),
     );
     expect(workspace).toHaveClass("min-w-0");
-    expect(screen.getByTestId("runs-execution-outline")).toHaveClass("min-w-0");
-    expect(screen.getByTestId("runs-evidence-viewer")).toHaveClass("min-w-0");
-    expect(screen.getByTestId("runs-evidence-pane-nav")).toHaveClass(
-      "min-w-0",
-      "flex-wrap",
+    expect(screen.getByTestId("runs-inspection-sheet-layout")).toHaveAttribute(
+      "data-inspector-mode",
+      "sheet",
     );
+    expect(screen.queryByTestId("runs-inspection-split-layout")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-evidence-viewer")).not.toBeInTheDocument();
 
     const finalOutput = screen.getByTestId("runs-detail-final-output");
     fireEvent.mouseDown(within(finalOutput).getByRole("tab", { name: "Raw" }), {
@@ -1391,6 +1702,17 @@ describe("RunsDetailPage", () => {
       "overflow-x-auto",
       "whitespace-pre",
     );
+
+    fireEvent.click(screen.getByTestId("runs-mobile-inspector-trigger"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("runs-evidence-viewer")).toBeVisible(),
+    );
+    expect(screen.getByTestId("runs-evidence-pane-nav")).toHaveClass(
+      "min-w-0",
+      "flex-wrap",
+    );
+    expect(screen.queryByTestId("split-inspector-right-pane")).not.toBeInTheDocument();
   });
 
   it("groups graph metadata and renders compact memory artifact audit links", () => {
@@ -1482,6 +1804,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
+    searchParamsMock = new URLSearchParams("mode=steps");
     const defaultRender = render(<RunsDetailPage />);
 
     expect(screen.queryByTestId("runs-graph-summary")).not.toBeInTheDocument();
@@ -1694,21 +2017,22 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("distinguishes absent run memory evidence from absent compact artifacts", () => {
+  it("renders one compact absent-memory state for the memory mode", () => {
     useRunMock.mockReturnValue(queryResult(buildRun()));
     searchParamsMock = new URLSearchParams("inspect=run&pane=memory");
 
     render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("runs-memory-evidence-empty")).toHaveTextContent(
-      /No run memory evidence recorded/i,
+    const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
+    expect(within(memoryWorkspace).getByTestId("runs-memory-empty"))
+      .toHaveTextContent(/No retrieval, write, review, audit, or compact memory artifact/i);
+    expect(screen.getByTestId("runs-memory-inspector-empty")).toHaveTextContent(
+      /select a memory artifact/i,
     );
-    expect(screen.getByTestId("runs-memory-artifacts-empty")).toHaveTextContent(
-      /No compact memory artifacts were written/i,
-    );
-    expect(
-      screen.queryByText(/No memory artifacts were created by this run/i),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-memory-artifacts-empty"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText(/No memory artifacts were created by this run/i))
+      .not.toBeInTheDocument();
   });
 
   it("omits graph grouping and memory artifact cards when metadata is absent", () => {
@@ -1813,9 +2137,10 @@ describe("RunsDetailPage", () => {
       ),
     );
 
+    searchParamsMock = new URLSearchParams("mode=steps");
     render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(
+    expect(screen.getByTestId("runs-detail-header")).toHaveTextContent(
       /workflow package/i,
     );
     expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(
@@ -2003,12 +2328,34 @@ describe("RunsDetailPage", () => {
     );
 
     searchParamsMock = new URLSearchParams("pane=request");
-    render(<RunsDetailPage />);
+    const stepsRender = render(<RunsDetailPage />);
 
-    expect(screen.getByText(/0 of 0 invocation\(s\) terminal/i)).toBeVisible();
-    expect(screen.getByText(/run progress/i).parentElement).toHaveTextContent(
+    expect(screen.getByTestId("runs-mode-rail")).toHaveAttribute(
+      "data-active-mode",
+      "steps",
+    );
+    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/running/i);
+    expect(
+      screen.getByTestId("runs-step-1-executing-indicator"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("runs-step-2")).toHaveTextContent(/skipped/i);
+    expect(
+      screen.queryByTestId("runs-step-2-completed-indicator"),
+    ).not.toBeInTheDocument();
+
+    stepsRender.unmount();
+    searchParamsMock = new URLSearchParams("mode=overview&pane=request");
+    const overviewRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-summary-execution-row")).toHaveTextContent(
+      /0 of 0 invocation\(s\) terminal/i,
+    );
+    expect(screen.getByTestId("runs-summary-progress-row")).toHaveTextContent(
       /64%/i,
     );
+
+    overviewRender.unmount();
+    searchParamsMock = new URLSearchParams("mode=output&pane=request");
+    const outputRender = render(<RunsDetailPage />);
     const pendingFinalOutputCard = screen.getByTestId(
       "runs-detail-final-output-card",
     );
@@ -2047,20 +2394,14 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByText(/no invocations have been planned or persisted/i),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/running/i);
-    expect(
-      screen.getByTestId("runs-step-1-executing-indicator"),
-    ).toBeInTheDocument();
-    expect(screen.getByTestId("runs-step-2")).toHaveTextContent(/skipped/i);
-    expect(
-      screen.queryByTestId("runs-step-2-completed-indicator"),
-    ).not.toBeInTheDocument();
+    outputRender.unmount();
   });
 
   it("renders an explicit empty state when no steps exist", () => {
     useRunMock.mockReturnValue(
       queryResult(buildRun({ steps: [], traceId: null })),
     );
+    searchParamsMock = new URLSearchParams("mode=steps");
 
     render(<RunsDetailPage />);
 
@@ -2109,7 +2450,7 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-queue-reason")).toHaveTextContent(
       /blocking run: #41/i,
     );
-    expect(screen.getByText(/run progress/i).parentElement).toHaveTextContent(
+    expect(screen.getByTestId("runs-summary-progress-row")).toHaveTextContent(
       /0%/i,
     );
     expect(screen.queryByText(/awaiting execution/i)).not.toBeInTheDocument();
@@ -2262,14 +2603,15 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    expect(
-      screen.getByRole("dialog", { name: /fork from analysis invocation/i }),
-    ).toBeVisible();
+    const forkDialog = screen.getByRole("dialog", {
+      name: /fork from analysis invocation/i,
+    });
+    expect(forkDialog).toBeVisible();
     expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, {
       enabled: true,
     });
-    expect(screen.getByText(/resume at step 1/i)).toBeVisible();
-    expect(screen.getByText(/invocation #1001/i)).toBeVisible();
+    expect(within(forkDialog).getByText(/resume at step 1/i)).toBeVisible();
+    expect(within(forkDialog).getByText(/^invocation #1001$/i)).toBeVisible();
     expect(
       await screen.findByLabelText("Target invocation input JSON"),
     ).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));

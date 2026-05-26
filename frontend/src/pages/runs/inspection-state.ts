@@ -20,7 +20,20 @@ export type RunInspectionPane =
   | "response"
   | "wiring";
 
+export type RunInspectionMode =
+  | "overview"
+  | "output"
+  | "input"
+  | "steps"
+  | "runtime"
+  | "audit"
+  | "lineage"
+  | "memory"
+  | "tokens"
+  | "diagnostics";
+
 export type RunInspectionState = {
+  mode: RunInspectionMode;
   pane: RunInspectionPane;
   target: RunInspectionTarget;
 };
@@ -31,6 +44,19 @@ type RunInspectionIndex = {
   operationInvocationIds: Set<number>;
   stepIndexes: Set<number>;
 };
+
+export const RUN_INSPECTION_MODES = [
+  "overview",
+  "output",
+  "input",
+  "steps",
+  "runtime",
+  "audit",
+  "lineage",
+  "memory",
+  "tokens",
+  "diagnostics",
+] as const satisfies readonly RunInspectionMode[];
 
 const RUN_PANES: RunInspectionPane[] = [
   "finalOutput",
@@ -87,6 +113,74 @@ function parsePositiveInteger(value: string | undefined): number | null {
 
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
+}
+
+function parseRunInspectionMode(raw: string | null): RunInspectionMode | null {
+  if (!raw) {
+    return null;
+  }
+  return RUN_INSPECTION_MODES.includes(raw as RunInspectionMode)
+    ? (raw as RunInspectionMode)
+    : null;
+}
+
+export function defaultRunInspectionMode(run: RunRead): RunInspectionMode {
+  const status = String(run.status);
+  if (status === "succeeded") {
+    return "output";
+  }
+  if (status === "running") {
+    return "steps";
+  }
+  return "overview";
+}
+
+function modeForPane(
+  target: RunInspectionTarget,
+  pane: RunInspectionPane,
+): RunInspectionMode | null {
+  if (target.type === "memoryArtifact") {
+    return "memory";
+  }
+  if (target.type !== "run") {
+    return pane === "error" ? "diagnostics" : "steps";
+  }
+
+  if (pane === "finalOutput" || pane === "output") {
+    return "output";
+  }
+  if (pane === "input") {
+    return "input";
+  }
+  if (pane === "lineage") {
+    return "lineage";
+  }
+  if (pane === "memory") {
+    return "memory";
+  }
+  if (pane === "error") {
+    return "diagnostics";
+  }
+  return null;
+}
+
+function defaultPaneForMode(
+  target: RunInspectionTarget,
+  mode: RunInspectionMode,
+): RunInspectionPane {
+  if (target.type !== "run") {
+    return defaultPaneForTarget(target);
+  }
+  if (mode === "input") {
+    return "input";
+  }
+  if (mode === "lineage") {
+    return "lineage";
+  }
+  if (mode === "memory") {
+    return "memory";
+  }
+  return "finalOutput";
 }
 
 export function inspectionPanesForTarget(
@@ -218,14 +312,28 @@ export function resolveRunInspectionState({
   steps: RunStepRead[];
 }): RunInspectionState {
   const target = canonicalTarget(run, steps, searchParams, hash);
+  const requestedMode = parseRunInspectionMode(searchParams.get("mode"));
   const requestedPane = searchParams.get("pane") as RunInspectionPane | null;
   const validPanes = inspectionPanesForTarget(target);
+  const requestedPaneIsValid = Boolean(
+    requestedPane && validPanes.includes(requestedPane),
+  );
+  const targetMode = modeForPane(target, defaultPaneForTarget(target));
+  const fallbackMode =
+    requestedMode ??
+    (target.type === "run" ? defaultRunInspectionMode(run) : targetMode) ??
+    defaultRunInspectionMode(run);
+  const pane = requestedPaneIsValid
+    ? (requestedPane as RunInspectionPane)
+    : defaultPaneForMode(target, fallbackMode);
+  const inferredMode = modeForPane(target, pane);
 
   return {
-    pane:
-      requestedPane && validPanes.includes(requestedPane)
-        ? requestedPane
-        : defaultPaneForTarget(target),
+    mode:
+      requestedMode ??
+      (requestedPaneIsValid || target.type !== "run" ? inferredMode : null) ??
+      defaultRunInspectionMode(run),
+    pane,
     target,
   };
 }
