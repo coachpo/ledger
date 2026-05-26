@@ -3,7 +3,7 @@
 > Inherits root rules from `/AGENTS.md`. Local frontend docs live in `e2e/` and throughout the high-signal `src/**/AGENTS.md` boundaries.
 
 ## OVERVIEW
-React 19 + Vite frontend with a flat route shell, TanStack Query for server state, extension-assembled Finance Workspace routes, routed workspace areas for Extensions, Workflow Packages, Model Connections, Memory, and Runs, plus shared UI that keeps route logic thin. Workflow Packages are the only live executable agent workflow authoring and launch surface.
+React 19 + Vite frontend with a flat, metadata-driven route shell, TanStack Query for server state, extension-assembled Finance Workspace routes, routed workspace areas for Extensions, Workflow Packages, Model Connections, Memory, and Runs, plus shared inventory/workspace UI that keeps route logic thin. Workflow Packages are the only live executable agent workflow authoring and launch surface.
 
 Extension model: SignalDeck Core ships statically resident extensions in code, while frontend state and gates decide which routes, nav items, and tool pickers are exposed.
 
@@ -34,7 +34,7 @@ Future frontend upgrade work must keep platform-core route, query, and authoring
 - `src/components/platform-authoring/AGENTS.md` — schema composer, generated form, refs, inspectors, and workflow-builder widgets
 - `src/components/templates/AGENTS.md` — placeholder browser and runtime-input support components
 - `src/components/ui/AGENTS.md` — shadcn/ui wrappers, sidebar primitives, and shared variant tokens
-- `src/components/shared/AGENTS.md` — reusable tables, ResourceRowCard, metrics, error boundaries, and field schemas
+- `src/components/shared/AGENTS.md` — reusable inventory/workspace shells, resource chrome, evidence helpers, tables, and field schemas
 - `src/components/portfolios/AGENTS.md` — portfolio feature sections, dialogs, tables, and trading forms
 
 ## STRUCTURE
@@ -47,16 +47,17 @@ frontend/
 ├── src/components/     # layout shell, theme, shared UI, cross-route dialogs, platform-authoring widgets, templates, portfolio UI, shadcn primitives
 ├── src/styles/         # fonts, theme tokens, and global CSS entrypoints; covered here
 ├── src/test/           # Vitest jsdom setup; covered here
-├── e2e/                # Playwright smoke and functional coverage
+├── e2e/                # Playwright route-family and shell-regression coverage
 └── scripts/            # Playwright backend/frontend startup helpers; covered here
 ```
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/extensions/runtime-helpers.ts`, `src/components/layout.tsx` | query client, router provider, extension route assembly, layout shell, theme toggle, sidebar navigation |
+| App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/routes.metadata.ts`, `src/extensions/runtime-helpers.ts`, `src/components/layout.tsx` | query client, router provider, metadata-driven shell/nav rendering, extension route assembly, theme toggle, and sidebar navigation |
 | Extension runtime and state | `src/extensions/AGENTS.md`, `src/pages/extensions/AGENTS.md`, `src/extensions/runtime.tsx`, `src/extensions/runtime-helpers.ts`, `src/hooks/use-extensions.ts` | bundled frontend extensions, finance route/nav/tool filtering, and `/extensions` state UI |
 | Shared API/state logic | `src/lib/AGENTS.md`, `src/lib/api/AGENTS.md`, `src/lib/types/AGENTS.md`, `src/lib/platform-authoring/AGENTS.md`, `src/hooks/AGENTS.md` | typed fetch, query keys, wire contracts, platform-authoring helpers, and TanStack Query wrappers |
+| Shared route shells and UI state | `src/components/shared/AGENTS.md`, `src/hooks/AGENTS.md` | inventory/workspace/split-inspector shells, resource chrome, and reusable cards/table/filter/selection/inspector state helpers |
 | Portfolio routes | `src/pages/portfolios/AGENTS.md`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
 | Template routes | `src/pages/templates/AGENTS.md`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
 | Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
@@ -68,13 +69,14 @@ frontend/
 
 ## CONVENTIONS
 - Routing stays flat under `Layout`; feature depth lives inside components and hooks, not in nested route trees.
-- `src/routes.ts` is the route source of truth, with Finance Workspace route entries assembled from `src/extensions/runtime-helpers.ts`; `src/components/layout.tsx` owns the shell nav plus breadcrumb labels.
+- `src/routes.ts` is the route source of truth, with Finance Workspace route entries assembled from `src/extensions/runtime-helpers.ts`; `src/components/layout.tsx` renders the shell nav plus metadata-backed breadcrumbs.
 - Server data flows through `src/lib/api*.ts` and `src/hooks/*`; routed screens should not call `fetch` directly.
 - Keep React render logic pure; use effects only for external synchronization, not derived state or local data transforms.
 - Browser-exposed env access goes through `import.meta.env`, and only `VITE_`-prefixed variables may reach frontend code.
 - Use the `@` alias for `src/` imports instead of long relative paths.
 - Mutation-heavy screens use Sonner toasts for success/error feedback and shadcn/ui primitives for dialogs/forms.
-- Template and workflow package editor routes stay inside the main shell, but `Layout` gives them full-height content regions instead of the usual scroll container. The Workflow Package launch page is a separate routed console, not an editor mode.
+- `src/routes.metadata.ts` is the contract for route archetype, breadcrumb, sidebar ownership, shell mode, width mode, and visible state variants; `Layout` consumes that metadata instead of page-local chrome rules.
+- Shared inventory/workspace/split-inspector shells plus the route-state hooks in `src/hooks/` are the default way to compose page chrome; do not fork cards/table/filter/selection/inspector scaffolding per route.
 - Template preview and report generation both support runtime-input maps built from shared row helpers in `src/lib/runtime-inputs.ts`.
 - Report flows are slug-addressed, use `use-reports.ts` for server state, and rely on `downloadReportUrl()` for native markdown downloads.
 - Report inventory grouping/search/sort logic lives in `src/lib/report-grouping.ts`; the route composes that derived view state instead of re-implementing grouping inline.
@@ -124,6 +126,6 @@ pnpm test:e2e
 ## NOTES
 - `vite.config.ts` sets up the `@` alias, Vitest jsdom mode, and manual chunking for framework/data/ui/forms/date/vendor bundles.
 - Playwright only runs Chromium here and starts both backend/frontend web servers automatically via `scripts/start-playwright-*.mjs`, with backend `8001` and frontend `4173`.
-- Current Vitest coverage spans `src/lib/` helpers plus targeted agent-platform, template-editor, and layout pages.
+- Current Vitest coverage spans `src/lib/` helpers plus targeted agent-platform, shared route-shell, inventory-state, template-editor, and layout pages.
 - `src/styles/fonts.css` is empty/unreferenced; theme tokens live in `src/styles/theme.css` and Tailwind import/source control lives in `src/styles/tailwind.css`.
 - The live router exposes dashboard, extension-gated portfolio/template/report routes, `/extensions`, Workflow Packages, Model Connections, `/memory`, and Runs; removed route families are guarded in `src/routes.test.tsx`.
