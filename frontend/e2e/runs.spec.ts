@@ -220,23 +220,29 @@ test.describe("Runs inventory monitor", () => {
     await expect(
       page.getByTestId("runs-inspection-split-layout"),
     ).toBeVisible();
-    await expect(page.getByTestId("runs-evidence-console-rail")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Summary" })).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Lineage and usage" }),
-    ).toBeVisible();
-    await expect(page.getByTestId("runs-runtime-profile")).toContainText(
-      "Runtime profile",
+    await expect(page.getByTestId("runs-tab-console")).toHaveAttribute(
+      "data-active-mode",
+      "outputs",
     );
-    await expect(
-      page.getByRole("heading", { name: "Audit evidence" }),
-    ).toBeVisible();
-    await expect(
-      page.getByTestId("runs-execution-outline-frame"),
-    ).toBeVisible();
+    await expect(page.getByTestId("runs-detail-state-summary")).toContainText(
+      "Output",
+    );
     await expect(page.getByTestId("runs-evidence-viewer")).toContainText(
       "Final output",
     );
+
+    await page.getByTestId("runs-tab-trigger-execution").click();
+    await expect(
+      page.getByTestId("runs-execution-outline-frame"),
+    ).toBeVisible();
+
+    await page.getByTestId("runs-tab-trigger-runtime").click();
+    await expect(page.getByTestId("runs-runtime-profile")).toContainText(
+      "Runtime profile",
+    );
+
+    await page.getByTestId("runs-tab-trigger-metadata").click();
+    await expect(page.getByRole("heading", { name: "Metadata" })).toBeVisible();
 
     await page.getByTestId("runs-detail-rerun").click();
     const rerunDialog = page.getByRole("dialog", {

@@ -281,7 +281,7 @@ async function expectInspectorContract(
     await expect(
       page.getByTestId("runs-inspection-split-layout"),
     ).toHaveAttribute("data-panel-group-direction", "horizontal");
-    await expect(page.getByTestId("runs-mode-rail")).toBeVisible();
+    await expect(page.getByTestId("runs-tab-console")).toBeVisible();
     await expect(page.getByTestId("runs-evidence-viewer")).toBeVisible();
     return;
   }
