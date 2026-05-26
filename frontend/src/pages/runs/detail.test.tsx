@@ -1340,12 +1340,8 @@ describe("RunsDetailPage", () => {
     expect(
       within(finalOutputCard).getByRole("heading", { name: /final output/i }),
     ).toHaveClass("text-base", "font-medium", "leading-none");
-    expect(
-      within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole(
-        "button",
-        { name: /trace/i },
-      ),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-evidence-pane-nav"))
+      .not.toBeInTheDocument();
     defaultRender.unmount();
     searchParamsMock = new URLSearchParams("mode=execution");
     const stepsModeRender = render(<RunsDetailPage />);
@@ -1456,9 +1452,10 @@ describe("RunsDetailPage", () => {
     searchParamsMock = new URLSearchParams("mode=metadata");
     const auditModeRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-audit-table")).toBeVisible();
-    expect(screen.getByTestId("runs-audit-row-trace-root")).toHaveTextContent(
-      /trace-42/i,
-    );
+    expect(screen.queryByTestId("runs-audit-row-trace-root"))
+      .not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-audit-row-payload-output"))
+      .toHaveTextContent(/final output captured/i);
     expect(
       screen.getByTestId("runs-audit-row-trace-agent-1002"),
     ).toHaveTextContent(/decision\/span-2/i);
@@ -1500,6 +1497,8 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByTestId("runs-detail-final-output"),
     ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-evidence-pane-nav"))
+      .not.toBeInTheDocument();
 
     runInputRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1");
@@ -1510,6 +1509,13 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-evidence-viewer")).toHaveTextContent(
       /step evidence/i,
     );
+    expect(screen.getByTestId("runs-evidence-pane-nav")).toBeVisible();
+    expect(
+      within(screen.getByTestId("runs-evidence-pane-nav")).getByRole(
+        "button",
+        { name: "Details" },
+      ),
+    ).toBeVisible();
     const stepSummary = screen.getByTestId("runs-step-1-summary");
     const metadataHeading = within(stepSummary).getByRole("heading", {
       name: /step metadata/i,
@@ -1812,10 +1818,8 @@ describe("RunsDetailPage", () => {
     await waitFor(() =>
       expect(screen.getByTestId("runs-evidence-viewer")).toBeVisible(),
     );
-    expect(screen.getByTestId("runs-evidence-pane-nav")).toHaveClass(
-      "min-w-0",
-      "flex-wrap",
-    );
+    expect(screen.queryByTestId("runs-evidence-pane-nav"))
+      .not.toBeInTheDocument();
     expect(screen.queryByTestId("split-inspector-right-pane")).not.toBeInTheDocument();
   });
 
@@ -2517,12 +2521,8 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByText(/no invocation trace spans captured/i),
     ).not.toBeInTheDocument();
-    expect(
-      within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole(
-        "button",
-        { name: /trace/i },
-      ),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-evidence-pane-nav"))
+      .not.toBeInTheDocument();
     expect(
       screen.queryByText(/no invocations have been planned or persisted/i),
     ).not.toBeInTheDocument();

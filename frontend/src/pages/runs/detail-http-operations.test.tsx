@@ -180,9 +180,8 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     searchParamsMock = new URLSearchParams("mode=metadata");
     const auditRender = render(<RunsDetailPage />);
     expect(screen.getByRole("heading", { name: "Metadata" })).toBeVisible();
-    expect(screen.getByTestId("runs-audit-row-trace-root")).toHaveTextContent(
-      /trace-http/i,
-    );
+    expect(screen.queryByTestId("runs-audit-row-trace-root"))
+      .not.toBeInTheDocument();
     expect(
       screen.getByTestId("runs-audit-row-payload-output"),
     ).toHaveTextContent(/final output captured/i);
@@ -255,6 +254,6 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     searchParamsMock = new URLSearchParams("pane=request");
     render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(/webhook_result/i);
-    expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-evidence-pane-nav")).not.toBeInTheDocument();
   });
 });

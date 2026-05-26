@@ -2768,15 +2768,6 @@ export function RunAuditEvidenceSection({
     tone?: "secondary" | "destructive" | "outline";
   }> = [
     {
-      category: "Trace",
-      id: "trace-root",
-      pane: "finalOutput",
-      summary: run.traceId ?? "Top-level trace missing",
-      target: { type: "run" },
-      title: "Trace root",
-      tone: run.traceId || traceSpanEntries.length > 0 ? "secondary" : "outline",
-    },
-    {
       category: "Payload",
       id: "payload-output",
       pane: "finalOutput",
@@ -4266,10 +4257,12 @@ export function EvidenceViewer({
           </div>
           <div className="flex min-w-0 flex-col gap-2 sm:items-end">
             {selectedInvocationForkAction}
-            <EvidencePaneNav
-              activeInspection={activeInspection}
-              onSelect={onSelect}
-            />
+            {activeInspection.target.type !== "run" ? (
+              <EvidencePaneNav
+                activeInspection={activeInspection}
+                onSelect={onSelect}
+              />
+            ) : null}
           </div>
         </div>
       </div>
