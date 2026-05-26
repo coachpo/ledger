@@ -116,6 +116,24 @@ function expectSinglePageMain(container: HTMLElement, pathname: string) {
   ).toBeInTheDocument();
 }
 
+function getLayoutContentWrapper(pathname: string) {
+  const metadata = getRouteMetadataForPathname(pathname);
+  const routedMain = screen.getByTestId(metadata.testId);
+  const firstChild = routedMain.firstElementChild as HTMLElement | null;
+
+  if (metadata.shellMode === "fullHeight") {
+    return firstChild;
+  }
+
+  return (
+    Array.from(routedMain.querySelectorAll<HTMLElement>("div")).find(
+      (element) =>
+        element.className.includes("min-h-full") &&
+        element.className.includes("max-w-full"),
+    ) ?? null
+  );
+}
+
 describe("Layout", () => {
   function renderLayout(initialEntry: string, financeEnabled = true) {
     const queryClient = new QueryClient({
@@ -158,6 +176,14 @@ describe("Layout", () => {
                   }
                 />
                 <Route
+                  path="memory"
+                  element={
+                    <div data-testid="memory-workspace-content">
+                      Memory inspection workspace
+                    </div>
+                  }
+                />
+                <Route
                   path="workflow-packages/import"
                   element={
                     <div data-testid="workflow-package-import-content">
@@ -174,6 +200,14 @@ describe("Layout", () => {
                   element={
                     <div data-testid="workflow-package-launch-page">
                       Package launch content
+                    </div>
+                  }
+                />
+                <Route
+                  path="reports/:slug"
+                  element={
+                    <div data-testid="report-detail-content">
+                      Report detail content
                     </div>
                   }
                 />
@@ -233,30 +267,71 @@ describe("Layout", () => {
     );
   });
 
-  it("constrains inventory scroll content to the shell width", () => {
-    const { container } = renderLayout("/model-connections");
-    const scrollArea = container.querySelector<HTMLElement>(
-      '[data-slot="scroll-area"]',
-    );
-    const contentWrapper = screen.getByTestId(
-      "model-connections-list-content",
+  it("maps width modes onto the scroll shell wrappers", () => {
+    const routeCases = [
+      {
+        pathname: "/workflow-packages",
+        wrapperClassNames: [
+          "min-h-full",
+          "min-w-0",
+          "max-w-full",
+          "[&>*]:min-w-0",
+          "[&>*]:w-full",
+        ],
+      },
+      {
+        pathname: "/extensions",
+        wrapperClassNames: [
+          "min-h-full",
+          "min-w-0",
+          "max-w-full",
+          "[&>*]:mx-auto",
+          "[&>*]:min-w-0",
+          "[&>*]:w-full",
+          "[&>*]:max-w-4xl",
+        ],
+      },
+      {
+        pathname: "/reports/example-report",
+        wrapperClassNames: [
+          "min-h-full",
+          "min-w-0",
+          "max-w-full",
+          "[&>*]:mx-auto",
+          "[&>*]:min-w-0",
+          "[&>*]:w-full",
+          "[&>*]:max-w-5xl",
+        ],
+      },
+    ] as const;
+
+    for (const { pathname, wrapperClassNames } of routeCases) {
+      const { unmount } = renderLayout(pathname);
+
+      expect(getLayoutContentWrapper(pathname)).toHaveClass(
+        ...wrapperClassNames,
+      );
+      unmount();
+    }
+  });
+
+  it("marks full-height routed mains and preserves the outlet path", () => {
+    const { container } = renderLayout("/workflow-packages/88/run");
+    const routedMain = screen
+      .getByTestId("workflow-package-launch-page")
+      .closest("main");
+    const fullHeightWrapper = screen.getByTestId(
+      "workflow-package-launch-page",
     ).parentElement;
 
-    expect(scrollArea).not.toBeNull();
-    expect(scrollArea).toHaveClass(
-      "min-w-0",
-      "[&_[data-slot=scroll-area-viewport]>div]:!block",
-      "[&_[data-slot=scroll-area-viewport]>div]:!min-w-0",
-      "[&_[data-slot=scroll-area-viewport]>div]:w-full",
-      "[&_[data-slot=scroll-area-viewport]>div]:max-w-full",
-    );
-    expect(contentWrapper).toHaveClass(
-      "min-w-0",
-      "max-w-full",
-      "[&>*]:min-w-0",
+    expect(routedMain).toHaveAttribute("data-route-shell-mode", "fullHeight");
+    expect(routedMain).toHaveAttribute("data-route-width-mode", "full");
+    expect(fullHeightWrapper).toHaveClass(
+      "h-full",
+      "[&>*]:h-full",
       "[&>*]:w-full",
-      "[&>*]:max-w-7xl",
     );
+    expect(container.querySelector('[data-slot="scroll-area"]')).toBeNull();
   });
 
   it("shows extension-aware grouped shell navigation when finance is enabled", () => {

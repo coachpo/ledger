@@ -5,6 +5,13 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/components/ui/utils";
 
@@ -40,6 +47,14 @@ export type SplitInspectorLayoutProps<TTab extends string = string> = {
   rightPanel?: SplitInspectorPanelSize;
   tabs?: readonly SplitInspectorLayoutTab<TTab>[];
   testId?: string;
+};
+
+export type SheetInspectorLayoutProps<TTab extends string = string> = Omit<
+  SplitInspectorLayoutProps<TTab>,
+  "direction" | "leftPanel" | "rightPanel"
+> & {
+  onInspectorOpenChange?: (open: boolean) => void;
+  sheetDescription?: ReactNode;
 };
 
 const defaultLeftPanel: Required<SplitInspectorPanelSize> = {
@@ -130,6 +145,76 @@ function renderEmptyInspector(content: ReactNode) {
   );
 }
 
+type InspectorContentProps<TTab extends string> = Pick<
+  SplitInspectorLayoutProps<TTab>,
+  | "activeTab"
+  | "emptyInspector"
+  | "inspectorActions"
+  | "inspectorOpen"
+  | "inspectorTitle"
+  | "onActiveTabChange"
+  | "rightPane"
+  | "tabs"
+>;
+
+function renderInspectorContent<TTab extends string = string>({
+  activeTab,
+  emptyInspector,
+  inspectorActions,
+  inspectorOpen = true,
+  inspectorTitle,
+  onActiveTabChange,
+  rightPane,
+  tabs,
+}: InspectorContentProps<TTab>) {
+  const selectedTab = activeTab ?? tabs?.[0]?.value;
+
+  if (!inspectorOpen) {
+    return renderEmptyInspector(emptyInspector);
+  }
+
+  if (tabs && tabs.length > 0 && selectedTab) {
+    return (
+      <Tabs
+        className="flex h-full min-h-0 min-w-0 flex-col gap-0"
+        onValueChange={(value) => onActiveTabChange?.(value as TTab)}
+        value={selectedTab}
+      >
+        <div className="flex shrink-0 flex-col gap-3 border-b bg-card/80 px-4 py-3">
+          <InspectorHeader actions={inspectorActions} title={inspectorTitle} />
+          <TabsList className="h-8 max-w-full justify-start overflow-x-auto">
+            {tabs.map((tab) => (
+              <TabsTrigger
+                className="px-3 text-xs"
+                disabled={tab.disabled}
+                key={tab.value}
+                value={tab.value}
+              >
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+        {tabs.map((tab) => (
+          <TabsContent
+            className="m-0 min-h-0 flex-1 overflow-auto p-4 data-[state=inactive]:hidden"
+            key={tab.value}
+            value={tab.value}
+          >
+            {tab.content}
+          </TabsContent>
+        ))}
+      </Tabs>
+    );
+  }
+
+  return renderPlainInspector({
+    actions: inspectorActions,
+    content: rightPane ?? emptyInspector,
+    title: inspectorTitle,
+  });
+}
+
 export function SplitInspectorLayout<TTab extends string = string>({
   activeTab,
   className,
@@ -150,48 +235,16 @@ export function SplitInspectorLayout<TTab extends string = string>({
 }: SplitInspectorLayoutProps<TTab>) {
   const leftSize = panelSize(defaultLeftPanel, leftPanel);
   const rightSize = panelSize(defaultRightPanel, rightPanel);
-  const selectedTab = activeTab ?? tabs?.[0]?.value;
-
-  const inspectorContent = !inspectorOpen
-    ? renderEmptyInspector(emptyInspector)
-    : tabs && tabs.length > 0 && selectedTab
-      ? (
-          <Tabs
-            className="flex h-full min-h-0 min-w-0 flex-col gap-0"
-            onValueChange={(value) => onActiveTabChange?.(value as TTab)}
-            value={selectedTab}
-          >
-            <div className="flex shrink-0 flex-col gap-3 border-b bg-card/80 px-4 py-3">
-              <InspectorHeader actions={inspectorActions} title={inspectorTitle} />
-              <TabsList className="h-8 max-w-full justify-start overflow-x-auto">
-                {tabs.map((tab) => (
-                  <TabsTrigger
-                    className="px-3 text-xs"
-                    disabled={tab.disabled}
-                    key={tab.value}
-                    value={tab.value}
-                  >
-                    {tab.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </div>
-            {tabs.map((tab) => (
-              <TabsContent
-                className="m-0 min-h-0 flex-1 overflow-auto p-4 data-[state=inactive]:hidden"
-                key={tab.value}
-                value={tab.value}
-              >
-                {tab.content}
-              </TabsContent>
-            ))}
-          </Tabs>
-        )
-      : renderPlainInspector({
-          actions: inspectorActions,
-          content: rightPane ?? emptyInspector,
-          title: inspectorTitle,
-        });
+  const inspectorContent = renderInspectorContent({
+    activeTab,
+    emptyInspector,
+    inspectorActions,
+    inspectorOpen,
+    inspectorTitle,
+    onActiveTabChange,
+    rightPane,
+    tabs,
+  });
 
   return (
     <ResizablePanelGroup
@@ -227,5 +280,74 @@ export function SplitInspectorLayout<TTab extends string = string>({
         </aside>
       </ResizablePanel>
     </ResizablePanelGroup>
+  );
+}
+
+export function SheetInspectorLayout<TTab extends string = string>({
+  activeTab,
+  className,
+  emptyInspector,
+  inspectorActions,
+  inspectorAriaLabel = "Inspector sheet",
+  inspectorOpen = true,
+  inspectorTitle,
+  leftPane,
+  leftPaneAriaLabel = "Inspector source panel",
+  onActiveTabChange,
+  onInspectorOpenChange,
+  rightPane,
+  sheetDescription,
+  tabs,
+  testId = "sheet-inspector-layout",
+}: SheetInspectorLayoutProps<TTab>) {
+  const inspectorContent = renderInspectorContent({
+    activeTab,
+    emptyInspector,
+    inspectorActions,
+    inspectorOpen,
+    inspectorTitle,
+    onActiveTabChange,
+    rightPane,
+    tabs,
+  });
+
+  return (
+    <div
+      className={cn(
+        "h-full min-h-0 min-w-0 overflow-hidden rounded-xl border bg-background",
+        className,
+      )}
+      data-inspector-mode="sheet"
+      data-inspector-state={inspectorOpen ? "open" : "closed"}
+      data-testid={testId}
+    >
+      <section
+        aria-label={leftPaneAriaLabel}
+        className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+        data-testid="split-inspector-left-pane"
+      >
+        {leftPane}
+      </section>
+      <Sheet onOpenChange={onInspectorOpenChange} open={inspectorOpen}>
+        <SheetContent
+          aria-label={inspectorAriaLabel}
+          className="w-full gap-0 p-0 sm:max-w-md"
+          data-testid="split-inspector-sheet"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>{inspectorTitle ?? "Inspector panel"}</SheetTitle>
+            {sheetDescription ? (
+              <SheetDescription>{sheetDescription}</SheetDescription>
+            ) : null}
+          </SheetHeader>
+          <div
+            className="min-h-0 flex-1 overflow-hidden"
+            data-testid="split-inspector-sheet-body"
+          >
+            {inspectorContent}
+          </div>
+        </SheetContent>
+      </Sheet>
+    </div>
   );
 }

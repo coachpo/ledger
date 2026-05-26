@@ -38,4 +38,15 @@ describe("PageContextBar", () => {
     expect(screen.getByText("Compact Context").closest("[data-slot='card-header']")).toHaveClass("px-4", "pt-4");
     expect(screen.getByText("Compact metadata").closest("[data-slot='card-content']")).toHaveClass("px-4", "pb-3");
   });
+
+  it("stays visual-only without sticky positioning or shell offsets", () => {
+    render(<PageContextBar title="Visual Context" />);
+
+    const card = screen.getByText("Visual Context").closest("[data-slot='card']");
+
+    expect(card).not.toBeNull();
+    expect(card?.className).not.toMatch(/\bsticky\b/);
+    expect(card?.className).not.toMatch(/\btop-0\b/);
+    expect(card?.className).not.toMatch(/\bz-10\b|\bz-20\b/);
+  });
 });

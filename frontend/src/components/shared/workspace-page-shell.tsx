@@ -1,0 +1,87 @@
+import type { ReactNode } from "react";
+
+import { cn } from "@/components/ui/utils";
+
+export type WorkspacePageShellProps = {
+  bodyAriaLabel?: string;
+  bodyClassName?: string;
+  children: ReactNode;
+  className?: string;
+  contentClassName?: string;
+  contextBar: ReactNode;
+  contextBarClassName?: string;
+  leftRail?: ReactNode;
+  leftRailAriaLabel?: string;
+  leftRailClassName?: string;
+  testId?: string;
+};
+
+export function WorkspacePageShell({
+  bodyAriaLabel = "Workspace body",
+  bodyClassName,
+  children,
+  className,
+  contentClassName,
+  contextBar,
+  contextBarClassName,
+  leftRail,
+  leftRailAriaLabel = "Workspace navigation",
+  leftRailClassName,
+  testId = "workspace-page-shell",
+}: WorkspacePageShellProps) {
+  return (
+    <div
+      className={cn(
+        "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background font-sans",
+        className,
+      )}
+      data-testid={testId}
+    >
+      <div
+        className={cn(
+          "sticky top-0 z-10 shrink-0 border-b border-border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/80",
+          contextBarClassName,
+        )}
+        data-testid="workspace-page-shell-context"
+        data-workspace-shell-region="context"
+      >
+        {contextBar}
+      </div>
+
+      <div
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1 gap-3 overflow-hidden p-3",
+          leftRail ? "flex-col lg:flex-row" : "flex-col",
+          contentClassName,
+        )}
+        data-testid="workspace-page-shell-content"
+        data-workspace-shell-region="content"
+      >
+        {leftRail ? (
+          <aside
+            aria-label={leftRailAriaLabel}
+            className={cn(
+              "min-h-0 min-w-0 shrink-0 overflow-hidden lg:w-64",
+              leftRailClassName,
+            )}
+            data-testid="workspace-page-shell-left-rail"
+            data-workspace-shell-region="left-rail"
+          >
+            {leftRail}
+          </aside>
+        ) : null}
+        <section
+          aria-label={bodyAriaLabel}
+          className={cn(
+            "flex min-h-0 min-w-0 flex-1 flex-col overflow-auto",
+            bodyClassName,
+          )}
+          data-testid="workspace-page-shell-body"
+          data-workspace-shell-region="body"
+        >
+          {children}
+        </section>
+      </div>
+    </div>
+  );
+}

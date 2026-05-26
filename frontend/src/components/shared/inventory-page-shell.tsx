@@ -1,0 +1,57 @@
+import type { ReactNode } from "react";
+
+import {
+  PageContextBar,
+  type PageContextBarProps,
+} from "@/components/shared/page-context-bar";
+import {
+  ResourceFilterBar,
+  type ResourceFilterBarProps,
+} from "@/components/shared/resource-filter-bar";
+import {
+  ResourceToolbar,
+  type ResourceToolbarProps,
+} from "@/components/shared/resource-toolbar";
+import { cn } from "@/components/ui/utils";
+
+export type InventoryPageShellProps = {
+  children: ReactNode;
+  className?: string;
+  contentClassName?: string;
+  filterBar?: ResourceFilterBarProps | null;
+  pageContext: PageContextBarProps;
+  testId?: string;
+  toolbar: ResourceToolbarProps;
+};
+export function InventoryPageShell({
+  children,
+  className,
+  contentClassName,
+  filterBar,
+  pageContext,
+  testId,
+  toolbar,
+}: InventoryPageShellProps) {
+  return (
+    <div className={cn("flex flex-col gap-4 p-4", className)} data-testid={testId}>
+      <div data-inventory-shell-region="context">
+        <PageContextBar {...pageContext} />
+      </div>
+      <div data-inventory-shell-region="toolbar">
+        <ResourceToolbar {...toolbar} />
+      </div>
+      {filterBar ? (
+        <div data-inventory-shell-region="filters">
+          <ResourceFilterBar {...filterBar} />
+        </div>
+      ) : null}
+      <div
+        className={cn("min-w-0", contentClassName)}
+        data-inventory-shell-region="content"
+        data-slot="inventory-page-shell-content"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}

@@ -185,30 +185,36 @@ describe("router", () => {
     expect(getRouteMetadataByPattern("/")).toMatchObject({
       archetype: "dashboard",
       owner: { kind: "extension" },
+      widthMode: "wide",
       stateVariants: ["loading", "ready", "error", "disabledExtension"],
       testId: "route-dashboard",
     });
     expect(getRouteMetadataByPattern("/workflow-packages")).toMatchObject({
       archetype: "inventory",
       owner: { kind: "platform" },
+      widthMode: "wide",
       stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
       testId: "route-workflow-packages-list",
     });
     expect(getRouteMetadataByPattern("/model-connections")).toMatchObject({
       archetype: "inventory",
       owner: { kind: "platform" },
+      widthMode: "wide",
       stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
       testId: "route-model-connections-list",
     });
     expect(getRouteMetadataByPattern("/memory")).toMatchObject({
       archetype: "inventory",
       owner: { kind: "platform" },
+      shellMode: "fullHeight",
+      widthMode: "full",
       stateVariants: ["loading", "ready", "error", "empty", "unauthorized"],
       testId: "route-memory-list",
     });
     expect(getRouteMetadataByPattern("/runs")).toMatchObject({
       archetype: "inventory",
       owner: { kind: "platform" },
+      widthMode: "wide",
       stateVariants: [
         "loading",
         "ready",
@@ -222,6 +228,7 @@ describe("router", () => {
     expect(getRouteMetadataByPattern("/extensions")).toMatchObject({
       archetype: "systemState",
       owner: { kind: "system" },
+      widthMode: "compact",
       stateVariants: ["loading", "ready", "error", "empty"],
       testId: "route-extensions",
     });
@@ -245,6 +252,9 @@ describe("router", () => {
       expect(metadata.nav.label).toBeTruthy();
       expect(metadata.nav.testId).toBeTruthy();
       expect(["scroll", "fullHeight"]).toContain(metadata.shellMode);
+      expect(["wide", "full", "compact", "readable"]).toContain(
+        metadata.widthMode,
+      );
       expect(metadata.stateVariants.length).toBeGreaterThan(0);
       expect(metadata.testId).toMatch(/^route-/);
 
@@ -285,6 +295,7 @@ describe("router", () => {
     ).toMatchObject({
       archetype: "console",
       shellMode: "fullHeight",
+      widthMode: "full",
       stateVariants: expect.arrayContaining([
         "loading",
         "ready",
@@ -296,6 +307,7 @@ describe("router", () => {
     expect(getRouteMetadataByPattern("/runs/:runId")).toMatchObject({
       archetype: "console",
       shellMode: "fullHeight",
+      widthMode: "full",
       stateVariants: expect.arrayContaining([
         "loading",
         "ready",
@@ -304,9 +316,27 @@ describe("router", () => {
         "polling",
       ]),
     });
+    expect(getRouteMetadataByPattern("/reports/:slug")).toMatchObject({
+      archetype: "detail",
+      shellMode: "scroll",
+      widthMode: "readable",
+    });
+    expect(getRouteMetadataByPattern("/templates/new")).toMatchObject({
+      archetype: "editor",
+      shellMode: "fullHeight",
+      widthMode: "full",
+    });
+    expect(
+      getRouteMetadataByPattern("/templates/:templateId/edit"),
+    ).toMatchObject({
+      archetype: "editor",
+      shellMode: "fullHeight",
+      widthMode: "full",
+    });
     expect(unknownRouteMetadata).toMatchObject({
       archetype: "unknown",
       shellMode: "scroll",
+      widthMode: "compact",
       stateVariants: ["notFound"],
       testId: "route-unknown",
     });
@@ -352,6 +382,7 @@ describe("router", () => {
       "/workflow-packages/:packageId/run",
       "/model-connections/new",
       "/model-connections/:modelConnectionId/edit",
+      "/memory",
       "/runs/:runId",
     ]);
   });
@@ -408,7 +439,9 @@ describe("router", () => {
       "route-memory-list",
     );
     expect(matchedRouteComponent("/api/memory")).toBe(NotFoundPage);
-    expect(getRouteMetadataForPathname("/api/memory")).toBe(unknownRouteMetadata);
+    expect(getRouteMetadataForPathname("/api/memory")).toBe(
+      unknownRouteMetadata,
+    );
     expect(matchRoutes(router.routes, "/runs")).not.toBeNull();
     expect(matchRoutes(router.routes, "/runs/123")).not.toBeNull();
   });
@@ -435,14 +468,20 @@ describe("router", () => {
 
     expect(await screen.findByTestId("route-memory-list")).toHaveAttribute(
       "data-route-shell-mode",
-      "scroll",
+      "fullHeight",
+    );
+    expect(screen.getByTestId("route-memory-list")).toHaveAttribute(
+      "data-route-width-mode",
+      "full",
     );
     expect(screen.getByTestId("memory-list-page")).toBeVisible();
     expect(screen.getByTestId("memory-access-required")).toHaveTextContent(
       "Access context required",
     );
     expect(screen.getByText(/explicit private scopes only/i)).toBeVisible();
-    expect(screen.queryByLabelText("Namespace declarations")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Namespace declarations"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Namespace grants")).not.toBeInTheDocument();
   });
 

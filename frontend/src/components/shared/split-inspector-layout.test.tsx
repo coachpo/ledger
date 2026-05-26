@@ -2,7 +2,7 @@ import { useState } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { SplitInspectorLayout } from "./split-inspector-layout";
+import { SheetInspectorLayout, SplitInspectorLayout } from "./split-inspector-layout";
 
 type InspectorTab = "summary" | "activity";
 
@@ -95,5 +95,31 @@ describe("SplitInspectorLayout", () => {
     const layout = screen.getByTestId("vertical-inspector");
     expect(layout).toHaveAttribute("data-panel-group-direction", "vertical");
     expect(layout).toHaveClass("min-w-0", "overflow-hidden", "rounded-xl");
+  });
+
+  it("renders the inspector in a sheet without mounting an inline right pane", () => {
+    render(
+      <SheetInspectorLayout
+        emptyInspector={<p>No selection</p>}
+        inspectorOpen
+        inspectorTitle="Sheet inspector"
+        leftPane={<div>Mobile source list</div>}
+        rightPane={<p>Sheet inspector payload</p>}
+        testId="mobile-inspector"
+      />,
+    );
+
+    expect(screen.getByTestId("mobile-inspector")).toHaveAttribute(
+      "data-inspector-mode",
+      "sheet",
+    );
+    expect(screen.getByTestId("split-inspector-left-pane")).toHaveTextContent(
+      "Mobile source list",
+    );
+    expect(screen.queryByTestId("split-inspector-right-pane")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("split-inspector-resize-handle")).not.toBeInTheDocument();
+    expect(screen.getByTestId("split-inspector-sheet-body")).toHaveTextContent(
+      "Sheet inspector payload",
+    );
   });
 });

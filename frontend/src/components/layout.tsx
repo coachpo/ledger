@@ -107,6 +107,18 @@ function AppSidebar() {
   );
 }
 
+function routeWidthWrapperClassName(widthMode: string) {
+  switch (widthMode) {
+    case "compact":
+      return "min-h-full min-w-0 max-w-full [&>*]:mx-auto [&>*]:min-w-0 [&>*]:w-full [&>*]:max-w-4xl";
+    case "readable":
+      return "min-h-full min-w-0 max-w-full [&>*]:mx-auto [&>*]:min-w-0 [&>*]:w-full [&>*]:max-w-5xl";
+    case "wide":
+    default:
+      return "min-h-full min-w-0 max-w-full [&>*]:min-w-0 [&>*]:w-full";
+  }
+}
+
 export function Layout() {
   const location = useLocation();
   const routeMetadata = getRouteMetadataForPathname(location.pathname);
@@ -152,6 +164,7 @@ export function Layout() {
         <main
           className="min-h-0 min-w-0 flex-1 overflow-hidden"
           data-route-shell-mode={routeMetadata.shellMode}
+          data-route-width-mode={usesFullHeightShell ? "full" : routeMetadata.widthMode}
           data-testid={routeMetadata.testId}
         >
           {usesFullHeightShell ? (
@@ -160,7 +173,7 @@ export function Layout() {
             </div>
           ) : (
             <ScrollArea className="h-full min-w-0 [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0 [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:max-w-full">
-              <div className="min-h-full min-w-0 max-w-full [&>*]:mx-auto [&>*]:min-w-0 [&>*]:w-full [&>*]:max-w-7xl">
+              <div className={routeWidthWrapperClassName(routeMetadata.widthMode)}>
                 <Outlet />
               </div>
             </ScrollArea>

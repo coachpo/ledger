@@ -21,6 +21,7 @@ export type RouteArchetype =
   | "systemState"
   | "unknown";
 export type RouteShellMode = "scroll" | "fullHeight";
+export type RouteWidthMode = "wide" | "full" | "compact" | "readable";
 
 export type RouteNavGroup =
   | typeof AGENT_PLATFORM_NAV_GROUP
@@ -95,6 +96,7 @@ export type RouteMetadata = {
   owner: RouteOwnership;
   pattern: RoutePattern;
   shellMode: RouteShellMode;
+  widthMode: RouteWidthMode;
   stateVariants: readonly RouteStateVariant[];
   testId: string;
 };
@@ -124,6 +126,7 @@ const financeRouteMetadataByPath = {
     breadcrumb: { title: "Dashboard" },
     navPath: "/",
     shellMode: "scroll",
+    widthMode: "wide",
     stateVariants: ["loading", "ready", "error", "disabledExtension"],
     testId: "route-dashboard",
   },
@@ -132,13 +135,8 @@ const financeRouteMetadataByPath = {
     breadcrumb: { title: "Portfolios" },
     navPath: "/portfolios",
     shellMode: "scroll",
-    stateVariants: [
-      "loading",
-      "ready",
-      "error",
-      "empty",
-      "disabledExtension",
-    ],
+    widthMode: "wide",
+    stateVariants: ["loading", "ready", "error", "empty", "disabledExtension"],
     testId: "route-portfolios-list",
   },
   "/portfolios/:portfolioId": {
@@ -149,6 +147,7 @@ const financeRouteMetadataByPath = {
     },
     navPath: "/portfolios",
     shellMode: "scroll",
+    widthMode: "wide",
     stateVariants: [
       "loading",
       "ready",
@@ -163,6 +162,7 @@ const financeRouteMetadataByPath = {
     breadcrumb: { title: "Templates" },
     navPath: "/templates",
     shellMode: "scroll",
+    widthMode: "wide",
     stateVariants: [
       "loading",
       "ready",
@@ -181,6 +181,7 @@ const financeRouteMetadataByPath = {
     },
     navPath: "/templates",
     shellMode: "fullHeight",
+    widthMode: "full",
     stateVariants: ["creating", "saving", "error", "disabledExtension"],
     testId: "route-template-new",
   },
@@ -192,6 +193,7 @@ const financeRouteMetadataByPath = {
     },
     navPath: "/templates",
     shellMode: "fullHeight",
+    widthMode: "full",
     stateVariants: [
       "loading",
       "editing",
@@ -207,6 +209,7 @@ const financeRouteMetadataByPath = {
     breadcrumb: { title: "Reports" },
     navPath: "/reports",
     shellMode: "scroll",
+    widthMode: "wide",
     stateVariants: [
       "loading",
       "ready",
@@ -225,6 +228,7 @@ const financeRouteMetadataByPath = {
     },
     navPath: "/reports",
     shellMode: "scroll",
+    widthMode: "readable",
     stateVariants: [
       "loading",
       "editing",
@@ -237,7 +241,10 @@ const financeRouteMetadataByPath = {
   },
 } as const satisfies Record<FinanceRoutePath, FinanceRouteMetadataOverride>;
 
-const financeNavContributionByPath = new Map<FinanceNavPath, FinanceNavContribution>(
+const financeNavContributionByPath = new Map<
+  FinanceNavPath,
+  FinanceNavContribution
+>(
   financeWorkspaceFrontendExtension.navContributions.map((contribution) => [
     contribution.to,
     contribution,
@@ -266,7 +273,8 @@ function financeNavMetadata(
 
 const financeRouteMetadata: RouteMetadata[] =
   financeWorkspaceFrontendExtension.routeContributions.map((contribution) => {
-    const { navPath, ...metadata } = financeRouteMetadataByPath[contribution.path];
+    const { navPath, ...metadata } =
+      financeRouteMetadataByPath[contribution.path];
 
     return {
       ...metadata,
@@ -295,6 +303,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "system" },
     pattern: "/extensions",
     shellMode: "scroll",
+    widthMode: "compact",
     stateVariants: ["loading", "ready", "error", "empty"],
     testId: "route-extensions",
   },
@@ -312,6 +321,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "platform" },
     pattern: "/workflow-packages",
     shellMode: "scroll",
+    widthMode: "wide",
     stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
     testId: "route-workflow-packages-list",
   },
@@ -332,6 +342,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "platform" },
     pattern: "/workflow-packages/import",
     shellMode: "fullHeight",
+    widthMode: "full",
     stateVariants: ["importing", "validating", "error"],
     testId: "route-workflow-package-import",
   },
@@ -352,6 +363,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "platform" },
     pattern: "/workflow-packages/new",
     shellMode: "fullHeight",
+    widthMode: "full",
     stateVariants: ["creating", "saving", "validating", "error"],
     testId: "route-workflow-package-new",
   },
@@ -372,6 +384,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "platform" },
     pattern: "/workflow-packages/:packageId",
     shellMode: "fullHeight",
+    widthMode: "full",
     stateVariants: [
       "loading",
       "editing",
@@ -399,6 +412,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "platform" },
     pattern: "/workflow-packages/:packageId/run",
     shellMode: "fullHeight",
+    widthMode: "full",
     stateVariants: ["loading", "ready", "error", "launching", "notFound"],
     testId: "route-workflow-package-launch",
   },
@@ -416,6 +430,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "platform" },
     pattern: "/model-connections",
     shellMode: "scroll",
+    widthMode: "wide",
     stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
     testId: "route-model-connections-list",
   },
@@ -436,6 +451,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "platform" },
     pattern: "/model-connections/new",
     shellMode: "fullHeight",
+    widthMode: "full",
     stateVariants: ["creating", "saving", "error"],
     testId: "route-model-connection-new",
   },
@@ -456,6 +472,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "platform" },
     pattern: "/model-connections/:modelConnectionId/edit",
     shellMode: "fullHeight",
+    widthMode: "full",
     stateVariants: ["loading", "editing", "saving", "error", "notFound"],
     testId: "route-model-connection-edit",
   },
@@ -472,7 +489,8 @@ const platformAndSystemRouteMetadata = [
     },
     owner: { kind: "platform" },
     pattern: "/memory",
-    shellMode: "scroll",
+    shellMode: "fullHeight",
+    widthMode: "full",
     stateVariants: ["loading", "ready", "error", "empty", "unauthorized"],
     testId: "route-memory-list",
   },
@@ -490,6 +508,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "platform" },
     pattern: "/runs",
     shellMode: "scroll",
+    widthMode: "wide",
     stateVariants: [
       "loading",
       "ready",
@@ -517,6 +536,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "platform" },
     pattern: "/runs/:runId",
     shellMode: "fullHeight",
+    widthMode: "full",
     stateVariants: ["loading", "ready", "error", "notFound", "polling"],
     testId: "route-run-detail",
   },
@@ -540,6 +560,7 @@ export const unknownRouteMetadata: RouteMetadata = {
   owner: { kind: "unknown" },
   pattern: UNKNOWN_ROUTE_PATTERN,
   shellMode: "scroll",
+  widthMode: "compact",
   stateVariants: ["notFound"],
   testId: "route-unknown",
 };
@@ -570,7 +591,9 @@ export function getRouteMetadataByPattern(
   return routeMetadataByPattern.get(pattern);
 }
 
-export function requireRouteMetadataByPattern(pattern: RoutePattern): RouteMetadata {
+export function requireRouteMetadataByPattern(
+  pattern: RoutePattern,
+): RouteMetadata {
   const metadata = getRouteMetadataByPattern(pattern);
 
   if (!metadata) {
@@ -612,7 +635,9 @@ export function getSidebarRouteMetadataGroups(): RouteNavGroupMetadata[] {
 export function getSidebarRouteMetadataByPath(
   path: AbsoluteRoutePath,
 ): RouteMetadata | undefined {
-  return getSidebarRouteMetadata().find((metadata) => metadata.nav.path === path);
+  return getSidebarRouteMetadata().find(
+    (metadata) => metadata.nav.path === path,
+  );
 }
 
 export type RouteCoverageDefinition = {
