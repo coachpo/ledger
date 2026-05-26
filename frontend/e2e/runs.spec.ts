@@ -200,11 +200,14 @@ test.describe("Runs inventory monitor", () => {
     await expect(row).toBeVisible({ timeout: 15_000 });
     await expect(row).toContainText(`Run #${runId}`);
     await expect(row).toContainText(targetKey);
-    await expect(row).toContainText("Progress");
-    await expect(row).toContainText("Tokens");
-    await expect(row).toContainText("Queued");
-    await expect(row).toContainText("Started");
-    await expect(row).toContainText("Finished");
+    await expect(page.getByRole("columnheader", { name: "Progress" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Tokens" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Timestamps" })).toBeVisible();
+    await expect(row.getByTestId(`runs-row-progress-${runId}`)).toContainText("100%");
+    await expect(row.getByTestId(`runs-row-queue-${runId}`)).toContainText("No queue hold");
+    await expect(row).toContainText("Queued:");
+    await expect(row).toContainText("Started:");
+    await expect(row).toContainText("Finished:");
     await expect(row.getByTestId(`runs-row-action-${runId}`)).toHaveAttribute(
       "href",
       `/runs/${runId}`,
@@ -230,6 +233,7 @@ test.describe("Runs inventory monitor", () => {
     await expect(page.getByTestId("runs-evidence-viewer")).toContainText(
       "Final output",
     );
+    await expect(page.getByTestId("runs-evidence-pane-nav")).toHaveCount(0);
 
     await page.getByTestId("runs-tab-trigger-execution").click();
     await expect(
@@ -255,13 +259,12 @@ test.describe("Runs inventory monitor", () => {
     await rerunDialog.getByRole("button", { name: "Cancel" }).click();
     await expect(rerunDialog).toBeHidden();
 
-    await page
-      .getByTestId("runs-evidence-pane-nav")
-      .getByRole("button", { name: "Run input" })
-      .click();
+    await page.getByTestId("runs-tab-trigger-inputs").click();
     await expect(page.getByTestId("runs-detail-input")).toBeVisible();
-    await expect(page).toHaveURL(/inspect=run/);
-    await expect(page).toHaveURL(/pane=input/);
+    await expect(page.getByTestId("runs-evidence-pane-nav")).toHaveCount(0);
+    await expect(page).toHaveURL(/mode=inputs/);
+    await expect(page).not.toHaveURL(/inspect=run/);
+    await expect(page).not.toHaveURL(/pane=input/);
 
     await page
       .getByTestId("runs-detail-input")
