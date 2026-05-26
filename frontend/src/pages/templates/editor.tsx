@@ -7,6 +7,7 @@ import { TemplatePlaceholderReference } from "@/components/templates/template-pl
 import { TemplateRuntimeInputsSection } from "@/components/templates/template-runtime-inputs-section";
 import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
 import { PageContextBar } from "@/components/shared/page-context-bar";
+import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Button } from "@/components/ui/button";
 import { GenerateReportDialog } from "@/components/forms/generate-report-dialog";
 import { Input } from "@/components/ui/input";
@@ -37,11 +38,9 @@ function TemplateEditorHeader({
   isFormatting,
   isGenerating,
   isSaving,
-  name,
   onClose,
   onFormat,
   onGenerateOpen,
-  onNameChange,
   onSave,
   onTogglePlaceholders,
 }: {
@@ -49,19 +48,14 @@ function TemplateEditorHeader({
   isFormatting: boolean;
   isGenerating: boolean;
   isSaving: boolean;
-  name: string;
   onClose: () => void;
   onFormat: () => void;
   onGenerateOpen: () => void;
-  onNameChange: (value: string) => void;
   onSave: () => void;
   onTogglePlaceholders: () => void;
 }) {
   return (
-    <div
-      className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/80"
-      data-testid="template-editor-header"
-    >
+    <div data-testid="template-editor-header">
       <PageContextBar
         className="gap-2 border-border/80 bg-card/95 shadow-none"
         density="compact"
@@ -76,27 +70,16 @@ function TemplateEditorHeader({
         description="Author markdown, compile placeholders, and generate reports from a saved template."
         meta={
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] uppercase tracking-wider">
-            <span>{isEditing ? "Saved template" : "Unsaved draft"}</span>
             <span>Markdown + {"{{placeholders}}"}</span>
             <span>Inline compile preview</span>
+            <span>Saved-template report generation</span>
           </div>
         }
         status={
-          <div className="flex min-w-[min(100%,18rem)] flex-col gap-1">
-            <Label
-              htmlFor="template-name"
-              className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
-            >
-              Template name
-            </Label>
-            <Input
-              id="template-name"
-              name="templateName"
-              value={name}
-              onChange={(event) => onNameChange(event.target.value)}
-              placeholder="Name this template..."
-              className="h-8 border-border/70 bg-background px-2.5 text-sm font-medium shadow-none focus-visible:ring-1"
-            />
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] uppercase tracking-wider text-muted-foreground">
+            <span>{isEditing ? "Saved template" : "Unsaved draft"}</span>
+            <span>{isSaving ? "Saving" : "Ready to save"}</span>
+            <span>{isGenerating ? "Generating report" : "Preview ready"}</span>
           </div>
         }
         actions={
@@ -383,131 +366,154 @@ export function TemplateEditorPage() {
   const isGenerating = compileReportMutation.isPending;
 
   return (
-    <div
-      aria-labelledby="template-editor-title"
-      className="flex h-full min-h-0 min-w-0 flex-col bg-background"
-      data-testid="template-editor-shell"
+    <WorkspacePageShell
+      bodyAriaLabel="Template authoring workspace"
+      bodyClassName="gap-3 overflow-hidden"
+      contextBar={
+        <TemplateEditorHeader
+          isEditing={isEditing && Boolean(templateId)}
+          isFormatting={isFormatting}
+          isGenerating={isGenerating}
+          isSaving={isSaving}
+          onClose={handleClose}
+          onFormat={() => void handleFormat()}
+          onGenerateOpen={() => setGenerateOpen(true)}
+          onSave={() => void handleSave()}
+          onTogglePlaceholders={() => setPlaceholdersOpen((open) => !open)}
+        />
+      }
+      testId="template-editor-shell"
     >
-      <TemplateEditorHeader
-        isEditing={isEditing && Boolean(templateId)}
-        isFormatting={isFormatting}
-        isGenerating={isGenerating}
-        isSaving={isSaving}
-        name={name}
-        onClose={handleClose}
-        onFormat={() => void handleFormat()}
-        onGenerateOpen={() => setGenerateOpen(true)}
-        onNameChange={setName}
-        onSave={() => void handleSave()}
-        onTogglePlaceholders={() => setPlaceholdersOpen((open) => !open)}
-      />
-
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
-        <section
-          aria-label="Template authoring context"
-          className="grid shrink-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)]"
-          data-testid="template-authoring-context"
-        >
-          <TemplateRuntimeInputsSection
-            open={runtimeInputsOpen}
-            rows={runtimeInputRows}
-            onAddRow={addRuntimeInputRow}
-            onOpenChange={setRuntimeInputsOpen}
-            onRemoveRow={removeRuntimeInputRow}
-            onUpdateRow={updateRuntimeInputRow}
-          />
-
-          <div className="min-w-0 rounded-xl border border-border bg-card p-3">
-            <div className="flex min-w-0 flex-col gap-1">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                Exact Runtime Input JSON
-              </span>
-              <p className="text-xs leading-5 text-muted-foreground">
-                Canonical read-only JSON shared by inline compile and
-                saved-template report generation.
-              </p>
-            </div>
-            <ExactJsonPreview
-              ariaLabel="Exact raw runtime input JSON"
-              className="mt-2"
-              data-testid="template-runtime-inputs-raw-json"
-              textareaClassName="min-h-20 max-h-24 text-[11px]"
-              value={runtimeInputsPreview}
-            />
-          </div>
-        </section>
-
+      <section
+        aria-label="Template authoring context"
+        className="grid shrink-0 gap-3 lg:grid-cols-[minmax(16rem,0.7fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(16rem,0.65fr)_minmax(0,1fr)_minmax(20rem,0.8fr)]"
+        data-testid="template-authoring-context"
+      >
         <div
-          className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-xl border border-border bg-background xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]"
-          data-testid="template-editor-split"
+          className="min-w-0 rounded-xl border border-border bg-card p-3"
+          data-testid="template-name-field"
         >
-          <div className="flex min-h-0 min-w-0 flex-col xl:border-r xl:border-border">
-            <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
-              <Code2 className="size-3 text-muted-foreground" />
-              <Label
-                htmlFor="content"
-                className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
-              >
-                Template content
-              </Label>
-              <span className="ml-auto text-[10px] text-muted-foreground">
-                Markdown + {"{{placeholders}}"}
-              </span>
-            </div>
-            <div className="relative min-h-0 flex-1">
-              <textarea
-                id="content"
-                name="content"
-                ref={textareaRef}
-                className="h-full w-full resize-none border-none bg-background px-4 py-3 font-mono text-sm leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none"
-                placeholder="Enter template content…"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                spellCheck={false}
-              />
-            </div>
+          <div className="flex min-w-0 flex-col gap-1">
+            <Label
+              htmlFor="template-name"
+              className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+            >
+              Template name
+            </Label>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Names stay with the saved template artifact and are used by the
+              report generation dialog.
+            </p>
           </div>
+          <Input
+            id="template-name"
+            name="templateName"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Name this template..."
+            className="mt-2 h-8 border-border/70 bg-background px-2.5 text-sm font-medium shadow-none focus-visible:ring-1"
+          />
+        </div>
 
-          <div className="flex min-h-0 min-w-0 flex-col">
-            <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
-              <Eye className="size-3 text-muted-foreground" />
-              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                Preview
-              </span>
-              {compileMutation.isPending && (
-                <Loader2 className="ml-auto size-3 animate-spin text-muted-foreground" />
-              )}
-            </div>
-            <ScrollArea className="min-h-0 flex-1">
-              <div className="min-h-full bg-muted/25 px-4 py-3">
-                {compileMutation.error ? (
-                  <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive">
-                    {compileMutation.error instanceof Error
-                      ? compileMutation.error.message
-                      : "Compile error"}
-                  </div>
-                ) : compileMutation.data ? (
-                  <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
-                    {compileMutation.data.compiled}
-                  </pre>
-                ) : (
-                  <div className="flex items-center justify-center py-12 text-xs italic text-muted-foreground">
-                    {content ? "Compiling…" : "Enter content to see preview"}
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
+        <TemplateRuntimeInputsSection
+          open={runtimeInputsOpen}
+          rows={runtimeInputRows}
+          onAddRow={addRuntimeInputRow}
+          onOpenChange={setRuntimeInputsOpen}
+          onRemoveRow={removeRuntimeInputRow}
+          onUpdateRow={updateRuntimeInputRow}
+        />
+
+        <div className="min-w-0 rounded-xl border border-border bg-card p-3">
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Exact Runtime Input JSON
+            </span>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Canonical read-only JSON shared by inline compile and
+              saved-template report generation.
+            </p>
+          </div>
+          <ExactJsonPreview
+            ariaLabel="Exact raw runtime input JSON"
+            className="mt-2"
+            data-testid="template-runtime-inputs-raw-json"
+            textareaClassName="min-h-20 max-h-24 text-[11px]"
+            value={runtimeInputsPreview}
+          />
+        </div>
+      </section>
+
+      <div
+        className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-xl border border-border bg-background xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]"
+        data-testid="template-editor-split"
+      >
+        <div className="flex min-h-0 min-w-0 flex-col xl:border-r xl:border-border">
+          <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
+            <Code2 className="size-3 text-muted-foreground" />
+            <Label
+              htmlFor="content"
+              className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+            >
+              Template content
+            </Label>
+            <span className="ml-auto text-[10px] text-muted-foreground">
+              Markdown + {"{{placeholders}}"}
+            </span>
+          </div>
+          <div className="relative min-h-0 flex-1">
+            <textarea
+              id="content"
+              name="content"
+              ref={textareaRef}
+              className="h-full w-full resize-none border-none bg-background px-4 py-3 font-mono text-sm leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none"
+              placeholder="Enter template content…"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              spellCheck={false}
+            />
           </div>
         </div>
 
-        <TemplatePlaceholderReference
-          open={placeholdersOpen}
-          isLoading={isLoadingPlaceholders}
-          onClose={() => setPlaceholdersOpen(false)}
-          onInsert={insertPlaceholder}
-          placeholderTree={placeholderTree}
-        />
+        <div className="flex min-h-0 min-w-0 flex-col">
+          <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
+            <Eye className="size-3 text-muted-foreground" />
+            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Preview
+            </span>
+            {compileMutation.isPending && (
+              <Loader2 className="ml-auto size-3 animate-spin text-muted-foreground" />
+            )}
+          </div>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="min-h-full bg-muted/25 px-4 py-3">
+              {compileMutation.error ? (
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive">
+                  {compileMutation.error instanceof Error
+                    ? compileMutation.error.message
+                    : "Compile error"}
+                </div>
+              ) : compileMutation.data ? (
+                <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
+                  {compileMutation.data.compiled}
+                </pre>
+              ) : (
+                <div className="flex items-center justify-center py-12 text-xs italic text-muted-foreground">
+                  {content ? "Compiling…" : "Enter content to see preview"}
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
       </div>
+
+      <TemplatePlaceholderReference
+        open={placeholdersOpen}
+        isLoading={isLoadingPlaceholders}
+        onClose={() => setPlaceholdersOpen(false)}
+        onInsert={insertPlaceholder}
+        placeholderTree={placeholderTree}
+      />
 
       {isEditing && templateId ? (
         <GenerateReportDialog
@@ -527,6 +533,6 @@ export function TemplateEditorPage() {
           onGenerate={handleGenerateReport}
         />
       ) : null}
-    </div>
+    </WorkspacePageShell>
   );
 }

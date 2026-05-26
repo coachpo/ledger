@@ -144,12 +144,15 @@ describe("WorkflowPackageEditorPage", () => {
       "h-full",
       "min-h-0",
       "min-w-0",
-      "overflow-y-auto",
-      "overflow-x-hidden",
+      "overflow-hidden",
     );
-    expect(shell).toHaveAttribute(
-      "aria-labelledby",
-      "workflow-package-editor-title",
+    expect(screen.getByTestId("workspace-page-shell-context")).toHaveClass(
+      "sticky",
+      "top-0",
+    );
+    expect(screen.getByTestId("workspace-page-shell-body")).toHaveAttribute(
+      "aria-label",
+      "Workflow package authoring workspace",
     );
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
     expect(
@@ -209,14 +212,20 @@ describe("WorkflowPackageEditorPage", () => {
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
     const contextBar = screen.getByTestId("workflow-package-context-bar");
-    expect(contextBar).toHaveClass("sticky", "top-0");
+    expect(screen.getByTestId("workspace-page-shell-context")).toHaveClass(
+      "sticky",
+      "top-0",
+    );
     expect(contextBar).toHaveTextContent("Draft");
     expect(contextBar).toHaveTextContent("Diagnostics");
 
     const sectionNav = screen.getByTestId("workflow-package-section-nav");
     expect(sectionNav).toHaveTextContent("Authoring Sections");
     expect(sectionNav).toHaveTextContent("Package-local resources only");
-    expect(sectionNav).toHaveClass("lg:sticky");
+    expect(screen.getByTestId("workspace-page-shell-left-rail")).toHaveClass(
+      "lg:sticky",
+      "lg:top-3",
+    );
 
     const tabList = screen.getByRole("tablist", {
       name: "Workflow package editor sections",
@@ -233,8 +242,13 @@ describe("WorkflowPackageEditorPage", () => {
       );
     }
 
+    const body = screen.getByTestId("workspace-page-shell-body");
+    const rail = screen.getByTestId("workspace-page-shell-left-rail");
     expect(tabsRoot).toContainElement(sectionNav);
     expect(tabsRoot).toContainElement(screen.getByRole("tabpanel"));
+    expect(rail).toContainElement(sectionNav);
+    expect(body).toContainElement(screen.getByRole("tabpanel"));
+    expect(rail).not.toContainElement(body);
   });
 
   it("hydrates existing package draft fields from manifestSource instead of summary metadata", () => {

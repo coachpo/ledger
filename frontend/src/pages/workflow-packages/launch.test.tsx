@@ -179,9 +179,9 @@ describe("WorkflowPackageLaunchPage", () => {
     renderLaunchPage();
 
     expect(screen.getByTestId("workflow-package-launch-page")).toBeVisible();
-    expect(screen.getByTestId("workflow-package-launch-page")).toHaveClass("min-w-0", "overflow-x-hidden");
+    expect(screen.getByTestId("workflow-package-launch-page")).toHaveClass("min-w-0", "overflow-hidden");
+    expect(screen.getByTestId("workspace-page-shell-context")).toHaveClass("sticky", "top-0");
     expect(screen.getByRole("heading", { name: "Launch Workflow Package" })).toBeVisible();
-    expect(screen.getByTestId("workflow-package-launch-identity")).toHaveClass("sticky", "top-0");
     expect(screen.getByText("Saved package launch")).toBeVisible();
     expect(within(screen.getByTestId("workflow-package-launch-identity")).getByText("Market Review Package")).toBeVisible();
     expect(screen.getByTestId("workflow-package-launch-context")).toHaveTextContent("Package identity");
@@ -191,7 +191,14 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByTestId("workflow-package-preflight-status")).toHaveTextContent(/ready to launch/i);
     expect(screen.getByTestId("workflow-package-preflight-evidence")).toHaveTextContent("Preflight");
     expect(screen.getByTestId("workflow-package-constraint-inspector")).toHaveTextContent("Capability constraints");
-    expect(screen.getByTestId("workflow-package-launch-tab")).toHaveTextContent("Run configuration");
+    const runConfig = screen.getByTestId("workflow-package-run-config");
+    const launchContext = screen.getByTestId("workflow-package-launch-context");
+    expect(screen.getByTestId("workflow-package-launch-tab")).toContainElement(runConfig);
+    expect(runConfig).toHaveTextContent("Run configuration");
+    expect(
+      runConfig.compareDocumentPosition(launchContext) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.getByTestId("runtime-input-console-grid")).toHaveClass("grid", "min-w-0");
     expect(screen.getByTestId("runtime-input-json-panel")).toHaveClass("min-w-0");
     expect(screen.getByLabelText("Runtime inputs JSON")).toHaveClass("max-w-full", "overflow-x-auto", "whitespace-pre");

@@ -128,17 +128,17 @@ describe("TemplateEditorPage", () => {
 
     const shell = screen.getByTestId("template-editor-shell");
     expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0");
-    expect(shell).toHaveAttribute("aria-labelledby", "template-editor-title");
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
-    expect(screen.getByTestId("template-editor-header")).toHaveClass(
+    expect(screen.getByTestId("workspace-page-shell-context")).toHaveClass(
       "sticky",
       "top-0",
-      "z-20",
+      "z-10",
     );
-    expect(screen.getByTestId("template-authoring-context")).toHaveClass(
-      "grid",
-      "shrink-0",
+    expect(screen.getByTestId("template-editor-header")).not.toHaveClass(
+      "sticky",
     );
+    const authoringContext = screen.getByTestId("template-authoring-context");
+    expect(authoringContext).toHaveClass("grid", "shrink-0");
     expect(screen.getByTestId("template-editor-split")).toHaveClass(
       "min-h-0",
       "flex-1",
@@ -147,10 +147,14 @@ describe("TemplateEditorPage", () => {
     expect(
       screen.getByRole("heading", { name: "Create Template" }),
     ).toBeVisible();
-    expect(screen.getByLabelText(/^Template name$/i)).toHaveAttribute(
-      "placeholder",
-      "Name this template...",
-    );
+    expect(
+      within(authoringContext).getByLabelText(/^Template name$/i),
+    ).toHaveAttribute("placeholder", "Name this template...");
+    expect(
+      within(screen.getByTestId("template-editor-header")).queryByLabelText(
+        /^Template name$/i,
+      ),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("textbox", { name: /^Template content$/i }),
     ).toHaveAttribute("placeholder", "Enter template content…");

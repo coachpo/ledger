@@ -13,12 +13,18 @@ import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { ResourceRowCard } from "@/components/shared/resource-row-card";
 import { ResourceStatusStrip, type ResourceStatusStripItem } from "@/components/shared/resource-status-strip";
-import { SplitInspectorLayout, type SplitInspectorLayoutTab } from "@/components/shared/split-inspector-layout";
+import {
+  SheetInspectorLayout,
+  SplitInspectorLayout,
+  type SplitInspectorLayoutTab,
+} from "@/components/shared/split-inspector-layout";
+import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useIsMobile } from "@/components/ui/use-mobile";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -127,34 +133,21 @@ function DetailField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MemoryHeader() {
-  return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex min-w-0 flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Canonical Memory</h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Platform memory from /api/memory. This workspace shows explicit private
-          scopes only until namespace grants have a trusted server-owned source;
-          finance report history remains in Reports.
-        </p>
-      </div>
-      <Badge className="w-fit" variant="secondary">
-        <ShieldCheck className="size-3.5" /> Explicit private scopes
-      </Badge>
-    </div>
-  );
-}
-
-function ContractNotice() {
+function MemoryContextContract() {
   return (
     <div data-testid="memory-contract-notice">
       <PageContextBar
+        actions={
+          <Badge className="w-fit" variant="secondary">
+            <ShieldCheck className="size-3.5" /> Explicit private scopes
+          </Badge>
+        }
         description={
           <>
-            Lists require a package access context and a concrete private scope.
-            Shared namespace grants are not accepted from browser-authored JSON;
-            there is no global wildcard search, and this page does not create,
-            edit, delete, or browse report history.
+            Platform memory from /api/memory shows explicit private scopes only.
+            Lists require a package access context and a concrete private scope;
+            shared namespace grants are not accepted from browser-authored JSON,
+            and finance report history remains in Reports.
           </>
         }
         meta="Visibility is fixed to explicit-scope for every list request."
@@ -169,7 +162,7 @@ function ContractNotice() {
         }
         title={
           <span className="inline-flex items-center gap-2">
-            <Database className="size-4" /> Stable platform memory contract
+            <Database className="size-4" /> Canonical Memory
           </span>
         }
       />
@@ -288,96 +281,101 @@ function MemoryListCard({
   );
 }
 
-function AccessContextCard({
+function MemoryAccessFilterControls({
+  accessContext,
   agentKey,
+  explicitScope,
+  kind,
   packageKey,
+  query,
   runId,
   scopeType,
   setAgentKey,
+  setKind,
   setPackageKey,
+  setQuery,
   setRunId,
   setScopeType,
+  setStatus,
   setWorkflowKey,
+  status,
   workflowKey,
 }: {
+  accessContext: MemoryApiAccessContext | null;
   agentKey: string;
+  explicitScope: MemoryScope | null;
+  kind: string;
   packageKey: string;
+  query: string;
   runId: string;
   scopeType: PrivateMemoryScopeType;
   setAgentKey: (value: string) => void;
+  setKind: (value: string) => void;
   setPackageKey: (value: string) => void;
+  setQuery: (value: string) => void;
   setRunId: (value: string) => void;
   setScopeType: (value: PrivateMemoryScopeType) => void;
+  setStatus: (value: string) => void;
   setWorkflowKey: (value: string) => void;
+  status: string;
   workflowKey: string;
 }) {
   return (
-    <Card data-testid="memory-access-context-card">
+    <Card data-testid="memory-access-filter-controls">
       <CardHeader className="px-4 pt-4">
-        <CardTitle className="text-base">Access context</CardTitle>
+        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <CardTitle className="text-base">Access context and filters</CardTitle>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Package context, private scope, and scoped filters stay pinned above
+              the split inspector; reads remain disabled until both gates pass.
+            </p>
+          </div>
+          <ResourceStatusStrip items={contextStatusItems(accessContext, explicitScope)} />
+        </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-4 pb-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" data-testid="memory-access-context-card">
           <TextField label="Package key" onChange={setPackageKey} placeholder="pkg_alpha" value={packageKey} />
           <TextField label="Workflow key" onChange={setWorkflowKey} placeholder="optional workflow" value={workflowKey} />
           <TextField label="Agent key" onChange={setAgentKey} placeholder="optional agent" value={agentKey} />
           <TextField label="Run id" onChange={setRunId} placeholder="optional run id" value={runId} />
         </div>
-        <div className="flex min-w-0 flex-col gap-2 md:max-w-xs">
-          <Label className="text-sm" htmlFor="memory-private-scope">Private scope</Label>
-          <Select onValueChange={(value) => setScopeType(value as PrivateMemoryScopeType)} value={scopeType}>
-            <SelectTrigger id="memory-private-scope" size="sm">
-              <SelectValue placeholder="Select private scope" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="run">Run</SelectItem>
-                <SelectItem value="package">Package</SelectItem>
-                <SelectItem value="workflow">Workflow</SelectItem>
-                <SelectItem value="agent">Agent</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            Shared namespace declarations and grants are intentionally not accepted here;
-            API access stays private-scope-only until grants come from trusted package metadata.
-          </p>
+        <div className="grid gap-3 lg:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)]" data-testid="memory-filter-card">
+          <div className="flex min-w-0 flex-col gap-2">
+            <Label className="text-sm" htmlFor="memory-private-scope">Private scope</Label>
+            <Select onValueChange={(value) => setScopeType(value as PrivateMemoryScopeType)} value={scopeType}>
+              <SelectTrigger id="memory-private-scope" size="sm">
+                <SelectValue placeholder="Select private scope" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="run">Run</SelectItem>
+                  <SelectItem value="package">Package</SelectItem>
+                  <SelectItem value="workflow">Workflow</SelectItem>
+                  <SelectItem value="agent">Agent</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Namespace grants are server-owned only.
+            </p>
+          </div>
+          <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_12rem_12rem]">
+            <div className="relative" role="search">
+              <Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground" />
+              <Input
+                aria-label="Search canonical memory"
+                className="h-8 pl-8 text-xs"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Scoped lexical search..."
+                value={query}
+              />
+            </div>
+            <Input aria-label="Filter memory kind" className="h-8 text-xs" onChange={(event) => setKind(event.target.value)} placeholder="kind" value={kind} />
+            <Input aria-label="Filter memory status" className="h-8 text-xs" onChange={(event) => setStatus(event.target.value)} placeholder="resolved" value={status} />
+          </div>
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function MemoryFilters({
-  kind,
-  query,
-  setKind,
-  setQuery,
-  setStatus,
-  status,
-}: {
-  kind: string;
-  query: string;
-  setKind: (value: string) => void;
-  setQuery: (value: string) => void;
-  setStatus: (value: string) => void;
-  status: string;
-}) {
-  return (
-    <Card data-testid="memory-filter-card">
-      <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_12rem_12rem]">
-        <div className="relative" role="search">
-          <Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground" />
-          <Input
-            aria-label="Search canonical memory"
-            className="h-8 pl-8 text-xs"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Scoped lexical search..."
-            value={query}
-          />
-        </div>
-        <Input aria-label="Filter memory kind" className="h-8 text-xs" onChange={(event) => setKind(event.target.value)} placeholder="kind" value={kind} />
-        <Input aria-label="Filter memory status" className="h-8 text-xs" onChange={(event) => setStatus(event.target.value)} placeholder="resolved" value={status} />
       </CardContent>
     </Card>
   );
@@ -611,6 +609,7 @@ function contextStatusItems(
 
 export function MemoryListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const isMobileInspector = useIsMobile();
   const selectedMemoryId = searchParams.get("memoryId");
   const [packageKey, setPackageKey] = useState(searchParams.get("packageKey") ?? "");
   const [workflowKey, setWorkflowKey] = useState(searchParams.get("workflowKey") ?? "");
@@ -695,76 +694,98 @@ export function MemoryListPage() {
     revisionsError: revisionsQuery.error,
     revisionsPending: revisionsQuery.isPending,
   });
+  const inspectorOpen = Boolean(selectedMemoryId) && inspector.isInspectorOpen;
+  const memoryListPane = (
+    <MemoryListPane
+      accessContext={accessContext}
+      canQuery={canQuery}
+      explicitScope={explicitScope}
+      isError={listQuery.isError}
+      isPending={listQuery.isPending}
+      items={items}
+      listError={listQuery.error}
+      onSelect={selectMemory}
+      selectedMemoryId={selectedMemoryId}
+    />
+  );
+  const memoryEmptyInspector = (
+    <EmptyStatePanel
+      description="Open a memory entry from the scoped inventory to inspect detail, revisions, and events without leaving /memory."
+      icon={<FileText className="size-4" />}
+      title="Select memory to inspect"
+    />
+  );
+  const memoryInspectorActions = selectedMemoryId ? (
+    <Button onClick={closeInspector} size="sm" type="button" variant="outline">
+      <X data-icon="inline-start" />
+      Close
+    </Button>
+  ) : null;
 
   return (
-    <div className="flex min-w-0 flex-col gap-4 p-4" data-testid="memory-list-page">
-      <MemoryHeader />
-      <ContractNotice />
-      <AccessContextCard
+    <WorkspacePageShell
+      bodyAriaLabel="Memory inspection workspace"
+      bodyClassName="gap-3"
+      contextBar={<MemoryContextContract />}
+      testId="memory-list-page"
+    >
+      <MemoryAccessFilterControls
+        accessContext={accessContext}
         agentKey={agentKey}
+        explicitScope={explicitScope}
+        kind={kind}
         packageKey={packageKey}
+        query={query}
         runId={runId}
         scopeType={scopeType}
         setAgentKey={setAgentKey}
+        setKind={setKind}
         setPackageKey={setPackageKey}
+        setQuery={setQuery}
         setRunId={setRunId}
         setScopeType={setScopeType}
+        setStatus={setStatus}
         setWorkflowKey={setWorkflowKey}
+        status={status}
         workflowKey={workflowKey}
       />
-      <MemoryFilters
-        kind={kind}
-        query={query}
-        setKind={setKind}
-        setQuery={setQuery}
-        setStatus={setStatus}
-        status={status}
-      />
-      <PageContextBar
-        description="Access context and filters are pinned above the split layout; scoped reads stay disabled until both required gates are satisfied."
-        meta={explicitScope ? `Inspecting ${formatScope(explicitScope)}` : "Awaiting concrete private scope"}
-        status={<ResourceStatusStrip items={contextStatusItems(accessContext, explicitScope)} />}
-        title="Scoped memory inventory"
-      />
-      <SplitInspectorLayout<MemoryInspectorTab>
-        activeTab={inspector.activeTab}
-        className="min-h-[34rem]"
-        emptyInspector={
-          <EmptyStatePanel
-            description="Open a memory entry from the scoped inventory to inspect detail, revisions, and events without leaving /memory."
-            icon={<FileText className="size-4" />}
-            title="Select memory to inspect"
-          />
-        }
-        inspectorActions={selectedMemoryId ? (
-          <Button onClick={closeInspector} size="sm" type="button" variant="outline">
-            <X data-icon="inline-start" />
-            Close
-          </Button>
-        ) : null}
-        inspectorAriaLabel="Memory inspection panel"
-        inspectorOpen={Boolean(selectedMemoryId) && inspector.isInspectorOpen}
-        inspectorTitle={selectedMemoryId ? `Memory ${selectedMemoryId}` : "Memory inspector"}
-        leftPane={
-          <MemoryListPane
-            accessContext={accessContext}
-            canQuery={canQuery}
-            explicitScope={explicitScope}
-            isError={listQuery.isError}
-            isPending={listQuery.isPending}
-            items={items}
-            listError={listQuery.error}
-            onSelect={selectMemory}
-            selectedMemoryId={selectedMemoryId}
-          />
-        }
-        leftPaneAriaLabel="Scoped memory inventory"
-        leftPanel={{ defaultSize: 38, minSize: 20 }}
-        onActiveTabChange={inspector.setActiveTab}
-        rightPanel={{ defaultSize: 62, minSize: 35 }}
-        tabs={selectedMemoryId ? inspectorTabs : undefined}
-        testId="memory-split-inspector"
-      />
-    </div>
+      {isMobileInspector ? (
+        <SheetInspectorLayout<MemoryInspectorTab>
+          activeTab={inspector.activeTab}
+          className="min-h-[34rem] flex-1"
+          emptyInspector={memoryEmptyInspector}
+          inspectorActions={memoryInspectorActions}
+          inspectorAriaLabel="Memory inspection sheet"
+          inspectorOpen={inspectorOpen}
+          inspectorTitle={selectedMemoryId ? `Memory ${selectedMemoryId}` : "Memory inspector"}
+          leftPane={memoryListPane}
+          leftPaneAriaLabel="Scoped memory inventory"
+          onActiveTabChange={inspector.setActiveTab}
+          onInspectorOpenChange={(open) => {
+            if (!open) closeInspector();
+          }}
+          sheetDescription="Inspect memory detail, revisions, and events without stacking a second panel in the mobile workspace."
+          tabs={selectedMemoryId ? inspectorTabs : undefined}
+          testId="memory-sheet-inspector"
+        />
+      ) : (
+        <SplitInspectorLayout<MemoryInspectorTab>
+          activeTab={inspector.activeTab}
+          className="min-h-[34rem] flex-1"
+          emptyInspector={memoryEmptyInspector}
+          inspectorActions={memoryInspectorActions}
+          inspectorAriaLabel="Memory inspection panel"
+          inspectorOpen={inspectorOpen}
+          inspectorTitle={selectedMemoryId ? `Memory ${selectedMemoryId}` : "Memory inspector"}
+          leftPane={memoryListPane}
+          leftPaneAriaLabel="Scoped memory inventory"
+          leftPanel={{ defaultSize: 38, minSize: 20 }}
+          onActiveTabChange={inspector.setActiveTab}
+          rightPanel={{ defaultSize: 62, minSize: 35 }}
+          tabs={selectedMemoryId ? inspectorTabs : undefined}
+          testId="memory-split-inspector"
+        />
+      )}
+    </WorkspacePageShell>
   );
 }

@@ -112,8 +112,9 @@ describe("WorkflowPackageImportPage", () => {
     renderPage();
 
     const shell = screen.getByTestId("workflow-package-import-page");
-    expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0");
-    expect(shell).toHaveAttribute("aria-labelledby", "workflow-package-import-title");
+    expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0", "overflow-hidden");
+    expect(screen.getByTestId("workspace-page-shell-context")).toHaveClass("sticky", "top-0");
+    expect(screen.getByTestId("workspace-page-shell-body")).toHaveAttribute("aria-label", "Workflow package import workspace");
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Import workflow package YAML" })).toBeVisible();
     const editor = screen.getByRole("textbox", { name: "Import package YAML" });
@@ -131,7 +132,7 @@ describe("WorkflowPackageImportPage", () => {
     expect(inspector).toHaveTextContent(
       "Paste a Workflow Package manifest before importing.",
     );
-    expect(inspector).toHaveTextContent("Backend-owned");
+    expect(screen.getByTestId("workspace-page-shell-context")).toHaveTextContent("Backend-owned");
     expect(inspector).toHaveTextContent("apiVersion must be signaldeck.workflowPackage/v1.");
     expect(screen.getByRole("button", { name: "Import package" })).toBeDisabled();
 
@@ -146,12 +147,11 @@ describe("WorkflowPackageImportPage", () => {
       target: { value: "metadata:\n  key: imported\n" },
     });
 
-    const inspector = screen.getByTestId("workflow-package-import-inspector");
-    expect(inspector).toHaveTextContent("Ready");
-    expect(inspector).toHaveTextContent("Pasted YAML");
-    expect(inspector).toHaveTextContent("Guards");
-    expect(inspector).toHaveTextContent("Active");
-    expect(inspector).toHaveTextContent("No blocking constraints.");
+    const context = screen.getByTestId("workspace-page-shell-context");
+    expect(context).toHaveTextContent("Pasted YAML");
+    expect(context).toHaveTextContent("Guards");
+    expect(context).toHaveTextContent("Active");
+    expect(screen.getByTestId("workflow-package-import-inspector")).toHaveTextContent("No blocking constraints.");
   });
 
   it("confirms before discarding pasted YAML from either cancel action", () => {
@@ -246,8 +246,8 @@ describe("WorkflowPackageImportPage", () => {
     expect(alert).toHaveTextContent("Workflow package manifest is invalid");
     expect(within(alert).getByText(/spec\.agents\[0]\.modelConnection/)).toBeVisible();
     expect(alert).toHaveTextContent("Missing model connection");
+    expect(screen.getByTestId("workspace-page-shell-context")).toHaveTextContent("Rejected");
     const inspector = screen.getByTestId("workflow-package-import-inspector");
-    expect(inspector).toHaveTextContent("Rejected");
     expect(inspector).toHaveTextContent(
       "Backend rejection details are shown in this route and remain visible until the next import attempt.",
     );

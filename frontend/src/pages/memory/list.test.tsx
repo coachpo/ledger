@@ -131,6 +131,10 @@ function renderPage(initialEntry = "/memory") {
 
 describe("MemoryListPage", () => {
   beforeEach(() => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1024,
+    });
     useMemoryDetailMock.mockReset();
     useMemoryEventsMock.mockReset();
     useMemoryListMock.mockReset();
@@ -151,10 +155,16 @@ describe("MemoryListPage", () => {
     renderPage();
 
     expect(screen.getByTestId("memory-list-page")).toBeVisible();
+    expect(screen.getByTestId("workspace-page-shell-context")).toContainElement(
+      screen.getByTestId("memory-contract-notice"),
+    );
     expect(screen.getByRole("heading", { name: "Canonical Memory" })).toBeVisible();
     expect(screen.getByTestId("memory-contract-notice")).toHaveTextContent(
       "concrete private scope",
     );
+    const shellBody = screen.getByTestId("workspace-page-shell-body");
+    expect(shellBody.children[0]).toBe(screen.getByTestId("memory-access-filter-controls"));
+    expect(shellBody.children[1]).toBe(screen.getByTestId("memory-split-inspector"));
     expect(screen.getByTestId("memory-access-required")).toHaveTextContent(
       "Access context required",
     );
@@ -197,7 +207,10 @@ describe("MemoryListPage", () => {
       }),
       { enabled: true },
     );
-    expect(screen.getByText("Scoped memory inventory")).toBeVisible();
+    expect(screen.getByTestId("memory-access-filter-controls")).toHaveTextContent(
+      "Access context and filters",
+    );
+    expect(screen.getByTestId("memory-split-inspector")).toBeVisible();
     const row = screen.getByTestId("memory-row-mem-risk-1");
     expect(row).toHaveTextContent("Risk review memory");
     expect(row).toHaveTextContent("run scope 41");
@@ -218,6 +231,39 @@ describe("MemoryListPage", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Events" }), { button: 0 });
     expect(screen.getByTestId("memory-events-panel")).toHaveTextContent("event #99");
     expect(screen.queryByRole("link", { name: /memory/i })).not.toBeInTheDocument();
+  });
+
+  it("opens selected memory in a sheet instead of an inline split inspector on mobile", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 390,
+    });
+    useMemoryListMock.mockReturnValue(idleQuery(listResponse([listItem()])));
+
+    renderPage("/memory?packageKey=pkg_alpha&runId=41");
+
+    await waitFor(() =>
+      expect(screen.getByTestId("memory-sheet-inspector")).toHaveAttribute(
+        "data-inspector-mode",
+        "sheet",
+      ),
+    );
+    expect(screen.queryByTestId("memory-split-inspector")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("split-inspector-sheet")).not.toBeInTheDocument();
+
+    const row = screen.getByTestId("memory-row-mem-risk-1");
+    fireEvent.click(within(row).getByRole("button", { name: "Open memory" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("memory-sheet-inspector")).toHaveAttribute(
+        "data-inspector-state",
+        "open",
+      ),
+    );
+    expect(screen.getByTestId("split-inspector-sheet-body")).toHaveTextContent(
+      "Risk memo content with a deterministic scope.",
+    );
+    expect(screen.queryByTestId("split-inspector-right-pane")).not.toBeInTheDocument();
   });
 
   it("keeps access-denied failures distinct from generic empty states", () => {

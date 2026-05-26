@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { ProvenanceBadge } from "@/components/shared/provenance-badge";
+import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,12 @@ import {
   type WorkflowPackageEditorTab,
 } from "./editor-sections.shared";
 
+function getWorkflowPackageEditorScrollElement() {
+  return document.querySelector<HTMLElement>(
+    '[data-testid="workflow-package-editor-shell"] [data-testid="workspace-page-shell-body"]',
+  );
+}
+
 export function WorkflowPackageEditorPage() {
   const navigate = useNavigate();
   const { packageId } = useParams<{ packageId: string }>();
@@ -73,7 +80,6 @@ export function WorkflowPackageEditorPage() {
     isNew ? undefined : packageId,
   );
   const workflowPackage = packageQuery.data;
-  const editorShellRef = useRef<HTMLDivElement>(null);
   const pendingTabScrollTop = useRef<number | null>(null);
   const [activeTab, setActiveTab] =
     useState<WorkflowPackageEditorTab>("overview");
@@ -99,7 +105,8 @@ export function WorkflowPackageEditorPage() {
   const deleteSecretBinding = useDeleteWorkflowPackageSecretBinding();
 
   const selectEditorTab = (tab: WorkflowPackageEditorTab) => {
-    pendingTabScrollTop.current = editorShellRef.current?.scrollTop ?? null;
+    pendingTabScrollTop.current =
+      getWorkflowPackageEditorScrollElement()?.scrollTop ?? null;
     setActiveTab(tab);
   };
 
@@ -109,7 +116,7 @@ export function WorkflowPackageEditorPage() {
       return;
     }
     pendingTabScrollTop.current = null;
-    const editorShell = editorShellRef.current;
+    const editorShell = getWorkflowPackageEditorScrollElement();
     if (!editorShell) {
       return;
     }
@@ -400,158 +407,123 @@ export function WorkflowPackageEditorPage() {
   };
 
   if (!isNew && (packageQuery.isPending || manifestQuery.isPending)) {
-    return <EditorSkeleton />;
+    return (
+      <WorkspacePageShell
+        bodyAriaLabel="Workflow package authoring workspace"
+        contextBar={
+          <PageContextBar
+            description="Loading saved package manifest and authoring resources."
+            title="Workflow Package"
+          />
+        }
+        testId="workflow-package-editor-shell"
+      >
+        <EditorSkeleton />
+      </WorkspacePageShell>
+    );
   }
 
   return (
-    <div
-      ref={editorShellRef}
-      aria-labelledby="workflow-package-editor-title"
-      className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto overflow-x-hidden p-4 font-sans"
-      data-testid="workflow-package-editor-shell"
-    >
-      <div
-        className="sticky top-0 z-20"
-        data-testid="workflow-package-context-bar"
+    <>
+      <Tabs
+        orientation="vertical"
+        value={activeTab}
+        onValueChange={(value) =>
+          selectEditorTab(value as WorkflowPackageEditorTab)
+        }
+        className="contents"
       >
-        <PageContextBar
-          actions={
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <Button
-                aria-label="Save package"
-                className="cursor-pointer"
-                disabled={isSaving || isEditorBlocked}
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => void savePackage()}
-              >
-                <Save data-icon="inline-start" />
-                Save
-              </Button>
-              <Button
-                aria-label="Validate package"
-                className="cursor-pointer"
-                disabled={validatePackage.isPending || isEditorBlocked}
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => void validateCurrentDraft()}
-              >
-                <FileCheck2 data-icon="inline-start" />
-                Validate
-              </Button>
-              <Button
-                aria-label="Launch workflow package"
-                className="cursor-pointer"
-                disabled={isNew || isEditorBlocked}
-                type="button"
-                size="sm"
-                onClick={requestLaunchSavedPackage}
-              >
-                <PlayCircle data-icon="inline-start" />
-                Launch
-              </Button>
+        <WorkspacePageShell
+          bodyAriaLabel="Workflow package authoring workspace"
+          bodyClassName="gap-4"
+          contextBar={
+            <div data-testid="workflow-package-context-bar">
+              <PageContextBar
+                actions={
+                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    <Button
+                      aria-label="Save package"
+                      className="cursor-pointer"
+                      disabled={isSaving || isEditorBlocked}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void savePackage()}
+                    >
+                      <Save data-icon="inline-start" />
+                      Save
+                    </Button>
+                    <Button
+                      aria-label="Validate package"
+                      className="cursor-pointer"
+                      disabled={validatePackage.isPending || isEditorBlocked}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void validateCurrentDraft()}
+                    >
+                      <FileCheck2 data-icon="inline-start" />
+                      Validate
+                    </Button>
+                    <Button
+                      aria-label="Launch workflow package"
+                      className="cursor-pointer"
+                      disabled={isNew || isEditorBlocked}
+                      type="button"
+                      size="sm"
+                      onClick={requestLaunchSavedPackage}
+                    >
+                      <PlayCircle data-icon="inline-start" />
+                      Launch
+                    </Button>
+                  </div>
+                }
+                className="border-border/70 bg-card/95 shadow-sm backdrop-blur"
+                description={
+                  <span className="flex min-w-0 flex-col gap-1">
+                    <span className="break-all font-mono text-xs">
+                      {packageSubtitle(workflowPackage, isNew)}
+                    </span>
+                    <span>{headerDescription}</span>
+                  </span>
+                }
+                meta={
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <ProvenanceBadge detail={manifestHash} label="Manifest" />
+                    <ProvenanceBadge detail={compiledHash} label="Compiled" />
+                    {workflowPackage ? (
+                      <ProvenanceBadge
+                        detail={formatDateTime(workflowPackage.updatedAt)}
+                        label="Updated"
+                      />
+                    ) : null}
+                  </div>
+                }
+                status={<ResourceStatusStrip items={contextStatusItems} />}
+                title={
+                  <span
+                    id="workflow-package-editor-title"
+                    className="block text-xl font-semibold tracking-tight"
+                  >
+                    {packageTitle(workflowPackage, isNew)}
+                  </span>
+                }
+              />
             </div>
           }
-          className="border-border/70 bg-card/95 shadow-sm backdrop-blur"
-          description={
-            <span className="flex min-w-0 flex-col gap-1">
-              <span className="break-all font-mono text-xs">
-                {packageSubtitle(workflowPackage, isNew)}
-              </span>
-              <span>{headerDescription}</span>
-            </span>
-          }
-          meta={
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <ProvenanceBadge detail={manifestHash} label="Manifest" />
-              <ProvenanceBadge detail={compiledHash} label="Compiled" />
-              {workflowPackage ? (
-                <ProvenanceBadge
-                  detail={formatDateTime(workflowPackage.updatedAt)}
-                  label="Updated"
-                />
-              ) : null}
-            </div>
-          }
-          status={<ResourceStatusStrip items={contextStatusItems} />}
-          title={
-            <span
-              id="workflow-package-editor-title"
-              className="block text-xl font-semibold tracking-tight"
-            >
-              {packageTitle(workflowPackage, isNew)}
-            </span>
-          }
-        />
-      </div>
-      <Dialog
-        open={launchConfirmationOpen}
-        onOpenChange={setLaunchConfirmationOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Launch saved package?</DialogTitle>
-            <DialogDescription>
-              This will open the launch page for the last saved version of this
-              package. Unsaved editor changes are excluded until you save them.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setLaunchConfirmationOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="button" onClick={launchSavedPackage}>
-              <PlayCircle data-icon="inline-start" />
-              Launch saved package
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      {editorBlocker ? (
-        <ManifestBlockingState
-          errors={editorBlocker.errors}
-          loading={packageQuery.isFetching || manifestQuery.isFetching}
-          onRetry={retryManifestLoad}
-          title={editorBlocker.title}
-        />
-      ) : (
-        <>
-          {packageDraftFromManifestSource(
-            workflowPackageDraftToManifestSource(draft),
-          ).errors.length > 0 ? (
-            <Alert variant="destructive">
-              <AlertTitle>Generated manifest cannot be parsed</AlertTitle>
-              <AlertDescription>
-                Review package-local resource fields before saving.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          <Tabs
-            orientation="vertical"
-            value={activeTab}
-            onValueChange={(value) =>
-              selectEditorTab(value as WorkflowPackageEditorTab)
-            }
-            className="min-h-0 flex-1 gap-4 lg:grid lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start"
-          >
-            <aside
-              className="min-w-0 shrink-0 lg:sticky lg:top-36"
-              data-testid="workflow-package-section-nav"
-            >
-              <div className="flex max-h-64 min-w-0 flex-col gap-2 overflow-y-auto rounded-xl border bg-card/80 p-2 shadow-sm lg:max-h-[calc(100vh-12rem)]">
+          leftRail={
+            editorBlocker ? undefined : (
+              <div
+                className="flex max-h-64 min-w-0 flex-col gap-2 overflow-y-auto rounded-xl border bg-card/80 p-2 shadow-sm lg:max-h-full"
+                data-testid="workflow-package-section-nav"
+              >
                 <div className="px-2 py-1">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Authoring Sections
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Package-local resources only; import and launch stay on
-                    their dedicated routes.
+                    Package-local resources only; import and launch stay on their
+                    dedicated routes.
                   </p>
                 </div>
                 <TabsList
@@ -580,92 +552,144 @@ export function WorkflowPackageEditorPage() {
                   })}
                 </TabsList>
               </div>
-            </aside>
-            <div className="min-w-0">
-              <TabsContent value="overview" className="mt-0">
-                <OverviewEditor
-                  draft={draft}
-                  issues={combinedIssues}
-                  isNew={isNew}
-                  onChange={updateDraft}
-                />
-              </TabsContent>
-              <TabsContent value="agents" className="mt-0">
-                <AgentsTab
-                  diagnosticTarget={diagnosticTarget}
-                  draft={draft}
-                  issues={combinedIssues}
-                  modelConnectionOptions={modelConnectionOptions}
-                  onChange={updateDraft}
-                />
-              </TabsContent>
-              <TabsContent value="output-schemas" className="mt-0">
-                <OutputSchemasTab
-                  draft={draft}
-                  issues={combinedIssues}
-                  onChange={updateDraft}
-                />
-              </TabsContent>
-              <TabsContent value="capability-profiles" className="mt-0">
-                <CapabilityProfilesTab
-                  draft={draft}
-                  issues={combinedIssues}
-                  onChange={updateDraft}
-                  tools={(toolsQuery.data?.items ?? []).map((tool) => ({
-                    description: tool.description,
-                    displayName: tool.displayName,
-                    key: tool.key,
-                  }))}
-                  toolsError={
-                    toolsQuery.error instanceof Error
-                      ? toolsQuery.error.message
-                      : null
-                  }
-                  toolsLoading={toolsQuery.isPending}
-                />
-              </TabsContent>
-              <TabsContent value="private-mcp" className="mt-0">
-                <PrivateMcpTab
-                  draft={draft}
-                  issues={combinedIssues}
-                  onChange={updateDraft}
-                />
-              </TabsContent>
-              <TabsContent value="workflow-yaml" className="mt-0">
-                <WorkflowYamlTab
-                  draft={draft}
-                  issues={combinedIssues}
-                  onChange={updateDraft}
-                />
-              </TabsContent>
-              <TabsContent value="secret-bindings" className="mt-0">
-                <SecretBindingsTab
-                  bindings={secretBindingsQuery.data?.items ?? []}
-                  bindingsError={
-                    secretBindingsQuery.error instanceof Error
-                      ? secretBindingsQuery.error.message
-                      : null
-                  }
-                  bindingsLoading={secretBindingsQuery.isPending}
-                  deleting={deleteSecretBinding.isPending}
-                  onDelete={removeSecretBinding}
-                  onSave={saveSecretBinding}
-                  packageId={packageId}
-                  referencedSecretKeys={referencedSecretKeys}
-                  saving={upsertSecretBinding.isPending}
-                />
-              </TabsContent>
-              <TabsContent value="exports" className="mt-0">
-                <ExportsTab
-                  draft={draft}
-                  onOpenImportWorkspace={openImportWorkspace}
-                  packageId={packageId}
-                />
-              </TabsContent>
-            </div>
-          </Tabs>
-        </>
-      )}
-    </div>
+            )
+          }
+          leftRailAriaLabel="Workflow package authoring sections"
+          leftRailClassName="lg:sticky lg:top-3 lg:w-72"
+          testId="workflow-package-editor-shell"
+        >
+          {editorBlocker ? (
+            <ManifestBlockingState
+              errors={editorBlocker.errors}
+              loading={packageQuery.isFetching || manifestQuery.isFetching}
+              onRetry={retryManifestLoad}
+              title={editorBlocker.title}
+            />
+          ) : (
+            <>
+              {packageDraftFromManifestSource(
+                workflowPackageDraftToManifestSource(draft),
+              ).errors.length > 0 ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Generated manifest cannot be parsed</AlertTitle>
+                  <AlertDescription>
+                    Review package-local resource fields before saving.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              <div className="min-w-0">
+                <TabsContent value="overview" className="mt-0">
+                  <OverviewEditor
+                    draft={draft}
+                    issues={combinedIssues}
+                    isNew={isNew}
+                    onChange={updateDraft}
+                  />
+                </TabsContent>
+                <TabsContent value="agents" className="mt-0">
+                  <AgentsTab
+                    diagnosticTarget={diagnosticTarget}
+                    draft={draft}
+                    issues={combinedIssues}
+                    modelConnectionOptions={modelConnectionOptions}
+                    onChange={updateDraft}
+                  />
+                </TabsContent>
+                <TabsContent value="output-schemas" className="mt-0">
+                  <OutputSchemasTab
+                    draft={draft}
+                    issues={combinedIssues}
+                    onChange={updateDraft}
+                  />
+                </TabsContent>
+                <TabsContent value="capability-profiles" className="mt-0">
+                  <CapabilityProfilesTab
+                    draft={draft}
+                    issues={combinedIssues}
+                    onChange={updateDraft}
+                    tools={(toolsQuery.data?.items ?? []).map((tool) => ({
+                      description: tool.description,
+                      displayName: tool.displayName,
+                      key: tool.key,
+                    }))}
+                    toolsError={
+                      toolsQuery.error instanceof Error
+                        ? toolsQuery.error.message
+                        : null
+                    }
+                    toolsLoading={toolsQuery.isPending}
+                  />
+                </TabsContent>
+                <TabsContent value="private-mcp" className="mt-0">
+                  <PrivateMcpTab
+                    draft={draft}
+                    issues={combinedIssues}
+                    onChange={updateDraft}
+                  />
+                </TabsContent>
+                <TabsContent value="workflow-yaml" className="mt-0">
+                  <WorkflowYamlTab
+                    draft={draft}
+                    issues={combinedIssues}
+                    onChange={updateDraft}
+                  />
+                </TabsContent>
+                <TabsContent value="secret-bindings" className="mt-0">
+                  <SecretBindingsTab
+                    bindings={secretBindingsQuery.data?.items ?? []}
+                    bindingsError={
+                      secretBindingsQuery.error instanceof Error
+                        ? secretBindingsQuery.error.message
+                        : null
+                    }
+                    bindingsLoading={secretBindingsQuery.isPending}
+                    deleting={deleteSecretBinding.isPending}
+                    onDelete={removeSecretBinding}
+                    onSave={saveSecretBinding}
+                    packageId={packageId}
+                    referencedSecretKeys={referencedSecretKeys}
+                    saving={upsertSecretBinding.isPending}
+                  />
+                </TabsContent>
+                <TabsContent value="exports" className="mt-0">
+                  <ExportsTab
+                    draft={draft}
+                    onOpenImportWorkspace={openImportWorkspace}
+                    packageId={packageId}
+                  />
+                </TabsContent>
+              </div>
+            </>
+          )}
+        </WorkspacePageShell>
+      </Tabs>
+      <Dialog
+        open={launchConfirmationOpen}
+        onOpenChange={setLaunchConfirmationOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Launch saved package?</DialogTitle>
+            <DialogDescription>
+              This will open the launch page for the last saved version of this
+              package. Unsaved editor changes are excluded until you save them.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setLaunchConfirmationOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={launchSavedPackage}>
+              <PlayCircle data-icon="inline-start" />
+              Launch saved package
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

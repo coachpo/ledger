@@ -5,7 +5,11 @@ import { toast } from "sonner";
 
 import { useBalances } from "@/hooks/use-balances";
 import { useMarketQuotes } from "@/hooks/use-market-data";
-import { useDeletePortfolio, usePortfolio, useUpdatePortfolio } from "@/hooks/use-portfolios";
+import {
+  useDeletePortfolio,
+  usePortfolio,
+  useUpdatePortfolio,
+} from "@/hooks/use-portfolios";
 import { usePositions } from "@/hooks/use-positions";
 import { useTradingOperations } from "@/hooks/use-trading-operations";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -18,9 +22,16 @@ import {
 import type { PortfolioUpdateInput } from "@/lib/types/portfolio";
 
 import { ConsoleSection } from "@/components/shared/console-section";
-import { EvidenceCluster, type EvidenceClusterItem } from "@/components/shared/evidence-cluster";
+import {
+  EvidenceCluster,
+  type EvidenceClusterItem,
+} from "@/components/shared/evidence-cluster";
 import { MetricCard } from "@/components/shared/metric-card";
-import { ResourceStatusStrip, type ResourceStatusStripItem } from "@/components/shared/resource-status-strip";
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import {
+  ResourceStatusStrip,
+  type ResourceStatusStripItem,
+} from "@/components/shared/resource-status-strip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -43,10 +54,22 @@ export function PortfolioDetailPage() {
   const [showEditForm, setShowEditForm] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
-  const positions = useMemo(() => positionsQuery.data ?? [], [positionsQuery.data]);
-  const balances = useMemo(() => balancesQuery.data ?? [], [balancesQuery.data]);
-  const operations = useMemo(() => tradingQuery.data ?? [], [tradingQuery.data]);
-  const symbols = useMemo(() => positions.map((position) => position.symbol), [positions]);
+  const positions = useMemo(
+    () => positionsQuery.data ?? [],
+    [positionsQuery.data],
+  );
+  const balances = useMemo(
+    () => balancesQuery.data ?? [],
+    [balancesQuery.data],
+  );
+  const operations = useMemo(
+    () => tradingQuery.data ?? [],
+    [tradingQuery.data],
+  );
+  const symbols = useMemo(
+    () => positions.map((position) => position.symbol),
+    [positions],
+  );
   const quotesQuery = useMarketQuotes(portfolioId, symbols);
   const enrichedPositions = useMemo(
     () => enrichPositionsWithQuotes(positions, quotesQuery.data?.quotes ?? []),
@@ -54,31 +77,50 @@ export function PortfolioDetailPage() {
   );
   const portfolio = portfolioQuery.data;
   const totalValue = computePortfolioTotalValue(enrichedPositions, balances);
-  const cashValue = balances.reduce((sum, balance) => sum + (getSignedBalanceAmount(balance) ?? 0), 0);
+  const cashValue = balances.reduce(
+    (sum, balance) => sum + (getSignedBalanceAmount(balance) ?? 0),
+    0,
+  );
   const unrealizedPnl = enrichedPositions.reduce(
     (sum, position) => sum + (computePositionPnl(position).unrealized ?? 0),
     0,
   );
-  const latestOperation = [...operations].sort((left, right) => right.executedAt.localeCompare(left.executedAt))[0];
+  const latestOperation = [...operations].sort((left, right) =>
+    right.executedAt.localeCompare(left.executedAt),
+  )[0];
   const quoteWarnings = quotesQuery.data?.warnings ?? [];
 
   if (!portfolioId) {
-    return <div className="p-4 text-xs text-muted-foreground">Portfolio route is missing an id.</div>;
+    return (
+      <div className="p-4 text-xs text-muted-foreground">
+        Portfolio route is missing an id.
+      </div>
+    );
   }
 
   if (portfolioQuery.isPending) {
-    return <div className="p-4 text-xs text-muted-foreground">Loading portfolio...</div>;
+    return (
+      <div className="p-4 text-xs text-muted-foreground">
+        Loading portfolio...
+      </div>
+    );
   }
 
   if (portfolioQuery.isError || !portfolio) {
     return (
       <div className="max-w-4xl space-y-4 p-4">
-        <Button size="sm" variant="outline" onClick={() => navigate("/portfolios")}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => navigate("/portfolios")}
+        >
           <ArrowLeft className="mr-1 size-4" /> Back
         </Button>
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            {portfolioQuery.error instanceof Error ? portfolioQuery.error.message : "Portfolio not found."}
+            {portfolioQuery.error instanceof Error
+              ? portfolioQuery.error.message
+              : "Portfolio not found."}
           </CardContent>
         </Card>
       </div>
@@ -112,70 +154,131 @@ export function PortfolioDetailPage() {
     {
       label: "Quotes",
       tone: quoteWarnings.length > 0 ? "warning" : "success",
-      value: quoteWarnings.length > 0 ? `${quoteWarnings.length} warnings` : "Ready",
+      value:
+        quoteWarnings.length > 0 ? `${quoteWarnings.length} warnings` : "Ready",
     },
   ] satisfies ResourceStatusStripItem[];
 
   return (
-    <div className="max-w-7xl space-y-3 p-4">
-      <section
+    <div className="space-y-3 p-4">
+      <div
         aria-labelledby="portfolio-detail-title"
-        className="rounded-xl border bg-card p-4 text-card-foreground"
         data-testid="portfolio-detail-header"
       >
-        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-3">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="-ml-2 h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => navigate("/portfolios")}
+        <PageContextBar
+          actions={
+            <div
+              className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end"
+              data-testid="portfolio-detail-actions"
             >
-              <ArrowLeft className="mr-1 size-3.5" /> Portfolios
-            </Button>
-            <div className="min-w-0 space-y-1" data-testid="portfolio-detail-identity">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Portfolio workspace</p>
-              <h1 id="portfolio-detail-title" className="break-words text-xl font-semibold tracking-tight">{portfolio.name}</h1>
-              <p className="max-w-4xl break-words text-sm text-muted-foreground">{portfolio.description || "No description"}</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => navigate("/portfolios")}
+              >
+                <ArrowLeft className="mr-1 size-3.5" /> Portfolios
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                onClick={() => setShowEditForm(true)}
+              >
+                <Pencil className="mr-1 size-3" /> Edit
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-8 text-xs"
+                onClick={() => setShowDeleteDialog(true)}
+              >
+                <Trash2 className="mr-1 size-3" /> Delete
+              </Button>
             </div>
-          </div>
-          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end" data-testid="portfolio-detail-actions">
-            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setShowEditForm(true)}>
-              <Pencil className="mr-1 size-3" /> Edit
-            </Button>
-            <Button size="sm" variant="destructive" className="h-8 text-xs" onClick={() => setShowDeleteDialog(true)}>
-              <Trash2 className="mr-1 size-3" /> Delete
-            </Button>
-          </div>
-        </div>
-        <EvidenceCluster className="mt-3" items={portfolioEvidenceItems} layout="inline" />
-        <ResourceStatusStrip className="mt-3" items={portfolioStatusItems} />
-      </section>
-
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard title="Total Value" value={formatCurrency(totalValue, portfolio.baseCurrency)} note="Balances plus marked positions" />
-        <MetricCard title="Cash Balances" value={formatCurrency(cashValue, portfolio.baseCurrency)} note={`${balances.length} balance accounts`} />
-        <MetricCard title="Unrealized P&L" value={formatCurrency(unrealizedPnl, portfolio.baseCurrency)} note={`${positions.length} tracked positions`} />
-        <MetricCard title="Latest Activity" value={latestOperation ? latestOperation.side : "None"} note={latestOperation ? formatDateTime(latestOperation.executedAt) : "No operations yet"} />
+          }
+          className="border-border/80 bg-card/95 shadow-none"
+          description={
+            <span
+              className="flex min-w-0 flex-col gap-1"
+              data-testid="portfolio-detail-identity"
+            >
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Portfolio workspace
+              </span>
+              <span className="max-w-4xl break-words text-sm text-muted-foreground">
+                {portfolio.description || "No description"}
+              </span>
+            </span>
+          }
+          meta={
+            <EvidenceCluster items={portfolioEvidenceItems} layout="inline" />
+          }
+          status={<ResourceStatusStrip items={portfolioStatusItems} />}
+          title={
+            <span
+              id="portfolio-detail-title"
+              className="block break-words text-xl font-semibold tracking-tight"
+            >
+              {portfolio.name}
+            </span>
+          }
+        />
       </div>
 
-      {positionsQuery.isError || balancesQuery.isError || tradingQuery.isError ? (
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          title="Total Value"
+          value={formatCurrency(totalValue, portfolio.baseCurrency)}
+          note="Balances plus marked positions"
+        />
+        <MetricCard
+          title="Cash Balances"
+          value={formatCurrency(cashValue, portfolio.baseCurrency)}
+          note={`${balances.length} balance accounts`}
+        />
+        <MetricCard
+          title="Unrealized P&L"
+          value={formatCurrency(unrealizedPnl, portfolio.baseCurrency)}
+          note={`${positions.length} tracked positions`}
+        />
+        <MetricCard
+          title="Latest Activity"
+          value={latestOperation ? latestOperation.side : "None"}
+          note={
+            latestOperation
+              ? formatDateTime(latestOperation.executedAt)
+              : "No operations yet"
+          }
+        />
+      </div>
+
+      {positionsQuery.isError ||
+      balancesQuery.isError ||
+      tradingQuery.isError ? (
         <Card>
           <CardContent className="py-3 text-sm text-muted-foreground">
-            Some portfolio sections could not be refreshed. Cached data may still be visible.
+            Some portfolio sections could not be refreshed. Cached data may
+            still be visible.
           </CardContent>
         </Card>
       ) : null}
 
       <Tabs defaultValue="positions" className="min-w-0">
         <ConsoleSection
-          actions={(
+          actions={
             <TabsList className="h-8" data-testid="portfolio-detail-tabs">
-              <TabsTrigger value="positions" className="text-xs">Positions</TabsTrigger>
-              <TabsTrigger value="balances" className="text-xs">Balances</TabsTrigger>
-              <TabsTrigger value="trades" className="text-xs">Trades</TabsTrigger>
+              <TabsTrigger value="positions" className="text-xs">
+                Positions
+              </TabsTrigger>
+              <TabsTrigger value="balances" className="text-xs">
+                Balances
+              </TabsTrigger>
+              <TabsTrigger value="trades" className="text-xs">
+                Trades
+              </TabsTrigger>
             </TabsList>
-          )}
+          }
           description="Positions, balances, and trades keep their own mutation controls inside each tabbed section."
           title="Portfolio sections"
         >
@@ -188,7 +291,10 @@ export function PortfolioDetailPage() {
             />
           </TabsContent>
           <TabsContent value="balances" className="mt-0 min-w-0">
-            <PortfolioBalancesSection portfolioId={portfolio.id} balances={balances} />
+            <PortfolioBalancesSection
+              portfolioId={portfolio.id}
+              balances={balances}
+            />
           </TabsContent>
           <TabsContent value="trades" className="mt-0 min-w-0">
             <PortfolioTradesSection
@@ -211,7 +317,12 @@ export function PortfolioDetailPage() {
           updateMutation.mutate(
             { portfolioId: portfolio.id, data: data as PortfolioUpdateInput },
             {
-              onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to update portfolio"),
+              onError: (error) =>
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to update portfolio",
+                ),
               onSuccess: () => {
                 toast.success("Portfolio updated");
                 setShowEditForm(false);
@@ -229,7 +340,12 @@ export function PortfolioDetailPage() {
         onOpenChange={setShowDeleteDialog}
         onConfirm={() => {
           deleteMutation.mutate(portfolio.id, {
-            onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to delete portfolio"),
+            onError: (error) =>
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "Failed to delete portfolio",
+              ),
             onSuccess: () => {
               toast.success("Portfolio deleted");
               navigate("/portfolios");

@@ -15,6 +15,7 @@ import { ConstraintInspector } from "@/components/shared/constraint-inspector";
 import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
+import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -179,14 +180,15 @@ function savedInputEntryLabel(
 
 function LaunchPageSkeleton() {
   return (
-    <div
-      className="min-w-0 space-y-4 overflow-x-hidden p-4"
-      data-testid="workflow-package-launch-page"
+    <WorkspacePageShell
+      bodyAriaLabel="Workflow package launch loading workspace"
+      bodyClassName="gap-4"
+      contextBar={<Skeleton className="h-24 w-full" />}
+      testId="workflow-package-launch-page"
     >
-      <Skeleton className="h-32 w-full" />
       <Skeleton className="h-44 w-full" />
       <Skeleton className="h-96 w-full" />
-    </div>
+    </WorkspacePageShell>
   );
 }
 function LaunchPageMessage({
@@ -201,9 +203,16 @@ function LaunchPageMessage({
   title: string;
 }) {
   return (
-    <div
-      className="flex h-full min-w-0 flex-col gap-4 overflow-x-hidden overflow-y-auto p-4"
-      data-testid="workflow-package-launch-page"
+    <WorkspacePageShell
+      bodyAriaLabel="Workflow package launch message workspace"
+      bodyClassName="gap-4"
+      contextBar={
+        <PageContextBar
+          description="Open a saved workflow package before queueing a run."
+          title="Launch Workflow Package"
+        />
+      }
+      testId="workflow-package-launch-page"
     >
       <Card
         className="min-w-0 border-destructive/30 bg-destructive/5 shadow-sm"
@@ -222,7 +231,7 @@ function LaunchPageMessage({
           </Button>
         </CardContent>
       </Card>
-    </div>
+    </WorkspacePageShell>
   );
 }
 
@@ -515,10 +524,7 @@ function LaunchIdentityContextBar({
       : "Review warnings";
 
   return (
-    <div
-      className="sticky top-0 z-20 min-w-0"
-      data-testid="workflow-package-launch-identity"
-    >
+    <div className="min-w-0" data-testid="workflow-package-launch-identity">
       <PageContextBar
         actions={
           <div
@@ -1319,57 +1325,59 @@ export function WorkflowPackageLaunchPage() {
   };
 
   return (
-    <div
-      className="flex h-full min-w-0 flex-col gap-4 overflow-x-hidden overflow-y-auto p-4 font-sans"
-      data-testid="workflow-package-launch-page"
+    <WorkspacePageShell
+      bodyAriaLabel="Workflow package launch workspace"
+      bodyClassName="gap-4"
+      contextBar={
+        <LaunchIdentityContextBar
+          blockingCount={blockingCount}
+          packageId={packageId}
+          ready={ready}
+          warningCount={warningCount}
+          workflowPackage={packageQuery.data}
+        />
+      }
+      testId="workflow-package-launch-page"
     >
-      <LaunchIdentityContextBar
-        blockingCount={blockingCount}
-        packageId={packageId}
-        ready={ready}
-        warningCount={warningCount}
-        workflowPackage={packageQuery.data}
-      />
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <div className="flex min-w-0 flex-col gap-4">
-          <LaunchContextCard workflowPackage={packageQuery.data} />
-          <LaunchReadinessCard
-            blockingCount={blockingCount}
-            diagnostics={diagnostics}
-            isLoadingMetadata={launchQuery.isPending}
-            metadataError={launchQuery.isError ? launchQuery.error : null}
-            readinessRead={readinessRead}
-            ready={ready}
-            warningCount={warningCount}
-            onPreflight={() => void runLaunchPreflight()}
-            preflightPending={preflightPackage.isPending}
-          />
-        </div>
+        <LaunchReadinessCard
+          blockingCount={blockingCount}
+          diagnostics={diagnostics}
+          isLoadingMetadata={launchQuery.isPending}
+          metadataError={launchQuery.isError ? launchQuery.error : null}
+          readinessRead={readinessRead}
+          ready={ready}
+          warningCount={warningCount}
+          onPreflight={() => void runLaunchPreflight()}
+          preflightPending={preflightPackage.isPending}
+        />
 
         <div data-testid="workflow-package-launch-tab">
-          <ConsoleSection
-            description="Select a workflow, provide runtime input JSON, manage saved inputs, and queue a run from this package snapshot."
-            title="Run configuration"
-          >
-            <div className="min-w-0 space-y-4">
-              <div className="min-w-0 space-y-2">
-                <Label htmlFor="workflow-key">Workflow key</Label>
-                <Input
-                  id="workflow-key"
-                  aria-label="Workflow key"
-                  placeholder="Workflow key"
-                  value={workflowKey}
-                  onChange={(event) => updateWorkflowKey(event.target.value)}
-                />
-              </div>
-              <Card className="min-w-0 bg-background/60">
-                <CardHeader>
-                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div data-testid="workflow-package-run-config">
+            <ConsoleSection
+              description="Select a workflow, provide runtime input JSON, manage saved inputs, and queue a run from this package snapshot."
+              title="Run configuration"
+            >
+              <div className="min-w-0 space-y-4">
+                <div className="min-w-0 space-y-2">
+                  <Label htmlFor="workflow-key">Workflow key</Label>
+                  <Input
+                    id="workflow-key"
+                    aria-label="Workflow key"
+                    placeholder="Workflow key"
+                    value={workflowKey}
+                    onChange={(event) => updateWorkflowKey(event.target.value)}
+                  />
+                </div>
+                <div className="min-w-0 rounded-xl border bg-background/60">
+                  <div className="flex min-w-0 flex-col gap-3 px-4 pt-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 space-y-1">
-                      <CardTitle className="text-base">Runtime inputs</CardTitle>
-                      <CardDescription>
+                      <h3 className="text-base font-semibold tracking-tight">
+                        Runtime inputs
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
                         Runtime inputs must be a JSON object.
-                      </CardDescription>
+                      </p>
                     </div>
                     <Button
                       className="w-full sm:w-auto"
@@ -1381,126 +1389,128 @@ export function WorkflowPackageLaunchPage() {
                       Reset to template
                     </Button>
                   </div>
-                </CardHeader>
-                <CardContent className="min-w-0 space-y-4">
-                  {!inputTemplate.schemaSupported ? (
-                    <Alert className="border-chart-3/30 bg-chart-3/10">
-                      <AlertCircle />
-                      <AlertTitle>Schema template started empty</AlertTitle>
-                      <AlertDescription>
-                        <p>{inputTemplate.reason}</p>
-                        {inputTemplate.issues.length > 0 ? (
-                          <ul className="list-disc pl-5">
-                            {inputTemplate.issues.map((issue) => (
-                              <li key={`${issue.field}-${issue.issue}`}>
-                                {issue.field}: {issue.issue}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : null}
-                      </AlertDescription>
-                    </Alert>
-                  ) : null}
-                  <RuntimeInputValidationAlert errors={runtimeInputErrors} />
-                  <div
-                    className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]"
-                    data-testid="runtime-input-console-grid"
-                  >
+                  <div className="min-w-0 space-y-4 p-4">
+                    {!inputTemplate.schemaSupported ? (
+                      <Alert className="border-chart-3/30 bg-chart-3/10">
+                        <AlertCircle />
+                        <AlertTitle>Schema template started empty</AlertTitle>
+                        <AlertDescription>
+                          <p>{inputTemplate.reason}</p>
+                          {inputTemplate.issues.length > 0 ? (
+                            <ul className="list-disc pl-5">
+                              {inputTemplate.issues.map((issue) => (
+                                <li key={`${issue.field}-${issue.issue}`}>
+                                  {issue.field}: {issue.issue}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </AlertDescription>
+                      </Alert>
+                    ) : null}
+                    <RuntimeInputValidationAlert errors={runtimeInputErrors} />
                     <div
-                      className="min-w-0 space-y-2"
-                      data-testid="runtime-input-json-panel"
+                      className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]"
+                      data-testid="runtime-input-console-grid"
                     >
-                      <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
-                      <Textarea
-                        id="runtime-json"
-                        aria-label="Runtime inputs JSON"
-                        className="min-h-72 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
-                        rows={14}
-                        value={parametersText}
-                        onChange={(event) =>
-                          updateParametersText(event.target.value)
+                      <div
+                        className="min-w-0 space-y-2"
+                        data-testid="runtime-input-json-panel"
+                      >
+                        <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
+                        <Textarea
+                          id="runtime-json"
+                          aria-label="Runtime inputs JSON"
+                          className="min-h-72 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
+                          rows={14}
+                          value={parametersText}
+                          onChange={(event) =>
+                            updateParametersText(event.target.value)
+                          }
+                        />
+                      </div>
+                      <SavedInputsHelper
+                        createDisabled={
+                          !resolvedWorkflowKey ||
+                          runtimeInputRegistry.isPending ||
+                          runtimeInputRegistry.isFetching ||
+                          !personalPresetName.trim()
                         }
+                        createPending={createPersonalEntry.isPending}
+                        deletePending={deletePersonalEntry.isPending}
+                        error={
+                          runtimeInputRegistry.isError
+                            ? runtimeInputRegistry.error
+                            : null
+                        }
+                        historyEntries={runtimeInputRegistry.data?.history ?? []}
+                        loading={
+                          runtimeInputRegistry.isPending ||
+                          runtimeInputRegistry.isFetching
+                        }
+                        personalEntries={runtimeInputRegistry.data?.personal ?? []}
+                        presetName={personalPresetName}
+                        updatePending={updatePersonalEntry.isPending}
+                        workflowKey={resolvedWorkflowKey}
+                        onCreate={() => void savePersonalInput()}
+                        onDelete={(entry) => void deletePersonalInput(entry)}
+                        onLoad={loadSavedInput}
+                        onPresetNameChange={setPersonalPresetName}
+                        onUpdate={(entry) => void overwritePersonalInput(entry)}
                       />
                     </div>
-                    <SavedInputsHelper
-                      createDisabled={
-                        !resolvedWorkflowKey ||
-                        runtimeInputRegistry.isPending ||
-                        runtimeInputRegistry.isFetching ||
-                        !personalPresetName.trim()
-                      }
-                      createPending={createPersonalEntry.isPending}
-                      deletePending={deletePersonalEntry.isPending}
-                      error={
-                        runtimeInputRegistry.isError
-                          ? runtimeInputRegistry.error
-                          : null
-                      }
-                      historyEntries={runtimeInputRegistry.data?.history ?? []}
-                      loading={
-                        runtimeInputRegistry.isPending ||
-                        runtimeInputRegistry.isFetching
-                      }
-                      personalEntries={runtimeInputRegistry.data?.personal ?? []}
-                      presetName={personalPresetName}
-                      updatePending={updatePersonalEntry.isPending}
-                      workflowKey={resolvedWorkflowKey}
-                      onCreate={() => void savePersonalInput()}
-                      onDelete={(entry) => void deletePersonalInput(entry)}
-                      onLoad={loadSavedInput}
-                      onPresetNameChange={setPersonalPresetName}
-                      onUpdate={(entry) => void overwritePersonalInput(entry)}
-                    />
                   </div>
-                </CardContent>
-              </Card>
-              <div
-                className="flex min-w-0 flex-col gap-2 sm:flex-row sm:justify-end"
-                data-testid="workflow-package-run-actions"
-              >
-                <Button
-                  className="w-full sm:w-auto"
-                  disabled={preflightPackage.isPending || launchQuery.isPending}
-                  type="button"
-                  variant="outline"
-                  onClick={() => void runLaunchPreflight()}
+                </div>
+                <div
+                  className="flex min-w-0 flex-col gap-2 sm:flex-row sm:justify-end"
+                  data-testid="workflow-package-run-actions"
                 >
-                  {preflightPackage.isPending ? (
-                    <Loader2
-                      className="animate-spin"
-                      data-icon="inline-start"
-                    />
-                  ) : (
-                    <FileCheck2 data-icon="inline-start" />
-                  )}
-                  Run preflight
-                </Button>
-                <Button
-                  className="w-full sm:w-auto"
-                  disabled={
-                    createLaunch.isPending ||
-                    preflightPackage.isPending ||
-                    launchQuery.isPending ||
-                    launchQuery.isError
-                  }
-                  type="button"
-                  onClick={() => void launchPackage()}
-                >
-                  {createLaunch.isPending ? (
-                    <Loader2
-                      className="animate-spin"
-                      data-icon="inline-start"
-                    />
-                  ) : (
-                    <PlayCircle data-icon="inline-start" />
-                  )}
-                  Launch Run
-                </Button>
+                  <Button
+                    className="w-full sm:w-auto"
+                    disabled={preflightPackage.isPending || launchQuery.isPending}
+                    type="button"
+                    variant="outline"
+                    onClick={() => void runLaunchPreflight()}
+                  >
+                    {preflightPackage.isPending ? (
+                      <Loader2
+                        className="animate-spin"
+                        data-icon="inline-start"
+                      />
+                    ) : (
+                      <FileCheck2 data-icon="inline-start" />
+                    )}
+                    Run preflight
+                  </Button>
+                  <Button
+                    className="w-full sm:w-auto"
+                    disabled={
+                      createLaunch.isPending ||
+                      preflightPackage.isPending ||
+                      launchQuery.isPending ||
+                      launchQuery.isError
+                    }
+                    type="button"
+                    onClick={() => void launchPackage()}
+                  >
+                    {createLaunch.isPending ? (
+                      <Loader2
+                        className="animate-spin"
+                        data-icon="inline-start"
+                      />
+                    ) : (
+                      <PlayCircle data-icon="inline-start" />
+                    )}
+                    Launch Run
+                  </Button>
+                </div>
               </div>
-            </div>
-          </ConsoleSection>
+            </ConsoleSection>
+          </div>
         </div>
       </div>
-    </div>
+
+      <LaunchContextCard workflowPackage={packageQuery.data} />
+    </WorkspacePageShell>
   );
 }

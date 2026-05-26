@@ -136,15 +136,12 @@ describe("ModelConnectionsEditorPage", () => {
     render(<ModelConnectionsEditorPage />);
 
     const shell = screen.getByTestId("model-connections-editor");
-    expect(shell).toHaveClass(
-      "h-full",
-      "min-h-0",
-      "min-w-0",
-      "overflow-y-auto",
+    expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0", "overflow-hidden");
+    expect(screen.getByTestId("workspace-page-shell-context")).toContainElement(
+      screen.getByText("Create Model Connection"),
     );
-    expect(shell).toHaveAttribute(
-      "aria-labelledby",
-      "model-connection-editor-title",
+    expect(screen.getByTestId("workspace-page-shell-body")).toHaveClass(
+      "overflow-auto",
     );
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
     expect(

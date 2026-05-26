@@ -92,7 +92,8 @@ function buildPortfolio() {
     id: 42,
     name: "Growth Fund With A Very Long Workspace Name",
     slug: "growth-fund",
-    description: "Long-term allocation with enough strategy notes to require wrapping on small screens.",
+    description:
+      "Long-term allocation with enough strategy notes to require wrapping on small screens.",
     baseCurrency: "USD",
     positionCount: 0,
     balanceCount: 0,
@@ -115,7 +116,9 @@ describe("PortfolioDetailPage", () => {
     useBalancesMock.mockReturnValue(queryResult([]));
     usePositionsMock.mockReturnValue(queryResult([]));
     useTradingOperationsMock.mockReturnValue(queryResult([]));
-    useMarketQuotesMock.mockReturnValue(queryResult({ quotes: [], warnings: [] }));
+    useMarketQuotesMock.mockReturnValue(
+      queryResult({ quotes: [], warnings: [] }),
+    );
   });
 
   it("renders a named detail identity block with consistent back and action hierarchy", () => {
@@ -124,8 +127,18 @@ describe("PortfolioDetailPage", () => {
     const heading = screen.getByRole("heading", {
       name: "Growth Fund With A Very Long Workspace Name",
     });
-    expect(heading).toHaveAttribute("id", "portfolio-detail-title");
-    expect(heading).toHaveClass("break-words", "text-xl", "font-semibold", "tracking-tight");
+    const title = screen.getByText(
+      "Growth Fund With A Very Long Workspace Name",
+      {
+        selector: "#portfolio-detail-title",
+      },
+    );
+    expect(title).toHaveClass(
+      "break-words",
+      "text-xl",
+      "font-semibold",
+      "tracking-tight",
+    );
     expect(heading).not.toHaveClass("truncate", "text-lg");
 
     const backButton = screen.getByRole("button", { name: /portfolios/i });
@@ -134,19 +147,30 @@ describe("PortfolioDetailPage", () => {
 
     const actions = screen.getByTestId("portfolio-detail-actions");
     expect(actions).toHaveClass("flex-wrap", "sm:w-auto");
-    expect(within(actions).getByRole("button", { name: /edit/i })).toBeVisible();
-    expect(within(actions).getByRole("button", { name: /delete/i })).toBeVisible();
+    expect(
+      within(actions).getByRole("button", { name: /edit/i }),
+    ).toBeVisible();
+    expect(
+      within(actions).getByRole("button", { name: /delete/i }),
+    ).toBeVisible();
   });
 
   it("keeps detail metadata readable with explicit evidence and tab rhythm", () => {
     render(<PortfolioDetailPage />);
 
     const header = screen.getByTestId("portfolio-detail-header");
+    const contextCard = header.querySelector('[data-slot="card"]');
     const identity = screen.getByTestId("portfolio-detail-identity");
-    expect(header).toHaveClass("rounded-xl", "border", "bg-card");
+    expect(contextCard).toHaveClass("rounded-xl", "border", "bg-card/95");
     expect(identity).toHaveClass("min-w-0");
-    expect(within(identity).getByText("Portfolio workspace")).toHaveClass("uppercase", "tracking-wide");
-    expect(screen.getByText(/Long-term allocation/)).toHaveClass("break-words", "text-sm");
+    expect(within(identity).getByText("Portfolio workspace")).toHaveClass(
+      "uppercase",
+      "tracking-wide",
+    );
+    expect(screen.getByText(/Long-term allocation/)).toHaveClass(
+      "break-words",
+      "text-sm",
+    );
     expect(within(header).getByText("Scope")).toBeVisible();
     expect(within(header).getByText("Finance Workspace")).toBeVisible();
     expect(within(header).getByText("Last updated")).toBeVisible();
@@ -157,6 +181,8 @@ describe("PortfolioDetailPage", () => {
     expect(within(tabs).getByRole("tab", { name: "Positions" })).toBeVisible();
     expect(within(tabs).getByRole("tab", { name: "Balances" })).toBeVisible();
     expect(within(tabs).getByRole("tab", { name: "Trades" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Portfolio sections" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Portfolio sections" }),
+    ).toBeVisible();
   });
 });

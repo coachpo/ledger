@@ -358,10 +358,13 @@ describe("report source labels", () => {
 
     expect(useReportMock).toHaveBeenCalledWith("agent_memory_snapshot");
     const detailHeading = screen.getAllByRole("heading", {
-      name: "Memory Snapshot",
+      name: /Memory Snapshot/,
     })[0];
+    const detailTitle = screen.getByText("Memory Snapshot", {
+      selector: "#report-detail-title",
+    });
     expect(detailHeading).toBeVisible();
-    expect(detailHeading).toHaveClass(
+    expect(detailTitle).toHaveClass(
       "break-words",
       "text-xl",
       "font-semibold",
@@ -373,11 +376,15 @@ describe("report source labels", () => {
 
     const actions = screen.getByTestId("report-detail-actions");
     expect(actions).toHaveClass("flex-wrap", "sm:w-auto");
-    expect(within(actions).getByRole("link", { name: /download/i })).toHaveAttribute(
+    expect(
+      within(actions).getByRole("link", { name: /download/i }),
+    ).toHaveAttribute(
       "href",
       expect.stringContaining("/reports/agent_memory_snapshot/download"),
     );
-    expect(within(actions).getByRole("button", { name: /edit/i })).toBeVisible();
+    expect(
+      within(actions).getByRole("button", { name: /edit/i }),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: /reports/i })).toBeVisible();
   });
 });

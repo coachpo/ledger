@@ -18,6 +18,7 @@ import {
   type EvidenceClusterTone,
 } from "@/components/shared/evidence-cluster";
 import { PageContextBar } from "@/components/shared/page-context-bar";
+import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -662,12 +663,10 @@ export function ModelConnectionsEditorPage() {
   const runtimePolicyEvidenceItems = buildRuntimePolicyEvidenceItems(values);
 
   return (
-    <div
-      aria-labelledby="model-connection-editor-title"
-      className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overflow-x-hidden p-4 font-sans"
-      data-testid="model-connections-editor"
-    >
-      <div className="sticky top-0 z-10 bg-background/95 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <WorkspacePageShell
+      bodyAriaLabel="Model connection editor workspace"
+      bodyClassName="gap-4"
+      contextBar={
         <PageContextBar
           density="compact"
           title={
@@ -727,8 +726,9 @@ export function ModelConnectionsEditorPage() {
             </div>
           }
         />
-      </div>
-
+      }
+      testId="model-connections-editor"
+    >
       <div className="grid min-h-0 min-w-0 gap-4 xl:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-4">
           <ConsoleSection
@@ -987,6 +987,6 @@ export function ModelConnectionsEditorPage() {
           </ConsoleSection>
         </div>
       </div>
-    </div>
+    </WorkspacePageShell>
   );
 }

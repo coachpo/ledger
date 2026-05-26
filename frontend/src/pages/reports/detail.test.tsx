@@ -1,19 +1,23 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ReportRead } from "@/lib/types/report";
 
 import { ReportDetailPage } from "./detail";
 
-const {
-  navigateMock,
-  updateReportMutateAsyncMock,
-  useReportMock,
-} = vi.hoisted(() => ({
-  navigateMock: vi.fn(),
-  updateReportMutateAsyncMock: vi.fn(),
-  useReportMock: vi.fn(),
-}));
+const { navigateMock, updateReportMutateAsyncMock, useReportMock } = vi.hoisted(
+  () => ({
+    navigateMock: vi.fn(),
+    updateReportMutateAsyncMock: vi.fn(),
+    useReportMock: vi.fn(),
+  }),
+);
 
 vi.mock("react-router", () => ({
   useNavigate: () => navigateMock,
@@ -77,39 +81,59 @@ describe("ReportDetailPage", () => {
 
     expect(useReportMock).toHaveBeenCalledWith("agent_memory_snapshot");
     const header = screen.getByTestId("report-detail-header");
+    const contextCard = header.querySelector('[data-slot="card"]');
     const identity = screen.getByTestId("report-detail-identity");
-    expect(header).toHaveClass("rounded-xl", "border", "bg-card");
-    expect(within(identity).getByText("Immutable report snapshot")).toHaveClass(
-      "uppercase",
-      "tracking-wide",
+    expect(contextCard).toHaveClass("rounded-xl", "border", "bg-card/95");
+    expect(identity).toHaveClass("uppercase", "tracking-wide");
+    const heading = screen.getAllByRole("heading", {
+      name: /Memory Snapshot/,
+    })[0];
+    const title = screen.getByText("Memory Snapshot", {
+      selector: "#report-detail-title",
+    });
+    expect(title).toHaveClass(
+      "break-words",
+      "text-xl",
+      "font-semibold",
+      "tracking-tight",
     );
-    const heading = screen.getAllByRole("heading", { name: "Memory Snapshot" })[0];
-    expect(heading).toHaveAttribute("id", "report-detail-title");
-    expect(heading).toHaveClass("break-words", "text-xl", "font-semibold", "tracking-tight");
+    expect(heading).not.toHaveClass("truncate", "text-lg");
     expect(within(header).getAllByText("Agent")[0]).toBeVisible();
     expect(within(header).getByText("Slug")).toBeVisible();
     expect(within(header).getByText("agent_memory_snapshot")).toBeVisible();
 
     const actions = screen.getByTestId("report-detail-actions");
     expect(actions).toHaveClass("flex-wrap", "sm:w-auto");
-    expect(within(actions).getByRole("link", { name: /download/i })).toHaveAttribute(
+    expect(
+      within(actions).getByRole("link", { name: /download/i }),
+    ).toHaveAttribute(
       "href",
       expect.stringContaining("/reports/agent_memory_snapshot/download"),
     );
-    expect(within(actions).getByRole("button", { name: /edit/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Report content" })).toBeVisible();
-    expect(screen.getByTestId("report-content-pane")).toHaveTextContent("Agent-created report.");
+    expect(
+      within(actions).getByRole("button", { name: /edit/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Report content" }),
+    ).toBeVisible();
+    expect(screen.getByTestId("report-content-pane")).toHaveTextContent(
+      "Agent-created report.",
+    );
   });
 
   it("saves only edited markdown content for the slug route", async () => {
     render(<ReportDetailPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
-    expect(screen.getByRole("heading", { name: "Edit report content" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Edit report content" }),
+    ).toBeVisible();
     const textarea = screen.getByLabelText("Report markdown content");
     expect(textarea).toHaveValue("# Memory Snapshot\n\nAgent-created report.");
 
-    fireEvent.change(textarea, { target: { value: "# Revised\n\nUpdated body." } });
+    fireEvent.change(textarea, {
+      target: { value: "# Revised\n\nUpdated body." },
+    });
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
 
     await waitFor(() => {
