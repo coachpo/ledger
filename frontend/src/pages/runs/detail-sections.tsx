@@ -4401,24 +4401,19 @@ function renderRunInspectionSection(
   }
   if (mode === "execution") {
     return (
-      <div
-        className="min-w-0 rounded-xl border"
-        data-testid="runs-execution-outline-frame"
-      >
-        <ExecutionOutline
-          activeInspection={activeInspection}
-          copiedInvocations={copiedInvocations}
-          copiedSteps={copiedSteps}
-          isCurrentFork={isCurrentFork}
-          onOpenFork={onOpenFork}
-          onSelect={onSelect}
-          plannedInvocations={plannedInvocations}
-          plannedSteps={plannedSteps}
-          run={run}
-          steps={steps}
-          traceSpanEntries={traceSpanEntries}
-        />
-      </div>
+      <ExecutionOutline
+        activeInspection={activeInspection}
+        copiedInvocations={copiedInvocations}
+        copiedSteps={copiedSteps}
+        isCurrentFork={isCurrentFork}
+        onOpenFork={onOpenFork}
+        onSelect={onSelect}
+        plannedInvocations={plannedInvocations}
+        plannedSteps={plannedSteps}
+        run={run}
+        steps={steps}
+        traceSpanEntries={traceSpanEntries}
+      />
     );
   }
   if (mode === "runtime") {

@@ -682,8 +682,7 @@ describe("RunsDetailPage", () => {
       ).toBeTruthy();
     });
     expect(within(stack).getByTestId("runs-overview-workspace")).toBeVisible();
-    expect(within(stack).getByTestId("runs-execution-outline-frame"))
-      .toBeVisible();
+    expect(within(stack).getByTestId("runs-execution-outline")).toBeVisible();
     expect(within(stack).getByTestId("runs-diagnostics-workspace"))
       .toBeVisible();
     expect(within(stack).getByTestId("runs-input-workspace")).toBeVisible();
@@ -818,7 +817,7 @@ describe("RunsDetailPage", () => {
       "summary",
     );
     expect(screen.getByTestId("runs-overview-workspace")).toBeVisible();
-    expect(screen.getByTestId("runs-execution-outline-frame")).toBeVisible();
+    expect(screen.getByTestId("runs-execution-outline")).toBeVisible();
     expect(screen.queryByTestId("split-inspector-right-pane"))
       .not.toBeInTheDocument();
   });

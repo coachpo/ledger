@@ -236,9 +236,7 @@ test.describe("Runs inventory monitor", () => {
     await expect(page.getByTestId("runs-evidence-pane-nav")).toHaveCount(0);
 
     await page.getByTestId("runs-tab-trigger-execution").click();
-    await expect(
-      page.getByTestId("runs-execution-outline-frame"),
-    ).toBeVisible();
+    await expect(page.getByTestId("runs-execution-outline")).toBeVisible();
 
     await page.getByTestId("runs-tab-trigger-runtime").click();
     await expect(page.getByTestId("runs-runtime-profile")).toContainText(

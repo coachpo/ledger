@@ -171,9 +171,8 @@ describe("RunsDetailPage HTTP operation invocations", () => {
       .not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-tab-console")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-mode-workspace")).toContainElement(
-      screen.getByTestId("runs-execution-outline-frame"),
+      screen.getByTestId("runs-execution-outline"),
     );
-    expect(screen.getByTestId("runs-execution-outline-frame")).toHaveClass("min-w-0");
     expect(screen.getByTestId("runs-execution-collapsible")).toHaveAttribute(
       "data-slot",
       "collapsible",
