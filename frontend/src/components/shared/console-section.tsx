@@ -17,8 +17,10 @@ export type ConsoleSectionProps = {
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  contentClassName?: string;
   density?: ConsoleSectionDensity;
   description?: ReactNode;
+  testId?: string;
   title: ReactNode;
   tone?: ConsoleSectionTone;
 };
@@ -44,13 +46,15 @@ export function ConsoleSection({
   actions,
   children,
   className,
+  contentClassName,
   density = "compact",
   description,
+  testId,
   title,
   tone = "default",
 }: ConsoleSectionProps) {
   return (
-    <Card className={cn("gap-4", sectionClassByTone[tone], className)} data-tone={tone}>
+    <Card className={cn("gap-4", sectionClassByTone[tone], className)} data-testid={testId} data-tone={tone}>
       <CardHeader className={headerClassByDensity[density]}>
         <div className="min-w-0">
           <CardTitle className="text-sm font-semibold tracking-tight">{title}</CardTitle>
@@ -58,7 +62,7 @@ export function ConsoleSection({
         </div>
         {actions ? <CardAction>{actions}</CardAction> : null}
       </CardHeader>
-      <CardContent className={contentClassByDensity[density]}>{children}</CardContent>
+      <CardContent className={cn(contentClassByDensity[density], contentClassName)}>{children}</CardContent>
     </Card>
   );
 }
