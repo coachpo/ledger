@@ -12,7 +12,6 @@ import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { useRun } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
@@ -32,60 +31,16 @@ import {
 } from "./detail-helpers";
 import {
   EvidenceViewer,
-  RunDetailTabPanel,
+  RunDetailSectionStack,
   RunForkDialog,
 } from "./detail-sections";
 import {
-  RUN_INSPECTION_MODES,
   resolveRunInspectionState,
   serializeInspectionTarget,
-  type RunInspectionMode,
   type RunInspectionPane,
   type RunInspectionTarget,
 } from "./inspection-state";
 import { RunRerunDialog } from "./rerun-dialog";
-
-const RUN_TAB_LABELS: Record<
-  RunInspectionMode,
-  { description: string; label: string }
-> = {
-  summary: {
-    description: "Run metrics, queue, progress, and availability",
-    label: "Summary",
-  },
-  execution: {
-    description: "Execution steps and invocation flow",
-    label: "Execution",
-  },
-  diagnostics: {
-    description: "Warnings, failures, and safety checks",
-    label: "Diagnostics",
-  },
-  inputs: {
-    description: "Launch input and source context",
-    label: "Inputs",
-  },
-  outputs: {
-    description: "Final output and provenance",
-    label: "Outputs",
-  },
-  runtime: {
-    description: "Provider, model, and token runtime profile",
-    label: "Runtime",
-  },
-  memory: {
-    description: "Memory events and artifacts",
-    label: "Memory",
-  },
-  lineage: {
-    description: "Fork, snapshot, and historical lineage",
-    label: "Lineage",
-  },
-  metadata: {
-    description: "Trace, payload, memory, and report evidence",
-    label: "Metadata",
-  },
-};
 
 export function RunsDetailPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -287,18 +242,6 @@ export function RunsDetailPage() {
     }
   };
 
-  const selectMode = (mode: RunInspectionMode) => {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      next.set("mode", mode);
-      if (activeInspection.target.type === "run") {
-        next.delete("inspect");
-        next.delete("pane");
-      }
-      return next;
-    });
-  };
-
   const lineageLabel = run.sourceRunId
     ? isCurrentFork
       ? `Forked from Run #${run.sourceRunId}`
@@ -366,43 +309,8 @@ export function RunsDetailPage() {
               ? run.queue?.message ?? "Queued for execution"
               : `Output ${outputState.label.toLowerCase()}`;
 
-  const runTabs = (
-    <Tabs
-      className="min-w-0 gap-2"
-      data-active-mode={activeInspection.mode}
-      data-testid="runs-tab-console"
-      onValueChange={(value) => selectMode(value as RunInspectionMode)}
-      value={activeInspection.mode}
-    >
-      <div className="max-w-full overflow-x-auto pb-1" data-testid="runs-tab-scroll">
-        <TabsList
-          aria-label="Run inspection tabs"
-          className="h-9 min-w-max justify-start rounded-xl"
-          data-testid="runs-tab-list"
-        >
-          {RUN_INSPECTION_MODES.map((mode) => {
-            const tabLabel = RUN_TAB_LABELS[mode];
-            return (
-              <TabsTrigger
-                aria-label={`${tabLabel.label} tab`}
-                className="px-3 text-xs"
-                data-mode={mode}
-                data-testid={`runs-tab-trigger-${mode}`}
-                key={mode}
-                title={tabLabel.description}
-                value={mode}
-              >
-                {tabLabel.label}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-      </div>
-    </Tabs>
-  );
-
   const primaryModeWorkspace = (
-    <RunDetailTabPanel
+    <RunDetailSectionStack
       activeInspection={activeInspection}
       allInvocationsCount={allInvocations.length}
       copiedInvocations={copiedInvocations}
@@ -605,7 +513,6 @@ export function RunsDetailPage() {
               title={`Run #${run.id}`}
             />
             {runActions}
-            {runTabs}
           </div>
         }
         testId="runs-detail-page"

@@ -115,6 +115,8 @@ import {
   inspectionPaneLabel,
   inspectionPanesForTarget,
   inspectionTargetKindLabel,
+  RUN_INSPECTION_MODES,
+  type RunInspectionMode,
   type RunInspectionPane,
   type RunInspectionState,
   type RunInspectionTarget,
@@ -4003,22 +4005,7 @@ function OperationEvidence({
   );
 }
 
-export function RunDetailTabPanel({
-  activeInspection,
-  allInvocationsCount,
-  copiedInvocations,
-  copiedSteps,
-  isCurrentFork,
-  onSelect,
-  plannedInvocations,
-  plannedSteps,
-  run,
-  runProgress,
-  steps,
-  targetKindLabel,
-  terminalInvocationsCount,
-  traceSpanEntries,
-}: {
+type RunDetailSectionStackProps = {
   activeInspection: RunInspectionState;
   allInvocationsCount: number;
   copiedInvocations: number;
@@ -4033,14 +4020,34 @@ export function RunDetailTabPanel({
   targetKindLabel: string;
   terminalInvocationsCount: number;
   traceSpanEntries: TraceSpanEntry[];
-}) {
-  if (activeInspection.mode === "outputs") {
+};
+
+function renderRunInspectionSection(
+  mode: RunInspectionMode,
+  {
+    activeInspection,
+    allInvocationsCount,
+    copiedInvocations,
+    copiedSteps,
+    isCurrentFork,
+    onSelect,
+    plannedInvocations,
+    plannedSteps,
+    run,
+    runProgress,
+    steps,
+    targetKindLabel,
+    terminalInvocationsCount,
+    traceSpanEntries,
+  }: RunDetailSectionStackProps,
+) {
+  if (mode === "outputs") {
     return <RunOutputWorkspace run={run} />;
   }
-  if (activeInspection.mode === "inputs") {
+  if (mode === "inputs") {
     return <RunInputWorkspace run={run} />;
   }
-  if (activeInspection.mode === "execution") {
+  if (mode === "execution") {
     return (
       <div
         className="min-h-96 min-w-0 overflow-hidden rounded-xl border"
@@ -4056,7 +4063,7 @@ export function RunDetailTabPanel({
       </div>
     );
   }
-  if (activeInspection.mode === "runtime") {
+  if (mode === "runtime") {
     return (
       <div className="grid min-w-0 gap-3" data-testid="runs-runtime-workspace">
         <RunRuntimeProfileSection run={run} />
@@ -4064,7 +4071,7 @@ export function RunDetailTabPanel({
       </div>
     );
   }
-  if (activeInspection.mode === "metadata") {
+  if (mode === "metadata") {
     return (
       <RunAuditEvidenceSection
         activeInspection={activeInspection}
@@ -4074,7 +4081,7 @@ export function RunDetailTabPanel({
       />
     );
   }
-  if (activeInspection.mode === "lineage") {
+  if (mode === "lineage") {
     return (
       <RunLineageWorkspace
         copiedInvocations={copiedInvocations}
@@ -4086,10 +4093,10 @@ export function RunDetailTabPanel({
       />
     );
   }
-  if (activeInspection.mode === "memory") {
+  if (mode === "memory") {
     return <RunMemoryWorkspace run={run} />;
   }
-  if (activeInspection.mode === "diagnostics") {
+  if (mode === "diagnostics") {
     return <RunDiagnosticsWorkspace run={run} steps={steps} />;
   }
   return (
@@ -4101,6 +4108,23 @@ export function RunDetailTabPanel({
       terminalInvocationsCount={terminalInvocationsCount}
       traceSpanEntries={traceSpanEntries}
     />
+  );
+}
+
+export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
+  return (
+    <div className="grid min-w-0 gap-3" data-testid="runs-stacked-workspace">
+      {RUN_INSPECTION_MODES.map((mode) => (
+        <section
+          className="min-w-0"
+          data-run-mode={mode}
+          data-testid={`runs-stacked-section-${mode}`}
+          key={mode}
+        >
+          {renderRunInspectionSection(mode, props)}
+        </section>
+      ))}
+    </div>
   );
 }
 

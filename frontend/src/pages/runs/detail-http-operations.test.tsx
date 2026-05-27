@@ -169,9 +169,7 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     );
     expect(screen.queryByTestId("workspace-page-shell-left-rail"))
       .not.toBeInTheDocument();
-    expect(screen.getByTestId("workspace-page-shell-context")).toContainElement(
-      screen.getByTestId("runs-tab-console"),
-    );
+    expect(screen.queryByTestId("runs-tab-console")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-mode-workspace")).toContainElement(
       screen.getByTestId("runs-execution-outline-frame"),
     );
