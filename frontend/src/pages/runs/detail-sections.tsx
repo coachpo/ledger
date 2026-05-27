@@ -315,14 +315,16 @@ function RunDetailEmptyState({
 
 function RunDetailTableFrame({
   children,
+  className,
   testId,
 }: {
   children: ReactNode;
+  className?: string;
   testId?: string;
 }) {
   return (
     <div
-      className="min-w-0 overflow-x-auto rounded-lg border bg-card"
+      className={cn("min-w-0 overflow-x-auto rounded-lg border bg-card", className)}
       data-testid={testId}
     >
       {children}
@@ -3315,8 +3317,11 @@ export function ExecutionOutline({
             No steps have been planned for this run yet.
           </RunDetailEmptyState>
         ) : (
-          <div className="pt-1">
-            <RunDetailTableFrame testId="runs-execution-table">
+          <div className="min-w-0 pt-1">
+            <RunDetailTableFrame
+              className="border-transparent bg-transparent"
+              testId="runs-execution-table"
+            >
               <Table>
               <TableHeader>
                 <TableRow>

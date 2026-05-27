@@ -3,7 +3,6 @@ import { useMemo } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 
 import { PageContextBar } from "@/components/shared/page-context-bar";
-import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +19,6 @@ import {
   getRunForkAvailability,
   hasCurrentForkLineage,
   isTerminalStatus,
-  runStatusTone,
   sortedInvocations,
   sortedOperationInvocations,
 } from "./detail-helpers";
@@ -250,6 +248,19 @@ export function RunsDetailPage() {
         ? "In progress"
         : "Not started";
   const outputState = finalOutputState(run);
+  const outputBadgeVariant =
+    outputState.tone === "danger"
+      ? "destructive"
+      : outputState.tone === "success"
+        ? "secondary"
+        : "outline";
+  const statusBadgeVariant =
+    run.status === "failed"
+      ? "destructive"
+      : run.status === "succeeded"
+        ? "secondary"
+        : "outline";
+  const shouldShowHeaderProgress = run.status !== "succeeded";
   const failedAgent = steps
     .flatMap((step) =>
       sortedInvocations(step.invocations).map((invocation) => ({
@@ -298,6 +309,9 @@ export function RunsDetailPage() {
             : run.status === "queued"
               ? run.queue?.message ?? "Queued for execution"
               : `Output ${outputState.label.toLowerCase()}`;
+  const headerStateDetail = currentStateSummary.startsWith("Output ")
+    ? null
+    : currentStateSummary;
 
   const primaryModeWorkspace = (
     <RunDetailSectionStack
@@ -321,7 +335,7 @@ export function RunsDetailPage() {
 
   const runActions = (
     <div
-      className="flex min-w-0 flex-wrap items-center gap-2"
+      className="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:justify-end"
       data-testid="runs-detail-actions"
     >
       {run.targetKind === "workflowPackage" &&
@@ -395,12 +409,42 @@ export function RunsDetailPage() {
         bodyAriaLabel="Run inspection workspace"
         bodyClassName="overflow-hidden"
         contextBar={
-          <div className="space-y-3" data-testid="runs-detail-header">
+          <div
+            className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start"
+            data-testid="runs-detail-header"
+          >
             <PageContextBar
-              className="border-0 bg-transparent shadow-none"
-              description={
-                <span className="flex min-w-0 flex-col gap-1">
-                  <span className="flex min-w-0 flex-wrap items-center gap-2">
+              className="min-w-0 border-0 bg-transparent shadow-none"
+              title={
+                <span className="flex min-w-0 flex-col gap-1.5">
+                  <span
+                    className="flex min-w-0 flex-wrap items-center gap-1.5"
+                    data-testid="runs-detail-summary-line"
+                  >
+                    <span className="mr-1 text-base font-semibold tracking-tight text-foreground">
+                      Run #{run.id}
+                    </span>
+                    <Badge variant={statusBadgeVariant}>{run.status}</Badge>
+                    {shouldShowHeaderProgress ? (
+                      <Badge variant="outline">{runProgress}%</Badge>
+                    ) : null}
+                    <Badge variant={outputBadgeVariant}>{outputState.label}</Badge>
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {run.totalTokens.toLocaleString()} tokens
+                    </span>
+                    {headerStateDetail ? (
+                      <span
+                        className="min-w-0 break-words text-xs font-normal text-muted-foreground"
+                        data-testid="runs-detail-state-summary"
+                      >
+                        {headerStateDetail}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span
+                    className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-normal text-muted-foreground"
+                    data-testid="runs-detail-identity-line"
+                  >
                     <Badge
                       className="max-w-full min-w-0 break-all"
                       data-testid="runs-detail-target-identity"
@@ -409,63 +453,36 @@ export function RunsDetailPage() {
                       {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
                     </Badge>
                     {run.packageProvenance ? (
-                      <Badge
-                        className="max-w-full min-w-0 break-all"
-                        variant="secondary"
-                      >
+                      <span className="min-w-0 max-w-full break-words">
                         {run.packageProvenance.workflowPackageName}
-                      </Badge>
+                      </span>
                     ) : null}
                     <Badge variant="outline">{targetKindLabel}</Badge>
                   </span>
                   <span
-                    className="break-words text-xs text-muted-foreground"
-                    data-testid="runs-detail-state-summary"
+                    className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal text-muted-foreground"
+                    data-testid="runs-detail-metadata-line"
                   >
-                    {currentStateSummary}
+                    <span>{startedLabel}</span>
+                    <span>{finishedLabel}</span>
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <Timer className="size-3.5 shrink-0" />
+                      {durationLabel}
+                    </span>
+                    <span
+                      className="inline-flex min-w-0 items-center gap-1.5"
+                      data-testid="runs-detail-lineage-indicator"
+                    >
+                      {run.sourceRunId ? (
+                        <GitBranch className="size-3.5 shrink-0" />
+                      ) : null}
+                      {lineageLabel}
+                    </span>
                   </span>
                 </span>
               }
-              meta={
-                <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
-                  <span>{startedLabel}</span>
-                  <span>{finishedLabel}</span>
-                  <span className="inline-flex min-w-0 items-center gap-1.5">
-                    <Timer className="size-3.5 shrink-0" />
-                    {durationLabel}
-                  </span>
-                  <span
-                    className="inline-flex min-w-0 items-center gap-1.5"
-                    data-testid="runs-detail-lineage-indicator"
-                  >
-                    {run.sourceRunId ? (
-                      <GitBranch className="size-3.5 shrink-0" />
-                    ) : null}
-                    {lineageLabel}
-                  </span>
-                </span>
-              }
-              status={
-                <ResourceStatusStrip
-                  items={[
-                    {
-                      label: "Status",
-                      value: run.status,
-                      tone: runStatusTone(run.status),
-                    },
-                    { label: "Progress", value: `${runProgress}%` },
-                    {
-                      label: "Output",
-                      value: outputState.label,
-                      tone: outputState.tone,
-                    },
-                    { label: "Tokens", value: run.totalTokens.toLocaleString() },
-                  ]}
-                />
-              }
-              title={`Run #${run.id}`}
             />
-            {runActions}
+            <div className="min-w-0 lg:pt-4">{runActions}</div>
           </div>
         }
         testId="runs-detail-page"

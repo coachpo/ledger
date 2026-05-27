@@ -1517,6 +1517,30 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-header")).toHaveTextContent(
       /workflow package/i,
     );
+    expect(screen.getByTestId("runs-detail-summary-line")).toHaveTextContent(
+      /run #42/i,
+    );
+    expect(screen.getByTestId("runs-detail-summary-line")).toHaveTextContent(
+      /captured/i,
+    );
+    expect(screen.getByTestId("runs-detail-summary-line")).toHaveTextContent(
+      /51 tokens/i,
+    );
+    expect(screen.getByTestId("runs-detail-summary-line")).not.toHaveTextContent(
+      /100%/i,
+    );
+    expect(screen.getByTestId("runs-detail-header")).not.toHaveTextContent(
+      /output captured/i,
+    );
+    expect(screen.getByTestId("runs-detail-state-summary")).toHaveTextContent(
+      /failure: step 2/i,
+    );
+    expect(screen.getByTestId("runs-detail-identity-line")).toHaveTextContent(
+      /market review package/i,
+    );
+    expect(screen.getByTestId("runs-detail-metadata-line")).toHaveTextContent(
+      /lineage from run #41/i,
+    );
     expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(
       /market_review_package/i,
     );
@@ -2458,6 +2482,10 @@ describe("RunsDetailPage", () => {
     searchParamsMock = new URLSearchParams("mode=execution");
     render(<RunsDetailPage />);
 
+    expect(screen.getByTestId("runs-execution-table")).toHaveClass(
+      "border-transparent",
+      "bg-transparent",
+    );
     expect(screen.getByTestId("runs-detail-header")).toHaveTextContent(
       /workflow package/i,
     );
