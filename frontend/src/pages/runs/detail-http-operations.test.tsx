@@ -163,17 +163,21 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     const outlineRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-page")).toHaveClass("h-full", "overflow-hidden");
-    expect(screen.getByTestId("runs-inspection-split-layout")).toHaveAttribute(
-      "data-slot",
-      "resizable-panel-group",
-    );
+    expect(screen.queryByTestId("runs-inspection-split-layout"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByTestId("split-inspector-right-pane"))
+      .not.toBeInTheDocument();
     expect(screen.queryByTestId("workspace-page-shell-left-rail"))
       .not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-tab-console")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-mode-workspace")).toContainElement(
       screen.getByTestId("runs-execution-outline-frame"),
     );
-    expect(screen.getByTestId("runs-execution-outline-frame")).toHaveClass("min-h-96", "overflow-hidden");
+    expect(screen.getByTestId("runs-execution-outline-frame")).toHaveClass("min-w-0");
+    expect(screen.getByTestId("runs-execution-collapsible")).toHaveAttribute(
+      "data-slot",
+      "collapsible",
+    );
     outlineRender.unmount();
     searchParamsMock = new URLSearchParams("mode=metadata");
     const auditRender = render(<RunsDetailPage />);
@@ -213,7 +217,7 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     stepsRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1");
     const stepSummaryRender = render(<RunsDetailPage />);
-    expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("runs-step-1-inline-evidence")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
     const aggregatedOutput = screen.getByTestId("runs-step-1-aggregated-output");
     expect(aggregatedOutput).toHaveTextContent(/webhook_result/i);
     expect(aggregatedOutput).toHaveTextContent(/webhook_retry/i);
@@ -243,7 +247,9 @@ describe("RunsDetailPage HTTP operation invocations", () => {
 
     searchParamsMock = new URLSearchParams("inspect=operation:2002&pane=error");
     const failedRender = render(<RunsDetailPage />);
-    const activeEvidence = screen.getByTestId("runs-active-evidence-viewer");
+    const activeEvidence = within(
+      screen.getByTestId("runs-operation-2002-inline-evidence"),
+    ).getByTestId("runs-active-evidence-viewer");
     expect(within(activeEvidence).getByText("http_status_error")).toBeVisible();
     expect(within(activeEvidence).getByText("Webhook returned 500.")).toBeVisible();
     expect(within(activeEvidence).getByText(/statusCode/)).toBeVisible();
