@@ -1,0 +1,734 @@
+from __future__ import annotations
+
+import json
+import re
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
+from typing import Protocol, cast
+
+import httpx
+
+from app.agents.runtime_tools.types import (
+    RuntimeToolContext,
+    RuntimeToolError,
+    RuntimeToolSpec,
+    RuntimeToolWarning,
+)
+from app.extensions.signaldeck_finance.digital_oracle.config import (
+    PREDICTION_MARKET_VENUES,
+    PredictionMarketVenue,
+)
+from app.extensions.signaldeck_finance.digital_oracle.mappers import map_prediction_markets_result
+from app.extensions.signaldeck_finance.digital_oracle.service import DigitalOraclePhase1Service
+from app.extensions.signaldeck_finance.digital_oracle.types import (
+    DigitalOraclePredictionMarketContract,
+    DigitalOraclePredictionMarketEvent,
+    DigitalOraclePredictionMarketProvider,
+    DigitalOraclePredictionMarketsProviderQuery,
+    DigitalOraclePredictionMarketsProviderResult,
+    DigitalOraclePredictionMarketsQuery,
+    DigitalOracleProviderError,
+)
+from app.extensions.signaldeck_finance.ownership import (
+    FINANCE_WORKSPACE_DENIED_CODE,
+    FINANCE_WORKSPACE_DENIED_MESSAGES,
+    FINANCE_WORKSPACE_EXTENSION_KEY,
+)
+from app.extensions.signaldeck_finance.runtime_types import PREDICTION_MARKETS_LOOKUP_TOOL_KEY
+
+PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_prediction_markets_lookup"
+PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
+PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
+    PREDICTION_MARKETS_LOOKUP_TOOL_KEY
+]
+
+_PREDICTION_MARKETS_MAX_ITEM_LIMIT = 20
+_PREDICTION_MARKET_VENUES = set(PREDICTION_MARKET_VENUES)
+_POLYMARKET_EVENTS_URL = "https://gamma-api.polymarket.com/events"
+_KALSHI_MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
+_USER_AGENT = "signaldeck-backend/0.1"
+_QUERY_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+_PREDICTION_MARKETS_LOOKUP_DESCRIPTION = (
+    "Read normalized prediction-market events and contracts across supported venues."
+)
+_PREDICTION_MARKETS_LOOKUP_GUIDANCE = (
+    "When you need prediction-market signals, call signaldeck_prediction_markets_lookup "
+    "with a plain-language query and optional venue filters. Use only returned event "
+    "and contract probabilities/prices, disclose all warnings as coverage limitations, "
+    "and never invent probabilities for unavailable markets."
+)
+_PREDICTION_MARKETS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string", "minLength": 1},
+        "venues": {
+            "type": "array",
+            "items": {"type": "string", "enum": ["polymarket", "kalshi"]},
+            "minItems": 1,
+            "maxItems": len(PREDICTION_MARKET_VENUES),
+        },
+        "itemLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": _PREDICTION_MARKETS_MAX_ITEM_LIMIT,
+        },
+        "includeResolved": {"type": "boolean"},
+    },
+    "required": ["query"],
+    "additionalProperties": False,
+}
+
+
+class _PredictionMarketsJsonClient(Protocol):
+    def get_json(
+        self,
+        url: str,
+        *,
+        params: Mapping[str, object],
+        timeout: float,
+        provider: PredictionMarketVenue,
+    ) -> object: ...
+
+
+class _HttpxPredictionMarketsJsonClient:
+    def get_json(
+        self,
+        url: str,
+        *,
+        params: Mapping[str, object],
+        timeout: float,
+        provider: PredictionMarketVenue,
+    ) -> object:
+        headers = {"User-Agent": _USER_AGENT, "Accept": "application/json"}
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                response = client.get(
+                    url,
+                    params=_compact_params(params),
+                    headers=headers,
+                )
+                _ = response.raise_for_status()
+                return cast(object, response.json())
+        except httpx.TimeoutException as exc:
+            raise DigitalOracleProviderError(
+                f"{provider} timed out while fetching prediction markets",
+                code="provider_timeout",
+                details={"provider": provider},
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise _http_status_provider_error(exc, provider=provider) from exc
+        except httpx.HTTPError as exc:
+            raise DigitalOracleProviderError(
+                f"{provider} is unavailable for prediction markets",
+                code="provider_unavailable",
+                details={"provider": provider},
+            ) from exc
+        except ValueError as exc:
+            raise DigitalOracleProviderError(
+                f"{provider} returned malformed prediction-market data",
+                details={"provider": provider},
+            ) from exc
+
+
+class PolymarketPredictionMarketsProvider:
+    venue: PredictionMarketVenue = "polymarket"
+
+    def __init__(self, http_client: _PredictionMarketsJsonClient | None = None) -> None:
+        self._http_client: _PredictionMarketsJsonClient = (
+            http_client or _HttpxPredictionMarketsJsonClient()
+        )
+
+    def lookup_prediction_markets(
+        self,
+        query: DigitalOraclePredictionMarketsProviderQuery,
+    ) -> DigitalOraclePredictionMarketsProviderResult:
+        payload = self._http_client.get_json(
+            _POLYMARKET_EVENTS_URL,
+            params={
+                "limit": query.item_limit,
+                "active": None if query.include_resolved else True,
+                "closed": None if query.include_resolved else False,
+                "order": "volume24hr",
+                "ascending": False,
+                "tag_slug": _slug_search_term(query.query),
+            },
+            timeout=query.timeout_seconds,
+            provider=self.venue,
+        )
+        raw_events = _object_list_payload(payload, provider=self.venue)
+        warnings: list[RuntimeToolWarning] = []
+        events: list[DigitalOraclePredictionMarketEvent] = []
+        for item in raw_events:
+            if not isinstance(item, Mapping):
+                warnings.append(_malformed_warning(self.venue, "event row"))
+                continue
+            event = _map_polymarket_event(
+                cast(Mapping[str, object], item),
+                query=query,
+                warnings=warnings,
+            )
+            if event is not None:
+                events.append(event)
+        return DigitalOraclePredictionMarketsProviderResult(
+            provider=self.venue,
+            events=tuple(events[: query.item_limit]),
+            warnings=tuple(warnings),
+        )
+
+
+class KalshiPredictionMarketsProvider:
+    venue: PredictionMarketVenue = "kalshi"
+
+    def __init__(self, http_client: _PredictionMarketsJsonClient | None = None) -> None:
+        self._http_client: _PredictionMarketsJsonClient = (
+            http_client or _HttpxPredictionMarketsJsonClient()
+        )
+
+    def lookup_prediction_markets(
+        self,
+        query: DigitalOraclePredictionMarketsProviderQuery,
+    ) -> DigitalOraclePredictionMarketsProviderResult:
+        payload = self._http_client.get_json(
+            _KALSHI_MARKETS_URL,
+            params={
+                "limit": query.item_limit,
+                "status": None if query.include_resolved else "open",
+                "mve_filter": "exclude",
+            },
+            timeout=query.timeout_seconds,
+            provider=self.venue,
+        )
+        raw_payload = _object_payload(payload, provider=self.venue)
+        raw_markets = _object_list(raw_payload.get("markets"))
+        warnings: list[RuntimeToolWarning] = []
+        events: list[DigitalOraclePredictionMarketEvent] = []
+        for item in raw_markets:
+            if not isinstance(item, Mapping):
+                warnings.append(_malformed_warning(self.venue, "market row"))
+                continue
+            event = _map_kalshi_market(
+                cast(Mapping[str, object], item),
+                query=query,
+                warnings=warnings,
+            )
+            if event is not None:
+                events.append(event)
+        return DigitalOraclePredictionMarketsProviderResult(
+            provider=self.venue,
+            events=tuple(events[: query.item_limit]),
+            warnings=tuple(warnings),
+        )
+
+
+def create_prediction_market_providers() -> tuple[DigitalOraclePredictionMarketProvider, ...]:
+    return (
+        PolymarketPredictionMarketsProvider(),
+        KalshiPredictionMarketsProvider(),
+    )
+
+
+def parse_prediction_markets_lookup_arguments(arguments_json: str) -> dict[str, object]:
+    raw_arguments = _parse_json_object(
+        arguments_json,
+        function_name=PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
+    )
+    _reject_unexpected_keys(
+        raw_arguments,
+        allowed_keys={"query", "venues", "itemLimit", "includeResolved"},
+        function_name=PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
+    )
+    return {
+        "query": _parse_required_query_argument(raw_arguments.get("query")),
+        "venues": _parse_venues_argument(raw_arguments.get("venues")),
+        "item_limit": _parse_optional_integer_argument(
+            raw_arguments.get("itemLimit"),
+            function_name=PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
+            field_name="itemLimit",
+            minimum=1,
+            maximum=_PREDICTION_MARKETS_MAX_ITEM_LIMIT,
+        ),
+        "include_resolved": _parse_optional_boolean_argument(
+            raw_arguments.get("includeResolved"),
+            field_name="includeResolved",
+        ),
+    }
+
+
+def execute_prediction_markets_lookup(
+    context: RuntimeToolContext,
+    arguments: dict[str, object],
+) -> dict[str, object]:
+    del context
+    service = DigitalOraclePhase1Service(
+        prediction_market_providers=create_prediction_market_providers(),
+    )
+    result = service.lookup_prediction_markets(
+        DigitalOraclePredictionMarketsQuery(
+            query=cast(str, arguments["query"]),
+            venues=cast(tuple[PredictionMarketVenue, ...] | None, arguments["venues"]),
+            item_limit=cast(int | None, arguments["item_limit"]),
+            include_resolved=cast(bool, arguments["include_resolved"]),
+        )
+    )
+    runtime_result = map_prediction_markets_result(result)
+    return cast(dict[str, object], runtime_result.model_dump(mode="json", by_alias=True))
+
+
+def _parse_json_object(arguments_json: str, *, function_name: str) -> dict[str, object]:
+    try:
+        raw_payload = cast(object, json.loads(arguments_json))
+    except json.JSONDecodeError as exc:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=("OpenAI response requested " f"{function_name} with invalid JSON arguments."),
+        ) from exc
+    if not isinstance(raw_payload, dict):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{function_name} arguments must be a JSON object.",
+        )
+    return cast(dict[str, object], raw_payload)
+
+
+def _reject_unexpected_keys(
+    raw_arguments: dict[str, object],
+    *,
+    allowed_keys: set[str],
+    function_name: str,
+) -> None:
+    unexpected_keys = sorted(set(raw_arguments) - allowed_keys)
+    if unexpected_keys:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{function_name} arguments contained unsupported fields: "
+                f"{', '.join(unexpected_keys)}"
+            ),
+        )
+
+
+def _parse_required_query_argument(value: object) -> str:
+    if not isinstance(value, str):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} query is required.",
+        )
+    normalized = " ".join(value.split()).strip()
+    if not normalized:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} " "query must not be empty."
+            ),
+        )
+    return normalized
+
+
+def _parse_venues_argument(value: object) -> tuple[PredictionMarketVenue, ...] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} "
+                "venues must be an array of strings."
+            ),
+        )
+    venues: list[PredictionMarketVenue] = []
+    seen: set[PredictionMarketVenue] = set()
+    for raw_venue in cast(list[object], value):
+        if not isinstance(raw_venue, str):
+            raise RuntimeToolError(
+                code="agent_tool_call_invalid",
+                message=(
+                    f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} "
+                    "venues must be an array of strings."
+                ),
+            )
+        venue = cast(PredictionMarketVenue, raw_venue.strip().lower())
+        if venue not in _PREDICTION_MARKET_VENUES:
+            allowed_values_text = ", ".join(sorted(_PREDICTION_MARKET_VENUES))
+            raise RuntimeToolError(
+                code="agent_tool_call_invalid",
+                message=(
+                    f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} "
+                    f"venues must use: {allowed_values_text}."
+                ),
+            )
+        if venue not in seen:
+            venues.append(venue)
+            seen.add(venue)
+    if not venues:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} "
+                "venues must contain at least one venue."
+            ),
+        )
+    return tuple(venues)
+
+
+def _parse_optional_integer_argument(
+    value: object,
+    *,
+    function_name: str,
+    field_name: str,
+    minimum: int,
+    maximum: int,
+) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{function_name} {field_name} must be an integer.",
+        )
+    if value < minimum:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{function_name} {field_name} must be at least {minimum}.",
+        )
+    if value > maximum:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{function_name} {field_name} must be at most {maximum}.",
+        )
+    return int(value)
+
+
+def _parse_optional_boolean_argument(value: object, *, field_name: str) -> bool:
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} "
+                f"{field_name} must be a boolean."
+            ),
+        )
+    return value
+
+
+def _map_polymarket_event(
+    raw_event: Mapping[str, object],
+    *,
+    query: DigitalOraclePredictionMarketsProviderQuery,
+    warnings: list[RuntimeToolWarning],
+) -> DigitalOraclePredictionMarketEvent | None:
+    title = _text(raw_event.get("title"))
+    slug = _text(raw_event.get("slug"))
+    event_id = _text(raw_event.get("id")) or slug
+    if event_id is None or title is None:
+        warnings.append(_malformed_warning("polymarket", "event identity"))
+        return None
+    if not _matches_query(query.query, title, slug or ""):
+        return None
+
+    contracts: list[DigitalOraclePredictionMarketContract] = []
+    open_interest = _decimal(raw_event.get("openInterest"))
+    for raw_market in _object_list(raw_event.get("markets")):
+        if not isinstance(raw_market, Mapping):
+            warnings.append(_malformed_warning("polymarket", "market row", event_id=event_id))
+            continue
+        contract = _map_polymarket_market(
+            cast(Mapping[str, object], raw_market),
+            event_id=event_id,
+            event_open_interest=open_interest,
+            warnings=warnings,
+        )
+        if contract is not None:
+            contracts.append(contract)
+    if not contracts:
+        warnings.append(_malformed_warning("polymarket", "binary contracts", event_id=event_id))
+        return None
+
+    return DigitalOraclePredictionMarketEvent(
+        venue="polymarket",
+        event_id=event_id,
+        title=title,
+        status=_polymarket_status(raw_event),
+        url=f"https://polymarket.com/event/{slug}" if slug is not None else None,
+        end_date=_iso_datetime(_text(raw_event.get("endDate"))),
+        contracts=tuple(contracts),
+    )
+
+
+def _map_polymarket_market(
+    raw_market: Mapping[str, object],
+    *,
+    event_id: str,
+    event_open_interest: Decimal | None,
+    warnings: list[RuntimeToolWarning],
+) -> DigitalOraclePredictionMarketContract | None:
+    try:
+        outcomes = _json_array(raw_market.get("outcomes"))
+        prices = _json_array(raw_market.get("outcomePrices"))
+    except ValueError:
+        warnings.append(_malformed_warning("polymarket", "market outcomes", event_id=event_id))
+        return None
+
+    outcome_prices = {
+        str(outcome).strip().lower(): _decimal(prices[index])
+        for index, outcome in enumerate(outcomes)
+        if index < len(prices)
+    }
+    if "yes" not in outcome_prices:
+        return None
+    yes_price = outcome_prices.get("yes")
+    no_price = outcome_prices.get("no")
+    if no_price is None and yes_price is not None:
+        no_price = Decimal("1") - yes_price
+
+    contract_id = (
+        _text(raw_market.get("id"))
+        or _text(raw_market.get("conditionId"))
+        or _text(raw_market.get("slug"))
+    )
+    title = _text(raw_market.get("question"))
+    if contract_id is None or title is None:
+        warnings.append(_malformed_warning("polymarket", "market identity", event_id=event_id))
+        return None
+    return DigitalOraclePredictionMarketContract(
+        contract_id=contract_id,
+        title=title,
+        probability=yes_price,
+        yes_price=yes_price,
+        no_price=no_price,
+        volume=_decimal(raw_market.get("volumeNum")) or _decimal(raw_market.get("volume")),
+        open_interest=_decimal(raw_market.get("openInterest")) or event_open_interest,
+    )
+
+
+def _map_kalshi_market(
+    raw_market: Mapping[str, object],
+    *,
+    query: DigitalOraclePredictionMarketsProviderQuery,
+    warnings: list[RuntimeToolWarning],
+) -> DigitalOraclePredictionMarketEvent | None:
+    ticker = _text(raw_market.get("ticker"))
+    title = _text(raw_market.get("title"))
+    event_ticker = _text(raw_market.get("event_ticker"))
+    if ticker is None or title is None:
+        warnings.append(_malformed_warning("kalshi", "market identity"))
+        return None
+    if not _matches_query(query.query, ticker, event_ticker or "", title):
+        return None
+
+    yes_bid = _cent_decimal(raw_market.get("yes_bid"))
+    yes_ask = _cent_decimal(raw_market.get("yes_ask"))
+    no_ask = _cent_decimal(raw_market.get("no_ask"))
+    last_price = _cent_decimal(raw_market.get("last_price"))
+    probability = _midpoint(yes_bid, yes_ask) or last_price
+    contract = DigitalOraclePredictionMarketContract(
+        contract_id=ticker,
+        title=_text(raw_market.get("yes_sub_title")) or title,
+        probability=probability,
+        yes_price=yes_ask or probability,
+        no_price=no_ask,
+        volume=_decimal(raw_market.get("volume")),
+        open_interest=_decimal(raw_market.get("open_interest")),
+    )
+    close_time = _text(raw_market.get("close_time")) or _text(raw_market.get("expiration_time"))
+    return DigitalOraclePredictionMarketEvent(
+        venue="kalshi",
+        event_id=event_ticker or ticker,
+        title=title,
+        status=_text(raw_market.get("status")) or "unknown",
+        url=f"https://kalshi.com/markets/{ticker}",
+        end_date=_iso_datetime(close_time),
+        contracts=(contract,),
+    )
+
+
+def _http_status_provider_error(
+    exc: httpx.HTTPStatusError,
+    *,
+    provider: PredictionMarketVenue,
+) -> DigitalOracleProviderError:
+    status_code = exc.response.status_code
+    if status_code == 429:
+        return DigitalOracleProviderError(
+            f"{provider} rate limited prediction markets",
+            code="provider_rate_limited",
+            details={"provider": provider, "status": str(status_code)},
+        )
+    if status_code >= 500:
+        return DigitalOracleProviderError(
+            f"{provider} outage while fetching prediction markets",
+            code="provider_unavailable",
+            details={"provider": provider, "status": str(status_code)},
+        )
+    return DigitalOracleProviderError(
+        f"{provider} failed while fetching prediction markets",
+        details={"provider": provider, "status": str(status_code)},
+    )
+
+
+def _compact_params(params: Mapping[str, object]) -> dict[str, str | int | float | bool]:
+    compact: dict[str, str | int | float | bool] = {}
+    for key, value in params.items():
+        if value is None:
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            compact[key] = value
+        else:
+            compact[key] = str(value)
+    return compact
+
+
+def _object_payload(payload: object, *, provider: PredictionMarketVenue) -> Mapping[str, object]:
+    if not isinstance(payload, Mapping):
+        raise DigitalOracleProviderError(
+            f"{provider} returned malformed prediction-market data",
+            details={"provider": provider},
+        )
+    return cast(Mapping[str, object], payload)
+
+
+def _object_list_payload(payload: object, *, provider: PredictionMarketVenue) -> list[object]:
+    if not isinstance(payload, list):
+        raise DigitalOracleProviderError(
+            f"{provider} returned malformed prediction-market data",
+            details={"provider": provider},
+        )
+    return list(cast(list[object], payload))
+
+
+def _object_list(value: object) -> list[object]:
+    return list(cast(list[object], value)) if isinstance(value, list) else []
+
+
+def _json_array(value: object) -> list[object]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return list(cast(list[object], value))
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        decoded = cast(object, json.loads(text))
+        if isinstance(decoded, list):
+            return list(cast(list[object], decoded))
+        raise ValueError("expected JSON array")
+    return []
+
+
+def _text(value: object) -> str | None:
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    if isinstance(value, int):
+        return str(value)
+    return None
+
+
+def _decimal(value: object) -> Decimal | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _cent_decimal(value: object) -> Decimal | None:
+    parsed = _decimal(value)
+    if parsed is None:
+        return None
+    return parsed / Decimal("100")
+
+
+def _midpoint(left: Decimal | None, right: Decimal | None) -> Decimal | None:
+    if left is None or right is None:
+        return None
+    return (left + right) / Decimal("2")
+
+
+def _iso_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        iso_value = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
+        parsed = datetime.fromisoformat(iso_value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _polymarket_status(raw_event: Mapping[str, object]) -> str:
+    if raw_event.get("closed") is True:
+        return "closed"
+    if raw_event.get("active") is True:
+        return "open"
+    return "unknown"
+
+
+def _query_tokens(query: str) -> tuple[str, ...]:
+    return tuple(_QUERY_TOKEN_RE.findall(query.lower()))
+
+
+def _matches_query(query: str, *candidates: str) -> bool:
+    tokens = _query_tokens(query)
+    if not tokens:
+        return True
+    haystack = " ".join(candidates).lower()
+    return all(token in haystack for token in tokens)
+
+
+def _slug_search_term(query: str) -> str:
+    return "-".join(_query_tokens(query))
+
+
+def _malformed_warning(
+    provider: PredictionMarketVenue,
+    field: str,
+    *,
+    event_id: str | None = None,
+) -> RuntimeToolWarning:
+    details = {"operation": "prediction_markets", "provider": provider, "field": field}
+    if event_id is not None:
+        details["eventId"] = event_id
+    return RuntimeToolWarning(
+        code="prediction_markets_malformed_payload",
+        message=f"{provider} returned malformed prediction-market {field}.",
+        details=details,
+    )
+
+
+PREDICTION_MARKETS_LOOKUP_TOOL_SPEC = RuntimeToolSpec(
+    key=PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
+    openai_function_name=PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
+    display_name="Prediction Markets Lookup",
+    description=_PREDICTION_MARKETS_LOOKUP_DESCRIPTION,
+    parameters_schema=_PREDICTION_MARKETS_LOOKUP_PARAMETERS_SCHEMA,
+    guidance=_PREDICTION_MARKETS_LOOKUP_GUIDANCE,
+    sort_order=86,
+    denied_code=PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_CODE,
+    denied_message=PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_MESSAGE,
+    parser=parse_prediction_markets_lookup_arguments,
+    executor=execute_prediction_markets_lookup,
+    owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
+)
+
+
+__all__ = [
+    "KalshiPredictionMarketsProvider",
+    "PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_CODE",
+    "PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_MESSAGE",
+    "PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME",
+    "PREDICTION_MARKETS_LOOKUP_TOOL_SPEC",
+    "PolymarketPredictionMarketsProvider",
+    "create_prediction_market_providers",
+    "execute_prediction_markets_lookup",
+    "parse_prediction_markets_lookup_arguments",
+]

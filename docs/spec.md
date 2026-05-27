@@ -1,6 +1,6 @@
 # Technical Specification
 
-> Status: Live technical reference for branch `feature/memory` at `51d748b`.
+> Status: Live technical reference for branch `feature/ui` at `a6aeea0`.
 
 ## Overview
 
@@ -83,6 +83,8 @@ Model Connection payloads use `protocolProfile` as the live writable selector, w
 
 Workflow Packages use `signaldeck.workflowPackage/v1` YAML. Package-local refs stay local, model bindings use global Model Connection keys, tool grants use global server-declared tool keys, and workflow graph nodes currently ship as `kind: step`, `kind: sequence`, `kind: fanout`, `kind: loop`, and `kind: http`.
 
+Package-local agent prompts own methodology. The Digital Oracle researcher package keeps its research policy in the `digital_oracle_researcher` agent `systemPrompt`, grants the local `digital_oracle_phase1_tools` capability profile, and reserves `demo/digital_oracle_researcher.yaml` as the final proven artifact path. This is package data, not a global skill or platform orchestration surface.
+
 `kind: step` invokes a local package agent through `AgentExecutionService`. `kind: http` is the shipped non-agent operation node and compiles into runtime operation specs rather than fake agents. HTTP request fields may contain literal JSON values, input refs, prior-node output refs, or `${{ secrets.key }}` refs. Secret refs are valid only in HTTP `url`, `headers`, `query`, and `body` fields.
 
 Package secret bindings are package-local encrypted values, not manifest/export data. Reads expose only key, package id, presence, and timestamps. Deletes remove live values without rewriting artifacts. Exports omit package secret binding rows and raw values.
@@ -93,9 +95,11 @@ Package secret bindings are package-local encrypted values, not manifest/export 
 
 `/api/tools` is the core global read-only discovery host. Finance-owned tools appear only while `signaldeck.finance` is enabled. Platform-core memory tools remain visible when finance is disabled.
 
-Current native runtime tools include quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, finance-owned report lookup, `signaldeck.memory.write`, and `signaldeck.memory.lookup`. The retired `signaldeck_reports_write` function name is fail-closed at native dispatch and is not live catalog metadata, ownership plumbing, or MCP fallback.
+Current native runtime tools include quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, finance-owned report lookup, `signaldeck.memory.write`, and `signaldeck.memory.lookup`. Finance also owns the phase-1 Digital Oracle-backed tools `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`. The retired `signaldeck_reports_write` function name is fail-closed at native dispatch and is not live catalog metadata, ownership plumbing, or MCP fallback.
 
 `signaldeck.news.lookup` and `signaldeck.social_sentiment.lookup` are separate tools. Social sentiment accepts one symbol, optional `sources` of `reddit` and `stocktwits`, optional date bounds, and `itemLimit` up to `50`, returning source blocks, aggregate metrics, and warnings.
+
+The Digital Oracle-backed phase-1 tools expose normalized finance payloads only. `signaldeck.prediction_markets.lookup` reads prediction-market events and contracts from finance-owned lookups, `signaldeck.sec_filings.lookup` reads SEC filing summaries by ticker, and `signaldeck.market_sentiment.lookup` reads the `fear_greed` indicator. All three serialize camelCase result models with `warnings[]`; provider internals, package secrets, EDGAR contact config, raw payloads, and speculative phase-2 providers are not public contracts.
 
 Tool failure metadata is typed with `failureClass`, `source`, `phase`, `retryable`, and `disposition`. The retryable allowlist is limited to pre-dispatch provider tool-argument JSON/object failures, native tool argument validation, and MCP argument JSON/schema validation before transport dispatch. Auth, permission, grants, namespaces, extension-disabled states, missing secrets, unsupported or retired tool names, provider/network/transport errors, MCP transport errors, executor/business-rule failures, policy failures, output-schema failures, and retry-bound exhaustion are fatal.
 
@@ -137,7 +141,7 @@ Unsupported help mechanisms include YAML comments, `comment`, `x-signaldeck-*` m
 
 Workflow Packages are the only live platform authoring root. Removed global authoring routes include `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*`. They are not aliases or redirects.
 
-Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract pages, `/api/skills`, and `/skills*` are not live product surfaces.
+Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract pages, global Digital Oracle skills, `/api/skills`, and `/skills*` are not live product surfaces.
 
 ## CI And Verification
 

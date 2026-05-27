@@ -225,6 +225,21 @@ describe("WorkflowPackageEditorPage resource editors", () => {
             displayName: "Report Lookup",
             description: "Read reports",
           },
+          {
+            key: "signaldeck.prediction_markets.lookup",
+            displayName: "Prediction Markets",
+            description: "Find prediction-market signals.",
+          },
+          {
+            key: "signaldeck.sec_filings.lookup",
+            displayName: "SEC Filings",
+            description: "Find SEC filing summaries.",
+          },
+          {
+            key: "signaldeck.market_sentiment.lookup",
+            displayName: "Market Sentiment",
+            description: "Read market sentiment snapshots.",
+          },
         ],
       },
       error: null,
@@ -259,6 +274,15 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
       "Report Lookup",
     );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "Prediction Markets",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "SEC Filings",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "Market Sentiment",
+    );
 
     clickTab("Private MCP");
     fireEvent.click(screen.getByRole("button", { name: "Add Private MCP" }));
@@ -281,6 +305,15 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
       "Report Lookup",
     );
+    expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
+      "Prediction Markets",
+    );
+    expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
+      "SEC Filings",
+    );
+    expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
+      "Market Sentiment",
+    );
     disabledView.unmount();
 
     useToolsMock.mockReturnValue({
@@ -290,6 +323,21 @@ describe("WorkflowPackageEditorPage resource editors", () => {
             key: "signaldeck.reports.lookup",
             displayName: "Report Lookup",
             description: "Read reports",
+          },
+          {
+            key: "signaldeck.prediction_markets.lookup",
+            displayName: "Prediction Markets",
+            description: "Find prediction-market signals.",
+          },
+          {
+            key: "signaldeck.sec_filings.lookup",
+            displayName: "SEC Filings",
+            description: "Find SEC filing summaries.",
+          },
+          {
+            key: "signaldeck.market_sentiment.lookup",
+            displayName: "Market Sentiment",
+            description: "Read market sentiment snapshots.",
           },
         ],
       },
@@ -302,6 +350,15 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add Profile" }));
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
       "Report Lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "Prediction Markets",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "SEC Filings",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "Market Sentiment",
     );
   });
 

@@ -34,7 +34,8 @@ def load_server_declared_tool_contributions() -> tuple[BundledServerDeclaredTool
 def load_runtime_tool_contributions() -> tuple[RuntimeToolSpec, ...]:
     from app.extensions.signaldeck_finance.runtime_executors import register
 
-    return register()
+    runtime_tool_contributions = register()
+    return runtime_tool_contributions
 
 
 def load_execution_provider_bundle() -> ExecutionProviderBundle:

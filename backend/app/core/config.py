@@ -16,6 +16,34 @@ class Settings(BaseSettings):
     quote_provider_timeout_seconds: float = Field(default=5.0, alias="QUOTE_PROVIDER_TIMEOUT")
     quote_provider_backend: str = Field(default="yahoo", alias="QUOTE_PROVIDER_BACKEND")
     quote_stale_after_minutes: int = Field(default=15, alias="QUOTE_STALE_AFTER_MINUTES")
+    digital_oracle_prediction_markets_enabled: bool = Field(
+        default=True,
+        alias="DIGITAL_ORACLE_PREDICTION_MARKETS_ENABLED",
+    )
+    digital_oracle_sec_filings_enabled: bool = Field(
+        default=True,
+        alias="DIGITAL_ORACLE_SEC_FILINGS_ENABLED",
+    )
+    digital_oracle_market_sentiment_enabled: bool = Field(
+        default=True,
+        alias="DIGITAL_ORACLE_MARKET_SENTIMENT_ENABLED",
+    )
+    digital_oracle_prediction_markets_default_item_limit: int = Field(
+        default=10,
+        alias="DIGITAL_ORACLE_PREDICTION_MARKETS_DEFAULT_ITEM_LIMIT",
+        ge=1,
+        le=20,
+    )
+    digital_oracle_sec_filings_default_item_limit: int = Field(
+        default=10,
+        alias="DIGITAL_ORACLE_SEC_FILINGS_DEFAULT_ITEM_LIMIT",
+        ge=1,
+        le=50,
+    )
+    digital_oracle_edgar_contact_email: str | None = Field(
+        default=None,
+        alias="DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL",
+    )
     agent_platform_encryption_key: str = Field(
         default="signaldeck-agent-platform-dev-key",
         alias="AGENT_PLATFORM_ENCRYPTION_KEY",
@@ -140,6 +168,16 @@ class Settings(BaseSettings):
         if not normalized:
             return None
         return normalized.rstrip("/")
+
+    @field_validator("digital_oracle_edgar_contact_email", mode="before")
+    @classmethod
+    def normalize_digital_oracle_edgar_contact_email(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        return normalized
 
     @field_validator("quote_provider_backend", mode="before")
     @classmethod

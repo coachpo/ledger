@@ -1,6 +1,6 @@
 # Requirements Document
 
-> Status: Live requirements reference for branch `feature/memory` at `51d748b`.
+> Status: Live requirements reference for branch `feature/ui` at `a6aeea0`.
 
 ## Purpose
 
@@ -17,7 +17,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Package secret bindings for package-local encrypted HTTP operation secrets.
 - Package import/export with no database ids, no run history, no package secret binding rows, and no raw secret values.
 - Model Connection CRUD, encrypted stored secrets, OpenAI-family `protocolProfile` selection, backend-owned compatibility evidence, reachability tests, capability probes, and secret-safe read payloads.
-- Global read-only Tools metadata from the server-declared catalog, filtered by extension state where tools are extension-owned.
+- Global read-only Tools metadata from the server-declared catalog, filtered by extension state where tools are extension-owned, including the finance-owned phase-1 Digital Oracle-backed tool keys `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`.
 - Dedicated Workflow Package launch console at `/workflow-packages/:packageId/run`, with preflight gating and run creation outside the editor.
 - Run list/detail, backend-owned progress/queue read models, package provenance, rerun drafts, reruns, fork drafts, invocation-input forks, operation invocation evidence, memory evidence, typed failure taxonomy, and bounded retry evidence.
 - Platform-core `/api/memory` and `/memory` surfaces for explicit-private-scope canonical memory list/detail, revisions, events, resolve, and reflect workflows.
@@ -25,7 +25,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 ### Out Of Scope
 
 - Public multi-user auth, live broker execution, realtime market streaming, tax-lot accounting, and user-facing autonomous scheduling.
-- Removed `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, and standalone global authoring routes.
+- Removed `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, global Digital Oracle skill surfaces, and standalone global authoring routes.
 - TradingAgents-specific platform behavior, exact LangGraph graph parity, checkpoint/runtime semantics, or agent-initiated trading execution.
 - Unscoped global memory browsing, public memory CRUD, exact-id `signaldeck.memory.get`, vector search, embeddings, and chunk tables in phase 1.
 - Raw HTTP LLM calls in application code when an official provider SDK exists.
@@ -54,6 +54,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 
 - Workflow Packages must be YAML-manifest based and reject aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate local refs, raw model connection ids, and unsupported `spec.skills` fields.
 - Package-private agents, output schemas, capability profiles, private MCP configs, HTTP operation nodes, and workflow graphs must stay inside package artifacts.
+- Package-specific methodology, including Digital Oracle research policy, must live in package-local agent `systemPrompt` text and must not be modeled as `spec.skills`, `/api/skills`, or a global skill surface.
 - Private MCP configs must stay inline as `env`, `headers`, and `query` manifest text.
 - Package exports must keep private MCP `env`, `headers`, and `query` values inline while omitting database ids, run history, package secret binding rows, and raw package secret binding values.
 - Package secret binding reads must expose only key, package id, presence, and timestamps; writes must store encrypted values; deletes must remove live bindings without rewriting package artifacts.
@@ -67,6 +68,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Public Model Connection create/update payloads must reject client-authored capabilities, runtime policy fields, probe cache TTL, derived API style, `compatibilityProfile`, and other compatibility truth that is not part of the write DTO.
 - Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles.
 - Finance-owned tool entries must be hidden while `signaldeck.finance` is disabled, while platform-core memory tools must remain visible.
+- The shipped Digital Oracle-backed finance tools must be limited to `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`; speculative phase-2 tools and raw provider payloads must not be documented or exposed as shipped contracts.
 - Retired report-write tool names, including `signaldeck_reports_write`, must fail closed at native dispatch and must not reappear through live tool discovery or MCP fallback.
 - `/api/extensions` must expose only `key`, `label`, and `enabled`; toggle requests must accept only `enabled`.
 
@@ -101,7 +103,8 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 
 - A user can manage portfolio records, templates, and reports without provider availability.
 - A user can author Workflow Packages, configure Model Connections, select server-declared Tools metadata during package authoring, launch saved package runs from `/workflow-packages/:packageId/run`, inspect Runs, and review explicit-private-scope canonical Memory from the browser.
+- The Digital Oracle researcher demo path is `demo/digital_oracle_researcher.yaml`; it must grant the three phase-1 finance tools through package-local capability profiles and keep methodology in `systemPrompt`, not a global skill.
 - Package HTTP operations can be authored, bound to package-local secrets, launched, and inspected without exposing raw secret values.
 - Run detail exposes backend-owned progress, queue state, agent invocations, operation invocations, package provenance, extension dependencies, memory artifacts, memory events, typed failure taxonomy, and bounded retry evidence.
 - `/api/memory` and `/memory` require package access context and explicit private scope selection, do not act as global memory search, and do not surface finance report history as platform memory.
-- Removed Studio, Tryout, orchestration, runtime-v2, simulation, backtest, `/api/skills`, `/skills*`, and standalone global authoring routes are not presented as current product surfaces.
+- Removed Studio, Tryout, orchestration, runtime-v2, simulation, backtest, `/api/skills`, `/skills*`, global Digital Oracle skill surfaces, and standalone global authoring routes are not presented as current product surfaces.

@@ -1,4 +1,3 @@
-# pyright: reportExplicitAny=false, reportAny=false, reportPrivateUsage=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnnecessaryCast=false
 from __future__ import annotations
 
 from copy import deepcopy
@@ -23,6 +22,7 @@ from app.schemas.model_connection import (
 from app.services.extension_service import ExtensionService
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
+from app.services.workflow_package_manifest_parser import parse_workflow_package_manifest
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
 
@@ -38,6 +38,14 @@ _TOOL_REQUIRED_FIXTURE = (
     / "workflow_packages"
     / "tool-required-fixture.yaml"
 )
+_DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
+    Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
+)
+_DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
+    "signaldeck.prediction_markets.lookup",
+    "signaldeck.sec_filings.lookup",
+    "signaldeck.market_sentiment.lookup",
+)
 
 
 def _package_source() -> str:
@@ -46,6 +54,91 @@ def _package_source() -> str:
 
 def _tool_required_package_source() -> str:
     return _TOOL_REQUIRED_FIXTURE.read_text()
+
+
+def _digital_oracle_researcher_demo_source() -> str:
+    return _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text()
+
+
+def _expected_digital_oracle_disabled_tool_errors() -> list[dict[str, object]]:
+    return [
+        {
+            "field": f"spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[{index}]",
+            "issue": (
+                f"Server-declared tool {tool_key!r} is disabled because extension "
+                f"{FINANCE_WORKSPACE_EXTENSION_KEY!r} is disabled"
+            ),
+            "code": "extension_disabled",
+            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "surface": f"tool.{tool_key}",
+        }
+        for index, tool_key in enumerate(sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS))
+    ]
+
+
+def _digital_oracle_phase1_package_source() -> str:
+    return """apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: digital_oracle_phase1_fixture
+  name: Digital Oracle Phase 1 Fixture
+  description: Deterministic package fixture for finance-owned phase-1 tools.
+spec:
+  inputs:
+    type: object
+    required: [researchQuestion]
+    properties:
+      researchQuestion:
+        type: string
+  capabilityProfiles:
+    - key: digital_oracle_phase1_tools
+      name: Digital Oracle Phase 1 Tools
+      description: Grants finance-owned phase-1 research tools.
+      toolKeys:
+        - signaldeck.prediction_markets.lookup
+        - signaldeck.sec_filings.lookup
+        - signaldeck.market_sentiment.lookup
+  outputSchemas:
+    - key: digital_oracle_report
+      name: Digital Oracle Report
+      jsonSchema:
+        type: object
+        required: [summary]
+        properties:
+          summary:
+            type: string
+  agents:
+    - key: digital_oracle_researcher
+      name: Digital Oracle Researcher
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Use the granted finance tools and return JSON.
+      inputSchema:
+        type: object
+        required: [researchQuestion]
+        properties:
+          researchQuestion:
+            type: string
+      outputSchema: digital_oracle_report
+      capabilityProfiles: [digital_oracle_phase1_tools]
+  workflows:
+    - key: research
+      name: Research
+      inputSchema:
+        type: object
+        required: [researchQuestion]
+        properties:
+          researchQuestion:
+            type: string
+      flow:
+        kind: step
+        id: research_step
+        slot: report
+        uses: digital_oracle_researcher
+        with:
+          researchQuestion: ${{ inputs.researchQuestion }}
+      output:
+        from: ${{ nodes.research_step.outputs.report }}
+"""
 
 
 def _mixed_capability_package_source() -> str:
@@ -365,6 +458,125 @@ def test_preflight_accepts_fixture_report_lookup_and_core_memory_tool_keys(
     assert "kind: sequence" in _package_source()
 
 
+def test_preflight_accepts_finance_server_declared_digital_oracle_toolKeys(
+    session_factory: sessionmaker[Session],
+) -> None:
+    compiled = compile_workflow_package_manifest(_digital_oracle_phase1_package_source())
+    compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
+    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
+    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
+    extension_dependencies = cast(list[dict[str, Any]], compiled["extensionDependencies"])
+
+    with session_factory() as session:
+        errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+
+    requirements = PackageExecutionPlanBuilder.derive_package_requirements(compiled_plan)
+    plan = PackageExecutionPlanBuilder.build_from_compiled_plan(compiled_plan, "research")
+    runtime_agent = plan.steps[0].agents[0].package_runtime_agent
+    assert runtime_agent is not None
+
+    assert errors == []
+    assert profiles_by_key["digital_oracle_phase1_tools"]["toolKeys"] == sorted(
+        _DIGITAL_ORACLE_PHASE1_TOOL_KEYS
+    )
+    assert requirements.native_tool_sources == (
+        "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys",
+    )
+    assert runtime_agent.capability_profiles[0].tool_keys == tuple(
+        sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
+    )
+    assert extension_dependencies == [
+        {
+            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "surfaces": sorted(
+                [
+                    "hook.workflowPackageStart",
+                    "provider.fallbackQuote",
+                    "provider.quote",
+                    "provider.socialSentiment",
+                    *[f"runtime.tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
+                    *[f"tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
+                ]
+            ),
+            "fields": [
+                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
+                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
+                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
+            ],
+        }
+    ]
+
+
+def test_digital_oracle_researcher_demo_validates_compiles_and_preflights(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    manifest_source = _digital_oracle_researcher_demo_source()
+    parsed = parse_workflow_package_manifest(manifest_source)
+    assert parsed.diagnostics == []
+    assert parsed.manifest is not None
+    validation = client.post(
+        "/api/workflow-packages/validate-manifest",
+        json={"manifestSource": manifest_source},
+    )
+    assert validation.status_code == 200, validation.json()
+    assert validation.json()["diagnostics"] == []
+
+    compiled = compile_workflow_package_manifest(manifest_source)
+    package_definition = cast(dict[str, Any], compiled["packageDefinition"])
+    compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
+    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
+    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
+
+    with session_factory() as session:
+        tool_errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+
+    requirements = PackageExecutionPlanBuilder.derive_package_requirements(compiled_plan)
+    plan = PackageExecutionPlanBuilder.build_from_compiled_plan(compiled_plan, "research")
+    runtime_agent = plan.steps[0].agents[0].package_runtime_agent
+    assert runtime_agent is not None
+
+    _seed_model_connection(
+        session_factory,
+        key="digital_oracle_primary_model",
+        name="Digital Oracle Primary Model",
+        protocol_profile="openai_chat_completions",
+        capabilities=_capabilities_with_statuses(),
+        last_test_ok=True,
+    )
+    created = client.post("/api/workflow-packages", json={"manifestSource": manifest_source})
+    assert created.status_code == 201, created.json()
+    preflight = client.post(
+        f"/api/workflow-packages/{created.json()['id']}/preflight",
+        params={"workflowKey": "research"},
+    )
+
+    assert preflight.status_code == 200, preflight.json()
+    preflight_body = cast(dict[str, object], preflight.json())
+    assert preflight_body["ready"] is True
+    assert preflight_body["blockingErrors"] == []
+    assert preflight_body["warnings"] == []
+    package_metadata = cast(dict[str, object], package_definition["metadata"])
+    assert package_metadata["key"] == "digital_oracle_researcher"
+    assert tool_errors == []
+    assert profiles_by_key["digital_oracle_phase1_tools"]["toolKeys"] == sorted(
+        _DIGITAL_ORACLE_PHASE1_TOOL_KEYS
+    )
+    assert requirements.native_tool_sources == (
+        "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys",
+    )
+    assert runtime_agent.key == "digital_oracle_researcher"
+    assert runtime_agent.system_prompt.startswith(
+        "Digital Oracle methodology is package-local for this agent."
+    )
+    assert runtime_agent.capability_profiles[0].tool_keys == tuple(
+        sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
+    )
+    assert "Package-ready draft" not in manifest_source
+    assert "spec.skills" not in manifest_source
+    assert "secrets:" not in manifest_source
+
+
 def test_preflight_rejects_duplicate_tool_keys_and_accepts_core_memory_tool_keys(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -388,6 +600,31 @@ def test_preflight_rejects_duplicate_tool_keys_and_accepts_core_memory_tool_keys
             "issue": "Duplicate tool key 'signaldeck.memory.write' is not allowed",
         }
     ]
+
+
+def test_preflight_missing_digital_oracle_toolKeys_diagnostic_preserves_field_only_shape(
+    session_factory: sessionmaker[Session],
+) -> None:
+    compiled = compile_workflow_package_manifest(_digital_oracle_phase1_package_source())
+    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
+    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
+    profiles[0]["toolKeys"] = [
+        "signaldeck.market_sentiment.lookup",
+        "signaldeck.digital_oracle.missing",
+        "signaldeck.sec_filings.lookup",
+    ]
+
+    with session_factory() as session:
+        errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+
+    assert errors == [
+        {
+            "field": "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
+            "issue": "Unknown server-declared tool 'signaldeck.digital_oracle.missing'",
+        }
+    ]
+    assert "code" not in errors[0]
+    assert "surface" not in errors[0]
 
 
 def test_package_execution_plan_builder_derives_tool_and_output_requirements() -> None:
@@ -898,6 +1135,28 @@ def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
             FINANCE_WORKSPACE_EXTENSION_KEY,
             ExtensionToggleRequest(enabled=False),
         )
+
+
+def test_preflight_blocks_digital_oracle_toolKeys_when_finance_extension_disabled(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _digital_oracle_phase1_package_source()},
+    )
+    assert response.status_code == 201, response.json()
+    _disable_finance_extension(session_factory)
+
+    preflight = client.post(
+        f"/api/workflow-packages/{response.json()['id']}/preflight?workflowKey=research"
+    )
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is False
+    assert body["blockingErrors"] == _expected_digital_oracle_disabled_tool_errors()
 
 
 def test_save_allows_disabled_extension_dependency_and_preflight_blocks(

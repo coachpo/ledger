@@ -11,6 +11,11 @@ const reactQueryState = vi.hoisted(() => ({
   useQueryMock: vi.fn((options: unknown) => options),
 }));
 
+const toolDiscoveryState = vi.hoisted(() => ({
+  listToolsMock: vi.fn(),
+  useExtensionsMock: vi.fn(),
+}));
+
 vi.mock("@tanstack/react-query", () => ({
   useMutation: (options: {
     mutationFn?: (variables: unknown) => unknown;
@@ -48,6 +53,14 @@ vi.mock("@/lib/api/workflow-packages", () => ({
   validateWorkflowPackageManifest: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-extensions", () => ({
+  useExtensions: () => toolDiscoveryState.useExtensionsMock(),
+}));
+
+vi.mock("@/lib/api/tools", () => ({
+  listTools: (...args: unknown[]) => toolDiscoveryState.listToolsMock(...args),
+}));
+
 import {
   createWorkflowPackageRuntimeInputPersonalEntry,
   deleteWorkflowPackage,
@@ -62,6 +75,7 @@ import {
   useDeleteWorkflowPackage,
   useDeleteWorkflowPackages,
   useDeleteWorkflowPackageRuntimeInputPersonalEntry,
+  useTools,
   useUpdateWorkflowPackage,
   useUpdateWorkflowPackageRuntimeInputPersonalEntry,
   useValidateWorkflowPackageManifest,
@@ -82,11 +96,91 @@ describe("useWorkflowPackages", () => {
     reactQueryState.removeQueriesMock.mockReset();
     reactQueryState.useQueryMock.mockReset();
     reactQueryState.capturedMutationOptions = null;
+    toolDiscoveryState.listToolsMock.mockReset();
+    toolDiscoveryState.useExtensionsMock.mockReset();
+    toolDiscoveryState.useExtensionsMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            enabled: true,
+            key: "signaldeck.finance",
+            label: "Finance Workspace",
+          },
+        ],
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
     vi.mocked(createWorkflowPackageRuntimeInputPersonalEntry).mockReset();
     vi.mocked(deleteWorkflowPackage).mockReset();
     vi.mocked(deleteWorkflowPackageRuntimeInputPersonalEntry).mockReset();
     vi.mocked(updateWorkflowPackageRuntimeInputPersonalEntry).mockReset();
     vi.mocked(validateWorkflowPackageManifest).mockReset();
+  });
+
+  it("filters Digital Oracle finance tools through existing tool discovery", () => {
+    const toolCatalog = {
+      items: [
+        {
+          key: "signaldeck.prediction_markets.lookup",
+          displayName: "Prediction Markets",
+          description: "Find prediction-market signals.",
+        },
+        {
+          key: "signaldeck.sec_filings.lookup",
+          displayName: "SEC Filings",
+          description: "Find SEC filing summaries.",
+        },
+        {
+          key: "signaldeck.market_sentiment.lookup",
+          displayName: "Market Sentiment",
+          description: "Read market sentiment snapshots.",
+        },
+        {
+          key: "signaldeck.memory.lookup",
+          displayName: "Memory Lookup",
+          description: "Read scoped package memory.",
+        },
+      ],
+    };
+    reactQueryState.useQueryMock.mockReturnValue({
+      data: toolCatalog,
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    expect(useTools().data?.items.map((tool) => tool.key)).toEqual([
+      "signaldeck.prediction_markets.lookup",
+      "signaldeck.sec_filings.lookup",
+      "signaldeck.market_sentiment.lookup",
+      "signaldeck.memory.lookup",
+    ]);
+    expect(reactQueryState.useQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: queryKeys.platform.tools.list(),
+      }),
+    );
+
+    toolDiscoveryState.useExtensionsMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            enabled: false,
+            key: "signaldeck.finance",
+            label: "Finance Workspace",
+          },
+        ],
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    expect(useTools().data?.items.map((tool) => tool.key)).toEqual([
+      "signaldeck.memory.lookup",
+    ]);
   });
 
   it("uses package list and detail keys without live status filters", () => {

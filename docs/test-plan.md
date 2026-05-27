@@ -1,6 +1,6 @@
 # Test Plan
 
-> Status: Live automated-coverage reference for branch `feature/memory` at `51d748b`.
+> Status: Live automated-coverage reference for branch `feature/ui` at `a6aeea0`.
 
 ## Backend Quality Gates
 
@@ -10,7 +10,7 @@
 - `uv run mypy app`
 - `uv run pytest`
 
-Backend coverage must prove preserved `/api/v1` finance CRUD, template/report behavior, package-first platform contracts, backend-owned compatibility resolution, Model Gateway behavior, native runtime tools, typed tool-failure taxonomy, bounded retries, memory services, explicit-private-scope `/api/memory`, scheduler semantics, run provenance, and removed-route guarantees.
+Backend coverage must prove preserved `/api/v1` finance CRUD, template/report behavior, package-first platform contracts, backend-owned compatibility resolution, Model Gateway behavior, native runtime tools, Digital Oracle phase-1 finance tools, typed tool-failure taxonomy, bounded retries, memory services, explicit-private-scope `/api/memory`, scheduler semantics, run provenance, and removed-route guarantees.
 
 ## Frontend Quality Gates
 
@@ -20,7 +20,7 @@ Backend coverage must prove preserved `/api/v1` finance CRUD, template/report be
 - `pnpm test:run`
 - `pnpm test:e2e`
 
-Frontend coverage must prove API helpers, query keys, formatting helpers, portfolio analytics, template/report flows, Workflow Package authoring, package secret bindings, dedicated launch page behavior, Model Connections, Extensions, server-declared Tools metadata in package authoring, Runs, run detail evidence, memory evidence rendering, explicit-private-scope `/memory`, and removed-route absence.
+Frontend coverage must prove API helpers, query keys, formatting helpers, portfolio analytics, template/report flows, Workflow Package authoring, package secret bindings, dedicated launch page behavior, Model Connections, Extensions, server-declared Tools metadata in package authoring, finance-disabled filtering for Digital Oracle-backed tool choices, Runs, run detail evidence, memory evidence rendering, explicit-private-scope `/memory`, and removed-route absence.
 
 ## Contract Coverage Matrix
 
@@ -29,10 +29,10 @@ Frontend coverage must prove API helpers, query keys, formatting helpers, portfo
 | API conventions              | Error envelope shape, camelCase aliases, decimal string serialization, multipart upload routes, and `422` validation behavior.                                                                                                                                                   |
 | Preserved finance routes     | Portfolio, balance, position, CSV import, trade, quote/history, template, and report route families under `/api/v1`.                                                                                                                                                             |
 | Extension state              | `GET/PATCH /api/extensions` exposes only `key`, `label`, and `enabled`; finance-owned routes/nav/tools are hidden when disabled while platform-core memory tools remain visible.                                                                                                 |
-| Workflow Packages            | YAML parser rejects aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate refs, raw ids, and unsupported `spec.skills`; package reads/writes do not expose live status.                                                                                  |
+| Workflow Packages            | YAML parser rejects aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate refs, raw ids, and unsupported `spec.skills`; package-local `systemPrompt` methodology stays in package artifacts; package reads/writes do not expose live status.             |
 | Package secrets and HTTP ops | Secret binding CRUD masks values; HTTP nodes allow only supported methods, keep secrets in request fields only, redact metadata, validate responses, and persist operation invocation rows.                                                                                      |
 | Model Connections            | Protocol profile validation, strict rejection of public compatibility/policy writes, backend-owned compatibility resolution, secret preservation/rotation, reachability test, capability probe cache, policy defaults, and secret-safe reads/errors.                             |
-| Tools                        | Server-declared `/api/tools` catalog, extension filtering, OpenAI function names, finance-owned data tools, social sentiment, report lookup, retired `signaldeck_reports_write` fail-closed behavior, typed failure taxonomy, bounded retry metadata, and platform memory tools. |
+| Tools                        | Server-declared `/api/tools` catalog, extension filtering, OpenAI function names, finance-owned data tools, `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, `signaldeck.market_sentiment.lookup`, report lookup, retired report-write fail-closed behavior, typed failure taxonomy, bounded retry metadata, and platform memory tools. |
 | Runs                         | Launch, scheduler queue semantics, progress read model, run-owned package snapshots, resolved model runtime profile provenance, rerun, fork, operation cards, extension dependencies, trace/span ids, memory evidence, typed failure taxonomy, and bounded retry evidence.       |
 | Runtime inputs               | JSON Schema `title` and `description` render as display metadata only; unsupported help-text/schema mechanisms remain rejected or ignored according to schema rules.                                                                                                             |
 | Memory                       | Core schemas, write/reuse/supersede semantics, scoped lookup fallback, namespace grants, conflict handling, runtime tools, `/api/memory`, `/memory`, run memory events, and report-domain separation.                                                                            |
@@ -40,11 +40,11 @@ Frontend coverage must prove API helpers, query keys, formatting helpers, portfo
 
 ## Backend Test Scope
 
-Backend tests cover preserved `/api/v1` CRUD, templates, reports, artifact-only workflow package dependency persistence, launch/preflight readiness, capability-aware model-connection probes, protocol-profile validation, strict public compatibility-write rejection, backend-owned compatibility resolution, scoped package requirements, rerun/fork draft readiness, package import/export with inline private MCP `env`, `headers`, and `query`, package secret bindings, HTTP operation execution, model connections, slim bundled extension state, extension-filtered tools, Model Gateway adapter execution, structured-output strategy selection, typed tool-failure taxonomy, bounded tool-call retry behavior, native tool-call capability enforcement, provider error normalization, frozen run-owned runtime-profile provenance, backend-owned run progress and queue read models, explicit scheduler worker semantics, dependency-only run extension records, ref-based invocation payloads, runtime tools, core memory schemas/services/tools, package-qualified memory scopes, namespace grants, `/api/memory`, shared-memory conflicts, persisted run memory evidence, trace metadata, global runs, DB upgrades, retired `signaldeck_reports_write` fail-closed behavior, and removed-route guarantees.
+Backend tests cover preserved `/api/v1` CRUD, templates, reports, artifact-only workflow package dependency persistence, launch/preflight readiness, capability-aware model-connection probes, protocol-profile validation, strict public compatibility-write rejection, backend-owned compatibility resolution, scoped package requirements, Digital Oracle package grants, package-local prompt methodology, rerun/fork draft readiness, package import/export with inline private MCP `env`, `headers`, and `query`, package secret bindings, HTTP operation execution, model connections, slim bundled extension state, extension-filtered tools, Model Gateway adapter execution, structured-output strategy selection, typed tool-failure taxonomy, bounded tool-call retry behavior, native tool-call capability enforcement, Digital Oracle runtime tool behavior, provider error normalization, frozen run-owned runtime-profile provenance, backend-owned run progress and queue read models, explicit scheduler worker semantics, dependency-only run extension records, ref-based invocation payloads, runtime tools, core memory schemas/services/tools, package-qualified memory scopes, namespace grants, `/api/memory`, shared-memory conflicts, persisted run memory evidence, trace metadata, global runs, DB upgrades, retired `signaldeck_reports_write` fail-closed behavior, and removed-route guarantees. T17 will promote and prove the final `demo/digital_oracle_researcher.yaml` artifact; T16 keeps this plan docs-only.
 
 ## Frontend Test Scope
 
-Frontend tests cover API helpers, query keys, formatting helpers, markdown formatting, portfolio analytics, workflow package helpers, authoring-only package editor flows, package secret binding UI, Model Connections protocol-profile editing, backend-derived compatibility evidence rendering, separate reachability-test and capability-probe actions, dedicated launch page behavior, capability blocker and warning rendering, backend progress/queue consumption, rerun/fork current-readiness gating, run-detail operation cards, effective runtime-profile rendering, typed failure/retry evidence, memory evidence rendering, explicit-private-scope `/memory`, layout routing, and browser E2E route families.
+Frontend tests cover API helpers, query keys, formatting helpers, markdown formatting, portfolio analytics, workflow package helpers, authoring-only package editor flows, package secret binding UI, Model Connections protocol-profile editing, backend-derived compatibility evidence rendering, separate reachability-test and capability-probe actions, dedicated launch page behavior, capability-profile tool choices from `/api/tools`, finance-disabled filtering for the three Digital Oracle-backed tool keys, capability blocker and warning rendering, backend progress/queue consumption, rerun/fork current-readiness gating, run-detail operation cards, effective runtime-profile rendering, typed failure/retry evidence, memory evidence rendering, explicit-private-scope `/memory`, layout routing, and browser E2E route families.
 
 ## E2E Scope
 
@@ -66,7 +66,10 @@ Use targeted checks when these contracts change:
 ```bash
 (cd backend && uv run pytest tests/test_workflow_package_preflight.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_run_contracts.py tests/test_runtime_tools.py tests/test_mcp_runtime.py tests/test_memory_domain_schemas.py tests/test_memory_service.py tests/test_api_memory.py tests/test_runtime_db_upgrades.py tests/test_legacy_backend_cutover.py)
 (cd frontend && pnpm test:run src/pages/workflow-packages src/pages/model-connections src/pages/runs src/pages/memory src/routes.test.tsx src/platform-clean-break.test.ts)
+(cd frontend && pnpm typecheck && pnpm test:run && cd ../backend && uv run pytest tests/test_workflow_package_preflight.py -k "digital_oracle" -q)
 ```
+
+Digital Oracle docs alignment must also keep `demo/digital_oracle_researcher.yaml` as the final artifact path without creating it before the demo promotion task.
 
 ## Extension Metadata Absence Guard
 

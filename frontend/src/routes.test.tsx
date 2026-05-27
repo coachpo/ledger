@@ -673,7 +673,47 @@ describe("router", () => {
     expect(extension.toolAuthoringDiscovery).toEqual([
       {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.",
+        toolKeyPrefix: "signaldeck.market_data.",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.indicators.",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.fundamentals.",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.news.",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.social_sentiment.",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.insider_data.",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.positions.",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.reports.",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.prediction_markets.",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.sec_filings.",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.market_sentiment.",
       },
     ]);
   });
@@ -694,6 +734,26 @@ describe("router", () => {
         description: "Read reports",
       },
       {
+        key: "signaldeck.prediction_markets.lookup",
+        displayName: "Prediction Markets",
+        description: "Find prediction-market signals.",
+      },
+      {
+        key: "signaldeck.sec_filings.lookup",
+        displayName: "SEC Filings",
+        description: "Find SEC filing summaries.",
+      },
+      {
+        key: "signaldeck.market_sentiment.lookup",
+        displayName: "Market Sentiment",
+        description: "Read market sentiment snapshots.",
+      },
+      {
+        key: "signaldeck.memory.lookup",
+        displayName: "Memory Lookup",
+        description: "Read scoped package memory.",
+      },
+      {
         key: "core.echo",
         displayName: "Echo",
         description: "Core smoke tool",
@@ -708,13 +768,20 @@ describe("router", () => {
     expect(enabledPaths).toEqual(
       extension.routeContributions.map((contribution) => contribution.path),
     );
-    expect(enabledToolKeys).toEqual(["signaldeck.reports.lookup", "core.echo"]);
+    expect(enabledToolKeys).toEqual([
+      "signaldeck.reports.lookup",
+      "signaldeck.prediction_markets.lookup",
+      "signaldeck.sec_filings.lookup",
+      "signaldeck.market_sentiment.lookup",
+      "signaldeck.memory.lookup",
+      "core.echo",
+    ]);
     expect(enabledFinanceRoutePaths(extensionList(false))).toEqual([]);
     expect(
       filterToolsForExtensionState(tools, extensionList(false)).map(
         (tool) => tool.key,
       ),
-    ).toEqual(["core.echo"]);
+    ).toEqual(["signaldeck.memory.lookup", "core.echo"]);
     expect(enabledFinanceRoutePaths(extensionList(true))).toEqual(enabledPaths);
     expect(
       filterToolsForExtensionState(tools, extensionList(true)).map(

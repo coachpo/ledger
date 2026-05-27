@@ -198,17 +198,17 @@ export function filterToolsForExtensionState(
   tools: readonly ToolCatalogItemRead[],
   extensionList: ExtensionListRead | undefined,
 ): ToolCatalogItemRead[] {
-  const financeToolContribution =
-    financeWorkspaceFrontendExtension.toolAuthoringDiscovery[0];
+  const disabledToolPrefixes =
+    financeWorkspaceFrontendExtension.toolAuthoringDiscovery
+      .filter((contribution) => !isGateTagEnabled(extensionList, contribution))
+      .map((contribution) => contribution.toolKeyPrefix);
 
-  if (
-    !financeToolContribution ||
-    isGateTagEnabled(extensionList, financeToolContribution)
-  ) {
+  if (disabledToolPrefixes.length === 0) {
     return [...tools];
   }
 
   return tools.filter(
-    (tool) => !tool.key.startsWith(financeToolContribution.toolKeyPrefix),
+    (tool) =>
+      !disabledToolPrefixes.some((prefix) => tool.key.startsWith(prefix)),
   );
 }

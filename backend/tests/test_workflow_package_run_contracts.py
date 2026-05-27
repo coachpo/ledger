@@ -3,14 +3,20 @@ from __future__ import annotations
 import json
 import time
 from copy import deepcopy
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.runtime_types import (
+    MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+    PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
+    SEC_FILINGS_LOOKUP_TOOL_KEY,
+)
 from app.models.agent_memory import RunMemoryEvent
 from app.models.model_connection import ModelConnection
 from app.models.report import Report
@@ -39,6 +45,7 @@ from app.services.agent_execution_service import AgentExecutionService, RunAgent
 from app.services.extension_service import ExtensionService
 from app.services.memory_service import MemoryLookupContext, MemoryService
 from app.services.model_connection_snapshot import parse_model_connection_runtime_snapshot
+from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
@@ -110,6 +117,13 @@ class _RuntimeRecordingOpenAIClient:
 
 
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
+_DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
+    Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
+)
+
+
+def _digital_oracle_researcher_demo_source() -> str:
+    return _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text()
 
 
 def _seeded_tradingagents_package(client: TestClient) -> dict[str, Any]:
@@ -206,6 +220,115 @@ spec:
 """
 
 
+_DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
+    PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
+    SEC_FILINGS_LOOKUP_TOOL_KEY,
+    MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+)
+
+
+class _DigitalOracleGuidanceOutput(BaseModel):
+    summary: str
+    signals: list[str]
+    contradictions: list[str]
+    limitations: list[str]
+    next_questions: list[str] = Field(alias="nextQuestions")
+
+
+def _digital_oracle_guidance_package_source(
+    *,
+    tool_keys: tuple[str, ...] = _DIGITAL_ORACLE_PHASE1_TOOL_KEYS,
+) -> str:
+    tool_key_lines = "\n".join(f"        - {tool_key}" for tool_key in tool_keys)
+    return f"""apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: digital_oracle_guidance_package
+  name: Digital Oracle Guidance Package
+spec:
+  inputs:
+    type: object
+    properties:
+      researchQuestion:
+        type: string
+      outputLanguage:
+        type: string
+    required: [researchQuestion, outputLanguage]
+  capabilityProfiles:
+    - key: digital_oracle_phase1_tools
+      name: Digital Oracle Phase 1 Tools
+      toolKeys:
+{tool_key_lines}
+  outputSchemas:
+    - key: digital_oracle_report
+      name: Digital Oracle Report
+      jsonSchema:
+        type: object
+        properties:
+          summary:
+            type: string
+          signals:
+            type: array
+            items:
+              type: string
+          contradictions:
+            type: array
+            items:
+              type: string
+          limitations:
+            type: array
+            items:
+              type: string
+          nextQuestions:
+            type: array
+            items:
+              type: string
+        required: [summary, signals, contradictions, limitations, nextQuestions]
+  agents:
+    - key: digital_oracle_researcher
+      name: Digital Oracle Researcher
+      modelConnection: package_runtime_model
+      systemPrompt: |
+        Digital Oracle methodology is package-local for this agent.
+        Decompose the research question before calling tools.
+        Call the minimum relevant tools from granted package capability profiles.
+        Compare contradictory signals and disclose warnings or coverage gaps.
+        Synthesize a research-only report; never invent prices, filing facts,
+        event probabilities, or sentiment readings.
+      inputSchema:
+        type: object
+        properties:
+          researchQuestion:
+            type: string
+          outputLanguage:
+            type: string
+        required: [researchQuestion, outputLanguage]
+      outputSchema: digital_oracle_report
+      capabilityProfiles: [digital_oracle_phase1_tools]
+  workflows:
+    - key: research
+      name: Research
+      inputSchema:
+        type: object
+        properties:
+          researchQuestion:
+            type: string
+          outputLanguage:
+            type: string
+        required: [researchQuestion, outputLanguage]
+      flow:
+        kind: step
+        id: digital_oracle_research
+        slot: report
+        uses: digital_oracle_researcher
+        with:
+          researchQuestion: ${{{{ inputs.researchQuestion }}}}
+          outputLanguage: ${{{{ inputs.outputLanguage }}}}
+      output:
+        from: ${{{{ nodes.digital_oracle_research.outputs.report }}}}
+"""
+
+
 def _create_package(
     client: TestClient,
     *,
@@ -246,6 +369,139 @@ def _seed_model_connection(
             )
         )
         session.commit()
+
+
+def test_digital_oracle_package_local_system_prompt_receives_runtime_tool_guidance(
+    session_factory: sessionmaker[Session],
+) -> None:
+    manifest_source = _digital_oracle_guidance_package_source()
+    compiled = compile_workflow_package_manifest(manifest_source)
+    compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
+    plan = PackageExecutionPlanBuilder.build_from_compiled_plan(compiled_plan, "research")
+    runtime_agent = plan.steps[0].agents[0].package_runtime_agent
+    assert runtime_agent is not None
+    assert runtime_agent.key == "digital_oracle_researcher"
+    assert runtime_agent.system_prompt.startswith(
+        "Digital Oracle methodology is package-local for this agent."
+    )
+    assert [profile.key for profile in runtime_agent.capability_profiles] == [
+        "digital_oracle_phase1_tools"
+    ]
+    granted_tool_keys = {
+        tool_key for profile in runtime_agent.capability_profiles for tool_key in profile.tool_keys
+    }
+    assert granted_tool_keys == set(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
+
+    with session_factory() as session:
+        registry = ExtensionService(session).get_runtime_tool_registry()
+        guidance = registry.get_guidance(granted_tool_keys)
+
+    instructions = AgentExecutionService._build_model_instructions(
+        runtime_agent,
+        _DigitalOracleGuidanceOutput,
+        runtime_tool_guidance=guidance,
+    )
+
+    assert "skills:" not in manifest_source
+    assert "skills" not in compiled_plan
+    assert "Digital Oracle methodology" not in guidance
+    assert "Digital Oracle methodology is package-local for this agent." in instructions
+    assert "Decompose the research question before calling tools." in instructions
+    assert "Call the minimum relevant tools" in instructions
+    assert "call signaldeck_prediction_markets_lookup" in instructions
+    assert "call signaldeck_sec_filings_lookup" in instructions
+    assert "call signaldeck_market_sentiment_lookup" in instructions
+    assert instructions.index("Digital Oracle methodology") < instructions.index(
+        "When you need prediction-market signals"
+    )
+
+
+def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local_methodology(
+    session_factory: sessionmaker[Session],
+) -> None:
+    manifest_source = _digital_oracle_researcher_demo_source()
+    compiled = compile_workflow_package_manifest(manifest_source)
+    compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
+    plan = PackageExecutionPlanBuilder.build_from_compiled_plan(compiled_plan, "research")
+    runtime_agent = plan.steps[0].agents[0].package_runtime_agent
+    assert runtime_agent is not None
+    granted_tool_keys = {
+        tool_key for profile in runtime_agent.capability_profiles for tool_key in profile.tool_keys
+    }
+
+    with session_factory() as session:
+        registry = ExtensionService(session).get_runtime_tool_registry()
+        guidance = registry.get_guidance(granted_tool_keys)
+        declarations = registry.get_tool_declarations(granted_tool_keys)
+
+    instructions = AgentExecutionService._build_model_instructions(
+        runtime_agent,
+        _DigitalOracleGuidanceOutput,
+        runtime_tool_guidance=guidance,
+    )
+
+    assert len(plan.steps) == 1
+    assert plan.steps[0].agents[0].agent_key == "digital_oracle_researcher"
+    assert runtime_agent.output_schema.key == "digital_oracle_report"
+    assert granted_tool_keys == set(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
+    assert {declaration.tool_key for declaration in declarations} == granted_tool_keys
+    assert "Package-ready draft" not in manifest_source
+    assert "skills:" not in manifest_source
+    assert "spec.skills" not in manifest_source
+    assert "secrets:" not in manifest_source
+    assert "Digital Oracle methodology is package-local for this agent." in instructions
+    assert "Decompose each research question" in instructions
+    assert "Call the minimum relevant granted tools" in instructions
+    assert "Compare contradictory signals" in instructions
+    assert "Disclose warnings" in instructions
+    assert "Never invent prices" in instructions
+    assert "call signaldeck_prediction_markets_lookup" in instructions
+    assert "call signaldeck_sec_filings_lookup" in instructions
+    assert "call signaldeck_market_sentiment_lookup" in instructions
+
+
+def test_digital_oracle_guidance_omits_ungranted_phase1_tools_and_global_skill_surface(
+    session_factory: sessionmaker[Session],
+) -> None:
+    granted_profile_tool_keys = (
+        PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
+        SEC_FILINGS_LOOKUP_TOOL_KEY,
+    )
+    manifest_source = _digital_oracle_guidance_package_source(
+        tool_keys=granted_profile_tool_keys,
+    )
+    compiled = compile_workflow_package_manifest(manifest_source)
+    compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
+    plan = PackageExecutionPlanBuilder.build_from_compiled_plan(compiled_plan, "research")
+    runtime_agent = plan.steps[0].agents[0].package_runtime_agent
+    assert runtime_agent is not None
+    granted_tool_keys = {
+        tool_key for profile in runtime_agent.capability_profiles for tool_key in profile.tool_keys
+    }
+    assert granted_tool_keys == set(granted_profile_tool_keys)
+
+    with session_factory() as session:
+        registry = ExtensionService(session).get_runtime_tool_registry()
+        guidance = registry.get_guidance(granted_tool_keys)
+        declarations = registry.get_tool_declarations(granted_tool_keys)
+
+    instructions = AgentExecutionService._build_model_instructions(
+        runtime_agent,
+        _DigitalOracleGuidanceOutput,
+        runtime_tool_guidance=guidance,
+    )
+    declared_tool_keys = {declaration.tool_key for declaration in declarations}
+
+    assert declared_tool_keys == set(granted_profile_tool_keys)
+    assert MARKET_SENTIMENT_LOOKUP_TOOL_KEY not in declared_tool_keys
+    assert "Digital Oracle methodology" not in guidance
+    assert "signaldeck_prediction_markets_lookup" in instructions
+    assert "signaldeck_sec_filings_lookup" in instructions
+    assert "signaldeck_market_sentiment_lookup" not in instructions
+    assert "When you need broad market sentiment" not in guidance
+    assert "skills:" not in manifest_source
+    assert "skills" not in compiled_plan
+    assert not hasattr(runtime_agent, "skills")
 
 
 def test_runtime_profile_normalizes_api_style_and_rejects_snapshot_mismatch() -> None:
@@ -1812,10 +2068,6 @@ def test_tradingagents_advisory_research_runtime_fails_when_extension_disabled_a
     detail_response = client.get(f"/api/runs/{run_id}")
     assert detail_response.status_code == 200, detail_response.json()
     detail = detail_response.json()
-    assert detail["status"] == "failed"
-    assert detail["error"] == "Extension is disabled"
-    dependencies = cast(list[dict[str, object]], detail["extensionDependencies"])
-    assert set(dependencies[0]) == {"extensionKey", "surfaces", "fields"}
     assert detail["status"] == "failed"
     assert detail["error"] == "Extension is disabled"
     dependencies = cast(list[dict[str, object]], detail["extensionDependencies"])

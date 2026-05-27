@@ -47,6 +47,12 @@ from app.services.workflow_package_runtime_inputs import (
 from app.workers.run_scheduler import scheduler_lease_owner
 from tests.test_workflow_package_manifest_http_node import assert_removed_contract_tokens_absent
 
+_DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
+    "signaldeck.prediction_markets.lookup",
+    "signaldeck.sec_filings.lookup",
+    "signaldeck.market_sentiment.lookup",
+)
+
 
 class _RuntimeOpenAIUsage:
     def __init__(self, total_tokens: int) -> None:
@@ -146,9 +152,7 @@ class _RuntimeRecordingChatCompletionsClient:
                 tool_argument_sequence[call_index - 1]
                 if tool_argument_sequence is not None
                 else (
-                    "{"
-                    if type(self).malformed_tool_arguments
-                    else self._memory_lookup_arguments()
+                    "{" if type(self).malformed_tool_arguments else self._memory_lookup_arguments()
                 )
             )
             call_id = (
@@ -424,6 +428,86 @@ def _package_source_with_memory_lookup(*, package_key: str) -> str:
         "      capabilityProfiles: [memory_context_tools]\n  workflows:",
         1,
     )
+
+
+def _expected_digital_oracle_disabled_tool_errors() -> list[dict[str, object]]:
+    return [
+        {
+            "field": f"spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[{index}]",
+            "issue": (
+                f"Server-declared tool {tool_key!r} is disabled because extension "
+                f"{FINANCE_WORKSPACE_EXTENSION_KEY!r} is disabled"
+            ),
+            "code": "extension_disabled",
+            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "surface": f"tool.{tool_key}",
+        }
+        for index, tool_key in enumerate(sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS))
+    ]
+
+
+def _package_source_with_digital_oracle_phase1_tools(*, package_key: str) -> str:
+    return f"""apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: {package_key}
+  name: Digital Oracle Runtime Fixture
+  description: Runtime fixture for finance-owned phase-1 tool grants.
+spec:
+  inputs:
+    type: object
+    properties:
+      researchQuestion:
+        type: string
+    required: [researchQuestion]
+  capabilityProfiles:
+    - key: digital_oracle_phase1_tools
+      name: Digital Oracle Phase 1 Tools
+      toolKeys:
+        - signaldeck.prediction_markets.lookup
+        - signaldeck.sec_filings.lookup
+        - signaldeck.market_sentiment.lookup
+  outputSchemas:
+    - key: summary_output
+      name: Summary Output
+      jsonSchema:
+        type: object
+        properties:
+          summary:
+            type: string
+        required: [summary]
+  agents:
+    - key: package_analyst
+      name: Package Analyst
+      modelConnection: package_runtime_model
+      systemPrompt: Return a short JSON summary.
+      inputSchema:
+        type: object
+        properties:
+          researchQuestion:
+            type: string
+        required: [researchQuestion]
+      outputSchema: summary_output
+      capabilityProfiles: [digital_oracle_phase1_tools]
+  workflows:
+    - key: runtime_workflow
+      name: Runtime Workflow
+      inputSchema:
+        type: object
+        properties:
+          researchQuestion:
+            type: string
+        required: [researchQuestion]
+      flow:
+        kind: step
+        id: package_analysis
+        slot: analysis
+        uses: package_analyst
+        with:
+          researchQuestion: ${{{{ inputs.researchQuestion }}}}
+      output:
+        from: ${{{{ nodes.package_analysis.outputs.analysis }}}}
+"""
 
 
 def _package_source_with_inline_private_mcp(*, package_key: str) -> str:
@@ -2111,7 +2195,9 @@ def test_workflow_package_runtime_native_parser_retry_success_records_accounting
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeRecordingChatCompletionsClient.reset()
-    invalid_arguments = json.loads(_RuntimeRecordingChatCompletionsClient._memory_lookup_arguments())
+    invalid_arguments = json.loads(
+        _RuntimeRecordingChatCompletionsClient._memory_lookup_arguments()
+    )
     invalid_arguments["limit"] = 0
     _RuntimeRecordingChatCompletionsClient.tool_argument_sequence = [
         json.dumps(invalid_arguments, sort_keys=True),
@@ -2149,9 +2235,7 @@ def test_workflow_package_runtime_native_parser_retry_success_records_accounting
     invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
     gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
     retry_failure = gateway_metadata["toolCallRetries"]["failures"][0]
-    assert retry_failure["failureTaxonomy"]["failureClass"] == (
-        "native_tool_argument_validation"
-    )
+    assert retry_failure["failureTaxonomy"]["failureClass"] == ("native_tool_argument_validation")
     assert retry_failure["toolName"] == "signaldeck_memory_lookup"
     assert "limit" in retry_failure["details"][0]["field"]
 
@@ -2330,6 +2414,72 @@ def test_workflow_package_runtime_tool_policy_forbid_blocks_tool_dependent_packa
         ),
     } in launch.json()["details"]
     assert _RuntimeRecordingChatCompletionsClient.create_calls == []
+
+
+def test_workflow_package_runtime_digital_oracle_toolKeys_capture_dependency_snapshot(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_digital_oracle_phase1_tools(
+            package_key="runtime_digital_oracle_dependency_package"
+        ),
+    )
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={
+            "workflowKey": "runtime_workflow",
+            "parameters": {"researchQuestion": "Will rates fall this quarter?"},
+        },
+    )
+
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+    detail = client.get(f"/api/runs/{run_id}")
+    assert detail.status_code == 200, detail.json()
+    dependencies = cast(list[dict[str, object]], detail.json()["extensionDependencies"])
+    assert len(dependencies) == 1
+    dependency = dependencies[0]
+    surfaces = set(cast(list[str], dependency["surfaces"]))
+    assert dependency["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert set(cast(list[str], dependency["fields"])) == {
+        "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
+        "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
+        "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
+    }
+    assert {f"tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS} <= surfaces
+    assert {f"runtime.tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS} <= surfaces
+
+
+def test_workflow_package_runtime_digital_oracle_toolKeys_disabled_extension_shape(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_digital_oracle_phase1_tools(
+            package_key="runtime_digital_oracle_disabled_extension_package"
+        ),
+    )
+    _disable_finance_extension(session_factory)
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={
+            "workflowKey": "runtime_workflow",
+            "parameters": {"researchQuestion": "Will rates fall this quarter?"},
+        },
+    )
+
+    assert launch.status_code == 422, launch.json()
+    body = launch.json()
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Workflow package launch validation failed"
+    assert body["details"] == _expected_digital_oracle_disabled_tool_errors()
 
 
 def test_workflow_package_runtime_chat_completions_adapter_normalizes_empty_response_error(

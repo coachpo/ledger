@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import ToolCatalogValidationError, get_default_tool_catalog
 from app.agents.runtime_tools import get_default_runtime_tool_registry
@@ -16,11 +17,17 @@ from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
 )
 from app.schemas.memory import MEMORY_CORE_RUNTIME_TOOL_KEYS
+from app.services.extension_service import ExtensionService
 
+_DIGITAL_ORACLE_FINANCE_TOOL_KEYS = {
+    "signaldeck.prediction_markets.lookup",
+    "signaldeck.sec_filings.lookup",
+    "signaldeck.market_sentiment.lookup",
+}
 _REQUIRED_FINANCE_TOOL_KEYS = {
     "signaldeck.market_data.quote_lookup",
     "signaldeck.reports.lookup",
-}
+} | _DIGITAL_ORACLE_FINANCE_TOOL_KEYS
 _REQUIRED_CORE_TOOL_KEYS = set(MEMORY_CORE_RUNTIME_TOOL_KEYS)
 
 
@@ -28,6 +35,14 @@ def _valid_manifest_source() -> str:
     module = import_module("tests.test_workflow_package_manifest_parser")
     source_factory = cast(Callable[[], str], module.__dict__["_valid_package_manifest_source"])
     return source_factory()
+
+
+def _api_tool_keys(client: TestClient) -> set[str]:
+    response = client.get("/api/tools")
+    assert response.status_code == 200, response.json()
+    body = cast(dict[str, object], response.json())
+    items = cast(list[dict[str, object]], body["items"])
+    return {str(item["key"]) for item in items}
 
 
 def test_signaldeck_finance_tool_inventory_matches_catalog_and_runtime() -> None:
@@ -133,6 +148,67 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         assert "contributionCategories" not in tool
         assert "toolGrants" not in tool
         assert "toolDefinitions" not in tool
+
+
+def test_digital_oracle_api_tools_follow_extension_state_in_catalog_and_runtime(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    enabled_api_tool_keys = _api_tool_keys(client)
+    assert _DIGITAL_ORACLE_FINANCE_TOOL_KEYS <= enabled_api_tool_keys
+    assert _REQUIRED_CORE_TOOL_KEYS <= enabled_api_tool_keys
+
+    with session_factory() as session:
+        enabled_service = ExtensionService(session)
+        enabled_catalog_keys = {
+            tool.key for tool in enabled_service.get_tool_catalog().list_registered_tools()
+        }
+        enabled_runtime_registry = enabled_service.get_runtime_tool_registry()
+        enabled_runtime_keys = {spec.key for spec in enabled_runtime_registry.list_enabled_specs()}
+        enabled_descriptor_keys = {
+            descriptor.tool_key
+            for descriptor in enabled_runtime_registry.get_execution_descriptors(
+                _DIGITAL_ORACLE_FINANCE_TOOL_KEYS
+            )
+        }
+
+    assert _DIGITAL_ORACLE_FINANCE_TOOL_KEYS <= enabled_catalog_keys
+    assert _REQUIRED_CORE_TOOL_KEYS <= enabled_catalog_keys
+    assert _DIGITAL_ORACLE_FINANCE_TOOL_KEYS <= enabled_runtime_keys
+    assert _REQUIRED_CORE_TOOL_KEYS <= enabled_runtime_keys
+    assert enabled_descriptor_keys == _DIGITAL_ORACLE_FINANCE_TOOL_KEYS
+
+    response = client.patch(
+        f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
+        json={"enabled": False},
+    )
+    assert response.status_code == 200, response.json()
+
+    disabled_api_tool_keys = _api_tool_keys(client)
+    assert not _DIGITAL_ORACLE_FINANCE_TOOL_KEYS & disabled_api_tool_keys
+    assert _REQUIRED_CORE_TOOL_KEYS <= disabled_api_tool_keys
+
+    with session_factory() as session:
+        disabled_service = ExtensionService(session)
+        disabled_catalog_keys = {
+            tool.key for tool in disabled_service.get_tool_catalog().list_registered_tools()
+        }
+        disabled_runtime_registry = disabled_service.get_runtime_tool_registry()
+        disabled_runtime_keys = {
+            spec.key for spec in disabled_runtime_registry.list_enabled_specs()
+        }
+        disabled_descriptor_keys = {
+            descriptor.tool_key
+            for descriptor in disabled_runtime_registry.get_execution_descriptors(
+                _DIGITAL_ORACLE_FINANCE_TOOL_KEYS | _REQUIRED_CORE_TOOL_KEYS
+            )
+        }
+
+    assert not _DIGITAL_ORACLE_FINANCE_TOOL_KEYS & disabled_catalog_keys
+    assert _REQUIRED_CORE_TOOL_KEYS <= disabled_catalog_keys
+    assert not _DIGITAL_ORACLE_FINANCE_TOOL_KEYS & disabled_runtime_keys
+    assert _REQUIRED_CORE_TOOL_KEYS <= disabled_runtime_keys
+    assert disabled_descriptor_keys == _REQUIRED_CORE_TOOL_KEYS
 
 
 def test_tools_catalog_route_is_get_only(client: TestClient) -> None:

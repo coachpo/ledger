@@ -85,7 +85,47 @@ export const financeWorkspaceFrontendExtension = {
   toolAuthoringDiscovery: [
     {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.",
+      toolKeyPrefix: "signaldeck.market_data.",
+    },
+    {
+      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      toolKeyPrefix: "signaldeck.indicators.",
+    },
+    {
+      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      toolKeyPrefix: "signaldeck.fundamentals.",
+    },
+    {
+      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      toolKeyPrefix: "signaldeck.news.",
+    },
+    {
+      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      toolKeyPrefix: "signaldeck.social_sentiment.",
+    },
+    {
+      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      toolKeyPrefix: "signaldeck.insider_data.",
+    },
+    {
+      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      toolKeyPrefix: "signaldeck.positions.",
+    },
+    {
+      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      toolKeyPrefix: "signaldeck.reports.",
+    },
+    {
+      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      toolKeyPrefix: "signaldeck.prediction_markets.",
+    },
+    {
+      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      toolKeyPrefix: "signaldeck.sec_filings.",
+    },
+    {
+      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      toolKeyPrefix: "signaldeck.market_sentiment.",
     },
   ],
 } as const satisfies FrontendExtensionDefinition;

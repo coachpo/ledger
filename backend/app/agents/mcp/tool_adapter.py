@@ -134,7 +134,6 @@ def validate_native_runtime_input_schema(schema: Mapping[str, object]) -> None:
     _validate_strict_schema_node(dict(schema), path="inputSchema", require_object_root=True)
 
 
-
 def build_native_runtime_tool_descriptor(
     *,
     key: str,
@@ -143,8 +142,10 @@ def build_native_runtime_tool_descriptor(
     parameters_schema: Mapping[str, object],
     owner_extension_key: str | None,
 ) -> ExecutionToolDescriptor:
-    strict_schema = deepcopy(dict(parameters_schema))
-    validate_native_runtime_input_schema(strict_schema)
+    strict_schema = _convert_native_runtime_strict_schema(
+        parameters_schema,
+        path="inputSchema",
+    )
     return ExecutionToolDescriptor(
         kind="native_runtime",
         tool_key=key,
@@ -377,7 +378,6 @@ def _validate_descriptor_shape(descriptor: ExecutionToolDescriptor) -> None:
         raise McpToolAdapterError("MCP descriptor identity is incomplete")
 
 
-
 def _validate_strict_schema_node(
     schema: object,
     *,
@@ -444,6 +444,22 @@ def _validate_strict_schema_node(
         _validate_strict_schema_node(raw["items"], path=f"{path}.items")
 
 
+def _convert_native_runtime_strict_schema(
+    schema: object,
+    *,
+    path: str,
+) -> dict[str, object]:
+    if not isinstance(schema, Mapping):
+        raise McpToolAdapterError(f"{path} must be an object")
+    raw = _string_key_mapping(schema, path=path)
+    if "type" not in raw:
+        raise McpToolAdapterError(f"{path}.type is required")
+    type_values = _schema_type_values(raw.get("type"), path=path)
+    if "object" not in type_values:
+        raise McpToolAdapterError("Native runtime input schema root must be object")
+    converted = _convert_runtime_object_schema(raw, path=path)
+    return converted
+
 
 def _convert_schema_node(
     schema: object,
@@ -461,7 +477,17 @@ def _convert_schema_node(
     if require_object_root and "object" not in type_values:
         raise McpToolAdapterError("MCP input schema root must be object")
     converted: dict[str, object] = {"type": raw["type"]}
-    optional_keys = ("description", "enum", "const", "minimum", "maximum", "minLength", "maxLength")
+    optional_keys = (
+        "description",
+        "enum",
+        "const",
+        "minimum",
+        "maximum",
+        "minLength",
+        "maxLength",
+        "minItems",
+        "maxItems",
+    )
     for optional_key in optional_keys:
         if optional_key in raw:
             converted[optional_key] = deepcopy(raw[optional_key])
@@ -480,6 +506,8 @@ def _convert_schema_node(
         "maximum",
         "minLength",
         "maxLength",
+        "minItems",
+        "maxItems",
     }
     if "object" in type_values:
         allowed.update({"properties", "required", "additionalProperties"})
@@ -488,6 +516,59 @@ def _convert_schema_node(
     extra = sorted(set(raw) - allowed)
     if extra:
         raise McpToolAdapterError(f"{path} contains unsupported keywords: {', '.join(extra)}")
+    return converted
+
+
+def _convert_runtime_object_schema(raw: Mapping[str, object], *, path: str) -> dict[str, object]:
+    raw_properties = raw.get("properties", {})
+    if not isinstance(raw_properties, Mapping):
+        raise McpToolAdapterError(f"{path}.properties must be an object")
+    properties = _string_key_mapping(raw_properties, path=f"{path}.properties")
+    required_raw = raw.get("required", [])
+    if not isinstance(required_raw, Sequence) or isinstance(required_raw, (str, bytes, bytearray)):
+        raise McpToolAdapterError(f"{path}.required must be an array")
+    public_required: list[str] = []
+    for value in required_raw:
+        if not isinstance(value, str) or not value:
+            raise McpToolAdapterError(f"{path}.required entries must be non-empty strings")
+        public_required.append(value)
+    if len(public_required) != len(set(public_required)):
+        raise McpToolAdapterError(f"{path}.required contains duplicate entries")
+    if not set(public_required).issubset(properties):
+        raise McpToolAdapterError(f"{path}.required must match properties")
+    converted_properties = {
+        key: _convert_runtime_property_schema(
+            value,
+            path=f"{path}.properties.{key}",
+            required=key in public_required,
+        )
+        for key, value in sorted(properties.items())
+    }
+    return {
+        "type": raw["type"],
+        "properties": converted_properties,
+        "required": list(converted_properties),
+        "additionalProperties": False,
+    }
+
+
+def _convert_runtime_property_schema(
+    schema: object,
+    *,
+    path: str,
+    required: bool,
+) -> dict[str, object]:
+    converted = _convert_schema_node(schema, path=path)
+    if required:
+        return converted
+    type_value = converted.get("type")
+    if isinstance(type_value, list):
+        if "null" not in type_value:
+            converted["type"] = [*type_value, "null"]
+    elif isinstance(type_value, str):
+        converted["type"] = [type_value, "null"]
+    else:
+        converted["type"] = [type_value, "null"]
     return converted
 
 
