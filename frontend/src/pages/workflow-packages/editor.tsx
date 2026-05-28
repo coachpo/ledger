@@ -570,7 +570,7 @@ export function WorkflowPackageEditorPage() {
                         key={tab.value}
                         value={tab.value}
                         aria-label={`${tab.label} tab`}
-                        className="h-auto justify-start gap-3 whitespace-normal px-3 py-2 text-left data-[state=active]:border-border/80 data-[state=active]:bg-muted"
+                        className="h-auto justify-start gap-3 whitespace-normal px-3 py-2 text-left"
                         onClick={() => selectEditorTab(tab.value)}
                       >
                         <Icon aria-hidden="true" />
