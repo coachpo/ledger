@@ -448,8 +448,8 @@ export function RunsDetailPage() {
                     className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-normal text-muted-foreground"
                     data-testid="runs-detail-identity-line">
                     <Badge variant="outline">{targetKindLabel}</Badge>  
-                    <span aria-hidden="true"> | </span>
-                    {run.packageProvenance ? (
+                      {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
+                      {run.packageProvenance ? (
                       <span className="min-w-0 max-w-full break-words">
                         {run.packageProvenance.workflowPackageName}
                       </span>
@@ -458,8 +458,6 @@ export function RunsDetailPage() {
                         {run.targetKey}
                       </span>
                     )}
-                    <span aria-hidden="true"> | </span>
-                      {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
                   </span>
                   <span
                     className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal text-muted-foreground"
