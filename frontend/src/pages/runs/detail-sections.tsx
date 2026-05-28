@@ -120,7 +120,6 @@ import {
   inspectionPaneLabel,
   inspectionPanesForTarget,
   inspectionTargetKindLabel,
-  RUN_INSPECTION_MODES,
   type RunInspectionMode,
   type RunInspectionPane,
   type RunInspectionState,
@@ -838,7 +837,6 @@ export function RunOutputWorkspace({ run }: { run: RunRead }) {
 
   return (
     <div className="grid min-w-0 gap-3" data-testid="runs-output-workspace">
-      <RunFinalOutputPane run={run} />
       <RunDetailSectionBlock
         blockId="output-provenance"
         description="Output provenance stays beside the rendered payload while raw payload detail is available from metadata rows."
@@ -946,8 +944,6 @@ export function RunOverviewWorkspace({
       ? "Queued without queue detail"
       : "No queue hold";
   const outputState = finalOutputState(run);
-  const providerCount =
-    run.packageProvenance?.resolvedModelConnections.length ?? 0;
 
   return (
     <section className="grid min-w-0 gap-3" data-testid="runs-overview-workspace">
@@ -1006,34 +1002,42 @@ export function RunOverviewWorkspace({
           </div>
         </div>
       </RunDetailSectionBlock>
-      <RunDetailSectionBlock
-        blockId="evidence-availability"
-        description="Evidence availability without opening the secondary evidence modes."
-        icon={FileText}
-        title="Evidence availability"
-      >
-        <EvidenceCluster
-          items={[
-            {
-              label: "Runtime",
-              value: `${providerCount} provider/model row${providerCount === 1 ? "" : "s"}`,
-              description: "Open Runtime for provider and capability rows.",
-            },
-            {
-              label: "Audit",
-              value: `${run.memoryEvents.length} memory event${run.memoryEvents.length === 1 ? "" : "s"}`,
-              description: `${run.memoryArtifacts.length} artifact${run.memoryArtifacts.length === 1 ? "" : "s"} available for audit drill-down.`,
-            },
-            {
-              label: "Usage",
-              value: `${run.executedTokens.toLocaleString()} executed tokens`,
-              description: `${run.inheritedTokens.toLocaleString()} inherited tokens copied into this snapshot.`,
-            },
-          ]}
-          layout="grid"
-        />
-      </RunDetailSectionBlock>
     </section>
+  );
+}
+
+export function RunEvidenceAvailabilitySection({ run }: { run: RunRead }) {
+  const providerCount =
+    run.packageProvenance?.resolvedModelConnections.length ?? 0;
+
+  return (
+    <RunDetailSectionBlock
+      blockId="evidence-availability"
+      description="Evidence availability without opening the secondary evidence modes."
+      icon={FileText}
+      title="Evidence availability"
+    >
+      <EvidenceCluster
+        items={[
+          {
+            label: "Runtime",
+            value: `${providerCount} provider/model row${providerCount === 1 ? "" : "s"}`,
+            description: "Open Runtime for provider and capability rows.",
+          },
+          {
+            label: "Audit",
+            value: `${run.memoryEvents.length} memory event${run.memoryEvents.length === 1 ? "" : "s"}`,
+            description: `${run.memoryArtifacts.length} artifact${run.memoryArtifacts.length === 1 ? "" : "s"} available for audit drill-down.`,
+          },
+          {
+            label: "Usage",
+            value: `${run.executedTokens.toLocaleString()} executed tokens`,
+            description: `${run.inheritedTokens.toLocaleString()} inherited tokens copied into this snapshot.`,
+          },
+        ]}
+        layout="grid"
+      />
+    </RunDetailSectionBlock>
   );
 }
 
@@ -1532,66 +1536,6 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
       </RunDetailSectionBlock>
 
       <RunDetailSectionBlock
-        blockId="capability-matrix"
-        description="Capability probes are row-first so repeated provider evidence stays comparable."
-        icon={Activity}
-        title="Capability matrix"
-      >
-        {resolvedModelConnections.length === 0 ? (
-          <RunDetailEmptyState testId="runs-runtime-capability-empty">
-            No capability probes were recorded.
-          </RunDetailEmptyState>
-        ) : (
-          <RunDetailTableFrame testId="runs-runtime-capability-matrix">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Capability</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Probe detail</TableHead>
-                  <TableHead>Last probed</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {resolvedModelConnections.flatMap((connection) =>
-                  CAPABILITY_ORDER.map((capabilityKey) => {
-                    const state = connection.capabilities[capabilityKey];
-                    return (
-                      <TableRow
-                        data-testid={`runs-runtime-capability-${connection.key}-${capabilityKey}`}
-                        key={`${connection.key}-${capabilityKey}`}
-                      >
-                        <TableCell className="whitespace-normal align-top font-medium">
-                          {connection.name}
-                        </TableCell>
-                        <TableCell className="whitespace-normal align-top">
-                          {CAPABILITY_LABELS[capabilityKey]}
-                        </TableCell>
-                        <TableCell className="align-top">
-                          <Badge variant={capabilityStatusVariant(state.status)}>
-                            {capabilityStatusLabel(state.status)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
-                          {state.detail || "No probe detail recorded."}
-                        </TableCell>
-                        <TableCell className="whitespace-normal align-top text-muted-foreground">
-                          {state.lastProbedAt
-                            ? formatDateTime(state.lastProbedAt)
-                            : "Not recorded"}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  }),
-                )}
-              </TableBody>
-            </Table>
-          </RunDetailTableFrame>
-        )}
-      </RunDetailSectionBlock>
-
-      <RunDetailSectionBlock
         blockId="selected-strategies"
         description="Adapter-selected strategy metadata is repeated invocation evidence, so it stays in rows."
         icon={Activity}
@@ -1657,6 +1601,66 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
               </Table>
             </RunDetailTableFrame>
           </div>
+        )}
+      </RunDetailSectionBlock>
+
+      <RunDetailSectionBlock
+        blockId="capability-matrix"
+        description="Capability probes are row-first so repeated provider evidence stays comparable."
+        icon={Activity}
+        title="Capability matrix"
+      >
+        {resolvedModelConnections.length === 0 ? (
+          <RunDetailEmptyState testId="runs-runtime-capability-empty">
+            No capability probes were recorded.
+          </RunDetailEmptyState>
+        ) : (
+          <RunDetailTableFrame testId="runs-runtime-capability-matrix">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Capability</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Probe detail</TableHead>
+                  <TableHead>Last probed</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {resolvedModelConnections.flatMap((connection) =>
+                  CAPABILITY_ORDER.map((capabilityKey) => {
+                    const state = connection.capabilities[capabilityKey];
+                    return (
+                      <TableRow
+                        data-testid={`runs-runtime-capability-${connection.key}-${capabilityKey}`}
+                        key={`${connection.key}-${capabilityKey}`}
+                      >
+                        <TableCell className="whitespace-normal align-top font-medium">
+                          {connection.name}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top">
+                          {CAPABILITY_LABELS[capabilityKey]}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge variant={capabilityStatusVariant(state.status)}>
+                            {capabilityStatusLabel(state.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
+                          {state.detail || "No probe detail recorded."}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-muted-foreground">
+                          {state.lastProbedAt
+                            ? formatDateTime(state.lastProbedAt)
+                            : "Not recorded"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }),
+                )}
+              </TableBody>
+            </Table>
+          </RunDetailTableFrame>
         )}
       </RunDetailSectionBlock>
     </div>
@@ -3885,60 +3889,27 @@ function RunMemoryEvidence({ run }: { run: RunRead }) {
   const hasArtifacts = run.memoryArtifacts.length > 0;
 
   return (
-    <Card data-testid="runs-memory-evidence">
-      <CardHeader>
-        <CardTitle className="text-base">Run memory evidence</CardTitle>
-        <CardDescription>
-          Run-scoped memory events and compact artifacts.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        {!hasEvents && !hasArtifacts ? (
-          <CompactModeEmptyState testId="runs-memory-evidence-empty">
-            No retrieval, write, review, audit, or compact memory artifact evidence was recorded for this run.
-          </CompactModeEmptyState>
-        ) : null}
+    <div className="space-y-5" data-testid="runs-memory-evidence">
+      <h3 className="text-base font-medium leading-none">Run memory evidence</h3>
+      <p className="text-sm text-muted-foreground">
+        Run-scoped memory events and compact artifacts.
+      </p>
+      {!hasEvents && !hasArtifacts ? (
+        <CompactModeEmptyState testId="runs-memory-evidence-empty">
+          No retrieval, write, review, audit, or compact memory artifact evidence was recorded for this run.
+        </CompactModeEmptyState>
+      ) : null}
 
-        {hasEvents
-          ? MEMORY_EVENT_GROUPS.map((definition) => (
-              <MemoryEventGroupSection
-                definition={definition}
-                events={groupedEvents[definition.key]}
-                key={definition.key}
-              />
-            ))
-          : null}
-
-        {hasArtifacts ? (
-          <section
-            aria-labelledby="runs-memory-compact-artifacts-heading"
-            className="space-y-3"
-            data-testid="runs-memory-compact-artifacts"
-          >
-            <div>
-              <h3
-                className="text-base font-medium leading-none"
-                id="runs-memory-compact-artifacts-heading"
-              >
-                Compact artifact slice
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                These artifacts summarize memory rows written for human audit;
-                they do not replace the event groups above.
-              </p>
-            </div>
-            <div className="grid gap-3">
-              {run.memoryArtifacts.map((artifact) => (
-                <MemoryArtifactSummaryCard
-                  artifact={artifact}
-                  key={artifact.memoryId}
-                />
-              ))}
-            </div>
-          </section>
-        ) : null}
-      </CardContent>
-    </Card>
+      {hasEvents
+        ? MEMORY_EVENT_GROUPS.map((definition) => (
+            <MemoryEventGroupSection
+              definition={definition}
+              events={groupedEvents[definition.key]}
+              key={definition.key}
+            />
+          ))
+        : null}
+    </div>
   );
 }
 
@@ -4373,9 +4344,8 @@ type RunDetailSectionStackProps = {
   traceSpanEntries: TraceSpanEntry[];
 };
 
-function renderRunInspectionSection(
-  mode: RunInspectionMode,
-  {
+export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
+  const {
     activeInspection,
     allInvocationsCount,
     copiedInvocations,
@@ -4391,99 +4361,115 @@ function renderRunInspectionSection(
     targetKindLabel,
     terminalInvocationsCount,
     traceSpanEntries,
-  }: RunDetailSectionStackProps,
-) {
-  if (mode === "outputs") {
-    return <RunOutputWorkspace run={run} />;
-  }
-  if (mode === "inputs") {
-    return <RunInputWorkspace run={run} />;
-  }
-  if (mode === "execution") {
-    return (
-      <ExecutionOutline
-        activeInspection={activeInspection}
-        copiedInvocations={copiedInvocations}
-        copiedSteps={copiedSteps}
-        isCurrentFork={isCurrentFork}
-        onOpenFork={onOpenFork}
-        onSelect={onSelect}
-        plannedInvocations={plannedInvocations}
-        plannedSteps={plannedSteps}
-        run={run}
-        steps={steps}
-        traceSpanEntries={traceSpanEntries}
-      />
-    );
-  }
-  if (mode === "runtime") {
-    return (
-      <div className="grid min-w-0 gap-3" data-testid="runs-runtime-workspace">
-        <RunRuntimeProfileSection run={run} />
-        <RunTokensWorkspace run={run} />
-      </div>
-    );
-  }
-  if (mode === "metadata") {
-    return (
-      <RunAuditEvidenceSection
-        activeInspection={activeInspection}
-        copiedInvocations={copiedInvocations}
-        copiedSteps={copiedSteps}
-        isCurrentFork={isCurrentFork}
-        onOpenFork={onOpenFork}
-        onSelect={onSelect}
-        plannedInvocations={plannedInvocations}
-        plannedSteps={plannedSteps}
-        run={run}
-        steps={steps}
-        traceSpanEntries={traceSpanEntries}
-      />
-    );
-  }
-  if (mode === "lineage") {
-    return (
-      <RunLineageWorkspace
-        copiedInvocations={copiedInvocations}
-        copiedSteps={copiedSteps}
-        isCurrentFork={isCurrentFork}
-        plannedInvocations={plannedInvocations}
-        plannedSteps={plannedSteps}
-        run={run}
-      />
-    );
-  }
-  if (mode === "memory") {
-    return <RunMemoryWorkspace run={run} />;
-  }
-  if (mode === "diagnostics") {
-    return <RunDiagnosticsWorkspace run={run} steps={steps} />;
-  }
-  return (
-    <RunOverviewWorkspace
-      allInvocationsCount={allInvocationsCount}
-      run={run}
-      runProgress={runProgress}
-      targetKindLabel={targetKindLabel}
-      terminalInvocationsCount={terminalInvocationsCount}
-      traceSpanEntries={traceSpanEntries}
-    />
-  );
-}
+  } = props;
 
-export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
   return (
     <div className="grid min-w-0 gap-3" data-testid="runs-stacked-workspace">
-      {RUN_INSPECTION_MODES.map((mode) => (
+      <section className="min-w-0" data-testid="runs-stacked-section-summary">
+        <RunOverviewWorkspace
+          allInvocationsCount={allInvocationsCount}
+          run={run}
+          runProgress={runProgress}
+          targetKindLabel={targetKindLabel}
+          terminalInvocationsCount={terminalInvocationsCount}
+          traceSpanEntries={traceSpanEntries}
+        />
+      </section>
+      <section className="min-w-0" data-testid="runs-stacked-section-final-output">
+        <RunFinalOutputPane run={run} />
+      </section>
+      <section
+        className="min-w-0"
+        data-testid="runs-stacked-section-evidence-availability"
+      >
+        <RunEvidenceAvailabilitySection run={run} />
+      </section>
+      <section className="min-w-0" data-testid="runs-stacked-section-diagnostics">
+        <RunDiagnosticsWorkspace run={run} steps={steps} />
+      </section>
+      <section className="min-w-0" data-testid="runs-stacked-section-execution">
+        <ExecutionOutline
+          activeInspection={activeInspection}
+          copiedInvocations={copiedInvocations}
+          copiedSteps={copiedSteps}
+          isCurrentFork={isCurrentFork}
+          onOpenFork={onOpenFork}
+          onSelect={onSelect}
+          plannedInvocations={plannedInvocations}
+          plannedSteps={plannedSteps}
+          run={run}
+          steps={steps}
+          traceSpanEntries={traceSpanEntries}
+        />
+      </section>
+      <section className="min-w-0" data-testid="runs-stacked-section-inputs">
+        <RunInputWorkspace run={run} />
+      </section>
+      <section className="min-w-0" data-testid="runs-stacked-section-outputs">
+        <RunOutputWorkspace run={run} />
+      </section>
+      <section className="min-w-0" data-testid="runs-stacked-section-memory">
+        <RunMemoryWorkspace run={run} />
+      </section>
+      <section className="min-w-0" data-testid="runs-stacked-section-runtime">
+        <div className="grid min-w-0 gap-3" data-testid="runs-runtime-workspace">
+          <RunRuntimeProfileSection run={run} />
+          <RunTokensWorkspace run={run} />
+        </div>
+      </section>
+      <section className="min-w-0" data-testid="runs-stacked-section-lineage">
+        <RunLineageWorkspace
+          copiedInvocations={copiedInvocations}
+          copiedSteps={copiedSteps}
+          isCurrentFork={isCurrentFork}
+          plannedInvocations={plannedInvocations}
+          plannedSteps={plannedSteps}
+          run={run}
+        />
+      </section>
+      {run.memoryArtifacts.length > 0 ? (
         <section
-          className="min-w-0"
-          data-run-mode={mode}
-          data-testid={`runs-stacked-section-${mode}`}
-          key={mode}
+          aria-labelledby="runs-memory-compact-artifacts-heading"
+          className="min-w-0 space-y-3"
+          data-testid="runs-memory-compact-artifacts"
         >
-          {renderRunInspectionSection(mode, props)}
+          <div>
+            <h3
+              className="text-base font-medium leading-none"
+              id="runs-memory-compact-artifacts-heading"
+            >
+              Compact artifact slice
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              These artifacts summarize memory rows written for human audit;
+              they do not replace the event groups above.
+            </p>
+          </div>
+          <div className="grid gap-3">
+            {run.memoryArtifacts.map((artifact) => (
+              <MemoryArtifactSummaryCard
+                artifact={artifact}
+                key={artifact.memoryId}
+              />
+            ))}
+          </div>
         </section>
-      ))}
+      ) : null}
+      <section className="min-w-0" data-testid="runs-stacked-section-metadata">
+        <RunAuditEvidenceSection
+          activeInspection={activeInspection}
+          copiedInvocations={copiedInvocations}
+          copiedSteps={copiedSteps}
+          isCurrentFork={isCurrentFork}
+          onOpenFork={onOpenFork}
+          onSelect={onSelect}
+          plannedInvocations={plannedInvocations}
+          plannedSteps={plannedSteps}
+          run={run}
+          steps={steps}
+          traceSpanEntries={traceSpanEntries}
+        />
+      </section>
     </div>
   );
 }

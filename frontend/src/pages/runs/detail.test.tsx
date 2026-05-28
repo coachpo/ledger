@@ -645,8 +645,32 @@ describe("RunsDetailPage", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
-          memoryEvents: [buildMemoryEvent()],
-          packageProvenance: buildPackageProvenance(),
+          memoryArtifacts: [
+            {
+              createdAt: NOW,
+              memoryId: "memory_safe",
+              provenance: {
+                agentKey: "portfolio_manager",
+                agentVersion: 3,
+                createdByType: "agent",
+                runId: 42,
+                slot: "decision",
+                workflowKey: "market_review",
+              },
+              sourceGraphMetadata: null,
+              status: "active",
+              summary: "Compact safe memory",
+            },
+          ],
+          memoryEvents: [
+            buildMemoryEvent({ id: 9101, eventType: "retrieved" }),
+            buildMemoryEvent({ id: 9102, eventType: "written" }),
+            buildMemoryEvent({ id: 9103, eventType: "reviewed" }),
+            buildMemoryEvent({ id: 9104, eventType: "failed" }),
+          ],
+          packageProvenance: buildPackageProvenance({
+            resolvedModelConnections: [buildResolvedModelConnection({})],
+          }),
         }),
       ),
     );
@@ -659,22 +683,37 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
 
     const stack = screen.getByTestId("runs-stacked-workspace");
-    const sectionIds = [
-      "runs-stacked-section-summary",
-      "runs-stacked-section-execution",
-      "runs-stacked-section-diagnostics",
-      "runs-stacked-section-inputs",
-      "runs-stacked-section-outputs",
-      "runs-stacked-section-runtime",
-      "runs-stacked-section-memory",
-      "runs-stacked-section-lineage",
-      "runs-stacked-section-metadata",
+    const expectedSections = [
+      ["runs-detail-section-operational-overview", "Operational overview"],
+      ["runs-detail-section-final-output", "Final output"],
+      ["runs-detail-section-evidence-availability", "Evidence availability"],
+      ["runs-detail-section-diagnostics", "Diagnostics"],
+      ["runs-detail-section-execution-steps", "Execution steps"],
+      ["runs-detail-section-run-input", "Run input"],
+      ["runs-detail-section-input-provenance", "Input provenance"],
+      ["runs-detail-section-output-provenance", "Output provenance"],
+      ["runs-detail-section-memory", "Memory"],
+      ["runs-memory-evidence", "Run memory evidence"],
+      ["runs-memory-group-retrievedContext", "Retrieved context"],
+      ["runs-memory-group-memoryWrites", "Memory written and reused"],
+      ["runs-memory-group-reviewFollowUp", "Review and follow-up"],
+      ["runs-memory-group-auditTrail", "Audit trail"],
+      ["runs-detail-section-runtime-profile", "Runtime profile"],
+      ["runs-detail-section-selected-strategies", "Selected strategies"],
+      ["runs-detail-section-capability-matrix", "Capability matrix"],
+      ["runs-detail-section-token-accounting", "Token accounting"],
+      ["runs-detail-section-invocation-usage-rows", "Invocation usage rows"],
+      ["runs-detail-section-lineage", "Lineage"],
+      ["runs-memory-compact-artifacts", "Compact artifact slice"],
+      ["runs-detail-section-metadata", "Metadata"],
     ];
-    const sections = sectionIds.map((sectionId) =>
-      within(stack).getByTestId(sectionId),
-    );
+    const sections = expectedSections.map(([sectionId, title]) => {
+      const section = within(stack).getByTestId(sectionId);
+      expect(section).toHaveTextContent(title);
+      return section;
+    });
 
-    expect(sections).toHaveLength(sectionIds.length);
+    expect(sections).toHaveLength(expectedSections.length);
     sections.slice(1).forEach((section, index) => {
       expect(
         sections[index].compareDocumentPosition(section) &
@@ -710,19 +749,19 @@ describe("RunsDetailPage", () => {
     const stack = screen.getByTestId("runs-stacked-workspace");
     const expectedBlocks = [
       ["operational-overview", "Operational overview"],
+      ["final-output", "Final output"],
       ["evidence-availability", "Evidence availability"],
-      ["execution-steps", "Execution steps"],
       ["diagnostics", "Diagnostics"],
+      ["execution-steps", "Execution steps"],
       ["run-input", "Run input"],
       ["input-provenance", "Input provenance"],
-      ["final-output", "Final output"],
       ["output-provenance", "Output provenance"],
+      ["memory", "Memory"],
       ["runtime-profile", "Runtime profile"],
-      ["capability-matrix", "Capability matrix"],
       ["selected-strategies", "Selected strategies"],
+      ["capability-matrix", "Capability matrix"],
       ["token-accounting", "Token accounting"],
       ["invocation-usage-rows", "Invocation usage rows"],
-      ["memory", "Memory"],
       ["lineage", "Lineage"],
       ["metadata", "Metadata"],
     ];
@@ -954,8 +993,9 @@ describe("RunsDetailPage", () => {
     const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
     expect(memoryWorkspace).toHaveTextContent(/retrieved context/i);
     expect(memoryWorkspace).toHaveTextContent(/memory written and reused/i);
-    expect(memoryWorkspace).toHaveTextContent(/compact artifact slice/i);
-    expect(within(memoryWorkspace).getByTestId("runs-memory-compact-artifact-memory_safe"))
+    expect(screen.getByTestId("runs-memory-compact-artifacts"))
+      .toHaveTextContent(/compact artifact slice/i);
+    expect(screen.getByTestId("runs-memory-compact-artifact-memory_safe"))
       .toHaveTextContent(/Compact safe memory/i);
     memoryRender.unmount();
 
@@ -1635,8 +1675,13 @@ describe("RunsDetailPage", () => {
     expect(
       within(overview).getByRole("heading", { name: /operational overview/i }),
     ).toBeVisible();
+    const evidenceAvailability = screen.getByTestId(
+      "runs-detail-section-evidence-availability",
+    );
     expect(
-      within(overview).getByRole("heading", { name: /evidence availability/i }),
+      within(evidenceAvailability).getByRole("heading", {
+        name: /evidence availability/i,
+      }),
     ).toBeVisible();
     expect(screen.getByTestId("runs-summary-execution-row")).toHaveTextContent(
       /2 of 2 invocation\(s\) terminal/i,
@@ -1644,8 +1689,8 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-summary-progress-row")).toHaveTextContent(
       /100%/i,
     );
-    expect(overview).toHaveTextContent(/30 executed tokens/i);
-    expect(overview).toHaveTextContent(/21 inherited tokens/i);
+    expect(evidenceAvailability).toHaveTextContent(/30 executed tokens/i);
+    expect(evidenceAvailability).toHaveTextContent(/21 inherited tokens/i);
 
     overviewRender.unmount();
     searchParamsMock = new URLSearchParams("mode=runtime");
@@ -2301,9 +2346,13 @@ describe("RunsDetailPage", () => {
     searchParamsMock = new URLSearchParams("inspect=run&pane=memory");
     render(<RunsDetailPage />);
 
+    const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
     expect(screen.getByTestId("runs-memory-evidence")).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: /run memory evidence/i }),
+      within(memoryWorkspace).getByRole("heading", { name: /run memory evidence/i }),
+    ).toBeVisible();
+    expect(
+      within(memoryWorkspace).getByRole("heading", { name: /^memory$/i }),
     ).toBeVisible();
     expect(
       screen.getByRole("heading", { name: /retrieved context/i }),
@@ -2345,12 +2394,10 @@ describe("RunsDetailPage", () => {
     expect(
       screen.getByTestId("runs-memory-event-9106-status"),
     ).toHaveTextContent(/memory_write_failed/i);
-    expect(
-      screen.getByTestId("runs-memory-compact-artifacts"),
-    ).toHaveTextContent(/compact artifact slice/i);
-    expect(
-      screen.getByTestId("runs-memory-compact-artifact-memory_safe"),
-    ).toHaveTextContent(/Compact safe memory/i);
+    expect(screen.getByTestId("runs-memory-compact-artifacts"))
+      .toHaveTextContent(/compact artifact slice/i);
+    expect(screen.getByTestId("runs-memory-compact-artifact-memory_safe"))
+      .toHaveTextContent(/Compact safe memory/i);
     expect(
       screen.queryByTestId("runs-memory-artifacts-empty"),
     ).not.toBeInTheDocument();
