@@ -789,7 +789,7 @@ describe("RunsDetailPage", () => {
       { card: runInputCard, sectionId: "runs-detail-section-run-input" },
     ];
 
-    expect(finalOutputCard).toHaveClass("min-h-[136px]");
+    expect(finalOutputCard).not.toHaveClass("min-h-[136px]");
     expect(runInputCard).not.toHaveClass("min-h-[136px]");
     collapsedBlocks.forEach(({ card, sectionId }) => {
       expect(screen.getByTestId(sectionId)).toHaveAttribute(
@@ -1166,9 +1166,10 @@ describe("RunsDetailPage", () => {
 
     searchParamsMock = new URLSearchParams("mode=execution");
     const executionRender = render(<RunsDetailPage />);
-    fireEvent.click(
-      within(screen.getByTestId("runs-step-1")).getByText(/succeeded/i),
-    );
+    const stepRow = screen.getByTestId("runs-step-1");
+    expect(stepRow).toHaveAttribute("role", "button");
+    expect(stepRow.querySelector("button")).toBeNull();
+    fireEvent.click(stepRow);
     applyLatestSearchParamsUpdate("mode=execution");
     expect(searchParamsMock.get("mode")).toBe("execution");
     executionRender.unmount();
@@ -1179,9 +1180,7 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-step-1-inline-evidence")).toHaveTextContent(
       /step evidence/i,
     );
-    fireEvent.click(
-      within(screen.getByTestId("runs-step-1")).getByText(/succeeded/i),
-    );
+    fireEvent.click(screen.getByTestId("runs-step-1"));
     applyLatestSearchParamsUpdate("mode=execution&inspect=step%3A1");
     expect(searchParamsMock.get("mode")).toBe("execution");
     expect(searchParamsMock.has("inspect")).toBe(false);
@@ -1190,11 +1189,10 @@ describe("RunsDetailPage", () => {
 
     searchParamsMock = new URLSearchParams("mode=execution");
     const invocationRender = render(<RunsDetailPage />);
-    fireEvent.click(
-      within(screen.getByTestId("runs-invocation-1001-outline-entry")).getByText(
-        /input derived/i,
-      ),
-    );
+    const invocationRow = screen.getByTestId("runs-invocation-1001-outline-entry");
+    expect(invocationRow).toHaveAttribute("role", "button");
+    expect(invocationRow.querySelector("button")).toBeNull();
+    fireEvent.click(invocationRow);
     applyLatestSearchParamsUpdate("mode=execution");
     invocationRender.unmount();
 
@@ -1202,11 +1200,7 @@ describe("RunsDetailPage", () => {
     expect(
       screen.getByTestId("runs-invocation-1001-inline-evidence"),
     ).toHaveTextContent(/output/i);
-    fireEvent.click(
-      within(screen.getByTestId("runs-invocation-1001-outline-entry")).getByText(
-        /input derived/i,
-      ),
-    );
+    fireEvent.click(screen.getByTestId("runs-invocation-1001-outline-entry"));
     applyLatestSearchParamsUpdate("mode=execution&inspect=invocation%3A1001");
     expect(searchParamsMock.get("mode")).toBe("execution");
     expect(searchParamsMock.has("inspect")).toBe(false);
@@ -1215,11 +1209,10 @@ describe("RunsDetailPage", () => {
 
     searchParamsMock = new URLSearchParams("mode=metadata");
     const metadataRender = render(<RunsDetailPage />);
-    fireEvent.click(
-      within(screen.getByTestId("runs-audit-row-payload-input")).getByText(
-        /launch input captured/i,
-      ),
-    );
+    const inputAuditRow = screen.getByTestId("runs-audit-row-payload-input");
+    expect(inputAuditRow).toHaveAttribute("role", "button");
+    expect(inputAuditRow.querySelector("button")).toBeNull();
+    fireEvent.click(inputAuditRow);
     applyLatestSearchParamsUpdate("mode=metadata");
     expect(searchParamsMock.get("mode")).toBe("metadata");
     metadataRender.unmount();
@@ -1232,11 +1225,7 @@ describe("RunsDetailPage", () => {
     expect(
       screen.getByTestId("runs-audit-row-payload-input-inline-evidence"),
     ).toHaveTextContent(/AAPL/i);
-    fireEvent.click(
-      within(screen.getByTestId("runs-audit-row-payload-input")).getByText(
-        /launch input captured/i,
-      ),
-    );
+    fireEvent.click(screen.getByTestId("runs-audit-row-payload-input"));
     applyLatestSearchParamsUpdate(
       "mode=metadata&inspect=run&pane=input",
     );
@@ -1254,11 +1243,7 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByTestId("runs-audit-row-payload-output-inline-evidence"),
     ).not.toBeInTheDocument();
-    fireEvent.click(
-      within(screen.getByTestId("runs-audit-row-payload-output")).getByText(
-        /final output payload/i,
-      ),
-    );
+    fireEvent.click(screen.getByTestId("runs-audit-row-payload-output"));
     applyLatestSearchParamsUpdate("mode=metadata");
     expect(searchParamsMock.get("mode")).toBe("metadata");
     expect(searchParamsMock.get("inspect")).toBe("run");
@@ -1275,12 +1260,10 @@ describe("RunsDetailPage", () => {
 
     searchParamsMock = new URLSearchParams("mode=metadata");
     const traceRender = render(<RunsDetailPage />);
-    fireEvent.click(
-      within(screen.getByTestId("runs-audit-row-trace-agent-1001")).getByRole(
-        "button",
-        { name: /agent invocation #1001/i },
-      ),
-    );
+    const traceAuditRow = screen.getByTestId("runs-audit-row-trace-agent-1001");
+    expect(traceAuditRow).toHaveAttribute("role", "button");
+    expect(traceAuditRow.querySelector("button")).toBeNull();
+    fireEvent.keyDown(traceAuditRow, { key: "Enter" });
     applyLatestSearchParamsUpdate("mode=metadata");
     traceRender.unmount();
 
@@ -1306,12 +1289,10 @@ describe("RunsDetailPage", () => {
 
     searchParamsMock = new URLSearchParams("mode=metadata");
     const artifactRender = render(<RunsDetailPage />);
-    fireEvent.click(
-      within(screen.getByTestId("runs-audit-row-artifact-memory_701")).getByRole(
-        "button",
-        { name: /AAPL decision memory/i },
-      ),
-    );
+    const artifactAuditRow = screen.getByTestId("runs-audit-row-artifact-memory_701");
+    expect(artifactAuditRow).toHaveAttribute("role", "button");
+    expect(artifactAuditRow.querySelector("button")).toBeNull();
+    fireEvent.click(artifactAuditRow);
     applyLatestSearchParamsUpdate("mode=metadata");
     artifactRender.unmount();
 
@@ -1340,10 +1321,10 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    const stepOneButton = within(
-      screen.getByTestId("runs-step-1"),
-    ).getAllByRole("button", { name: /step 1/i })[0];
-    fireEvent.click(stepOneButton);
+    const stepOneRow = screen.getByTestId("runs-step-1");
+    expect(stepOneRow).toHaveAttribute("role", "button");
+    expect(stepOneRow.querySelector("button")).toBeNull();
+    fireEvent.click(stepOneRow);
     const updater = setSearchParamsMock.mock.calls.at(-1)?.[0] as (
       current: URLSearchParams,
     ) => URLSearchParams;
@@ -1832,10 +1813,10 @@ describe("RunsDetailPage", () => {
     auditModeRender.unmount();
     searchParamsMock = new URLSearchParams("mode=execution");
     const stepSelectionRender = render(<RunsDetailPage />);
-    const stepOneButton = within(
-      screen.getByTestId("runs-step-1"),
-    ).getAllByRole("button", { name: /step 1/i })[0];
-    fireEvent.click(stepOneButton);
+    const stepOneRow = screen.getByTestId("runs-step-1");
+    expect(stepOneRow).toHaveAttribute("role", "button");
+    expect(stepOneRow.querySelector("button")).toBeNull();
+    fireEvent.click(stepOneRow);
     expect(
       within(screen.getByTestId("runs-step-1")).queryByRole("link", {
         name: /step 1/i,

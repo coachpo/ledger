@@ -230,22 +230,19 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     expect(screen.queryByTestId("runs-step-1-operation-webhook_result")).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-step-1-operation-webhook_retry")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/operation webhook_result\/span-operation/i);
-    fireEvent.click(
-      within(screen.getByTestId("runs-operation-2001-outline-entry")).getByText(
-        /executed/i,
-      ),
-    );
+    const operationRow = screen.getByTestId("runs-operation-2001-outline-entry");
+    expect(operationRow).toHaveAttribute("role", "button");
+    expect(operationRow.querySelector("button")).toBeNull();
+    fireEvent.click(operationRow);
     applyLatestSearchParamsUpdate("mode=execution");
     stepsRender.unmount();
 
     const selectedOperationRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-operation-2001-inline-evidence"))
       .toHaveTextContent(/queued/i);
-    fireEvent.click(
-      within(screen.getByTestId("runs-operation-2001-outline-entry")).getByText(
-        /executed/i,
-      ),
-    );
+    fireEvent.keyDown(screen.getByTestId("runs-operation-2001-outline-entry"), {
+      key: " ",
+    });
     applyLatestSearchParamsUpdate("mode=execution&inspect=operation%3A2001");
     expect(searchParamsMock.get("mode")).toBe("execution");
     expect(searchParamsMock.has("inspect")).toBe(false);
