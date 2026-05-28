@@ -11,7 +11,6 @@ import { useRun } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
 
 import {
-  finalOutputState,
   findForkTargetContext,
   formatQueueReasonTitle,
   formatTargetKindLabel,
@@ -262,13 +261,6 @@ export function RunsDetailPage() {
       : run.startedAt
         ? "In progress"
         : "Not started";
-  const outputState = finalOutputState(run);
-  const outputBadgeVariant =
-    outputState.tone === "danger"
-      ? "destructive"
-      : outputState.tone === "success"
-        ? "secondary"
-        : "outline";
   const statusBadgeVariant =
     run.status === "failed"
       ? "destructive"
@@ -311,7 +303,7 @@ export function RunsDetailPage() {
   const failedStep = steps.find(
     (step) => step.status === "failed" || Boolean(step.error),
   );
-  const currentStateSummary = failedAgent
+  const headerStateDetail = failedAgent
     ? `Failure: Step ${failedAgent.step.index} · ${failedAgent.invocation.slot} agent invocation #${failedAgent.invocation.id}`
     : failedOperation
       ? `Failure: Step ${failedOperation.step.index} · ${failedOperation.invocation.slot} operation invocation #${failedOperation.invocation.id}`
@@ -323,10 +315,7 @@ export function RunsDetailPage() {
             ? `Running: ${run.progress.terminalCount} of ${run.progress.totalCount} invocation(s) terminal`
             : run.status === "queued"
               ? run.queue?.message ?? "Queued for execution"
-              : `Output ${outputState.label.toLowerCase()}`;
-  const headerStateDetail = currentStateSummary.startsWith("Output ")
-    ? null
-    : currentStateSummary;
+              : null;
 
   const primaryModeWorkspace = (
     <RunDetailSectionStack
@@ -443,7 +432,6 @@ export function RunsDetailPage() {
                     {shouldShowHeaderProgress ? (
                       <Badge variant="outline">{runProgress}%</Badge>
                     ) : null}
-                    <Badge variant={outputBadgeVariant}>{outputState.label}</Badge>
                     <span className="text-xs font-medium text-muted-foreground">
                       {run.totalTokens.toLocaleString()} tokens
                     </span>

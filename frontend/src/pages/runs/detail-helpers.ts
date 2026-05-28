@@ -40,13 +40,6 @@ export type RunDraftReadinessDiagnostic = {
   severity: "error" | "warning";
 };
 
-export type RunFinalOutputState = {
-  description: string;
-  isPending: boolean;
-  label: "Captured" | "Not produced" | "Pending";
-  tone: "danger" | "success" | "warning";
-};
-
 export const DEFAULT_FORK_UNAVAILABLE_REASON =
   "Forking is available for succeeded Workflow Package runs and succeeded agent invocations.";
 
@@ -92,42 +85,6 @@ export function diagnosticsFromDraftReadiness(
 
 export function isTerminalStatus(status: RunStepStatus): boolean {
   return status === "succeeded" || status === "failed" || status === "skipped";
-}
-
-export function finalOutputState(run: Pick<RunRead, "finalOutput" | "status">): RunFinalOutputState {
-  if (run.finalOutput !== null) {
-    return {
-      description: "Rendered and raw views use the same immutable payload.",
-      isPending: false,
-      label: "Captured",
-      tone: "success",
-    };
-  }
-
-  if (run.status === "queued" || run.status === "running") {
-    return {
-      description: "Final output is not available yet.",
-      isPending: true,
-      label: "Pending",
-      tone: "warning",
-    };
-  }
-
-  if (run.status === "failed") {
-    return {
-      description: "Run failed before final output was produced.",
-      isPending: false,
-      label: "Not produced",
-      tone: "danger",
-    };
-  }
-
-  return {
-    description: "The run completed with an explicit null final output.",
-    isPending: false,
-    label: "Captured",
-    tone: "success",
-  };
 }
 
 export function progressForInvocations(

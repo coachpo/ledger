@@ -104,7 +104,6 @@ import { stringifyJson } from "../platform-resource-helpers";
 import {
   DEFAULT_FORK_UNAVAILABLE_REASON,
   diagnosticsFromDraftReadiness,
-  finalOutputState,
   formatQueueReasonTitle,
   getRunForkAvailability,
   progressForInvocations,
@@ -828,9 +827,6 @@ function RunPayloadPane({
 }
 
 export function RunFinalOutputPane({ run }: { run: RunRead }) {
-  const outputState = finalOutputState(run);
-  const showPayload = !outputState.isPending && outputState.label === "Captured";
-
   return (
     <RunDetailSectionBlock
       blockId="final-output"
@@ -841,7 +837,7 @@ export function RunFinalOutputPane({ run }: { run: RunRead }) {
       icon={Download}
       title="Final output"
     >
-      {showPayload ? (
+      {run.finalOutput !== null ? (
         <RunPayloadPane
           label="Final output"
           testId="runs-detail-final-output"
@@ -850,7 +846,7 @@ export function RunFinalOutputPane({ run }: { run: RunRead }) {
       ) : (
         <section aria-label="Final output" className="space-y-3">
           <RunDetailEmptyState testId="runs-detail-final-output">
-            {outputState.description}
+            No final output payload was recorded for this run.
           </RunDetailEmptyState>
         </section>
       )}
@@ -860,7 +856,6 @@ export function RunFinalOutputPane({ run }: { run: RunRead }) {
 
 export function RunOutputWorkspace({ run }: { run: RunRead }) {
   const provenance = run.packageProvenance;
-  const outputState = finalOutputState(run);
 
   return (
     <div className="grid min-w-0 gap-3" data-testid="runs-output-workspace">
@@ -878,17 +873,6 @@ export function RunOutputWorkspace({ run }: { run: RunRead }) {
               description:
                 provenance?.workflowKey ?? run.targetKey ?? "Not recorded",
             },
-            {
-              label: "Availability",
-              value: outputState.label,
-              description: outputState.description,
-              tone:
-                outputState.tone === "danger"
-                  ? "danger"
-                  : outputState.tone === "warning"
-                    ? "warning"
-                    : "verified",
-            },
           ]}
           layout="grid"
         />
@@ -898,6 +882,8 @@ export function RunOutputWorkspace({ run }: { run: RunRead }) {
 }
 
 export function RunInputWorkspace({ run }: { run: RunRead }) {
+  const provenance = run.packageProvenance;
+
   return (
     <div className="grid min-w-0 gap-3" data-testid="runs-input-workspace">
       <RunDetailSectionBlock
@@ -912,6 +898,29 @@ export function RunInputWorkspace({ run }: { run: RunRead }) {
           label="Run input"
           testId="runs-detail-input"
           value={run.input}
+        />
+      </RunDetailSectionBlock>
+      <RunDetailSectionBlock
+        blockId="input-provenance"
+        description="Input provenance stays beside the launch payload while raw payload detail is available from metadata rows."
+        icon={FileText}
+        title="Input provenance"
+      >
+        <EvidenceCluster
+          items={[
+            {
+              label: "Workflow",
+              value: provenance?.workflowName ?? "Snapshot workflow",
+              description:
+                provenance?.workflowKey ?? run.targetKey ?? "Not recorded",
+            },
+            {
+              label: "Target",
+              value: run.targetKey,
+              description: `Run #${run.id} launch snapshot`,
+            },
+          ]}
+          layout="grid"
         />
       </RunDetailSectionBlock>
     </div>
@@ -938,7 +947,6 @@ export function RunOverviewWorkspace({
     : run.status === "queued"
       ? "Queued without queue detail"
       : "No queue hold";
-  const outputState = finalOutputState(run);
 
   return (
     <section className="grid min-w-0 gap-3" data-testid="runs-overview-workspace">
@@ -967,11 +975,6 @@ export function RunOverviewWorkspace({
               {
                 label: "Invocations",
                 value: `${terminalInvocationsCount} of ${allInvocationsCount} invocation(s) terminal`,
-              },
-              {
-                label: "Output",
-                value: outputState.label,
-                tone: outputState.tone,
               },
               {
                 label: "Trace",
@@ -2991,7 +2994,6 @@ export function RunAuditEvidenceSection({
   traceSpanEntries: TraceSpanEntry[];
 }) {
   const groupedEvents = groupedMemoryEvents(run.memoryEvents ?? []);
-  const outputState = finalOutputState(run);
   const reportAuditLinks = run.memoryArtifacts.filter(
     (artifact) => artifact.auditLinks?.report,
   ).length;
@@ -3008,15 +3010,10 @@ export function RunAuditEvidenceSection({
       category: "Payload",
       id: "payload-output",
       pane: "finalOutput",
-      summary: `Final output ${outputState.label.toLowerCase()}`,
+      summary: "Final output payload",
       target: { type: "run" },
       title: "Final output",
-      tone:
-        outputState.tone === "danger"
-          ? "destructive"
-          : outputState.tone === "warning"
-            ? "outline"
-            : "secondary",
+      tone: "outline",
     },
     {
       category: "Payload",
@@ -4421,6 +4418,12 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
       </section>
       <section className="min-w-0" data-testid="runs-stacked-section-final-output">
         <RunFinalOutputPane run={run} />
+      </section>
+      <section
+        className="min-w-0"
+        data-testid="runs-stacked-section-output-provenance"
+      >
+        <RunOutputWorkspace run={run} />
       </section>
       <section
         className="min-w-0"
