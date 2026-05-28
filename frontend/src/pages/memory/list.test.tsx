@@ -158,12 +158,12 @@ describe("MemoryListPage", () => {
     expect(screen.getByTestId("workspace-page-shell-context")).toContainElement(
       screen.getByTestId("memory-contract-notice"),
     );
-    expect(screen.getByRole("heading", { name: "Canonical Memory" })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: "Memory" })).toBeVisible();
     const contractNotice = screen.getByTestId("memory-contract-notice");
-    expect(contractNotice).toHaveTextContent("Explicit private scopes");
-    expect(contractNotice).toHaveTextContent("Package key required");
-    expect(contractNotice).toHaveTextContent("Private scope required");
-    expect(contractNotice).toHaveTextContent("Namespace grants server-owned only");
+    expect(contractNotice).not.toHaveTextContent("Explicit private scopes");
+    expect(contractNotice).not.toHaveTextContent("Package key required");
+    expect(contractNotice).not.toHaveTextContent("Private scope required");
+    expect(contractNotice).not.toHaveTextContent("Namespace grants server-owned only");
     expect(contractNotice).toHaveTextContent("/api/memory");
     expect(contractNotice).toHaveTextContent("package access context");
     expect(contractNotice).toHaveTextContent("concrete private scope");
