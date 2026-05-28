@@ -401,8 +401,9 @@ describe("WorkflowPackageEditorPage", () => {
 
     expect(overviewTab).toHaveAttribute("data-state", "active");
     expect(agentsTab).toHaveAttribute("data-state", "inactive");
-    expect(overviewTab).toHaveClass("data-[state=active]:bg-muted");
-    expect(overviewTab).toHaveClass("data-[state=active]:border-border/80");
+    expect(overviewTab).toHaveClass("data-[state=active]:bg-accent");
+    expect(overviewTab).toHaveClass("data-[state=active]:text-accent-foreground");
+    expect(overviewTab).toHaveClass("data-[state=active]:shadow-sm");
 
     fireEvent.click(agentsTab);
 
