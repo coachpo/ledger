@@ -159,9 +159,17 @@ describe("MemoryListPage", () => {
       screen.getByTestId("memory-contract-notice"),
     );
     expect(screen.getByRole("heading", { name: "Canonical Memory" })).toBeVisible();
-    expect(screen.getByTestId("memory-contract-notice")).toHaveTextContent(
-      "concrete private scope",
-    );
+    const contractNotice = screen.getByTestId("memory-contract-notice");
+    expect(contractNotice).toHaveTextContent("Explicit private scopes");
+    expect(contractNotice).toHaveTextContent("Package key required");
+    expect(contractNotice).toHaveTextContent("Private scope required");
+    expect(contractNotice).toHaveTextContent("Namespace grants server-owned only");
+    expect(contractNotice).toHaveTextContent("/api/memory");
+    expect(contractNotice).toHaveTextContent("package access context");
+    expect(contractNotice).toHaveTextContent("concrete private scope");
+    expect(contractNotice).toHaveTextContent("visibility is fixed to explicit-scope");
+    expect(contractNotice).toHaveTextContent("browser-authored JSON is not accepted");
+    expect(contractNotice).toHaveTextContent("finance report history remains in Reports");
     const shellBody = screen.getByTestId("workspace-page-shell-body");
     expect(shellBody.children[0]).toBe(screen.getByTestId("memory-access-filter-controls"));
     expect(shellBody.children[1]).toBe(screen.getByTestId("memory-split-inspector"));

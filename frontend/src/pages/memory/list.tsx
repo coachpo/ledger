@@ -10,7 +10,6 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
-import { PageContextBar } from "@/components/shared/page-context-bar";
 import { ResourceRowCard } from "@/components/shared/resource-row-card";
 import { ResourceStatusStrip, type ResourceStatusStripItem } from "@/components/shared/resource-status-strip";
 import {
@@ -135,38 +134,37 @@ function DetailField({ label, value }: { label: string; value: string }) {
 
 function MemoryContextContract() {
   return (
-    <div data-testid="memory-contract-notice">
-      <PageContextBar
-        actions={
-          <Badge className="w-fit" variant="secondary">
-            <ShieldCheck className="size-3.5" /> Explicit private scopes
-          </Badge>
-        }
-        description={
-          <>
-            Platform memory from /api/memory shows explicit private scopes only.
-            Lists require a package access context and a concrete private scope;
-            shared namespace grants are not accepted from browser-authored JSON,
-            and finance report history remains in Reports.
-          </>
-        }
-        meta="Visibility is fixed to explicit-scope for every list request."
-        status={
-          <ResourceStatusStrip
-            items={[
-              { label: "Package key", value: "required", tone: "warning" },
-              { label: "Private scope", value: "required", tone: "warning" },
-              { label: "Namespace grants", value: "server-owned only", tone: "muted" },
-            ]}
-          />
-        }
-        title={
-          <span className="inline-flex items-center gap-2">
-            <Database className="size-4" /> Canonical Memory
-          </span>
-        }
-      />
-    </div>
+    <Card className="gap-0" data-testid="memory-contract-notice">
+      <div className="flex min-w-0 flex-col gap-2 px-3 py-2.5 sm:px-4">
+        <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h2 className="inline-flex min-w-0 items-center gap-2 text-base font-semibold tracking-tight">
+              <Database className="size-4 shrink-0" />
+              <span className="min-w-0 truncate">Canonical Memory</span>
+            </h2>
+            <Badge className="w-fit shrink-0" variant="secondary">
+              <ShieldCheck className="size-3.5" /> Explicit private scopes
+            </Badge>
+          </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.7rem] text-muted-foreground">
+            <Badge className="border-border/70 bg-muted/30 text-muted-foreground" variant="outline">
+              Package key required
+            </Badge>
+            <span aria-hidden="true" className="text-muted-foreground/60">•</span>
+            <Badge className="border-border/70 bg-muted/30 text-muted-foreground" variant="outline">
+              Private scope required
+            </Badge>
+            <span aria-hidden="true" className="text-muted-foreground/60">•</span>
+            <Badge className="border-border/70 bg-muted/30 text-muted-foreground" variant="outline">
+              Namespace grants server-owned only
+            </Badge>
+          </div>
+        </div>
+        <p className="min-w-0 text-xs leading-5 text-muted-foreground">
+          /api/memory lists explicit private scopes only: a package access context and concrete private scope are required, visibility is fixed to explicit-scope, namespace grants are server-owned so browser-authored JSON is not accepted, and finance report history remains in Reports.
+        </p>
+      </div>
+    </Card>
   );
 }
 
