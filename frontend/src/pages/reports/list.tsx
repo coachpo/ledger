@@ -29,10 +29,7 @@ import { ReportUploadDialog } from "@/components/forms/report-upload-dialog";
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { GroupedListCard } from "@/components/shared/resource-row-card";
-import {
-  ResourceStatusStrip,
-  type ResourceStatusStripItem,
-} from "@/components/shared/resource-status-strip";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -89,47 +86,6 @@ function getTemplateItems(
   return data?.items ?? [];
 }
 
-type ReportViewMode = "cards" | "table";
-
-function buildReportStatusItems({
-  filteredCount,
-  isError,
-  isPending,
-  selectedCount,
-  totalCount,
-  viewMode,
-}: {
-  filteredCount: number;
-  isError: boolean;
-  isPending: boolean;
-  selectedCount: number;
-  totalCount: number;
-  viewMode: ReportViewMode;
-}): ResourceStatusStripItem[] {
-  if (isPending) {
-    return [{ label: "Loading", tone: "muted", value: "Reports" }];
-  }
-
-  if (isError) {
-    return [{ label: "Error", tone: "danger", value: "Reports" }];
-  }
-
-  const items: ResourceStatusStripItem[] = [
-    { label: "Total", value: totalCount },
-    {
-      label: "Shown",
-      tone: totalCount > 0 && filteredCount === 0 ? "warning" : "neutral",
-      value: filteredCount,
-    },
-  ];
-
-  if (viewMode === "table" && selectedCount > 0) {
-    items.push({ label: "Selected", tone: "success", value: selectedCount });
-  }
-
-  return items;
-}
-
 export function ReportListPage() {
   const navigate = useNavigate();
   const reportsQuery = useReports();
@@ -178,14 +134,6 @@ export function ReportListPage() {
   }, []);
   const { viewMode, onViewModeChange } = useInventoryViewState({
     onCardsMode: clearReportSelection,
-  });
-  const statusItems = buildReportStatusItems({
-    filteredCount: filtered.length,
-    isError: reportsQuery.isError,
-    isPending: reportsQuery.isPending,
-    selectedCount,
-    totalCount: reports.length,
-    viewMode,
   });
   const toggleGroup = (label: string) => {
     setCollapsedGroups((prev) => {
@@ -367,7 +315,6 @@ export function ReportListPage() {
         ),
         description: "Compiled template snapshots — point-in-time deliverables.",
         layout: "toolbar",
-        status: <ResourceStatusStrip density="toolbar" items={statusItems} />,
         title: "Reports",
       }}
       testId="reports-list-page"

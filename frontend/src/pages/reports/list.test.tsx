@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -109,16 +109,17 @@ describe("ReportListPage", () => {
       "aria-checked",
       "true",
     );
-    const heading = screen.getByRole("heading", { name: "Reports" });
+    const heading = screen.getByRole("heading", { level: 1, name: "Reports" });
     expect(heading).toBeVisible();
-    expect(heading.closest("[data-slot='card-header']")).not.toBeInTheDocument();
-    expect(heading.closest("[data-slot='card-content']")).toHaveClass("p-3", "sm:flex-row");
+    const header = heading.closest("[data-slot='page-context-bar']");
+    expect(header).toHaveClass("sm:flex-row", "sm:items-start");
+    expect(header?.closest("[data-slot='card']")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Generate Report" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Upload Report" })).toBeVisible();
     expect(screen.getByLabelText("Search reports")).toBeVisible();
     expect(screen.getByLabelText("Group reports")).toBeVisible();
-    expect(screen.getByText("Total")).toBeVisible();
-    expect(screen.getByText("Shown")).toBeVisible();
+    expect(within(header as HTMLElement).queryByText("Total")).not.toBeInTheDocument();
+    expect(within(header as HTMLElement).queryByText("Shown")).not.toBeInTheDocument();
     expect(screen.getByText("Showing 0 of 0 reports")).toBeVisible();
     expect(screen.getByText("No reports yet.")).toBeVisible();
     expect(
@@ -136,7 +137,7 @@ describe("ReportListPage", () => {
 
     renderReportsList();
 
-    expect(screen.getByText("Error")).toBeVisible();
+    expect(screen.queryByText("Error")).not.toBeInTheDocument();
     expect(screen.getByText("Reports could not be loaded")).toBeVisible();
     expect(screen.getByText("Reports API unavailable")).toBeVisible();
   });
