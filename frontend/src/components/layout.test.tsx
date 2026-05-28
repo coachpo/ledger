@@ -285,10 +285,8 @@ describe("Layout", () => {
           "min-h-full",
           "min-w-0",
           "max-w-full",
-          "[&>*]:mx-auto",
           "[&>*]:min-w-0",
           "[&>*]:w-full",
-          "[&>*]:max-w-4xl",
         ],
       },
       {
@@ -308,9 +306,13 @@ describe("Layout", () => {
     for (const { pathname, wrapperClassNames } of routeCases) {
       const { unmount } = renderLayout(pathname);
 
-      expect(getLayoutContentWrapper(pathname)).toHaveClass(
-        ...wrapperClassNames,
-      );
+      const wrapper = getLayoutContentWrapper(pathname);
+
+      expect(wrapper).toHaveClass(...wrapperClassNames);
+      if (pathname === "/extensions") {
+        expect(wrapper?.className).not.toContain("[&>*]:max-w-4xl");
+        expect(wrapper?.className).not.toContain("[&>*]:mx-auto");
+      }
       unmount();
     }
   });

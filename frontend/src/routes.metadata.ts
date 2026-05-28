@@ -303,7 +303,7 @@ const platformAndSystemRouteMetadata = [
     owner: { kind: "system" },
     pattern: "/extensions",
     shellMode: "scroll",
-    widthMode: "compact",
+    widthMode: "wide",
     stateVariants: ["loading", "ready", "error", "empty"],
     testId: "route-extensions",
   },

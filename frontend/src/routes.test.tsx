@@ -228,7 +228,7 @@ describe("router", () => {
     expect(getRouteMetadataByPattern("/extensions")).toMatchObject({
       archetype: "systemState",
       owner: { kind: "system" },
-      widthMode: "compact",
+      widthMode: "wide",
       stateVariants: ["loading", "ready", "error", "empty"],
       testId: "route-extensions",
     });
