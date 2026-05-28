@@ -169,7 +169,6 @@ describe("WorkflowPackageEditorPage", () => {
       screen.getByRole("heading", { name: "Market Review Package" }),
     );
     expect(within(headerTopRow).getByText("market_review_package")).toBeVisible();
-    expect(within(headerTopRow).getByText("·")).toBeVisible();
     expect(
       within(headerTopRow).getByRole("button", { name: "Save package" }),
     ).toBeEnabled();
@@ -392,6 +391,26 @@ describe("WorkflowPackageEditorPage", () => {
     expect(
       screen.getByRole("button", { name: "Launch workflow package" }),
     ).toBeDisabled();
+  });
+
+  it("applies selected-state visual classes to the active authoring tab", () => {
+    renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
+
+    const overviewTab = screen.getByRole("tab", { name: "Overview tab" });
+    const agentsTab = screen.getByRole("tab", { name: "Agents tab" });
+
+    expect(overviewTab).toHaveAttribute("data-state", "active");
+    expect(agentsTab).toHaveAttribute("data-state", "inactive");
+    expect(overviewTab).toHaveClass("data-[state=active]:bg-muted");
+    expect(overviewTab).toHaveClass("data-[state=active]:border-border/80");
+
+    fireEvent.click(agentsTab);
+
+    expect(agentsTab).toHaveAttribute("data-state", "active");
+    expect(overviewTab).toHaveAttribute("data-state", "inactive");
+    expect(screen.getByRole("tabpanel")).toHaveTextContent(
+      "No package-local agents yet.",
+    );
   });
 
   it("switches tabs and routes clean launch button to the run shell", () => {
