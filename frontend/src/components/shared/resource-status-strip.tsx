@@ -5,7 +5,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/components/ui/utils";
 
 export type ResourceStatusTone = "neutral" | "success" | "warning" | "danger" | "muted";
-export type ResourceStatusStripDensity = "compact" | "comfortable";
+export type ResourceStatusStripDensity = "compact" | "comfortable" | "toolbar";
 
 export type ResourceStatusStripItem = {
   description?: ReactNode;
@@ -32,6 +32,7 @@ const badgeVariantByTone: Record<ResourceStatusTone, "default" | "secondary" | "
 const densityClass: Record<ResourceStatusStripDensity, string> = {
   compact: "gap-2 px-3 py-2 text-xs",
   comfortable: "gap-3 px-4 py-3 text-sm",
+  toolbar: "gap-1.5 rounded-md px-2 py-0.5 text-xs",
 };
 
 export function ResourceStatusStrip({

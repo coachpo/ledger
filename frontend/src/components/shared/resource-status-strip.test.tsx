@@ -7,6 +7,7 @@ describe("ResourceStatusStrip", () => {
   it("renders status items with deterministic tone badges", () => {
     render(
       <ResourceStatusStrip
+        density="toolbar"
         items={[
           { label: "Ready", tone: "success", value: "3 checks" },
           { description: "review", label: "Warning", tone: "warning" },
@@ -15,7 +16,7 @@ describe("ResourceStatusStrip", () => {
       />,
     );
 
-    expect(screen.getByRole("list")).toBeInTheDocument();
+    expect(screen.getByRole("list")).toHaveClass("px-2", "py-0.5", "text-xs");
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
     expect(screen.getByText("Ready").closest("[data-slot='badge']")).toHaveAttribute("data-tone", "success");
     expect(screen.getByText("Warning").closest("[data-slot='badge']")).toHaveAttribute("data-tone", "warning");
