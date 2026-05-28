@@ -830,7 +830,6 @@ export function RunFinalOutputPane({ run }: { run: RunRead }) {
   return (
     <RunDetailSectionBlock
       blockId="final-output"
-      cardClassName="min-h-[136px]"
       cardTestId="runs-detail-final-output-card"
       contentClassName="space-y-5"
       description="Rendered payload view for the immutable run result."
@@ -3132,18 +3131,16 @@ export function RunAuditEvidenceSection({
                     tabIndex={0}
                   >
                     <TableCell className="min-w-56 whitespace-normal align-top">
-                      <Button
-                        className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          selectRow();
-                        }}
-                        size="sm"
-                        type="button"
-                        variant={isActive ? "secondary" : "ghost"}
+                      <span
+                        className={cn(
+                          "block w-full rounded-md px-2 py-1.5 text-left font-medium",
+                          isActive
+                            ? "bg-secondary text-secondary-foreground"
+                            : "text-foreground",
+                        )}
                       >
                         {row.title}
-                      </Button>
+                      </span>
                     </TableCell>
                     <TableCell className="align-top">
                       <Badge variant={row.tone ?? "outline"}>
@@ -3392,24 +3389,20 @@ export function ExecutionOutline({
                       tabIndex={0}
                     >
                       <TableCell className="min-w-56 whitespace-normal align-top">
-                        <Button
-                          className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            selectStep();
-                          }}
-                          size="sm"
-                          type="button"
-                          variant={isStepActive ? "secondary" : "ghost"}
+                        <span
+                          className={cn(
+                            "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left",
+                            isStepActive
+                              ? "bg-secondary text-secondary-foreground"
+                              : "text-foreground",
+                          )}
                         >
-                          <span className="flex min-w-0 items-center gap-2">
-                            <StepStatusIndicator
-                              state={indicatorState}
-                              stepIndex={step.index}
-                            />
-                            <span className="font-medium">Step {step.index}</span>
-                          </span>
-                        </Button>
+                          <StepStatusIndicator
+                            state={indicatorState}
+                            stepIndex={step.index}
+                          />
+                          <span className="font-medium">Step {step.index}</span>
+                        </span>
                       </TableCell>
                       <TableCell className="align-top">
                         <Badge variant={statusVariant(step.status)}>
@@ -3460,25 +3453,21 @@ export function ExecutionOutline({
                         tabIndex={0}
                       >
                         <TableCell className="min-w-56 whitespace-normal align-top">
-                          <Button
-                            className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              selectInvocation();
-                            }}
-                            size="sm"
-                            type="button"
-                            variant={isActive ? "secondary" : "ghost"}
+                          <span
+                            className={cn(
+                              "flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left",
+                              isActive
+                                ? "bg-secondary text-secondary-foreground"
+                                : "text-foreground",
+                            )}
                           >
-                            <span className="flex min-w-0 flex-col gap-0.5">
-                              <span className="font-medium">
-                                {invocation.slot} agent
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                Invocation #{invocation.id}
-                              </span>
+                            <span className="font-medium">
+                              {invocation.slot} agent
                             </span>
-                          </Button>
+                            <span className="text-xs text-muted-foreground">
+                              Invocation #{invocation.id}
+                            </span>
+                          </span>
                         </TableCell>
                         <TableCell className="align-top">
                           <Badge variant={statusVariant(invocation.status)}>
@@ -3537,25 +3526,21 @@ export function ExecutionOutline({
                         tabIndex={0}
                       >
                         <TableCell className="min-w-56 whitespace-normal align-top">
-                          <Button
-                            className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              selectOperation();
-                            }}
-                            size="sm"
-                            type="button"
-                            variant={isActive ? "secondary" : "ghost"}
+                          <span
+                            className={cn(
+                              "flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left",
+                              isActive
+                                ? "bg-secondary text-secondary-foreground"
+                                : "text-foreground",
+                            )}
                           >
-                            <span className="flex min-w-0 flex-col gap-0.5">
-                              <span className="font-medium">
-                                {invocation.slot} operation
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                Invocation #{invocation.id}
-                              </span>
+                            <span className="font-medium">
+                              {invocation.slot} operation
                             </span>
-                          </Button>
+                            <span className="text-xs text-muted-foreground">
+                              Invocation #{invocation.id}
+                            </span>
+                          </span>
                         </TableCell>
                         <TableCell className="align-top">
                           <Badge variant={statusVariant(invocation.status)}>
