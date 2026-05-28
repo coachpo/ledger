@@ -3131,14 +3131,7 @@ export function RunAuditEvidenceSection({
                     tabIndex={0}
                   >
                     <TableCell className="min-w-56 whitespace-normal align-top">
-                      <span
-                        className={cn(
-                          "block w-full rounded-md px-2 py-1.5 text-left font-medium",
-                          isActive
-                            ? "bg-secondary text-secondary-foreground"
-                            : "text-foreground",
-                        )}
-                      >
+                      <span className="block w-full rounded-md px-2 py-1.5 text-left font-medium text-foreground">
                         {row.title}
                       </span>
                     </TableCell>
@@ -3389,14 +3382,7 @@ export function ExecutionOutline({
                       tabIndex={0}
                     >
                       <TableCell className="min-w-56 whitespace-normal align-top">
-                        <span
-                          className={cn(
-                            "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left",
-                            isStepActive
-                              ? "bg-secondary text-secondary-foreground"
-                              : "text-foreground",
-                          )}
-                        >
+                        <span className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-foreground">
                           <StepStatusIndicator
                             state={indicatorState}
                             stepIndex={step.index}
@@ -3453,14 +3439,7 @@ export function ExecutionOutline({
                         tabIndex={0}
                       >
                         <TableCell className="min-w-56 whitespace-normal align-top">
-                          <span
-                            className={cn(
-                              "flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left",
-                              isActive
-                                ? "bg-secondary text-secondary-foreground"
-                                : "text-foreground",
-                            )}
-                          >
+                          <span className="flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-foreground">
                             <span className="font-medium">
                               {invocation.slot} agent
                             </span>
@@ -3526,14 +3505,7 @@ export function ExecutionOutline({
                         tabIndex={0}
                       >
                         <TableCell className="min-w-56 whitespace-normal align-top">
-                          <span
-                            className={cn(
-                              "flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left",
-                              isActive
-                                ? "bg-secondary text-secondary-foreground"
-                                : "text-foreground",
-                            )}
-                          >
+                          <span className="flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-foreground">
                             <span className="font-medium">
                               {invocation.slot} operation
                             </span>
