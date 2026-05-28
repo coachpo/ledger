@@ -4,9 +4,7 @@ import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { PageContextBar } from "@/components/shared/page-context-bar";
-import { ProvenanceBadge } from "@/components/shared/provenance-badge";
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
-import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -182,7 +180,7 @@ export function WorkflowPackageEditorPage() {
   const combinedIssues = [...localIssues, ...issues];
   const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map(
     (connection) => ({
-      description: `${connection.modelId} · ${connection.apiStyle} · ${connectionKindLabel(connection.connectionKind)}`,
+      description: `${connection.modelId} ${connection.apiStyle} ${connectionKindLabel(connection.connectionKind)}`,
       label: connection.name,
       value: connection.key,
     }),
@@ -438,9 +436,27 @@ export function WorkflowPackageEditorPage() {
           bodyClassName="gap-4"
           contextBar={
             <div data-testid="workflow-package-context-bar">
-              <PageContextBar
-                actions={
-                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <div
+                className="rounded-xl border border-border/70 bg-card/95 px-3 py-2.5 text-card-foreground shadow-sm backdrop-blur"
+                data-testid="workflow-package-editor-compact-header"
+              >
+                <div
+                  className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
+                  data-testid="workflow-package-editor-header-top-row"
+                >
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <h1
+                      id="workflow-package-editor-title"
+                      className="min-w-0 text-xl font-semibold tracking-tight"
+                    >
+                      {packageTitle(workflowPackage, isNew)}
+                    </h1>
+
+                    <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">
+                      {packageSubtitle(workflowPackage, isNew)}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
                     <Button
                       aria-label="Save package"
                       className="cursor-pointer"
@@ -477,38 +493,55 @@ export function WorkflowPackageEditorPage() {
                       Launch
                     </Button>
                   </div>
-                }
-                className="border-border/70 bg-card/95 shadow-sm backdrop-blur"
-                description={
-                  <span className="flex min-w-0 flex-col gap-1">
-                    <span className="break-all font-mono text-xs">
-                      {packageSubtitle(workflowPackage, isNew)}
+                </div>
+                <div
+                  className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+                  data-testid="workflow-package-editor-header-meta-row"
+                >
+                  <span className="min-w-0 truncate">{headerDescription}</span>
+                  <span>
+                    <span className="font-medium text-foreground">Manifest</span>{" "}
+                    <span className="font-mono">{manifestHash}</span>
+                  </span>
+                  <span>
+                    <span className="font-medium text-foreground">Compiled</span>{" "}
+                    <span className="font-mono">{compiledHash}</span>
+                  </span>
+                  {workflowPackage ? (
+                    <>
+                      <span>
+                        <span className="font-medium text-foreground">Updated</span>{" "}
+                        {formatDateTime(workflowPackage.updatedAt)}
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+                <div
+                  className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+                  data-testid="workflow-package-editor-header-status-row"
+                >
+                  {contextStatusItems.map((item, index) => (
+                    <span
+                      className="flex min-w-0 items-center gap-1.5"
+                      key={item.label}
+                    >
+
+                      <span className="text-muted-foreground">{item.label}</span>
+                      <span
+                        className={
+                          item.tone === "danger"
+                            ? "font-medium text-destructive"
+                            : item.tone === "warning"
+                              ? "font-medium text-foreground"
+                              : "font-medium text-foreground"
+                        }
+                      >
+                        {item.value}
+                      </span>
                     </span>
-                    <span>{headerDescription}</span>
-                  </span>
-                }
-                meta={
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <ProvenanceBadge detail={manifestHash} label="Manifest" />
-                    <ProvenanceBadge detail={compiledHash} label="Compiled" />
-                    {workflowPackage ? (
-                      <ProvenanceBadge
-                        detail={formatDateTime(workflowPackage.updatedAt)}
-                        label="Updated"
-                      />
-                    ) : null}
-                  </div>
-                }
-                status={<ResourceStatusStrip items={contextStatusItems} />}
-                title={
-                  <span
-                    id="workflow-package-editor-title"
-                    className="block text-xl font-semibold tracking-tight"
-                  >
-                    {packageTitle(workflowPackage, isNew)}
-                  </span>
-                }
-              />
+                  ))}
+                </div>
+              </div>
             </div>
           }
           leftRail={

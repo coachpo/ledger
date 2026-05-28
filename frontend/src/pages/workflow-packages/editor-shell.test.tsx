@@ -158,10 +158,52 @@ describe("WorkflowPackageEditorPage", () => {
     expect(
       screen.getByRole("heading", { name: "Market Review Package" }),
     ).toBeVisible();
-    expect(screen.getByText("market_review_package")).toBeVisible();
+
+    const compactHeader = screen.getByTestId(
+      "workflow-package-editor-compact-header",
+    );
+    const headerTopRow = screen.getByTestId(
+      "workflow-package-editor-header-top-row",
+    );
+    expect(headerTopRow).toContainElement(
+      screen.getByRole("heading", { name: "Market Review Package" }),
+    );
+    expect(within(headerTopRow).getByText("market_review_package")).toBeVisible();
+    expect(within(headerTopRow).getByText("·")).toBeVisible();
     expect(
-      screen.getAllByText("Private package for multi-agent market review.")[0],
-    ).toBeVisible();
+      within(headerTopRow).getByRole("button", { name: "Save package" }),
+    ).toBeEnabled();
+    expect(
+      within(headerTopRow).getByRole("button", { name: "Validate package" }),
+    ).toBeEnabled();
+    expect(
+      within(headerTopRow).getByRole("button", {
+        name: "Launch workflow package",
+      }),
+    ).toBeEnabled();
+
+    const headerMetaRow = screen.getByTestId(
+      "workflow-package-editor-header-meta-row",
+    );
+    expect(headerMetaRow).toHaveTextContent(
+      "Private package for multi-agent market review.",
+    );
+    expect(headerMetaRow).toHaveTextContent("Manifest manifest-has");
+    expect(headerMetaRow).toHaveTextContent("Compiled compiled-has");
+    expect(headerMetaRow).toHaveTextContent("Updated");
+
+    const headerStatusRow = screen.getByTestId(
+      "workflow-package-editor-header-status-row",
+    );
+    expect(headerStatusRow).toHaveTextContent("Mode");
+    expect(headerStatusRow).toHaveTextContent("Saved package");
+    expect(headerStatusRow).toHaveTextContent("Draft");
+    expect(headerStatusRow).toHaveTextContent("Clean");
+    expect(headerStatusRow).toHaveTextContent("Diagnostics");
+    expect(headerStatusRow).toHaveTextContent("Clear");
+    expect(compactHeader).toContainElement(headerTopRow);
+    expect(compactHeader).toContainElement(headerMetaRow);
+    expect(compactHeader).toContainElement(headerStatusRow);
 
     for (const tabName of [
       "Overview",
