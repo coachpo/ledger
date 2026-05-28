@@ -215,9 +215,24 @@ export function RunsDetailPage() {
     pane?: RunInspectionPane,
     mode?: RunInspectionMode,
   ) => {
+    const serializedTarget = serializeInspectionTarget(target);
+    const isSameSelection =
+      activeInspection.selected !== false &&
+      serializeInspectionTarget(activeInspection.target) === serializedTarget &&
+      activeInspection.pane === (pane ?? activeInspection.pane) &&
+      (!mode || activeInspection.mode === mode);
+
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      next.set("inspect", serializeInspectionTarget(target));
+      if (isSameSelection) {
+        next.delete("inspect");
+        next.delete("pane");
+        if (mode) {
+          next.set("mode", mode);
+        }
+        return next;
+      }
+      next.set("inspect", serializedTarget);
       if (pane) {
         next.set("pane", pane);
       } else {
@@ -443,21 +458,20 @@ export function RunsDetailPage() {
                   </span>
                   <span
                     className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-normal text-muted-foreground"
-                    data-testid="runs-detail-identity-line"
-                  >
-                    <Badge
-                      className="max-w-full min-w-0 break-all"
-                      data-testid="runs-detail-target-identity"
-                      variant="outline"
-                    >
-                      {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
-                    </Badge>
+                    data-testid="runs-detail-identity-line">
+                    <Badge variant="outline">{targetKindLabel}</Badge>  
+                    <span aria-hidden="true"> | </span>
                     {run.packageProvenance ? (
                       <span className="min-w-0 max-w-full break-words">
                         {run.packageProvenance.workflowPackageName}
                       </span>
-                    ) : null}
-                    <Badge variant="outline">{targetKindLabel}</Badge>
+                    ) : (
+                      <span className="min-w-0 max-w-full break-words">
+                        {run.targetKey}
+                      </span>
+                    )}
+                    <span aria-hidden="true"> | </span>
+                      {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
                   </span>
                   <span
                     className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal text-muted-foreground"

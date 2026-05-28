@@ -28,6 +28,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import { Link, useNavigate } from "react-router";
@@ -204,6 +205,7 @@ const MEMORY_EVENT_GROUPS: MemoryEventGroupDefinition[] = [
 type RunDetailSectionBlockProps = {
   actions?: ReactNode;
   blockId: string;
+  cardClassName?: string;
   cardTestId?: string;
   children: ReactNode;
   contentClassName?: string;
@@ -261,6 +263,7 @@ function RunDetailSectionDescription({
 function RunDetailSectionBlock({
   actions,
   blockId,
+  cardClassName,
   cardTestId,
   children,
   contentClassName,
@@ -270,13 +273,24 @@ function RunDetailSectionBlock({
   tone = "default",
 }: RunDetailSectionBlockProps) {
   return (
-    <div
+    <Collapsible
       className="min-w-0"
       data-run-detail-section-block="true"
       data-testid={`runs-detail-section-${blockId}`}
+      defaultOpen={false}
     >
       <ConsoleSection
-        actions={actions}
+        actions={
+          <div className="flex min-w-0 flex-wrap justify-end gap-2">
+            {actions}
+            <CollapsibleTrigger asChild>
+              <Button className="cursor-pointer" size="sm" type="button" variant="outline">
+                Toggle
+              </Button>
+            </CollapsibleTrigger>
+          </div>
+        }
+        className={cardClassName}
         contentClassName={contentClassName}
         description={
           <RunDetailSectionDescription blockId={blockId}>
@@ -289,9 +303,14 @@ function RunDetailSectionBlock({
         }
         tone={tone}
       >
-        <div className="grid min-w-0 gap-3">{children}</div>
+        <CollapsibleContent
+          className="grid min-w-0 gap-3 data-[state=closed]:hidden"
+          forceMount
+        >
+          {children}
+        </CollapsibleContent>
       </ConsoleSection>
-    </div>
+    </Collapsible>
   );
 }
 
@@ -336,19 +355,40 @@ function CollapsibleConsoleSection({
   children,
   description,
   icon,
-  testId,
   title,
 }: {
   blockId: string;
   children: ReactNode;
   description: ReactNode;
   icon: LucideIcon;
+  title: ReactNode;
+}) {
+  return (
+    <RunDetailSectionBlock
+      blockId={blockId}
+      description={description}
+      icon={icon}
+      title={title}
+    >
+      {children}
+    </RunDetailSectionBlock>
+  );
+}
+
+function CollapsibleDetailPanel({
+  children,
+  description,
+  testId,
+  title,
+}: {
+  children: ReactNode;
+  description: ReactNode;
   testId: string;
   title: ReactNode;
 }) {
   return (
-    <Collapsible data-testid={testId} defaultOpen>
-      <RunDetailSectionBlock
+    <Collapsible className="min-w-0" data-testid={testId} defaultOpen={false}>
+      <ConsoleSection
         actions={
           <CollapsibleTrigger asChild>
             <Button className="cursor-pointer" size="sm" type="button" variant="outline">
@@ -356,15 +396,16 @@ function CollapsibleConsoleSection({
             </Button>
           </CollapsibleTrigger>
         }
-        blockId={blockId}
         description={description}
-        icon={icon}
         title={title}
       >
-        <CollapsibleContent className="grid min-w-0 gap-3 data-[state=closed]:hidden">
+        <CollapsibleContent
+          className="grid min-w-0 gap-3 data-[state=closed]:hidden"
+          forceMount
+        >
           {children}
         </CollapsibleContent>
-      </RunDetailSectionBlock>
+      </ConsoleSection>
     </Collapsible>
   );
 }
@@ -771,21 +812,16 @@ function JsonBlock({
 }
 
 function RunPayloadPane({
-  headingId,
   label,
   testId,
   value,
 }: {
-  headingId: string;
   label: string;
   testId: string;
   value: unknown;
 }) {
   return (
-    <section aria-labelledby={headingId} className="min-w-0 space-y-3">
-      <h3 className="text-base font-medium leading-none" id={headingId}>
-        {label}
-      </h3>
+    <section aria-label={label} className="min-w-0 space-y-3">
       <PayloadViewTabs label={label} testId={testId} value={value} />
     </section>
   );
@@ -798,30 +834,21 @@ export function RunFinalOutputPane({ run }: { run: RunRead }) {
   return (
     <RunDetailSectionBlock
       blockId="final-output"
+      cardClassName="min-h-[136px]"
       cardTestId="runs-detail-final-output-card"
-      contentClassName="space-y-5 pt-6"
+      contentClassName="space-y-5"
       description="Rendered payload view for the immutable run result."
       icon={Download}
       title="Final output"
     >
       {showPayload ? (
         <RunPayloadPane
-          headingId="runs-final-output-heading"
           label="Final output"
           testId="runs-detail-final-output"
           value={run.finalOutput}
         />
       ) : (
-        <section
-          aria-labelledby="runs-final-output-heading"
-          className="space-y-3"
-        >
-          <h3
-            className="text-base font-medium leading-none"
-            id="runs-final-output-heading"
-          >
-            Final output
-          </h3>
+        <section aria-label="Final output" className="space-y-3">
           <RunDetailEmptyState testId="runs-detail-final-output">
             {outputState.description}
           </RunDetailEmptyState>
@@ -871,52 +898,20 @@ export function RunOutputWorkspace({ run }: { run: RunRead }) {
 }
 
 export function RunInputWorkspace({ run }: { run: RunRead }) {
-  const provenance = run.packageProvenance;
-  const launchSnapshot = provenance?.launchSnapshot ?? null;
-
   return (
     <div className="grid min-w-0 gap-3" data-testid="runs-input-workspace">
       <RunDetailSectionBlock
         blockId="run-input"
         cardTestId="runs-detail-input-card"
-        contentClassName="space-y-5 pt-6"
+        contentClassName="space-y-5"
         description="Launch payload captured with the immutable run snapshot."
         icon={FileText}
         title="Run input"
       >
         <RunPayloadPane
-          headingId="runs-input-heading"
           label="Run input"
           testId="runs-detail-input"
           value={run.input}
-        />
-      </RunDetailSectionBlock>
-      <RunDetailSectionBlock
-        blockId="input-provenance"
-        description="Launch-time input context is owned by the workspace; selected raw detail expands from metadata rows."
-        icon={FileText}
-        title="Input provenance"
-      >
-        <EvidenceCluster
-          items={[
-            {
-              label: "Parameters",
-              value:
-                run.input && typeof run.input === "object"
-                  ? `${Object.keys(run.input as Record<string, unknown>).length} root field(s)`
-                  : "Scalar input",
-              description: "Root launch parameters captured with the run.",
-            },
-            {
-              label: "Schema",
-              value: launchSnapshot?.inputSchema
-                ? "Snapshot schema captured"
-                : "No schema snapshot",
-              description: launchSnapshot?.workflowKey ?? "Not recorded",
-              tone: launchSnapshot?.inputSchema ? "verified" : "warning",
-            },
-          ]}
-          layout="grid"
         />
       </RunDetailSectionBlock>
     </div>
@@ -3081,7 +3076,6 @@ export function RunAuditEvidenceSection({
       blockId="metadata"
       description="Trace, payload, memory, and report evidence rows expand inline with contextual raw detail."
       icon={FileText}
-      testId="runs-metadata-collapsible"
       title="Metadata"
     >
       <div className="grid min-w-0 gap-3">
@@ -3123,18 +3117,30 @@ export function RunAuditEvidenceSection({
                 );
                 const paneMatches = !row.pane || activeInspection.pane === row.pane;
                 const isActive =
-                  targetMatches && (row.target.type === "run" ? paneMatches : true);
+                  activeInspection.selected !== false &&
+                  targetMatches &&
+                  (row.target.type === "run" ? paneMatches : true);
                 const shouldRenderInline = isActive && activeInspection.mode === "metadata";
+                const selectRow = () => onSelect(row.target, row.pane, "metadata");
                 const dataRow = (
                   <TableRow
+                    aria-label={`${row.title} evidence row`}
+                    className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     data-state={isActive ? "selected" : undefined}
                     data-testid={`runs-audit-row-${row.id}`}
                     key={row.id}
+                    onClick={selectRow}
+                    onKeyDown={(event) => handleSelectableRowKeyDown(event, selectRow)}
+                    role="button"
+                    tabIndex={0}
                   >
                     <TableCell className="min-w-56 whitespace-normal align-top">
                       <Button
                         className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
-                        onClick={() => onSelect(row.target, row.pane, "metadata")}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          selectRow();
+                        }}
                         size="sm"
                         type="button"
                         variant={isActive ? "secondary" : "ghost"}
@@ -3185,6 +3191,18 @@ export function RunAuditEvidenceSection({
       </div>
     </CollapsibleConsoleSection>
   );
+}
+
+function handleSelectableRowKeyDown(
+  event: KeyboardEvent<HTMLTableRowElement>,
+  onSelect: () => void,
+) {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+
+  event.preventDefault();
+  onSelect();
 }
 
 function StepStatusIndicator({
@@ -3313,7 +3331,6 @@ export function ExecutionOutline({
         blockId="execution-steps"
         description="Step and invocation rows stay visible while selected row detail expands inline."
         icon={Activity}
-        testId="runs-execution-collapsible"
         title="Execution steps"
       >
         {steps.length === 0 ? (
@@ -3363,17 +3380,27 @@ export function ExecutionOutline({
                   const stepTraceEntries = traceSpanEntries.filter(
                     (entry) => entry.stepIndex === step.index,
                   );
+                  const selectStep = () => onSelect(stepTarget, undefined, "execution");
                   const stepRow = (
                     <TableRow
+                      aria-label={`Step ${step.index} execution row`}
+                      className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       data-state={isStepActive ? "selected" : undefined}
                       data-testid={`runs-step-${step.index}`}
                       id={`step-${step.index}`}
                       key={`step-${step.id}`}
+                      onClick={selectStep}
+                      onKeyDown={(event) => handleSelectableRowKeyDown(event, selectStep)}
+                      role="button"
+                      tabIndex={0}
                     >
                       <TableCell className="min-w-56 whitespace-normal align-top">
                         <Button
                           className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
-                          onClick={() => onSelect(stepTarget, undefined, "execution")}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            selectStep();
+                          }}
                           size="sm"
                           type="button"
                           variant={isStepActive ? "secondary" : "ghost"}
@@ -3418,17 +3445,30 @@ export function ExecutionOutline({
                       activeInspection.target,
                       invocationTarget,
                     );
+                    const selectInvocation = () =>
+                      onSelect(invocationTarget, undefined, "execution");
                     const row = (
                       <TableRow
+                        aria-label={`${invocation.slot} agent invocation row`}
+                        className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         data-state={isActive ? "selected" : undefined}
                         data-testid={`runs-invocation-${invocation.id}-outline-entry`}
                         id={`invocation-${invocation.id}`}
                         key={`agent-${invocation.id}`}
+                        onClick={selectInvocation}
+                        onKeyDown={(event) =>
+                          handleSelectableRowKeyDown(event, selectInvocation)
+                        }
+                        role="button"
+                        tabIndex={0}
                       >
                         <TableCell className="min-w-56 whitespace-normal align-top">
                           <Button
                             className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
-                            onClick={() => onSelect(invocationTarget, undefined, "execution")}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              selectInvocation();
+                            }}
                             size="sm"
                             type="button"
                             variant={isActive ? "secondary" : "ghost"}
@@ -3482,17 +3522,30 @@ export function ExecutionOutline({
                       activeInspection.target,
                       operationTarget,
                     );
+                    const selectOperation = () =>
+                      onSelect(operationTarget, undefined, "execution");
                     const row = (
                       <TableRow
+                        aria-label={`${invocation.slot} operation invocation row`}
+                        className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         data-state={isActive ? "selected" : undefined}
                         data-testid={`runs-operation-${invocation.id}-outline-entry`}
                         id={`operation-invocation-${invocation.id}`}
                         key={`operation-${invocation.id}`}
+                        onClick={selectOperation}
+                        onKeyDown={(event) =>
+                          handleSelectableRowKeyDown(event, selectOperation)
+                        }
+                        role="button"
+                        tabIndex={0}
                       >
                         <TableCell className="min-w-56 whitespace-normal align-top">
                           <Button
                             className="h-auto w-full cursor-pointer justify-start px-2 py-1.5 text-left"
-                            onClick={() => onSelect(operationTarget, undefined, "execution")}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              selectOperation();
+                            }}
                             size="sm"
                             type="button"
                             variant={isActive ? "secondary" : "ghost"}
@@ -3822,27 +3875,18 @@ function MemoryEventGroupSection({
   events: RunMemoryEventRead[];
 }) {
   return (
-    <section
-      aria-labelledby={`runs-memory-group-${definition.key}-heading`}
-      className="space-y-3"
-      data-testid={`runs-memory-group-${definition.key}`}
+    <CollapsibleDetailPanel
+      description={
+        <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
+          <span>{definition.description}</span>
+          <Badge variant="outline">
+            {events.length} event{events.length === 1 ? "" : "s"}
+          </Badge>
+        </span>
+      }
+      testId={`runs-memory-group-${definition.key}`}
+      title={definition.title}
     >
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h3
-            className="text-base font-medium leading-none"
-            id={`runs-memory-group-${definition.key}-heading`}
-          >
-            {definition.title}
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {definition.description}
-          </p>
-        </div>
-        <Badge variant="outline">
-          {events.length} event{events.length === 1 ? "" : "s"}
-        </Badge>
-      </div>
       {events.length > 0 ? (
         <div className="grid gap-3">
           {events.map((event) => (
@@ -3852,7 +3896,7 @@ function MemoryEventGroupSection({
       ) : (
         <p className="text-sm text-muted-foreground">{definition.emptyCopy}</p>
       )}
-    </section>
+    </CollapsibleDetailPanel>
   );
 }
 
@@ -3889,11 +3933,11 @@ function RunMemoryEvidence({ run }: { run: RunRead }) {
   const hasArtifacts = run.memoryArtifacts.length > 0;
 
   return (
-    <div className="space-y-5" data-testid="runs-memory-evidence">
-      <h3 className="text-base font-medium leading-none">Run memory evidence</h3>
-      <p className="text-sm text-muted-foreground">
-        Run-scoped memory events and compact artifacts.
-      </p>
+    <CollapsibleDetailPanel
+      description="Run-scoped memory events and compact artifacts."
+      testId="runs-memory-evidence"
+      title="Run memory evidence"
+    >
       {!hasEvents && !hasArtifacts ? (
         <CompactModeEmptyState testId="runs-memory-evidence-empty">
           No retrieval, write, review, audit, or compact memory artifact evidence was recorded for this run.
@@ -3909,7 +3953,7 @@ function RunMemoryEvidence({ run }: { run: RunRead }) {
             />
           ))
         : null}
-    </div>
+    </CollapsibleDetailPanel>
   );
 }
 
@@ -4405,9 +4449,6 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
       <section className="min-w-0" data-testid="runs-stacked-section-inputs">
         <RunInputWorkspace run={run} />
       </section>
-      <section className="min-w-0" data-testid="runs-stacked-section-outputs">
-        <RunOutputWorkspace run={run} />
-      </section>
       <section className="min-w-0" data-testid="runs-stacked-section-memory">
         <RunMemoryWorkspace run={run} />
       </section>
@@ -4428,23 +4469,11 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
         />
       </section>
       {run.memoryArtifacts.length > 0 ? (
-        <section
-          aria-labelledby="runs-memory-compact-artifacts-heading"
-          className="min-w-0 space-y-3"
-          data-testid="runs-memory-compact-artifacts"
+        <CollapsibleDetailPanel
+          description="These artifacts summarize memory rows written for human audit; they do not replace the event groups above."
+          testId="runs-memory-compact-artifacts"
+          title="Compact artifact slice"
         >
-          <div>
-            <h3
-              className="text-base font-medium leading-none"
-              id="runs-memory-compact-artifacts-heading"
-            >
-              Compact artifact slice
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              These artifacts summarize memory rows written for human audit;
-              they do not replace the event groups above.
-            </p>
-          </div>
           <div className="grid gap-3">
             {run.memoryArtifacts.map((artifact) => (
               <MemoryArtifactSummaryCard
@@ -4453,7 +4482,7 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
               />
             ))}
           </div>
-        </section>
+        </CollapsibleDetailPanel>
       ) : null}
       <section className="min-w-0" data-testid="runs-stacked-section-metadata">
         <RunAuditEvidenceSection
@@ -4569,7 +4598,6 @@ function RunInlineEvidence({
         </div>
       ) : (
         <RunPayloadPane
-          headingId="runs-input-heading"
           label="Run input"
           testId="runs-detail-input"
           value={run.input}

@@ -6,6 +6,7 @@ import type { RunOperationInvocationRead, RunRead, RunStepRead } from "@/lib/typ
 
 import { RunsDetailPage } from "./detail";
 
+const setSearchParamsMock = vi.fn();
 const useRunMock = vi.fn();
 let searchParamsMock = new URLSearchParams();
 
@@ -14,7 +15,7 @@ vi.mock("react-router", () => ({
   useLocation: () => ({ hash: "", pathname: "/runs/42", search: searchParamsMock.toString() }),
   useNavigate: () => vi.fn(),
   useParams: () => ({ runId: "42" }),
-  useSearchParams: () => [searchParamsMock, vi.fn()],
+  useSearchParams: () => [searchParamsMock, setSearchParamsMock],
 }));
 
 vi.mock("@/hooks/use-runs", () => ({
@@ -93,6 +94,20 @@ function buildStep(overrides: Partial<RunStepRead> = {}): RunStepRead {
   };
 }
 
+function applyLatestSearchParamsUpdate(currentSearch: string) {
+  const lastCall =
+    setSearchParamsMock.mock.calls[setSearchParamsMock.mock.calls.length - 1];
+  const updater = lastCall?.[0];
+
+  if (typeof updater !== "function") {
+    throw new Error(
+      "Expected the latest search params update to use an updater function.",
+    );
+  }
+
+  searchParamsMock = updater(new URLSearchParams(currentSearch));
+}
+
 function buildRun(overrides: Partial<RunRead> = {}): RunRead {
   return {
     createdAt: NOW,
@@ -135,6 +150,7 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
 describe("RunsDetailPage HTTP operation invocations", () => {
   beforeEach(() => {
     searchParamsMock = new URLSearchParams();
+    setSearchParamsMock.mockReset();
     useRunMock.mockReset();
   });
 
@@ -173,7 +189,7 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     expect(screen.getByTestId("runs-mode-workspace")).toContainElement(
       screen.getByTestId("runs-execution-outline"),
     );
-    expect(screen.getByTestId("runs-execution-collapsible")).toHaveAttribute(
+    expect(screen.getByTestId("runs-detail-section-execution-steps")).toHaveAttribute(
       "data-slot",
       "collapsible",
     );
@@ -212,8 +228,27 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     expect(screen.queryByTestId("runs-step-1-operation-webhook_result")).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-step-1-operation-webhook_retry")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/operation webhook_result\/span-operation/i);
-
+    fireEvent.click(
+      within(screen.getByTestId("runs-operation-2001-outline-entry")).getByText(
+        /executed/i,
+      ),
+    );
+    applyLatestSearchParamsUpdate("mode=execution");
     stepsRender.unmount();
+
+    const selectedOperationRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-operation-2001-inline-evidence"))
+      .toHaveTextContent(/queued/i);
+    fireEvent.click(
+      within(screen.getByTestId("runs-operation-2001-outline-entry")).getByText(
+        /executed/i,
+      ),
+    );
+    applyLatestSearchParamsUpdate("mode=execution&inspect=operation%3A2001");
+    expect(searchParamsMock.get("mode")).toBe("execution");
+    expect(searchParamsMock.has("inspect")).toBe(false);
+    expect(searchParamsMock.has("pane")).toBe(false);
+    selectedOperationRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1");
     const stepSummaryRender = render(<RunsDetailPage />);
     expect(within(screen.getByTestId("runs-step-1-inline-evidence")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();

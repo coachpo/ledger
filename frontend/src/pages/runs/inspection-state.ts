@@ -34,6 +34,7 @@ export type RunInspectionMode =
 export type RunInspectionState = {
   mode: RunInspectionMode;
   pane: RunInspectionPane;
+  selected?: boolean;
   target: RunInspectionTarget;
 };
 
@@ -409,6 +410,9 @@ export function resolveRunInspectionState({
     failedDefault?.target ?? canonicalTarget(run, steps, searchParams, hash);
   const requestedMode = parseRunInspectionMode(searchParams.get("mode"));
   const requestedPane = searchParams.get("pane") as RunInspectionPane | null;
+  const hasExplicitSelection = Boolean(
+    searchParams.has("inspect") || searchParams.has("pane") || parseAnchorTarget(hash),
+  );
   const validPanes = inspectionPanesForTarget(target);
   const requestedPaneIsValid = Boolean(
     requestedPane && validPanes.includes(requestedPane),
@@ -424,13 +428,16 @@ export function resolveRunInspectionState({
     : (failedDefault?.pane ?? defaultPaneForMode(target, fallbackMode));
   const inferredMode = modeForPane(target, pane);
 
+  const mode =
+    requestedMode ??
+    failedDefault?.mode ??
+    (requestedPaneIsValid || target.type !== "run" ? inferredMode : null) ??
+    defaultRunInspectionMode(run);
+
   return {
-    mode:
-      requestedMode ??
-      failedDefault?.mode ??
-      (requestedPaneIsValid || target.type !== "run" ? inferredMode : null) ??
-      defaultRunInspectionMode(run),
+    mode,
     pane,
+    selected: !(mode === "metadata" && !hasExplicitSelection),
     target,
   };
 }

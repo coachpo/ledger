@@ -103,9 +103,7 @@ vi.mock("@xyflow/react", () => ({
     zoomOnDoubleClick,
     zoomOnPinch,
     zoomOnScroll,
-    ...props
   }: {
-    "aria-label"?: string;
     autoPanOnNodeDrag?: boolean;
     children?: ReactNode;
     connectOnClick?: boolean;
@@ -149,7 +147,6 @@ vi.mock("@xyflow/react", () => ({
     zoomOnScroll?: boolean;
   }) => (
     <div
-      aria-label={props["aria-label"]}
       data-auto-pan-on-node-drag={String(autoPanOnNodeDrag)}
       data-connect-on-click={String(connectOnClick)}
       data-edges-focusable={String(edgesFocusable)}
@@ -690,8 +687,6 @@ describe("RunsDetailPage", () => {
       ["runs-detail-section-diagnostics", "Diagnostics"],
       ["runs-detail-section-execution-steps", "Execution steps"],
       ["runs-detail-section-run-input", "Run input"],
-      ["runs-detail-section-input-provenance", "Input provenance"],
-      ["runs-detail-section-output-provenance", "Output provenance"],
       ["runs-detail-section-memory", "Memory"],
       ["runs-memory-evidence", "Run memory evidence"],
       ["runs-memory-group-retrievedContext", "Retrieved context"],
@@ -720,16 +715,16 @@ describe("RunsDetailPage", () => {
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });
-    expect(within(stack).getByTestId("runs-overview-workspace")).toBeVisible();
-    expect(within(stack).getByTestId("runs-execution-outline")).toBeVisible();
-    expect(within(stack).getByTestId("runs-diagnostics-workspace"))
-      .toBeVisible();
-    expect(within(stack).getByTestId("runs-input-workspace")).toBeVisible();
-    expect(within(stack).getByTestId("runs-output-workspace")).toBeVisible();
-    expect(within(stack).getByTestId("runs-runtime-workspace")).toBeVisible();
-    expect(within(stack).getByTestId("runs-memory-workspace")).toBeVisible();
-    expect(within(stack).getByTestId("runs-lineage-workspace")).toBeVisible();
-    expect(within(stack).getByTestId("runs-audit-table")).toBeVisible();
+    expect(within(stack).queryByTestId("runs-detail-section-input-provenance"))
+      .not.toBeInTheDocument();
+    expect(within(stack).queryByTestId("runs-detail-section-output-provenance"))
+      .not.toBeInTheDocument();
+    expect(within(stack).queryByTestId("runs-output-workspace"))
+      .not.toBeInTheDocument();
+    sections.forEach((section) => {
+      expect(section).toHaveAttribute("data-slot", "collapsible");
+      expect(section).toHaveAttribute("data-state", "closed");
+    });
   });
 
   it("renders every stacked run detail block with shared iconized section chrome", () => {
@@ -754,8 +749,6 @@ describe("RunsDetailPage", () => {
       ["diagnostics", "Diagnostics"],
       ["execution-steps", "Execution steps"],
       ["run-input", "Run input"],
-      ["input-provenance", "Input provenance"],
-      ["output-provenance", "Output provenance"],
       ["memory", "Memory"],
       ["runtime-profile", "Runtime profile"],
       ["selected-strategies", "Selected strategies"],
@@ -778,6 +771,34 @@ describe("RunsDetailPage", () => {
       expect(
         within(block).getByTestId(`runs-detail-section-description-${blockId}`),
       ).toHaveClass("text-xs", "leading-5", "text-muted-foreground");
+    });
+  });
+
+  it("keeps final output and run input collapsed content free of extra top padding", () => {
+    useRunMock.mockReturnValue(queryResult(buildRun()));
+
+    render(<RunsDetailPage />);
+
+    const finalOutputCard = screen.getByTestId("runs-detail-final-output-card");
+    const runInputCard = screen.getByTestId("runs-detail-input-card");
+    const collapsedBlocks = [
+      { card: finalOutputCard, sectionId: "runs-detail-section-final-output" },
+      { card: runInputCard, sectionId: "runs-detail-section-run-input" },
+    ];
+
+    expect(finalOutputCard).toHaveClass("min-h-[136px]");
+    expect(runInputCard).not.toHaveClass("min-h-[136px]");
+    collapsedBlocks.forEach(({ card, sectionId }) => {
+      expect(screen.getByTestId(sectionId)).toHaveAttribute(
+        "data-state",
+        "closed",
+      );
+      expect(card.querySelector("[data-slot='card-content']")).toHaveClass(
+        "space-y-5",
+      );
+      expect(card.querySelector("[data-slot='card-content']")).not.toHaveClass(
+        "pt-6",
+      );
     });
   });
 
@@ -1143,9 +1164,7 @@ describe("RunsDetailPage", () => {
     searchParamsMock = new URLSearchParams("mode=execution");
     const executionRender = render(<RunsDetailPage />);
     fireEvent.click(
-      within(screen.getByTestId("runs-step-1")).getByRole("button", {
-        name: /step 1/i,
-      }),
+      within(screen.getByTestId("runs-step-1")).getByText(/succeeded/i),
     );
     applyLatestSearchParamsUpdate("mode=execution");
     expect(searchParamsMock.get("mode")).toBe("execution");
@@ -1157,14 +1176,20 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-step-1-inline-evidence")).toHaveTextContent(
       /step evidence/i,
     );
+    fireEvent.click(
+      within(screen.getByTestId("runs-step-1")).getByText(/succeeded/i),
+    );
+    applyLatestSearchParamsUpdate("mode=execution&inspect=step%3A1");
+    expect(searchParamsMock.get("mode")).toBe("execution");
+    expect(searchParamsMock.has("inspect")).toBe(false);
+    expect(searchParamsMock.has("pane")).toBe(false);
     selectedStepRender.unmount();
 
     searchParamsMock = new URLSearchParams("mode=execution");
     const invocationRender = render(<RunsDetailPage />);
     fireEvent.click(
-      within(screen.getByTestId("runs-invocation-1001-outline-entry")).getByRole(
-        "button",
-        { name: /analysis agent/i },
+      within(screen.getByTestId("runs-invocation-1001-outline-entry")).getByText(
+        /input derived/i,
       ),
     );
     applyLatestSearchParamsUpdate("mode=execution");
@@ -1174,14 +1199,22 @@ describe("RunsDetailPage", () => {
     expect(
       screen.getByTestId("runs-invocation-1001-inline-evidence"),
     ).toHaveTextContent(/output/i);
+    fireEvent.click(
+      within(screen.getByTestId("runs-invocation-1001-outline-entry")).getByText(
+        /input derived/i,
+      ),
+    );
+    applyLatestSearchParamsUpdate("mode=execution&inspect=invocation%3A1001");
+    expect(searchParamsMock.get("mode")).toBe("execution");
+    expect(searchParamsMock.has("inspect")).toBe(false);
+    expect(searchParamsMock.has("pane")).toBe(false);
     selectedInvocationRender.unmount();
 
     searchParamsMock = new URLSearchParams("mode=metadata");
     const metadataRender = render(<RunsDetailPage />);
     fireEvent.click(
-      within(screen.getByTestId("runs-audit-row-payload-input")).getByRole(
-        "button",
-        { name: /run input/i },
+      within(screen.getByTestId("runs-audit-row-payload-input")).getByText(
+        /launch input captured/i,
       ),
     );
     applyLatestSearchParamsUpdate("mode=metadata");
@@ -1189,14 +1222,53 @@ describe("RunsDetailPage", () => {
     metadataRender.unmount();
 
     const selectedMetadataRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-metadata-collapsible")).toHaveAttribute(
+    expect(screen.getByTestId("runs-detail-section-metadata")).toHaveAttribute(
       "data-slot",
       "collapsible",
     );
     expect(
       screen.getByTestId("runs-audit-row-payload-input-inline-evidence"),
     ).toHaveTextContent(/AAPL/i);
+    fireEvent.click(
+      within(screen.getByTestId("runs-audit-row-payload-input")).getByText(
+        /launch input captured/i,
+      ),
+    );
+    applyLatestSearchParamsUpdate(
+      "mode=metadata&inspect=run&pane=input",
+    );
+    expect(searchParamsMock.get("mode")).toBe("metadata");
+    expect(searchParamsMock.has("inspect")).toBe(false);
+    expect(searchParamsMock.has("pane")).toBe(false);
     selectedMetadataRender.unmount();
+
+    const closedMetadataRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-audit-row-payload-input"))
+      .not.toHaveAttribute("data-state", "selected");
+    expect(
+      screen.queryByTestId("runs-audit-row-payload-input-inline-evidence"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-audit-row-payload-output-inline-evidence"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      within(screen.getByTestId("runs-audit-row-payload-output")).getByText(
+        /final output captured/i,
+      ),
+    );
+    applyLatestSearchParamsUpdate("mode=metadata");
+    expect(searchParamsMock.get("mode")).toBe("metadata");
+    expect(searchParamsMock.get("inspect")).toBe("run");
+    expect(searchParamsMock.get("pane")).toBe("finalOutput");
+    closedMetadataRender.unmount();
+
+    const reopenedMetadataRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-audit-row-payload-output"))
+      .toHaveAttribute("data-state", "selected");
+    expect(
+      screen.getByTestId("runs-audit-row-payload-output-inline-evidence"),
+    ).toHaveTextContent(/All clear/i);
+    reopenedMetadataRender.unmount();
 
     searchParamsMock = new URLSearchParams("mode=metadata");
     const traceRender = render(<RunsDetailPage />);
@@ -1526,8 +1598,11 @@ describe("RunsDetailPage", () => {
       screen.getAllByRole("heading", { name: /final output/i })[0],
     ).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: /output provenance/i }),
-    ).toBeVisible();
+      screen.queryByRole("heading", { name: /output provenance/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /input provenance/i }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: /operational overview/i }),
     ).toBeVisible();
@@ -1580,7 +1655,7 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-metadata-line")).toHaveTextContent(
       /lineage from run #41/i,
     );
-    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(
+    expect(screen.getByTestId("runs-detail-identity-line")).toHaveTextContent(
       /market_review_package/i,
     );
     expect(screen.queryByText(/captured package id/i)).not.toBeInTheDocument();
@@ -1608,7 +1683,10 @@ describe("RunsDetailPage", () => {
     expect(finalOutputCard).toHaveAttribute("data-slot", "card");
     expect(
       finalOutputCard.querySelector("[data-slot='card-content']"),
-    ).toHaveClass("space-y-5", "pt-6");
+    ).toHaveClass("space-y-5");
+    expect(
+      finalOutputCard.querySelector("[data-slot='card-content']"),
+    ).not.toHaveClass("pt-6");
     expect(finalOutput).toHaveTextContent(/normalized/i);
     expect(finalOutput).toHaveClass(
       "flex",
@@ -1620,8 +1698,8 @@ describe("RunsDetailPage", () => {
     expect(finalOutput).not.toHaveClass("overflow-hidden", "text-xs");
     expect(finalOutput.querySelector("pre")).toBeNull();
     expect(
-      within(finalOutputCard).getAllByRole("heading", { name: /final output/i })[1],
-    ).toHaveClass("text-base", "font-medium", "leading-none");
+      within(finalOutputCard).getAllByRole("heading", { name: /^final output$/i }),
+    ).toHaveLength(1);
     expect(screen.queryByTestId("runs-evidence-pane-nav"))
       .not.toBeInTheDocument();
     defaultRender.unmount();
@@ -1647,7 +1725,7 @@ describe("RunsDetailPage", () => {
       .not.toBeInTheDocument();
     expect(screen.queryByTestId("split-inspector-resize-handle"))
       .not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-execution-collapsible")).toHaveAttribute(
+    expect(screen.getByTestId("runs-detail-section-execution-steps")).toHaveAttribute(
       "data-slot",
       "collapsible",
     );
@@ -1770,15 +1848,20 @@ describe("RunsDetailPage", () => {
     stepSelectionRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=run&pane=input");
     const runInputRender = render(<RunsDetailPage />);
-    const runInput = screen.getByTestId("runs-detail-input");
+    const runInputCard = screen.getByTestId("runs-detail-input-card");
+    const runInput = within(runInputCard).getByTestId("runs-detail-input");
+    expect(
+      runInputCard.querySelector("[data-slot='card-content']"),
+    ).toHaveClass("space-y-5");
+    expect(
+      runInputCard.querySelector("[data-slot='card-content']"),
+    ).not.toHaveClass("pt-6");
     expect(runInput).toHaveTextContent(/AAPL/i);
     expect(runInput).toHaveClass("flex", "flex-col", "min-w-0", "gap-3");
     expect(runInput).not.toHaveClass("overflow-hidden", "text-xs");
-    expect(screen.getAllByRole("heading", { name: /^run input$/i })[1]).toHaveClass(
-      "text-base",
-      "font-medium",
-      "leading-none",
-    );
+    expect(
+      screen.getAllByRole("heading", { name: /^run input$/i }),
+    ).toHaveLength(1);
     expect(screen.queryByTestId("runs-active-evidence-viewer"))
       .not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-evidence-pane-nav"))
@@ -2483,6 +2566,10 @@ describe("RunsDetailPage", () => {
           finalOutput: { summary: "Macro complete" },
           id: 43,
           input: { topic: "macro" },
+          packageProvenance: buildPackageProvenance({
+            workflowPackageKey: "signaldeck_advisory_research_memory",
+            workflowPackageName: "SignalDeck Advisory Research with Memory",
+          }),
           steps: [
             buildStep({
               id: 201,
@@ -2535,8 +2622,11 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-header")).toHaveTextContent(
       /workflow package/i,
     );
-    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(
-      /macro_package/i,
+    expect(screen.getByTestId("runs-detail-identity-line")).toHaveTextContent(
+      "Workflow Package | SignalDeck Advisory Research with Memory | signaldeck_advisory_research_memory",
+    );
+    expect(screen.getByTestId("runs-detail-identity-line")).toHaveTextContent(
+      /signaldeck_advisory_research_memory/i,
     );
     expect(
       screen.queryByText(/captured package id: 12/i),
@@ -2784,7 +2874,10 @@ describe("RunsDetailPage", () => {
     expect(pendingFinalOutputCard).toHaveAttribute("data-slot", "card");
     expect(
       pendingFinalOutputCard.querySelector("[data-slot='card-content']"),
-    ).toHaveClass("space-y-5", "pt-6");
+    ).toHaveClass("space-y-5");
+    expect(
+      pendingFinalOutputCard.querySelector("[data-slot='card-content']"),
+    ).not.toHaveClass("pt-6");
     expect(pendingFinalOutput).toHaveTextContent(
       "Final output is not available yet.",
     );
@@ -2798,9 +2891,9 @@ describe("RunsDetailPage", () => {
     );
     expect(
       within(pendingFinalOutputCard).getAllByRole("heading", {
-        name: /final output/i,
-      })[1],
-    ).toBeVisible();
+        name: /^final output$/i,
+      }),
+    ).toHaveLength(1);
     expect(
       screen.queryByText(/no invocation trace spans captured/i),
     ).not.toBeInTheDocument();
