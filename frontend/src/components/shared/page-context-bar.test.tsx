@@ -13,7 +13,9 @@ describe("PageContextBar", () => {
         actions={<button onClick={onRefresh} type="button">Refresh</button>}
         description="Operational context for this route."
         meta="Updated 2 minutes ago"
-        status={<ResourceStatusStrip items={[{ label: "Ready", tone: "success" }]} />}
+        status={
+          <ResourceStatusStrip items={[{ label: "Ready", tone: "success" }]} />
+        }
         title="Runtime Console"
       />,
     );
@@ -21,8 +23,13 @@ describe("PageContextBar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     expect(screen.getByText("Runtime Console")).toBeInTheDocument();
-    expect(screen.getByText("Updated 2 minutes ago")).toHaveClass("text-xs", "text-muted-foreground");
-    expect(screen.getByText("Ready").closest("[data-slot='badge']")).toHaveAttribute("data-tone", "success");
+    expect(screen.getByText("Updated 2 minutes ago")).toHaveClass(
+      "text-xs",
+      "text-muted-foreground",
+    );
+    expect(
+      screen.getByText("Ready").closest("[data-slot='badge']"),
+    ).toHaveAttribute("data-tone", "success");
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
@@ -35,14 +42,63 @@ describe("PageContextBar", () => {
       />,
     );
 
-    expect(screen.getByText("Compact Context").closest("[data-slot='card-header']")).toHaveClass("px-4", "pt-4");
-    expect(screen.getByText("Compact metadata").closest("[data-slot='card-content']")).toHaveClass("px-4", "pb-3");
+    expect(
+      screen.getByText("Compact Context").closest("[data-slot='card-header']"),
+    ).toHaveClass("px-4", "pt-4");
+    expect(
+      screen.getByText("Compact metadata").closest("[data-slot='card-content']"),
+    ).toHaveClass("px-4", "pb-3");
+  });
+
+  it("keeps stacked layout as the default and uses toolbar layout only when requested", () => {
+    const { rerender } = render(
+      <PageContextBar
+        description="Default stacked context."
+        title="Stacked Context"
+      />,
+    );
+
+    expect(
+      screen.getByText("Stacked Context").closest("[data-slot='card-header']"),
+    ).toBeInTheDocument();
+
+    rerender(
+      <PageContextBar
+        description="Compact toolbar context."
+        layout="toolbar"
+        status={
+          <ResourceStatusStrip items={[{ label: "Ready", value: "3" }]} />
+        }
+        title="Toolbar Context"
+      />,
+    );
+
+    expect(
+      screen.getByText("Toolbar Context").closest("[data-slot='card-header']"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Toolbar Context").closest("[data-slot='card-content']"),
+    ).toHaveClass("p-3", "sm:flex-row", "sm:items-center");
+    expect(screen.getByText("Toolbar Context").parentElement).toHaveClass(
+      "sm:flex-row",
+      "sm:items-baseline",
+    );
+    expect(screen.getByText("Compact toolbar context.")).toHaveClass(
+      "min-w-0",
+      "truncate",
+      "text-xs",
+    );
+    expect(
+      screen.getByText("Ready").closest("[role='list']"),
+    ).toBeInTheDocument();
   });
 
   it("stays visual-only without sticky positioning or shell offsets", () => {
     render(<PageContextBar title="Visual Context" />);
 
-    const card = screen.getByText("Visual Context").closest("[data-slot='card']");
+    const card = screen
+      .getByText("Visual Context")
+      .closest("[data-slot='card']");
 
     expect(card).not.toBeNull();
     expect(card?.className).not.toMatch(/\bsticky\b/);
