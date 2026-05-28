@@ -73,7 +73,7 @@ describe("ExtensionsListPage", () => {
 
     const page = screen.getByTestId("extensions-list-page");
     expect(page).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Extensions" })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: "Extensions" })).toBeVisible();
     expect(screen.getByText(/slim system-state contract only/i)).toBeVisible();
     const context = page.querySelector<HTMLElement>(
       '[data-inventory-shell-region="context"]',
@@ -84,15 +84,13 @@ describe("ExtensionsListPage", () => {
     }
 
     expect(context).toBeInTheDocument();
-    expect(context).toHaveTextContent("Surface");
-    expect(context).toHaveTextContent("system state");
-    expect(context).toHaveTextContent("Backend");
-    expect(context).toHaveTextContent("slim contract");
-    expect(context).toHaveTextContent(/Bundled\s*1/);
-    expect(context).toHaveTextContent(/Enabled\s*1/);
-    expect(
-      within(context).getByText("1 bundled extension returned"),
-    ).toBeVisible();
+    expect(context).not.toHaveTextContent("Surface");
+    expect(context).not.toHaveTextContent("system state");
+    expect(context).not.toHaveTextContent("Backend");
+    expect(context).not.toHaveTextContent("slim contract");
+    expect(context).not.toHaveTextContent(/Bundled\s*1/);
+    expect(context).not.toHaveTextContent(/Enabled\s*1/);
+    expect(context).not.toHaveTextContent("1 bundled extension returned");
     expect(
       page.querySelector('[data-inventory-shell-region="toolbar"]'),
     ).not.toBeInTheDocument();
@@ -106,11 +104,11 @@ describe("ExtensionsListPage", () => {
     expect(row).toHaveTextContent("Finance Workspace");
     expect(row).toHaveTextContent("signaldeck.finance");
     expect(row).toHaveTextContent("Enabled");
-    expect(row).toHaveTextContent(
+    expect(row).not.toHaveTextContent(
       "Ownership: SignalDeck Core plus Finance Workspace extension",
     );
-    expect(row).toHaveTextContent("Blast radius");
-    expect(row).toHaveTextContent("Finance routes, nav, tools");
+    expect(row).not.toHaveTextContent("Blast radius");
+    expect(row).not.toHaveTextContent("Finance routes, nav, tools");
     expect(screen.queryByText(/marketplace/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/install/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/remove/i)).not.toBeInTheDocument();

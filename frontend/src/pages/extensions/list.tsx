@@ -3,8 +3,6 @@ import { toast } from "sonner";
 
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
-import { ProvenanceBadge } from "@/components/shared/provenance-badge";
-import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Switch } from "@/components/ui/switch";
 import { useExtensions, useToggleExtension } from "@/hooks/use-extensions";
 import type { ExtensionRead } from "@/lib/types/extension";
@@ -53,37 +51,8 @@ function ExtensionRow({
           onCheckedChange={(checked) => onToggle(extension, checked)}
         />
       }
-      badges={
-        <ProvenanceBadge
-          detail="statically resident"
-          label="Bundled"
-          tone="verified"
-        />
-      }
       density="compact"
-      description="System control row for bundled route, navigation, and tool availability."
-      metadata="Ownership: SignalDeck Core plus Finance Workspace extension"
-      statusStrip={
-        <ResourceStatusStrip
-          items={[
-            {
-              label: "State",
-              tone: extension.enabled ? "success" : "muted",
-              value: enabledLabel,
-            },
-            {
-              label: "Contract",
-              tone: "neutral",
-              value: "key, label, enabled",
-            },
-            {
-              label: "Blast radius",
-              tone: extension.enabled ? "neutral" : "warning",
-              value: "Finance routes, nav, tools",
-            },
-          ]}
-        />
-      }
+      description={enabledLabel}
       subtitle={extension.key}
       testId={`extension-row-${testSegment}`}
       title={extension.label}
@@ -95,9 +64,6 @@ export function ExtensionsListPage() {
   const extensionsQuery = useExtensions();
   const toggleExtension = useToggleExtension();
   const extensions = sortExtensions(extensionsQuery.data?.items ?? []);
-  const enabledCount = extensions.filter(
-    (extension) => extension.enabled,
-  ).length;
 
   const handleToggle = async (
     extension: ExtensionRead,
@@ -126,44 +92,9 @@ export function ExtensionsListPage() {
     <InventoryPageShell
       className="gap-3 p-4 sm:p-5 lg:p-6"
       pageContext={{
-        actions: (
-          <span className="text-xs text-muted-foreground">
-            {extensions.length} bundled{" "}
-            {extensions.length === 1 ? "extension" : "extensions"} returned
-          </span>
-        ),
         description:
           "Manage bundled extension availability from the slim system-state contract only. Runtime gates own route and tool visibility.",
-        layout: "toolbar",
-        meta: (
-          <div className="flex flex-wrap items-center gap-2">
-            <ProvenanceBadge detail="system state" label="Surface" />
-            <ProvenanceBadge
-              detail="slim contract"
-              label="Backend"
-              tone="verified"
-            />
-          </div>
-        ),
-        status: (
-          <ResourceStatusStrip
-            className="rounded-md px-2 py-1"
-            items={[
-              {
-                label: "Bundled",
-                tone: extensions.length ? "success" : "muted",
-                value: String(extensions.length),
-              },
-              {
-                label: "Enabled",
-                tone: enabledCount ? "success" : "muted",
-                value: String(enabledCount),
-              },
-            ]}
-          />
-        ),
         title: "Extensions",
-        toolbarMetaPlacement: "middle",
       }}
       testId="extensions-list-page"
       toolbar={null}
