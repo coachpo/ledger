@@ -35,6 +35,7 @@ describe("RouteErrorPage", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Route failed to render" }),
     ).toBeVisible();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("Route error boundary")).toBeVisible();
     expect(screen.getByText("Render failure")).toBeVisible();
     expect(screen.queryByText("Route harness failure")).not.toBeInTheDocument();
@@ -53,6 +54,7 @@ describe("RouteErrorPage", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Route resource not found" }),
     ).toBeVisible();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("404")).toBeVisible();
     expect(screen.queryByText("Unexpected Application Error!")).not.toBeInTheDocument();
   });

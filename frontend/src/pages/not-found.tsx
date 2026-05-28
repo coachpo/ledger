@@ -27,7 +27,7 @@ export function NotFoundPage() {
               ]}
             />
           }
-          title="Unknown route"
+          title="Page not found"
         />
         <EmptyStatePanel
           action={
@@ -40,7 +40,7 @@ export function NotFoundPage() {
           }
           description="The workspace path you requested is not registered in SignalDeck. Return to a known route to continue your workflow."
           icon={<SearchX className="size-4" />}
-          title={<h1 className="text-2xl font-semibold tracking-tight">Page not found</h1>}
+          title="Unknown route"
           tone="warning"
         />
       </div>

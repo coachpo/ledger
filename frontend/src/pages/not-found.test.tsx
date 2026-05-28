@@ -20,6 +20,7 @@ describe("NotFoundPage", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Page not found" }),
     ).toBeVisible();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("Unknown route")).toBeVisible();
     expect(screen.getByText("Not found")).toBeVisible();
     expect(screen.getByText("Workflow packages")).toBeVisible();

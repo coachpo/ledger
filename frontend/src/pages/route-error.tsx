@@ -77,7 +77,7 @@ export function RouteErrorPage() {
               ]}
             />
           }
-          title="Route error boundary"
+          title={details.title}
         />
         <EmptyStatePanel
           action={
@@ -90,7 +90,7 @@ export function RouteErrorPage() {
           }
           description={details.description}
           icon={<AlertTriangle className="size-4 text-destructive" />}
-          title={<h1 className="text-2xl font-semibold tracking-tight">{details.title}</h1>}
+          title="Route error boundary"
           tone="danger"
         />
       </div>
