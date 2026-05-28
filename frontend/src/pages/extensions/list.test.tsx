@@ -75,12 +75,27 @@ describe("ExtensionsListPage", () => {
     expect(page).toBeVisible();
     expect(screen.getByRole("heading", { name: "Extensions" })).toBeVisible();
     expect(screen.getByText(/slim system-state contract only/i)).toBeVisible();
+    const context = page.querySelector<HTMLElement>(
+      '[data-inventory-shell-region="context"]',
+    );
+
+    if (!context) {
+      throw new Error("Expected extensions context region.");
+    }
+
+    expect(context).toBeInTheDocument();
+    expect(context).toHaveTextContent("Surface");
+    expect(context).toHaveTextContent("system state");
+    expect(context).toHaveTextContent("Backend");
+    expect(context).toHaveTextContent("slim contract");
+    expect(context).toHaveTextContent(/Bundled\s*1/);
+    expect(context).toHaveTextContent(/Enabled\s*1/);
     expect(
-      page.querySelector('[data-inventory-shell-region="context"]'),
-    ).toBeInTheDocument();
+      within(context).getByText("1 bundled extension returned"),
+    ).toBeVisible();
     expect(
       page.querySelector('[data-inventory-shell-region="toolbar"]'),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(
       page.querySelector('[data-inventory-shell-region="filters"]'),
     ).not.toBeInTheDocument();

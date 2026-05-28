@@ -124,10 +124,17 @@ export function ExtensionsListPage() {
 
   return (
     <InventoryPageShell
-      className="gap-3 p-3 sm:p-4"
+      className="gap-3 p-4 sm:p-5 lg:p-6"
       pageContext={{
+        actions: (
+          <span className="text-xs text-muted-foreground">
+            {extensions.length} bundled{" "}
+            {extensions.length === 1 ? "extension" : "extensions"} returned
+          </span>
+        ),
         description:
           "Manage bundled extension availability from the slim system-state contract only. Runtime gates own route and tool visibility.",
+        layout: "toolbar",
         meta: (
           <div className="flex flex-wrap items-center gap-2">
             <ProvenanceBadge detail="system state" label="Surface" />
@@ -140,6 +147,7 @@ export function ExtensionsListPage() {
         ),
         status: (
           <ResourceStatusStrip
+            className="rounded-md px-2 py-1"
             items={[
               {
                 label: "Bundled",
@@ -155,12 +163,10 @@ export function ExtensionsListPage() {
           />
         ),
         title: "Extensions",
+        toolbarMetaPlacement: "middle",
       }}
       testId="extensions-list-page"
-      toolbar={{
-        className: "gap-0",
-        resultSummary: `${extensions.length} bundled ${extensions.length === 1 ? "extension" : "extensions"} returned`,
-      }}
+      toolbar={null}
     >
       {extensionsQuery.isPending ? (
         <EmptyStatePanel
