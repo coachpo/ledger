@@ -109,7 +109,10 @@ describe("ReportListPage", () => {
       "aria-checked",
       "true",
     );
-    expect(screen.getByRole("heading", { name: "Reports" })).toBeVisible();
+    const heading = screen.getByRole("heading", { name: "Reports" });
+    expect(heading).toBeVisible();
+    expect(heading.closest("[data-slot='card-header']")).not.toBeInTheDocument();
+    expect(heading.closest("[data-slot='card-content']")).toHaveClass("p-3", "sm:flex-row");
     expect(screen.getByRole("button", { name: "Generate Report" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Upload Report" })).toBeVisible();
     expect(screen.getByLabelText("Search reports")).toBeVisible();

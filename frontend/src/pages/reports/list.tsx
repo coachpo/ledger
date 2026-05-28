@@ -352,7 +352,7 @@ export function ReportListPage() {
     <InventoryPageShell
       pageContext={{
         actions: (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={() => setGenerateOpen(true)}>
               <Plus data-icon="inline-start" /> Generate Report
             </Button>
@@ -366,7 +366,8 @@ export function ReportListPage() {
           </div>
         ),
         description: "Compiled template snapshots — point-in-time deliverables.",
-        status: <ResourceStatusStrip items={statusItems} />,
+        layout: "toolbar",
+        status: <ResourceStatusStrip density="toolbar" items={statusItems} />,
         title: "Reports",
       }}
       testId="reports-list-page"
