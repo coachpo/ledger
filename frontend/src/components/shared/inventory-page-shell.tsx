@@ -21,7 +21,7 @@ export type InventoryPageShellProps = {
   filterBar?: ResourceFilterBarProps | null;
   pageContext: PageContextBarProps;
   testId?: string;
-  toolbar: ResourceToolbarProps;
+  toolbar?: ResourceToolbarProps | null;
 };
 export function InventoryPageShell({
   children,
@@ -33,13 +33,18 @@ export function InventoryPageShell({
   toolbar,
 }: InventoryPageShellProps) {
   return (
-    <div className={cn("flex flex-col gap-4 p-4", className)} data-testid={testId}>
+    <div
+      className={cn("flex flex-col gap-4 p-4", className)}
+      data-testid={testId}
+    >
       <div data-inventory-shell-region="context">
         <PageContextBar {...pageContext} />
       </div>
-      <div data-inventory-shell-region="toolbar">
-        <ResourceToolbar {...toolbar} />
-      </div>
+      {toolbar ? (
+        <div data-inventory-shell-region="toolbar">
+          <ResourceToolbar {...toolbar} />
+        </div>
+      ) : null}
       {filterBar ? (
         <div data-inventory-shell-region="filters">
           <ResourceFilterBar {...filterBar} />

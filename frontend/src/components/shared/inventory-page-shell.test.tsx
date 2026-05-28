@@ -55,6 +55,23 @@ describe("InventoryPageShell", () => {
     expect(screen.queryByTestId("inventory-filters")).not.toBeInTheDocument();
   });
 
+  it("omits the toolbar region when callers move summary into compact route context", () => {
+    render(
+      <InventoryPageShell
+        pageContext={{ title: "Extensions" }}
+        testId="inventory-shell"
+        toolbar={null}
+      >
+        <div>Extension rows</div>
+      </InventoryPageShell>,
+    );
+
+    expect(shellRegions()).toEqual(["context", "content"]);
+    expect(
+      screen.queryByText(/bundled extension returned/i),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps route-owned content after shared controls instead of nesting controls in results", () => {
     render(
       <InventoryPageShell
