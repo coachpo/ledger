@@ -717,11 +717,14 @@ describe("RunsDetailPage", () => {
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });
-    expect(within(stack).getByTestId("runs-output-workspace"))
-      .toBeInTheDocument();
+    expect(
+      within(stack).getByTestId("runs-output-workspace"),
+    ).toBeInTheDocument();
     expect(
       within(stack).getByTestId("runs-detail-section-output-provenance"),
-    ).not.toHaveTextContent(/\bCaptured\b|\bPending\b|Not produced|Availability/i);
+    ).not.toHaveTextContent(
+      /\bCaptured\b|\bPending\b|Not produced|Availability/i,
+    );
     sections.forEach((section) => {
       expect(section).toHaveAttribute("data-slot", "collapsible");
       expect(section).toHaveAttribute("data-state", "closed");
@@ -861,8 +864,9 @@ describe("RunsDetailPage", () => {
       "data-run-mode",
       "execution",
     );
-    expect(screen.getByTestId("runs-invocation-1002-outline-entry"))
-      .toHaveAttribute("data-state", "selected");
+    expect(
+      screen.getByTestId("runs-invocation-1002-outline-entry"),
+    ).toHaveAttribute("data-state", "selected");
     expect(screen.getByTestId("runs-active-evidence-viewer")).toHaveTextContent(
       /provider failed/i,
     );
@@ -881,8 +885,9 @@ describe("RunsDetailPage", () => {
     );
     expect(screen.getByTestId("runs-overview-workspace")).toBeVisible();
     expect(screen.getByTestId("runs-execution-outline")).toBeVisible();
-    expect(screen.queryByTestId("split-inspector-right-pane"))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("split-inspector-right-pane"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders dedicated secondary modes with compact empty states", () => {
@@ -902,20 +907,28 @@ describe("RunsDetailPage", () => {
     const lineageRender = render(<RunsDetailPage />);
     const lineageWorkspace = screen.getByTestId("runs-lineage-workspace");
     expect(lineageWorkspace).toBeVisible();
-    expect(within(lineageWorkspace).getByTestId("runs-lineage-empty"))
-      .toHaveTextContent(/no fork, snapshot replay, copied-step, or historical lineage/i);
-    expect(screen.queryByTestId("runs-lineage-inspector-empty"))
-      .not.toBeInTheDocument();
+    expect(
+      within(lineageWorkspace).getByTestId("runs-lineage-empty"),
+    ).toHaveTextContent(
+      /no fork, snapshot replay, copied-step, or historical lineage/i,
+    );
+    expect(
+      screen.queryByTestId("runs-lineage-inspector-empty"),
+    ).not.toBeInTheDocument();
     lineageRender.unmount();
 
     searchParamsMock = new URLSearchParams("mode=memory");
     const memoryRender = render(<RunsDetailPage />);
     const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
     expect(memoryWorkspace).toBeVisible();
-    expect(within(memoryWorkspace).getByTestId("runs-memory-empty"))
-      .toHaveTextContent(/no retrieval, write, review, audit, or compact memory artifact/i);
-    expect(screen.queryByTestId("runs-memory-inspector-empty"))
-      .not.toBeInTheDocument();
+    expect(
+      within(memoryWorkspace).getByTestId("runs-memory-empty"),
+    ).toHaveTextContent(
+      /no retrieval, write, review, audit, or compact memory artifact/i,
+    );
+    expect(
+      screen.queryByTestId("runs-memory-inspector-empty"),
+    ).not.toBeInTheDocument();
     memoryRender.unmount();
 
     useRunMock.mockReturnValue(queryResult(tokenlessRun));
@@ -923,17 +936,23 @@ describe("RunsDetailPage", () => {
     const tokensRender = render(<RunsDetailPage />);
     const tokensWorkspace = screen.getByTestId("runs-tokens-workspace");
     expect(tokensWorkspace).toBeVisible();
-    expect(within(tokensWorkspace).getByTestId("runs-tokens-empty"))
-      .toHaveTextContent(/no token accounting was reported/i);
+    expect(
+      within(tokensWorkspace).getByTestId("runs-tokens-empty"),
+    ).toHaveTextContent(/no token accounting was reported/i);
     tokensRender.unmount();
 
     useRunMock.mockReturnValue(queryResult(buildRun()));
     searchParamsMock = new URLSearchParams("mode=diagnostics");
     render(<RunsDetailPage />);
-    const diagnosticsWorkspace = screen.getByTestId("runs-diagnostics-workspace");
+    const diagnosticsWorkspace = screen.getByTestId(
+      "runs-diagnostics-workspace",
+    );
     expect(diagnosticsWorkspace).toBeVisible();
-    expect(within(diagnosticsWorkspace).getByTestId("runs-diagnostics-empty"))
-      .toHaveTextContent(/no run diagnostics, queue warnings, runtime capability warnings/i);
+    expect(
+      within(diagnosticsWorkspace).getByTestId("runs-diagnostics-empty"),
+    ).toHaveTextContent(
+      /no run diagnostics, queue warnings, runtime capability warnings/i,
+    );
   });
 
   it("renders secondary lineage, memory, and token accounting evidence", () => {
@@ -978,7 +997,11 @@ describe("RunsDetailPage", () => {
       ],
       memoryEvents: [
         buildMemoryEvent({ id: 9101, eventType: "retrieved" }),
-        buildMemoryEvent({ id: 9102, eventType: "written", memoryId: "memory_safe" }),
+        buildMemoryEvent({
+          id: 9102,
+          eventType: "written",
+          memoryId: "memory_safe",
+        }),
       ],
       packageProvenance: buildPackageProvenance(),
       replayStepIndex: 1,
@@ -1008,8 +1031,9 @@ describe("RunsDetailPage", () => {
     expect(lineageWorkspace).toHaveTextContent(/lineage boundaries/i);
     expect(lineageWorkspace).toHaveTextContent(/Run #41/i);
     expect(lineageWorkspace).toHaveTextContent(/1 copied · 1 planned/i);
-    expect(within(lineageWorkspace).getByTestId("runs-lineage-summary"))
-      .toBeVisible();
+    expect(
+      within(lineageWorkspace).getByTestId("runs-lineage-summary"),
+    ).toBeVisible();
     lineageRender.unmount();
 
     searchParamsMock = new URLSearchParams("mode=memory");
@@ -1017,10 +1041,12 @@ describe("RunsDetailPage", () => {
     const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
     expect(memoryWorkspace).toHaveTextContent(/retrieved context/i);
     expect(memoryWorkspace).toHaveTextContent(/memory written and reused/i);
-    expect(screen.getByTestId("runs-memory-compact-artifacts"))
-      .toHaveTextContent(/compact artifact slice/i);
-    expect(screen.getByTestId("runs-memory-compact-artifact-memory_safe"))
-      .toHaveTextContent(/Compact safe memory/i);
+    expect(
+      screen.getByTestId("runs-memory-compact-artifacts"),
+    ).toHaveTextContent(/compact artifact slice/i);
+    expect(
+      screen.getByTestId("runs-memory-compact-artifact-memory_safe"),
+    ).toHaveTextContent(/Compact safe memory/i);
     memoryRender.unmount();
 
     searchParamsMock = new URLSearchParams("mode=runtime");
@@ -1073,16 +1099,23 @@ describe("RunsDetailPage", () => {
     const warningRender = render(<RunsDetailPage />);
     const warningDiagnostics = screen.getByTestId("runs-diagnostics-workspace");
     expect(warningDiagnostics).toHaveTextContent(/warnings/i);
-    expect(screen.getByTestId("runs-diagnostic-preflight-warning-0"))
-      .toHaveAttribute("data-severity", "warning");
-    expect(screen.getByTestId("runs-diagnostic-compiled-hash-mismatch"))
-      .toHaveAttribute("data-severity", "warning");
-    expect(screen.getByTestId("runs-diagnostic-unsupported-primary_openai-nativeToolCalls"))
-      .toHaveAttribute("data-severity", "warning");
-    expect(warningDiagnostics.querySelector('[data-severity="error"]'))
-      .not.toBeInTheDocument();
-    expect(warningDiagnostics.querySelector('[data-slot="badge"].bg-destructive'))
-      .not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("runs-diagnostic-preflight-warning-0"),
+    ).toHaveAttribute("data-severity", "warning");
+    expect(
+      screen.getByTestId("runs-diagnostic-compiled-hash-mismatch"),
+    ).toHaveAttribute("data-severity", "warning");
+    expect(
+      screen.getByTestId(
+        "runs-diagnostic-unsupported-primary_openai-nativeToolCalls",
+      ),
+    ).toHaveAttribute("data-severity", "warning");
+    expect(
+      warningDiagnostics.querySelector('[data-severity="error"]'),
+    ).not.toBeInTheDocument();
+    expect(
+      warningDiagnostics.querySelector('[data-slot="badge"].bg-destructive'),
+    ).not.toBeInTheDocument();
     warningRender.unmount();
 
     useRunMock.mockReturnValue(
@@ -1107,12 +1140,18 @@ describe("RunsDetailPage", () => {
     );
     searchParamsMock = new URLSearchParams("mode=diagnostics");
     render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-diagnostic-run-error"))
-      .toHaveAttribute("data-severity", "error");
-    expect(screen.getByTestId("runs-diagnostic-agent-1001-error"))
-      .toHaveAttribute("data-severity", "error");
-    expect(screen.getByTestId("runs-diagnostics-workspace").querySelector('[data-severity="error"]'))
-      .toBeInTheDocument();
+    expect(screen.getByTestId("runs-diagnostic-run-error")).toHaveAttribute(
+      "data-severity",
+      "error",
+    );
+    expect(
+      screen.getByTestId("runs-diagnostic-agent-1001-error"),
+    ).toHaveAttribute("data-severity", "error");
+    expect(
+      screen
+        .getByTestId("runs-diagnostics-workspace")
+        .querySelector('[data-severity="error"]'),
+    ).toBeInTheDocument();
   });
 
   it("resolves legacy mode aliases to canonical inspection state", () => {
@@ -1175,8 +1214,9 @@ describe("RunsDetailPage", () => {
     executionRender.unmount();
 
     const selectedStepRender = render(<RunsDetailPage />);
-    expect(screen.queryByTestId("split-inspector-right-pane"))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("split-inspector-right-pane"),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1-inline-evidence")).toHaveTextContent(
       /step evidence/i,
     );
@@ -1189,7 +1229,9 @@ describe("RunsDetailPage", () => {
 
     searchParamsMock = new URLSearchParams("mode=execution");
     const invocationRender = render(<RunsDetailPage />);
-    const invocationRow = screen.getByTestId("runs-invocation-1001-outline-entry");
+    const invocationRow = screen.getByTestId(
+      "runs-invocation-1001-outline-entry",
+    );
     expect(invocationRow).toHaveAttribute("role", "button");
     expect(invocationRow.querySelector("button")).toBeNull();
     fireEvent.click(invocationRow);
@@ -1197,9 +1239,17 @@ describe("RunsDetailPage", () => {
     invocationRender.unmount();
 
     const selectedInvocationRender = render(<RunsDetailPage />);
+    const invocationInlineEvidence = screen.getByTestId(
+      "runs-invocation-1001-inline-evidence",
+    );
+    expect(invocationInlineEvidence).toHaveTextContent(/output/i);
+    expect(invocationInlineEvidence).not.toHaveClass("rounded-lg");
+    expect(invocationInlineEvidence).not.toHaveClass("border");
+    expect(invocationInlineEvidence).not.toHaveClass("bg-card/80");
+    expect(invocationInlineEvidence).not.toHaveClass("p-3");
     expect(
-      screen.getByTestId("runs-invocation-1001-inline-evidence"),
-    ).toHaveTextContent(/output/i);
+      within(invocationInlineEvidence).getByTestId("runs-evidence-pane-nav"),
+    ).toBeVisible();
     fireEvent.click(screen.getByTestId("runs-invocation-1001-outline-entry"));
     applyLatestSearchParamsUpdate("mode=execution&inspect=invocation%3A1001");
     expect(searchParamsMock.get("mode")).toBe("execution");
@@ -1226,17 +1276,16 @@ describe("RunsDetailPage", () => {
       screen.getByTestId("runs-audit-row-payload-input-inline-evidence"),
     ).toHaveTextContent(/AAPL/i);
     fireEvent.click(screen.getByTestId("runs-audit-row-payload-input"));
-    applyLatestSearchParamsUpdate(
-      "mode=metadata&inspect=run&pane=input",
-    );
+    applyLatestSearchParamsUpdate("mode=metadata&inspect=run&pane=input");
     expect(searchParamsMock.get("mode")).toBe("metadata");
     expect(searchParamsMock.has("inspect")).toBe(false);
     expect(searchParamsMock.has("pane")).toBe(false);
     selectedMetadataRender.unmount();
 
     const closedMetadataRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-audit-row-payload-input"))
-      .not.toHaveAttribute("data-state", "selected");
+    expect(
+      screen.getByTestId("runs-audit-row-payload-input"),
+    ).not.toHaveAttribute("data-state", "selected");
     expect(
       screen.queryByTestId("runs-audit-row-payload-input-inline-evidence"),
     ).not.toBeInTheDocument();
@@ -1251,8 +1300,10 @@ describe("RunsDetailPage", () => {
     closedMetadataRender.unmount();
 
     const reopenedMetadataRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-audit-row-payload-output"))
-      .toHaveAttribute("data-state", "selected");
+    expect(screen.getByTestId("runs-audit-row-payload-output")).toHaveAttribute(
+      "data-state",
+      "selected",
+    );
     expect(
       screen.getByTestId("runs-audit-row-payload-output-inline-evidence"),
     ).toHaveTextContent(/All clear/i);
@@ -1289,7 +1340,9 @@ describe("RunsDetailPage", () => {
 
     searchParamsMock = new URLSearchParams("mode=metadata");
     const artifactRender = render(<RunsDetailPage />);
-    const artifactAuditRow = screen.getByTestId("runs-audit-row-artifact-memory_701");
+    const artifactAuditRow = screen.getByTestId(
+      "runs-audit-row-artifact-memory_701",
+    );
     expect(artifactAuditRow).toHaveAttribute("role", "button");
     expect(artifactAuditRow.querySelector("button")).toBeNull();
     fireEvent.click(artifactAuditRow);
@@ -1302,7 +1355,9 @@ describe("RunsDetailPage", () => {
     );
     expect(artifactInlineEvidence).toHaveTextContent(/portfolio_manager@3/i);
     fireEvent.click(
-      within(artifactInlineEvidence).getByRole("button", { name: /provenance/i }),
+      within(artifactInlineEvidence).getByRole("button", {
+        name: /provenance/i,
+      }),
     );
     applyLatestSearchParamsUpdate(
       "mode=metadata&inspect=memory%3Amemory_701&pane=details",
@@ -1567,17 +1622,20 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("workspace-page-shell-context")).toContainElement(
       screen.getByTestId("runs-detail-header"),
     );
-    expect(screen.queryByTestId("workspace-page-shell-left-rail"))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("workspace-page-shell-left-rail"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-tab-console")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-mode-workspace")).toHaveAttribute(
       "data-run-mode",
       "outputs",
     );
-    expect(screen.queryByTestId("runs-inspection-split-layout"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByTestId("split-inspector-right-pane"))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-inspection-split-layout"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("split-inspector-right-pane"),
+    ).not.toBeInTheDocument();
     expect(
       screen.getAllByRole("heading", { name: /final output/i })[0],
     ).toBeVisible();
@@ -1607,8 +1665,9 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-inspection-workspace")).not.toHaveAttribute(
       "data-console-layout",
     );
-    expect(screen.queryByTestId("runs-evidence-viewer"))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-evidence-viewer"),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-header")).toHaveTextContent(
       /succeeded/i,
     );
@@ -1618,15 +1677,15 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-summary-line")).toHaveTextContent(
       /run #42/i,
     );
-    expect(screen.getByTestId("runs-detail-summary-line")).not.toHaveTextContent(
-      /\bCaptured\b|\bPending\b|Not produced/i,
-    );
+    expect(
+      screen.getByTestId("runs-detail-summary-line"),
+    ).not.toHaveTextContent(/\bCaptured\b|\bPending\b|Not produced/i);
     expect(screen.getByTestId("runs-detail-summary-line")).toHaveTextContent(
       /51 tokens/i,
     );
-    expect(screen.getByTestId("runs-detail-summary-line")).not.toHaveTextContent(
-      /100%/i,
-    );
+    expect(
+      screen.getByTestId("runs-detail-summary-line"),
+    ).not.toHaveTextContent(/100%/i);
     expect(screen.getByTestId("runs-detail-header")).not.toHaveTextContent(
       /output captured/i,
     );
@@ -1682,10 +1741,13 @@ describe("RunsDetailPage", () => {
     expect(finalOutput).not.toHaveClass("overflow-hidden", "text-xs");
     expect(finalOutput.querySelector("pre")).toBeNull();
     expect(
-      within(finalOutputCard).getAllByRole("heading", { name: /^final output$/i }),
+      within(finalOutputCard).getAllByRole("heading", {
+        name: /^final output$/i,
+      }),
     ).toHaveLength(1);
-    expect(screen.queryByTestId("runs-evidence-pane-nav"))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-evidence-pane-nav"),
+    ).not.toBeInTheDocument();
     defaultRender.unmount();
     searchParamsMock = new URLSearchParams("mode=execution");
     const stepsModeRender = render(<RunsDetailPage />);
@@ -1705,14 +1767,15 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByTestId("runs-step-2-completed-indicator"),
     ).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-inspection-split-layout"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByTestId("split-inspector-resize-handle"))
-      .not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-detail-section-execution-steps")).toHaveAttribute(
-      "data-slot",
-      "collapsible",
-    );
+    expect(
+      screen.queryByTestId("runs-inspection-split-layout"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("split-inspector-resize-handle"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("runs-detail-section-execution-steps"),
+    ).toHaveAttribute("data-slot", "collapsible");
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(
       /copied origin/i,
     );
@@ -1784,7 +1847,9 @@ describe("RunsDetailPage", () => {
     expect(smokeProfile).toHaveTextContent(
       /5 supported · 3 unsupported · 0 unknown · 3 not applicable/i,
     );
-    expect(screen.getByRole("heading", { name: /selected strategies/i })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: /selected strategies/i }),
+    ).toBeVisible();
     const decisionStrategy = screen.getByTestId("runs-runtime-strategy-2-1002");
     expect(decisionStrategy).toBeVisible();
     expect(decisionStrategy).toHaveTextContent(/consumer_agent@2/i);
@@ -1802,10 +1867,12 @@ describe("RunsDetailPage", () => {
     searchParamsMock = new URLSearchParams("mode=metadata");
     const auditModeRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-audit-table")).toBeVisible();
-    expect(screen.queryByTestId("runs-audit-row-trace-root"))
-      .not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-audit-row-payload-output"))
-      .toHaveTextContent(/final output payload/i);
+    expect(
+      screen.queryByTestId("runs-audit-row-trace-root"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("runs-audit-row-payload-output"),
+    ).toHaveTextContent(/final output payload/i);
     expect(
       screen.getByTestId("runs-audit-row-trace-agent-1002"),
     ).toHaveTextContent(/decision\/span-2/i);
@@ -1846,26 +1913,39 @@ describe("RunsDetailPage", () => {
     expect(
       screen.getAllByRole("heading", { name: /^run input$/i }),
     ).toHaveLength(1);
-    expect(screen.queryByTestId("runs-active-evidence-viewer"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-evidence-pane-nav"))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-active-evidence-viewer"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-evidence-pane-nav"),
+    ).not.toBeInTheDocument();
 
     runInputRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1");
     const stepSummaryRender = render(<RunsDetailPage />);
-    expect(screen.queryByTestId("runs-inspection-split-layout"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-evidence-viewer"))
-      .not.toBeInTheDocument();
-    const stepInlineEvidence = screen.getByTestId("runs-step-1-inline-evidence");
+    expect(
+      screen.queryByTestId("runs-inspection-split-layout"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-evidence-viewer"),
+    ).not.toBeInTheDocument();
+    const stepInlineEvidence = screen.getByTestId(
+      "runs-step-1-inline-evidence",
+    );
     expect(stepInlineEvidence).toHaveTextContent(/step evidence/i);
-    expect(within(stepInlineEvidence).getByTestId("runs-evidence-pane-nav"))
-      .toBeVisible();
+    expect(stepInlineEvidence).not.toHaveClass("rounded-lg");
+    expect(stepInlineEvidence).not.toHaveClass("border");
+    expect(stepInlineEvidence).not.toHaveClass("bg-card/80");
+    expect(stepInlineEvidence).not.toHaveClass("p-3");
+    expect(
+      within(stepInlineEvidence).getByTestId("runs-evidence-pane-nav"),
+    ).toBeVisible();
     expect(
       within(stepInlineEvidence).getByRole("button", { name: "Details" }),
     ).toBeVisible();
     const stepSummary = screen.getByTestId("runs-step-1-summary");
+    expect(stepSummary.tagName).toBe("DIV");
+    expect(stepSummary).not.toHaveAttribute("data-slot", "card");
     const metadataHeading = within(stepSummary).getByRole("heading", {
       name: /step metadata/i,
     });
@@ -1887,11 +1967,13 @@ describe("RunsDetailPage", () => {
     expect(
       within(stepSummary).queryByText(/readonly step output/i),
     ).not.toBeInTheDocument();
-    expect(
-      stepSummary.querySelectorAll("[data-slot='card-content'] > section"),
-    ).toHaveLength(2);
+    expect(stepSummary.querySelectorAll(":scope > section")).toHaveLength(2);
     const metadata = screen.getByTestId("runs-step-1-metadata");
     expect(metadata.tagName).toBe("DL");
+    expect(metadata).not.toHaveClass("rounded-md");
+    expect(metadata).not.toHaveClass("border");
+    expect(metadata).not.toHaveClass("bg-muted/20");
+    expect(metadata).not.toHaveClass("p-3");
     expect(metadata.querySelectorAll("dt")).toHaveLength(9);
     expect(
       screen.getByTestId("runs-step-1-aggregated-output"),
@@ -2102,9 +2184,7 @@ describe("RunsDetailPage", () => {
       /unsupported/i,
     );
 
-    expect(
-      screen.getByTestId("runs-runtime-strategy-1-1001"),
-    ).toBeVisible();
+    expect(screen.getByTestId("runs-runtime-strategy-1-1001")).toBeVisible();
     expect(
       screen.getByTestId("runs-runtime-strategy-1-1001"),
     ).toHaveTextContent(/strictJsonSchema/i);
@@ -2116,9 +2196,9 @@ describe("RunsDetailPage", () => {
         /^Input tokens$/i,
       ),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-runtime-strategy-1-1001")).toHaveTextContent(
-      /Usage not recorded/i,
-    );
+    expect(
+      screen.getByTestId("runs-runtime-strategy-1-1001"),
+    ).toHaveTextContent(/Usage not recorded/i);
   });
 
   it("keeps raw payloads scrollable on mobile without a sheet inspector", () => {
@@ -2135,14 +2215,18 @@ describe("RunsDetailPage", () => {
     const workspace = screen.getByTestId("runs-inspection-workspace");
     expect(workspace).not.toHaveAttribute("data-console-layout");
     expect(workspace).toHaveClass("min-w-0");
-    expect(screen.queryByTestId("runs-inspection-sheet-layout"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-inspection-split-layout"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-mobile-inspector-trigger"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-evidence-viewer"))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-inspection-sheet-layout"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-inspection-split-layout"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-mobile-inspector-trigger"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-evidence-viewer"),
+    ).not.toBeInTheDocument();
 
     const finalOutput = screen.getByTestId("runs-detail-final-output");
     fireEvent.mouseDown(within(finalOutput).getByRole("tab", { name: "Raw" }), {
@@ -2161,8 +2245,9 @@ describe("RunsDetailPage", () => {
       "overflow-x-auto",
       "whitespace-pre",
     );
-    expect(screen.queryByTestId("split-inspector-right-pane"))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("split-inspector-right-pane"),
+    ).not.toBeInTheDocument();
   });
 
   it("groups graph metadata and renders compact memory artifact audit links", () => {
@@ -2416,7 +2501,9 @@ describe("RunsDetailPage", () => {
     const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
     expect(screen.getByTestId("runs-memory-evidence")).toBeVisible();
     expect(
-      within(memoryWorkspace).getByRole("heading", { name: /run memory evidence/i }),
+      within(memoryWorkspace).getByRole("heading", {
+        name: /run memory evidence/i,
+      }),
     ).toBeVisible();
     expect(
       within(memoryWorkspace).getByRole("heading", { name: /^memory$/i }),
@@ -2461,10 +2548,12 @@ describe("RunsDetailPage", () => {
     expect(
       screen.getByTestId("runs-memory-event-9106-status"),
     ).toHaveTextContent(/memory_write_failed/i);
-    expect(screen.getByTestId("runs-memory-compact-artifacts"))
-      .toHaveTextContent(/compact artifact slice/i);
-    expect(screen.getByTestId("runs-memory-compact-artifact-memory_safe"))
-      .toHaveTextContent(/Compact safe memory/i);
+    expect(
+      screen.getByTestId("runs-memory-compact-artifacts"),
+    ).toHaveTextContent(/compact artifact slice/i);
+    expect(
+      screen.getByTestId("runs-memory-compact-artifact-memory_safe"),
+    ).toHaveTextContent(/Compact safe memory/i);
     expect(
       screen.queryByTestId("runs-memory-artifacts-empty"),
     ).not.toBeInTheDocument();
@@ -2480,14 +2569,20 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
-    expect(within(memoryWorkspace).getByTestId("runs-memory-empty"))
-      .toHaveTextContent(/No retrieval, write, review, audit, or compact memory artifact/i);
-    expect(screen.queryByTestId("runs-memory-inspector-empty"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-memory-artifacts-empty"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByText(/No memory artifacts were created by this run/i))
-      .not.toBeInTheDocument();
+    expect(
+      within(memoryWorkspace).getByTestId("runs-memory-empty"),
+    ).toHaveTextContent(
+      /No retrieval, write, review, audit, or compact memory artifact/i,
+    );
+    expect(
+      screen.queryByTestId("runs-memory-inspector-empty"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-memory-artifacts-empty"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/No memory artifacts were created by this run/i),
+    ).not.toBeInTheDocument();
   });
 
   it("omits graph grouping and memory artifact cards when metadata is absent", () => {
@@ -2782,10 +2877,12 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(
       "No final output payload was recorded for this run.",
     );
-    expect(screen.queryByTestId("runs-active-evidence-viewer"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByText("Final output is not available yet."))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-active-evidence-viewer"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Final output is not available yet."),
+    ).not.toBeInTheDocument();
   });
 
   it("handles empty, running, skipped, and invalid pane URL state", () => {
@@ -2887,8 +2984,9 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByText(/no invocation trace spans captured/i),
     ).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-evidence-pane-nav"))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-evidence-pane-nav"),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText(/no invocations have been planned or persisted/i),
     ).not.toBeInTheDocument();

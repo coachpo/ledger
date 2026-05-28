@@ -283,7 +283,12 @@ function RunDetailSectionBlock({
           <div className="flex min-w-0 flex-wrap justify-end gap-2">
             {actions}
             <CollapsibleTrigger asChild>
-              <Button className="cursor-pointer" size="sm" type="button" variant="outline">
+              <Button
+                className="cursor-pointer"
+                size="sm"
+                type="button"
+                variant="outline"
+              >
                 Toggle
               </Button>
             </CollapsibleTrigger>
@@ -341,7 +346,10 @@ function RunDetailTableFrame({
 }) {
   return (
     <div
-      className={cn("min-w-0 overflow-x-auto rounded-lg border bg-card", className)}
+      className={cn(
+        "min-w-0 overflow-x-auto rounded-lg border bg-card",
+        className,
+      )}
       data-testid={testId}
     >
       {children}
@@ -390,7 +398,12 @@ function CollapsibleDetailPanel({
       <ConsoleSection
         actions={
           <CollapsibleTrigger asChild>
-            <Button className="cursor-pointer" size="sm" type="button" variant="outline">
+            <Button
+              className="cursor-pointer"
+              size="sm"
+              type="button"
+              variant="outline"
+            >
               Toggle
             </Button>
           </CollapsibleTrigger>
@@ -948,7 +961,10 @@ export function RunOverviewWorkspace({
       : "No queue hold";
 
   return (
-    <section className="grid min-w-0 gap-3" data-testid="runs-overview-workspace">
+    <section
+      className="grid min-w-0 gap-3"
+      data-testid="runs-overview-workspace"
+    >
       <RunDetailSectionBlock
         blockId="operational-overview"
         description="Operational availability and progress cues for this immutable run snapshot."
@@ -1492,13 +1508,17 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
                     <TableCell className="whitespace-normal align-top">
                       <div className="flex flex-wrap gap-1.5">
                         <Badge variant="outline">
-                          {runtimeConnectionKindLabel(connection.connectionKind)}
+                          {runtimeConnectionKindLabel(
+                            connection.connectionKind,
+                          )}
                         </Badge>
                         <Badge variant="secondary">
                           {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
                         </Badge>
                         <Badge
-                          variant={connection.hasApiKey ? "secondary" : "outline"}
+                          variant={
+                            connection.hasApiKey ? "secondary" : "outline"
+                          }
                         >
                           {connection.hasApiKey
                             ? "Credential present"
@@ -1522,7 +1542,9 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
                       ].join(" · ")}
                     </TableCell>
                     <TableCell className="min-w-48 whitespace-normal align-top text-muted-foreground">
-                      {connection.timeoutSeconds}s timeout · reasoning {connection.reasoningEffort ?? "omitted"} · probe TTL {connection.probeCacheTtlSeconds}s
+                      {connection.timeoutSeconds}s timeout · reasoning{" "}
+                      {connection.reasoningEffort ?? "omitted"} · probe TTL{" "}
+                      {connection.probeCacheTtlSeconds}s
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1546,7 +1568,8 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
           <div className="grid min-w-0 gap-2">
             {hiddenStrategyCount > 0 ? (
               <p className="text-xs text-muted-foreground">
-                Showing the first {visibleStrategySummaries.length} of {strategySummaries.length} invocation records.
+                Showing the first {visibleStrategySummaries.length} of{" "}
+                {strategySummaries.length} invocation records.
               </p>
             ) : null}
             <RunDetailTableFrame>
@@ -1571,7 +1594,8 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
                             {summary.agentLabel}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            Step {summary.stepIndex} · Invocation #{summary.invocationId}
+                            Step {summary.stepIndex} · Invocation #
+                            {summary.invocationId}
                           </span>
                         </div>
                       </TableCell>
@@ -1639,7 +1663,9 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
                           {CAPABILITY_LABELS[capabilityKey]}
                         </TableCell>
                         <TableCell className="align-top">
-                          <Badge variant={capabilityStatusVariant(state.status)}>
+                          <Badge
+                            variant={capabilityStatusVariant(state.status)}
+                          >
                             {capabilityStatusLabel(state.status)}
                           </Badge>
                         </TableCell>
@@ -2384,10 +2410,10 @@ function hasRunLineageEvidence({
 }): boolean {
   return Boolean(
     run.sourceRunId ||
-      (run.lineageRootRunId && run.lineageRootRunId !== run.id) ||
-      run.replayStepIndex !== null ||
-      copiedSteps > 0 ||
-      copiedInvocations > 0,
+    (run.lineageRootRunId && run.lineageRootRunId !== run.id) ||
+    run.replayStepIndex !== null ||
+    copiedSteps > 0 ||
+    copiedInvocations > 0,
   );
 }
 
@@ -2408,7 +2434,10 @@ export function RunLineageWorkspace({
 }) {
   if (!hasRunLineageEvidence({ copiedInvocations, copiedSteps, run })) {
     return (
-      <section className="grid min-w-0 gap-3" data-testid="runs-lineage-workspace">
+      <section
+        className="grid min-w-0 gap-3"
+        data-testid="runs-lineage-workspace"
+      >
         <RunDetailSectionBlock
           blockId="lineage"
           description="Fork, snapshot, and historical boundaries appear here when the run has upstream lineage."
@@ -2416,7 +2445,8 @@ export function RunLineageWorkspace({
           title="Lineage"
         >
           <CompactModeEmptyState testId="runs-lineage-empty">
-            No fork, snapshot replay, copied-step, or historical lineage boundary is recorded for this run.
+            No fork, snapshot replay, copied-step, or historical lineage
+            boundary is recorded for this run.
           </CompactModeEmptyState>
         </RunDetailSectionBlock>
       </section>
@@ -2424,7 +2454,10 @@ export function RunLineageWorkspace({
   }
 
   return (
-    <section className="grid min-w-0 gap-3" data-testid="runs-lineage-workspace">
+    <section
+      className="grid min-w-0 gap-3"
+      data-testid="runs-lineage-workspace"
+    >
       <RunDetailSectionBlock
         blockId="lineage"
         description="Lineage boundaries stay isolated from execution rows with fork, snapshot, and historical context."
@@ -2435,7 +2468,9 @@ export function RunLineageWorkspace({
           items={[
             {
               label: "Source",
-              value: run.sourceRunId ? `Run #${run.sourceRunId}` : "Snapshot root",
+              value: run.sourceRunId
+                ? `Run #${run.sourceRunId}`
+                : "Snapshot root",
               description: isCurrentFork
                 ? "Current fork lineage"
                 : "Historical or original lineage boundary",
@@ -2456,7 +2491,8 @@ export function RunLineageWorkspace({
             {
               label: "Invocations",
               value: `${copiedInvocations} copied · ${plannedInvocations} planned/executed`,
-              description: "Invocation-level inherited output or input boundaries.",
+              description:
+                "Invocation-level inherited output or input boundaries.",
             },
           ]}
           layout="grid"
@@ -2481,15 +2517,18 @@ export function RunTokensWorkspace({ run }: { run: RunRead }) {
   );
   const hasTokenAccounting = Boolean(
     run.totalTokens ||
-      run.inheritedTokens ||
-      run.executedTokens ||
-      tokenRows.length > 0 ||
-      strategySummaries.length > 0,
+    run.inheritedTokens ||
+    run.executedTokens ||
+    tokenRows.length > 0 ||
+    strategySummaries.length > 0,
   );
 
   if (!hasTokenAccounting) {
     return (
-      <section className="grid min-w-0 gap-3" data-testid="runs-tokens-workspace">
+      <section
+        className="grid min-w-0 gap-3"
+        data-testid="runs-tokens-workspace"
+      >
         <RunDetailSectionBlock
           blockId="token-accounting"
           description="Token usage appears here when the backend reports run-level or invocation-level accounting."
@@ -2576,7 +2615,8 @@ export function RunTokensWorkspace({ run }: { run: RunRead }) {
       >
         {tokenRows.length === 0 && strategySummaries.length === 0 ? (
           <CompactModeEmptyState testId="runs-tokens-rows-empty">
-            No invocation-level token rows were recorded; only run-level accounting is available.
+            No invocation-level token rows were recorded; only run-level
+            accounting is available.
           </CompactModeEmptyState>
         ) : (
           <RunDetailTableFrame>
@@ -2591,37 +2631,43 @@ export function RunTokensWorkspace({ run }: { run: RunRead }) {
               </TableHeader>
               <TableBody>
                 {tokenRows.map((row) => {
-                const gatewayUsage = strategySummaries.find(
-                  (summary) => summary.key === row.key,
-                )?.usage;
-                return (
-                  <TableRow data-testid={`runs-token-row-${row.key}`} key={row.key}>
-                    <TableCell className="min-w-52 whitespace-normal align-top">
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <span className="font-medium text-foreground">
-                          {row.agentLabel}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          Step {row.stepIndex} · {row.slot} · Invocation #{row.invocationId}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
-                    </TableCell>
-                    <TableCell className="align-top text-muted-foreground">
-                      {row.tokens.toLocaleString()}
-                    </TableCell>
-                    <TableCell className="min-w-64 whitespace-normal align-top text-muted-foreground">
-                      {gatewayUsage
-                        ? usageItems(gatewayUsage)
-                            .map((item) => `${item.label}: ${item.value}`)
-                            .join(" · ")
-                        : "Gateway usage not recorded"}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+                  const gatewayUsage = strategySummaries.find(
+                    (summary) => summary.key === row.key,
+                  )?.usage;
+                  return (
+                    <TableRow
+                      data-testid={`runs-token-row-${row.key}`}
+                      key={row.key}
+                    >
+                      <TableCell className="min-w-52 whitespace-normal align-top">
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <span className="font-medium text-foreground">
+                            {row.agentLabel}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            Step {row.stepIndex} · {row.slot} · Invocation #
+                            {row.invocationId}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="align-top">
+                        <Badge variant={statusVariant(row.status)}>
+                          {row.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="align-top text-muted-foreground">
+                        {row.tokens.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="min-w-64 whitespace-normal align-top text-muted-foreground">
+                        {gatewayUsage
+                          ? usageItems(gatewayUsage)
+                              .map((item) => `${item.label}: ${item.value}`)
+                              .join(" · ")
+                          : "Gateway usage not recorded"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </RunDetailTableFrame>
@@ -2666,7 +2712,10 @@ function packageReadinessDiagnostics(run: RunRead): RunDiagnosticRow[] {
     key: `preflight-${diagnostic.severity}-${index}`,
     severity: diagnostic.severity,
     source: "Launch preflight",
-    title: diagnostic.severity === "error" ? "Preflight blocker" : "Preflight warning",
+    title:
+      diagnostic.severity === "error"
+        ? "Preflight blocker"
+        : "Preflight warning",
   }));
 }
 
@@ -2680,7 +2729,9 @@ function packageCurrentDiagnostics(run: RunRead): RunDiagnosticRow[] {
   if (!currentPackage.available) {
     diagnostics.push({
       field: "package.currentPackage.available",
-      issue: currentPackage.unavailableReason ?? "Current package snapshot is unavailable.",
+      issue:
+        currentPackage.unavailableReason ??
+        "Current package snapshot is unavailable.",
       key: "current-package-unavailable",
       severity: "warning",
       source: "Current package",
@@ -2714,7 +2765,8 @@ function unsupportedCapabilityDiagnostics(run: RunRead): RunDiagnosticRow[] {
   return (run.packageProvenance?.resolvedModelConnections ?? []).flatMap(
     (connection) =>
       CAPABILITY_ORDER.filter(
-        (capabilityKey) => connection.capabilities[capabilityKey].status === "unsupported",
+        (capabilityKey) =>
+          connection.capabilities[capabilityKey].status === "unsupported",
       ).map((capabilityKey) => ({
         field: `runtime.${connection.key}.${capabilityKey}`,
         issue:
@@ -2728,7 +2780,10 @@ function unsupportedCapabilityDiagnostics(run: RunRead): RunDiagnosticRow[] {
   );
 }
 
-function runDiagnostics(run: RunRead, steps: RunStepRead[]): RunDiagnosticRow[] {
+function runDiagnostics(
+  run: RunRead,
+  steps: RunStepRead[],
+): RunDiagnosticRow[] {
   const stepDiagnostics = steps.flatMap((step) => {
     const diagnostics: RunDiagnosticRow[] = [];
     if (step.error) {
@@ -2743,42 +2798,51 @@ function runDiagnostics(run: RunRead, steps: RunStepRead[]): RunDiagnosticRow[] 
     }
     sortedInvocations(step.invocations).forEach((invocation) => {
       const hasError = Boolean(
-        invocation.errorCode || invocation.errorMessage || invocation.errorDetails.length > 0,
+        invocation.errorCode ||
+        invocation.errorMessage ||
+        invocation.errorDetails.length > 0,
       );
       if (!hasError) {
         return;
       }
       diagnostics.push({
         field: `steps.${step.index}.invocations.${invocation.id}`,
-        issue: invocation.errorMessage ?? "No invocation error message recorded.",
+        issue:
+          invocation.errorMessage ?? "No invocation error message recorded.",
         key: `agent-${invocation.id}-error`,
         severity: "error",
         source: "Agent invocation",
         title: invocation.errorCode ?? `${invocation.slot} invocation failed`,
       });
     });
-    sortedOperationInvocations(step.operationInvocations).forEach((invocation) => {
-      const hasError = Boolean(
-        invocation.errorCode || invocation.errorMessage || invocation.errorDetails.length > 0,
-      );
-      if (!hasError) {
-        return;
-      }
-      diagnostics.push({
-        field: `steps.${step.index}.operations.${invocation.id}`,
-        issue: invocation.errorMessage ?? "No operation error message recorded.",
-        key: `operation-${invocation.id}-error`,
-        severity: "error",
-        source: "Operation invocation",
-        title: invocation.errorCode ?? `${invocation.slot} operation failed`,
-      });
-    });
+    sortedOperationInvocations(step.operationInvocations).forEach(
+      (invocation) => {
+        const hasError = Boolean(
+          invocation.errorCode ||
+          invocation.errorMessage ||
+          invocation.errorDetails.length > 0,
+        );
+        if (!hasError) {
+          return;
+        }
+        diagnostics.push({
+          field: `steps.${step.index}.operations.${invocation.id}`,
+          issue:
+            invocation.errorMessage ?? "No operation error message recorded.",
+          key: `operation-${invocation.id}-error`,
+          severity: "error",
+          source: "Operation invocation",
+          title: invocation.errorCode ?? `${invocation.slot} operation failed`,
+        });
+      },
+    );
     return diagnostics;
   });
   const forkCandidates = steps.flatMap((step) =>
     step.status === "succeeded"
       ? sortedInvocations(step.invocations).filter(
-          (invocation) => invocation.status === "succeeded" && invocation.persistedAt,
+          (invocation) =>
+            invocation.status === "succeeded" && invocation.persistedAt,
         )
       : [],
   );
@@ -2812,11 +2876,14 @@ function runDiagnostics(run: RunRead, steps: RunStepRead[]): RunDiagnosticRow[] 
     ...packageReadinessDiagnostics(run),
     ...packageCurrentDiagnostics(run),
     ...unsupportedCapabilityDiagnostics(run),
-    ...(run.targetKind === "workflowPackage" && run.status === "succeeded" && forkCandidates.length === 0
+    ...(run.targetKind === "workflowPackage" &&
+    run.status === "succeeded" &&
+    forkCandidates.length === 0
       ? [
           {
             field: "fork.invocation",
-            issue: "No succeeded persisted agent invocation is available for invocation-specific fork creation.",
+            issue:
+              "No succeeded persisted agent invocation is available for invocation-specific fork creation.",
             key: "fork-no-candidate",
             severity: "warning" as const,
             source: "Fork safety",
@@ -2835,12 +2902,17 @@ export function RunDiagnosticsWorkspace({
   steps: RunStepRead[];
 }) {
   const diagnostics = runDiagnostics(run, steps);
-  const errorCount = diagnostics.filter((item) => item.severity === "error").length;
+  const errorCount = diagnostics.filter(
+    (item) => item.severity === "error",
+  ).length;
   const warningCount = diagnostics.length - errorCount;
 
   if (diagnostics.length === 0) {
     return (
-      <section className="grid min-w-0 gap-3" data-testid="runs-diagnostics-workspace">
+      <section
+        className="grid min-w-0 gap-3"
+        data-testid="runs-diagnostics-workspace"
+      >
         <RunDetailSectionBlock
           blockId="diagnostics"
           description="Warnings, failures, unsupported capabilities, and retry/fork safety checks appear here."
@@ -2848,7 +2920,8 @@ export function RunDiagnosticsWorkspace({
           title="Diagnostics"
         >
           <CompactModeEmptyState testId="runs-diagnostics-empty">
-            No run diagnostics, queue warnings, runtime capability warnings, or safety blockers are recorded.
+            No run diagnostics, queue warnings, runtime capability warnings, or
+            safety blockers are recorded.
           </CompactModeEmptyState>
         </RunDetailSectionBlock>
       </section>
@@ -2856,7 +2929,10 @@ export function RunDiagnosticsWorkspace({
   }
 
   return (
-    <section className="grid min-w-0 gap-3" data-testid="runs-diagnostics-workspace">
+    <section
+      className="grid min-w-0 gap-3"
+      data-testid="runs-diagnostics-workspace"
+    >
       <RunDetailSectionBlock
         blockId="diagnostics"
         description="Warnings stay visually separate from destructive failures so degraded runs are not confused with failed ones."
@@ -2934,7 +3010,10 @@ export function RunMemoryWorkspace({ run }: { run: RunRead }) {
 
   if (!hasEvents && !hasArtifacts) {
     return (
-      <section className="grid min-w-0 gap-3" data-testid="runs-memory-workspace">
+      <section
+        className="grid min-w-0 gap-3"
+        data-testid="runs-memory-workspace"
+      >
         <RunDetailSectionBlock
           blockId="memory"
           description="Memory retrieval, write, review, audit, and compact artifact evidence appears here when recorded."
@@ -2942,7 +3021,8 @@ export function RunMemoryWorkspace({ run }: { run: RunRead }) {
           title="Memory"
         >
           <CompactModeEmptyState testId="runs-memory-empty">
-            No retrieval, write, review, audit, or compact memory artifact evidence was recorded for this run.
+            No retrieval, write, review, audit, or compact memory artifact
+            evidence was recorded for this run.
           </CompactModeEmptyState>
         </RunDetailSectionBlock>
       </section>
@@ -3063,7 +3143,9 @@ export function RunAuditEvidenceSection({
         memoryId: artifact.memoryId,
       },
       title: artifact.summary,
-      tone: artifact.auditLinks?.report ? ("secondary" as const) : ("outline" as const),
+      tone: artifact.auditLinks?.report
+        ? ("secondary" as const)
+        : ("outline" as const),
     })),
   ];
 
@@ -3111,13 +3193,16 @@ export function RunAuditEvidenceSection({
                   activeInspection.target,
                   row.target,
                 );
-                const paneMatches = !row.pane || activeInspection.pane === row.pane;
+                const paneMatches =
+                  !row.pane || activeInspection.pane === row.pane;
                 const isActive =
                   activeInspection.selected !== false &&
                   targetMatches &&
                   (row.target.type === "run" ? paneMatches : true);
-                const shouldRenderInline = isActive && activeInspection.mode === "metadata";
-                const selectRow = () => onSelect(row.target, row.pane, "metadata");
+                const shouldRenderInline =
+                  isActive && activeInspection.mode === "metadata";
+                const selectRow = () =>
+                  onSelect(row.target, row.pane, "metadata");
                 const dataRow = (
                   <TableRow
                     aria-label={`${row.title} evidence row`}
@@ -3126,7 +3211,9 @@ export function RunAuditEvidenceSection({
                     data-testid={`runs-audit-row-${row.id}`}
                     key={row.id}
                     onClick={selectRow}
-                    onKeyDown={(event) => handleSelectableRowKeyDown(event, selectRow)}
+                    onKeyDown={(event) =>
+                      handleSelectableRowKeyDown(event, selectRow)
+                    }
                     role="button"
                     tabIndex={0}
                   >
@@ -3331,233 +3418,242 @@ export function ExecutionOutline({
               testId="runs-execution-table"
             >
               <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Timeline row</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Origin</TableHead>
-                  <TableHead>Progress</TableHead>
-                  <TableHead>Trace</TableHead>
-                  <TableHead>Context</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {steps.flatMap((step) => {
-                  const invocations = sortedInvocations(step.invocations);
-                  const operationInvocations = sortedOperationInvocations(
-                    step.operationInvocations,
-                  );
-                  const allInvocations = [
-                    ...invocations,
-                    ...operationInvocations,
-                  ];
-                  const stepProgress = progressForInvocations(
-                    allInvocations,
-                    step.status,
-                  );
-                  const stepTarget: RunInspectionTarget = {
-                    type: "step",
-                    stepIndex: step.index,
-                  };
-                  const indicatorState = stepIndicatorState(step.status);
-                  const isStepActive = isInspectionTargetEqual(
-                    activeInspection.target,
-                    stepTarget,
-                  );
-                  const stepTraceEntries = traceSpanEntries.filter(
-                    (entry) => entry.stepIndex === step.index,
-                  );
-                  const selectStep = () => onSelect(stepTarget, undefined, "execution");
-                  const stepRow = (
-                    <TableRow
-                      aria-label={`Step ${step.index} execution row`}
-                      className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      data-state={isStepActive ? "selected" : undefined}
-                      data-testid={`runs-step-${step.index}`}
-                      id={`step-${step.index}`}
-                      key={`step-${step.id}`}
-                      onClick={selectStep}
-                      onKeyDown={(event) => handleSelectableRowKeyDown(event, selectStep)}
-                      role="button"
-                      tabIndex={0}
-                    >
-                      <TableCell className="min-w-56 whitespace-normal align-top">
-                        <span className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-foreground">
-                          <StepStatusIndicator
-                            state={indicatorState}
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Timeline row</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Origin</TableHead>
+                    <TableHead>Progress</TableHead>
+                    <TableHead>Trace</TableHead>
+                    <TableHead>Context</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {steps.flatMap((step) => {
+                    const invocations = sortedInvocations(step.invocations);
+                    const operationInvocations = sortedOperationInvocations(
+                      step.operationInvocations,
+                    );
+                    const allInvocations = [
+                      ...invocations,
+                      ...operationInvocations,
+                    ];
+                    const stepProgress = progressForInvocations(
+                      allInvocations,
+                      step.status,
+                    );
+                    const stepTarget: RunInspectionTarget = {
+                      type: "step",
+                      stepIndex: step.index,
+                    };
+                    const indicatorState = stepIndicatorState(step.status);
+                    const isStepActive = isInspectionTargetEqual(
+                      activeInspection.target,
+                      stepTarget,
+                    );
+                    const stepTraceEntries = traceSpanEntries.filter(
+                      (entry) => entry.stepIndex === step.index,
+                    );
+                    const selectStep = () =>
+                      onSelect(stepTarget, undefined, "execution");
+                    const stepRow = (
+                      <TableRow
+                        aria-label={`Step ${step.index} execution row`}
+                        className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        data-state={isStepActive ? "selected" : undefined}
+                        data-testid={`runs-step-${step.index}`}
+                        id={`step-${step.index}`}
+                        key={`step-${step.id}`}
+                        onClick={selectStep}
+                        onKeyDown={(event) =>
+                          handleSelectableRowKeyDown(event, selectStep)
+                        }
+                        role="button"
+                        tabIndex={0}
+                      >
+                        <TableCell className="min-w-56 whitespace-normal align-top">
+                          <span className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-foreground">
+                            <StepStatusIndicator
+                              state={indicatorState}
+                              stepIndex={step.index}
+                            />
+                            <span className="font-medium">
+                              Step {step.index}
+                            </span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge variant={statusVariant(step.status)}>
+                            {step.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge variant="outline">{step.origin} origin</Badge>
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge variant="secondary">{stepProgress}%</Badge>
+                        </TableCell>
+                        <TableCell className="min-w-64 whitespace-normal align-top">
+                          <StepTraceSummary
+                            entries={stepTraceEntries}
                             stepIndex={step.index}
                           />
-                          <span className="font-medium">Step {step.index}</span>
-                        </span>
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <Badge variant={statusVariant(step.status)}>
-                          {step.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <Badge variant="outline">{step.origin} origin</Badge>
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <Badge variant="secondary">{stepProgress}%</Badge>
-                      </TableCell>
-                      <TableCell className="min-w-64 whitespace-normal align-top">
-                        <StepTraceSummary
-                          entries={stepTraceEntries}
-                          stepIndex={step.index}
-                        />
-                      </TableCell>
-                      <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
-                        {invocations.length} agent invocation(s) · {operationInvocations.length} operation invocation(s)
-                      </TableCell>
-                    </TableRow>
-                  );
-                  const agentRows = invocations.flatMap((invocation) => {
-                    const invocationTarget: RunInspectionTarget = {
-                      type: "agentInvocation",
-                      invocationId: invocation.id,
-                    };
-                    const isActive = isInspectionTargetEqual(
-                      activeInspection.target,
-                      invocationTarget,
-                    );
-                    const selectInvocation = () =>
-                      onSelect(invocationTarget, undefined, "execution");
-                    const row = (
-                      <TableRow
-                        aria-label={`${invocation.slot} agent invocation row`}
-                        className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        data-state={isActive ? "selected" : undefined}
-                        data-testid={`runs-invocation-${invocation.id}-outline-entry`}
-                        id={`invocation-${invocation.id}`}
-                        key={`agent-${invocation.id}`}
-                        onClick={selectInvocation}
-                        onKeyDown={(event) =>
-                          handleSelectableRowKeyDown(event, selectInvocation)
-                        }
-                        role="button"
-                        tabIndex={0}
-                      >
-                        <TableCell className="min-w-56 whitespace-normal align-top">
-                          <span className="flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-foreground">
-                            <span className="font-medium">
-                              {invocation.slot} agent
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              Invocation #{invocation.id}
-                            </span>
-                          </span>
-                        </TableCell>
-                        <TableCell className="align-top">
-                          <Badge variant={statusVariant(invocation.status)}>
-                            {invocation.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="whitespace-normal align-top text-muted-foreground">
-                          input {invocation.resolvedInputOrigin}
-                        </TableCell>
-                        <TableCell className="whitespace-normal align-top text-muted-foreground">
-                          {invocation.outputOrigin ?? "pending"}
-                        </TableCell>
-                        <TableCell className="whitespace-normal align-top text-muted-foreground">
-                          {invocation.traceSpanId ?? "Not recorded"}
                         </TableCell>
                         <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
-                          {invocation.agentKey} v{invocation.agentVersion}
+                          {invocations.length} agent invocation(s) ·{" "}
+                          {operationInvocations.length} operation invocation(s)
                         </TableCell>
                       </TableRow>
                     );
-                    if (!isActive || !shouldRenderExecutionInline) {
-                      return [row];
-                    }
-                    return [
-                      row,
-                      renderInlineEvidenceRow(
-                        `agent-${invocation.id}-inline`,
-                        `runs-invocation-${invocation.id}-inline-evidence`,
-                      ),
-                    ];
-                  });
-                  const operationRows = operationInvocations.flatMap((invocation) => {
-                    const operationTarget: RunInspectionTarget = {
-                      type: "operationInvocation",
-                      invocationId: invocation.id,
-                    };
-                    const isActive = isInspectionTargetEqual(
-                      activeInspection.target,
-                      operationTarget,
-                    );
-                    const selectOperation = () =>
-                      onSelect(operationTarget, undefined, "execution");
-                    const row = (
-                      <TableRow
-                        aria-label={`${invocation.slot} operation invocation row`}
-                        className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        data-state={isActive ? "selected" : undefined}
-                        data-testid={`runs-operation-${invocation.id}-outline-entry`}
-                        id={`operation-invocation-${invocation.id}`}
-                        key={`operation-${invocation.id}`}
-                        onClick={selectOperation}
-                        onKeyDown={(event) =>
-                          handleSelectableRowKeyDown(event, selectOperation)
+                    const agentRows = invocations.flatMap((invocation) => {
+                      const invocationTarget: RunInspectionTarget = {
+                        type: "agentInvocation",
+                        invocationId: invocation.id,
+                      };
+                      const isActive = isInspectionTargetEqual(
+                        activeInspection.target,
+                        invocationTarget,
+                      );
+                      const selectInvocation = () =>
+                        onSelect(invocationTarget, undefined, "execution");
+                      const row = (
+                        <TableRow
+                          aria-label={`${invocation.slot} agent invocation row`}
+                          className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          data-state={isActive ? "selected" : undefined}
+                          data-testid={`runs-invocation-${invocation.id}-outline-entry`}
+                          id={`invocation-${invocation.id}`}
+                          key={`agent-${invocation.id}`}
+                          onClick={selectInvocation}
+                          onKeyDown={(event) =>
+                            handleSelectableRowKeyDown(event, selectInvocation)
+                          }
+                          role="button"
+                          tabIndex={0}
+                        >
+                          <TableCell className="min-w-56 whitespace-normal align-top">
+                            <span className="flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-foreground">
+                              <span className="font-medium">
+                                {invocation.slot} agent
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                Invocation #{invocation.id}
+                              </span>
+                            </span>
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <Badge variant={statusVariant(invocation.status)}>
+                              {invocation.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="whitespace-normal align-top text-muted-foreground">
+                            input {invocation.resolvedInputOrigin}
+                          </TableCell>
+                          <TableCell className="whitespace-normal align-top text-muted-foreground">
+                            {invocation.outputOrigin ?? "pending"}
+                          </TableCell>
+                          <TableCell className="whitespace-normal align-top text-muted-foreground">
+                            {invocation.traceSpanId ?? "Not recorded"}
+                          </TableCell>
+                          <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
+                            {invocation.agentKey} v{invocation.agentVersion}
+                          </TableCell>
+                        </TableRow>
+                      );
+                      if (!isActive || !shouldRenderExecutionInline) {
+                        return [row];
+                      }
+                      return [
+                        row,
+                        renderInlineEvidenceRow(
+                          `agent-${invocation.id}-inline`,
+                          `runs-invocation-${invocation.id}-inline-evidence`,
+                        ),
+                      ];
+                    });
+                    const operationRows = operationInvocations.flatMap(
+                      (invocation) => {
+                        const operationTarget: RunInspectionTarget = {
+                          type: "operationInvocation",
+                          invocationId: invocation.id,
+                        };
+                        const isActive = isInspectionTargetEqual(
+                          activeInspection.target,
+                          operationTarget,
+                        );
+                        const selectOperation = () =>
+                          onSelect(operationTarget, undefined, "execution");
+                        const row = (
+                          <TableRow
+                            aria-label={`${invocation.slot} operation invocation row`}
+                            className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            data-state={isActive ? "selected" : undefined}
+                            data-testid={`runs-operation-${invocation.id}-outline-entry`}
+                            id={`operation-invocation-${invocation.id}`}
+                            key={`operation-${invocation.id}`}
+                            onClick={selectOperation}
+                            onKeyDown={(event) =>
+                              handleSelectableRowKeyDown(event, selectOperation)
+                            }
+                            role="button"
+                            tabIndex={0}
+                          >
+                            <TableCell className="min-w-56 whitespace-normal align-top">
+                              <span className="flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-foreground">
+                                <span className="font-medium">
+                                  {invocation.slot} operation
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  Invocation #{invocation.id}
+                                </span>
+                              </span>
+                            </TableCell>
+                            <TableCell className="align-top">
+                              <Badge variant={statusVariant(invocation.status)}>
+                                {invocation.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-normal align-top text-muted-foreground">
+                              {invocation.operationKind}
+                            </TableCell>
+                            <TableCell className="whitespace-normal align-top text-muted-foreground">
+                              {invocation.outputOrigin ?? "pending"}
+                            </TableCell>
+                            <TableCell className="whitespace-normal align-top text-muted-foreground">
+                              {invocation.traceSpanId ?? "Not recorded"}
+                            </TableCell>
+                            <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
+                              {invocation.operationKey} · operation forks are
+                              not supported in this phase
+                            </TableCell>
+                          </TableRow>
+                        );
+                        if (!isActive || !shouldRenderExecutionInline) {
+                          return [row];
                         }
-                        role="button"
-                        tabIndex={0}
-                      >
-                        <TableCell className="min-w-56 whitespace-normal align-top">
-                          <span className="flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-foreground">
-                            <span className="font-medium">
-                              {invocation.slot} operation
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              Invocation #{invocation.id}
-                            </span>
-                          </span>
-                        </TableCell>
-                        <TableCell className="align-top">
-                          <Badge variant={statusVariant(invocation.status)}>
-                            {invocation.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="whitespace-normal align-top text-muted-foreground">
-                          {invocation.operationKind}
-                        </TableCell>
-                        <TableCell className="whitespace-normal align-top text-muted-foreground">
-                          {invocation.outputOrigin ?? "pending"}
-                        </TableCell>
-                        <TableCell className="whitespace-normal align-top text-muted-foreground">
-                          {invocation.traceSpanId ?? "Not recorded"}
-                        </TableCell>
-                        <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
-                          {invocation.operationKey} · operation forks are not supported in this phase
-                        </TableCell>
-                      </TableRow>
-                    );
-                    if (!isActive || !shouldRenderExecutionInline) {
-                      return [row];
-                    }
-                    return [
-                      row,
-                      renderInlineEvidenceRow(
-                        `operation-${invocation.id}-inline`,
-                        `runs-operation-${invocation.id}-inline-evidence`,
-                      ),
-                    ];
-                  });
-
-                  const stepRows =
-                    isStepActive && shouldRenderExecutionInline
-                      ? [
-                          stepRow,
+                        return [
+                          row,
                           renderInlineEvidenceRow(
-                            `step-${step.id}-inline`,
-                            `runs-step-${step.index}-inline-evidence`,
+                            `operation-${invocation.id}-inline`,
+                            `runs-operation-${invocation.id}-inline-evidence`,
                           ),
-                        ]
-                      : [stepRow];
+                        ];
+                      },
+                    );
 
-                  return [...stepRows, ...agentRows, ...operationRows];
-                })}
+                    const stepRows =
+                      isStepActive && shouldRenderExecutionInline
+                        ? [
+                            stepRow,
+                            renderInlineEvidenceRow(
+                              `step-${step.id}-inline`,
+                              `runs-step-${step.index}-inline-evidence`,
+                            ),
+                          ]
+                        : [stepRow];
+
+                    return [...stepRows, ...agentRows, ...operationRows];
+                  })}
                 </TableBody>
               </Table>
             </RunDetailTableFrame>
@@ -3588,7 +3684,9 @@ function EvidencePaneNav({
         <Button
           className="max-w-full cursor-pointer"
           key={pane}
-          onClick={() => onSelect(activeInspection.target, pane, activeInspection.mode)}
+          onClick={() =>
+            onSelect(activeInspection.target, pane, activeInspection.mode)
+          }
           size="sm"
           type="button"
           variant={activeInspection.pane === pane ? "secondary" : "outline"}
@@ -3894,7 +3992,8 @@ function RunMemoryEvidence({ run }: { run: RunRead }) {
     >
       {!hasEvents && !hasArtifacts ? (
         <CompactModeEmptyState testId="runs-memory-evidence-empty">
-          No retrieval, write, review, audit, or compact memory artifact evidence was recorded for this run.
+          No retrieval, write, review, audit, or compact memory artifact
+          evidence was recorded for this run.
         </CompactModeEmptyState>
       ) : null}
 
@@ -3992,51 +4091,52 @@ function StepSummaryEvidence({ step }: { step: RunStepRead }) {
   ];
 
   return (
-    <Card data-testid={`runs-step-${step.index}-summary`}>
-      <CardContent className="min-w-0 space-y-5 pt-6">
-        <section
-          aria-labelledby={`runs-step-${step.index}-metadata-heading`}
-          className="space-y-3"
+    <div
+      className="min-w-0 space-y-5"
+      data-testid={`runs-step-${step.index}-summary`}
+    >
+      <section
+        aria-labelledby={`runs-step-${step.index}-metadata-heading`}
+        className="space-y-3"
+      >
+        <h3
+          className="text-base font-medium leading-none"
+          id={`runs-step-${step.index}-metadata-heading`}
         >
-          <h3
-            className="text-base font-medium leading-none"
-            id={`runs-step-${step.index}-metadata-heading`}
-          >
-            Step metadata
-          </h3>
-          <dl
-            className="grid gap-x-5 gap-y-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 xl:grid-cols-3"
-            data-testid={`runs-step-${step.index}-metadata`}
-          >
-            {metadataItems.map((item) => (
-              <div className="min-w-0" key={item.label}>
-                <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {item.label}
-                </dt>
-                <dd className="mt-0.5 break-words text-foreground">
-                  {formatOptional(item.value)}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-        <section
-          aria-labelledby={`runs-step-${step.index}-output-heading`}
-          className="space-y-3"
+          Step metadata
+        </h3>
+        <dl
+          className="grid gap-x-5 gap-y-2 text-sm sm:grid-cols-2 xl:grid-cols-3"
+          data-testid={`runs-step-${step.index}-metadata`}
         >
-          <h3
-            className="text-base font-medium leading-none"
-            id={`runs-step-${step.index}-output-heading`}
-          >
-            Aggregated output
-          </h3>
-          <JsonBlock
-            testId={`runs-step-${step.index}-aggregated-output`}
-            value={aggregatedStepOutput(step)}
-          />
-        </section>
-      </CardContent>
-    </Card>
+          {metadataItems.map((item) => (
+            <div className="min-w-0" key={item.label}>
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {item.label}
+              </dt>
+              <dd className="mt-0.5 break-words text-foreground">
+                {formatOptional(item.value)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+      <section
+        aria-labelledby={`runs-step-${step.index}-output-heading`}
+        className="space-y-3"
+      >
+        <h3
+          className="text-base font-medium leading-none"
+          id={`runs-step-${step.index}-output-heading`}
+        >
+          Aggregated output
+        </h3>
+        <JsonBlock
+          testId={`runs-step-${step.index}-aggregated-output`}
+          value={aggregatedStepOutput(step)}
+        />
+      </section>
+    </div>
   );
 }
 
@@ -4373,7 +4473,10 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
           traceSpanEntries={traceSpanEntries}
         />
       </section>
-      <section className="min-w-0" data-testid="runs-stacked-section-final-output">
+      <section
+        className="min-w-0"
+        data-testid="runs-stacked-section-final-output"
+      >
         <RunFinalOutputPane run={run} />
       </section>
       <section
@@ -4388,7 +4491,10 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
       >
         <RunEvidenceAvailabilitySection run={run} />
       </section>
-      <section className="min-w-0" data-testid="runs-stacked-section-diagnostics">
+      <section
+        className="min-w-0"
+        data-testid="runs-stacked-section-diagnostics"
+      >
         <RunDiagnosticsWorkspace run={run} steps={steps} />
       </section>
       <section className="min-w-0" data-testid="runs-stacked-section-execution">
@@ -4413,7 +4519,10 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
         <RunMemoryWorkspace run={run} />
       </section>
       <section className="min-w-0" data-testid="runs-stacked-section-runtime">
-        <div className="grid min-w-0 gap-3" data-testid="runs-runtime-workspace">
+        <div
+          className="grid min-w-0 gap-3"
+          data-testid="runs-runtime-workspace"
+        >
           <RunRuntimeProfileSection run={run} />
           <RunTokensWorkspace run={run} />
         </div>
@@ -4494,6 +4603,9 @@ function RunInlineEvidence({
 }) {
   const target = activeInspection.target;
   const title = selectedTargetLabel(target, steps, run);
+  const flattenInlineExecutionChrome =
+    activeInspection.mode === "execution" &&
+    (target.type === "step" || target.type === "agentInvocation");
   let content: ReactNode;
   let selectedInvocationForkAction: ReactNode = null;
 
@@ -4567,7 +4679,8 @@ function RunInlineEvidence({
     content =
       activeInspection.mode === "lineage" ? (
         <CompactModeEmptyState testId="runs-lineage-inspector-empty">
-          Select lineage evidence from the center workspace to inspect raw detail.
+          Select lineage evidence from the center workspace to inspect raw
+          detail.
         </CompactModeEmptyState>
       ) : (
         <RunLineageEvidence
@@ -4601,7 +4714,12 @@ function RunInlineEvidence({
 
   return (
     <div
-      className="grid min-w-0 gap-3 rounded-lg border bg-card/80 p-3"
+      className={cn(
+        "grid min-w-0 gap-3",
+        flattenInlineExecutionChrome
+          ? null
+          : "rounded-lg border bg-card/80 p-3",
+      )}
       data-testid={testId}
     >
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -4619,7 +4737,10 @@ function RunInlineEvidence({
         <div className="flex min-w-0 flex-col gap-2 sm:items-end">
           {selectedInvocationForkAction}
           {activeInspection.target.type !== "run" ? (
-            <EvidencePaneNav activeInspection={activeInspection} onSelect={onSelect} />
+            <EvidencePaneNav
+              activeInspection={activeInspection}
+              onSelect={onSelect}
+            />
           ) : null}
         </div>
       </div>
