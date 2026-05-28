@@ -1,13 +1,5 @@
 import type { ReactNode } from "react";
 
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { cn } from "@/components/ui/utils";
 
 export type PageContextBarDensity = "compact" | "comfortable";
@@ -26,20 +18,21 @@ export type PageContextBarProps = {
   toolbarMetaPlacement?: PageContextBarToolbarMetaPlacement;
 };
 
-const contentClassByDensity: Record<PageContextBarDensity, string> = {
-  compact: "px-4 pb-3",
-  comfortable: "px-5 pb-4",
+const rootClassByDensity: Record<PageContextBarDensity, string> = {
+  compact: "gap-3",
+  comfortable: "gap-4",
 };
 
-const headerClassByDensity: Record<PageContextBarDensity, string> = {
-  compact: "gap-1.5 px-4 pt-4",
-  comfortable: "gap-2 px-5 pt-5",
-};
-
-const toolbarContentClassByDensity: Record<PageContextBarDensity, string> = {
-  compact: "gap-3 p-3 sm:px-4",
-  comfortable: "gap-4 p-4 sm:px-5",
-};
+function PageContextTitle({ children }: { children: ReactNode }) {
+  return (
+    <h1
+      className="shrink-0 text-2xl font-semibold leading-tight tracking-tight text-foreground sm:text-3xl"
+      data-slot="page-context-title"
+    >
+      {children}
+    </h1>
+  );
+}
 
 export function PageContextBar({
   actions,
@@ -52,99 +45,66 @@ export function PageContextBar({
   title,
   toolbarMetaPlacement = "below",
 }: PageContextBarProps) {
-  if (layout === "toolbar") {
-    const placesMetaInMiddle = toolbarMetaPlacement === "middle";
-
-    return (
-      <Card className={cn("gap-0", className)}>
-        <CardContent
-          className={cn(
-            "flex min-w-0 flex-col",
-            placesMetaInMiddle
-              ? "gap-3 lg:flex-row lg:items-center lg:justify-between"
-              : "sm:flex-row sm:items-center sm:justify-between",
-            toolbarContentClassByDensity[density],
-          )}
-        >
-          <div
-            className={cn(
-              "min-w-0 flex-1 space-y-0.5",
-              placesMetaInMiddle ? "lg:basis-0" : undefined,
-            )}
-          >
-            <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
-              <CardTitle className="shrink-0 text-base font-semibold leading-6 tracking-tight">
-                {title}
-              </CardTitle>
-              {description ? (
-                <CardDescription
-                  className={cn(
-                    "min-w-0 text-xs leading-5 sm:text-[13px]",
-                    placesMetaInMiddle ? "text-pretty" : "truncate",
-                  )}
-                >
-                  {description}
-                </CardDescription>
-              ) : null}
-            </div>
-            {meta && !placesMetaInMiddle ? (
-              <div className="truncate text-xs text-muted-foreground">
-                {meta}
-              </div>
-            ) : null}
-          </div>
-          {meta && placesMetaInMiddle ? (
-            <div className="flex min-w-0 flex-wrap items-center gap-2 lg:shrink-0 lg:justify-center">
-              {meta}
-            </div>
-          ) : null}
-          {(status || actions) ? (
-            <div
-              className={cn(
-                "flex min-w-0 flex-wrap items-center gap-2",
-                placesMetaInMiddle
-                  ? "lg:ml-3 lg:shrink-0 lg:justify-end"
-                  : "sm:ml-3 sm:justify-end",
-              )}
-            >
-              {status ? <div className="min-w-0">{status}</div> : null}
-              {actions ? <div className="shrink-0">{actions}</div> : null}
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-    );
-  }
+  const placesMetaInMiddle = layout === "toolbar" && toolbarMetaPlacement === "middle";
 
   return (
-    <Card className={cn("gap-3", className)}>
-      <CardHeader className={headerClassByDensity[density]}>
-        <div className="min-w-0">
-          <CardTitle className="text-base font-semibold tracking-tight">
-            {title}
-          </CardTitle>
+    <div
+      className={cn(
+        "flex min-w-0 flex-col",
+        placesMetaInMiddle
+          ? "lg:flex-row lg:items-center lg:justify-between"
+          : "sm:flex-row sm:items-start sm:justify-between",
+        rootClassByDensity[density],
+        className,
+      )}
+      data-slot="page-context-bar"
+    >
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col gap-2",
+          placesMetaInMiddle ? "lg:basis-0" : undefined,
+        )}
+      >
+        <div className="flex min-w-0 flex-col gap-1.5 md:flex-row md:items-baseline md:gap-4">
+          <PageContextTitle>{title}</PageContextTitle>
           {description ? (
-            <CardDescription className="mt-1 text-xs leading-5">
+            <p
+              className={cn(
+                "min-w-0 max-w-3xl text-sm leading-6 text-muted-foreground",
+                placesMetaInMiddle ? "text-pretty" : undefined,
+              )}
+              data-slot="page-context-description"
+            >
               {description}
-            </CardDescription>
+            </p>
           ) : null}
         </div>
-        {actions ? <CardAction>{actions}</CardAction> : null}
-      </CardHeader>
-      {meta || status ? (
-        <CardContent className={contentClassByDensity[density]}>
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            {meta ? (
-              <div className="min-w-0 text-xs text-muted-foreground">
-                {meta}
-              </div>
-            ) : null}
-            {status ? (
-              <div className="min-w-0 sm:shrink-0">{status}</div>
-            ) : null}
+        {meta && !placesMetaInMiddle ? (
+          <div className="min-w-0 text-xs text-muted-foreground" data-slot="page-context-meta">
+            {meta}
           </div>
-        </CardContent>
+        ) : null}
+      </div>
+      {meta && placesMetaInMiddle ? (
+        <div
+          className="flex min-w-0 flex-wrap items-center gap-2 lg:shrink-0 lg:justify-center"
+          data-slot="page-context-meta"
+        >
+          {meta}
+        </div>
       ) : null}
-    </Card>
+      {(status || actions) ? (
+        <div
+          className={cn(
+            "flex min-w-0 flex-wrap items-center gap-2 sm:ml-3 sm:shrink-0 sm:justify-end",
+            placesMetaInMiddle ? "lg:ml-3" : undefined,
+          )}
+          data-slot="page-context-actions"
+        >
+          {status ? <div className="min-w-0">{status}</div> : null}
+          {actions ? <div className="shrink-0">{actions}</div> : null}
+        </div>
+      ) : null}
+    </div>
   );
 }

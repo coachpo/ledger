@@ -22,7 +22,9 @@ describe("PageContextBar", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
-    expect(screen.getByText("Runtime Console")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Runtime Console" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Updated 2 minutes ago")).toHaveClass(
       "text-xs",
       "text-muted-foreground",
@@ -33,7 +35,7 @@ describe("PageContextBar", () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it("applies compact density header and content classes", () => {
+  it("renders compact density as a flat unboxed header", () => {
     render(
       <PageContextBar
         density="compact"
@@ -42,27 +44,44 @@ describe("PageContextBar", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Compact Context").closest("[data-slot='card-header']"),
-    ).toHaveClass("px-4", "pt-4");
-    expect(
-      screen.getByText("Compact metadata").closest("[data-slot='card-content']"),
-    ).toHaveClass("px-4", "pb-3");
+    const root = screen
+      .getByText("Compact Context")
+      .closest("[data-slot='page-context-bar']");
+
+    expect(root).toHaveClass("gap-3");
+    expect(root?.closest("[data-slot='card']")).not.toBeInTheDocument();
+    expect(screen.getByText("Compact metadata")).toHaveAttribute(
+      "data-slot",
+      "page-context-meta",
+    );
   });
 
-  it("keeps stacked layout as the default and uses toolbar layout only when requested", () => {
-    const { rerender } = render(
+  it("places the H1 and description in the same responsive row", () => {
+    render(
       <PageContextBar
         description="Default stacked context."
         title="Stacked Context"
       />,
     );
 
-    expect(
-      screen.getByText("Stacked Context").closest("[data-slot='card-header']"),
-    ).toBeInTheDocument();
+    const title = screen.getByRole("heading", {
+      level: 1,
+      name: "Stacked Context",
+    });
+    const description = screen.getByText("Default stacked context.");
 
-    rerender(
+    expect(title.parentElement).toBe(description.parentElement);
+    expect(title.parentElement).toHaveClass(
+      "flex-col",
+      "md:flex-row",
+      "md:items-baseline",
+    );
+    expect(description).toHaveAttribute("data-slot", "page-context-description");
+    expect(description).toHaveClass("min-w-0", "max-w-3xl", "text-sm");
+  });
+
+  it("keeps toolbar status and actions in the right-side area", () => {
+    render(
       <PageContextBar
         description="Compact toolbar context."
         layout="toolbar"
@@ -73,21 +92,15 @@ describe("PageContextBar", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Toolbar Context").closest("[data-slot='card-header']"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Toolbar Context").closest("[data-slot='card-content']"),
-    ).toHaveClass("p-3", "sm:flex-row", "sm:items-center");
-    expect(screen.getByText("Toolbar Context").parentElement).toHaveClass(
-      "sm:flex-row",
-      "sm:items-baseline",
+    const root = screen
+      .getByText("Toolbar Context")
+      .closest("[data-slot='page-context-bar']");
+    const actionRegion = screen.getByText("Ready").closest(
+      "[data-slot='page-context-actions']",
     );
-    expect(screen.getByText("Compact toolbar context.")).toHaveClass(
-      "min-w-0",
-      "truncate",
-      "text-xs",
-    );
+
+    expect(root).toHaveClass("sm:flex-row", "sm:items-start");
+    expect(actionRegion).toHaveClass("sm:ml-3", "sm:justify-end");
     expect(
       screen.getByText("Ready").closest("[role='list']"),
     ).toBeInTheDocument();
@@ -108,31 +121,33 @@ describe("PageContextBar", () => {
       />,
     );
 
-    const content = screen
+    const root = screen
       .getByText("Extensions")
-      .closest("[data-slot='card-content']");
+      .closest("[data-slot='page-context-bar']");
     const meta = screen.getByText("Backend slim contract");
     const status = screen.getByText("Enabled").closest("[role='list']");
 
-    expect(content).toHaveClass("lg:flex-row", "lg:items-center");
-    expect(screen.getByText("Slim route contract.")).not.toHaveClass(
-      "truncate",
+    expect(root).toHaveClass("lg:flex-row", "lg:items-center");
+    expect(screen.getByText("Slim route contract.")).toHaveClass(
+      "text-pretty",
     );
     expect(meta.parentElement).toHaveClass("lg:justify-center");
     expect(status).toBeInTheDocument();
     expect(screen.getByText("3 results returned")).toBeInTheDocument();
   });
 
-  it("stays visual-only without sticky positioning or shell offsets", () => {
+  it("stays visual-only without boxed, sticky, or shell-offset chrome", () => {
     render(<PageContextBar title="Visual Context" />);
 
-    const card = screen
+    const root = screen
       .getByText("Visual Context")
-      .closest("[data-slot='card']");
+      .closest("[data-slot='page-context-bar']");
 
-    expect(card).not.toBeNull();
-    expect(card?.className).not.toMatch(/\bsticky\b/);
-    expect(card?.className).not.toMatch(/\btop-0\b/);
-    expect(card?.className).not.toMatch(/\bz-10\b|\bz-20\b/);
+    expect(root).not.toBeNull();
+    expect(root?.closest("[data-slot='card']")).not.toBeInTheDocument();
+    expect(root?.className).not.toMatch(/\bborder\b|\bbg-card\b|\brounded/);
+    expect(root?.className).not.toMatch(/\bsticky\b/);
+    expect(root?.className).not.toMatch(/\btop-0\b/);
+    expect(root?.className).not.toMatch(/\bz-10\b|\bz-20\b/);
   });
 });
