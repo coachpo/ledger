@@ -354,8 +354,10 @@ export function RunsListPage() {
       pageContext={{
         description:
           "Live monitor for recent agent and workflow package executions with route-owned polling, backend progress, queue state, token usage, and direct run inspection.",
+        layout: "toolbar",
         status: (
           <ResourceStatusStrip
+            className="rounded-md px-2.5 py-1"
             items={[
               { label: "Returned", value: String(runs.length) },
               { label: "Active", value: String(activeRunCount) },

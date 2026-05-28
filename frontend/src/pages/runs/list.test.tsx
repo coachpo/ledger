@@ -164,9 +164,24 @@ describe("RunsListPage", () => {
         /live monitor for recent agent and workflow package executions/i,
       ),
     ).toBeVisible();
+    const contextRegion = page.querySelector(
+      '[data-inventory-shell-region="context"]',
+    );
+    expect(contextRegion).toBeInTheDocument();
     expect(
-      page.querySelector('[data-inventory-shell-region="context"]'),
-    ).toBeInTheDocument();
+      within(contextRegion as HTMLElement).getByText("Runs").closest("[data-slot='card-content']"),
+    ).toHaveClass("p-3", "sm:flex-row", "sm:items-center");
+    expect(
+      within(contextRegion as HTMLElement).queryByText("Runs")?.closest("[data-slot='card-header']"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(contextRegion as HTMLElement).getByText(
+        /live monitor for recent agent and workflow package executions/i,
+      ),
+    ).toHaveClass("truncate", "text-xs");
+    expect(
+      within(contextRegion as HTMLElement).getByRole("list"),
+    ).toHaveClass("py-1");
     expect(
       page.querySelector('[data-inventory-shell-region="toolbar"]'),
     ).toBeInTheDocument();
