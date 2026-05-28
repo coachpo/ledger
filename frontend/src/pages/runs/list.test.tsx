@@ -168,29 +168,28 @@ describe("RunsListPage", () => {
       '[data-inventory-shell-region="context"]',
     );
     expect(contextRegion).toBeInTheDocument();
-    expect(
-      within(contextRegion as HTMLElement).getByText("Runs").closest("[data-slot='card-content']"),
-    ).toHaveClass("p-3", "sm:flex-row", "sm:items-center");
-    expect(
-      within(contextRegion as HTMLElement).queryByText("Runs")?.closest("[data-slot='card-header']"),
-    ).not.toBeInTheDocument();
+    const header = within(contextRegion as HTMLElement)
+      .getByRole("heading", { level: 1, name: "Runs" })
+      .closest("[data-slot='page-context-bar']");
+    expect(header).toHaveClass("sm:flex-row", "sm:items-start");
+    expect(header?.closest("[data-slot='card']")).not.toBeInTheDocument();
     expect(
       within(contextRegion as HTMLElement).getByText(
         /live monitor for recent agent and workflow package executions/i,
       ),
-    ).toHaveClass("truncate", "text-xs");
+    ).toHaveClass("max-w-3xl", "text-sm");
     expect(
-      within(contextRegion as HTMLElement).getByRole("list"),
-    ).toHaveClass("py-1");
+      within(contextRegion as HTMLElement).queryByRole("list"),
+    ).not.toBeInTheDocument();
     expect(
       page.querySelector('[data-inventory-shell-region="toolbar"]'),
     ).toBeInTheDocument();
     expect(
       page.querySelector('[data-inventory-shell-region="filters"]'),
     ).toBeInTheDocument();
-    expect(screen.getByText("Returned")).toBeVisible();
-    expect(screen.getByText("Active")).toBeVisible();
-    expect(screen.getByText("Queued")).toBeVisible();
+    expect(within(contextRegion as HTMLElement).queryByText("Returned")).not.toBeInTheDocument();
+    expect(within(contextRegion as HTMLElement).queryByText("Active")).not.toBeInTheDocument();
+    expect(within(contextRegion as HTMLElement).queryByText("Queued")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Target key")).toBeVisible();
     expect(screen.getByLabelText("Target kind")).toBeVisible();
     expect(screen.getByLabelText("Run status")).toBeVisible();

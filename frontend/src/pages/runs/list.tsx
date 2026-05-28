@@ -4,7 +4,7 @@ import { Link } from "react-router";
 
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
-import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -338,11 +338,6 @@ export function RunsListPage() {
   const activeFilterCount = [targetKind, normalizedTargetKey, status].filter(
     Boolean,
   ).length;
-  const activeRunCount = runs.filter(
-    (run) => run.status === "queued" || run.status === "running",
-  ).length;
-  const queuedRunCount = runs.filter((run) => run.status === "queued").length;
-
   const clearFilters = () => {
     setTargetKind(undefined);
     setTargetKey("");
@@ -355,16 +350,6 @@ export function RunsListPage() {
         description:
           "Live monitor for recent agent and workflow package executions with route-owned polling, backend progress, queue state, token usage, and direct run inspection.",
         layout: "toolbar",
-        status: (
-          <ResourceStatusStrip
-            className="rounded-md px-2.5 py-1"
-            items={[
-              { label: "Returned", value: String(runs.length) },
-              { label: "Active", value: String(activeRunCount) },
-              { label: "Queued", value: String(queuedRunCount) },
-            ]}
-          />
-        ),
         title: "Runs",
       }}
       testId="runs-list-page"
