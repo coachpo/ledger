@@ -199,9 +199,11 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     expect(screen.getByRole("heading", { name: "Metadata" })).toBeVisible();
     expect(screen.queryByTestId("runs-audit-row-trace-root"))
       .not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("runs-audit-row-payload-output"),
-    ).toHaveTextContent(/final output captured/i);
+    const finalOutputAuditRow = screen.getByTestId("runs-audit-row-payload-output");
+    expect(finalOutputAuditRow).toHaveTextContent(/final output payload/i);
+    expect(finalOutputAuditRow).not.toHaveTextContent(
+      /\bCaptured\b|\bPending\b|Not produced/i,
+    );
     expect(
       screen.getByTestId("runs-audit-row-trace-operation-2001"),
     ).toHaveTextContent(/webhook_result\/span-operation/i);

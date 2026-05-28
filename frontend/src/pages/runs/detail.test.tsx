@@ -683,10 +683,12 @@ describe("RunsDetailPage", () => {
     const expectedSections = [
       ["runs-detail-section-operational-overview", "Operational overview"],
       ["runs-detail-section-final-output", "Final output"],
+      ["runs-detail-section-output-provenance", "Output provenance"],
       ["runs-detail-section-evidence-availability", "Evidence availability"],
       ["runs-detail-section-diagnostics", "Diagnostics"],
       ["runs-detail-section-execution-steps", "Execution steps"],
       ["runs-detail-section-run-input", "Run input"],
+      ["runs-detail-section-input-provenance", "Input provenance"],
       ["runs-detail-section-memory", "Memory"],
       ["runs-memory-evidence", "Run memory evidence"],
       ["runs-memory-group-retrievedContext", "Retrieved context"],
@@ -715,12 +717,11 @@ describe("RunsDetailPage", () => {
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });
-    expect(within(stack).queryByTestId("runs-detail-section-input-provenance"))
-      .not.toBeInTheDocument();
-    expect(within(stack).queryByTestId("runs-detail-section-output-provenance"))
-      .not.toBeInTheDocument();
-    expect(within(stack).queryByTestId("runs-output-workspace"))
-      .not.toBeInTheDocument();
+    expect(within(stack).getByTestId("runs-output-workspace"))
+      .toBeInTheDocument();
+    expect(
+      within(stack).getByTestId("runs-detail-section-output-provenance"),
+    ).not.toHaveTextContent(/\bCaptured\b|\bPending\b|Not produced|Availability/i);
     sections.forEach((section) => {
       expect(section).toHaveAttribute("data-slot", "collapsible");
       expect(section).toHaveAttribute("data-state", "closed");
@@ -745,10 +746,12 @@ describe("RunsDetailPage", () => {
     const expectedBlocks = [
       ["operational-overview", "Operational overview"],
       ["final-output", "Final output"],
+      ["output-provenance", "Output provenance"],
       ["evidence-availability", "Evidence availability"],
       ["diagnostics", "Diagnostics"],
       ["execution-steps", "Execution steps"],
       ["run-input", "Run input"],
+      ["input-provenance", "Input provenance"],
       ["memory", "Memory"],
       ["runtime-profile", "Runtime profile"],
       ["selected-strategies", "Selected strategies"],
@@ -1253,7 +1256,7 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
     fireEvent.click(
       within(screen.getByTestId("runs-audit-row-payload-output")).getByText(
-        /final output captured/i,
+        /final output payload/i,
       ),
     );
     applyLatestSearchParamsUpdate("mode=metadata");
@@ -1598,11 +1601,11 @@ describe("RunsDetailPage", () => {
       screen.getAllByRole("heading", { name: /final output/i })[0],
     ).toBeVisible();
     expect(
-      screen.queryByRole("heading", { name: /output provenance/i }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("heading", { name: /output provenance/i }),
+    ).toBeVisible();
     expect(
-      screen.queryByRole("heading", { name: /input provenance/i }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("heading", { name: /input provenance/i }),
+    ).toBeVisible();
     expect(
       screen.getByRole("heading", { name: /operational overview/i }),
     ).toBeVisible();
@@ -1634,8 +1637,8 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-summary-line")).toHaveTextContent(
       /run #42/i,
     );
-    expect(screen.getByTestId("runs-detail-summary-line")).toHaveTextContent(
-      /captured/i,
+    expect(screen.getByTestId("runs-detail-summary-line")).not.toHaveTextContent(
+      /\bCaptured\b|\bPending\b|Not produced/i,
     );
     expect(screen.getByTestId("runs-detail-summary-line")).toHaveTextContent(
       /51 tokens/i,
@@ -1821,7 +1824,7 @@ describe("RunsDetailPage", () => {
     expect(screen.queryByTestId("runs-audit-row-trace-root"))
       .not.toBeInTheDocument();
     expect(screen.getByTestId("runs-audit-row-payload-output"))
-      .toHaveTextContent(/final output captured/i);
+      .toHaveTextContent(/final output payload/i);
     expect(
       screen.getByTestId("runs-audit-row-trace-agent-1002"),
     ).toHaveTextContent(/decision\/span-2/i);
@@ -2756,7 +2759,7 @@ describe("RunsDetailPage", () => {
     expect(aggregatedOutput.querySelector("table")).toBeInTheDocument();
   });
 
-  it("renders terminal null final output instead of the pending-state copy", () => {
+  it("renders a neutral empty state when no final output payload is recorded", () => {
     useRunMock.mockReturnValue(
       queryResult(buildRun({ finalOutput: null, status: "succeeded" })),
     );
@@ -2765,13 +2768,16 @@ describe("RunsDetailPage", () => {
 
     const succeededFinalOutput = screen.getByTestId("runs-detail-final-output");
 
-    expect(succeededFinalOutput).toHaveTextContent("null");
+    expect(succeededFinalOutput).toHaveTextContent(
+      "No final output payload was recorded for this run.",
+    );
+    expect(succeededFinalOutput).not.toHaveTextContent("null");
+    expect(succeededFinalOutput).not.toHaveTextContent(
+      /\bCaptured\b|\bPending\b|Not produced/i,
+    );
     expect(
       succeededFinalOutput.querySelector("[data-structured-string-view]"),
     ).toBeNull();
-    expect(succeededFinalOutput).not.toHaveTextContent(
-      "Final output is not available yet.",
-    );
     succeededRender.unmount();
 
     useRunMock.mockReturnValue(
@@ -2791,9 +2797,9 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-state-summary")).toHaveTextContent(
       /failure/i,
     );
-    expect(screen.getAllByText("Not produced").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Not produced")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(
-      /run failed before final output was produced/i,
+      "No final output payload was recorded for this run.",
     );
     expect(screen.queryByTestId("runs-active-evidence-viewer"))
       .not.toBeInTheDocument();
@@ -2879,7 +2885,10 @@ describe("RunsDetailPage", () => {
       pendingFinalOutputCard.querySelector("[data-slot='card-content']"),
     ).not.toHaveClass("pt-6");
     expect(pendingFinalOutput).toHaveTextContent(
-      "Final output is not available yet.",
+      "No final output payload was recorded for this run.",
+    );
+    expect(pendingFinalOutput).not.toHaveTextContent(
+      /\bCaptured\b|\bPending\b|Not produced/i,
     );
     expect(pendingFinalOutput).toHaveClass(
       "rounded-md",
