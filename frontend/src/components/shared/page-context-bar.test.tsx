@@ -93,6 +93,36 @@ describe("PageContextBar", () => {
     ).toBeInTheDocument();
   });
 
+  it("can place toolbar metadata between title copy and status when requested", () => {
+    render(
+      <PageContextBar
+        actions={<span>3 results returned</span>}
+        description="Slim route contract."
+        layout="toolbar"
+        meta={<span>Backend slim contract</span>}
+        status={
+          <ResourceStatusStrip items={[{ label: "Enabled", value: "1" }]} />
+        }
+        title="Extensions"
+        toolbarMetaPlacement="middle"
+      />,
+    );
+
+    const content = screen
+      .getByText("Extensions")
+      .closest("[data-slot='card-content']");
+    const meta = screen.getByText("Backend slim contract");
+    const status = screen.getByText("Enabled").closest("[role='list']");
+
+    expect(content).toHaveClass("lg:flex-row", "lg:items-center");
+    expect(screen.getByText("Slim route contract.")).not.toHaveClass(
+      "truncate",
+    );
+    expect(meta.parentElement).toHaveClass("lg:justify-center");
+    expect(status).toBeInTheDocument();
+    expect(screen.getByText("3 results returned")).toBeInTheDocument();
+  });
+
   it("stays visual-only without sticky positioning or shell offsets", () => {
     render(<PageContextBar title="Visual Context" />);
 

@@ -12,6 +12,7 @@ import { cn } from "@/components/ui/utils";
 
 export type PageContextBarDensity = "compact" | "comfortable";
 export type PageContextBarLayout = "stacked" | "toolbar";
+export type PageContextBarToolbarMetaPlacement = "below" | "middle";
 
 export type PageContextBarProps = {
   actions?: ReactNode;
@@ -22,6 +23,7 @@ export type PageContextBarProps = {
   meta?: ReactNode;
   status?: ReactNode;
   title: ReactNode;
+  toolbarMetaPlacement?: PageContextBarToolbarMetaPlacement;
 };
 
 const contentClassByDensity: Record<PageContextBarDensity, string> = {
@@ -48,33 +50,63 @@ export function PageContextBar({
   meta,
   status,
   title,
+  toolbarMetaPlacement = "below",
 }: PageContextBarProps) {
   if (layout === "toolbar") {
+    const placesMetaInMiddle = toolbarMetaPlacement === "middle";
+
     return (
       <Card className={cn("gap-0", className)}>
         <CardContent
           className={cn(
-            "flex min-w-0 flex-col sm:flex-row sm:items-center sm:justify-between",
+            "flex min-w-0 flex-col",
+            placesMetaInMiddle
+              ? "gap-3 lg:flex-row lg:items-center lg:justify-between"
+              : "sm:flex-row sm:items-center sm:justify-between",
             toolbarContentClassByDensity[density],
           )}
         >
-          <div className="min-w-0 flex-1 space-y-0.5">
+          <div
+            className={cn(
+              "min-w-0 flex-1 space-y-0.5",
+              placesMetaInMiddle ? "lg:basis-0" : undefined,
+            )}
+          >
             <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
               <CardTitle className="shrink-0 text-base font-semibold leading-6 tracking-tight">
                 {title}
               </CardTitle>
               {description ? (
-                <CardDescription className="min-w-0 truncate text-xs leading-5 sm:text-[13px]">
+                <CardDescription
+                  className={cn(
+                    "min-w-0 text-xs leading-5 sm:text-[13px]",
+                    placesMetaInMiddle ? "text-pretty" : "truncate",
+                  )}
+                >
                   {description}
                 </CardDescription>
               ) : null}
             </div>
-            {meta ? (
-              <div className="truncate text-xs text-muted-foreground">{meta}</div>
+            {meta && !placesMetaInMiddle ? (
+              <div className="truncate text-xs text-muted-foreground">
+                {meta}
+              </div>
             ) : null}
           </div>
+          {meta && placesMetaInMiddle ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-2 lg:shrink-0 lg:justify-center">
+              {meta}
+            </div>
+          ) : null}
           {(status || actions) ? (
-            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ml-3 sm:justify-end">
+            <div
+              className={cn(
+                "flex min-w-0 flex-wrap items-center gap-2",
+                placesMetaInMiddle
+                  ? "lg:ml-3 lg:shrink-0 lg:justify-end"
+                  : "sm:ml-3 sm:justify-end",
+              )}
+            >
               {status ? <div className="min-w-0">{status}</div> : null}
               {actions ? <div className="shrink-0">{actions}</div> : null}
             </div>
@@ -103,9 +135,13 @@ export function PageContextBar({
         <CardContent className={contentClassByDensity[density]}>
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             {meta ? (
-              <div className="min-w-0 text-xs text-muted-foreground">{meta}</div>
+              <div className="min-w-0 text-xs text-muted-foreground">
+                {meta}
+              </div>
             ) : null}
-            {status ? <div className="min-w-0 sm:shrink-0">{status}</div> : null}
+            {status ? (
+              <div className="min-w-0 sm:shrink-0">{status}</div>
+            ) : null}
           </div>
         </CardContent>
       ) : null}
