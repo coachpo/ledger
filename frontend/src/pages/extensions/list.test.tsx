@@ -74,7 +74,7 @@ describe("ExtensionsListPage", () => {
     const page = screen.getByTestId("extensions-list-page");
     expect(page).toBeVisible();
     expect(screen.getByRole("heading", { level: 1, name: "Extensions" })).toBeVisible();
-    expect(screen.getByText(/slim system-state contract only/i)).toBeVisible();
+    expect(screen.getByText("Manage bundled extensions.")).toBeVisible();
     const context = page.querySelector<HTMLElement>(
       '[data-inventory-shell-region="context"]',
     );

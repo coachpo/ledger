@@ -92,8 +92,7 @@ export function ExtensionsListPage() {
     <InventoryPageShell
       className="gap-3 p-4 sm:p-5 lg:p-6"
       pageContext={{
-        description:
-          "Manage bundled extension availability from the slim system-state contract only. Runtime gates own route and tool visibility.",
+        description: "Manage bundled extensions.",
         title: "Extensions",
       }}
       testId="extensions-list-page"
