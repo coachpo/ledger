@@ -562,8 +562,7 @@ export function ModelConnectionsListPage() {
     <InventoryPageShell
       pageContext={{
         actions: <ModelConnectionsPageActions />,
-        description:
-          "Manage live model endpoints, credentials, protocol profiles, and backend-derived compatibility evidence by stable key.",
+        description: "Manage model connections.",
         title: "Model Connections",
       }}
       testId="platform-model-connections-page"

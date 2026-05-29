@@ -699,8 +699,7 @@ export function WorkflowPackagesListPage() {
     <InventoryPageShell
       pageContext={{
         actions: <WorkflowPackagesPageActions />,
-        description:
-          "Package-first authoring for private agents, output schemas, capability profiles, MCP bindings, artifact updates, and controlled launches.",
+        description: "Author and launch packages.",
         title: "Workflow Packages",
       }}
       testId="workflow-packages-list-page"
