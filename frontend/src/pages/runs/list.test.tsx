@@ -135,9 +135,11 @@ describe("RunsListPage", () => {
     });
     const { rerender } = render(<RunsListPage />);
 
-    expect(screen.getByTestId("runs-monitor-filter-card")).toHaveTextContent(
-      "Polling every 2 seconds while queued or running rows are present.",
-    );
+    expect(
+      screen.queryByText(
+        "Polling every 2 seconds while queued or running rows are present.",
+      ),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText("No runs match the current monitor filters"),
     ).toBeVisible();
@@ -159,11 +161,7 @@ describe("RunsListPage", () => {
     render(<RunsListPage />);
 
     const page = screen.getByTestId("runs-list-page");
-    expect(
-      within(page).getByText(
-        /monitor recent workflow package runs/i,
-      ),
-    ).toBeVisible();
+    expect(within(page).getByText(/monitor workflow runs/i)).toBeVisible();
     const contextRegion = page.querySelector(
       '[data-inventory-shell-region="context"]',
     );
@@ -174,9 +172,7 @@ describe("RunsListPage", () => {
     expect(header).toHaveClass("sm:flex-row", "sm:items-start");
     expect(header?.closest("[data-slot='card']")).not.toBeInTheDocument();
     expect(
-      within(contextRegion as HTMLElement).getByText(
-        /monitor recent workflow package runs/i,
-      ),
+      within(contextRegion as HTMLElement).getByText(/monitor workflow runs/i),
     ).toHaveClass("max-w-3xl", "truncate", "text-sm");
     expect(
       within(contextRegion as HTMLElement).queryByRole("list"),
@@ -186,19 +182,14 @@ describe("RunsListPage", () => {
     ).toBeInTheDocument();
     expect(
       page.querySelector('[data-inventory-shell-region="filters"]'),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(within(contextRegion as HTMLElement).queryByText("Returned")).not.toBeInTheDocument();
     expect(within(contextRegion as HTMLElement).queryByText("Active")).not.toBeInTheDocument();
     expect(within(contextRegion as HTMLElement).queryByText("Queued")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Target key")).toBeVisible();
     expect(screen.getByLabelText("Target kind")).toBeVisible();
     expect(screen.getByLabelText("Run status")).toBeVisible();
-    expect(screen.getByTestId("runs-monitor-filter-card")).toHaveTextContent(
-      "Target kind",
-    );
-    expect(screen.getByTestId("runs-monitor-filter-card")).toHaveTextContent(
-      "All statuses",
-    );
+    expect(screen.queryByTestId("runs-monitor-filter-card")).not.toBeInTheDocument();
 
     const table = screen.getByRole("table");
     for (const column of [
@@ -311,20 +302,9 @@ describe("RunsListPage", () => {
       },
       { refetchInterval: 2000 },
     );
-    expect(screen.getByTestId("runs-monitor-filter-card")).toHaveTextContent(
-      "market_review_package · select target kind to apply",
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
-
-    expect(useRunsMock).toHaveBeenLastCalledWith(
-      {
-        limit: 50,
-        status: undefined,
-        targetKey: undefined,
-        targetKind: undefined,
-      },
-      { refetchInterval: 2000 },
+    expect(screen.queryByTestId("runs-monitor-filter-card")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Target key")).toHaveValue(
+      " market_review_package ",
     );
   });
 });

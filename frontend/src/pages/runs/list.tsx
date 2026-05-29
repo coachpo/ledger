@@ -317,11 +317,6 @@ export function RunsListPage() {
   const normalizedTargetKey = targetKey.trim();
   const appliedTargetKey =
     targetKind && normalizedTargetKey ? normalizedTargetKey : undefined;
-  const targetKeyFilterValue = normalizedTargetKey
-    ? targetKind
-      ? normalizedTargetKey
-      : `${normalizedTargetKey} · select target kind to apply`
-    : "Any key";
   const runsQuery = useRuns(
     {
       limit: 50,
@@ -335,15 +330,6 @@ export function RunsListPage() {
     () => runsQuery.data?.items ?? [],
     [runsQuery.data?.items],
   );
-  const activeFilterCount = [targetKind, normalizedTargetKey, status].filter(
-    Boolean,
-  ).length;
-  const clearFilters = () => {
-    setTargetKind(undefined);
-    setTargetKey("");
-    setStatus(undefined);
-  };
-
   return (
     <InventoryPageShell
       pageContext={{
@@ -381,37 +367,6 @@ export function RunsListPage() {
           value: targetKey,
           onChange: setTargetKey,
         },
-      }}
-      filterBar={{
-        testId: "runs-monitor-filter-card",
-        summary:
-          "Polling every 2 seconds while queued or running rows are present.",
-        items: [
-          {
-            active: Boolean(targetKind),
-            id: "target-kind",
-            label: "Target kind",
-            value: targetKind
-              ? formatTargetKindLabel(targetKind)
-              : "All targets",
-            onClear: targetKind ? () => setTargetKind(undefined) : undefined,
-          },
-          {
-            active: Boolean(normalizedTargetKey),
-            id: "target-key",
-            label: "Target key",
-            value: targetKeyFilterValue,
-            onClear: normalizedTargetKey ? () => setTargetKey("") : undefined,
-          },
-          {
-            active: Boolean(status),
-            id: "status",
-            label: "Status",
-            value: status ?? "All statuses",
-            onClear: status ? () => setStatus(undefined) : undefined,
-          },
-        ],
-        onClearAll: activeFilterCount > 0 ? clearFilters : undefined,
       }}
     >
       {runsQuery.isPending ? (
