@@ -186,8 +186,8 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(within(screen.getByTestId("workflow-package-launch-identity")).getByText("Market Review Package")).toBeVisible();
     expect(screen.getByTestId("workflow-package-launch-context")).toHaveTextContent("Package identity");
     expect(screen.getAllByText("market_review_package").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "Open authoring editor" })).toHaveAttribute("href", "/workflow-packages/42");
-    expect(screen.getByTestId("workflow-package-launch-actions")).toHaveClass("flex", "w-full", "sm:w-auto");
+    expect(screen.queryByRole("link", { name: "Open authoring editor" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workflow-package-launch-actions")).not.toBeInTheDocument();
     expect(screen.getByTestId("workflow-package-preflight-status")).toHaveTextContent(/ready to launch/i);
     expect(screen.getByTestId("workflow-package-preflight-evidence")).toHaveTextContent("Preflight");
     expect(screen.getByTestId("workflow-package-constraint-inspector")).toHaveTextContent("Capability constraints");

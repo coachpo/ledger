@@ -506,13 +506,11 @@ function SavedInputEntryRow(props: {
 
 function LaunchIdentityContextBar({
   blockingCount,
-  packageId,
   ready,
   warningCount,
   workflowPackage,
 }: {
   blockingCount: number;
-  packageId: string;
   ready: boolean;
   warningCount: number;
   workflowPackage: WorkflowPackageRead;
@@ -526,23 +524,6 @@ function LaunchIdentityContextBar({
   return (
     <div className="min-w-0" data-testid="workflow-package-launch-identity">
       <PageContextBar
-        actions={
-          <div
-            className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row lg:justify-end"
-            data-testid="workflow-package-launch-actions"
-          >
-            <Button
-              asChild
-              className="w-full sm:w-auto"
-              size="sm"
-              variant="outline"
-            >
-              <Link to={`/workflow-packages/${packageId}`}>
-                Open authoring editor
-              </Link>
-            </Button>
-          </div>
-        }
         description={
           workflowPackage.description ||
           "Queue a run from the currently persisted workflow package."
@@ -1330,7 +1311,6 @@ export function WorkflowPackageLaunchPage() {
       contextBar={
         <LaunchIdentityContextBar
           blockingCount={blockingCount}
-          packageId={packageId}
           ready={ready}
           warningCount={warningCount}
           workflowPackage={packageQuery.data}
