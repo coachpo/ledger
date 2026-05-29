@@ -313,7 +313,7 @@ export function ReportListPage() {
             </Button>
           </div>
         ),
-        description: "Compiled template snapshots — point-in-time deliverables.",
+        description: "Generate and review reports.",
         layout: "toolbar",
         title: "Reports",
       }}

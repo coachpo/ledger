@@ -116,7 +116,7 @@ export function TemplateListPage() {
             </Link>
           </Button>
         ),
-        description: "Manage text templates with portfolio data placeholders.",
+        description: "Manage templates.",
         title: "Templates",
       }}
       testId="templates-list-page"

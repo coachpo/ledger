@@ -158,8 +158,7 @@ export function PortfolioListPage() {
             <Plus data-icon="inline-start" /> New Portfolio
           </Button>
         ),
-        description:
-          "Manage live portfolio records and jump into detailed position, balance, and trade views.",
+        description: "Manage portfolios.",
         title: "Portfolios",
       }}
       testId="portfolios-list-page"
