@@ -478,7 +478,7 @@ describe("router", () => {
     expect(screen.getByTestId("memory-access-required")).toHaveTextContent(
       "Access context required",
     );
-    expect(screen.getByText(/explicit private scopes only/i)).toBeVisible();
+    expect(screen.getByText("Inspect package memory.")).toBeVisible();
     expect(
       screen.queryByLabelText("Namespace declarations"),
     ).not.toBeInTheDocument();

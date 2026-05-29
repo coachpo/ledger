@@ -130,7 +130,7 @@ function MemoryContextContract() {
   return (
     <div data-testid="memory-contract-notice">
       <PageContextBar
-        description="/api/memory lists explicit private scopes only: a package access context and concrete private scope are required, visibility is fixed to explicit-scope, namespace grants are server-owned so browser-authored JSON is not accepted, and finance report history remains in Reports."
+        description="Inspect package memory."
         layout="toolbar"
         title="Memory"
       />
