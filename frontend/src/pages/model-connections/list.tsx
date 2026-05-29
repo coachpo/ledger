@@ -1,11 +1,4 @@
-import {
-  ChevronDown,
-  ChevronRight,
-  MoreHorizontal,
-  Plus,
-  SquarePen,
-  Trash2,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, SquarePen, Trash2 } from "lucide-react";
 import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
@@ -24,13 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/components/ui/utils";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -214,109 +200,24 @@ function getNamedEvidenceItem(
   );
 }
 
-function CompactLabeledValue({
-  children,
-  label,
-  valueLabel,
-}: {
-  children: ReactNode;
-  label: string;
-  valueLabel?: string;
-}) {
-  return (
-    <div className="flex min-w-0 items-baseline gap-2 text-xs">
-      <dt className="w-20 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:w-16">
-        {label}
-      </dt>
-      <dd aria-label={valueLabel} className="min-w-0 flex-1 text-foreground">
-        {children}
-      </dd>
-    </div>
-  );
-}
-
-function ModelConnectionCardFactsGrid({
-  connection,
-}: {
-  connection: ModelConnectionListItemRead;
-}) {
-  return (
-    <dl className="grid min-w-0 gap-x-4 gap-y-1.5 rounded-lg border bg-muted/15 p-3 sm:grid-cols-2">
-      <CompactLabeledValue label="Stable key">
-        <MonospaceTruncate label="Stable key" value={connection.key} />
-      </CompactLabeledValue>
-      <CompactLabeledValue label="Model ID">
-        <MonospaceTruncate label="Model ID" value={connection.modelId} />
-      </CompactLabeledValue>
-      <CompactLabeledValue label="Endpoint">
-        <span
-          aria-label={`Endpoint: ${connection.baseUrl}`}
-          className="block max-w-full truncate font-mono text-xs text-muted-foreground"
-          title={connection.baseUrl}
-        >
-          {connection.baseUrl}
-        </span>
-      </CompactLabeledValue>
-      <CompactLabeledValue
-        label="Timeout"
-        valueLabel={`Timeout: ${connection.timeoutSeconds}s`}
-      >
-        <span className="text-xs text-muted-foreground">
-          {connection.timeoutSeconds}s
-        </span>
-      </CompactLabeledValue>
-    </dl>
-  );
-}
-
 function ModelConnectionCardEvidenceChips({
   connection,
 }: {
   connection: ModelConnectionListItemRead;
 }) {
-  const testItem = getNamedEvidenceItem(connection, "Test state");
-  const capabilityItem = getNamedEvidenceItem(connection, "Capability support");
   const credentialItem = getNamedEvidenceItem(connection, "Credential state");
-  const lastTestDetail = [
-    testItem?.description ??
-      "Backend connection test has not reported a provider message.",
-    `Last tested: ${formatCompactLastTestedAt(connection)}`,
-  ].join(" · ");
+
+  if (!credentialItem) {
+    return null;
+  }
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-      <ProtocolProfileCell connection={connection} />
       <CompactMetadataBadge
-        detail={String(lastTestDetail)}
-        label={formatLastTestStatus(connection)}
-        tone={compactBadgeToneFromEvidence(testItem?.tone)}
+        detail={String(credentialItem.description ?? credentialItem.value)}
+        label={String(credentialItem.value)}
+        tone={compactBadgeToneFromEvidence(credentialItem.tone)}
       />
-      <CompactMetadataBadge
-        accessibleDetail={formatCapabilityDetails(connection)}
-        detail={formatCapabilityDetails(connection)
-          .split(" · ")
-          .map((item) => (
-            <div key={item}>{item}</div>
-          ))}
-        label={formatCompactCapabilitySummary(connection.capabilities)}
-        tone={compactBadgeToneFromEvidence(capabilityItem?.tone)}
-      />
-      {credentialItem ? (
-        <CompactMetadataBadge
-          detail={String(credentialItem.description ?? credentialItem.value)}
-          label={String(credentialItem.value)}
-          tone={compactBadgeToneFromEvidence(credentialItem.tone)}
-        />
-      ) : null}
-      {getCompactRuntimePolicyItems(connection).map((item) => (
-        <CompactMetadataBadge
-          detail={item.detail}
-          emphasized={item.key === "reasoning" || item.key === "streaming"}
-          key={item.key}
-          label={item.label}
-          tone={item.tone}
-        />
-      ))}
     </div>
   );
 }
@@ -341,8 +242,7 @@ function ModelConnectionCard({
       }
       density="compactPlus"
       description={connection.description || "No description provided."}
-      evidenceChips={<ModelConnectionCardEvidenceChips connection={connection} />}
-      factsGrid={<ModelConnectionCardFactsGrid connection={connection} />}
+      factsGrid={<ModelConnectionCardDetails connection={connection} />}
       testId={`model-connections-row-${connection.id}`}
       title={connection.name}
     />
@@ -393,32 +293,19 @@ function ModelConnectionActions({
           Edit
         </Link>
       </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            aria-label={`Open actions for model connection ${connection.name}`}
-            className="size-8 cursor-pointer"
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <MoreHorizontal />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuGroup>
-            <DropdownMenuItem
-              data-testid={`model-connections-delete-${connection.id}`}
-              disabled={deletePending}
-              onSelect={() => onDelete(connection)}
-              variant="destructive"
-            >
-              <Trash2 />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <Button
+        aria-label={`Delete model connection ${connection.name}`}
+        className="h-8 px-2 cursor-pointer"
+        data-testid={`model-connections-delete-${connection.id}`}
+        disabled={deletePending}
+        onClick={() => onDelete(connection)}
+        size="sm"
+        type="button"
+        variant="destructive"
+      >
+        <Trash2 data-icon="inline-start" />
+        Delete
+      </Button>
     </>
   );
 }
@@ -516,13 +403,15 @@ function ProtocolProfileCell({
 }: {
   connection: ModelConnectionListItemRead;
 }) {
-  const detail = `${PROTOCOL_PROFILE_LABELS[connection.protocolProfile]} · ${PROTOCOL_PROFILE_DESCRIPTIONS[connection.protocolProfile]} Endpoint: ${connection.baseUrl}. Timeout: ${connection.timeoutSeconds}s.`;
+  const label = PROTOCOL_PROFILE_SHORT_LABELS[connection.protocolProfile];
 
   return (
-    <CompactMetadataBadge
-      detail={detail}
-      label={PROTOCOL_PROFILE_SHORT_LABELS[connection.protocolProfile]}
-    />
+    <Badge
+      aria-label={`Profile: ${PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}`}
+      variant="outline"
+    >
+      {label}
+    </Badge>
   );
 }
 
@@ -569,6 +458,85 @@ function CompactDetailGroup({
   );
 }
 
+function ModelConnectionDetailSections({
+  className,
+  connection,
+}: {
+  className?: string;
+  connection: ModelConnectionListItemRead;
+}) {
+  return (
+    <div
+      className={cn(
+        "grid min-w-0 gap-x-6 gap-y-2 md:grid-cols-2 xl:grid-cols-4",
+        className,
+      )}
+    >
+      <CompactDetailGroup title="Endpoint">
+        <CompactDetailField label="Profile">
+          {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
+        </CompactDetailField>
+        <CompactDetailField label="Stable key" mono>
+          {connection.key}
+        </CompactDetailField>
+        <CompactDetailField label="Model ID" mono>
+          {connection.modelId}
+        </CompactDetailField>
+        <CompactDetailField label="Base URL" mono>
+          {connection.baseUrl}
+        </CompactDetailField>
+        <CompactDetailField label="Timeout">
+          {connection.timeoutSeconds}s
+        </CompactDetailField>
+      </CompactDetailGroup>
+      <CompactDetailGroup title="Capability support">
+        <CompactDetailField label="Summary">
+          {formatCapabilitySummary(connection.capabilities)}
+        </CompactDetailField>
+        <CompactDetailField label="Detail">
+          {formatCapabilityDetails(connection)}
+        </CompactDetailField>
+      </CompactDetailGroup>
+      <CompactDetailGroup title="Test and reachability">
+        <CompactDetailField label="Last test">
+          {formatLastTestStatus(connection)}
+        </CompactDetailField>
+        <CompactDetailField label="Tested at">
+          {formatCompactLastTestedAt(connection)}
+        </CompactDetailField>
+        <CompactDetailField label="Message">
+          {connection.lastTestMessage ??
+            "Backend connection test has not reported a provider message."}
+        </CompactDetailField>
+      </CompactDetailGroup>
+      <CompactDetailGroup title="Runtime policy">
+        <CompactDetailField label="Policy">
+          {formatRuntimePolicyEvidence(connection)}
+        </CompactDetailField>
+        <CompactDetailField label="Reasoning">
+          {formatReasoningEffort(connection.reasoningEffort)}
+        </CompactDetailField>
+      </CompactDetailGroup>
+    </div>
+  );
+}
+
+function ModelConnectionCardDetails({
+  connection,
+}: {
+  connection: ModelConnectionListItemRead;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <ModelConnectionCardEvidenceChips connection={connection} />
+      <ModelConnectionDetailSections
+        className="rounded-lg border bg-muted/15 p-3"
+        connection={connection}
+      />
+    </div>
+  );
+}
+
 function ModelConnectionDetailsRow({
   connection,
   detailsId,
@@ -612,53 +580,10 @@ function ModelConnectionDetailsRow({
               ))}
             </div>
           </div>
-          <div className="grid min-w-0 gap-x-6 gap-y-2 border-t pt-2 md:grid-cols-2 xl:grid-cols-4">
-            <CompactDetailGroup title="Endpoint">
-              <CompactDetailField label="Profile">
-                {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
-              </CompactDetailField>
-              <CompactDetailField label="Stable key" mono>
-                {connection.key}
-              </CompactDetailField>
-              <CompactDetailField label="Model ID" mono>
-                {connection.modelId}
-              </CompactDetailField>
-              <CompactDetailField label="Base URL" mono>
-                {connection.baseUrl}
-              </CompactDetailField>
-              <CompactDetailField label="Timeout">
-                {connection.timeoutSeconds}s
-              </CompactDetailField>
-            </CompactDetailGroup>
-            <CompactDetailGroup title="Capability support">
-              <CompactDetailField label="Summary">
-                {formatCapabilitySummary(connection.capabilities)}
-              </CompactDetailField>
-              <CompactDetailField label="Detail">
-                {formatCapabilityDetails(connection)}
-              </CompactDetailField>
-            </CompactDetailGroup>
-            <CompactDetailGroup title="Test and reachability">
-              <CompactDetailField label="Last test">
-                {formatLastTestStatus(connection)}
-              </CompactDetailField>
-              <CompactDetailField label="Tested at">
-                {formatCompactLastTestedAt(connection)}
-              </CompactDetailField>
-              <CompactDetailField label="Message">
-                {connection.lastTestMessage ??
-                  "Backend connection test has not reported a provider message."}
-              </CompactDetailField>
-            </CompactDetailGroup>
-            <CompactDetailGroup title="Runtime policy">
-              <CompactDetailField label="Policy">
-                {formatRuntimePolicyEvidence(connection)}
-              </CompactDetailField>
-              <CompactDetailField label="Reasoning">
-                {formatReasoningEffort(connection.reasoningEffort)}
-              </CompactDetailField>
-            </CompactDetailGroup>
-          </div>
+          <ModelConnectionDetailSections
+            className="border-t pt-2"
+            connection={connection}
+          />
         </div>
       </TableCell>
     </TableRow>
@@ -719,7 +644,7 @@ function ModelConnectionsTable({
           <TableHead className="w-[20%] px-2 py-1.5">Stable key</TableHead>
           <TableHead className="w-[24%] px-2 py-1.5">Model ID</TableHead>
           <TableHead className="w-[12%] px-2 py-1.5">Profile</TableHead>
-          <TableHead className="w-24 px-2 py-1.5 text-right">Actions</TableHead>
+          <TableHead className="w-[280px] px-2 py-1.5 text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -762,7 +687,24 @@ function ModelConnectionsTable({
                   <ProtocolProfileCell connection={connection} />
                 </TableCell>
                 <TableCell className="px-2 py-1.5">
-                  <div className="flex justify-end gap-1.5">
+                  <div className="flex flex-wrap justify-end gap-1.5">
+                    <Button
+                      aria-controls={detailsId}
+                      aria-expanded={isExpanded}
+                      className="h-8 px-2 cursor-pointer"
+                      data-testid={`model-connections-details-${connection.id}`}
+                      onClick={() => toggleDetails(connection.id)}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      {isExpanded ? (
+                        <ChevronDown data-icon="inline-start" />
+                      ) : (
+                        <ChevronRight data-icon="inline-start" />
+                      )}
+                      {isExpanded ? "Hide details" : "Show details"}
+                    </Button>
                     <Button
                       asChild
                       className="h-8 px-2"
@@ -778,41 +720,19 @@ function ModelConnectionsTable({
                         Edit
                       </Link>
                     </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          aria-label={`Open actions for model connection ${connection.name}`}
-                          className="cursor-pointer"
-                          size="icon"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <MoreHorizontal />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuGroup>
-                          <DropdownMenuItem
-                            aria-controls={detailsId}
-                            aria-expanded={isExpanded}
-                            data-testid={`model-connections-details-${connection.id}`}
-                            onSelect={() => toggleDetails(connection.id)}
-                          >
-                            {isExpanded ? <ChevronDown /> : <ChevronRight />}
-                            {isExpanded ? "Hide details" : "Show details"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            data-testid={`model-connections-delete-${connection.id}`}
-                            disabled={deletePending}
-                            onSelect={() => onDelete(connection)}
-                            variant="destructive"
-                          >
-                            <Trash2 />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuGroup>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Button
+                      aria-label={`Delete model connection ${connection.name}`}
+                      className="h-8 px-2 cursor-pointer"
+                      data-testid={`model-connections-delete-${connection.id}`}
+                      disabled={deletePending}
+                      onClick={() => onDelete(connection)}
+                      size="sm"
+                      type="button"
+                      variant="destructive"
+                    >
+                      <Trash2 data-icon="inline-start" />
+                      Delete
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>

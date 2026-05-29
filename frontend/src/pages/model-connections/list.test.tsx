@@ -252,13 +252,7 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.queryByText("Provider-backed")).not.toBeInTheDocument();
     expect(screen.queryByText("Deterministic smoke")).not.toBeInTheDocument();
 
-    fireEvent.keyDown(
-      primaryRow.getByRole("button", {
-        name: "Open actions for model connection Primary Compatible",
-      }),
-      { key: "Enter" },
-    );
-    fireEvent.click(screen.getByTestId("model-connections-delete-9"));
+    fireEvent.click(primaryRow.getByTestId("model-connections-delete-9"));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Delete Primary Compatible?",
     );
@@ -341,13 +335,10 @@ describe("ModelConnectionsListPage", () => {
       "/model-connections/9/edit",
     );
     const primaryRow = within(screen.getByTestId("model-connections-row-9"));
-    fireEvent.keyDown(
-      primaryRow.getByRole("button", {
-        name: "Open actions for model connection Primary Compatible",
-      }),
-      { key: "Enter" },
-    );
-    fireEvent.click(screen.getByTestId("model-connections-details-9"));
+    expect(
+      primaryRow.getByRole("button", { name: "Show details" }),
+    ).toBeVisible();
+    fireEvent.click(primaryRow.getByTestId("model-connections-details-9"));
     expect(screen.getByText("Connection detail")).toBeVisible();
     expect(screen.getByText("Production traffic")).toBeVisible();
     expect(screen.getByText("Capability support")).toBeVisible();
@@ -367,13 +358,10 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByText("Reasoning")).toBeVisible();
     expect(screen.getByText("Omitted")).toBeVisible();
     expect(screen.getByText("https://api.openai.com/v1")).toBeVisible();
-    fireEvent.keyDown(
-      primaryRow.getByRole("button", {
-        name: "Open actions for model connection Primary Compatible",
-      }),
-      { key: "Enter" },
-    );
-    fireEvent.click(screen.getByTestId("model-connections-delete-9"));
+    expect(
+      primaryRow.getByRole("button", { name: "Hide details" }),
+    ).toBeVisible();
+    fireEvent.click(primaryRow.getByTestId("model-connections-delete-9"));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Delete Primary Compatible?",
     );
@@ -396,25 +384,55 @@ describe("ModelConnectionsListPage", () => {
         name: "Select model connection Primary Compatible",
       }),
     ).not.toBeInTheDocument();
-    expect(
-      primaryCard.getByLabelText("Stable key: primary_compatible"),
-    ).toBeVisible();
-    expect(primaryCard.getByLabelText("Model ID: gpt-4.1")).toBeVisible();
-    const endpointValue = primaryCard.getByLabelText(
-      "Endpoint: https://api.openai.com/v1",
-    );
-    expect(endpointValue).toBeVisible();
-    expect(endpointValue).toHaveAttribute("title", "https://api.openai.com/v1");
-    expect(primaryCard.getByLabelText("Timeout: 90s")).toBeVisible();
     expect(primaryCard.getByText("Production traffic")).toBeVisible();
-    expect(primaryCard.getByText("Responses")).toBeVisible();
-    expect(primaryCard.getByText("Passed")).toBeVisible();
-    expect(primaryCard.getByText("3 OK · 0 fail · 7 unknown")).toBeVisible();
-    expect(primaryCard.getByText("Write-only secret")).toBeVisible();
-    expect(primaryCard.getByText("strict schema")).toBeVisible();
-    expect(primaryCard.getByText("tools serialized")).toBeVisible();
-    expect(primaryCard.getByText("reasoning")).toBeVisible();
-    expect(primaryCard.getByText("streaming")).toBeVisible();
+    expect(
+      primaryCard.getByLabelText(
+        "Write-only secret: Saved provider credentials stay write-only and can only be rotated from the editor.",
+      ),
+    ).toBeVisible();
+
+    const endpointSection = primaryCard
+      .getByRole("heading", { name: "Endpoint" })
+      .closest("section") as HTMLElement;
+    expect(endpointSection).toHaveTextContent("Profile");
+    expect(endpointSection).toHaveTextContent("Responses-compatible");
+    expect(endpointSection).toHaveTextContent("Stable key");
+    expect(endpointSection).toHaveTextContent("primary_compatible");
+    expect(endpointSection).toHaveTextContent("Model ID");
+    expect(endpointSection).toHaveTextContent("gpt-4.1");
+    expect(endpointSection).toHaveTextContent("Base URL");
+    expect(endpointSection).toHaveTextContent("https://api.openai.com/v1");
+    expect(endpointSection).toHaveTextContent("Timeout");
+    expect(endpointSection).toHaveTextContent("90s");
+
+    const capabilitySection = primaryCard
+      .getByRole("heading", { name: "Capability support" })
+      .closest("section") as HTMLElement;
+    expect(capabilitySection).toHaveTextContent(
+      "3 supported · 0 unsupported · 7 unknown",
+    );
+    expect(capabilitySection).toHaveTextContent(
+      /strict json schema output: supported/i,
+    );
+
+    const testSection = primaryCard
+      .getByRole("heading", { name: "Test and reachability" })
+      .closest("section") as HTMLElement;
+    expect(testSection).toHaveTextContent("Last test");
+    expect(testSection).toHaveTextContent("Passed");
+    expect(testSection).toHaveTextContent("Tested at");
+    expect(testSection).toHaveTextContent("Apr 22, 2026");
+    expect(testSection).toHaveTextContent("Message");
+    expect(testSection).toHaveTextContent("Connection OK");
+
+    const runtimeSection = primaryCard
+      .getByRole("heading", { name: "Runtime policy" })
+      .closest("section") as HTMLElement;
+    expect(runtimeSection).toHaveTextContent("Policy");
+    expect(runtimeSection).toHaveTextContent("strict schema");
+    expect(runtimeSection).toHaveTextContent("Serialize tool calls");
+    expect(runtimeSection).toHaveTextContent("Reasoning");
+    expect(runtimeSection).toHaveTextContent("Omitted");
     expect(
       primaryCard.getByRole("link", {
         name: "Edit model connection Primary Compatible",
@@ -422,10 +440,9 @@ describe("ModelConnectionsListPage", () => {
     ).toBeVisible();
     expect(
       primaryCard.getByRole("button", {
-        name: "Open actions for model connection Primary Compatible",
+        name: "Delete model connection Primary Compatible",
       }),
     ).toBeVisible();
-    expect(primaryCard.queryByText("Credential state")).not.toBeInTheDocument();
     expect(primaryCardElement).toHaveTextContent("Stable key");
     expect(primaryCardElement).toHaveTextContent("Model ID");
     expect(primaryCardElement).toHaveTextContent("Endpoint");
@@ -575,14 +592,11 @@ describe("ModelConnectionsListPage", () => {
     deleteModelConnectionMock.mockRejectedValue(blockedError);
 
     render(<ModelConnectionsListPage />);
-    fireEvent.keyDown(
-      within(screen.getByTestId("model-connections-row-9")).getByRole(
-        "button",
-        { name: "Open actions for model connection Primary Compatible" },
+    fireEvent.click(
+      within(screen.getByTestId("model-connections-row-9")).getByTestId(
+        "model-connections-delete-9",
       ),
-      { key: "Enter" },
     );
-    fireEvent.click(screen.getByTestId("model-connections-delete-9"));
     fireEvent.click(screen.getByRole("button", { name: "Delete connection" }));
 
     await waitFor(() =>
