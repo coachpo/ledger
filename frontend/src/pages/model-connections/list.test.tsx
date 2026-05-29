@@ -339,25 +339,29 @@ describe("ModelConnectionsListPage", () => {
       primaryRow.getByRole("button", { name: "Show details" }),
     ).toBeVisible();
     fireEvent.click(primaryRow.getByTestId("model-connections-details-9"));
-    expect(screen.getByText("Connection detail")).toBeVisible();
-    expect(screen.getByText("Production traffic")).toBeVisible();
-    expect(screen.getByText("Capability support")).toBeVisible();
+    const expandedDetails = screen.getByLabelText(
+      "Expanded details for Primary Compatible",
+    );
+    expect(within(expandedDetails).getByText("Connection detail")).toBeVisible();
+    expect(within(expandedDetails).getByText("Production traffic")).toBeVisible();
+    expect(expandedDetails.querySelector('[data-slot="badge"]')).toBeNull();
+    expect(within(expandedDetails).getByText("Capability support")).toBeVisible();
     expect(
-      screen.getByText("3 supported · 0 unsupported · 7 unknown"),
+      within(expandedDetails).getByText("3 supported · 0 unsupported · 7 unknown"),
     ).toBeVisible();
     expect(
-      screen.getByText(/strict json schema output: supported/i),
+      within(expandedDetails).getByText(/strict json schema output: supported/i),
     ).toBeVisible();
-    expect(screen.getByText("Test and reachability")).toBeVisible();
-    expect(screen.getByText("Connection OK")).toBeVisible();
-    expect(screen.getByText("Tested at")).toBeVisible();
-    expect(screen.getByText("Apr 22, 2026")).toBeVisible();
-    expect(screen.getByText("Runtime policy")).toBeVisible();
-    expect(screen.getByText("strict schema")).toBeVisible();
-    expect(screen.getByText("tools serialized")).toBeVisible();
-    expect(screen.getByText("Reasoning")).toBeVisible();
-    expect(screen.getByText("Omitted")).toBeVisible();
-    expect(screen.getByText("https://api.openai.com/v1")).toBeVisible();
+    expect(within(expandedDetails).getByText("Test and reachability")).toBeVisible();
+    expect(within(expandedDetails).getByText("Connection OK")).toBeVisible();
+    expect(within(expandedDetails).getByText("Tested at")).toBeVisible();
+    expect(within(expandedDetails).getByText("Apr 22, 2026")).toBeVisible();
+    expect(within(expandedDetails).getByText("Runtime policy")).toBeVisible();
+    expect(expandedDetails).toHaveTextContent("Prefer strict schema");
+    expect(expandedDetails).toHaveTextContent("Serialize tool calls");
+    expect(within(expandedDetails).getByText("Reasoning")).toBeVisible();
+    expect(within(expandedDetails).getByText("Omitted")).toBeVisible();
+    expect(within(expandedDetails).getByText("https://api.openai.com/v1")).toBeVisible();
     expect(
       primaryRow.getByRole("button", { name: "Hide details" }),
     ).toBeVisible();

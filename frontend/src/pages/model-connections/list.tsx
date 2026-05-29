@@ -552,33 +552,13 @@ function ModelConnectionDetailsRow({
           className="flex min-w-0 flex-col gap-2 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
           role="group"
         >
-          <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-foreground">
-                Connection detail
-              </p>
-              <p className="mt-0.5 break-words leading-5">
-                {connection.description || "No description provided."}
-              </p>
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-1">
-              <CompactMetadataBadge
-                detail={
-                  PROTOCOL_PROFILE_DESCRIPTIONS[connection.protocolProfile]
-                }
-                label={
-                  PROTOCOL_PROFILE_SHORT_LABELS[connection.protocolProfile]
-                }
-              />
-              {getCompactRuntimePolicyItems(connection).map((item) => (
-                <CompactMetadataBadge
-                  detail={item.detail}
-                  key={item.key}
-                  label={item.label}
-                  tone={item.tone}
-                />
-              ))}
-            </div>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-foreground">
+              Connection detail
+            </p>
+            <p className="mt-0.5 break-words leading-5">
+              {connection.description || "No description provided."}
+            </p>
           </div>
           <ModelConnectionDetailSections
             className="border-t pt-2"
