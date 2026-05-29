@@ -195,6 +195,51 @@ describe("ResourceRowCard", () => {
     expect(screen.getByText("Created by SignalDeck")).toHaveClass("text-[11px]", "text-muted-foreground");
   });
 
+  it("renders facts and evidence chip slots inside the shared body without wrapping the primary link", () => {
+    renderResourceRowCard(
+      <ResourceRowCard
+        density="compactPlus"
+        evidenceChips={
+          <div className="flex flex-wrap gap-1.5">
+            <span>Responses</span>
+            <span>Passed</span>
+          </div>
+        }
+        factsGrid={
+          <dl className="grid gap-1 sm:grid-cols-2">
+            <div>
+              <dt>Stable key</dt>
+              <dd>primary_model</dd>
+            </div>
+            <div>
+              <dt>Timeout</dt>
+              <dd>90s</dd>
+            </div>
+          </dl>
+        }
+        primaryAction={{ kind: "link", label: "Open Model Connection", to: "/model-connections/9/edit" }}
+        testId="model-connection-row"
+        title="Primary Compatible"
+      />,
+    );
+
+    const primaryLink = screen.getByRole("link", {
+      name: "Open Model Connection",
+    });
+    const stableKey = screen.getByText("Stable key");
+    const responsesChip = screen.getByText("Responses");
+
+    expect(screen.getByTestId("model-connection-row")).toBeInTheDocument();
+    expect(stableKey).toBeInTheDocument();
+    expect(screen.getByText("primary_model")).toBeInTheDocument();
+    expect(screen.getByText("Timeout")).toBeInTheDocument();
+    expect(screen.getByText("90s")).toBeInTheDocument();
+    expect(responsesChip).toBeInTheDocument();
+    expect(screen.getByText("Passed")).toBeInTheDocument();
+    expect(primaryLink).not.toContainElement(stableKey);
+    expect(primaryLink).not.toContainElement(responsesChip);
+  });
+
   it("renders shared status, provenance, evidence, and footer slots without wrapping actions", () => {
     renderResourceRowCard(
       <ResourceRowCard

@@ -22,6 +22,8 @@ export type EntityListCardProps = {
   className?: string;
   description?: ReactNode;
   evidence?: ReactNode;
+  evidenceChips?: ReactNode;
+  factsGrid?: ReactNode;
   footer?: ReactNode;
   leading?: ReactNode;
   metadata?: ReactNode;
@@ -129,6 +131,8 @@ type ListCardBodyProps = Pick<
   | "badges"
   | "description"
   | "evidence"
+  | "evidenceChips"
+  | "factsGrid"
   | "footer"
   | "metadata"
   | "provenance"
@@ -146,6 +150,8 @@ function ListCardBody({
   className,
   description,
   evidence,
+  evidenceChips,
+  factsGrid,
   footer,
   metadata,
   provenance,
@@ -182,14 +188,20 @@ function ListCardBody({
           {metadata}
         </div>
       ) : null}
+      {factsGrid ? <div className="min-w-0 pt-1">{factsGrid}</div> : null}
       {(statusStrip || provenance) ? (
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {statusStrip}
           {provenance}
         </div>
       ) : null}
+      {evidenceChips ? (
+        <div className="min-w-0 pt-1">{evidenceChips}</div>
+      ) : null}
       {evidence ? <div className="min-w-0">{evidence}</div> : null}
-      {footer ? <div className="min-w-0 text-xs text-muted-foreground">{footer}</div> : null}
+      {footer ? (
+        <div className="min-w-0 text-xs text-muted-foreground">{footer}</div>
+      ) : null}
     </div>
   );
 }
@@ -209,6 +221,8 @@ type ResourceRowCardBodyProps = Pick<
   | "badges"
   | "description"
   | "evidence"
+  | "evidenceChips"
+  | "factsGrid"
   | "footer"
   | "metadata"
   | "provenance"
@@ -227,6 +241,8 @@ function ResourceRowCardBody({
   density,
   description,
   evidence,
+  evidenceChips,
+  factsGrid,
   footer,
   metadata,
   provenance,
@@ -250,11 +266,15 @@ function ResourceRowCardBody({
       {subtitle ? <div className={subtitleClassByDensity[density]}>{subtitle}</div> : null}
       {description ? <div className={descriptionClassByDensity[density]}>{description}</div> : null}
       {metadata ? <div className={metadataClassByDensity[density]}>{metadata}</div> : null}
+      {factsGrid ? <div className="min-w-0 pt-1">{factsGrid}</div> : null}
       {(statusStrip || provenance) ? (
         <div className="flex min-w-0 flex-wrap items-center gap-2 pt-1">
           {statusStrip}
           {provenance}
         </div>
+      ) : null}
+      {evidenceChips ? (
+        <div className="min-w-0 pt-1">{evidenceChips}</div>
       ) : null}
       {evidence ? <div className="min-w-0 pt-1">{evidence}</div> : null}
       {footer ? <div className={footerClassByDensity[density]}>{footer}</div> : null}

@@ -19,6 +19,8 @@ type PlatformResourceCardProps = {
   density?: ResourceRowCardDensity;
   description?: ReactNode;
   evidence?: ReactNode;
+  evidenceChips?: ReactNode;
+  factsGrid?: ReactNode;
   footer?: ReactNode;
   leading?: ReactNode;
   metadata?: ReactNode;
@@ -44,6 +46,8 @@ export function PlatformResourceCard(props: PlatformResourceCardProps) {
     density = "compactPlus",
     description,
     evidence,
+    evidenceChips,
+    factsGrid,
     footer,
     leading,
     metadata,
@@ -64,6 +68,8 @@ export function PlatformResourceCard(props: PlatformResourceCardProps) {
       density={density}
       description={description}
       evidence={evidence}
+      evidenceChips={evidenceChips}
+      factsGrid={factsGrid}
       footer={footer}
       leading={leading}
       metadata={metadata}
