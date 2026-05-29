@@ -543,7 +543,6 @@ function LaunchIdentityContextBar({
             </Button>
           </div>
         }
-        className="border-border/70 bg-card/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/85"
         description={
           workflowPackage.description ||
           "Queue a run from the currently persisted workflow package."

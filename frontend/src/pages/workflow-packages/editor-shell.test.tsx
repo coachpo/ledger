@@ -159,9 +159,7 @@ describe("WorkflowPackageEditorPage", () => {
       screen.getByRole("heading", { name: "Market Review Package" }),
     ).toBeVisible();
 
-    const compactHeader = screen.getByTestId(
-      "workflow-package-editor-compact-header",
-    );
+    const contextBar = screen.getByTestId("workflow-package-context-bar");
     const headerTopRow = screen.getByTestId(
       "workflow-package-editor-header-top-row",
     );
@@ -200,9 +198,9 @@ describe("WorkflowPackageEditorPage", () => {
     expect(headerStatusRow).toHaveTextContent("Clean");
     expect(headerStatusRow).toHaveTextContent("Diagnostics");
     expect(headerStatusRow).toHaveTextContent("Clear");
-    expect(compactHeader).toContainElement(headerTopRow);
-    expect(compactHeader).toContainElement(headerMetaRow);
-    expect(compactHeader).toContainElement(headerStatusRow);
+    expect(contextBar).toContainElement(headerTopRow);
+    expect(contextBar).toContainElement(headerMetaRow);
+    expect(contextBar).toContainElement(headerStatusRow);
 
     for (const tabName of [
       "Overview",

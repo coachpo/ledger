@@ -435,112 +435,105 @@ export function WorkflowPackageEditorPage() {
           bodyAriaLabel="Workflow package authoring workspace"
           bodyClassName="gap-4"
           contextBar={
-            <div data-testid="workflow-package-context-bar">
+            <div
+              className="flex min-w-0 flex-col gap-1.5"
+              data-testid="workflow-package-context-bar"
+            >
               <div
-                className="rounded-xl border border-border/70 bg-card/95 px-3 py-2.5 text-card-foreground shadow-sm backdrop-blur"
-                data-testid="workflow-package-editor-compact-header"
+                className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
+                data-testid="workflow-package-editor-header-top-row"
               >
-                <div
-                  className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
-                  data-testid="workflow-package-editor-header-top-row"
-                >
-                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <h1
-                      id="workflow-package-editor-title"
-                      className="min-w-0 text-xl font-semibold tracking-tight"
-                    >
-                      {packageTitle(workflowPackage, isNew)}
-                    </h1>
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <h1
+                    id="workflow-package-editor-title"
+                    className="min-w-0 text-xl font-semibold tracking-tight"
+                  >
+                    {packageTitle(workflowPackage, isNew)}
+                  </h1>
 
-                    <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">
-                      {packageSubtitle(workflowPackage, isNew)}
-                    </span>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-                    <Button
-                      aria-label="Save package"
-                      className="cursor-pointer"
-                      disabled={isSaving || isEditorBlocked}
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void savePackage()}
-                    >
-                      <Save data-icon="inline-start" />
-                      Save
-                    </Button>
-                    <Button
-                      aria-label="Validate package"
-                      className="cursor-pointer"
-                      disabled={validatePackage.isPending || isEditorBlocked}
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void validateCurrentDraft()}
-                    >
-                      <FileCheck2 data-icon="inline-start" />
-                      Validate
-                    </Button>
-                    <Button
-                      aria-label="Launch workflow package"
-                      className="cursor-pointer"
-                      disabled={isNew || isEditorBlocked}
-                      type="button"
-                      size="sm"
-                      onClick={requestLaunchSavedPackage}
-                    >
-                      <PlayCircle data-icon="inline-start" />
-                      Launch
-                    </Button>
-                  </div>
-                </div>
-                <div
-                  className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
-                  data-testid="workflow-package-editor-header-meta-row"
-                >
-                  <span className="min-w-0 truncate">{headerDescription}</span>
-                  <span>
-                    <span className="font-medium text-foreground">Manifest</span>{" "}
-                    <span className="font-mono">{manifestHash}</span>
+                  <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">
+                    {packageSubtitle(workflowPackage, isNew)}
                   </span>
-                  <span>
-                    <span className="font-medium text-foreground">Compiled</span>{" "}
-                    <span className="font-mono">{compiledHash}</span>
-                  </span>
-                  {workflowPackage ? (
-                    <>
-                      <span>
-                        <span className="font-medium text-foreground">Updated</span>{" "}
-                        {formatDateTime(workflowPackage.updatedAt)}
-                      </span>
-                    </>
-                  ) : null}
                 </div>
-                <div
-                  className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs"
-                  data-testid="workflow-package-editor-header-status-row"
-                >
-                  {contextStatusItems.map((item) => (
+                <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                  <Button
+                    aria-label="Save package"
+                    className="cursor-pointer"
+                    disabled={isSaving || isEditorBlocked}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void savePackage()}
+                  >
+                    <Save data-icon="inline-start" />
+                    Save
+                  </Button>
+                  <Button
+                    aria-label="Validate package"
+                    className="cursor-pointer"
+                    disabled={validatePackage.isPending || isEditorBlocked}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void validateCurrentDraft()}
+                  >
+                    <FileCheck2 data-icon="inline-start" />
+                    Validate
+                  </Button>
+                  <Button
+                    aria-label="Launch workflow package"
+                    className="cursor-pointer"
+                    disabled={isNew || isEditorBlocked}
+                    type="button"
+                    size="sm"
+                    onClick={requestLaunchSavedPackage}
+                  >
+                    <PlayCircle data-icon="inline-start" />
+                    Launch
+                  </Button>
+                </div>
+              </div>
+              <div
+                className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+                data-testid="workflow-package-editor-header-meta-row"
+              >
+                <span className="min-w-0 truncate">{headerDescription}</span>
+                <span>
+                  <span className="font-medium text-foreground">Manifest</span>{" "}
+                  <span className="font-mono">{manifestHash}</span>
+                </span>
+                <span>
+                  <span className="font-medium text-foreground">Compiled</span>{" "}
+                  <span className="font-mono">{compiledHash}</span>
+                </span>
+                {workflowPackage ? (
+                  <span>
+                    <span className="font-medium text-foreground">Updated</span>{" "}
+                    {formatDateTime(workflowPackage.updatedAt)}
+                  </span>
+                ) : null}
+              </div>
+              <div
+                className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+                data-testid="workflow-package-editor-header-status-row"
+              >
+                {contextStatusItems.map((item) => (
+                  <span
+                    className="flex min-w-0 items-center gap-1.5"
+                    key={item.label}
+                  >
+                    <span className="text-muted-foreground">{item.label}</span>
                     <span
-                      className="flex min-w-0 items-center gap-1.5"
-                      key={item.label}
+                      className={
+                        item.tone === "danger"
+                          ? "font-medium text-destructive"
+                          : "font-medium text-foreground"
+                      }
                     >
-
-                      <span className="text-muted-foreground">{item.label}</span>
-                      <span
-                        className={
-                          item.tone === "danger"
-                            ? "font-medium text-destructive"
-                            : item.tone === "warning"
-                              ? "font-medium text-foreground"
-                              : "font-medium text-foreground"
-                        }
-                      >
-                        {item.value}
-                      </span>
+                      {item.value}
                     </span>
-                  ))}
-                </div>
+                  </span>
+                ))}
               </div>
             </div>
           }
