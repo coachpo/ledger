@@ -8,7 +8,7 @@ import { usePortfolios } from "@/hooks/use-portfolios";
 function DashboardHeader() {
   return (
     <PageContextBar
-      description="Singleton landing context for portfolio inventory, position coverage, and Finance Workspace health."
+      description="Portfolio overview."
       layout="toolbar"
       title="Dashboard"
     />

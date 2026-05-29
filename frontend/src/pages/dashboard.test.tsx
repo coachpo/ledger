@@ -58,7 +58,7 @@ describe("Dashboard", () => {
 
     expect(screen.getByTestId("dashboard-page")).toBeVisible();
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
-    expect(screen.getByText(/singleton landing context/i)).toBeVisible();
+    expect(screen.getByText("Portfolio overview.")).toBeVisible();
     expect(screen.queryByText("Portfolios")).not.toBeInTheDocument();
     expect(screen.queryByText("Refresh")).not.toBeInTheDocument();
     expect(screen.queryByText("Ready")).not.toBeInTheDocument();
