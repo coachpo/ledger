@@ -14,7 +14,6 @@ import {
 } from "@/components/shared/form-schemas";
 
 import { EntityDialogShell } from "@/components/shared/entity-dialog-shell";
-import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import {
@@ -67,32 +66,14 @@ export function PortfolioFormDialog({
   const formId = "portfolio-form-dialog-form";
   const dialogTitle = initial ? "Edit Portfolio" : "Create Portfolio";
   const dialogDescription = initial
-    ? "Update the portfolio identity fields that remain editable after creation."
-    : "Create a Finance Workspace portfolio with a stable slug and base currency.";
+    ? "Update the editable portfolio identity fields."
+    : "Create a Finance Workspace portfolio with a stable slug.";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <EntityDialogShell
         title={dialogTitle}
         description={dialogDescription}
-        constraintStrip={
-          <ResourceStatusStrip
-            items={[
-              {
-                label: "Mode",
-                value: initial ? "Editing" : "Creating",
-              },
-              {
-                label: "Slug",
-                value: initial ? "Immutable" : "Required",
-              },
-              {
-                label: "Currency",
-                value: initial ? initialBaseCurrency : "3-letter code",
-              },
-            ]}
-          />
-        }
         footer={
           <>
             <Button
@@ -129,7 +110,7 @@ export function PortfolioFormDialog({
 
               onSave({
                 ...payload,
-                baseCurrency: values.baseCurrency.trim().toUpperCase(),
+                baseCurrency: initialBaseCurrency.trim().toUpperCase(),
                 slug: values.slug.trim().toLowerCase(),
               } satisfies PortfolioWriteInput);
             })}
@@ -165,11 +146,11 @@ export function PortfolioFormDialog({
                       placeholder="retirement"
                     />
                   </FormControl>
-                  <FormDescription>
-                    {initial
-                      ? "Slug is immutable after creation."
-                      : "Use lowercase letters, numbers, and underscores."}
-                  </FormDescription>
+                  {!initial ? (
+                    <FormDescription>
+                      Use lowercase letters, numbers, and underscores.
+                    </FormDescription>
+                  ) : null}
                   <FormMessage />
                 </FormItem>
               )}
@@ -182,27 +163,6 @@ export function PortfolioFormDialog({
                   <FormLabel>Description</FormLabel>
                   <FormControl>
                     <Textarea {...field} disabled={isPending} rows={4} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="baseCurrency"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Base Currency</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      disabled={isPending || Boolean(initial)}
-                      maxLength={3}
-                      onChange={(event) =>
-                        field.onChange(event.target.value.toUpperCase())
-                      }
-                      placeholder="USD"
-                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
