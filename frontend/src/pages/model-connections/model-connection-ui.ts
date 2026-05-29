@@ -6,7 +6,7 @@ import type {
   ResourceStatusStripItem,
   ResourceStatusTone,
 } from "@/components/shared/resource-status-strip";
-import { formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import type {
   ModelConnectionCapabilities,
   ModelConnectionCapabilityState,
@@ -25,6 +25,14 @@ export const PROTOCOL_PROFILE_LABELS: Record<
 > = {
   openai_chat_completions: "Chat Completions-compatible",
   openai_responses: "Responses-compatible",
+};
+
+export const PROTOCOL_PROFILE_SHORT_LABELS: Record<
+  ModelConnectionProtocolProfile,
+  string
+> = {
+  openai_chat_completions: "Chat",
+  openai_responses: "Responses",
 };
 
 export const PROTOCOL_PROFILE_DESCRIPTIONS: Record<
@@ -195,6 +203,17 @@ export function formatCapabilitySummary(
   ].join(" · ");
 }
 
+export function formatCompactCapabilitySummary(
+  capabilities: ModelConnectionCapabilities,
+): string {
+  const counts = getCapabilityCounts(capabilities);
+  return [
+    `${counts.supported} OK`,
+    `${counts.unsupported} fail`,
+    `${counts.unknown} unknown`,
+  ].join(" · ");
+}
+
 export function formatLastTestStatus(
   connection: ModelConnectionListItemRead,
 ): string {
@@ -224,6 +243,89 @@ export function formatRuntimePolicyEvidence(
     REASONING_POLICY_LABELS[connection.reasoningPolicy],
     STREAMING_POLICY_LABELS[connection.streamingPolicy],
   ].join(" · ");
+}
+
+export type CompactRuntimePolicyItem = {
+  detail: string;
+  key: "output" | "tools" | "reasoning" | "streaming";
+  label: string;
+  tone: "neutral" | "success" | "warning";
+};
+
+function formatCompactOutputPolicy(
+  policy: ModelConnectionOutputStrategyPolicy,
+): string {
+  if (policy === "allow_plain_text") {
+    return "plain text";
+  }
+
+  if (policy === "allow_json_object_validation") {
+    return "JSON fallback";
+  }
+
+  return "strict schema";
+}
+
+function formatCompactParallelToolPolicy(
+  policy: ModelConnectionParallelToolCallsPolicy,
+): string {
+  if (policy === "allow") {
+    return "parallel tools";
+  }
+
+  if (policy === "forbid") {
+    return "tools off";
+  }
+
+  return "tools serialized";
+}
+
+export function getCompactRuntimePolicyItems(
+  connection: ModelConnectionListItemRead,
+): CompactRuntimePolicyItem[] {
+  return [
+    {
+      detail: OUTPUT_STRATEGY_POLICY_LABELS[connection.outputStrategyPolicy],
+      key: "output",
+      label: formatCompactOutputPolicy(connection.outputStrategyPolicy),
+      tone:
+        connection.outputStrategyPolicy === "allow_plain_text"
+          ? "warning"
+          : "neutral",
+    },
+    {
+      detail: PARALLEL_TOOL_CALLS_POLICY_LABELS[
+        connection.parallelToolCallsPolicy
+      ],
+      key: "tools",
+      label: formatCompactParallelToolPolicy(connection.parallelToolCallsPolicy),
+      tone:
+        connection.parallelToolCallsPolicy === "forbid" ? "warning" : "neutral",
+    },
+    {
+      detail: `${REASONING_POLICY_LABELS[connection.reasoningPolicy]} · Effort: ${formatReasoningEffort(
+        connection.reasoningEffort,
+      )}`,
+      key: "reasoning",
+      label:
+        connection.reasoningPolicy === "allow" ? "reasoning" : "no reasoning",
+      tone: connection.reasoningPolicy === "allow" ? "success" : "warning",
+    },
+    {
+      detail: STREAMING_POLICY_LABELS[connection.streamingPolicy],
+      key: "streaming",
+      label: connection.streamingPolicy === "allow" ? "streaming" : "no stream",
+      tone: connection.streamingPolicy === "allow" ? "success" : "warning",
+    },
+  ];
+}
+
+export function formatCompactLastTestedAt(
+  connection: ModelConnectionListItemRead,
+): string {
+  return connection.lastTestedAt
+    ? formatDate(connection.lastTestedAt)
+    : "No test date";
 }
 
 export function formatCapabilityDetails(

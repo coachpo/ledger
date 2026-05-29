@@ -225,27 +225,39 @@ describe("ModelConnectionsListPage", () => {
 
     render(<ModelConnectionsListPage />);
 
-    expect(
-      screen.getByText(/backend-derived compatibility evidence/i),
-    ).toBeVisible();
+    expect(screen.getByText("4 of 4 model connections shown")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
-    const primaryRow = within(screen.getByTestId("model-connections-row-9"));
+    const primaryRowElement = screen.getByTestId("model-connections-row-9");
+    const primaryRow = within(primaryRowElement);
+    const primaryName = primaryRow.getByText("Primary Compatible");
+    expect(primaryName).toBeVisible();
+    expect(primaryName.closest("a")).toBeNull();
     expect(primaryRow.getByText("primary_compatible")).toBeVisible();
     expect(primaryRow.getByText("gpt-4.1")).toBeVisible();
-    expect(primaryRow.getByText("Protocol profile")).toBeVisible();
-    expect(primaryRow.getByText("Responses-compatible")).toBeVisible();
-    expect(primaryRow.getByText("Test state")).toBeVisible();
-    expect(primaryRow.getByText(/^passed$/i)).toBeVisible();
-    expect(primaryRow.getByText("Reachability")).toBeVisible();
+    expect(primaryRow.getByText("Responses")).toBeVisible();
     expect(
-      primaryRow.getByText("3 supported · 0 unsupported · 7 unknown"),
-    ).toBeVisible();
-    expect(primaryRow.getByText(/Prefer strict schema/)).toBeVisible();
+      primaryRow.queryByText("Production traffic"),
+    ).not.toBeInTheDocument();
+    expect(primaryRow.queryByText(/^passed$/i)).not.toBeInTheDocument();
+    expect(primaryRow.queryByText("Apr 22, 2026")).not.toBeInTheDocument();
+    expect(
+      primaryRow.queryByText("3 OK · 0 fail · 7 unknown"),
+    ).not.toBeInTheDocument();
+    expect(primaryRow.queryByText("strict schema")).not.toBeInTheDocument();
+    expect(primaryRow.queryByText("tools serialized")).not.toBeInTheDocument();
+    expect(primaryRow.queryByText("reasoning")).not.toBeInTheDocument();
+    expect(primaryRow.queryByText("streaming")).not.toBeInTheDocument();
     expect(screen.queryByText("Provider-backed")).not.toBeInTheDocument();
     expect(screen.queryByText("Deterministic smoke")).not.toBeInTheDocument();
 
+    fireEvent.keyDown(
+      primaryRow.getByRole("button", {
+        name: "Open actions for model connection Primary Compatible",
+      }),
+      { key: "Enter" },
+    );
     fireEvent.click(screen.getByTestId("model-connections-delete-9"));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Delete Primary Compatible?",
@@ -302,10 +314,7 @@ describe("ModelConnectionsListPage", () => {
       "Name",
       "Stable key",
       "Model ID",
-      "Protocol profile",
-      "Capability summary",
-      "Test state",
-      "Runtime policy",
+      "Profile",
       "Actions",
     ]) {
       expect(screen.getByRole("columnheader", { name: column })).toBeVisible();
@@ -314,6 +323,9 @@ describe("ModelConnectionsListPage", () => {
       "Model",
       "Base URL",
       "Protocol Profile",
+      "Capabilities",
+      "Test",
+      "Policy",
       "Compatibility Evidence",
       "Runtime Policy Evidence",
       "Reachability Test",
@@ -327,6 +339,39 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByTestId("model-connections-open-9")).toHaveAttribute(
       "href",
       "/model-connections/9/edit",
+    );
+    const primaryRow = within(screen.getByTestId("model-connections-row-9"));
+    fireEvent.keyDown(
+      primaryRow.getByRole("button", {
+        name: "Open actions for model connection Primary Compatible",
+      }),
+      { key: "Enter" },
+    );
+    fireEvent.click(screen.getByTestId("model-connections-details-9"));
+    expect(screen.getByText("Connection detail")).toBeVisible();
+    expect(screen.getByText("Production traffic")).toBeVisible();
+    expect(screen.getByText("Capability support")).toBeVisible();
+    expect(
+      screen.getByText("3 supported · 0 unsupported · 7 unknown"),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/strict json schema output: supported/i),
+    ).toBeVisible();
+    expect(screen.getByText("Test and reachability")).toBeVisible();
+    expect(screen.getByText("Connection OK")).toBeVisible();
+    expect(screen.getByText("Tested at")).toBeVisible();
+    expect(screen.getByText("Apr 22, 2026")).toBeVisible();
+    expect(screen.getByText("Runtime policy")).toBeVisible();
+    expect(screen.getByText("strict schema")).toBeVisible();
+    expect(screen.getByText("tools serialized")).toBeVisible();
+    expect(screen.getByText("Reasoning")).toBeVisible();
+    expect(screen.getByText("Omitted")).toBeVisible();
+    expect(screen.getByText("https://api.openai.com/v1")).toBeVisible();
+    fireEvent.keyDown(
+      primaryRow.getByRole("button", {
+        name: "Open actions for model connection Primary Compatible",
+      }),
+      { key: "Enter" },
     );
     fireEvent.click(screen.getByTestId("model-connections-delete-9"));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
@@ -344,15 +389,47 @@ describe("ModelConnectionsListPage", () => {
         name: "Select all shown model connections",
       }),
     ).not.toBeInTheDocument();
-    const primaryCard = within(screen.getByTestId("model-connections-row-9"));
+    const primaryCardElement = screen.getByTestId("model-connections-row-9");
+    const primaryCard = within(primaryCardElement);
     expect(
       primaryCard.queryByRole("checkbox", {
         name: "Select model connection Primary Compatible",
       }),
     ).not.toBeInTheDocument();
-    expect(primaryCard.getByLabelText("Stable key: primary_compatible")).toBeVisible();
-    expect(primaryCard.getByText("Credential state")).toBeVisible();
+    expect(
+      primaryCard.getByLabelText("Stable key: primary_compatible"),
+    ).toBeVisible();
+    expect(primaryCard.getByLabelText("Model ID: gpt-4.1")).toBeVisible();
+    const endpointValue = primaryCard.getByLabelText(
+      "Endpoint: https://api.openai.com/v1",
+    );
+    expect(endpointValue).toBeVisible();
+    expect(endpointValue).toHaveAttribute("title", "https://api.openai.com/v1");
+    expect(primaryCard.getByLabelText("Timeout: 90s")).toBeVisible();
+    expect(primaryCard.getByText("Production traffic")).toBeVisible();
+    expect(primaryCard.getByText("Responses")).toBeVisible();
+    expect(primaryCard.getByText("Passed")).toBeVisible();
+    expect(primaryCard.getByText("3 OK · 0 fail · 7 unknown")).toBeVisible();
     expect(primaryCard.getByText("Write-only secret")).toBeVisible();
+    expect(primaryCard.getByText("strict schema")).toBeVisible();
+    expect(primaryCard.getByText("tools serialized")).toBeVisible();
+    expect(primaryCard.getByText("reasoning")).toBeVisible();
+    expect(primaryCard.getByText("streaming")).toBeVisible();
+    expect(
+      primaryCard.getByRole("link", {
+        name: "Edit model connection Primary Compatible",
+      }),
+    ).toBeVisible();
+    expect(
+      primaryCard.getByRole("button", {
+        name: "Open actions for model connection Primary Compatible",
+      }),
+    ).toBeVisible();
+    expect(primaryCard.queryByText("Credential state")).not.toBeInTheDocument();
+    expect(primaryCardElement).toHaveTextContent("Stable key");
+    expect(primaryCardElement).toHaveTextContent("Model ID");
+    expect(primaryCardElement).toHaveTextContent("Endpoint");
+    expect(primaryCardElement).toHaveTextContent("Timeout");
   });
 
   it("filters the sorted model connection inventory locally", () => {
@@ -363,12 +440,8 @@ describe("ModelConnectionsListPage", () => {
       { target: { value: "responses-compatible" } },
     );
 
-    expect(
-      screen.getByTestId("model-connections-row-9"),
-    ).toBeVisible();
-    expect(
-      screen.getByTestId("model-connections-row-12"),
-    ).toBeVisible();
+    expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
+    expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
     expect(
       screen.queryByTestId("model-connections-row-4"),
     ).not.toBeInTheDocument();
@@ -502,6 +575,13 @@ describe("ModelConnectionsListPage", () => {
     deleteModelConnectionMock.mockRejectedValue(blockedError);
 
     render(<ModelConnectionsListPage />);
+    fireEvent.keyDown(
+      within(screen.getByTestId("model-connections-row-9")).getByRole(
+        "button",
+        { name: "Open actions for model connection Primary Compatible" },
+      ),
+      { key: "Enter" },
+    );
     fireEvent.click(screen.getByTestId("model-connections-delete-9"));
     fireEvent.click(screen.getByRole("button", { name: "Delete connection" }));
 

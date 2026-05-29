@@ -1,5 +1,12 @@
-import { MoreHorizontal, Plus, SquarePen, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  MoreHorizontal,
+  Plus,
+  SquarePen,
+  Trash2,
+} from "lucide-react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
@@ -10,20 +17,25 @@ import {
 } from "@/hooks/use-model-connections";
 import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
-import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
-import { ProvenanceBadge } from "@/components/shared/provenance-badge";
-import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/components/ui/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -32,18 +44,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  PlatformResourceCard,
-  PlatformResourceList,
-} from "../platform-resource-shared";
+import { PlatformResourceList } from "../platform-resource-shared";
 import {
   PROTOCOL_PROFILE_DESCRIPTIONS,
   PROTOCOL_PROFILE_LABELS,
+  PROTOCOL_PROFILE_SHORT_LABELS,
   formatCapabilityDetails,
   formatCapabilitySummary,
+  formatCompactCapabilitySummary,
+  formatCompactLastTestedAt,
+  formatLastTestStatus,
+  formatReasoningEffort,
   formatRuntimePolicyEvidence,
+  getCompactRuntimePolicyItems,
   getModelConnectionEvidenceItems,
-  getModelConnectionStatusItems,
 } from "./model-connection-ui";
 
 type ModelConnectionSelectionHandlers = {
@@ -79,32 +93,23 @@ function filterConnections(
       connection.baseUrl,
       connection.protocolProfile,
       PROTOCOL_PROFILE_LABELS[connection.protocolProfile],
+      PROTOCOL_PROFILE_SHORT_LABELS[connection.protocolProfile],
       PROTOCOL_PROFILE_DESCRIPTIONS[connection.protocolProfile],
       formatCapabilitySummary(connection.capabilities),
+      formatCompactCapabilitySummary(connection.capabilities),
       formatCapabilityDetails(connection),
+      formatLastTestStatus(connection),
+      formatCompactLastTestedAt(connection),
       formatRuntimePolicyEvidence(connection),
+      getCompactRuntimePolicyItems(connection)
+        .map((item) => `${item.label} ${item.detail}`)
+        .join(" "),
       connection.lastTestMessage ?? "",
     ]
       .join(" ")
       .toLowerCase()
       .includes(query),
   );
-}
-
-function ModelConnectionEvidence({
-  connection,
-  labels,
-  layout = "grid",
-}: {
-  connection: ModelConnectionListItemRead;
-  labels?: readonly string[];
-  layout?: "grid" | "list" | "inline";
-}) {
-  const items = getModelConnectionEvidenceItems(connection).filter((item) =>
-    labels ? labels.includes(String(item.label)) : true,
-  );
-
-  return <EvidenceCluster items={items} layout={layout} />;
 }
 
 function ModelConnectionsPageActions() {
@@ -175,6 +180,212 @@ function ModelConnectionsStateCards({
   );
 }
 
+type ModelConnectionEvidenceItem = ReturnType<
+  typeof getModelConnectionEvidenceItems
+>[number];
+
+function compactBadgeToneFromEvidence(
+  tone: ModelConnectionEvidenceItem["tone"],
+): CompactBadgeTone {
+  if (tone === "verified") {
+    return "success";
+  }
+
+  if (tone === "danger") {
+    return "danger";
+  }
+
+  if (tone === "warning") {
+    return "warning";
+  }
+
+  return "neutral";
+}
+
+function getNamedEvidenceItem(
+  connection: ModelConnectionListItemRead,
+  label: string,
+) {
+  return getModelConnectionEvidenceItems(connection).find(
+    (item) => String(item.label) === label,
+  );
+}
+
+function CompactLabeledValue({
+  children,
+  label,
+  valueLabel,
+}: {
+  children: ReactNode;
+  label: string;
+  valueLabel?: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-baseline gap-2 text-xs">
+      <dt className="w-20 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:w-16">
+        {label}
+      </dt>
+      <dd aria-label={valueLabel} className="min-w-0 flex-1 text-foreground">
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+function ModelConnectionCardIdentity({
+  connection,
+}: {
+  connection: ModelConnectionListItemRead;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <ModelConnectionNameCell
+          className="text-base font-semibold leading-6 tracking-tight"
+          connection={connection}
+        />
+      </div>
+      <p className="min-w-0 break-words text-xs leading-5 text-muted-foreground sm:text-sm">
+        {connection.description || "No description provided."}
+      </p>
+      <dl className="min-w-0 pt-1">
+        <CompactLabeledValue label="Stable key">
+          <MonospaceTruncate label="Stable key" value={connection.key} />
+        </CompactLabeledValue>
+      </dl>
+    </div>
+  );
+}
+
+function ModelConnectionCardMetadata({
+  connection,
+}: {
+  connection: ModelConnectionListItemRead;
+}) {
+  return (
+    <dl className="grid min-w-0 gap-1.5 rounded-lg border bg-muted/15 p-3 md:border-0 md:bg-transparent md:p-0">
+      <CompactLabeledValue label="Model ID">
+        <MonospaceTruncate label="Model ID" value={connection.modelId} />
+      </CompactLabeledValue>
+      <CompactLabeledValue label="Endpoint">
+        <span
+          aria-label={`Endpoint: ${connection.baseUrl}`}
+          className="block max-w-full truncate font-mono text-xs text-muted-foreground"
+          title={connection.baseUrl}
+        >
+          {connection.baseUrl}
+        </span>
+      </CompactLabeledValue>
+      <CompactLabeledValue
+        label="Timeout"
+        valueLabel={`Timeout: ${connection.timeoutSeconds}s`}
+      >
+        <span className="text-xs text-muted-foreground">
+          {connection.timeoutSeconds}s
+        </span>
+      </CompactLabeledValue>
+    </dl>
+  );
+}
+
+function ModelConnectionCardStatusBadges({
+  connection,
+}: {
+  connection: ModelConnectionListItemRead;
+}) {
+  const testItem = getNamedEvidenceItem(connection, "Test state");
+  const capabilityItem = getNamedEvidenceItem(connection, "Capability support");
+  const credentialItem = getNamedEvidenceItem(connection, "Credential state");
+  const lastTestDetail = [
+    testItem?.description ??
+      "Backend connection test has not reported a provider message.",
+    `Last tested: ${formatCompactLastTestedAt(connection)}`,
+  ].join(" · ");
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-start gap-1.5 md:justify-end">
+      <ProtocolProfileCell connection={connection} />
+      <CompactMetadataBadge
+        detail={String(lastTestDetail)}
+        label={formatLastTestStatus(connection)}
+        tone={compactBadgeToneFromEvidence(testItem?.tone)}
+      />
+      <CompactMetadataBadge
+        accessibleDetail={formatCapabilityDetails(connection)}
+        detail={formatCapabilityDetails(connection)
+          .split(" · ")
+          .map((item) => (
+            <div key={item}>{item}</div>
+          ))}
+        label={formatCompactCapabilitySummary(connection.capabilities)}
+        tone={compactBadgeToneFromEvidence(capabilityItem?.tone)}
+      />
+      {credentialItem ? (
+        <CompactMetadataBadge
+          detail={String(credentialItem.description ?? credentialItem.value)}
+          label={String(credentialItem.value)}
+          tone={compactBadgeToneFromEvidence(credentialItem.tone)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ModelConnectionCapabilityChips({
+  connection,
+}: {
+  connection: ModelConnectionListItemRead;
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-t pt-3">
+      {getCompactRuntimePolicyItems(connection).map((item) => (
+        <CompactMetadataBadge
+          detail={item.detail}
+          emphasized={item.key === "reasoning" || item.key === "streaming"}
+          key={item.key}
+          label={item.label}
+          tone={item.tone}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ModelConnectionCard({
+  connection,
+  deletePending,
+  onDelete,
+}: {
+  connection: ModelConnectionListItemRead;
+  deletePending: boolean;
+  onDelete: (connection: ModelConnectionListItemRead) => void;
+}) {
+  return (
+    <Card
+      className="overflow-hidden transition-[background-color,border-color,box-shadow] hover:border-ring/40 hover:bg-accent/20 hover:shadow-sm focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/30"
+      data-testid={`model-connections-row-${connection.id}`}
+    >
+      <CardContent className="flex min-w-0 flex-col gap-3 p-3 sm:p-4">
+        <div className="grid min-w-0 gap-3 md:grid-cols-3 md:items-start">
+          <ModelConnectionCardIdentity connection={connection} />
+          <ModelConnectionCardMetadata connection={connection} />
+          <div className="flex min-w-0 flex-col gap-2 md:items-end">
+            <ModelConnectionCardStatusBadges connection={connection} />
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5 md:justify-end [&_button]:cursor-pointer">
+              <ModelConnectionActions
+                connection={connection}
+                deletePending={deletePending}
+                onDelete={onDelete}
+              />
+            </div>
+          </div>
+        </div>
+        <ModelConnectionCapabilityChips connection={connection} />
+      </CardContent>
+    </Card>
+  );
+}
+
 function ModelConnectionsCards({
   connections,
   deletePending,
@@ -187,29 +398,11 @@ function ModelConnectionsCards({
   return (
     <PlatformResourceList>
       {connections.map((connection) => (
-        <PlatformResourceCard
+        <ModelConnectionCard
+          connection={connection}
+          deletePending={deletePending}
           key={connection.id}
-          density="compactPlus"
-          testId={`model-connections-row-${connection.id}`}
-          title={connection.name}
-          subtitle={connection.modelId}
-          description={connection.description || "No description provided."}
-          provenance={
-            <ProvenanceBadge label="Stable key" detail={connection.key} />
-          }
-          statusStrip={
-            <ResourceStatusStrip
-              items={getModelConnectionStatusItems(connection)}
-            />
-          }
-          evidence={<ModelConnectionEvidence connection={connection} />}
-          actions={
-            <ModelConnectionActions
-              connection={connection}
-              deletePending={deletePending}
-              onDelete={onDelete}
-            />
-          }
+          onDelete={onDelete}
         />
       ))}
     </PlatformResourceList>
@@ -227,7 +420,7 @@ function ModelConnectionActions({
 }) {
   return (
     <>
-      <Button asChild size="sm">
+      <Button asChild className="h-8 px-2" size="sm" variant="outline">
         <Link
           aria-label={`Edit model connection ${connection.name}`}
           data-testid={`model-connections-open-${connection.id}`}
@@ -241,27 +434,271 @@ function ModelConnectionActions({
         <DropdownMenuTrigger asChild>
           <Button
             aria-label={`Open actions for model connection ${connection.name}`}
-            className="cursor-pointer"
+            className="size-8 cursor-pointer"
             size="icon"
             type="button"
             variant="ghost"
           >
-            <MoreHorizontal className="size-4" />
+            <MoreHorizontal />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            data-testid={`model-connections-delete-${connection.id}`}
-            disabled={deletePending}
-            onSelect={() => onDelete(connection)}
-            variant="destructive"
-          >
-            <Trash2 className="size-3.5" />
-            Delete
-          </DropdownMenuItem>
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              data-testid={`model-connections-delete-${connection.id}`}
+              disabled={deletePending}
+              onSelect={() => onDelete(connection)}
+              variant="destructive"
+            >
+              <Trash2 />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
     </>
+  );
+}
+
+type CompactBadgeTone = "neutral" | "success" | "warning" | "danger";
+
+const compactBadgeVariantByTone: Record<
+  CompactBadgeTone,
+  "secondary" | "outline" | "destructive"
+> = {
+  danger: "destructive",
+  neutral: "outline",
+  success: "secondary",
+  warning: "outline",
+};
+
+function CompactMetadataBadge({
+  accessibleDetail,
+  detail,
+  emphasized = false,
+  label,
+  tone = "neutral",
+}: {
+  accessibleDetail?: string;
+  detail: ReactNode;
+  emphasized?: boolean;
+  label: string;
+  tone?: CompactBadgeTone;
+}) {
+  const derivedAccessibleDetail =
+    accessibleDetail ?? (typeof detail === "string" ? detail : undefined);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          aria-label={derivedAccessibleDetail ? `${label}: ${derivedAccessibleDetail}` : label}
+          className="inline-flex max-w-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          tabIndex={0}
+        >
+          <Badge
+            className={cn(
+              "max-w-full px-1.5 py-0 text-xs leading-5",
+              emphasized
+                ? "border-ring/30 bg-accent/40 text-accent-foreground shadow-sm"
+                : null,
+            )}
+            data-emphasized={emphasized ? "true" : undefined}
+            data-tone={tone}
+            variant={compactBadgeVariantByTone[tone]}
+          >
+            <span className="truncate">{label}</span>
+          </Badge>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs text-left">{detail}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function MonospaceTruncate({ label, value }: { label: string; value: string }) {
+  return (
+    <span
+      aria-label={`${label}: ${value}`}
+      className="block max-w-full truncate font-mono text-xs text-muted-foreground"
+      title={value}
+    >
+      {value}
+    </span>
+  );
+}
+
+function ModelConnectionNameCell({
+  className,
+  connection,
+}: {
+  className?: string;
+  connection: ModelConnectionListItemRead;
+}) {
+  return (
+    <span
+      className={cn(
+        "block min-w-0 truncate text-sm font-medium leading-5 text-foreground",
+        className,
+      )}
+      title={connection.name}
+    >
+      {connection.name}
+    </span>
+  );
+}
+
+function ProtocolProfileCell({
+  connection,
+}: {
+  connection: ModelConnectionListItemRead;
+}) {
+  const detail = `${PROTOCOL_PROFILE_LABELS[connection.protocolProfile]} · ${PROTOCOL_PROFILE_DESCRIPTIONS[connection.protocolProfile]} Endpoint: ${connection.baseUrl}. Timeout: ${connection.timeoutSeconds}s.`;
+
+  return (
+    <CompactMetadataBadge
+      detail={detail}
+      label={PROTOCOL_PROFILE_SHORT_LABELS[connection.protocolProfile]}
+    />
+  );
+}
+
+function CompactDetailField({
+  children,
+  label,
+  mono = false,
+}: {
+  children: ReactNode;
+  label: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-2">
+      <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:w-24">
+        {label}
+      </dt>
+      <dd
+        className={cn(
+          "min-w-0 break-words text-xs leading-5 text-foreground",
+          mono ? "break-all font-mono" : null,
+        )}
+      >
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+function CompactDetailGroup({
+  children,
+  title,
+}: {
+  children: ReactNode;
+  title: string;
+}) {
+  return (
+    <section className="min-w-0">
+      <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground">
+        {title}
+      </h4>
+      <dl className="flex min-w-0 flex-col gap-1.5">{children}</dl>
+    </section>
+  );
+}
+
+function ModelConnectionDetailsRow({
+  connection,
+  detailsId,
+}: {
+  connection: ModelConnectionListItemRead;
+  detailsId: string;
+}) {
+  return (
+    <TableRow className="bg-muted/20 hover:bg-muted/20" id={detailsId}>
+      <TableCell colSpan={6} className="whitespace-normal px-3 py-2">
+        <div
+          aria-label={`Expanded details for ${connection.name}`}
+          className="flex min-w-0 flex-col gap-2 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+          role="group"
+        >
+          <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-foreground">
+                Connection detail
+              </p>
+              <p className="mt-0.5 break-words leading-5">
+                {connection.description || "No description provided."}
+              </p>
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
+              <CompactMetadataBadge
+                detail={
+                  PROTOCOL_PROFILE_DESCRIPTIONS[connection.protocolProfile]
+                }
+                label={
+                  PROTOCOL_PROFILE_SHORT_LABELS[connection.protocolProfile]
+                }
+              />
+              {getCompactRuntimePolicyItems(connection).map((item) => (
+                <CompactMetadataBadge
+                  detail={item.detail}
+                  key={item.key}
+                  label={item.label}
+                  tone={item.tone}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="grid min-w-0 gap-x-6 gap-y-2 border-t pt-2 md:grid-cols-2 xl:grid-cols-4">
+            <CompactDetailGroup title="Endpoint">
+              <CompactDetailField label="Profile">
+                {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
+              </CompactDetailField>
+              <CompactDetailField label="Stable key" mono>
+                {connection.key}
+              </CompactDetailField>
+              <CompactDetailField label="Model ID" mono>
+                {connection.modelId}
+              </CompactDetailField>
+              <CompactDetailField label="Base URL" mono>
+                {connection.baseUrl}
+              </CompactDetailField>
+              <CompactDetailField label="Timeout">
+                {connection.timeoutSeconds}s
+              </CompactDetailField>
+            </CompactDetailGroup>
+            <CompactDetailGroup title="Capability support">
+              <CompactDetailField label="Summary">
+                {formatCapabilitySummary(connection.capabilities)}
+              </CompactDetailField>
+              <CompactDetailField label="Detail">
+                {formatCapabilityDetails(connection)}
+              </CompactDetailField>
+            </CompactDetailGroup>
+            <CompactDetailGroup title="Test and reachability">
+              <CompactDetailField label="Last test">
+                {formatLastTestStatus(connection)}
+              </CompactDetailField>
+              <CompactDetailField label="Tested at">
+                {formatCompactLastTestedAt(connection)}
+              </CompactDetailField>
+              <CompactDetailField label="Message">
+                {connection.lastTestMessage ??
+                  "Backend connection test has not reported a provider message."}
+              </CompactDetailField>
+            </CompactDetailGroup>
+            <CompactDetailGroup title="Runtime policy">
+              <CompactDetailField label="Policy">
+                {formatRuntimePolicyEvidence(connection)}
+              </CompactDetailField>
+              <CompactDetailField label="Reasoning">
+                {formatReasoningEffort(connection.reasoningEffort)}
+              </CompactDetailField>
+            </CompactDetailGroup>
+          </div>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -280,11 +717,27 @@ function ModelConnectionsTable({
   selectedConnectionIds: ReadonlySet<ModelConnectionListItemRead["id"]>;
   someFilteredSelected: boolean;
 } & ModelConnectionSelectionHandlers) {
+  const [expandedConnectionIds, setExpandedConnectionIds] = useState<
+    Set<ModelConnectionListItemRead["id"]>
+  >(new Set());
+
+  const toggleDetails = (connectionId: ModelConnectionListItemRead["id"]) => {
+    setExpandedConnectionIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(connectionId)) {
+        next.delete(connectionId);
+      } else {
+        next.add(connectionId);
+      }
+      return next;
+    });
+  };
+
   return (
-    <Table>
+    <Table className="table-fixed text-xs">
       <TableHeader>
         <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableHead className="w-9">
+          <TableHead className="w-9 px-2 py-1.5">
             <Checkbox
               aria-label="Select all shown model connections"
               checked={
@@ -299,96 +752,114 @@ function ModelConnectionsTable({
               }
             />
           </TableHead>
-          <TableHead>Name</TableHead>
-          <TableHead>Stable key</TableHead>
-          <TableHead>Model ID</TableHead>
-          <TableHead>Protocol profile</TableHead>
-          <TableHead>Capability summary</TableHead>
-          <TableHead>Test state</TableHead>
-          <TableHead>Runtime policy</TableHead>
-          <TableHead className="text-right">Actions</TableHead>
+          <TableHead className="w-[28%] px-2 py-1.5">Name</TableHead>
+          <TableHead className="w-[20%] px-2 py-1.5">Stable key</TableHead>
+          <TableHead className="w-[24%] px-2 py-1.5">Model ID</TableHead>
+          <TableHead className="w-[12%] px-2 py-1.5">Profile</TableHead>
+          <TableHead className="w-24 px-2 py-1.5 text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {connections.map((connection) => {
           const isSelected = selectedConnectionIds.has(connection.id);
+          const isExpanded = expandedConnectionIds.has(connection.id);
+          const detailsId = `model-connection-details-${connection.id}`;
 
           return (
-            <TableRow
-              key={connection.id}
-              data-state={isSelected ? "selected" : undefined}
-              data-testid={`model-connections-row-${connection.id}`}
-            >
-              <TableCell>
-                <Checkbox
-                  aria-label={`Select model connection ${connection.name}`}
-                  checked={isSelected}
-                  onCheckedChange={(checked) =>
-                    onSelect([connection], checked === true)
-                  }
-                />
-              </TableCell>
-              <TableCell className="min-w-56 whitespace-normal">
-                <div className="flex flex-col gap-1">
-                  <p className="font-medium text-foreground">
-                    {connection.name}
-                  </p>
-                  <p className="line-clamp-2 text-xs text-muted-foreground">
-                    {connection.description || "No description provided."}
-                  </p>
-                </div>
-              </TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">
-                {connection.key}
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                {connection.modelId}
-              </TableCell>
-              <TableCell className="min-w-64 whitespace-normal text-xs text-muted-foreground">
-                <ModelConnectionEvidence
-                  connection={connection}
-                  labels={["Protocol profile"]}
-                  layout="list"
-                />
-              </TableCell>
-              <TableCell className="min-w-64 whitespace-normal text-xs text-muted-foreground">
-                {formatCapabilitySummary(connection.capabilities)}
-              </TableCell>
-              <TableCell className="min-w-64 whitespace-normal text-xs text-muted-foreground">
-                <ModelConnectionEvidence
-                  connection={connection}
-                  labels={["Test state", "Reachability"]}
-                  layout="list"
-                />
-              </TableCell>
-              <TableCell className="min-w-72 whitespace-normal text-xs text-muted-foreground">
-                {formatRuntimePolicyEvidence(connection)}
-              </TableCell>
-              <TableCell>
-                <div className="flex justify-end gap-2">
-                  <Button asChild size="sm" variant="outline">
-                    <Link
-                      aria-label={`Edit model connection ${connection.name}`}
-                      data-testid={`model-connections-open-${connection.id}`}
-                      to={`/model-connections/${connection.id}/edit`}
+            <Fragment key={connection.id}>
+              <TableRow
+                data-state={isSelected ? "selected" : undefined}
+                data-testid={`model-connections-row-${connection.id}`}
+              >
+                <TableCell className="px-2 py-1.5">
+                  <Checkbox
+                    aria-label={`Select model connection ${connection.name}`}
+                    checked={isSelected}
+                    onCheckedChange={(checked) =>
+                      onSelect([connection], checked === true)
+                    }
+                  />
+                </TableCell>
+                <TableCell className="min-w-0 px-2 py-1.5">
+                  <ModelConnectionNameCell connection={connection} />
+                </TableCell>
+                <TableCell className="min-w-0 px-2 py-1.5">
+                  <MonospaceTruncate
+                    label="Stable key"
+                    value={connection.key}
+                  />
+                </TableCell>
+                <TableCell className="min-w-0 px-2 py-1.5">
+                  <MonospaceTruncate
+                    label="Model ID"
+                    value={connection.modelId}
+                  />
+                </TableCell>
+                <TableCell className="min-w-0 px-2 py-1.5">
+                  <ProtocolProfileCell connection={connection} />
+                </TableCell>
+                <TableCell className="px-2 py-1.5">
+                  <div className="flex justify-end gap-1.5">
+                    <Button
+                      asChild
+                      className="h-8 px-2"
+                      size="sm"
+                      variant="outline"
                     >
-                      <SquarePen data-icon="inline-start" />
-                      Edit
-                    </Link>
-                  </Button>
-                  <Button
-                    data-testid={`model-connections-delete-${connection.id}`}
-                    disabled={deletePending}
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onDelete(connection)}
-                  >
-                    <Trash2 data-icon="inline-start" />
-                    Delete
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
+                      <Link
+                        aria-label={`Edit model connection ${connection.name}`}
+                        data-testid={`model-connections-open-${connection.id}`}
+                        to={`/model-connections/${connection.id}/edit`}
+                      >
+                        <SquarePen data-icon="inline-start" />
+                        Edit
+                      </Link>
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          aria-label={`Open actions for model connection ${connection.name}`}
+                          className="cursor-pointer"
+                          size="icon"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <MoreHorizontal />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem
+                            aria-controls={detailsId}
+                            aria-expanded={isExpanded}
+                            data-testid={`model-connections-details-${connection.id}`}
+                            onSelect={() => toggleDetails(connection.id)}
+                          >
+                            {isExpanded ? <ChevronDown /> : <ChevronRight />}
+                            {isExpanded ? "Hide details" : "Show details"}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            data-testid={`model-connections-delete-${connection.id}`}
+                            disabled={deletePending}
+                            onSelect={() => onDelete(connection)}
+                            variant="destructive"
+                          >
+                            <Trash2 />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </TableCell>
+              </TableRow>
+              {isExpanded ? (
+                <ModelConnectionDetailsRow
+                  connection={connection}
+                  detailsId={detailsId}
+                />
+              ) : null}
+            </Fragment>
           );
         })}
       </TableBody>
