@@ -161,7 +161,7 @@ describe("RunsListPage", () => {
     const page = screen.getByTestId("runs-list-page");
     expect(
       within(page).getByText(
-        /live monitor for recent agent and workflow package executions/i,
+        /monitor recent workflow package runs/i,
       ),
     ).toBeVisible();
     const contextRegion = page.querySelector(
@@ -175,9 +175,9 @@ describe("RunsListPage", () => {
     expect(header?.closest("[data-slot='card']")).not.toBeInTheDocument();
     expect(
       within(contextRegion as HTMLElement).getByText(
-        /live monitor for recent agent and workflow package executions/i,
+        /monitor recent workflow package runs/i,
       ),
-    ).toHaveClass("max-w-3xl", "text-sm");
+    ).toHaveClass("max-w-3xl", "truncate", "text-sm");
     expect(
       within(contextRegion as HTMLElement).queryByRole("list"),
     ).not.toBeInTheDocument();
