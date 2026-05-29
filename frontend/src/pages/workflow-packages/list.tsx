@@ -64,7 +64,6 @@ function getPackageReadiness(workflowPackage: WorkflowPackageRead) {
 
   if (hasManifest && hasCompiledPlan) {
     return {
-      description: "Manifest and compiled artifact recorded",
       label: "Ready for preflight",
       tone: "success" as const,
     };
@@ -371,7 +370,7 @@ function WorkflowPackageCards({
       {packages.map((workflowPackage) => (
         <PlatformResourceCard
           key={workflowPackage.id}
-          density="compactPlus"
+          density="compact"
           testId={`workflow-packages-row-${workflowPackage.key}`}
           title={workflowPackage.name}
           subtitle={<span className="font-mono">{workflowPackage.key}</span>}

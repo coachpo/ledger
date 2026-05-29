@@ -224,7 +224,7 @@ describe("WorkflowPackagesListPage", () => {
     expect(within(riskRow).getByText("risk_review")).toHaveClass("font-mono");
     expect(riskRow).toHaveTextContent("Risk review workflow bundle");
     expect(riskRow).toHaveTextContent("Ready for preflight");
-    expect(riskRow).toHaveTextContent(
+    expect(riskRow).not.toHaveTextContent(
       "Manifest and compiled artifact recorded",
     );
     expect(riskRow).toHaveTextContent("manifest-has");
