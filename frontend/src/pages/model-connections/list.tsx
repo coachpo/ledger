@@ -44,7 +44,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { PlatformResourceList } from "../platform-resource-shared";
+import {
+  PlatformResourceCard,
+  PlatformResourceList,
+} from "../platform-resource-shared";
 import {
   PROTOCOL_PROFILE_DESCRIPTIONS,
   PROTOCOL_PROFILE_LABELS,
@@ -232,38 +235,16 @@ function CompactLabeledValue({
   );
 }
 
-function ModelConnectionCardIdentity({
+function ModelConnectionCardFactsGrid({
   connection,
 }: {
   connection: ModelConnectionListItemRead;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <ModelConnectionNameCell
-          className="text-base font-semibold leading-6 tracking-tight"
-          connection={connection}
-        />
-      </div>
-      <p className="min-w-0 break-words text-xs leading-5 text-muted-foreground sm:text-sm">
-        {connection.description || "No description provided."}
-      </p>
-      <dl className="min-w-0 pt-1">
-        <CompactLabeledValue label="Stable key">
-          <MonospaceTruncate label="Stable key" value={connection.key} />
-        </CompactLabeledValue>
-      </dl>
-    </div>
-  );
-}
-
-function ModelConnectionCardMetadata({
-  connection,
-}: {
-  connection: ModelConnectionListItemRead;
-}) {
-  return (
-    <dl className="grid min-w-0 gap-1.5 rounded-lg border bg-muted/15 p-3 md:border-0 md:bg-transparent md:p-0">
+    <dl className="grid min-w-0 gap-x-4 gap-y-1.5 rounded-lg border bg-muted/15 p-3 sm:grid-cols-2">
+      <CompactLabeledValue label="Stable key">
+        <MonospaceTruncate label="Stable key" value={connection.key} />
+      </CompactLabeledValue>
       <CompactLabeledValue label="Model ID">
         <MonospaceTruncate label="Model ID" value={connection.modelId} />
       </CompactLabeledValue>
@@ -288,7 +269,7 @@ function ModelConnectionCardMetadata({
   );
 }
 
-function ModelConnectionCardStatusBadges({
+function ModelConnectionCardEvidenceChips({
   connection,
 }: {
   connection: ModelConnectionListItemRead;
@@ -303,7 +284,7 @@ function ModelConnectionCardStatusBadges({
   ].join(" · ");
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center justify-start gap-1.5 md:justify-end">
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
       <ProtocolProfileCell connection={connection} />
       <CompactMetadataBadge
         detail={String(lastTestDetail)}
@@ -327,17 +308,6 @@ function ModelConnectionCardStatusBadges({
           tone={compactBadgeToneFromEvidence(credentialItem.tone)}
         />
       ) : null}
-    </div>
-  );
-}
-
-function ModelConnectionCapabilityChips({
-  connection,
-}: {
-  connection: ModelConnectionListItemRead;
-}) {
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-t pt-3">
       {getCompactRuntimePolicyItems(connection).map((item) => (
         <CompactMetadataBadge
           detail={item.detail}
@@ -361,28 +331,21 @@ function ModelConnectionCard({
   onDelete: (connection: ModelConnectionListItemRead) => void;
 }) {
   return (
-    <Card
-      className="overflow-hidden transition-[background-color,border-color,box-shadow] hover:border-ring/40 hover:bg-accent/20 hover:shadow-sm focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/30"
-      data-testid={`model-connections-row-${connection.id}`}
-    >
-      <CardContent className="flex min-w-0 flex-col gap-3 p-3 sm:p-4">
-        <div className="grid min-w-0 gap-3 md:grid-cols-3 md:items-start">
-          <ModelConnectionCardIdentity connection={connection} />
-          <ModelConnectionCardMetadata connection={connection} />
-          <div className="flex min-w-0 flex-col gap-2 md:items-end">
-            <ModelConnectionCardStatusBadges connection={connection} />
-            <div className="flex shrink-0 flex-wrap items-center gap-1.5 md:justify-end [&_button]:cursor-pointer">
-              <ModelConnectionActions
-                connection={connection}
-                deletePending={deletePending}
-                onDelete={onDelete}
-              />
-            </div>
-          </div>
-        </div>
-        <ModelConnectionCapabilityChips connection={connection} />
-      </CardContent>
-    </Card>
+    <PlatformResourceCard
+      actions={
+        <ModelConnectionActions
+          connection={connection}
+          deletePending={deletePending}
+          onDelete={onDelete}
+        />
+      }
+      density="compactPlus"
+      description={connection.description || "No description provided."}
+      evidenceChips={<ModelConnectionCardEvidenceChips connection={connection} />}
+      factsGrid={<ModelConnectionCardFactsGrid connection={connection} />}
+      testId={`model-connections-row-${connection.id}`}
+      title={connection.name}
+    />
   );
 }
 
