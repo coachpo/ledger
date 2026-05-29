@@ -77,7 +77,12 @@ describe("PageContextBar", () => {
       "md:items-baseline",
     );
     expect(description).toHaveAttribute("data-slot", "page-context-description");
-    expect(description).toHaveClass("min-w-0", "max-w-3xl", "text-sm");
+    expect(description).toHaveClass(
+      "min-w-0",
+      "max-w-3xl",
+      "truncate",
+      "text-sm",
+    );
   });
 
   it("keeps toolbar status and actions in the right-side area", () => {
@@ -129,7 +134,7 @@ describe("PageContextBar", () => {
 
     expect(root).toHaveClass("lg:flex-row", "lg:items-center");
     expect(screen.getByText("Slim route contract.")).toHaveClass(
-      "text-pretty",
+      "truncate",
     );
     expect(meta.parentElement).toHaveClass("lg:justify-center");
     expect(status).toBeInTheDocument();

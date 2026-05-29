@@ -69,10 +69,7 @@ export function PageContextBar({
           <PageContextTitle>{title}</PageContextTitle>
           {description ? (
             <p
-              className={cn(
-                "min-w-0 max-w-3xl text-sm leading-6 text-muted-foreground",
-                placesMetaInMiddle ? "text-pretty" : undefined,
-              )}
+              className="min-w-0 max-w-3xl truncate text-sm leading-6 text-muted-foreground"
               data-slot="page-context-description"
             >
               {description}
