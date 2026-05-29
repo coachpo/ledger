@@ -562,7 +562,7 @@ function LaunchHeader({
         <Button asChild size="sm" variant="outline">
           <Link to={`/workflow-packages/${workflowPackage.id}`}>
             <SquarePen data-icon="inline-start" />
-            Open authoring editor
+            Open Editor
           </Link>
         </Button>
       }

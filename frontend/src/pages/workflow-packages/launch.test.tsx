@@ -189,7 +189,7 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByTestId("workflow-package-launch-page")).toHaveClass("min-w-0", "overflow-hidden");
     expect(screen.getByTestId("workspace-page-shell-context")).toHaveClass("sticky", "top-0");
     expect(screen.getByRole("heading", { name: "Launch Workflow Package" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open authoring editor" })).toHaveAttribute("href", "/workflow-packages/42");
+    expect(screen.getByRole("link", { name: "Open Editor" })).toHaveAttribute("href", "/workflow-packages/42");
     const identity = screen.getByTestId("workflow-package-launch-identity");
     expect(identity).toHaveTextContent("Package #42");
     expect(identity).toHaveTextContent("market_review_package");
