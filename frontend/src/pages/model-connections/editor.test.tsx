@@ -179,9 +179,21 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByText("Editable connection details")).toBeVisible();
     expect(screen.getByText("Credential rotation")).toBeVisible();
     expect(screen.getByText("Compatibility evidence")).toBeVisible();
+    const compactEvidence = screen.getByTestId(
+      "model-connection-compatibility-evidence",
+    );
+    expect(
+      within(compactEvidence).getAllByTestId(
+        "model-connection-compact-evidence-row",
+      ).length,
+    ).toBeGreaterThan(10);
+    expect(within(compactEvidence).queryAllByRole("listitem")).toHaveLength(0);
+    expect(screen.getByText("Connection health")).toBeVisible();
     expect(screen.getByText("Capability matrix")).toBeVisible();
-    expect(screen.getByText("Backend runtime policies")).toBeVisible();
-    expect(screen.getAllByText("Strict JSON schema output")[0]).toBeVisible();
+    expect(screen.getByText("Runtime policies")).toBeVisible();
+    expect(screen.queryByText("Backend runtime policies")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Strict JSON schema output")).toHaveLength(1);
+    expect(screen.getAllByText("Streaming responses")).toHaveLength(1);
     expect(screen.getByText("Output strategy policy")).toBeVisible();
     expect(
       screen.queryByLabelText(/^Strict JSON schema output capability$/i),

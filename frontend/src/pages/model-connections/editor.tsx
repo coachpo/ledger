@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { CheckCircle2, PlugZap, Radar, Save, XCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
@@ -13,7 +13,6 @@ import {
 import { SecretInput } from "@/components/forms/secret-input";
 import { ConsoleSection } from "@/components/shared/console-section";
 import {
-  EvidenceCluster,
   type EvidenceClusterItem,
   type EvidenceClusterTone,
 } from "@/components/shared/evidence-cluster";
@@ -32,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/components/ui/utils";
 import { formatDateTime } from "@/lib/format";
 import type {
   ModelConnectionCapabilities,
@@ -63,7 +63,6 @@ import {
   PROTOCOL_PROFILE_LABELS,
   REASONING_POLICY_LABELS,
   STREAMING_POLICY_LABELS,
-  SUMMARY_CAPABILITY_KEYS,
   capabilitiesForProtocolProfile,
   createDefaultCapabilities,
   formatCapabilitySummary,
@@ -136,6 +135,67 @@ const initialValues: ModelConnectionEditorValues = {
   streamingPolicy: "allow",
   timeoutSeconds: "60",
 };
+
+type EvidenceGroupProps = {
+  children: ReactNode;
+  title: string;
+};
+
+type CompactEvidenceRowsProps = {
+  items: EvidenceClusterItem[];
+};
+
+const COMPACT_EVIDENCE_TONE_CLASSES: Record<EvidenceClusterTone, string> = {
+  danger: "border-l-destructive bg-destructive/5",
+  neutral: "border-l-border bg-muted/30",
+  verified: "border-l-primary bg-primary/5",
+  warning: "border-l-accent bg-accent/40",
+};
+
+function EvidenceGroup({ children, title }: EvidenceGroupProps) {
+  return (
+    <section className="flex min-w-0 flex-col gap-2" aria-label={title}>
+      <h5 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h5>
+      {children}
+    </section>
+  );
+}
+
+function CompactEvidenceRows({ items }: CompactEvidenceRowsProps) {
+  return (
+    <div className="flex min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card/50">
+      {items.map((item) => {
+        const tone = item.tone ?? "neutral";
+
+        return (
+          <div
+            key={`${item.label}-${item.value}`}
+            data-testid="model-connection-compact-evidence-row"
+            data-tone={tone}
+            className={cn(
+              "flex min-w-0 flex-col gap-1 border-b border-border/70 border-l-2 px-3 py-2 last:border-b-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4",
+              COMPACT_EVIDENCE_TONE_CLASSES[tone],
+            )}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-foreground">{item.label}</p>
+              {item.description ? (
+                <p className="mt-0.5 whitespace-normal break-words text-xs leading-5 text-muted-foreground">
+                  {item.description}
+                </p>
+              ) : null}
+            </div>
+            <p className="min-w-0 whitespace-normal break-words text-xs font-semibold text-foreground sm:max-w-56 sm:text-right">
+              {item.value}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function isReasoningEffortPreset(
   value: string | null,
@@ -307,17 +367,6 @@ function buildConnectionEvidenceItems({
       label: "Capability support",
       tone: probeFeedback ? getFeedbackTone(probeFeedback.variant) : "warning",
       value: probeFeedback?.title ?? formatCapabilitySummary(values.capabilities),
-    },
-    {
-      description: `Reasoning effort: ${getReasoningEffortValue(values) ?? "Omitted"}.`,
-      label: "Runtime policy",
-      tone: "neutral",
-      value: [
-        OUTPUT_STRATEGY_POLICY_LABELS[values.outputStrategyPolicy],
-        PARALLEL_TOOL_CALLS_POLICY_LABELS[values.parallelToolCallsPolicy],
-        REASONING_POLICY_LABELS[values.reasoningPolicy],
-        STREAMING_POLICY_LABELS[values.streamingPolicy],
-      ].join(" · "),
     },
     {
       description: credentialEvidence.description,
@@ -652,10 +701,6 @@ export function ModelConnectionsEditorPage() {
     probeFeedback,
     values,
   });
-  const summaryCapabilityItems = buildCapabilityEvidenceItems(
-    values,
-    SUMMARY_CAPABILITY_KEYS,
-  );
   const capabilityEvidenceItems = buildCapabilityEvidenceItems(
     values,
     CAPABILITY_DEFINITIONS.map(({ key }) => key),
@@ -964,26 +1009,22 @@ export function ModelConnectionsEditorPage() {
 
           <ConsoleSection
             title="Compatibility evidence"
-            description="Read-only test, probe, credential, and runtime evidence resolved by the backend. Save before refreshing it."
+            description="Read-only backend evidence resolved from saved connection tests, capability probes, credentials, and runtime policies. Save before refreshing it."
           >
-            <div className="flex min-w-0 flex-col gap-3">
-              <EvidenceCluster items={connectionEvidenceItems} layout="grid" />
-              <EvidenceCluster items={summaryCapabilityItems} layout="grid" />
+            <div
+              data-testid="model-connection-compatibility-evidence"
+              className="flex min-w-0 flex-col gap-4"
+            >
+              <EvidenceGroup title="Connection health">
+                <CompactEvidenceRows items={connectionEvidenceItems} />
+              </EvidenceGroup>
+              <EvidenceGroup title="Capability matrix">
+                <CompactEvidenceRows items={capabilityEvidenceItems} />
+              </EvidenceGroup>
+              <EvidenceGroup title="Runtime policies">
+                <CompactEvidenceRows items={runtimePolicyEvidenceItems} />
+              </EvidenceGroup>
             </div>
-          </ConsoleSection>
-
-          <ConsoleSection
-            title="Capability matrix"
-            description="Backend-owned capability support is displayed here but never submitted from the editor form."
-          >
-            <EvidenceCluster items={capabilityEvidenceItems} layout="grid" />
-          </ConsoleSection>
-
-          <ConsoleSection
-            title="Backend runtime policies"
-            description="Policy truth remains server-derived and is excluded from create/edit payloads."
-          >
-            <EvidenceCluster items={runtimePolicyEvidenceItems} layout="grid" />
           </ConsoleSection>
         </div>
       </div>
