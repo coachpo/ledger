@@ -16,6 +16,13 @@ const platformRoutes = [
     url: /\/model-connections$/,
   },
   {
+    pageTestId: "scheduled-tasks-list-page",
+    routeTestId: "route-scheduled-tasks-list",
+    shellMode: "scroll",
+    testId: "nav-scheduled-tasks",
+    url: /\/scheduled-tasks$/,
+  },
+  {
     pageTestId: "runs-list-page",
     routeTestId: "route-runs-list",
     shellMode: "scroll",
@@ -32,6 +39,7 @@ const primaryShellNavTestIds = [
   "nav-workflow-packages",
   "nav-model-connections",
   "nav-memory",
+  "nav-scheduled-tasks",
   "nav-runs",
   "nav-extensions",
 ] as const;
