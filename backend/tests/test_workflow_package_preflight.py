@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.errors import ApiError
 from app.core.formatting import utcnow
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.model_connection import ModelConnection
@@ -19,11 +22,18 @@ from app.schemas.model_connection import (
     default_model_connection_capabilities,
     dump_model_connection_capabilities,
 )
+from app.schemas.schedule import FireReason, MisfirePolicy, OverlapPolicy
 from app.services.extension_service import ExtensionService
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_manifest_parser import parse_workflow_package_manifest
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
+from app.services.workflow_package_schedule_inputs import SCHEDULE_TEMPLATE_MISSING_VALUE
+from app.services.workflow_package_schedule_service import (
+    DueWorkflowPackageSchedule,
+    ScheduleFireMetadata,
+    WorkflowPackageScheduleService,
+)
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
 
 _FIXTURE = (
@@ -1171,3 +1181,220 @@ def test_preflight_blocks_tradingagents_advisory_research_when_extension_disable
         and error.get("surface") == "tool.signaldeck.market_data.quote_lookup"
         for error in errors
     )
+
+
+def test_schedule_run_now_surfaces_extension_disabled_preflight_failure(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _digital_oracle_phase1_package_source()},
+    )
+    assert response.status_code == 201, response.json()
+    package_id = int(response.json()["id"])
+    schedule = client.post(
+        "/api/schedules",
+        json={
+            "packageId": package_id,
+            "workflowKey": "research",
+            "name": "Disabled extension scheduled research",
+            "status": "enabled",
+            "timezone": "UTC",
+            "recurrence": {"type": "daily", "atLocalTime": "09:00"},
+            "overlapPolicy": "skip",
+            "misfirePolicy": "catchUpOne",
+            "misfireGraceSeconds": 86400,
+            "inputTemplate": {"researchQuestion": "{{vars.researchQuestion}}"},
+            "templateVars": {"researchQuestion": "What changed in NVDA filings?"},
+        },
+    )
+    assert schedule.status_code == 201, schedule.json()
+    schedule_id = int(schedule.json()["id"])
+    _disable_finance_extension(session_factory)
+
+    run_now = client.post(
+        f"/api/schedules/{schedule_id}/run-now",
+        json={
+            "idempotencyKey": "disabled-extension-retry",
+            "scheduledFor": "2026-06-01T13:00:00Z",
+        },
+    )
+
+    assert run_now.status_code == 422, run_now.json()
+    body = run_now.json()
+    assert body["code"] == "validation_error"
+    details = cast(list[dict[str, object]], body["details"])
+    assert any(
+        error.get("code") == "extension_disabled"
+        and error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
+        and str(error.get("surface", "")).startswith("tool.signaldeck.")
+        for error in details
+    )
+    with session_factory() as session:
+        history = WorkflowPackageScheduleService(session).list_fire_history(schedule_id)
+        assert history.total_count == 0
+
+
+def _schedule_render_validation_package(session: Session) -> WorkflowPackage:
+    package = WorkflowPackage(
+        key="schedule_render_validation_package",
+        name="Schedule Render Validation Package",
+        description="Package used for scheduled input render validation.",
+        manifest_source="apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\n",
+        manifest_hash="c" * 64,
+        package_definition={
+            "metadata": {
+                "key": "schedule_render_validation_package",
+                "name": "Schedule Render Validation Package",
+            }
+        },
+        compiled_hash="d" * 64,
+        extension_dependencies=[],
+        compiled_plan={
+            "workflows": [
+                {
+                    "key": "daily_research",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["asOfDate", "lookbackDays", "title"],
+                        "properties": {
+                            "asOfDate": {"type": "string"},
+                            "lookbackDays": {"type": "integer"},
+                            "title": {"type": "string"},
+                        },
+                    },
+                }
+            ]
+        },
+    )
+    session.add(package)
+    session.commit()
+    session.refresh(package)
+    return package
+
+
+def _schedule_render_validation_due_schedule(
+    package: WorkflowPackage,
+    *,
+    input_template: dict[str, Any],
+    template_vars: dict[str, Any],
+) -> DueWorkflowPackageSchedule:
+    scheduled_for = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
+    return DueWorkflowPackageSchedule(
+        id=44,
+        package_id=package.id,
+        package_key=package.key,
+        workflow_key="daily_research",
+        name="Daily research",
+        timezone="America/New_York",
+        recurrence={"type": "daily", "atLocalTime": "09:00"},
+        next_fire_at=scheduled_for,
+        overlap_policy=OverlapPolicy.SKIP,
+        misfire_policy=MisfirePolicy.CATCH_UP_ONE,
+        misfire_grace_seconds=86400,
+        input_template=input_template,
+        template_vars=template_vars,
+        ends_at=None,
+    )
+
+
+def _schedule_render_validation_fire() -> ScheduleFireMetadata:
+    scheduled_for = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
+    return ScheduleFireMetadata(
+        schedule_id=44,
+        fire_key="daily-research-2026-06-01T13:00:00Z",
+        reason=FireReason.SCHEDULED,
+        scheduled_for=scheduled_for,
+        scheduled_local_date="2026-06-01",
+        scheduled_local_time="09:00",
+        scheduled_local_datetime="2026-06-01T09:00:00",
+    )
+
+
+def test_schedule_render_validation_preview_returns_ready_rendered_parameters(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        package = _schedule_render_validation_package(session)
+        due_schedule = _schedule_render_validation_due_schedule(
+            package,
+            input_template={
+                "asOfDate": "{{fire.scheduledLocalDate}}",
+                "lookbackDays": "{{vars.lookbackDays}}",
+                "title": "Daily brief for {{fire.scheduledLocalDate}}",
+            },
+            template_vars={"lookbackDays": 5},
+        )
+        preview = WorkflowPackageScheduleService(session).preview_due_schedule_input_render(
+            due_schedule,
+            _schedule_render_validation_fire(),
+        )
+
+    assert preview.ready is True
+    assert preview.validation_errors == []
+    assert preview.rendered_parameters == {
+        "asOfDate": "2026-06-01",
+        "lookbackDays": 5,
+        "title": "Daily brief for 2026-06-01",
+    }
+    assert preview.parameters_for_launch() == preview.rendered_parameters
+
+
+def test_schedule_render_validation_blocks_schema_invalid_rendered_parameters(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        package = _schedule_render_validation_package(session)
+        due_schedule = _schedule_render_validation_due_schedule(
+            package,
+            input_template={
+                "asOfDate": "{{fire.scheduledLocalDate}}",
+                "lookbackDays": "lookback {{vars.lookbackDays}}",
+                "title": "Daily brief for {{fire.scheduledLocalDate}}",
+            },
+            template_vars={"lookbackDays": 5},
+        )
+        preview = WorkflowPackageScheduleService(session).preview_due_schedule_input_render(
+            due_schedule,
+            _schedule_render_validation_fire(),
+        )
+
+    assert preview.ready is False
+    assert preview.rendered_parameters["lookbackDays"] == "lookback 5"
+    assert preview.validation_errors[0]["code"] == "run_invalid_input"
+    assert preview.validation_errors[0]["field"] == "lookbackDays"
+
+
+def test_schedule_render_validation_or_raise_blocks_missing_placeholder(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        package = _schedule_render_validation_package(session)
+        due_schedule = _schedule_render_validation_due_schedule(
+            package,
+            input_template={
+                "asOfDate": "{{fire.scheduledLocalDate}}",
+                "lookbackDays": "{{vars.lookbackDays}}",
+                "title": "{{vars.missingTitle}}",
+            },
+            template_vars={"lookbackDays": 5},
+        )
+        service = WorkflowPackageScheduleService(session)
+        with pytest.raises(ApiError) as exc_info:
+            service.render_due_schedule_input_or_raise(
+                due_schedule,
+                _schedule_render_validation_fire(),
+            )
+
+    exc = exc_info.value
+    assert exc.code == SCHEDULE_TEMPLATE_MISSING_VALUE
+    assert exc.details == [
+        {
+            "field": "inputTemplate.title",
+            "issue": "Missing scheduled input placeholder value for 'vars.missingTitle'",
+            "code": SCHEDULE_TEMPLATE_MISSING_VALUE,
+            "expression": "vars.missingTitle",
+        }
+    ]
