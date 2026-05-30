@@ -133,13 +133,6 @@ function capabilityStatusVariant(
   return "outline";
 }
 
-function runtimeConnectionKindLabel(
-  value: RunPackageResolvedModelConnectionRead["connectionKind"],
-): string {
-  return value === "deterministic_smoke"
-    ? "Deterministic smoke"
-    : "Provider-backed";
-}
 
 type RuntimeStrategySummary = {
   agentLabel: string;
@@ -352,11 +345,6 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
                     </TableCell>
                     <TableCell className="whitespace-normal align-top">
                       <div className="flex flex-wrap gap-1.5">
-                        <Badge variant="outline">
-                          {runtimeConnectionKindLabel(
-                            connection.connectionKind,
-                          )}
-                        </Badge>
                         <Badge variant="secondary">
                           {PROTOCOL_PROFILE_LABELS[connection.protocolProfile]}
                         </Badge>

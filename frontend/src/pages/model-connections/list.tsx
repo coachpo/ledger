@@ -18,11 +18,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/components/ui/utils";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
   Table,
   TableBody,
   TableCell,
@@ -46,7 +41,6 @@ import {
   formatReasoningEffort,
   formatRuntimePolicyEvidence,
   getCompactRuntimePolicyItems,
-  getModelConnectionEvidenceItems,
 } from "./model-connection-ui";
 
 type ModelConnectionSelectionHandlers = {
@@ -169,59 +163,6 @@ function ModelConnectionsStateCards({
   );
 }
 
-type ModelConnectionEvidenceItem = ReturnType<
-  typeof getModelConnectionEvidenceItems
->[number];
-
-function compactBadgeToneFromEvidence(
-  tone: ModelConnectionEvidenceItem["tone"],
-): CompactBadgeTone {
-  if (tone === "verified") {
-    return "success";
-  }
-
-  if (tone === "danger") {
-    return "danger";
-  }
-
-  if (tone === "warning") {
-    return "warning";
-  }
-
-  return "neutral";
-}
-
-function getNamedEvidenceItem(
-  connection: ModelConnectionListItemRead,
-  label: string,
-) {
-  return getModelConnectionEvidenceItems(connection).find(
-    (item) => String(item.label) === label,
-  );
-}
-
-function ModelConnectionCardEvidenceChips({
-  connection,
-}: {
-  connection: ModelConnectionListItemRead;
-}) {
-  const credentialItem = getNamedEvidenceItem(connection, "Credential state");
-
-  if (!credentialItem) {
-    return null;
-  }
-
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-      <CompactMetadataBadge
-        detail={String(credentialItem.description ?? credentialItem.value)}
-        label={String(credentialItem.value)}
-        tone={compactBadgeToneFromEvidence(credentialItem.tone)}
-      />
-    </div>
-  );
-}
-
 function ModelConnectionCard({
   connection,
   deletePending,
@@ -307,62 +248,6 @@ function ModelConnectionActions({
         Delete
       </Button>
     </>
-  );
-}
-
-type CompactBadgeTone = "neutral" | "success" | "warning" | "danger";
-
-const compactBadgeVariantByTone: Record<
-  CompactBadgeTone,
-  "secondary" | "outline" | "destructive"
-> = {
-  danger: "destructive",
-  neutral: "outline",
-  success: "secondary",
-  warning: "outline",
-};
-
-function CompactMetadataBadge({
-  accessibleDetail,
-  detail,
-  emphasized = false,
-  label,
-  tone = "neutral",
-}: {
-  accessibleDetail?: string;
-  detail: ReactNode;
-  emphasized?: boolean;
-  label: string;
-  tone?: CompactBadgeTone;
-}) {
-  const derivedAccessibleDetail =
-    accessibleDetail ?? (typeof detail === "string" ? detail : undefined);
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          aria-label={derivedAccessibleDetail ? `${label}: ${derivedAccessibleDetail}` : label}
-          className="inline-flex max-w-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          tabIndex={0}
-        >
-          <Badge
-            className={cn(
-              "max-w-full px-1.5 py-0 text-xs leading-5",
-              emphasized
-                ? "border-ring/30 bg-accent/40 text-accent-foreground shadow-sm"
-                : null,
-            )}
-            data-emphasized={emphasized ? "true" : undefined}
-            data-tone={tone}
-            variant={compactBadgeVariantByTone[tone]}
-          >
-            <span className="truncate">{label}</span>
-          </Badge>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent className="max-w-xs text-left">{detail}</TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -528,7 +413,6 @@ function ModelConnectionCardDetails({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <ModelConnectionCardEvidenceChips connection={connection} />
       <ModelConnectionDetailSections
         className="rounded-lg border bg-muted/15 p-3"
         connection={connection}

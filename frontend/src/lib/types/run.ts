@@ -2,7 +2,6 @@ import type { UnknownRecord } from "./common";
 import type {
   ModelConnectionApiStyle,
   ModelConnectionCapabilities,
-  ModelConnectionKind,
   ModelConnectionOutputStrategyPolicy,
   ModelConnectionParallelToolCallsPolicy,
   ModelConnectionProtocolProfile,
@@ -142,7 +141,6 @@ export interface RunMemoryEventRead {
 export interface RunPackageResolvedModelConnectionRead {
   key: string;
   name: string;
-  connectionKind: ModelConnectionKind;
   protocolProfile: ModelConnectionProtocolProfile;
   baseUrl: string;
   modelId: string;

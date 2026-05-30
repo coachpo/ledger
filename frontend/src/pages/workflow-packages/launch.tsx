@@ -55,7 +55,6 @@ import {
   resetLaunchParametersTemplate,
 } from "@/lib/platform-authoring/schema/schema-template";
 import type { ApiErrorDetail, UnknownRecord } from "@/lib/types/common";
-import type { ModelConnectionKind } from "@/lib/types/model-connection";
 import type {
   WorkflowPackageLaunchRead,
   WorkflowPackageRead,
@@ -63,7 +62,6 @@ import type {
 } from "@/lib/types/workflow-package";
 
 type PackageDiagnostic = {
-  connectionKind?: ModelConnectionKind;
   field: string;
   issue: string;
   severity: "error" | "warning";
@@ -72,11 +70,6 @@ type PackageDiagnostic = {
 type SavedInputEntryMode = "history" | "personal";
 
 const SAVED_INPUT_ENTRY_LIMIT = 20;
-
-const CONNECTION_KIND_LABELS: Record<ModelConnectionKind, string> = {
-  deterministic_smoke: "Deterministic smoke",
-  provider: "Provider-backed",
-};
 
 function validPackageId(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -90,25 +83,13 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function modelConnectionKindValue(value: unknown): ModelConnectionKind | null {
-  return value === "provider" || value === "deterministic_smoke" ? value : null;
-}
-
-function connectionKindLabel(
-  value: ModelConnectionKind | null | undefined,
-): string {
-  return CONNECTION_KIND_LABELS[value ?? "provider"];
-}
-
 function diagnosticFromRecord(
   value: unknown,
   severity: "error" | "warning",
 ): PackageDiagnostic {
   const record = isUnknownRecord(value) ? value : {};
   const field = stringValue(record.field) || stringValue(record.path) || "$";
-  const connectionKind = modelConnectionKindValue(record.connectionKind);
   return {
-    ...(connectionKind ? { connectionKind } : {}),
     field,
     issue:
       stringValue(record.issue) ||
@@ -340,17 +321,6 @@ function DiagnosticList({
           >
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               {diagnosticBadge(diagnostic)}
-              {diagnostic.connectionKind ? (
-                <Badge
-                  variant={
-                    diagnostic.connectionKind === "deterministic_smoke"
-                      ? "secondary"
-                      : "outline"
-                  }
-                >
-                  {connectionKindLabel(diagnostic.connectionKind)}
-                </Badge>
-              ) : null}
             </div>
             <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">
               {diagnostic.field}

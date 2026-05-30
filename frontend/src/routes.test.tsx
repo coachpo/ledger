@@ -478,7 +478,10 @@ describe("router", () => {
     expect(screen.getByTestId("memory-access-required")).toHaveTextContent(
       "Access context required",
     );
-    expect(screen.getByText("Inspect package memory.")).toBeVisible();
+    const contractNotice = screen.getByTestId("memory-contract-notice");
+    expect(contractNotice).toHaveTextContent(/Inspect \/api\/memory/);
+    expect(contractNotice).toHaveTextContent(/package access context/);
+    expect(contractNotice).toHaveTextContent(/concrete private scope/);
     expect(
       screen.queryByLabelText("Namespace declarations"),
     ).not.toBeInTheDocument();

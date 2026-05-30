@@ -197,7 +197,7 @@ export function PortfolioDetailPage() {
               </Button>
             </div>
           }
-          className="border-border/80 bg-card/95 shadow-none"
+          className="rounded-xl border border-border/80 bg-card/95 p-4 shadow-none"
           description={
             <span
               className="flex min-w-0 flex-col gap-1"

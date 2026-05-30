@@ -37,7 +37,6 @@ import type {
   ModelConnectionCapabilities,
   ModelConnectionCapabilityStatus,
   ModelConnectionCreateInput,
-  ModelConnectionKind,
   ModelConnectionOutputStrategyPolicy,
   ModelConnectionParallelToolCallsPolicy,
   ModelConnectionProtocolProfile,
@@ -307,36 +306,17 @@ function getStoredReachabilityValue(connection: ModelConnectionRead | undefined)
   return "No reachability test recorded";
 }
 
-function getCredentialEvidence(connectionKind: ModelConnectionKind) {
-  if (connectionKind === "deterministic_smoke") {
-    return {
-      description:
-        "Deterministic smoke connections can run offline fixtures without an API key.",
-      value: "API key optional",
-    };
-  }
-
-  return {
-    description:
-      "Saved provider credentials stay write-only and can only be rotated from this editor.",
-    value: "Write-only secret",
-  };
-}
-
 function buildConnectionEvidenceItems({
   connection,
   connectionFeedback,
-  connectionKind,
   probeFeedback,
   values,
 }: {
   connection?: ModelConnectionRead;
   connectionFeedback: ConnectionFeedback | null;
-  connectionKind: ModelConnectionKind;
   probeFeedback: ConnectionFeedback | null;
   values: ModelConnectionEditorValues;
 }): EvidenceClusterItem[] {
-  const credentialEvidence = getCredentialEvidence(connectionKind);
   const lastTestDescription = connection?.lastTestedAt
     ? `${formatDateTime(connection.lastTestedAt)}${
         connection.lastTestMessage ? ` · ${connection.lastTestMessage}` : ""
@@ -367,12 +347,6 @@ function buildConnectionEvidenceItems({
       label: "Capability support",
       tone: probeFeedback ? getFeedbackTone(probeFeedback.variant) : "warning",
       value: probeFeedback?.title ?? formatCapabilitySummary(values.capabilities),
-    },
-    {
-      description: credentialEvidence.description,
-      label: "Credential state",
-      tone: connectionKind === "deterministic_smoke" ? "verified" : "neutral",
-      value: credentialEvidence.value,
     },
   ];
 }
@@ -537,9 +511,6 @@ export function ModelConnectionsEditorPage() {
     isSaving ||
     testConnectionMutation.isPending ||
     probeCapabilitiesMutation.isPending;
-  const currentConnectionKind =
-    connectionQuery.data?.connectionKind ?? "provider";
-
   const updateValue = <Key extends keyof ModelConnectionEditorValues>(
     key: Key,
     value: ModelConnectionEditorValues[Key],
@@ -688,16 +659,12 @@ export function ModelConnectionsEditorPage() {
     );
   }
 
-  const apiKeyHelpText =
-    currentConnectionKind === "deterministic_smoke"
-      ? "Optional for deterministic smoke."
-      : isEditing
-        ? "Leave blank to keep the current key."
-        : "Optional; add or rotate it later.";
+  const apiKeyHelpText = isEditing
+    ? "Leave blank to keep the current key."
+    : "Optional; add or rotate it later.";
   const connectionEvidenceItems = buildConnectionEvidenceItems({
     connection: connectionQuery.data,
     connectionFeedback,
-    connectionKind: currentConnectionKind,
     probeFeedback,
     values,
   });
@@ -951,11 +918,7 @@ export function ModelConnectionsEditorPage() {
 
           <ConsoleSection
             title="Credential rotation"
-            description={
-              currentConnectionKind === "deterministic_smoke"
-                ? "Deterministic smoke connections run offline; provider API keys remain optional and hidden."
-                : "Existing secrets are never shown again. Save a new value only when you want to rotate it."
-            }
+            description="Existing secrets are never shown again. Save a new value only when you want to rotate it."
           >
             <SecretInput
               aria-label="API Key"
@@ -1009,7 +972,7 @@ export function ModelConnectionsEditorPage() {
 
           <ConsoleSection
             title="Compatibility evidence"
-            description="Read-only backend evidence resolved from saved connection tests, capability probes, credentials, and runtime policies. Save before refreshing it."
+            description="Read-only backend evidence resolved from saved connection tests, capability probes, and runtime policies. Save before refreshing it."
           >
             <div
               data-testid="model-connection-compatibility-evidence"

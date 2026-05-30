@@ -53,7 +53,6 @@ import {
 } from "./editor-sections";
 import {
   collectSecretReferenceKeys,
-  connectionKindLabel,
   diagnosticToAuthoringTarget,
   editorTabs,
   manifestIdentity,
@@ -180,7 +179,7 @@ export function WorkflowPackageEditorPage() {
   const combinedIssues = [...localIssues, ...issues];
   const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map(
     (connection) => ({
-      description: `${connection.modelId} ${connection.apiStyle} ${connectionKindLabel(connection.connectionKind)}`,
+      description: `${connection.modelId} ${connection.apiStyle}`,
       label: connection.name,
       value: connection.key,
     }),

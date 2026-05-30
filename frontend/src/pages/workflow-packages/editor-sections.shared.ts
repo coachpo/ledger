@@ -13,7 +13,6 @@ import {
   diagnosticToEditorTarget,
   type WorkflowPackageEditorIssue,
 } from "@/lib/platform-authoring/workflow-packages/manifest";
-import type { ModelConnectionKind } from "@/lib/types/model-connection";
 import type {
   WorkflowPackageManifestRead,
   WorkflowPackageRead,
@@ -149,17 +148,6 @@ export function packageSubtitle(
 
 export function manifestIdentity(manifest: WorkflowPackageManifestRead) {
   return `package:${manifest.packageId}:${manifest.manifestHash}`;
-}
-
-const CONNECTION_KIND_LABELS: Record<ModelConnectionKind, string> = {
-  deterministic_smoke: "Deterministic smoke",
-  provider: "Provider-backed",
-};
-
-export function connectionKindLabel(
-  value: ModelConnectionKind | null | undefined,
-): string {
-  return CONNECTION_KIND_LABELS[value ?? "provider"];
 }
 
 export function collectSecretReferenceKeys(value: unknown): string[] {

@@ -2,10 +2,6 @@ import type {
   EvidenceClusterItem,
   EvidenceClusterTone,
 } from "@/components/shared/evidence-cluster";
-import type {
-  ResourceStatusStripItem,
-  ResourceStatusTone,
-} from "@/components/shared/resource-status-strip";
 import { formatDate, formatDateTime } from "@/lib/format";
 import type {
   ModelConnectionCapabilities,
@@ -353,32 +349,11 @@ function getLastTestEvidenceTone(
   return "warning";
 }
 
-function getLastTestStatusTone(
-  connection: ModelConnectionListItemRead,
-): ResourceStatusTone {
-  if (connection.lastTestOk === true) {
-    return "success";
-  }
-
-  if (connection.lastTestOk === false) {
-    return "danger";
-  }
-
-  return "warning";
-}
-
 function getCapabilityEvidenceTone(
   capabilities: ModelConnectionCapabilities,
 ): EvidenceClusterTone {
   const counts = getCapabilityCounts(capabilities);
   return counts.unsupported > 0 || counts.unknown > 0 ? "warning" : "verified";
-}
-
-function getCapabilityStatusTone(
-  capabilities: ModelConnectionCapabilities,
-): ResourceStatusTone {
-  const counts = getCapabilityCounts(capabilities);
-  return counts.unsupported > 0 || counts.unknown > 0 ? "warning" : "success";
 }
 
 function formatReachabilityValue(connection: ModelConnectionListItemRead): string {
@@ -387,51 +362,10 @@ function formatReachabilityValue(connection: ModelConnectionListItemRead): strin
     : "No reachability test recorded";
 }
 
-function getCredentialState(connection: ModelConnectionListItemRead) {
-  if (connection.connectionKind === "deterministic_smoke") {
-    return {
-      description:
-        "Deterministic smoke connections can run offline fixtures without an API key.",
-      label: "API key optional",
-      tone: "verified" as const,
-    };
-  }
-
-  return {
-    description:
-      "Saved provider credentials stay write-only and can only be rotated from the editor.",
-    label: "Write-only secret",
-    tone: "neutral" as const,
-  };
-}
-
-export function getModelConnectionStatusItems(
-  connection: ModelConnectionListItemRead,
-): ResourceStatusStripItem[] {
-  return [
-    {
-      label: "Test",
-      tone: getLastTestStatusTone(connection),
-      value: formatLastTestStatus(connection),
-    },
-    {
-      label: "Profile",
-      tone: "neutral",
-      value: PROTOCOL_PROFILE_LABELS[connection.protocolProfile],
-    },
-    {
-      label: "Capabilities",
-      tone: getCapabilityStatusTone(connection.capabilities),
-      value: formatCapabilitySummary(connection.capabilities),
-    },
-  ];
-}
 
 export function getModelConnectionEvidenceItems(
   connection: ModelConnectionListItemRead,
 ): EvidenceClusterItem[] {
-  const credentialState = getCredentialState(connection);
-
   return [
     {
       description: `${PROTOCOL_PROFILE_DESCRIPTIONS[connection.protocolProfile]} Timeout ${connection.timeoutSeconds}s against ${connection.baseUrl}.`,
@@ -462,12 +396,6 @@ export function getModelConnectionEvidenceItems(
       label: "Reachability",
       tone: getLastTestEvidenceTone(connection),
       value: formatReachabilityValue(connection),
-    },
-    {
-      description: credentialState.description,
-      label: "Credential state",
-      tone: credentialState.tone,
-      value: credentialState.label,
     },
   ];
 }

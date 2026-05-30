@@ -1,5 +1,4 @@
 import type { UnknownRecord } from "./common";
-import type { ModelConnectionKind } from "./model-connection";
 import type { RunStatus } from "./run";
 
 export type WorkflowPackageManifestApiVersion = "signaldeck.workflowPackage/v1";
@@ -81,7 +80,6 @@ export interface WorkflowPackageListRead {
 }
 
 export interface WorkflowPackageLaunchDiagnostic extends UnknownRecord {
-  connectionKind?: ModelConnectionKind;
   field?: string;
   issue?: string;
   message?: string;
@@ -174,4 +172,3 @@ export interface WorkflowPackageLaunchCreateResponse {
   workflowKey: string;
   createdAt: string;
 }
-

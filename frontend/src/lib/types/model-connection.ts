@@ -17,7 +17,6 @@ export type ModelConnectionOutputStrategyPolicy =
 export type ModelConnectionParallelToolCallsPolicy = "allow" | "serialize" | "forbid";
 export type ModelConnectionReasoningPolicy = "allow" | "forbid";
 export type ModelConnectionStreamingPolicy = "allow" | "forbid";
-export type ModelConnectionKind = "provider" | "deterministic_smoke";
 
 export interface ModelConnectionCapabilityState {
   status: ModelConnectionCapabilityStatus;
@@ -43,7 +42,6 @@ export interface ModelConnectionCreateInput {
   key: string;
   name: string;
   description?: string;
-  connectionKind?: ModelConnectionKind;
   protocolProfile?: ModelConnectionProtocolProfile;
   baseUrl: string;
   modelId: string;
@@ -55,7 +53,6 @@ export interface ModelConnectionCreateInput {
 export interface ModelConnectionUpdateInput {
   name?: string;
   description?: string | null;
-  connectionKind?: ModelConnectionKind;
   protocolProfile?: ModelConnectionProtocolProfile;
   baseUrl?: string;
   modelId?: string;
@@ -69,7 +66,6 @@ export interface ModelConnectionListItemRead {
   key: string;
   name: string;
   description: string;
-  connectionKind: ModelConnectionKind;
   protocolProfile: ModelConnectionProtocolProfile;
   /** @deprecated Historical compatibility only; use protocolProfile. */
   apiStyle?: ModelConnectionApiStyle;
