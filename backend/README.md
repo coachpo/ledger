@@ -14,6 +14,8 @@ docker compose up -d db
 uv run uvicorn app.main:app --reload --port 28000
 ```
 
+Run `uv run python -m app.workers.run_scheduler` beside Uvicorn when you need due Scheduled Tasks materialized or queued Workflow Package runs executed.
+
 The backend expects PostgreSQL everywhere. The default local connection is `postgresql+psycopg://signaldeck:signaldeck@localhost:25432/signaldeck`, so manual `uv run uvicorn ...` startup assumes PostgreSQL is already running on that port. Set `SIGNALDECK_DB_PORT` before `docker compose up -d db` if you need a different host port, then align `DATABASE_URL`. CORS is enabled for common local Vite dev hosts by default and can be overridden through `CORS_ALLOWED_ORIGINS`.
 
 ## Model Connections
@@ -25,9 +27,14 @@ Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets rema
 - `/health` for backend health
 - `/api/v1` for portfolios, balances, positions, trading operations, market data, templates, and reports
 - `/api/workflow-packages` for package-first authoring, validation, import, export, preflight, launch metadata, and launch creation
+- `/api/schedules` for Scheduled Tasks targeting Workflow Packages, including create, list, detail, patch, archive, preview, run-now, and fire-history reads
 - `/api/model-connections` for global live provider bindings and secret-safe connection testing
 - `/api/tools` for read-only server-declared tool metadata
 - `/api/runs` for global run list/detail, root-parameter reruns, invocation-input forks, historical replay lineage reads, and immutable run-owned executable snapshot provenance
+
+Scheduled Tasks use structured recurrence payloads: `interval` with minutes, hours, or days, `daily` at a local time, `weekly` with unique weekday values, and `monthly` with unique day-of-month values. Schedules require a valid IANA timezone. Daily, weekly, and monthly schedules evaluate local wall-clock occurrences, roll DST spring gaps forward to the next valid minute, and fire DST fall repeated local times once at the earliest valid instant. Monthly invalid dates are skipped. Overlap policy is `skip` or `queue`; misfire policy is `skip` or `catchUpOne`, with `catchUpOne` bounded by `misfireGraceSeconds`.
+
+Scheduled input templates are JSON objects only. The renderer allows `schedule`, `fire`, `window`, `lastRun`, and `vars` placeholders, preserves JSON types for exact placeholders, stringifies embedded placeholders, validates the rendered parameters against the package workflow input schema, and fails missing or unsupported expressions before queueing. Unsaved previews use `POST /api/schedules/preview`; saved previews use `POST /api/schedules/{scheduleId}/preview` and are ephemeral. Schedule reads intentionally omit `inputTemplate` and `templateVars`, so clients must save explicit input drafts instead of assuming detail hydration. Run now requires `idempotencyKey` and `scheduledFor`, creates a manual fire through the scheduled-run path, and returns a compact run summary. Archive sets `status: "archived"`, clears future fire scheduling, preserves audit history, and rejects later patch, preview, and run-now actions.
 
 Rerun endpoints are `GET /api/runs/{runId}/rerun-draft` and `POST /api/runs/{runId}/reruns`; they work with root launch `parameters`. Fork endpoints are `GET /api/runs/{runId}/fork-draft?sourceInvocationId=...` and `POST /api/runs/{runId}/forks`; they work with one agent invocation `invocationInput`, persist `run_forks`, and use `resumeStepIndex` only as the execution boundary.
 

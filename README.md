@@ -12,15 +12,17 @@ SignalDeck is a monorepo for a portfolio-tracking stack with a FastAPI backend, 
 
 ## What Ships
 
-- Frontend routes for `portfolios`, `templates`, `reports`, `workflow-packages`, `model-connections`, and `runs`
+- Frontend routes for `portfolios`, `templates`, `reports`, `workflow-packages`, `scheduled-tasks`, `model-connections`, and `runs`
 - Backend `/api/v1` resource routes for portfolios, balances, positions, trading operations, market data, templates, and reports
-- Backend `/api/*` platform routes for workflow packages, model connections, tools, and runs, including reruns and invocation-input forks
+- Backend `/api/*` platform routes for workflow packages, scheduled tasks, model connections, tools, and runs, including reruns and invocation-input forks
 
 ## Workflow Package Contract
 
 Workflow Packages are the only live platform authoring root. Package manifests use `signaldeck.workflowPackage/v1` YAML and keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
 
 Model Connections remain global live bindings for provider credentials. Global Tools are read-only server-declared metadata from `/api/tools`; packages reference tool keys through local capability profiles. Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history. Runs store immutable executable snapshots with copied package id, key, hashes, workflow identity, launch evidence, rerun metadata, and fork artifacts.
+
+Scheduled Tasks is the package-first automation surface for recurring Workflow Package runs. The browser route `/scheduled-tasks` and `/api/schedules` create schedules for one package and workflow, use structured interval, daily, weekly, or monthly recurrence instead of raw cron, require an IANA timezone, and materialize due fires into ordinary queued runs with schedule provenance. Scheduled inputs are JSON templates that may use allowlisted `schedule`, `fire`, `window`, `lastRun`, and `vars` placeholders; preview validates rendered parameters without creating fires or runs. Run now creates an idempotent manual fire, then sends the operator to the linked run detail for queue and execution evidence. Archive keeps fire and run history while blocking edit, preview, and run-now actions.
 
 Rerun and fork are separate run-descendant flows. Rerun edits root launch `parameters` through `/api/runs/{runId}/reruns`. Fork edits one selected agent invocation input through `/api/runs/{runId}/fork-draft?sourceInvocationId=...` and `/api/runs/{runId}/forks`, preserves the source run input, copies upstream context, and resumes from `resumeStepIndex`. Historical step replay data may still appear through historical replay lineage reads, but it is not a live write surface.
 
@@ -70,7 +72,7 @@ It will:
 - prefer the backend on `28000`, then fall back to `28001` or `28002` if the requested port is occupied by a non-SignalDeck service
 - prefer the frontend on `25173`, then fall back to `25174` if needed
 - stop previously running SignalDeck backend, scheduler worker, frontend, and local Docker database instances before starting fresh ones
-- start the dedicated scheduler worker that claims and executes queued Workflow Package runs
+- start the dedicated scheduler worker that materializes due Scheduled Tasks and claims queued Workflow Package runs
 - derive `DATABASE_URL` for backend and scheduler startup when you do not provide one
 - derive `VITE_API_BASE_URL` for frontend startup
 
@@ -111,7 +113,7 @@ The default local connection is `postgresql+psycopg://signaldeck:signaldeck@loca
 (cd backend && uv run python -m app.workers.run_scheduler)
 ```
 
-Keep this process running beside the backend. API requests only enqueue Workflow Package runs; the scheduler worker is the process that claims queued runs, heartbeats leases, recovers expired leases, and executes work. Without it, queued runs remain queued until a worker starts.
+Keep this process running beside the backend. API requests create Scheduled Tasks, preview scheduled inputs, run manual fires, and enqueue Workflow Package runs; the scheduler worker materializes due scheduled fires, claims queued runs, heartbeats leases, recovers expired leases, and executes work. Without it, due schedules and queued runs wait until a worker starts.
 
 Scheduler defaults are `RUN_SCHEDULER_MAX_ACTIVE_RUNS=4`, `RUN_SCHEDULER_MAX_ACTIVE_PER_PACKAGE=1`, `RUN_SCHEDULER_POLL_INTERVAL_SECONDS=1`, `RUN_SCHEDULER_HEARTBEAT_SECONDS=10`, and `RUN_SCHEDULER_LEASE_TTL_SECONDS=60`.
 
@@ -127,7 +129,7 @@ Visit `http://127.0.0.1:25173/`.
 
 ## Runtime Notes
 
-- The normal browser-facing execution surfaces are Workflow Packages, Model Connections, and Runs, plus the preserved portfolio, template, and report routes. In Runs, rerun is for root parameters and fork is for one agent invocation input.
+- The normal browser-facing execution surfaces are Workflow Packages, Scheduled Tasks, Model Connections, and Runs, plus the preserved portfolio, template, and report routes. In Runs, rerun is for root parameters and fork is for one agent invocation input.
 - Workflow package manifests use `signaldeck.workflowPackage/v1`; package-private agents, output schemas, capability profiles, and workflow graphs are authored inside one package. Private MCP configs use inline `env`, `headers`, and `query` fields, and the export/import contract is intentionally breaking.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright E2E uses Chromium only with dedicated startup helpers: backend `8001`, frontend preview `4173`, deterministic quote provider, and frontend API base `http://127.0.0.1:8001/api/v1` by default.
