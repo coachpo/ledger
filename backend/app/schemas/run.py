@@ -488,13 +488,17 @@ class RunListItemRead(CamelModel):
     status: RunStatus
     progress: RunProgressRead
     queue: RunQueueRead | None = None
+    schedule_id: int | None = None
+    schedule_fire_id: int | None = None
+    scheduled_for: datetime | None = None
+    schedule_reason: Literal["scheduled", "manual"] | None = None
     total_tokens: int = Field(ge=0)
     trace_id: str | None = None
     queued_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
 
-    @field_validator("queued_at", "started_at", "finished_at")
+    @field_validator("scheduled_for", "queued_at", "started_at", "finished_at")
     @classmethod
     def validate_timestamps(cls, value: datetime | None) -> datetime | None:
         if value is None:
@@ -630,6 +634,10 @@ class RunRead(CamelModel):
     status: RunStatus
     progress: RunProgressRead
     queue: RunQueueRead | None = None
+    schedule_id: int | None = None
+    schedule_fire_id: int | None = None
+    scheduled_for: datetime | None = None
+    schedule_reason: Literal["scheduled", "manual"] | None = None
     total_tokens: int = Field(ge=0)
     inherited_tokens: int = Field(ge=0)
     executed_tokens: int = Field(ge=0)
@@ -654,7 +662,14 @@ class RunRead(CamelModel):
             )
         return self
 
-    @field_validator("queued_at", "started_at", "finished_at", "created_at", "updated_at")
+    @field_validator(
+        "scheduled_for",
+        "queued_at",
+        "started_at",
+        "finished_at",
+        "created_at",
+        "updated_at",
+    )
     @classmethod
     def validate_timestamps(cls, value: datetime | None) -> datetime | None:
         if value is None:
