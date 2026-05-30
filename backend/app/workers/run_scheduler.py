@@ -19,6 +19,7 @@ from app.db.session import init_db
 from app.services.extension_service import ExtensionService
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
+from app.services.workflow_package_schedule_materializer import WorkflowPackageScheduleMaterializer
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ class RunSchedulerWorker:
 
     def run_once(self) -> bool:
         self._recover_stale_leases()
+        self._materialize_due_schedules()
         run_id = self._claim_next_run(slot=1)
         if run_id is None:
             return False
@@ -92,6 +94,7 @@ class RunSchedulerWorker:
         try:
             while True:
                 self._recover_stale_leases()
+                self._materialize_due_schedules()
                 self._collect_finished_runs(in_flight)
                 claimed = self._submit_available_runs(executor, in_flight)
                 if not claimed:
@@ -100,6 +103,18 @@ class RunSchedulerWorker:
             logger.info("SignalDeck run scheduler worker %s stopping", self.worker_id)
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
+
+    def _materialize_due_schedules(self) -> int:
+        result = WorkflowPackageScheduleMaterializer(self.session_factory).materialize_due()
+        if result.changed_count:
+            logger.info(
+                "Materialized %d due schedule(s): queued=%d skipped=%d failed=%d",
+                result.processed_count,
+                result.queued_count,
+                result.skipped_count,
+                result.failed_count,
+            )
+        return result.changed_count
 
     def _submit_available_runs(
         self,

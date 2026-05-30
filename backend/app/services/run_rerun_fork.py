@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 from app.core.errors import ApiError, business_rule_error, not_found_error, validation_error
 from app.core.formatting import utcnow
 from app.models.agent import Agent
-from app.models.output_schema import OutputSchema
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
@@ -44,6 +43,11 @@ from app.services.output_schema_compiler import OutputSchemaCompiler
 from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
     WorkflowPackageExecutionPlanError,
+)
+from app.services.run_input_validation import (
+    build_run_input_model,
+    validate_run_input_payload,
+    validation_details_from_pydantic_error,
 )
 from app.services.run_read_projection import RunReadProjection
 from app.services.workflow_package_preflight import (
@@ -387,16 +391,13 @@ class RunRerunForkPreparation:
         candidate_key: str,
         resource_name: str,
     ) -> dict[str, Any]:
-        input_model = self._build_input_model(input_schema, candidate_key=candidate_key)
-        try:
-            validated = input_model.model_validate(input_payload)
-        except ValidationError as exc:
-            raise business_rule_error(
-                "run_invalid_input",
-                f"Run input failed {resource_name} input schema validation",
-                details=self._validation_details_from_pydantic_error(exc),
-            ) from exc
-        return validated.model_dump(mode="json")
+        return validate_run_input_payload(
+            schema_compiler=self.schema_compiler,
+            input_schema=input_schema,
+            input_payload=input_payload,
+            candidate_key=candidate_key,
+            resource_name=resource_name,
+        )
 
     def validated_copied_context_steps(
         self,
@@ -672,33 +673,17 @@ class RunRerunForkPreparation:
         *,
         candidate_key: str,
     ) -> type[BaseModel]:
-        candidate = OutputSchema(
-            key=candidate_key,
-            version=1,
-            status="published",
-            kind="standalone",
-            name="Run Input Schema",
-            description="Run input schema validation candidate",
-            json_schema=input_schema,
-            registry_refs=[],
+        return build_run_input_model(
+            self.schema_compiler,
+            input_schema,
+            candidate_key=candidate_key,
         )
-        return self.schema_compiler.build_runtime_model(candidate)
 
     @staticmethod
     def _validation_details_from_pydantic_error(
         exc: ValidationError,
     ) -> list[dict[str, str]]:
-        details: list[dict[str, str]] = []
-        for error in exc.errors():
-            location = error.get("loc", ())
-            field = ".".join(str(part) for part in location) if location else "input"
-            details.append(
-                {
-                    "field": field or "input",
-                    "issue": str(error.get("msg", "Invalid value")),
-                }
-            )
-        return details
+        return validation_details_from_pydantic_error(exc)
 
 
 __all__ = [

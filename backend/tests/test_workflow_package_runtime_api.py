@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from threading import Event, Lock
 from typing import Any, cast
 
@@ -22,8 +22,18 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_fork import RunFork
 from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
+from app.models.workflow_package_schedule import WorkflowPackageScheduleFire
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.extension import ExtensionToggleRequest
+from app.schemas.schedule import (
+    DailyRecurrence,
+    FireStatus,
+    IntervalRecurrence,
+    IntervalUnit,
+    MisfirePolicy,
+    OverlapPolicy,
+    ScheduleCreate,
+)
 from app.schemas.workflow_package import WorkflowPackageLaunchCreateRequest
 from app.services.extension_service import ExtensionService
 from app.services.model_gateway import ModelExecutionGateway
@@ -44,7 +54,17 @@ from app.services.workflow_package_runtime_inputs import (
     runtime_input_schema_fingerprint,
     validate_runtime_input_payload_safety,
 )
-from app.workers.run_scheduler import scheduler_lease_owner
+from app.services.workflow_package_schedule_inputs import (
+    SCHEDULE_RENDER_VALIDATION_FAILED,
+    SCHEDULE_TEMPLATE_INVALID_EXPRESSION,
+    SCHEDULE_TEMPLATE_MISSING_VALUE,
+    ScheduledInputLastRunContext,
+    build_scheduled_input_template_context,
+    render_scheduled_input_template,
+)
+from app.services.workflow_package_schedule_materializer import WorkflowPackageScheduleMaterializer
+from app.services.workflow_package_schedule_service import WorkflowPackageScheduleService
+from app.workers.run_scheduler import RunSchedulerWorker, scheduler_lease_owner
 from tests.fake_openai_provider import run_fake_openai_provider
 from tests.test_workflow_package_manifest_http_node import assert_removed_contract_tokens_absent
 
@@ -2983,3 +3003,1005 @@ def test_runtime_input_no_history_on_invalid_launch_or_preflight(
     with session_factory() as session:
         assert session.query(Run).count() == 0
         assert session.query(WorkflowPackageRuntimeInputEntry).count() == 0
+
+
+def _assert_no_snake_case_keys(value: object) -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            assert "_" not in str(key)
+            _assert_no_snake_case_keys(child)
+    elif isinstance(value, list):
+        for item in value:
+            _assert_no_snake_case_keys(item)
+
+
+def _schedule_api_payload(package_id: int, *, name: str = "Daily market brief") -> dict[str, Any]:
+    return {
+        "packageId": package_id,
+        "workflowKey": "runtime_workflow",
+        "name": name,
+        "description": "Runs on a schedule",
+        "status": "enabled",
+        "timezone": "UTC",
+        "recurrence": {"type": "interval", "every": 1, "unit": "hours"},
+        "startsAt": "2099-06-01T12:00:00Z",
+        "endsAt": None,
+        "overlapPolicy": "skip",
+        "misfirePolicy": "catchUpOne",
+        "misfireGraceSeconds": 86400,
+        "inputTemplate": {"ticker": "{{vars.ticker}}"},
+        "templateVars": {"ticker": "MSFT"},
+    }
+
+
+def test_schedule_api_schedule_crud_contract_package_first_and_camelcase(
+    client: TestClient,
+) -> None:
+    created_package = _create_package(client, package_key="schedule_api_crud_package")
+    package_id = cast(int, created_package["id"])
+
+    created = client.post("/api/schedules", json=_schedule_api_payload(package_id))
+
+    assert created.status_code == 201, created.json()
+    created_body = cast(dict[str, Any], created.json())
+    schedule_id = int(created_body["id"])
+    _assert_no_snake_case_keys(created_body)
+    assert created_body["packageId"] == package_id
+    assert created_body["packageKey"] == "schedule_api_crud_package"
+    assert created_body["workflowKey"] == "runtime_workflow"
+    assert created_body["status"] == "enabled"
+    assert created_body["nextFireAt"] == "2099-06-01T13:00:00Z"
+    assert created_body["latestFireId"] is None
+    assert created_body["latestRunId"] is None
+    assert created_body["latestStatus"] is None
+
+    listed = client.get(
+        "/api/schedules",
+        params={"packageKey": "schedule_api_crud_package", "status": "enabled"},
+    )
+    assert listed.status_code == 200, listed.json()
+    listed_body = cast(dict[str, Any], listed.json())
+    _assert_no_snake_case_keys(listed_body)
+    assert listed_body["totalCount"] == 1
+    assert listed_body["items"][0]["id"] == schedule_id
+
+    detail = client.get(f"/api/schedules/{schedule_id}")
+    assert detail.status_code == 200, detail.json()
+    assert detail.json()["packageId"] == package_id
+
+    patched = client.patch(
+        f"/api/schedules/{schedule_id}",
+        json={
+            "status": "paused",
+            "description": None,
+            "startsAt": None,
+            "endsAt": None,
+            "templateVars": {"ticker": "NVDA"},
+        },
+    )
+    assert patched.status_code == 200, patched.json()
+    patched_body = patched.json()
+    assert patched_body["status"] == "paused"
+    assert patched_body["description"] is None
+    assert patched_body["startsAt"] is None
+    assert patched_body["endsAt"] is None
+    assert patched_body["name"] == "Daily market brief"
+    assert patched_body["timezone"] == "UTC"
+    assert patched_body["recurrence"] == {"type": "interval", "every": 1, "unit": "hours"}
+    assert patched_body["overlapPolicy"] == "skip"
+    assert patched_body["misfirePolicy"] == "catchUpOne"
+    assert patched_body["misfireGraceSeconds"] == 86400
+
+    archived = client.post(f"/api/schedules/{schedule_id}/archive")
+    assert archived.status_code == 200, archived.json()
+    archived_body = archived.json()
+    assert archived_body["status"] == "archived"
+    assert archived_body["archivedAt"] is not None
+    assert archived_body["nextFireAt"] is None
+
+    archived_update = client.patch(f"/api/schedules/{schedule_id}", json={"name": "Nope"})
+    assert archived_update.status_code == 400, archived_update.json()
+    assert archived_update.json()["code"] == "schedule_archived"
+
+    archived_preview = client.post(f"/api/schedules/{schedule_id}/preview", json={})
+    assert archived_preview.status_code == 400, archived_preview.json()
+    assert archived_preview.json()["code"] == "schedule_archived"
+
+    archived_run_now = client.post(
+        f"/api/schedules/{schedule_id}/run-now",
+        json={
+            "idempotencyKey": "archived-reject",
+            "scheduledFor": "2026-06-01T13:00:00Z",
+        },
+    )
+    assert archived_run_now.status_code == 400, archived_run_now.json()
+    assert archived_run_now.json()["code"] == "schedule_archived"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "null_patch"),
+    [
+        ("status", {"status": None}),
+        ("name", {"name": None}),
+        ("timezone", {"timezone": None}),
+        ("recurrence", {"recurrence": None}),
+        ("overlapPolicy", {"overlapPolicy": None}),
+        ("misfirePolicy", {"misfirePolicy": None}),
+        ("misfireGraceSeconds", {"misfireGraceSeconds": None}),
+        ("inputTemplate", {"inputTemplate": None}),
+        ("templateVars", {"templateVars": None}),
+    ],
+)
+def test_schedule_api_patch_rejects_null_for_non_nullable_fields(
+    client: TestClient,
+    field_name: str,
+    null_patch: dict[str, Any],
+) -> None:
+    created_package = _create_package(client, package_key=f"schedule_api_null_{field_name.lower()}")
+    package_id = cast(int, created_package["id"])
+    created = client.post(
+        "/api/schedules",
+        json=_schedule_api_payload(package_id, name="Null guard schedule"),
+    )
+    assert created.status_code == 201, created.json()
+    schedule_id = int(created.json()["id"])
+
+    rejected = client.patch(f"/api/schedules/{schedule_id}", json=null_patch)
+
+    assert rejected.status_code == 422, rejected.json()
+    rejected_body = cast(dict[str, Any], rejected.json())
+    assert rejected_body["code"] == "validation_error"
+    assert rejected_body["message"] == "Request validation failed"
+    assert rejected_body["details"][0]["field"] == field_name
+    assert "null" in rejected_body["details"][0]["issue"].lower()
+
+    detail = client.get(f"/api/schedules/{schedule_id}")
+    assert detail.status_code == 200, detail.json()
+    detail_body = cast(dict[str, Any], detail.json())
+    assert detail_body["name"] == "Null guard schedule"
+    assert detail_body["status"] == "enabled"
+    assert detail_body["timezone"] == "UTC"
+    assert detail_body["recurrence"] == {"type": "interval", "every": 1, "unit": "hours"}
+    assert detail_body["overlapPolicy"] == "skip"
+    assert detail_body["misfirePolicy"] == "catchUpOne"
+    assert detail_body["misfireGraceSeconds"] == 86400
+
+
+def test_schedule_api_schedule_preview_run_now_fire_history_contract(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created_package = _create_package(client, package_key="schedule_api_run_now_package")
+    package_id = cast(int, created_package["id"])
+    scheduled_for = "2026-06-01T13:00:00Z"
+
+    unsaved_preview = client.post(
+        "/api/schedules/preview",
+        json={
+            "packageId": package_id,
+            "workflowKey": "runtime_workflow",
+            "timezone": "America/New_York",
+            "recurrence": {"type": "daily", "atLocalTime": "09:00"},
+            "scheduledFor": scheduled_for,
+            "inputTemplate": {"ticker": "{{vars.ticker}}"},
+            "templateVars": {"ticker": "MSFT"},
+        },
+    )
+    assert unsaved_preview.status_code == 200, unsaved_preview.json()
+    unsaved_body = cast(dict[str, Any], unsaved_preview.json())
+    assert unsaved_body["scheduleId"] is None
+    assert unsaved_body["scheduledFor"] == scheduled_for
+    assert unsaved_body["renderedParameters"] == {"ticker": "MSFT"}
+    assert unsaved_body["validationErrors"] == []
+    assert unsaved_body["ready"] is True
+    assert unsaved_body["templateContext"]["fire"]["scheduledLocalDate"] == "2026-06-01"
+    assert unsaved_body["templateContext"]["fire"]["scheduledLocalTime"] == "09:00"
+
+    with session_factory() as session:
+        assert session.query(Run).count() == 0
+        assert session.query(WorkflowPackageScheduleFire).count() == 0
+
+    created = client.post("/api/schedules", json=_schedule_api_payload(package_id))
+    assert created.status_code == 201, created.json()
+    schedule_id = int(created.json()["id"])
+
+    saved_preview = client.post(
+        f"/api/schedules/{schedule_id}/preview",
+        json={"scheduledFor": scheduled_for},
+    )
+    assert saved_preview.status_code == 200, saved_preview.json()
+    saved_body = cast(dict[str, Any], saved_preview.json())
+    assert saved_body["scheduleId"] == schedule_id
+    assert saved_body["renderedParameters"] == {"ticker": "MSFT"}
+    assert saved_body["validationErrors"] == []
+    assert saved_body["ready"] is True
+
+    with session_factory() as session:
+        assert session.query(Run).count() == 0
+        assert session.query(WorkflowPackageScheduleFire).count() == 0
+
+    run_now = client.post(
+        f"/api/schedules/{schedule_id}/run-now",
+        json={"idempotencyKey": "manual-fire-2026-06-01", "scheduledFor": scheduled_for},
+    )
+    assert run_now.status_code == 201, run_now.json()
+    run_now_body = cast(dict[str, Any], run_now.json())
+    fire_body = cast(dict[str, Any], run_now_body["fire"])
+    run_body = cast(dict[str, Any], run_now_body["run"])
+    assert run_now_body["scheduleId"] == schedule_id
+    assert fire_body["reason"] == "manual"
+    assert fire_body["status"] == "queued"
+    assert fire_body["scheduledFor"] == scheduled_for
+    assert fire_body["scheduledLocalDate"] == "2026-06-01"
+    assert fire_body["scheduledLocalTime"] == "13:00"
+    assert fire_body["renderedParameters"] == {"ticker": "MSFT"}
+    assert run_body["status"] == "queued"
+    assert run_body["workflowPackageId"] == package_id
+    assert run_body["workflowPackageKey"] == "schedule_api_run_now_package"
+    assert run_body["workflowKey"] == "runtime_workflow"
+
+    run_list = client.get("/api/runs", params={"workflowPackageId": package_id})
+    assert run_list.status_code == 200, run_list.json()
+    run_list_items = cast(list[dict[str, Any]], run_list.json()["items"])
+    run_list_item = next(item for item in run_list_items if item["id"] == run_body["id"])
+    assert run_list_item["scheduleId"] == schedule_id
+    assert run_list_item["scheduleFireId"] == fire_body["id"]
+    assert run_list_item["scheduledFor"] == scheduled_for
+    assert run_list_item["scheduleReason"] == "manual"
+
+    run_detail = client.get(f"/api/runs/{run_body['id']}")
+    assert run_detail.status_code == 200, run_detail.json()
+    run_detail_body = cast(dict[str, Any], run_detail.json())
+    assert run_detail_body["scheduleId"] == schedule_id
+    assert run_detail_body["scheduleFireId"] == fire_body["id"]
+    assert run_detail_body["scheduledFor"] == scheduled_for
+    assert run_detail_body["scheduleReason"] == "manual"
+
+    repeated = client.post(
+        f"/api/schedules/{schedule_id}/run-now",
+        json={"idempotencyKey": "manual-fire-2026-06-01", "scheduledFor": scheduled_for},
+    )
+    assert repeated.status_code == 201, repeated.json()
+    assert repeated.json()["fire"]["id"] == fire_body["id"]
+    assert repeated.json()["run"]["id"] == run_body["id"]
+
+    fires = client.get(f"/api/schedules/{schedule_id}/fires", params={"limit": 10})
+    assert fires.status_code == 200, fires.json()
+    fire_history = cast(dict[str, Any], fires.json())
+    assert fire_history["totalCount"] == 1
+    assert fire_history["items"][0]["id"] == fire_body["id"]
+    assert fire_history["items"][0]["runId"] == run_body["id"]
+
+    with session_factory() as session:
+        runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
+        fires_count = (
+            session.query(WorkflowPackageScheduleFire)
+            .filter(WorkflowPackageScheduleFire.schedule_id == schedule_id)
+            .count()
+        )
+        assert len(runs) == 1
+        assert fires_count == 1
+        assert runs[0].schedule_reason == "manual"
+        assert runs[0].input == {"ticker": "MSFT"}
+
+
+@pytest.mark.parametrize(
+    ("case_name", "recurrence", "scheduled_for", "expected_window_start"),
+    [
+        (
+            "daily",
+            {"type": "daily", "atLocalTime": "09:00"},
+            "2026-06-02T09:00:00Z",
+            "2026-06-01T09:00:00Z",
+        ),
+        (
+            "weekly",
+            {"type": "weekly", "daysOfWeek": ["mon", "wed"], "atLocalTime": "09:00"},
+            "2026-06-03T09:00:00Z",
+            "2026-06-01T09:00:00Z",
+        ),
+        (
+            "monthly",
+            {"type": "monthly", "daysOfMonth": [1, 15], "atLocalTime": "09:00"},
+            "2026-06-15T09:00:00Z",
+            "2026-06-01T09:00:00Z",
+        ),
+    ],
+)
+def test_schedule_api_non_interval_window_start_for_preview_and_run_now(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    case_name: str,
+    recurrence: dict[str, Any],
+    scheduled_for: str,
+    expected_window_start: str,
+) -> None:
+    _seed_model_connection(session_factory)
+    package_key = f"schedule_api_window_start_{case_name}_package"
+    created_package = _create_package(client, package_key=package_key)
+    package_id = cast(int, created_package["id"])
+    input_template = {"ticker": "{{window.start}}|{{window.startDate}}"}
+    expected_ticker = f"{expected_window_start}|2026-06-01"
+
+    unsaved_preview = client.post(
+        "/api/schedules/preview",
+        json={
+            "packageId": package_id,
+            "workflowKey": "runtime_workflow",
+            "timezone": "UTC",
+            "recurrence": recurrence,
+            "scheduledFor": scheduled_for,
+            "inputTemplate": input_template,
+            "templateVars": {},
+        },
+    )
+
+    assert unsaved_preview.status_code == 200, unsaved_preview.json()
+    unsaved_body = cast(dict[str, Any], unsaved_preview.json())
+    assert unsaved_body["templateContext"]["window"]["start"] == expected_window_start
+    assert unsaved_body["templateContext"]["window"]["startDate"] == "2026-06-01"
+    assert unsaved_body["renderedParameters"] == {"ticker": expected_ticker}
+    assert unsaved_body["ready"] is True
+
+    payload = _schedule_api_payload(package_id, name=f"{case_name.title()} window start")
+    payload["timezone"] = "UTC"
+    payload["recurrence"] = recurrence
+    payload["inputTemplate"] = input_template
+    payload["templateVars"] = {}
+    created = client.post("/api/schedules", json=payload)
+    assert created.status_code == 201, created.json()
+    schedule_id = int(created.json()["id"])
+
+    saved_preview = client.post(
+        f"/api/schedules/{schedule_id}/preview",
+        json={"scheduledFor": scheduled_for},
+    )
+
+    assert saved_preview.status_code == 200, saved_preview.json()
+    saved_body = cast(dict[str, Any], saved_preview.json())
+    assert saved_body["templateContext"]["window"]["start"] == expected_window_start
+    assert saved_body["templateContext"]["window"]["startDate"] == "2026-06-01"
+    assert saved_body["renderedParameters"] == {"ticker": expected_ticker}
+    assert saved_body["ready"] is True
+
+    run_now = client.post(
+        f"/api/schedules/{schedule_id}/run-now",
+        json={"idempotencyKey": f"{case_name}-window-start", "scheduledFor": scheduled_for},
+    )
+
+    assert run_now.status_code == 201, run_now.json()
+    run_now_body = cast(dict[str, Any], run_now.json())
+    assert run_now_body["fire"]["renderedParameters"] == {"ticker": expected_ticker}
+    with session_factory() as session:
+        runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
+        assert len(runs) == 1
+        assert runs[0].input == {"ticker": expected_ticker}
+
+
+def test_schedule_api_run_now_idempotency_scope_and_paused_schedule(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created_package = _create_package(client, package_key="schedule_api_run_now_scope_package")
+    package_id = cast(int, created_package["id"])
+    payload = _schedule_api_payload(package_id, name="Paused manual schedule")
+    payload["status"] = "paused"
+    created = client.post("/api/schedules", json=payload)
+    assert created.status_code == 201, created.json()
+    schedule_id = int(created.json()["id"])
+    assert created.json()["status"] == "paused"
+
+    first = client.post(
+        f"/api/schedules/{schedule_id}/run-now",
+        json={"idempotencyKey": "manual-retry", "scheduledFor": "2026-06-01T13:00:00Z"},
+    )
+    repeated = client.post(
+        f"/api/schedules/{schedule_id}/run-now",
+        json={"idempotencyKey": "manual-retry", "scheduledFor": "2026-06-01T13:00:00Z"},
+    )
+    second_time = client.post(
+        f"/api/schedules/{schedule_id}/run-now",
+        json={"idempotencyKey": "manual-retry", "scheduledFor": "2026-06-01T14:00:00Z"},
+    )
+
+    assert first.status_code == 201, first.json()
+    assert repeated.status_code == 201, repeated.json()
+    assert second_time.status_code == 201, second_time.json()
+    assert repeated.json()["fire"]["id"] == first.json()["fire"]["id"]
+    assert repeated.json()["run"]["id"] == first.json()["run"]["id"]
+    assert second_time.json()["fire"]["id"] != first.json()["fire"]["id"]
+    assert second_time.json()["run"]["id"] != first.json()["run"]["id"]
+
+    detail = client.get(f"/api/schedules/{schedule_id}")
+    fires = client.get(f"/api/schedules/{schedule_id}/fires", params={"limit": 10})
+    assert detail.status_code == 200, detail.json()
+    assert fires.status_code == 200, fires.json()
+    assert detail.json()["status"] == "paused"
+    assert fires.json()["totalCount"] == 2
+    with session_factory() as session:
+        runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
+        assert len(runs) == 2
+        assert {run.schedule_reason for run in runs} == {"manual"}
+
+
+def test_schedule_api_preview_reports_render_and_schema_validation_failures(
+    client: TestClient,
+) -> None:
+    created_package = _create_package(client, package_key="schedule_api_preview_invalid_package")
+    package_id = cast(int, created_package["id"])
+    base_payload: dict[str, Any] = {
+        "packageId": package_id,
+        "workflowKey": "runtime_workflow",
+        "timezone": "America/New_York",
+        "recurrence": {"type": "daily", "atLocalTime": "09:00"},
+        "scheduledFor": "2026-06-01T13:00:00Z",
+    }
+
+    missing_placeholder = client.post(
+        "/api/schedules/preview",
+        json={
+            **base_payload,
+            "inputTemplate": {"ticker": "{{vars.missingTicker}}"},
+            "templateVars": {},
+        },
+    )
+    schema_invalid = client.post(
+        "/api/schedules/preview",
+        json={
+            **base_payload,
+            "inputTemplate": {},
+            "templateVars": {},
+        },
+    )
+
+    assert missing_placeholder.status_code == 200, missing_placeholder.json()
+    missing_body = missing_placeholder.json()
+    assert missing_body["ready"] is False
+    assert missing_body["renderedParameters"] == {}
+    assert missing_body["validationErrors"] == [
+        {
+            "field": "inputTemplate.ticker",
+            "issue": "Missing scheduled input placeholder value for 'vars.missingTicker'",
+        }
+    ]
+
+    assert schema_invalid.status_code == 200, schema_invalid.json()
+    schema_body = schema_invalid.json()
+    assert schema_body["ready"] is False
+    assert schema_body["renderedParameters"] == {}
+    assert schema_body["validationErrors"][0]["field"] == "ticker"
+    assert "Field required" in schema_body["validationErrors"][0]["issue"]
+
+
+def test_schedule_api_stale_workflow_preview_and_materializer_fail_deterministically(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    now = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
+    created_package = _create_package(client, package_key="schedule_api_stale_workflow_package")
+    package_id = cast(int, created_package["id"])
+    with session_factory() as session:
+        schedule = WorkflowPackageScheduleService(session).create_schedule(
+            ScheduleCreate(
+                package_id=package_id,
+                workflow_key="runtime_workflow",
+                name="Stale workflow schedule",
+                timezone="UTC",
+                recurrence=IntervalRecurrence(every=1, unit=IntervalUnit.HOURS),
+                input_template={"ticker": "{{vars.ticker}}"},
+                template_vars={"ticker": "MSFT"},
+            ),
+            next_fire_at=now,
+        )
+        schedule_id = schedule.id
+        package = session.get(WorkflowPackage, package_id)
+        assert package is not None
+        package.compiled_plan = {"workflows": []}
+        package.compiled_hash = "e" * 64
+        session.commit()
+
+    preview = client.post(
+        f"/api/schedules/{schedule_id}/preview",
+        json={"scheduledFor": "2026-06-01T13:00:00Z"},
+    )
+    result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)
+
+    assert preview.status_code == 200, preview.json()
+    preview_body = preview.json()
+    assert preview_body["ready"] is False
+    assert preview_body["validationErrors"] == [
+        {
+            "field": "workflowKey",
+            "issue": "Schedule workflow is no longer present in the current package",
+        }
+    ]
+    assert result.failed_count == 1
+    with session_factory() as session:
+        fires = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items
+        runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
+        assert len(fires) == 1
+        assert fires[0].status == FireStatus.FAILED
+        assert fires[0].error_code == SCHEDULE_RENDER_VALIDATION_FAILED
+        assert fires[0].error_message == "Scheduled input template validation failed"
+        assert runs == []
+
+
+def test_schedule_materializer_records_failed_fire_for_missing_render_placeholder(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    now = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
+    _, schedule_id = _create_schedule_materializer_schedule(
+        client,
+        session_factory,
+        package_key="schedule_materializer_missing_placeholder_package",
+        next_fire_at=now,
+        input_template={"ticker": "{{vars.missingTicker}}"},
+        template_vars={},
+    )
+
+    result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)
+
+    assert result.failed_count == 1
+    with session_factory() as session:
+        fires = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items
+        runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
+        schedule = WorkflowPackageScheduleService(session).get_schedule(schedule_id)
+        assert len(fires) == 1
+        assert fires[0].status == FireStatus.FAILED
+        assert fires[0].error_code == SCHEDULE_TEMPLATE_MISSING_VALUE
+        assert fires[0].error_message == "Scheduled input template validation failed"
+        assert schedule.next_fire_at == now + timedelta(hours=1)
+        assert runs == []
+
+
+def _schedule_template_render_context(
+    *,
+    vars_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    scheduled_for = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
+    window_start = datetime(2026, 5, 31, 13, 0, tzinfo=UTC)
+    completed_at = datetime(2026, 5, 31, 13, 30, tzinfo=UTC)
+    return build_scheduled_input_template_context(
+        schedule_id=44,
+        schedule_name="Daily market brief",
+        schedule_timezone="America/New_York",
+        package_key="schedule_render_package",
+        workflow_key="daily_research",
+        fire_id=801,
+        fire_reason="scheduled",
+        scheduled_for=scheduled_for,
+        scheduled_local_date="2026-06-01",
+        scheduled_local_time="09:00",
+        scheduled_local_datetime="2026-06-01T09:00:00",
+        materialized_at=scheduled_for + timedelta(seconds=4),
+        window_start=window_start,
+        last_run=ScheduledInputLastRunContext(
+            id=710,
+            status="succeeded",
+            completed_at=completed_at,
+        ),
+        template_vars=vars_payload or {},
+    )
+
+
+def test_schedule_template_render_exact_placeholder_type_preservation() -> None:
+    context = _schedule_template_render_context(
+        vars_payload={
+            "lookbackDays": 5,
+            "payload": {"symbols": ["NVDA"], "active": True},
+        }
+    )
+    result = render_scheduled_input_template(
+        {
+            "lookbackDays": "{{vars.lookbackDays}}",
+            "payload": "{{vars.payload}}",
+            "scheduleId": "{{schedule.id}}",
+            "lastRunId": "{{lastRun.id}}",
+        },
+        context,
+    )
+
+    assert result.validation_errors == []
+    assert result.rendered_parameters["lookbackDays"] == 5
+    assert isinstance(result.rendered_parameters["lookbackDays"], int)
+    assert result.rendered_parameters["payload"] == {"symbols": ["NVDA"], "active": True}
+    assert result.rendered_parameters["scheduleId"] == 44
+    assert result.rendered_parameters["lastRunId"] == 710
+
+
+def test_schedule_template_render_embedded_placeholders_are_strings() -> None:
+    context = _schedule_template_render_context(
+        vars_payload={
+            "lookbackDays": 5,
+            "payload": {"symbols": ["NVDA"], "active": True},
+        }
+    )
+    result = render_scheduled_input_template(
+        {
+            "title": "Daily brief for {{fire.scheduledLocalDate}}",
+            "window": "{{window.start}} to {{window.end}}",
+            "lookback": "{{vars.lookbackDays}} days",
+            "payloadText": "payload={{vars.payload}}",
+            "literal": r"\{{notAPlaceholder\}}",
+        },
+        context,
+    )
+
+    assert result.validation_errors == []
+    assert result.rendered_parameters == {
+        "title": "Daily brief for 2026-06-01",
+        "window": "2026-05-31T13:00:00Z to 2026-06-01T13:00:00Z",
+        "lookback": "5 days",
+        "payloadText": 'payload={"active":true,"symbols":["NVDA"]}',
+        "literal": "{{notAPlaceholder}}",
+    }
+
+
+def test_schedule_template_render_missing_variable_fails_deterministically() -> None:
+    result = render_scheduled_input_template(
+        {"ticker": "{{vars.missingTicker}}"},
+        _schedule_template_render_context(vars_payload={"ticker": "NVDA"}),
+    )
+
+    assert result.rendered_parameters == {}
+    assert result.validation_errors == [
+        {
+            "field": "inputTemplate.ticker",
+            "issue": "Missing scheduled input placeholder value for 'vars.missingTicker'",
+            "code": SCHEDULE_TEMPLATE_MISSING_VALUE,
+            "expression": "vars.missingTicker",
+        }
+    ]
+
+
+def test_schedule_template_render_invalid_expression_fails_deterministically() -> None:
+    context = _schedule_template_render_context(vars_payload={"items": ["NVDA"]})
+    unsafe_templates = [
+        "{{env.API_KEY}}",
+        "{{vars.items[0]}}",
+        "{{vars.items | first}}",
+        "{{vars.items()}}",
+        "{{vars.items + 1}}",
+        "{% for item in vars.items %}{{item}}{% endfor %}",
+    ]
+
+    for expression in unsafe_templates:
+        result = render_scheduled_input_template({"value": expression}, context)
+        assert result.rendered_parameters == {}
+        assert result.validation_errors[0]["field"] == "inputTemplate.value"
+        assert result.validation_errors[0]["code"] == SCHEDULE_TEMPLATE_INVALID_EXPRESSION
+
+
+def _create_schedule_materializer_schedule(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    *,
+    package_key: str,
+    next_fire_at: datetime,
+    timezone_name: str = "UTC",
+    recurrence: Any | None = None,
+    overlap_policy: OverlapPolicy = OverlapPolicy.SKIP,
+    misfire_policy: MisfirePolicy = MisfirePolicy.CATCH_UP_ONE,
+    misfire_grace_seconds: int = 86400,
+    input_template: dict[str, Any] | None = None,
+    template_vars: dict[str, Any] | None = None,
+) -> tuple[int, int]:
+    with session_factory() as session:
+        has_model = (
+            session.query(ModelConnection)
+            .filter(ModelConnection.key == "package_runtime_model")
+            .first()
+            is not None
+        )
+    if not has_model:
+        _seed_model_connection(session_factory)
+    created = _create_package(client, package_key=package_key)
+    package_id = cast(int, created["id"])
+    with session_factory() as session:
+        schedule = WorkflowPackageScheduleService(session).create_schedule(
+            ScheduleCreate(
+                package_id=package_id,
+                workflow_key="runtime_workflow",
+                name=f"Schedule {package_key}",
+                timezone=timezone_name,
+                recurrence=recurrence or IntervalRecurrence(every=1, unit=IntervalUnit.HOURS),
+                overlap_policy=overlap_policy,
+                misfire_policy=misfire_policy,
+                misfire_grace_seconds=misfire_grace_seconds,
+                input_template=input_template or {"ticker": "{{vars.ticker}}"},
+                template_vars=template_vars or {"ticker": "MSFT"},
+            ),
+            next_fire_at=next_fire_at,
+        )
+        return package_id, schedule.id
+
+
+def test_schedule_materializer_due_schedule_creates_one_fire_and_queued_run(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    now = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
+    package_id, schedule_id = _create_schedule_materializer_schedule(
+        client,
+        session_factory,
+        package_key="schedule_materializer_due_package",
+        next_fire_at=now,
+    )
+
+    result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)
+    repeat = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)
+
+    assert result.processed_count == 1
+    assert result.queued_count == 1
+    assert repeat.changed_count == 0
+    with session_factory() as session:
+        runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
+        fires = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items
+        schedule = WorkflowPackageScheduleService(session).get_schedule(schedule_id)
+        assert len(runs) == 1
+        assert len(fires) == 1
+        assert fires[0].status == FireStatus.QUEUED
+        assert fires[0].rendered_parameters == {"ticker": "MSFT"}
+        assert runs[0].workflow_package_id == package_id
+        assert runs[0].schedule_fire_id == fires[0].id
+        assert runs[0].scheduled_for == now
+        assert runs[0].schedule_reason == "scheduled"
+        assert runs[0].input == {"ticker": "MSFT"}
+        assert schedule.next_fire_at == now + timedelta(hours=1)
+
+
+def test_schedule_materializer_daily_dst_transitions_use_named_timezone(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    spring_gap_fire = datetime(2026, 3, 8, 7, 0, tzinfo=UTC)
+    _, spring_schedule_id = _create_schedule_materializer_schedule(
+        client,
+        session_factory,
+        package_key="schedule_materializer_dst_spring_package",
+        next_fire_at=spring_gap_fire,
+        timezone_name="America/New_York",
+        recurrence=DailyRecurrence(at_local_time="02:00"),
+    )
+
+    spring_result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(
+        now=spring_gap_fire
+    )
+
+    assert spring_result.queued_count == 1
+    with session_factory() as session:
+        spring_schedule = WorkflowPackageScheduleService(session).get_schedule(spring_schedule_id)
+        spring_fire = (
+            WorkflowPackageScheduleService(session).list_fire_history(spring_schedule_id).items[0]
+        )
+        assert spring_fire.scheduled_for == spring_gap_fire
+        assert spring_fire.scheduled_local_date == "2026-03-08"
+        assert spring_fire.scheduled_local_time == "03:00"
+        assert spring_fire.scheduled_local_datetime == "2026-03-08T03:00"
+        assert spring_schedule.next_fire_at == datetime(2026, 3, 9, 6, 0, tzinfo=UTC)
+
+    fall_back_fire = datetime(2026, 11, 1, 5, 30, tzinfo=UTC)
+    _, fall_schedule_id = _create_schedule_materializer_schedule(
+        client,
+        session_factory,
+        package_key="schedule_materializer_dst_fall_package",
+        next_fire_at=fall_back_fire,
+        timezone_name="America/New_York",
+        recurrence=DailyRecurrence(at_local_time="01:30"),
+    )
+
+    fall_result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(
+        now=fall_back_fire
+    )
+
+    assert fall_result.queued_count == 1
+    with session_factory() as session:
+        fall_schedule = WorkflowPackageScheduleService(session).get_schedule(fall_schedule_id)
+        fall_fire = (
+            WorkflowPackageScheduleService(session).list_fire_history(fall_schedule_id).items[0]
+        )
+        assert fall_fire.scheduled_for == fall_back_fire
+        assert fall_fire.scheduled_local_date == "2026-11-01"
+        assert fall_fire.scheduled_local_time == "01:30"
+        assert fall_fire.scheduled_local_datetime == "2026-11-01T01:30"
+        assert fall_schedule.next_fire_at == datetime(2026, 11, 2, 6, 30, tzinfo=UTC)
+
+
+def test_schedule_materializer_worker_materializes_before_claim(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    due_at = utcnow() - timedelta(hours=1)
+    _, schedule_id = _create_schedule_materializer_schedule(
+        client,
+        session_factory,
+        package_key="schedule_materializer_worker_order_package",
+        next_fire_at=due_at,
+    )
+
+    executed_run_ids: list[int] = []
+
+    def record_claimed_run(self: RunSchedulerWorker, scheduled_run: object) -> None:
+        del self
+        executed_run_ids.append(int(cast(Any, scheduled_run).run_id))
+
+    monkeypatch.setattr(RunSchedulerWorker, "_execute_claimed_run", record_claimed_run)
+
+    worker = RunSchedulerWorker(session_factory=session_factory)
+    claimed = worker.run_once()
+
+    assert claimed is True
+    with session_factory() as session:
+        run = session.query(Run).filter(Run.schedule_id == schedule_id).one()
+        fire = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items[0]
+        assert fire.status == FireStatus.QUEUED
+        assert run.schedule_fire_id == fire.id
+        assert run.status == "running"
+        assert run.last_claimed_at is not None
+        assert executed_run_ids == [run.id]
+
+
+def test_schedule_materializer_overlap_skip_and_misfire_skip(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    now = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
+    _, overlap_schedule_id = _create_schedule_materializer_schedule(
+        client,
+        session_factory,
+        package_key="schedule_materializer_overlap_package",
+        next_fire_at=now,
+        overlap_policy=OverlapPolicy.SKIP,
+    )
+    with session_factory() as session:
+        session.add(
+            Run(
+                target_kind="agent",
+                target_id=1,
+                target_key="active-overlap",
+                target_version=1,
+                schedule_id=overlap_schedule_id,
+                input={},
+                status="queued",
+                queued_at=now - timedelta(minutes=5),
+            )
+        )
+        session.commit()
+
+    overlap_result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)
+
+    assert overlap_result.skipped_count == 1
+    with session_factory() as session:
+        overlap_fires = (
+            WorkflowPackageScheduleService(session).list_fire_history(overlap_schedule_id).items
+        )
+        overlap_runs = session.query(Run).filter(Run.schedule_id == overlap_schedule_id).all()
+        assert len(overlap_fires) == 1
+        assert overlap_fires[0].status == FireStatus.SKIPPED
+        assert overlap_fires[0].skip_reason == "schedule_overlap_active"
+        assert len(overlap_runs) == 1
+
+    _, misfire_schedule_id = _create_schedule_materializer_schedule(
+        client,
+        session_factory,
+        package_key="schedule_materializer_misfire_package",
+        next_fire_at=now - timedelta(hours=3),
+        misfire_policy=MisfirePolicy.SKIP,
+    )
+    misfire_result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)
+
+    assert misfire_result.skipped_count == 1
+    with session_factory() as session:
+        misfire_fires = (
+            WorkflowPackageScheduleService(session).list_fire_history(misfire_schedule_id).items
+        )
+        misfire_runs = session.query(Run).filter(Run.schedule_id == misfire_schedule_id).all()
+        misfire_schedule = WorkflowPackageScheduleService(session).get_schedule(misfire_schedule_id)
+        assert len(misfire_fires) == 1
+        assert misfire_fires[0].status == FireStatus.SKIPPED
+        assert misfire_fires[0].scheduled_for == now
+        assert misfire_fires[0].skip_reason == "schedule_misfire_skipped"
+        assert misfire_schedule.next_fire_at == now + timedelta(hours=1)
+        assert misfire_runs == []
+
+
+def test_schedule_materializer_catch_up_one_queues_latest_eligible_misfire(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    now = datetime(2026, 6, 1, 13, 5, tzinfo=UTC)
+    expected_fire = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
+    _, schedule_id = _create_schedule_materializer_schedule(
+        client,
+        session_factory,
+        package_key="schedule_materializer_catch_up_one_package",
+        next_fire_at=datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+        misfire_policy=MisfirePolicy.CATCH_UP_ONE,
+        misfire_grace_seconds=7200,
+    )
+
+    result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)
+
+    assert result.queued_count == 1
+    with session_factory() as session:
+        fires = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items
+        runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
+        schedule = WorkflowPackageScheduleService(session).get_schedule(schedule_id)
+        assert len(fires) == 1
+        assert len(runs) == 1
+        assert fires[0].status == FireStatus.QUEUED
+        assert fires[0].scheduled_for == expected_fire
+        assert runs[0].scheduled_for == expected_fire
+        assert schedule.next_fire_at == expected_fire + timedelta(hours=1)
+
+
+def test_schedule_materializer_overlap_queue_creates_run_when_prior_run_active(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    now = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
+    _, schedule_id = _create_schedule_materializer_schedule(
+        client,
+        session_factory,
+        package_key="schedule_materializer_overlap_queue_package",
+        next_fire_at=now,
+        overlap_policy=OverlapPolicy.QUEUE,
+    )
+    with session_factory() as session:
+        session.add(
+            Run(
+                target_kind="agent",
+                target_id=1,
+                target_key="active-overlap-queue",
+                target_version=1,
+                schedule_id=schedule_id,
+                input={},
+                status="running",
+                started_at=now - timedelta(minutes=5),
+            )
+        )
+        session.commit()
+
+    result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)
+
+    assert result.queued_count == 1
+    with session_factory() as session:
+        fires = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items
+        runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
+        scheduled_runs = [run for run in runs if run.schedule_fire_id is not None]
+        assert len(fires) == 1
+        assert fires[0].status == FireStatus.QUEUED
+        assert len(runs) == 2
+        assert len(scheduled_runs) == 1
+        assert scheduled_runs[0].status == "queued"
+        assert scheduled_runs[0].schedule_fire_id == fires[0].id
+
+
+def test_schedule_materializer_concurrent_materialization_idempotency(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    now = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
+    _, schedule_id = _create_schedule_materializer_schedule(
+        client,
+        session_factory,
+        package_key="schedule_materializer_idempotency_package",
+        next_fire_at=now,
+    )
+
+    first = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)
+    second = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)
+
+    assert first.queued_count == 1
+    assert second.changed_count == 0
+    with session_factory() as session:
+        fires = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items
+        runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
+        assert len(fires) == 1
+        assert len(runs) == 1
+        assert runs[0].schedule_fire_id == fires[0].id

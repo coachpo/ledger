@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -41,6 +42,15 @@ from app.schemas.model_connection import (
     default_model_connection_capabilities,
 )
 from app.schemas.run import RunPackageResolvedModelConnectionRead
+from app.schemas.schedule import (
+    DailyRecurrence,
+    FireReason,
+    FireStatus,
+    IntervalRecurrence,
+    IntervalUnit,
+    ScheduleCreate,
+    ScheduleStatus,
+)
 from app.services.agent_execution_service import AgentExecutionService, RunAgentInvocationResult
 from app.services.extension_service import ExtensionService
 from app.services.memory_service import MemoryLookupContext, MemoryService
@@ -49,6 +59,11 @@ from app.services.package_execution_plan_builder import PackageExecutionPlanBuil
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
+from app.services.workflow_package_schedule_materializer import WorkflowPackageScheduleMaterializer
+from app.services.workflow_package_schedule_service import (
+    ScheduleFireMetadata,
+    WorkflowPackageScheduleService,
+)
 from tests.test_workflow_package_manifest_http_node import (
     assert_removed_contract_tokens_absent,
     http_node_package_source,
@@ -368,6 +383,114 @@ def _seed_model_connection(
             )
         )
         session.commit()
+
+
+def test_schedule_contract_service_read_models_include_latest_fire_and_run(
+    session_factory: sessionmaker[Session],
+) -> None:
+    scheduled_for = datetime.fromisoformat("2026-06-01T13:00:00+00:00")
+    materialized_at = datetime.fromisoformat("2026-06-01T13:00:04+00:00")
+    archived_at = datetime.fromisoformat("2026-06-02T13:00:00+00:00")
+    with session_factory() as session:
+        package = WorkflowPackage(
+            key="schedule_contract_package",
+            name="Schedule Contract Package",
+            description="Package used by schedule service contracts.",
+            manifest_source=_package_source(package_key="schedule_contract_package"),
+            manifest_hash="a" * 64,
+            package_definition={
+                "metadata": {"key": "schedule_contract_package", "name": "Schedule Contract"}
+            },
+            compiled_plan={"workflows": [{"key": "daily_research"}]},
+            compiled_hash="b" * 64,
+            extension_dependencies=[],
+        )
+        session.add(package)
+        session.commit()
+
+        service = WorkflowPackageScheduleService(session)
+        schedule = service.create_schedule(
+            ScheduleCreate(
+                package_id=package.id,
+                workflow_key="daily_research",
+                name="Daily research",
+                timezone="UTC",
+                recurrence=DailyRecurrence(at_local_time="09:00"),
+                input_template={"ticker": "{{vars.ticker}}"},
+                template_vars={"ticker": "NVDA"},
+            ),
+            next_fire_at=scheduled_for,
+        )
+        fire = service.create_or_get_fire(
+            ScheduleFireMetadata(
+                schedule_id=schedule.id,
+                fire_key="daily-research-2026-06-01T13:00:00Z",
+                reason=FireReason.SCHEDULED,
+                scheduled_for=scheduled_for,
+                scheduled_local_date="2026-06-01",
+                scheduled_local_time="09:00",
+                scheduled_local_datetime="2026-06-01T09:00:00",
+            ),
+            status=FireStatus.QUEUED,
+            materialized_at=materialized_at,
+            rendered_parameters={"ticker": "NVDA"},
+        )
+        run = Run(
+            target_kind="workflowPackage",
+            target_id=package.id,
+            target_key=package.key,
+            target_version=1,
+            workflow_package_id=package.id,
+            workflow_package_key=package.key,
+            workflow_package_workflow_key="daily_research",
+            schedule_id=schedule.id,
+            schedule_fire_id=fire.id,
+            scheduled_for=scheduled_for,
+            schedule_reason=FireReason.SCHEDULED.value,
+            input={"ticker": "NVDA"},
+            status="queued",
+            queued_at=materialized_at,
+        )
+        run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+            workflow_package_id=package.id,
+            workflow_package_key=package.key,
+            workflow_package_name=package.name,
+            workflow_package_description=package.description,
+            workflow_package_status=None,
+            workflow_key="daily_research",
+            workflow_name="Daily Research",
+            workflow_description="",
+            manifest_hash=package.manifest_hash,
+            compiled_hash=package.compiled_hash,
+            manifest_source=package.manifest_source,
+            package_definition=package.package_definition,
+            compiled_plan=package.compiled_plan,
+            extension_dependencies=package.extension_dependencies,
+            local_resource_refs={"workflows": ["daily_research"]},
+            input_schema={},
+            launch_parameters={"ticker": "NVDA"},
+            resolved_model_connections=[],
+            preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
+        )
+        session.add(run)
+        session.commit()
+
+        detail = service.get_schedule(schedule.id)
+        history = service.list_fire_history(schedule.id)
+        archived = service.archive_schedule(schedule.id, archived_at=archived_at)
+
+    assert schedule.package_key == "schedule_contract_package"
+    assert schedule.status == ScheduleStatus.ENABLED
+    assert schedule.next_fire_at == scheduled_for
+    assert fire.run_id is None
+    assert detail.latest_fire_id == fire.id
+    assert detail.latest_run_id == run.id
+    assert detail.latest_status == "queued"
+    assert history.items[0].id == fire.id
+    assert history.items[0].run_id == run.id
+    assert archived.status == ScheduleStatus.ARCHIVED
+    assert archived.archived_at == archived_at
+    assert archived.next_fire_at is None
 
 
 def test_digital_oracle_package_local_system_prompt_receives_runtime_tool_guidance(
@@ -2068,3 +2191,78 @@ def test_tradingagents_advisory_research_runtime_fails_when_extension_disabled_a
     assert detail["error"] == "Extension is disabled"
     dependencies = cast(list[dict[str, object]], detail["extensionDependencies"])
     assert set(dependencies[0]) == {"extensionKey", "surfaces", "fields"}
+
+
+def test_scheduled_run_snapshot_materializer_creates_normal_package_run(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    scheduled_for = datetime.fromisoformat("2026-06-01T13:00:00+00:00")
+    created = _create_package(client, package_key="scheduled_run_snapshot_package")
+    package_id = cast(int, created["id"])
+    with session_factory() as session:
+        schedule = WorkflowPackageScheduleService(session).create_schedule(
+            ScheduleCreate(
+                package_id=package_id,
+                workflow_key="runtime_workflow",
+                name="Scheduled snapshot run",
+                timezone="UTC",
+                recurrence=IntervalRecurrence(every=1, unit=IntervalUnit.HOURS),
+                input_template={"ticker": "{{vars.ticker}}"},
+                template_vars={"ticker": "MSFT"},
+            ),
+            next_fire_at=scheduled_for,
+        )
+        schedule_id = schedule.id
+
+    result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=scheduled_for)
+
+    assert result.queued_count == 1
+    with session_factory() as session:
+        run = session.query(Run).filter(Run.schedule_id == schedule_id).one()
+        snapshot = (
+            session.query(RunWorkflowPackageSnapshot)
+            .filter(RunWorkflowPackageSnapshot.run_id == run.id)
+            .one()
+        )
+        fire = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items[0]
+        detail = RunService(session, session_factory).get_run(run.id)
+        run_id = run.id
+        fire_id = fire.id
+
+        assert run.target_kind == "workflowPackage"
+        assert run.status == "queued"
+        assert run.schedule_fire_id == fire.id
+        assert run.scheduled_for == scheduled_for
+        assert run.schedule_reason == FireReason.SCHEDULED.value
+        assert run.input == {"ticker": "MSFT"}
+        assert fire.status == FireStatus.QUEUED
+        assert snapshot.workflow_package_id == package_id
+        assert snapshot.workflow_package_key == "scheduled_run_snapshot_package"
+        assert snapshot.workflow_key == "runtime_workflow"
+        assert snapshot.launch_parameters == {"ticker": "MSFT"}
+        assert detail.schedule_id == schedule_id
+        assert detail.schedule_fire_id == fire.id
+        assert detail.scheduled_for == scheduled_for
+        assert detail.schedule_reason == FireReason.SCHEDULED.value
+        assert detail.package_provenance is not None
+        assert detail.package_provenance.launch_snapshot is not None
+        assert detail.package_provenance.launch_snapshot.parameters == {"ticker": "MSFT"}
+
+    api_detail_response = client.get(f"/api/runs/{run_id}")
+    assert api_detail_response.status_code == 200, api_detail_response.json()
+    api_detail = cast(dict[str, Any], api_detail_response.json())
+    assert api_detail["scheduleId"] == schedule_id
+    assert api_detail["scheduleFireId"] == fire_id
+    assert api_detail["scheduledFor"] == "2026-06-01T13:00:00Z"
+    assert api_detail["scheduleReason"] == "scheduled"
+
+    api_list_response = client.get("/api/runs", params={"workflowPackageId": package_id})
+    assert api_list_response.status_code == 200, api_list_response.json()
+    api_items = cast(list[dict[str, Any]], api_list_response.json()["items"])
+    api_item = next(item for item in api_items if item["id"] == run_id)
+    assert api_item["scheduleId"] == schedule_id
+    assert api_item["scheduleFireId"] == fire_id
+    assert api_item["scheduledFor"] == "2026-06-01T13:00:00Z"
+    assert api_item["scheduleReason"] == "scheduled"

@@ -144,6 +144,10 @@ class RunReadProjection:
                         run.id
                     ),
                 ),
+                "scheduleId": run.schedule_id,
+                "scheduleFireId": run.schedule_fire_id,
+                "scheduledFor": run.scheduled_for,
+                "scheduleReason": run.schedule_reason,
                 "totalTokens": run.total_tokens,
                 "inheritedTokens": run.inherited_tokens,
                 "executedTokens": run.executed_tokens,

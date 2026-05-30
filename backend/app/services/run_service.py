@@ -411,6 +411,35 @@ class RunService:
             }
         )
 
+    def create_scheduled_workflow_package_run(
+        self,
+        *,
+        package_id: int,
+        workflow_key: str,
+        parameters: dict[str, Any],
+        schedule_id: int,
+        schedule_fire_id: int,
+        scheduled_for: datetime,
+        schedule_reason: object,
+        commit: bool = False,
+    ) -> RunCreatedRead:
+        prepared = self._prepare_workflow_package_launch(
+            package_id,
+            workflow_key=workflow_key,
+            require_api_key=True,
+        )
+        return self._create_run_from_plan(
+            prepared.plan,
+            parameters,
+            workflow_package=prepared.package,
+            preflight=prepared.preflight,
+            schedule_id=schedule_id,
+            schedule_fire_id=schedule_fire_id,
+            scheduled_for=scheduled_for,
+            schedule_reason=str(getattr(schedule_reason, "value", schedule_reason)),
+            commit=commit,
+        )
+
     def create_target_run(
         self,
         target_kind: str,
@@ -694,6 +723,11 @@ class RunService:
         *,
         workflow_package: WorkflowPackage | None = None,
         preflight: WorkflowPackagePreflightResult | None = None,
+        schedule_id: int | None = None,
+        schedule_fire_id: int | None = None,
+        scheduled_for: datetime | None = None,
+        schedule_reason: str | None = None,
+        commit: bool = True,
     ) -> RunCreatedRead:
         validated_input = self._validate_run_input(
             input_schema=plan.input_schema,
@@ -723,6 +757,10 @@ class RunService:
                 package_ownership.package_key if package_ownership is not None else None
             ),
             workflow_package_workflow_key=package_workflow_key,
+            schedule_id=schedule_id,
+            schedule_fire_id=schedule_fire_id,
+            scheduled_for=scheduled_for,
+            schedule_reason=schedule_reason,
             extension_dependencies=extension_dependencies,
             input=validated_input,
             status=_RUN_STATUS_QUEUED,
@@ -760,8 +798,11 @@ class RunService:
                     payload=validated_input,
                     source_run_id=run.id,
                 )
-            self.session.commit()
-            self.session.refresh(run)
+            if commit:
+                self.session.commit()
+                self.session.refresh(run)
+            else:
+                self.session.flush()
         except Exception:
             self.session.rollback()
             raise
@@ -2784,6 +2825,10 @@ class RunService:
                 "status": run.status,
                 "progress": progress,
                 "queue": queue,
+                "scheduleId": run.schedule_id,
+                "scheduleFireId": run.schedule_fire_id,
+                "scheduledFor": run.scheduled_for,
+                "scheduleReason": run.schedule_reason,
                 "totalTokens": run.total_tokens,
                 "traceId": run.trace_id,
                 "queuedAt": run.queued_at,
