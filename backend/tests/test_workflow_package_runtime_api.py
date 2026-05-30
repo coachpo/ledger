@@ -45,6 +45,7 @@ from app.services.workflow_package_runtime_inputs import (
     validate_runtime_input_payload_safety,
 )
 from app.workers.run_scheduler import scheduler_lease_owner
+from tests.fake_openai_provider import run_fake_openai_provider
 from tests.test_workflow_package_manifest_http_node import assert_removed_contract_tokens_absent
 
 _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
@@ -584,9 +585,8 @@ def _create_package_from_source(
 def _seed_model_connection(
     session_factory: sessionmaker[Session],
     *,
-    api_key: str | None = "sk-package-runtime-v1",
-    connection_kind: str = "provider",
-    base_url: str = "https://runtime-v1.example.com/v1",
+    api_key: str | None = "test-api-key",
+    base_url: str = "https://provider-runtime.example.test/v1",
     model_id: str = "gpt-package-v1",
     api_style: str = "responses",
     capabilities: dict[str, Any] | None = None,
@@ -601,7 +601,6 @@ def _seed_model_connection(
             ModelConnection(
                 key="package_runtime_model",
                 status="active",
-                connection_kind=connection_kind,
                 name="Package Runtime Model",
                 description="Package runtime model binding.",
                 base_url=base_url,
@@ -1716,7 +1715,7 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         connection.model_id = "gpt-package-v2"
         connection.reasoning_effort = "low"
         connection.timeout_seconds = 91
-        connection.secret_payload = {"apiKey": "sk-package-runtime-v2"}
+        connection.secret_payload = {"apiKey": "test-api-key-rotated"}
         session.commit()
 
     launch = client.post(
@@ -1780,7 +1779,7 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         "streamingStrategy": "disabled",
     }
     assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
-        "api_key": "sk-package-runtime-v2",
+        "api_key": "test-api-key-rotated",
         "base_url": "https://runtime-v2.example.com/v1",
         "timeout": 91.0,
     }
@@ -2085,8 +2084,8 @@ def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_a
     assert detail["finalOutput"] == {"summary": "package chat runtime output"}
     assert detail["executedTokens"] == 28
     assert _RuntimeRecordingChatCompletionsClient.init_calls[-1] == {
-        "api_key": "sk-package-runtime-v1",
-        "base_url": "https://runtime-v1.example.com/v1",
+        "api_key": "test-api-key",
+        "base_url": "https://provider-runtime.example.test/v1",
         "timeout": 31.0,
     }
     assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 2
@@ -2516,7 +2515,7 @@ def test_workflow_package_runtime_chat_completions_adapter_normalizes_empty_resp
     assert detail["executedTokens"] == 0
 
 
-def test_workflow_package_runtime_uses_smoke_kind_without_openai(
+def test_workflow_package_launch_blocks_secretless_provider_without_openai(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -2524,33 +2523,30 @@ def test_workflow_package_runtime_uses_smoke_kind_without_openai(
     class _UnexpectedOpenAIClient:
         def __init__(self, **kwargs: object) -> None:
             del kwargs
-            raise AssertionError("OpenAI should not be used for deterministic smoke runs")
+            raise AssertionError("OpenAI should not be used before provider API key validation")
 
     monkeypatch.setattr("app.services.run_service.OpenAI", _UnexpectedOpenAIClient)
 
     _seed_model_connection(
         session_factory,
         api_key=None,
-        connection_kind="deterministic_smoke",
-        base_url="https://not-a-smoke-host.example.com/v1",
-        model_id="smoke-runtime-model",
+        base_url="https://provider-key-required.example.test/v1",
+        model_id="provider-runtime-model",
         api_style="chat_completions",
     )
-    created = _create_package(client, package_key="runtime_smoke_kind_package")
+    created = _create_package(client, package_key="runtime_provider_key_required_package")
 
     launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
         json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "AMD"}},
     )
-    assert launch.status_code == 201, launch.json()
-    run_id = int(launch.json()["id"])
 
-    _drain_run_queue(session_factory)
-    detail = _wait_for_run(client, run_id)
-
-    assert detail["status"] == "succeeded"
-    assert detail["finalOutput"] == {"summary": "deterministic summary"}
-    assert detail["executedTokens"] == 1
+    assert launch.status_code == 422, launch.json()
+    body = cast(dict[str, Any], launch.json())
+    assert body["code"] == "validation_error"
+    assert body["details"] == [
+        {"field": "spec.agents[0].modelConnection", "issue": "API key is not configured"}
+    ]
 
 
 def test_workflow_package_runtime_without_finance_dependencies_succeeds_when_finance_disabled(
@@ -2558,20 +2554,14 @@ def test_workflow_package_runtime_without_finance_dependencies_succeeds_when_fin
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    class _UnexpectedOpenAIClient:
-        def __init__(self, **kwargs: object) -> None:
-            del kwargs
-            raise AssertionError("OpenAI should not be used for deterministic smoke runs")
-
-    monkeypatch.setattr("app.services.run_service.OpenAI", _UnexpectedOpenAIClient)
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "provider no finance output"}'
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
 
     _seed_model_connection(
         session_factory,
-        api_key=None,
-        connection_kind="deterministic_smoke",
-        base_url="https://not-a-smoke-host.example.com/v1",
-        model_id="smoke-runtime-model",
-        api_style="chat_completions",
+        base_url="https://provider-core-only.example.test/v1",
+        model_id="provider-runtime-model",
     )
     created = _create_package(client, package_key="runtime_core_no_finance_package")
     _disable_finance_extension(session_factory)
@@ -2590,7 +2580,7 @@ def test_workflow_package_runtime_without_finance_dependencies_succeeds_when_fin
     detail = _wait_for_run(client, run_id)
 
     assert detail["status"] == "succeeded"
-    assert detail["finalOutput"] == {"summary": "deterministic summary"}
+    assert detail["finalOutput"] == {"summary": "provider no finance output"}
     assert detail["extensionDependencies"] == []
 
 
@@ -2644,40 +2634,27 @@ def test_workflow_package_validation_redacts_inline_private_mcp_values_but_autho
     assert "exaApiKey: inline-query-secret" in exported.text
 
 
-def test_workflow_package_runtime_provider_kind_ignores_deterministic_hostname(
+def test_workflow_package_runtime_uses_fake_provider_endpoint(
     client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    _RuntimeRecordingOpenAIClient.reset()
-    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "package provider host output"}'
-    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    with run_fake_openai_provider() as base_url:
+        _seed_model_connection(session_factory, base_url=base_url)
+        created = _create_package(client, package_key="runtime_fake_provider_package")
 
-    _seed_model_connection(
-        session_factory,
-        base_url="https://signaldeck-deterministic-model.local/v1",
-    )
-    created = _create_package(client, package_key="runtime_provider_host_package")
+        launch = client.post(
+            f"/api/workflow-packages/{created['id']}/launches",
+            json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "NVDA"}},
+        )
+        assert launch.status_code == 201, launch.json()
+        run_id = int(launch.json()["id"])
 
-    launch = client.post(
-        f"/api/workflow-packages/{created['id']}/launches",
-        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "NVDA"}},
-    )
-    assert launch.status_code == 201, launch.json()
-    run_id = int(launch.json()["id"])
-
-    _drain_run_queue(session_factory)
-    detail = _wait_for_run(client, run_id)
+        _drain_run_queue(session_factory)
+        detail = _wait_for_run(client, run_id)
 
     assert detail["status"] == "succeeded"
-    assert detail["finalOutput"] == {"summary": "package provider host output"}
-    assert detail["executedTokens"] == 23
-    assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
-        "api_key": "sk-package-runtime-v1",
-        "base_url": "https://signaldeck-deterministic-model.local/v1",
-        "timeout": 31.0,
-    }
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-v1"
+    assert detail["finalOutput"] == {"summary": "fake strict schema"}
+    assert detail["executedTokens"] == 5
 
 
 def test_workflow_package_save_allows_missing_model_connection_and_launch_rejects_readiness(

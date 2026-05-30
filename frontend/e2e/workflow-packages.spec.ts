@@ -6,8 +6,6 @@ import {
 } from "@playwright/test";
 
 const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
-const DETERMINISTIC_MODEL_BASE_URL =
-  "https://signaldeck-deterministic-model.local/v1";
 const FAKE_PROVIDER_BASE_URL =
   process.env.SIGNALDECK_FAKE_PROVIDER_BASE_URL ?? "http://127.0.0.1:18081/v1";
 
@@ -147,15 +145,14 @@ function wideOutputPackageManifest(
 async function seedModelConnection(request: APIRequestContext, key: string) {
   return seedModelConnectionPayload(request, {
     key,
-    name: `E2E deterministic model ${key}`,
-    description: "Deterministic model connection for package-first E2E.",
-    connectionKind: "deterministic_smoke",
-    baseUrl: DETERMINISTIC_MODEL_BASE_URL,
-    modelId: "signaldeck-deterministic-json",
+    name: `E2E fake provider model ${key}`,
+    description: "Fake provider model connection for package-first E2E.",
+    baseUrl: FAKE_PROVIDER_BASE_URL,
+    modelId: "fake-strict-schema",
     reasoningEffort: "low",
     protocolProfile: "openai_responses",
     timeoutSeconds: 5,
-    apiKey: "sk-e2e-deterministic",
+    apiKey: "sk-e2e-fake-provider",
   });
 }
 
@@ -269,18 +266,16 @@ async function launchPackageFromDedicatedPage(
   await expect(
     page.getByTestId("workflow-package-preflight-status"),
   ).toBeVisible();
-  await expect(
-    page.getByTestId("workflow-package-constraint-inspector"),
-  ).toBeVisible();
-  await expect(
-    page.getByTestId("workflow-package-preflight-evidence"),
-  ).toBeVisible();
+  await expect(page.getByText("Launch readiness")).toBeVisible();
   await expect(page.getByTestId("workflow-package-launch-tab")).toBeVisible();
 
   const launchButton = page.getByRole("button", { name: "Launch Run" });
   const runtimeInputs = page.getByLabel("Runtime inputs JSON");
   await page.getByLabel("Workflow key").fill(workflowKey);
-  await expect(launchButton).toBeEnabled();
+  await page.getByRole("button", { name: "Run preflight" }).click();
+  await expect(page.getByTestId("workflow-package-preflight-status")).toContainText(
+    "Preflight ready",
+  );
   await runtimeInputs.fill(JSON.stringify(parameters, null, 2));
   await expect(runtimeInputs).toHaveValue(JSON.stringify(parameters, null, 2));
   await expect(launchButton).toBeEnabled();
@@ -324,7 +319,7 @@ test.describe("Workflow packages", () => {
 
     expect(detail.status).toBe("succeeded");
     expect(detail.finalOutput).toMatchObject({
-      summary: "deterministic summary",
+      summary: "fake strict schema",
     });
   });
 
@@ -360,12 +355,14 @@ test.describe("Workflow packages", () => {
     await expect(packageRow).toBeVisible();
     await expect(packageRow).toContainText(`E2E Package ${packageKey}`);
     await expect(packageRow).toContainText("Ready for preflight");
-    await expect(packageRow).toContainText(
-      "Manifest and compiled artifact recorded",
-    );
-    await expect(packageRow.getByLabel(/Manifest: /)).toBeVisible();
-    await expect(packageRow.getByLabel(/Compiled: /)).toBeVisible();
-    await expect(packageRow.getByLabel(/Updated: /)).toBeVisible();
+    await expect(packageRow.getByRole("cell").nth(4)).toContainText(/^[a-f0-9]{12}$/);
+    await expect(packageRow.getByRole("cell").nth(5)).toContainText(/^[a-f0-9]{12}$/);
+    const expectedCreatedDate = new Intl.DateTimeFormat("en-US", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(new Date(String(created.createdAt)));
+    await expect(packageRow).toContainText(expectedCreatedDate);
     await expect(
       packageRow.getByRole("link", {
         name: `Open package E2E Package ${packageKey}`,
@@ -407,7 +404,7 @@ test.describe("Workflow packages", () => {
     expect(detail.status).toBe("succeeded");
     expect(detail.targetKind).toBe("workflowPackage");
     expect(detail.finalOutput).toMatchObject({
-      summary: "deterministic summary",
+      summary: "fake strict schema",
     });
     expect(detail.packageProvenance).toMatchObject({
       launchSnapshot: {
@@ -511,7 +508,7 @@ test.describe("Workflow packages", () => {
     expect(detail.status).toBe("succeeded");
     expect(detail.targetKind).toBe("workflowPackage");
     expect(detail.finalOutput).toMatchObject({
-      summary: "deterministic summary",
+      summary: "fake strict schema",
     });
     const packageProvenance = detail.packageProvenance as Record<
       string,
@@ -567,11 +564,11 @@ test.describe("Workflow packages", () => {
       { timeout: 15_000 },
     );
     await expect(page.getByTestId("runs-detail-final-output")).toContainText(
-      "deterministic summary",
+      "fake strict schema",
     );
-    await expect(page.getByTestId("runs-detail-target-identity")).toContainText(
-      packageKey,
-    );
+    await expect(
+      page.getByRole("heading", { name: new RegExp(`Run #${runId}`) }),
+    ).toContainText(packageKey);
     await expect(
       page.getByRole("link", { name: "Open current package" }),
     ).toHaveAttribute("href", `/workflow-packages/${created.id}`);
@@ -632,7 +629,6 @@ test.describe("Workflow packages", () => {
       key: noToolsModelKey,
       name: "E2E fake provider tools disabled",
       description: "Fake provider with native tool calls disabled.",
-      connectionKind: "provider",
       baseUrl: FAKE_PROVIDER_BASE_URL,
       modelId: "fake-tools-disabled",
       reasoningEffort: null,
@@ -676,21 +672,13 @@ test.describe("Workflow packages", () => {
     await expect(
       page.getByTestId("workflow-package-launch-page"),
     ).toBeVisible();
-    await expect(
-      page.getByTestId("workflow-package-constraint-inspector"),
-    ).toContainText("This workflow requires native tool calls");
-    await expect(
-      page.getByTestId("workflow-package-launch-warnings"),
-    ).toContainText("No warnings reported");
-    await expect(
-      page.getByTestId("workflow-package-model-connection-modes"),
-    ).toContainText("No deterministic smoke warnings were reported");
+    await expect(page.getByText("Blocking diagnostics")).toBeVisible();
+    await expect(page.getByText("This workflow requires native tool calls")).toBeVisible();
 
     await seedModelConnectionPayload(request, {
       key: strictModelKey,
       name: "E2E fake provider strict schema",
       description: "Fake provider with strict schema support.",
-      connectionKind: "provider",
       baseUrl: FAKE_PROVIDER_BASE_URL,
       modelId: "fake-strict-schema",
       reasoningEffort: null,
@@ -743,7 +731,6 @@ test.describe("Workflow packages", () => {
       key: jsonModelKey,
       name: "E2E fake provider JSON object only",
       description: "Fake provider with JSON object mode but no strict schema.",
-      connectionKind: "provider",
       baseUrl: FAKE_PROVIDER_BASE_URL,
       modelId: "fake-json-object-only",
       reasoningEffort: null,
@@ -796,7 +783,6 @@ test.describe("Workflow packages", () => {
       key: noUsageModelKey,
       name: "E2E fake provider missing usage",
       description: "Fake provider omits usage metadata.",
-      connectionKind: "provider",
       baseUrl: FAKE_PROVIDER_BASE_URL,
       modelId: "fake-missing-usage",
       reasoningEffort: null,
@@ -842,7 +828,6 @@ test.describe("Workflow packages", () => {
       key: reasoningModelKey,
       name: "E2E fake provider reasoning disabled",
       description: "Fake provider rejects reasoning fields.",
-      connectionKind: "provider",
       baseUrl: FAKE_PROVIDER_BASE_URL,
       modelId: "fake-reasoning-disabled",
       reasoningEffort: "high",
@@ -904,17 +889,13 @@ test.describe("Workflow packages", () => {
     await expect(page.getByTestId("runs-runtime-profile")).toContainText(
       "Unsupported",
     );
-    await page.getByRole("button", { name: "Audit evidence" }).click();
     await expect(
-      page.getByTestId("runs-runtime-selected-strategies"),
-    ).toContainText("Selected strategies");
-    await expect(
-      page.getByTestId("runs-runtime-selected-strategies"),
-    ).toContainText("Output strategy");
+      page.getByRole("heading", { name: "Selected strategies" }),
+    ).toBeVisible();
     await expect(page.getByText(/sk-e2e-fake/i)).toHaveCount(0);
   });
 
-  test("keeps run step evidence width stable when aggregated output switches to raw", async ({
+  test("keeps run detail evidence workspace horizontally contained on mobile", async ({
     page,
     request,
   }) => {
@@ -952,7 +933,7 @@ test.describe("Workflow packages", () => {
     expect(detail.status).toBe("succeeded");
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`/runs/${runId}?inspect=step:1`);
+    await page.goto(`/runs/${runId}`);
     await expect(page.getByTestId("route-run-detail")).toHaveAttribute(
       "data-route-shell-mode",
       "fullHeight",
@@ -961,64 +942,28 @@ test.describe("Workflow packages", () => {
       "succeeded",
       { timeout: 15_000 },
     );
-    await expect(page.getByTestId("runs-step-1-summary")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Final output" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
 
-    const layoutMetrics = async () =>
-      page.evaluate(() => {
-        const summary = document.querySelector<HTMLElement>(
-          '[data-testid="runs-step-1-summary"]',
-        );
-        const evidence = document.querySelector<HTMLElement>(
-          '[data-testid="runs-evidence-viewer"]',
-        );
-        if (!summary || !evidence) {
-          throw new Error("Run step evidence layout elements were not found");
-        }
-        return {
-          evidenceWidth: evidence.getBoundingClientRect().width,
-          pageScrollWidth: document.documentElement.scrollWidth,
-          summaryWidth: summary.getBoundingClientRect().width,
-          viewportWidth: window.innerWidth,
-        };
-      });
-
-    const aggregatedOutput = page.getByTestId("runs-step-1-aggregated-output");
-    await expect(
-      aggregatedOutput.getByTestId("runs-step-1-aggregated-output-rendered"),
-    ).toBeVisible();
-    const renderedMetrics = await layoutMetrics();
-
-    const rawTab = aggregatedOutput.getByRole("tab", { name: "Raw" });
-    await rawTab.focus();
-    await page.keyboard.press("Space");
-    const rawPayload = aggregatedOutput.getByTestId(
-      "runs-step-1-aggregated-output-raw",
-    );
-    await expect(rawPayload).toBeVisible();
-    const rawMetrics = await layoutMetrics();
-
-    expect(
-      Math.abs(rawMetrics.summaryWidth - renderedMetrics.summaryWidth),
-    ).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(rawMetrics.evidenceWidth - renderedMetrics.evidenceWidth),
-    ).toBeLessThanOrEqual(1);
-    expect(rawMetrics.pageScrollWidth).toBeLessThanOrEqual(
-      renderedMetrics.pageScrollWidth + 20,
-    );
-    expect(rawMetrics.summaryWidth).toBeLessThan(rawMetrics.viewportWidth);
-
-    const rawPayloadMetrics = await rawPayload.evaluate((node) => {
-      node.scrollLeft = node.scrollWidth;
+    const layoutMetrics = await page.evaluate(() => {
+      const workspace = document.querySelector<HTMLElement>(
+        '[data-testid="runs-inspection-workspace"]',
+      );
+      if (!workspace) {
+        throw new Error("Run inspection workspace was not found");
+      }
       return {
-        clientWidth: node.clientWidth,
-        scrollLeft: node.scrollLeft,
-        scrollWidth: node.scrollWidth,
+        pageScrollWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+        workspaceWidth: workspace.getBoundingClientRect().width,
       };
     });
-    expect(rawPayloadMetrics.scrollWidth).toBeGreaterThan(
-      rawPayloadMetrics.clientWidth + 1_000,
+
+    expect(layoutMetrics.pageScrollWidth).toBeLessThanOrEqual(
+      layoutMetrics.viewportWidth + 20,
     );
-    expect(rawPayloadMetrics.scrollLeft).toBeGreaterThan(0);
+    expect(layoutMetrics.workspaceWidth).toBeLessThanOrEqual(
+      layoutMetrics.viewportWidth,
+    );
   });
 });

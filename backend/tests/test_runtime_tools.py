@@ -18,7 +18,6 @@ from app.agents import get_default_tool_catalog
 from app.agents.mcp.boundaries import McpClientBoundary
 from app.agents.mcp.runtime import McpRuntimeDispatcher, McpRuntimeTool
 from app.agents.mcp.tool_adapter import (
-    McpToolAdapterError,
     build_mcp_tool_snapshot,
     mcp_snapshot_to_execution_descriptor,
 )
@@ -3285,15 +3284,17 @@ def test_runtime_tool_registry_returns_signaldeck_declarations_in_sort_order() -
     assert {declaration.kind for declaration in declarations} == {"native_runtime"}
     assert all(declaration.strict for declaration in declarations)
     report_schema = cast(dict[str, object], declarations[0].input_schema)
-    assert report_schema["required"] == [
-        "ticker",
-        "tag",
-        "reviewType",
-        "portfolioSlug",
-        "source",
-        "limit",
-        "offset",
-    ]
+    assert report_schema["required"] == sorted(
+        [
+            "ticker",
+            "tag",
+            "reviewType",
+            "portfolioSlug",
+            "source",
+            "limit",
+            "offset",
+        ]
+    )
 
 
 def test_core_memory_runtime_tools_expose_recursively_strict_schemas() -> None:
@@ -3327,8 +3328,8 @@ def test_core_memory_runtime_tools_expose_recursively_strict_schemas() -> None:
     assert "attributes" not in lookup_subject_ref_properties
 
 
-def test_runtime_tool_registry_rejects_nested_open_object_schema() -> None:
-    invalid_spec = replace(
+def test_runtime_tool_registry_closes_nested_object_schema() -> None:
+    nested_spec = replace(
         _runtime_tool_spec(),
         parameters_schema={
             "type": "object",
@@ -3344,8 +3345,13 @@ def test_runtime_tool_registry_rejects_nested_open_object_schema() -> None:
         },
     )
 
-    with pytest.raises(McpToolAdapterError, match="additionalProperties must be false"):
-        _ = RuntimeToolRegistry([invalid_spec])
+    registry = RuntimeToolRegistry([nested_spec])
+    descriptor = registry.list_execution_descriptors()[0]
+    properties = cast(dict[str, object], descriptor.strict_schema["properties"])
+    payload_schema = cast(dict[str, object], properties["payload"])
+
+    assert payload_schema["additionalProperties"] is False
+    assert payload_schema["required"] == ["value"]
 
 
 def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None:

@@ -12,10 +12,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.agents.mcp.runtime import McpRuntimeDispatcher
 from app.agents.runtime_tools.registry import RuntimeToolRegistry
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolSpec
-from app.services.agent_execution_service import (
-    AgentExecutionService,
-    _ResolvedModelConnectionConfig,
-)
+from app.services.agent_execution_service import AgentExecutionService
+from app.services.model_gateway_dto import ModelGatewayConnectionConfig
 
 
 class _SummaryOutput(BaseModel):
@@ -76,7 +74,7 @@ def _build_runtime_tool_registry(recorder: _DispatchRecorder) -> RuntimeToolRegi
                 parameters_schema={
                     "type": "object",
                     "properties": {
-                        "symbols": {"type": "array"},
+                        "symbols": {"type": "array", "items": {"type": "string"}},
                         "baseCurrency": {"type": ["string", "null"]},
                     },
                     "required": ["symbols", "baseCurrency"],
@@ -90,7 +88,7 @@ def _build_runtime_tool_registry(recorder: _DispatchRecorder) -> RuntimeToolRegi
                 parameters_schema={
                     "type": "object",
                     "properties": {
-                        "symbols": {"type": "array"},
+                        "symbols": {"type": "array", "items": {"type": "string"}},
                         "range": {"type": ["string", "null"]},
                         "pointLimit": {"type": ["integer", "null"]},
                     },
@@ -229,10 +227,9 @@ def test_invoke_responses_agent_replays_manual_context_after_call_id_failure(
     tool_registry = _build_runtime_tool_registry(recorder)
     result = service._invoke_responses_agent(
         client=client,
-        model_connection=_ResolvedModelConnectionConfig(
+        model_connection=ModelGatewayConnectionConfig(
             id=1,
             name="TradingAgents Primary Model",
-            connection_kind="provider",
             base_url="http://provider.example/v1",
             model_id="gpt-5.4-mini",
             reasoning_effort="medium",

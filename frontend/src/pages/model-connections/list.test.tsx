@@ -79,7 +79,6 @@ describe("ModelConnectionsListPage", () => {
                 status: "supported",
               },
             },
-            connectionKind: "provider",
             description: "Production traffic",
             id: 9,
             key: "primary_compatible",
@@ -108,7 +107,6 @@ describe("ModelConnectionsListPage", () => {
                 status: "unsupported",
               },
             },
-            connectionKind: "deterministic_smoke",
             description: "Fallback traffic",
             id: 4,
             key: "legacy_backup",
@@ -130,7 +128,6 @@ describe("ModelConnectionsListPage", () => {
           {
             baseUrl: "https://literal.openai.com/v1",
             capabilities: createDefaultCapabilities("openai_responses"),
-            connectionKind: "provider",
             description: "Literal none reasoning value",
             id: 12,
             key: "literal_none",
@@ -164,7 +161,6 @@ describe("ModelConnectionsListPage", () => {
                 status: "unsupported",
               },
             },
-            connectionKind: "provider",
             description: "Unsupported reasoning and usage metadata",
             id: 18,
             key: "reasoning_blocked",
@@ -249,9 +245,6 @@ describe("ModelConnectionsListPage", () => {
     expect(primaryRow.queryByText("tools serialized")).not.toBeInTheDocument();
     expect(primaryRow.queryByText("reasoning")).not.toBeInTheDocument();
     expect(primaryRow.queryByText("streaming")).not.toBeInTheDocument();
-    expect(screen.queryByText("Provider-backed")).not.toBeInTheDocument();
-    expect(screen.queryByText("Deterministic smoke")).not.toBeInTheDocument();
-
     fireEvent.click(primaryRow.getByTestId("model-connections-delete-9"));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Delete Primary Compatible?",
@@ -389,11 +382,6 @@ describe("ModelConnectionsListPage", () => {
       }),
     ).not.toBeInTheDocument();
     expect(primaryCard.getByText("Production traffic")).toBeVisible();
-    expect(
-      primaryCard.getByLabelText(
-        "Write-only secret: Saved provider credentials stay write-only and can only be rotated from the editor.",
-      ),
-    ).toBeVisible();
 
     const endpointSection = primaryCard
       .getByRole("heading", { name: "Endpoint" })

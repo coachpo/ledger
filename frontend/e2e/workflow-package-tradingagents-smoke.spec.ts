@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
-const DETERMINISTIC_MODEL_BASE_URL = "https://signaldeck-deterministic-model.local/v1";
+const FAKE_PROVIDER_BASE_URL =
+  process.env.SIGNALDECK_FAKE_PROVIDER_BASE_URL ?? "http://127.0.0.1:18081/v1";
 const FIXTURE_PATH = resolve(
   process.cwd(),
   "..",
@@ -37,14 +38,13 @@ async function seedTradingAgentsModel(request: APIRequestContext) {
   const payload = {
     key: "tradingagents_primary_model",
     name: "TradingAgents Primary Model",
-    description: "Deterministic smoke model binding for workflow-package E2E.",
-    connectionKind: "deterministic_smoke",
-    baseUrl: DETERMINISTIC_MODEL_BASE_URL,
-    modelId: "signaldeck-deterministic-json",
+    description: "Fake provider model binding for workflow-package E2E.",
+    baseUrl: FAKE_PROVIDER_BASE_URL,
+    modelId: "fake-strict-schema",
     reasoningEffort: "low",
     protocolProfile: "openai_responses",
     timeoutSeconds: 5,
-    apiKey: "sk-e2e-tradingagents-deterministic",
+    apiKey: "sk-e2e-tradingagents-fake-provider",
   };
   if (existing) {
     const { key: _key, ...updatePayload } = payload;
@@ -104,7 +104,7 @@ function workflowStepCount(detail: Record<string, unknown>) {
 }
 
 test.describe("TradingAgents workflow-package smoke", () => {
-  test("launches the ordinary package fixture with deterministic model output", async ({ request }) => {
+  test("launches the ordinary package fixture with fake provider output", async ({ request }) => {
     await seedTradingAgentsModel(request);
     const workflowPackage = await createOrUpdatePackage(request, fixtureSource());
 
@@ -128,7 +128,7 @@ test.describe("TradingAgents workflow-package smoke", () => {
       workflowKey: "advisory_research",
     });
     expect(workflowStepCount(detail)).toBeGreaterThanOrEqual(14);
-    expect(detail.finalOutput).toMatchObject({ posture: "deterministic posture" });
+    expect(detail.finalOutput).toMatchObject({ posture: "fake provider posture" });
 
     const serialized = JSON.stringify(detail);
     expect(serialized).toContain("tradingagents_advisory_research");

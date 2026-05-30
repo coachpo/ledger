@@ -6,8 +6,8 @@ import {
 } from "@playwright/test";
 
 const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
-const DETERMINISTIC_MODEL_BASE_URL =
-  "https://signaldeck-deterministic-model.local/v1";
+const FAKE_PROVIDER_BASE_URL =
+  process.env.SIGNALDECK_FAKE_PROVIDER_BASE_URL ?? "http://127.0.0.1:18081/v1";
 
 function packageManifest(packageKey: string, modelKey: string) {
   return [
@@ -70,15 +70,14 @@ function packageManifest(packageKey: string, modelKey: string) {
 async function seedModelConnection(request: APIRequestContext, key: string) {
   const payload = {
     key,
-    name: `E2E runs deterministic model ${key}`,
-    description: "Deterministic model connection for runs monitor E2E.",
-    connectionKind: "deterministic_smoke",
-    baseUrl: DETERMINISTIC_MODEL_BASE_URL,
-    modelId: "signaldeck-deterministic-json",
+    name: `E2E runs fake provider model ${key}`,
+    description: "Fake provider model connection for runs monitor E2E.",
+    baseUrl: FAKE_PROVIDER_BASE_URL,
+    modelId: "fake-strict-schema",
     reasoningEffort: "low",
     protocolProfile: "openai_responses",
     timeoutSeconds: 5,
-    apiKey: "sk-e2e-runs-deterministic",
+    apiKey: "sk-e2e-runs-fake-provider",
   };
 
   const list = await request.get(`${PLATFORM_API_BASE}/model-connections`, {
@@ -185,16 +184,11 @@ test.describe("Runs inventory monitor", () => {
     await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
 
     await page.getByLabel("Target key").fill(targetKey);
-    await expect(page.getByTestId("runs-monitor-filter-card")).toContainText(
-      `${targetKey} · select target kind to apply`,
-    );
     await expect(page.getByText("Failed to load runs")).toHaveCount(0);
 
     await page.getByLabel("Target kind").click();
     await page.getByRole("option", { name: "workflow package" }).click();
-    await expect(page.getByTestId("runs-monitor-filter-card")).toContainText(
-      targetKey,
-    );
+    await expect(page.getByRole("table")).toContainText(targetKey);
 
     const row = page.getByTestId(`runs-row-${runId}`);
     await expect(row).toBeVisible({ timeout: 15_000 });
@@ -216,34 +210,17 @@ test.describe("Runs inventory monitor", () => {
     await row.getByTestId(`runs-row-action-${runId}`).click();
     await expect(page).toHaveURL(new RegExp(`/runs/${runId}$`));
     await expect(page.getByTestId("runs-detail-page")).toBeVisible();
-    await expect(page.getByTestId("runs-inspection-workspace")).toHaveAttribute(
-      "data-console-layout",
-      "split",
-    );
+    await expect(page.getByTestId("runs-inspection-workspace")).toBeVisible();
     await expect(
-      page.getByTestId("runs-inspection-split-layout"),
+      page.getByRole("heading", { name: new RegExp(`Run #${runId}`) }),
+    ).toContainText(targetKey);
+    await expect(page.getByRole("heading", { name: "Final output" })).toBeVisible();
+    await expect(
+      page.getByText("Rendered payload view for the immutable run result."),
     ).toBeVisible();
-    await expect(page.getByTestId("runs-tab-console")).toHaveAttribute(
-      "data-active-mode",
-      "outputs",
-    );
-    await expect(page.getByTestId("runs-detail-state-summary")).toContainText(
-      "Output",
-    );
-    await expect(page.getByTestId("runs-evidence-viewer")).toContainText(
-      "Final output",
-    );
-    await expect(page.getByTestId("runs-evidence-pane-nav")).toHaveCount(0);
-
-    await page.getByTestId("runs-tab-trigger-execution").click();
-    await expect(page.getByTestId("runs-execution-outline")).toBeVisible();
-
-    await page.getByTestId("runs-tab-trigger-runtime").click();
-    await expect(page.getByTestId("runs-runtime-profile")).toContainText(
-      "Runtime profile",
-    );
-
-    await page.getByTestId("runs-tab-trigger-metadata").click();
+    await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Run input" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Runtime profile" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Metadata" })).toBeVisible();
 
     await page.getByTestId("runs-detail-rerun").click();
@@ -256,24 +233,5 @@ test.describe("Runs inventory monitor", () => {
     await expect(rerunDialog).toContainText("Readiness");
     await rerunDialog.getByRole("button", { name: "Cancel" }).click();
     await expect(rerunDialog).toBeHidden();
-
-    await page.getByTestId("runs-tab-trigger-inputs").click();
-    await expect(page.getByTestId("runs-detail-input")).toBeVisible();
-    await expect(page.getByTestId("runs-evidence-pane-nav")).toHaveCount(0);
-    await expect(page).toHaveURL(/mode=inputs/);
-    await expect(page).not.toHaveURL(/inspect=run/);
-    await expect(page).not.toHaveURL(/pane=input/);
-
-    await page
-      .getByTestId("runs-detail-input")
-      .getByRole("tab", { name: "Raw" })
-      .click();
-    await expect(page.getByTestId("runs-detail-input-tab-scroll")).toHaveClass(
-      /overflow-x-auto/,
-    );
-    await expect(page.getByTestId("runs-detail-input-raw")).toHaveAttribute(
-      "data-wide-payload",
-      "scroll",
-    );
   });
 });

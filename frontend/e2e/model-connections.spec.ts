@@ -1,12 +1,11 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
-const DETERMINISTIC_MODEL_BASE_URL =
-  "https://signaldeck-deterministic-model.local/v1";
+const FAKE_PROVIDER_BASE_URL =
+  process.env.SIGNALDECK_FAKE_PROVIDER_BASE_URL ?? "http://127.0.0.1:18081/v1";
 
 type SeedModelConnectionPayload = {
   baseUrl: string;
-  connectionKind: "provider" | "deterministic_smoke";
   description: string;
   key: string;
   modelId: string;
@@ -30,17 +29,16 @@ async function seedModelConnection(
   return JSON.parse(responseText) as { id: number; key: string; name: string };
 }
 
-async function seedTestedDeterministicConnection(
+async function seedTestedProviderConnection(
   request: APIRequestContext,
   suffix: number,
 ) {
   const connection = await seedModelConnection(request, {
     apiKey: "sk-e2e-redacted-model-connection",
-    baseUrl: DETERMINISTIC_MODEL_BASE_URL,
-    connectionKind: "deterministic_smoke",
-    description: "Deterministic fixture for model connection inventory evidence.",
+    baseUrl: FAKE_PROVIDER_BASE_URL,
+    description: "Fake provider fixture for model connection inventory evidence.",
     key: `e2e_model_inventory_${suffix}`,
-    modelId: "signaldeck-deterministic-json",
+    modelId: "fake-strict-schema",
     name: `E2E Evidence Model ${suffix}`,
     protocolProfile: "openai_responses",
     reasoningEffort: null,
@@ -72,7 +70,7 @@ test.describe("model connections inventory", () => {
     request,
   }) => {
     const suffix = Date.now();
-    const connection = await seedTestedDeterministicConnection(request, suffix);
+    const connection = await seedTestedProviderConnection(request, suffix);
 
     const listResponsePromise = page.waitForResponse(
       (response) =>
@@ -95,22 +93,24 @@ test.describe("model connections inventory", () => {
     const row = page.getByTestId(`model-connections-row-${connection.id}`);
     await expect(row).toBeVisible();
     await expect(row.getByLabel("Stable key: " + connection.key)).toBeVisible();
+    await row.getByRole("button", { name: "Show details" }).click();
 
+    const details = page.getByRole("group", {
+      name: `Expanded details for ${connection.name}`,
+    });
+    await expect(details).toBeVisible();
     for (const evidenceLabel of [
-      "Protocol profile",
-      "Test state",
+      "Endpoint",
       "Capability support",
+      "Test and reachability",
       "Runtime policy",
-      "Reachability",
-      "Credential state",
     ]) {
-      await expect(row.getByText(evidenceLabel)).toBeVisible();
+      await expect(details.getByText(evidenceLabel)).toBeVisible();
     }
 
-    await expect(row.getByText("Responses-compatible").first()).toBeVisible();
-    await expect(row.getByText("Passed").first()).toBeVisible();
-    await expect(row.getByText("API key optional")).toBeVisible();
-    await expect(row.getByText("sk-e2e-redacted")).toHaveCount(0);
+    await expect(details.getByText("Responses-compatible").first()).toBeVisible();
+    await expect(details.getByText("Passed").first()).toBeVisible();
+    await expect(page.getByText("sk-e2e-redacted")).toHaveCount(0);
 
     const edit = row.getByRole("link", {
       name: `Edit model connection ${connection.name}`,

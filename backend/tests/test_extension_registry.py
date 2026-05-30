@@ -29,8 +29,29 @@ def test_bundled_extension_registry_discovers_finance_workspace_once() -> None:
         "/api/v1/templates",
         "/api/v1/reports",
     }
-    assert len(registry.list_server_declared_tool_contributions()) == 10
-    assert len(registry.list_runtime_tool_contributions()) == 10
+    expected_tool_keys = {
+        "signaldeck.fundamentals.lookup",
+        "signaldeck.indicators.lookup",
+        "signaldeck.insider_data.lookup",
+        "signaldeck.market_data.history_lookup",
+        "signaldeck.market_data.ohlcv_lookup",
+        "signaldeck.market_data.quote_lookup",
+        "signaldeck.market_sentiment.lookup",
+        "signaldeck.news.lookup",
+        "signaldeck.positions.lookup",
+        "signaldeck.prediction_markets.lookup",
+        "signaldeck.reports.lookup",
+        "signaldeck.sec_filings.lookup",
+        "signaldeck.social_sentiment.lookup",
+    }
+    server_tool_keys = {
+        contribution.key for contribution in registry.list_server_declared_tool_contributions()
+    }
+    runtime_tool_keys = {
+        contribution.key for contribution in registry.list_runtime_tool_contributions()
+    }
+    assert server_tool_keys == expected_tool_keys
+    assert runtime_tool_keys == expected_tool_keys
 
 
 def test_bundled_extension_registry_rejects_duplicate_keys() -> None:

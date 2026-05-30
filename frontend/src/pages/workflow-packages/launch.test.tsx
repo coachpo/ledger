@@ -235,7 +235,6 @@ describe("WorkflowPackageLaunchPage", () => {
         ...launchRead,
         blockingErrors: [
           {
-            connectionKind: "provider",
             field: "spec.agents[0].modelConnection",
             issue: "This workflow requires native tool calls",
             severity: "error",
@@ -244,13 +243,11 @@ describe("WorkflowPackageLaunchPage", () => {
         ready: false,
         warnings: [
           {
-            connectionKind: "deterministic_smoke",
             field: "spec.agents[1].modelConnection",
             issue: "This connection will degrade to plain text output",
             severity: "warning",
           },
           {
-            connectionKind: "provider",
             field: "spec.agents[2].modelConnection",
             issue: "This model connection omits usage metadata, so run usage totals will be derived from the response body.",
             severity: "warning",

@@ -7,8 +7,8 @@ import {
 
 const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
 const API_BASE = "http://127.0.0.1:8001/api/v1";
-const DETERMINISTIC_MODEL_BASE_URL =
-  "https://signaldeck-deterministic-model.local/v1";
+const FAKE_PROVIDER_BASE_URL =
+  process.env.SIGNALDECK_FAKE_PROVIDER_BASE_URL ?? "http://127.0.0.1:18081/v1";
 
 const viewports = [
   { height: 900, label: "desktop-wide", width: 1440 },
@@ -95,12 +95,11 @@ async function seedModelConnection(request: APIRequestContext, key: string) {
     `${PLATFORM_API_BASE}/model-connections`,
     {
       data: {
-        apiKey: "sk-e2e-shell-regression",
-        baseUrl: DETERMINISTIC_MODEL_BASE_URL,
-        connectionKind: "deterministic_smoke",
-        description: "Responsive shell regression model connection.",
+        apiKey: "sk-e2e-shell-regression-fake-provider",
+        baseUrl: FAKE_PROVIDER_BASE_URL,
+        description: "Responsive shell regression fake provider connection.",
         key,
-        modelId: "signaldeck-deterministic-json",
+        modelId: "fake-strict-schema",
         name: `Shell Regression Model ${key}`,
         protocolProfile: "openai_responses",
         reasoningEffort: "low",

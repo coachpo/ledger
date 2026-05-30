@@ -39,8 +39,8 @@ from app.repositories.workflow import WorkflowRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.capability import CapabilityDraftCreate, CapabilityDraftUpdate
 from app.schemas.mcp_server import McpServerCreate, McpServerTransport, McpServerUpdate
-from app.schemas.output_schema import OutputSchemaDraftCreate, OutputSchemaDraftUpdate
 from app.schemas.model_connection import default_model_connection_capabilities
+from app.schemas.output_schema import OutputSchemaDraftCreate, OutputSchemaDraftUpdate
 from app.schemas.run import (
     RunAgentInvocationRead,
     RunForkCreateRequest,
@@ -970,7 +970,6 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
                 {
                     "key": connection.key,
                     "name": connection.name,
-                    "connectionKind": connection.connection_kind,
                     "protocolProfile": connection.protocol_profile,
                     "baseUrl": connection.base_url,
                     "modelId": connection.model_id,
@@ -1008,7 +1007,6 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
         {
             "key": f"snapshot_ignored_model_{run_status}",
             "name": f"Snapshot Ignored Model {run_status}",
-            "connectionKind": "provider",
             "protocolProfile": connection.protocol_profile,
             "baseUrl": "https://api.openai.com/v1",
             "modelId": "gpt-5.4-mini",

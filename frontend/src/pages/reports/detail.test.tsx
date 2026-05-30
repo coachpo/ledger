@@ -81,9 +81,9 @@ describe("ReportDetailPage", () => {
 
     expect(useReportMock).toHaveBeenCalledWith("agent_memory_snapshot");
     const header = screen.getByTestId("report-detail-header");
-    const contextCard = header.querySelector('[data-slot="card"]');
+    const contextBar = header.querySelector('[data-slot="page-context-bar"]');
     const identity = screen.getByTestId("report-detail-identity");
-    expect(contextCard).toHaveClass("rounded-xl", "border", "bg-card/95");
+    expect(contextBar).toHaveClass("rounded-xl", "border", "bg-card/95");
     expect(identity).toHaveClass("uppercase", "tracking-wide");
     const heading = screen.getAllByRole("heading", {
       name: /Memory Snapshot/,

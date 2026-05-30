@@ -28,8 +28,8 @@ from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
-from app.schemas.output_schema import OutputSchemaDraftCreate
 from app.schemas.model_connection import default_model_connection_capabilities
+from app.schemas.output_schema import OutputSchemaDraftCreate
 from app.schemas.run import (
     RunListItemRead,
     RunMemoryArtifactRead,
@@ -1993,11 +1993,10 @@ def test_run_memory_event_schema_serializes_generic_redacted_contract() -> None:
     assert "download" not in serialized
 
 
-def test_run_package_resolved_model_connection_schema_serializes_effective_runtime_profile_without_secrets() -> None:
+def test_run_resolved_model_connection_schema_omits_runtime_secrets() -> None:
     payload = {
         "key": "package_runtime_model",
         "name": "Package Runtime Model",
-        "connectionKind": "provider",
         "protocolProfile": "openai_responses",
         "baseUrl": "https://runtime.example.com/v1",
         "modelId": "gpt-package-runtime",

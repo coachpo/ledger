@@ -15,7 +15,6 @@ const packageRead = {
 const launchRead = {
   blockingErrors: [
     {
-      connectionKind: "provider",
       field: "spec.agents[0].modelConnection",
       issue: "This workflow requires native tool calls",
       severity: "error",
@@ -36,7 +35,6 @@ const launchRead = {
   ready: false,
   warnings: [
     {
-      connectionKind: "provider",
       field: "spec.agents[1].modelConnection",
       issue:
         "This model connection omits usage metadata, so run usage totals will be derived from the response body.",
@@ -155,8 +153,7 @@ const runDetail = {
             status: "unsupported",
           },
         },
-        connectionKind: "provider",
-        hasApiKey: true,
+          hasApiKey: true,
         key: "primary_openai",
         modelId: "gpt-5.5",
         name: "Primary OpenAI",

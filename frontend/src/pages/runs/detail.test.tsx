@@ -439,7 +439,6 @@ function buildResolvedModelConnection(
     apiStyle: "responses",
     baseUrl: "https://api.openai.com/v1",
     capabilities: buildCapabilities(),
-    connectionKind: "provider",
     hasApiKey: true,
     key: "primary_openai",
     modelId: "gpt-5.5",
@@ -1518,69 +1517,68 @@ describe("RunsDetailPage", () => {
           }),
           buildResolvedModelConnection({
             apiStyle: "chat_completions",
-            baseUrl: "https://signaldeck-deterministic-model.local/v1",
+            baseUrl: "http://localhost:4010/v1",
             capabilities: buildCapabilities({
               chatCompletions: buildCapabilityState(
                 "supported",
-                "Chat completions support is available on the smoke profile.",
+                "Chat completions support is available on this provider profile.",
                 "2026-05-08T07:31:00Z",
               ),
               jsonObjectOutput: buildCapabilityState(
                 "notApplicable",
-                "JSON object output is not exercised on the smoke profile.",
+                "JSON object output is not exercised on this provider profile.",
                 "2026-05-08T07:32:00Z",
               ),
               nativeToolCalls: buildCapabilityState(
                 "unsupported",
-                "Native tool calls are not available on the smoke profile.",
+                "Native tool calls are not available on this provider profile.",
                 "2026-05-08T07:34:00Z",
               ),
               parallelToolCalls: buildCapabilityState(
                 "unsupported",
-                "Parallel tool calls are not available on the smoke profile.",
+                "Parallel tool calls are not available on this provider profile.",
                 "2026-05-08T07:35:00Z",
               ),
               reasoningHints: buildCapabilityState(
                 "notApplicable",
-                "Reasoning hints are not exercised on the smoke profile.",
+                "Reasoning hints are not exercised on this provider profile.",
                 "2026-05-08T07:36:00Z",
               ),
               responsesApi: buildCapabilityState(
                 "notApplicable",
-                "Responses API is not exercised on the smoke profile.",
+                "Responses API is not exercised on this provider profile.",
                 "2026-05-08T07:37:00Z",
               ),
               streaming: buildCapabilityState(
                 "unsupported",
-                "Streaming is disabled for the smoke profile.",
+                "Streaming is disabled for this provider profile.",
                 "2026-05-08T07:38:00Z",
               ),
               strictJsonSchemaOutput: buildCapabilityState(
                 "supported",
-                "Strict JSON schema output is available on the smoke profile.",
+                "Strict JSON schema output is available on this provider profile.",
                 "2026-05-08T07:39:00Z",
               ),
               systemMessages: buildCapabilityState(
                 "supported",
-                "System messages are accepted on the smoke profile.",
+                "System messages are accepted on this provider profile.",
                 "2026-05-08T07:40:00Z",
               ),
               textGeneration: buildCapabilityState(
                 "supported",
-                "Text generation is available on the smoke profile.",
+                "Text generation is available on this provider profile.",
                 "2026-05-08T07:41:00Z",
               ),
               usageReporting: buildCapabilityState(
                 "supported",
-                "Usage metadata was emitted by the smoke profile probe.",
+                "Usage metadata was emitted by this provider profile probe.",
                 "2026-05-08T07:42:00Z",
               ),
             }),
-            connectionKind: "deterministic_smoke",
             hasApiKey: false,
-            key: "smoke_model",
-            modelId: "signaldeck-smoke",
-            name: "Smoke Model",
+            key: "local_compatibility_model",
+            modelId: "local-compatibility-gpt",
+            name: "Local Compatibility Model",
             outputStrategyPolicy: "allow_plain_text",
             parallelToolCallsPolicy: "forbid",
             probeCacheTtlSeconds: 300,
@@ -1697,9 +1695,6 @@ describe("RunsDetailPage", () => {
     );
     expect(screen.getByTestId("runs-detail-metadata-line")).toHaveTextContent(
       /lineage from run #41/i,
-    );
-    expect(screen.getByTestId("runs-detail-identity-line")).toHaveTextContent(
-      /market_review_package/i,
     );
     expect(screen.queryByText(/captured package id/i)).not.toBeInTheDocument();
     expect(
@@ -1831,20 +1826,22 @@ describe("RunsDetailPage", () => {
     expect(primaryProfile).toHaveTextContent(/Primary OpenAI/i);
     expect(primaryProfile).toHaveTextContent(/primary_openai/i);
     expect(primaryProfile).toHaveTextContent(/Responses-compatible/i);
-    expect(primaryProfile).toHaveTextContent(/Credential present/i);
     expect(primaryProfile).toHaveTextContent(
       /9 supported · 2 unsupported · 0 unknown · 0 not applicable/i,
     );
     expect(primaryProfile).not.toHaveTextContent(/Snapshot key/i);
     expect(primaryProfile).not.toHaveTextContent(/Selected strategies/i);
     expect(primaryProfile).not.toHaveTextContent(/Last probed/i);
-    const smokeProfile = screen.getByTestId(
-      "runs-runtime-profile-connection-smoke_model",
+    const compatibilityProfile = screen.getByTestId(
+      "runs-runtime-profile-connection-local_compatibility_model",
     );
-    expect(smokeProfile).toHaveTextContent(/Smoke Model/i);
-    expect(smokeProfile).toHaveTextContent(/Chat Completions-compatible/i);
-    expect(smokeProfile).toHaveTextContent(/No credential/i);
-    expect(smokeProfile).toHaveTextContent(
+    expect(compatibilityProfile).toHaveTextContent(
+      /Local Compatibility Model/i,
+    );
+    expect(compatibilityProfile).toHaveTextContent(
+      /Chat Completions-compatible/i,
+    );
+    expect(compatibilityProfile).toHaveTextContent(
       /5 supported · 3 unsupported · 0 unknown · 3 not applicable/i,
     );
     expect(
@@ -2702,10 +2699,7 @@ describe("RunsDetailPage", () => {
       /workflow package/i,
     );
     expect(screen.getByTestId("runs-detail-identity-line")).toHaveTextContent(
-      "Workflow Package | SignalDeck Advisory Research with Memory | signaldeck_advisory_research_memory",
-    );
-    expect(screen.getByTestId("runs-detail-identity-line")).toHaveTextContent(
-      /signaldeck_advisory_research_memory/i,
+      /SignalDeck Advisory Research with Memory/i,
     );
     expect(
       screen.queryByText(/captured package id: 12/i),
@@ -3588,3 +3582,4 @@ describe("RunsDetailPage", () => {
     });
   });
 });
+

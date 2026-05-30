@@ -265,7 +265,6 @@ def _model_binding() -> PackageResolvedModelBinding:
     return PackageResolvedModelBinding(
         key="mixed_model",
         name="Mixed Model",
-        connection_kind="deterministic_smoke",
         protocol_profile=protocol_profile,
         base_url="https://model.example.test/v1",
         model_id="mixed-model",
@@ -281,7 +280,7 @@ def _model_binding() -> PackageResolvedModelBinding:
         probe_cache_ttl_seconds=900,
         api_style="responses",
         timeout_seconds=10,
-        has_api_key=False,
+        has_api_key=True,
     )
 
 
@@ -573,7 +572,9 @@ def test_run_service_composes_gateway_without_direct_protocol_adapter(
     session_factory: sessionmaker[Session],
 ) -> None:
     _RecordingModelExecutionGateway.reset()
-    monkeypatch.setattr("app.services.run_service.ModelExecutionGateway", _RecordingModelExecutionGateway)
+    monkeypatch.setattr(
+        "app.services.run_service.ModelExecutionGateway", _RecordingModelExecutionGateway
+    )
     with session_factory() as session:
         _ = RunService(session, session_factory)
     assert len(_RecordingModelExecutionGateway.init_calls) == 1

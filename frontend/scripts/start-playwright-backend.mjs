@@ -6,12 +6,15 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const backendDir = resolve(__dirname, "..", "..", "backend");
 const fakeProviderPort = process.env.SIGNALDECK_FAKE_PROVIDER_PORT ?? "18081";
+const fakeProviderBaseUrl =
+  process.env.SIGNALDECK_FAKE_PROVIDER_BASE_URL ??
+  `http://127.0.0.1:${fakeProviderPort}/v1`;
 const backendEnv = {
   ...process.env,
+  OPENAI_API_KEY: "sk-e2e-fake-provider",
+  OPENAI_BASE_URL: fakeProviderBaseUrl,
   QUOTE_PROVIDER_BACKEND: process.env.QUOTE_PROVIDER_BACKEND ?? "deterministic",
-  SIGNALDECK_FAKE_PROVIDER_BASE_URL:
-    process.env.SIGNALDECK_FAKE_PROVIDER_BASE_URL ??
-    `http://127.0.0.1:${fakeProviderPort}/v1`,
+  SIGNALDECK_FAKE_PROVIDER_BASE_URL: fakeProviderBaseUrl,
   SIGNALDECK_FAKE_PROVIDER_PORT: fakeProviderPort,
 };
 const children = new Set();

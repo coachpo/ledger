@@ -84,7 +84,6 @@ def _seed_runtime_input_registry_boundary_model_connection(
             ModelConnection(
                 key="package_runtime_model",
                 status="active",
-                connection_kind="provider",
                 name="Package Runtime Model",
                 description="Runtime boundary model binding.",
                 base_url="https://runtime-boundary.example.com/v1",
@@ -176,7 +175,6 @@ def _snapshot() -> RunWorkflowPackageSnapshot:
             {
                 "key": "package_runtime_model",
                 "name": "Package Runtime Model",
-                "connectionKind": "provider",
                 "protocolProfile": "openai_responses",
                 "baseUrl": "https://runtime.example.com/v1",
                 "modelId": "gpt-package-runtime",

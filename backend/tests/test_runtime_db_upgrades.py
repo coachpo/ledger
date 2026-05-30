@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 from __future__ import annotations
 
 import json
@@ -11,6 +12,7 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.db import upgrades
 from app.db.session import init_db
 from app.db.upgrades import _ensure_agent_model_connection_snapshot_support, upgrade_legacy_schema
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
@@ -287,7 +289,6 @@ _INVOCATION_COST_COLUMN = f"{_RUNTIME_COST_WORD}_{_RUNTIME_COST_CURRENCY}"
 _INVOCATION_COST_CHECK = f"ck_run_agent_invocations_{_RUNTIME_COST_WORD}_non_negative"
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
 _TRADINGAGENTS_MODEL_CONNECTION_KEY = "tradingagents_primary_model"
-_TRADINGAGENTS_DETERMINISTIC_BASE_URL = "https://signaldeck-deterministic-model.local/v1"
 _TRADINGAGENTS_FIXTURE_PATH = (
     Path(__file__).parent
     / "fixtures"
@@ -448,17 +449,16 @@ def _assert_tradingagents_preset_launchable(
             text(
                 """
                 INSERT INTO model_connections (
-                    key, status, connection_kind, name, description, base_url, model_id,
+                    key, status, name, description, base_url, model_id,
                     reasoning_effort, protocol_profile, timeout_seconds, secret_payload,
                     created_at, updated_at
                 ) VALUES (
-                    :key, 'active', 'deterministic_smoke', 'TradingAgents Primary Model',
-                    '', :base_url, :model_id, 'medium', 'openai_responses', 60, '{}'::jsonb,
-                    NOW(), NOW()
+                    :key, 'active', 'TradingAgents Primary Model', '', :base_url,
+                    :model_id, 'medium', 'openai_responses', 60,
+                    '{"apiKey":"sk-tradingagents-upgrade-test"}'::jsonb, NOW(), NOW()
                 )
                 ON CONFLICT (key) DO UPDATE SET
                     status = EXCLUDED.status,
-                    connection_kind = EXCLUDED.connection_kind,
                     name = EXCLUDED.name,
                     base_url = EXCLUDED.base_url,
                     model_id = EXCLUDED.model_id,
@@ -467,7 +467,7 @@ def _assert_tradingagents_preset_launchable(
                 """
             ),
             {
-                "base_url": _TRADINGAGENTS_DETERMINISTIC_BASE_URL,
+                "base_url": "https://api.openai.com/v1",
                 "key": _TRADINGAGENTS_MODEL_CONNECTION_KEY,
                 "model_id": "openai:gpt-5.4-mini",
             },
@@ -1436,6 +1436,76 @@ def test_agent_model_connection_snapshot_upgrade_drops_legacy_org_project_keys(
             "api_style": "responses",
             "timeout_seconds": 60,
         }
+    finally:
+        engine.dispose()
+
+
+def test_model_connection_kind_cleanup_scrubs_agent_snapshot_aliases_and_drops_column(  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE model_connections "
+                "ADD COLUMN connection_kind VARCHAR(40) NOT NULL DEFAULT 'provider'"  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE model_connections ADD CONSTRAINT ck_model_connections_connection_kind "  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+                "CHECK (connection_kind IN ('provider', 'deterministic_smoke'))"  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+            )
+            model_connection_id = _insert_model_connection_reasoning_effort_row(
+                connection,
+                key="agent_snapshot_kind_cleanup_connection",
+                reasoning_effort="medium",
+            )
+            _insert_agent_model_connection_snapshot_row(
+                connection,
+                key="agent_snapshot_kind_cleanup_agent",
+                model_connection_id=model_connection_id,
+                model_id="openai:agent_snapshot_kind_cleanup_connection",
+                model_connection_snapshot={
+                    "base_url": "https://api.openai.com/v1",
+                    "connectionKind": "provider",  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+                    "connection_kind": "provider",  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+                    "model_id": "openai:agent_snapshot_kind_cleanup_connection",
+                    "reasoning_effort": "medium",
+                    "api_style": "responses",
+                    "timeout_seconds": 60,
+                },
+            )
+
+        upgrades._remove_legacy_model_connection_kind_support(  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+            engine,
+            set(inspect(engine).get_table_names()),
+        )
+
+        with engine.connect() as connection:
+            snapshot = connection.execute(
+                text(
+                    "SELECT model_connection_snapshot FROM agents "
+                    "WHERE key = 'agent_snapshot_kind_cleanup_agent'"
+                )
+            ).scalar_one()
+        model_connection_columns = {
+            column["name"]: column for column in inspect(engine).get_columns("model_connections")
+        }
+        model_connection_check_sql = {
+            constraint["name"]: str(constraint["sqltext"])
+            for constraint in inspect(engine).get_check_constraints("model_connections")
+        }
+
+        assert snapshot == {
+            "base_url": "https://api.openai.com/v1",
+            "model_id": "openai:agent_snapshot_kind_cleanup_connection",
+            "reasoning_effort": "medium",
+            "api_style": "responses",
+            "timeout_seconds": 60,
+        }
+        assert "connection_kind" not in model_connection_columns  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+        assert "ck_model_connections_connection_kind" not in model_connection_check_sql  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
     finally:
         engine.dispose()
 

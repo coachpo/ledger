@@ -159,9 +159,9 @@ describe("PortfolioDetailPage", () => {
     render(<PortfolioDetailPage />);
 
     const header = screen.getByTestId("portfolio-detail-header");
-    const contextCard = header.querySelector('[data-slot="card"]');
+    const contextBar = header.querySelector('[data-slot="page-context-bar"]');
     const identity = screen.getByTestId("portfolio-detail-identity");
-    expect(contextCard).toHaveClass("rounded-xl", "border", "bg-card/95");
+    expect(contextBar).toHaveClass("rounded-xl", "border", "bg-card/95");
     expect(identity).toHaveClass("min-w-0");
     expect(within(identity).getByText("Portfolio workspace")).toHaveClass(
       "uppercase",

@@ -39,6 +39,7 @@ from app.services.quote_provider import (
     QuoteProviderError,
 )
 from app.services.report_service import ReportService
+from tests.fake_openai_provider import run_fake_openai_provider
 
 UTC_TZ = timezone.utc  # noqa: UP017
 _TRACE_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
@@ -55,6 +56,8 @@ _EXPECTED_MODEL_CONNECTION_CAPABILITY_KEYS = {
     "textGeneration",
     "usageReporting",
 }
+_REMOVED_MODEL_CONNECTION_KIND_FIELD = f"connection{'K'}ind"
+_REMOVED_MODEL_CONNECTION_KIND_DB_FIELD = f"connection{'_'}kind"
 
 
 def _assert_logfire_trace_id(value: object) -> None:
@@ -176,8 +179,7 @@ def _seed_model_connection_record(
     base_url: str,
     model_id: str,
     protocol_profile: str = "openai_responses",
-    connection_kind: str = "provider",
-    api_key: str | None = "sk-test-model-connection",
+    api_key: str | None = "test-api-key",
     probe_cache_ttl_seconds: int = 900,
     last_probed_at: datetime | None = None,
     last_tested_at: datetime | None = None,
@@ -192,7 +194,6 @@ def _seed_model_connection_record(
                 id=connection_id,
                 key=key,
                 status="active",
-                connection_kind=connection_kind,
                 name=name,
                 description=description,
                 base_url=base_url,
@@ -406,7 +407,7 @@ _DELETED_MODEL_CONNECTION_FIELDS: dict[str, object] = {
 
 
 def _model_connection_create_payload(
-    base_url: str = "https://api.openai.com",
+    base_url: str = "https://provider.example.test",
 ) -> dict[str, object]:
     return {
         "key": "deleted_fields_model",
@@ -417,7 +418,7 @@ def _model_connection_create_payload(
         "reasoningEffort": "medium",
         "protocolProfile": "openai_responses",
         "timeoutSeconds": 60,
-        "apiKey": "sk-test-model-connection",
+        "apiKey": "test-api-key",
     }
 
 
@@ -2955,30 +2956,52 @@ def test_init_db_upgrades_legacy_report_schema(database_url: str) -> None:
         engine.dispose()
 
 
-def test_model_connection_round_trips_connection_kind(client: TestClient) -> None:
-    payload = {**_model_connection_create_payload(), "connectionKind": "deterministic_smoke"}
+def test_model_connection_rejects_removed_kind_fields(client: TestClient) -> None:
+    create_payload = _model_connection_create_payload()
+    create_field_names = {
+        _REMOVED_MODEL_CONNECTION_KIND_FIELD,
+        _REMOVED_MODEL_CONNECTION_KIND_DB_FIELD,
+    }
+    removed_fields_payload = {
+        _REMOVED_MODEL_CONNECTION_KIND_FIELD: "provider",
+        _REMOVED_MODEL_CONNECTION_KIND_DB_FIELD: "provider",
+    }
 
-    create_response = client.post("/api/model-connections", json=payload)
+    rejected_create = client.post(
+        "/api/model-connections",
+        json={**create_payload, **removed_fields_payload},
+    )
+    _assert_deleted_model_connection_fields_rejected(rejected_create, create_field_names)
+    _assert_schema_extra_forbidden(
+        ModelConnectionCreate,
+        {**create_payload, **removed_fields_payload},
+        create_field_names,
+    )
+
+    create_response = client.post("/api/model-connections", json=create_payload)
     assert create_response.status_code == 201, create_response.json()
     create_body = cast(dict[str, object], create_response.json())
-    assert create_body["connectionKind"] == "deterministic_smoke"
+    assert _REMOVED_MODEL_CONNECTION_KIND_FIELD not in create_body
     connection_id = cast(int, create_body["id"])
 
-    patch_response = client.patch(
+    rejected_patch = client.patch(
         f"/api/model-connections/{connection_id}",
-        json={"connectionKind": "provider"},
+        json=removed_fields_payload,
     )
-    assert patch_response.status_code == 200, patch_response.json()
-    patch_body = cast(dict[str, object], patch_response.json())
-    assert patch_body["connectionKind"] == "provider"
+    _assert_deleted_model_connection_fields_rejected(rejected_patch, create_field_names)
+    _assert_schema_extra_forbidden(
+        ModelConnectionUpdate,
+        removed_fields_payload,
+        create_field_names,
+    )
 
     get_response = client.get(f"/api/model-connections/{connection_id}")
     assert get_response.status_code == 200
     get_body = cast(dict[str, object], get_response.json())
-    assert get_body["connectionKind"] == "provider"
+    assert _REMOVED_MODEL_CONNECTION_KIND_FIELD not in get_body
 
 
-def test_model_connection_compatibility_derives_protocol_capabilities_and_rejects_public_policy_writes(
+def test_model_connection_compatibility_derives_caps_and_rejects_public_policy_writes(
     client: TestClient,
 ) -> None:
     create_payload = {
@@ -3128,84 +3151,41 @@ def test_model_connection_connection_test_uses_provider_openai_behavior(
     session_factory: sessionmaker[Session],
 ) -> None:
     fixed_now = datetime(2026, 5, 12, 15, 0, tzinfo=UTC_TZ)
-
-    class _RecordingOpenAIResponse:
-        _request_id = "req-provider-connection-test"
-
-    class _RecordingOpenAIClient:
-        init_calls: list[dict[str, object]] = []
-        response_calls: list[dict[str, object]] = []
-
-        class _Responses:
-            def __init__(self, client: _RecordingOpenAIClient) -> None:
-                self._client = client
-
-            def create(self, **kwargs: object) -> _RecordingOpenAIResponse:
-                self._client.response_calls.append(dict(kwargs))
-                return _RecordingOpenAIResponse()
-
-        def __init__(self, **kwargs: object) -> None:
-            self.init_calls.append(dict(kwargs))
-            self.responses = self._Responses(self)
-
-        def __enter__(self) -> _RecordingOpenAIClient:
-            return self
-
-        def __exit__(self, exc_type: object, exc_value: object, exc_traceback: object) -> bool:
-            return False
-
-    monkeypatch.setattr("app.services.model_connection_service.OpenAI", _RecordingOpenAIClient)
     monkeypatch.setattr("app.services.model_connection_service.utcnow", lambda: fixed_now)
 
-    create_response = client.post("/api/model-connections", json=_model_connection_create_payload())
-    assert create_response.status_code == 201, create_response.json()
-    create_body = cast(dict[str, object], create_response.json())
-    connection_id = cast(int, create_body["id"])
+    with run_fake_openai_provider() as base_url:
+        create_response = client.post(
+            "/api/model-connections",
+            json=_model_connection_create_payload(base_url),
+        )
+        assert create_response.status_code == 201, create_response.json()
+        create_body = cast(dict[str, object], create_response.json())
+        connection_id = cast(int, create_body["id"])
 
-    probe_seed_at = datetime(2026, 5, 12, 14, 50, tzinfo=UTC_TZ)
-    _set_model_connection_probe_cache(
-        session_factory,
-        connection_id=connection_id,
-        probed_at=probe_seed_at,
-    )
+        probe_seed_at = datetime(2026, 5, 12, 14, 50, tzinfo=UTC_TZ)
+        _set_model_connection_probe_cache(
+            session_factory,
+            connection_id=connection_id,
+            probed_at=probe_seed_at,
+        )
 
-    test_response = client.post(f"/api/model-connections/{connection_id}/connection-test")
-    assert test_response.status_code == 200, test_response.json()
+        test_response = client.post(f"/api/model-connections/{connection_id}/connection-test")
+        assert test_response.status_code == 200, test_response.json()
+
     test_body = cast(dict[str, object], test_response.json())
     assert test_body["modelConnectionId"] == connection_id
     assert test_body["ok"] is True
-    assert (
-        test_body["message"] == "Connection test succeeded (request req-provider-connection-test)."
-    )
+    assert test_body["message"] == "Connection test succeeded (request fake-openai-request)."
     assert (
         datetime.fromisoformat(cast(str, test_body["lastTestedAt"]).replace("Z", "+00:00"))
         == fixed_now
     )
-    assert _RecordingOpenAIClient.init_calls == [
-        {
-            "api_key": "sk-test-model-connection",
-            "base_url": "https://api.openai.com/v1",
-            "timeout": 60.0,
-            "max_retries": 0,
-        }
-    ]
-    assert _RecordingOpenAIClient.response_calls == [
-        {
-            "model": "gpt-5.5-mini",
-            "instructions": "Reply with the single word OK.",
-            "input": "Connection test.",
-            "reasoning": {"effort": "medium"},
-        }
-    ]
 
     get_response = client.get(f"/api/model-connections/{connection_id}")
     assert get_response.status_code == 200, get_response.json()
     get_body = cast(dict[str, object], get_response.json())
     assert get_body["lastTestOk"] is True
-    assert (
-        get_body["lastTestMessage"]
-        == "Connection test succeeded (request req-provider-connection-test)."
-    )
+    assert get_body["lastTestMessage"] == "Connection test succeeded (request fake-openai-request)."
     assert (
         datetime.fromisoformat(cast(str, get_body["lastTestedAt"]).replace("Z", "+00:00"))
         == fixed_now
@@ -3598,7 +3578,7 @@ def test_model_connection_capability_probe_marks_transport_failures_inconclusive
     assert strict_schema["lastProbedAt"] == "2026-05-12T15:10:00Z"
 
 
-def test_model_connection_connection_test_uses_smoke_kind_without_openai(
+def test_model_connection_connection_test_requires_provider_api_key_without_openai(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3606,16 +3586,15 @@ def test_model_connection_connection_test_uses_smoke_kind_without_openai(
 
     class _UnexpectedOpenAIClient:
         def __init__(self, **kwargs: object) -> None:
-            raise AssertionError("OpenAI should not be used for deterministic_smoke connections")
+            raise AssertionError("OpenAI should not be used when the provider API key is missing")
 
     monkeypatch.setattr("app.services.model_connection_service.OpenAI", _UnexpectedOpenAIClient)
     monkeypatch.setattr("app.services.model_connection_service.utcnow", lambda: fixed_now)
 
     payload = {
         **_model_connection_create_payload(),
-        "connectionKind": "deterministic_smoke",
-        "baseUrl": "https://smoke.invalid/v1",
-        "modelId": "smoke-check",
+        "baseUrl": "https://provider.invalid/v1",
+        "modelId": "provider-check",
         "protocolProfile": "openai_chat_completions",
     }
     payload.pop("apiKey")
@@ -3629,8 +3608,8 @@ def test_model_connection_connection_test_uses_smoke_kind_without_openai(
     assert test_response.status_code == 200, test_response.json()
     test_body = cast(dict[str, object], test_response.json())
     assert test_body["modelConnectionId"] == connection_id
-    assert test_body["ok"] is True
-    assert test_body["message"] == "Deterministic smoke test succeeded."
+    assert test_body["ok"] is False
+    assert test_body["message"] == "API key is not configured."
     assert (
         datetime.fromisoformat(cast(str, test_body["lastTestedAt"]).replace("Z", "+00:00"))
         == fixed_now
@@ -3639,8 +3618,8 @@ def test_model_connection_connection_test_uses_smoke_kind_without_openai(
     get_response = client.get(f"/api/model-connections/{connection_id}")
     assert get_response.status_code == 200, get_response.json()
     get_body = cast(dict[str, object], get_response.json())
-    assert get_body["lastTestOk"] is True
-    assert get_body["lastTestMessage"] == "Deterministic smoke test succeeded."
+    assert get_body["lastTestOk"] is False
+    assert get_body["lastTestMessage"] == "API key is not configured."
     assert (
         datetime.fromisoformat(cast(str, get_body["lastTestedAt"]).replace("Z", "+00:00"))
         == fixed_now

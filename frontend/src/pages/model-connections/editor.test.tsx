@@ -31,7 +31,6 @@ const existingCapabilities = {
 const existingConnection = {
   baseUrl: "https://provider.example.test/v1/",
   capabilities: existingCapabilities,
-  connectionKind: "deterministic_smoke",
   createdAt: "2026-04-21T12:00:00Z",
   description: "Production compatible endpoint.",
   id: 4,
@@ -212,7 +211,6 @@ describe("ModelConnectionsEditorPage", () => {
     render(<ModelConnectionsEditorPage />);
 
     expect(screen.queryByText("Connection mode:")).not.toBeInTheDocument();
-    expect(screen.queryByText("Provider-backed")).not.toBeInTheDocument();
     fillRequiredCreateFields();
 
     fireEvent.click(
@@ -271,7 +269,6 @@ describe("ModelConnectionsEditorPage", () => {
     expect(
       screen.getByRole("option", { name: /^Custom\.\.\.$/ }),
     ).toBeVisible();
-    expect(screen.getByText(/providers that reject reasoning/i)).toBeVisible();
   });
 
   it("submits null reasoning effort when Omit is selected", async () => {
@@ -437,9 +434,6 @@ describe("ModelConnectionsEditorPage", () => {
       "https://provider.example.test/v1/",
     );
 
-    expect(
-      screen.getByText(/optional for deterministic smoke\./i),
-    ).toBeVisible();
     expect(screen.getByText(/last reachability test passed/i)).toBeVisible();
     expect(screen.getAllByText(/tool calls rejected by fixture/i)[0]).toBeVisible();
     expect(screen.getAllByText(/strict schema accepted/i)[0]).toBeVisible();

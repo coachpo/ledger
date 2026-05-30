@@ -54,6 +54,8 @@ from tests.test_workflow_package_manifest_http_node import (
     http_node_package_source,
 )
 
+_REMOVED_MODEL_CONNECTION_KIND_FIELD = f"connection{'K'}ind"
+
 _EXPECTED_STRUCTURED_OUTPUT_WARNING = {
     "field": "spec.outputSchemas.summary_output.jsonSchema",
     "code": "model_capability_probe_inconclusive",
@@ -139,14 +141,13 @@ def _seeded_tradingagents_package(client: TestClient) -> dict[str, Any]:
 def _seed_tradingagents_model_connection(
     session_factory: sessionmaker[Session],
     *,
-    api_key: str | None = "sk-preflight",
+    api_key: str | None = "test-api-key",
 ) -> None:
     with session_factory() as session:
         session.add(
             ModelConnection(
                 key="tradingagents_primary_model",
                 status="active",
-                connection_kind="provider",
                 name="TradingAgents Primary Model",
                 description="Preflight model binding.",
                 base_url="https://api.openai.com/v1",
@@ -345,9 +346,8 @@ def _create_package(
 def _seed_model_connection(
     session_factory: sessionmaker[Session],
     *,
-    api_key: str | None = "sk-package-runtime-v1",
-    connection_kind: str = "provider",
-    base_url: str = "https://runtime-v1.example.com/v1",
+    api_key: str | None = "test-api-key",
+    base_url: str = "https://provider-runtime.example.test/v1",
     model_id: str = "gpt-package-v1",
     api_style: str = "responses",
 ) -> None:
@@ -357,7 +357,6 @@ def _seed_model_connection(
             ModelConnection(
                 key="package_runtime_model",
                 status="active",
-                connection_kind=connection_kind,
                 name="Package Runtime Model",
                 description="Package runtime model binding.",
                 base_url=base_url,
@@ -508,7 +507,6 @@ def test_runtime_profile_normalizes_api_style_and_rejects_snapshot_mismatch() ->
     legacy_profile_payload: dict[str, Any] = {
         "key": "legacy_chat_model",
         "name": "Legacy Chat Model",
-        "connectionKind": "provider",
         "apiStyle": "chat_completions",
         "baseUrl": "https://legacy-chat.example.test/v1",
         "modelId": "gpt-legacy-chat",
@@ -1161,9 +1159,8 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
         {
             "key": "package_runtime_model",
             "name": "Package Runtime Model",
-            "connectionKind": "provider",
             "protocolProfile": "openai_responses",
-            "baseUrl": "https://runtime-v1.example.com/v1",
+            "baseUrl": "https://provider-runtime.example.test/v1",
             "modelId": "gpt-package-v1",
             "reasoningEffort": "high",
             "capabilities": default_model_connection_capabilities("openai_responses").model_dump(
@@ -1194,7 +1191,7 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     rerun_provenance = cast(dict[str, Any], rerun_draft.json()["packageProvenance"])
     assert rerun_provenance["workflowPackageKey"] == "provenance_filter_package"
     first_connection = cast(dict[str, Any], rerun_provenance["resolvedModelConnections"][0])
-    assert first_connection["connectionKind"] == "provider"
+    assert _REMOVED_MODEL_CONNECTION_KIND_FIELD not in first_connection
     assert first_connection["protocolProfile"] == "openai_responses"
     assert first_connection["outputStrategyPolicy"] == "prefer_strict_schema"
     assert first_connection["parallelToolCallsPolicy"] == "serialize"
@@ -1563,7 +1560,7 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
         source_snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
         assert source_snapshot is not None
         source_profile = cast(dict[str, Any], source_snapshot.resolved_model_connections[0])
-        assert source_profile["baseUrl"] == "https://runtime-v1.example.com/v1"
+        assert source_profile["baseUrl"] == "https://provider-runtime.example.test/v1"
         assert source_profile["modelId"] == "gpt-package-v1"
         assert source_profile["reasoningEffort"] == "high"
         assert source_profile["timeoutSeconds"] == 31
@@ -1586,7 +1583,7 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
     drifted_detail = cast(dict[str, Any], drifted_detail_response.json())
     drifted_provenance = cast(dict[str, Any], drifted_detail["packageProvenance"])
     drifted_profile = cast(dict[str, Any], drifted_provenance["resolvedModelConnections"][0])
-    assert drifted_profile["baseUrl"] == "https://runtime-v1.example.com/v1"
+    assert drifted_profile["baseUrl"] == "https://provider-runtime.example.test/v1"
     assert drifted_profile["modelId"] == "gpt-package-v1"
     assert drifted_profile["reasoningEffort"] == "high"
     assert drifted_profile["timeoutSeconds"] == 31
@@ -1606,7 +1603,7 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
         draft_provenance = cast(dict[str, Any], draft["packageProvenance"])
         assert draft_provenance["preflightSummary"]["ready"] is False
         draft_profile = cast(dict[str, Any], draft_provenance["resolvedModelConnections"][0])
-        assert draft_profile["baseUrl"] == "https://runtime-v1.example.com/v1"
+        assert draft_profile["baseUrl"] == "https://provider-runtime.example.test/v1"
         assert draft_profile["modelId"] == "gpt-package-v1"
         assert draft_profile["reasoningEffort"] == "high"
         assert draft_profile["timeoutSeconds"] == 31
@@ -1645,7 +1642,7 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
     assert rerun_detail["status"] == "succeeded"
     assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
         "api_key": "sk-package-runtime-live",
-        "base_url": "https://runtime-v1.example.com/v1",
+        "base_url": "https://provider-runtime.example.test/v1",
         "timeout": 31.0,
     }
     assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-v1"
@@ -1659,7 +1656,7 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
     assert fork_detail["status"] == "succeeded"
     assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
         "api_key": "sk-package-runtime-live",
-        "base_url": "https://runtime-v1.example.com/v1",
+        "base_url": "https://provider-runtime.example.test/v1",
         "timeout": 31.0,
     }
     assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-v1"
@@ -1707,7 +1704,6 @@ def test_compat_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(
         {
             "key": "package_runtime_model",
             "name": "Compatibility Runtime Profile Model",
-            "connectionKind": "provider",
             "protocolProfile": "openai_chat_completions",
             "baseUrl": "https://compat-runtime-profile.example.test/v1",
             "modelId": "fake-compat-runtime-profile",

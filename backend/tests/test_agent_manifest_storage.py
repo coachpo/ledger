@@ -26,6 +26,9 @@ from app.services.model_connection_snapshot import build_model_connection_runtim
 from tests.test_agent_manifest_compiler import _expected_payload, _seed_manifest_refs
 from tests.test_agent_manifest_parser import _valid_manifest_source
 
+_REMOVED_MODEL_CONNECTION_KIND_FIELD = f"connection{'K'}ind"
+_REMOVED_MODEL_CONNECTION_KIND_DB_FIELD = f"connection{'_'}kind"
+
 
 def _agent_service(session: Session) -> AgentService:
     return AgentService(
@@ -100,23 +103,14 @@ def test_agent_manifest_save_read_decompile_preserves_reasoning_snapshot(
         assert (
             created_row.model_connection_snapshot["reasoning_effort"] == expected_reasoning_effort
         )
-        assert created.model_connection_snapshot.connection_kind == connection.connection_kind
         assert (
-            created_payload["modelConnectionSnapshot"]["connectionKind"]
-            == connection.connection_kind
+            _REMOVED_MODEL_CONNECTION_KIND_FIELD not in created_payload["modelConnectionSnapshot"]
         )
-        assert (
-            created_row.model_connection_snapshot["connection_kind"] == connection.connection_kind
-        )
+        assert _REMOVED_MODEL_CONNECTION_KIND_DB_FIELD not in created_row.model_connection_snapshot
 
         decompiled = decompile_agent_model(created_row, session)
-        created_row.model_connection_snapshot = {
-            **created_row.model_connection_snapshot,
-            "connection_kind": "deterministic_smoke",
-        }
-        session.commit()
-        session.refresh(created_row)
         reread = service.get_agent(created.id)
+        reread_payload = reread.model_dump(mode="json", by_alias=True)
 
         assert decompiled.payload["modelConnectionId"] == connection.id
         assert decompiled.payload["key"] == "research_agent"
@@ -125,9 +119,8 @@ def test_agent_manifest_save_read_decompile_preserves_reasoning_snapshot(
         assert (
             created_row.model_connection_snapshot["reasoning_effort"] == expected_reasoning_effort
         )
-        assert created_row.model_connection_snapshot["connection_kind"] == "deterministic_smoke"
         assert reread.model_connection_snapshot.reasoning_effort == expected_reasoning_effort
-        assert reread.model_connection_snapshot.connection_kind == connection.connection_kind
+        assert _REMOVED_MODEL_CONNECTION_KIND_FIELD not in reread_payload["modelConnectionSnapshot"]
 
 
 def test_agent_service_structured_create_write_is_rejected_without_persisting_row(

@@ -2,24 +2,162 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 from typing import Any
 
 
-def _response(summary: str, *, include_usage: bool = True) -> dict[str, Any]:
+def _string_value(key: str, summary: str) -> str:
+    normalized = key.replace("_", " ").replace("-", " ").strip() or "value"
+    if key == "summary":
+        return summary
+    if key == "posture":
+        return "fake provider posture"
+    if key == "rationale":
+        return "fake provider rationale"
+    if key == "riskSummary":
+        return "fake provider risk summary"
+    if key == "implementationNotes":
+        return "fake provider implementation notes"
+    if len(key) > 80:
+        return (f"fake provider wide output for {key} ") * 12
+    return f"fake provider {normalized}"
+
+
+def _schema_type(schema: dict[str, object]) -> str:
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        return next((str(item) for item in schema_type if item != "null"), "string")
+    if isinstance(schema_type, str):
+        return schema_type
+    if isinstance(schema.get("properties"), dict):
+        return "object"
+    if isinstance(schema.get("items"), dict):
+        return "array"
+    return "string"
+
+
+def _resolve_ref(root_schema: dict[str, object], ref: object) -> object | None:
+    if not isinstance(ref, str) or not ref.startswith("#/"):
+        return None
+    current: object = root_schema
+    for part in ref[2:].split("/"):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part.replace("~1", "/").replace("~0", "~"))
+    return current
+
+
+def _schema_value(
+    key: str,
+    schema: object,
+    summary: str,
+    root_schema: dict[str, object],
+    depth: int = 0,
+) -> object:
+    if depth > 12 or not isinstance(schema, dict):
+        return _string_value(key, summary)
+    resolved = _resolve_ref(root_schema, schema.get("$ref"))
+    if resolved is not None:
+        return _schema_value(key, resolved, summary, root_schema, depth + 1)
+    for combiner in ("allOf", "anyOf", "oneOf"):
+        options = schema.get(combiner)
+        if isinstance(options, list) and options:
+            return _schema_value(key, options[0], summary, root_schema, depth + 1)
+    if "const" in schema:
+        return schema["const"]
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and enum_values:
+        return enum_values[0]
+
+    schema_type = _schema_type(schema)
+    if schema_type == "object":
+        properties = schema.get("properties")
+        if not isinstance(properties, dict):
+            return {}
+        return {
+            str(property_key): _schema_value(
+                str(property_key), property_schema, summary, root_schema, depth + 1
+            )
+            for property_key, property_schema in properties.items()
+        }
+    if schema_type == "array":
+        min_items = schema.get("minItems")
+        if isinstance(min_items, int) and min_items > 0:
+            return [_schema_value(key, schema.get("items", {}), summary, root_schema, depth + 1)]
+        return []
+    if schema_type == "integer":
+        return 1
+    if schema_type == "number":
+        return 1.23
+    if schema_type == "boolean":
+        return True
+    return _string_value(key, summary)
+
+
+def _schema_output(schema: object, summary: str) -> dict[str, object]:
+    if not isinstance(schema, dict):
+        return {"summary": summary}
+    output = _schema_value("summary", schema, summary, schema)
+    return output if isinstance(output, dict) else {"summary": summary}
+
+
+def _responses_schema(payload: dict[str, Any]) -> object | None:
+    text = payload.get("text")
+    if not isinstance(text, dict):
+        return None
+    text_format = text.get("format")
+    if not isinstance(text_format, dict) or text_format.get("type") != "json_schema":
+        return None
+    return text_format.get("schema")
+
+
+def _chat_schema(payload: dict[str, Any]) -> object | None:
+    response_format = payload.get("response_format")
+    if not isinstance(response_format, dict) or response_format.get("type") != "json_schema":
+        return None
+    json_schema = response_format.get("json_schema")
+    if not isinstance(json_schema, dict):
+        return None
+    return json_schema.get("schema")
+
+
+def _response(
+    summary: str,
+    *,
+    include_usage: bool = True,
+    schema: object | None = None,
+) -> dict[str, Any]:
+    output = _schema_output(schema, summary)
+    output_text = json.dumps(output)
     body: dict[str, Any] = {
         "id": "fake-response",
         "output": [
             {
                 "type": "message",
-                "content": [{"type": "output_text", "text": json.dumps({"summary": summary})}],
+                "content": [{"type": "output_text", "text": output_text}],
             }
         ],
-        "output_text": json.dumps({"summary": summary}),
+        "output_text": output_text,
     }
     if include_usage:
         body["usage"] = {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5}
     return body
+
+
+@contextmanager
+def run_fake_openai_provider(host: str = "127.0.0.1") -> Iterator[str]:
+    server = ThreadingHTTPServer((host, 0), FakeOpenAIProviderHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://{host}:{server.server_port}/v1"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 class FakeOpenAIProviderHandler(BaseHTTPRequestHandler):
@@ -46,6 +184,7 @@ class FakeOpenAIProviderHandler(BaseHTTPRequestHandler):
 
     def _handle_responses(self, payload: dict[str, Any]) -> None:
         model = str(payload.get("model") or "")
+        schema = _responses_schema(payload)
         if "tools-disabled" in model and payload.get("tools"):
             self._send_json(400, {"error": {"message": "tool calls are unsupported"}})
             return
@@ -60,12 +199,16 @@ class FakeOpenAIProviderHandler(BaseHTTPRequestHandler):
             self._send_json(200, _response("fake json object fallback"))
             return
         if "missing-usage" in model:
-            self._send_json(200, _response("fake missing usage", include_usage=False))
+            self._send_json(
+                200,
+                _response("fake missing usage", include_usage=False, schema=schema),
+            )
             return
-        self._send_json(200, _response("fake strict schema"))
+        self._send_json(200, _response("fake strict schema", schema=schema))
 
     def _handle_chat_completions(self, payload: dict[str, Any]) -> None:
         model = str(payload.get("model") or "")
+        schema = _chat_schema(payload)
         if "tools-disabled" in model and payload.get("tools"):
             self._send_json(400, {"error": {"message": "tool calls are unsupported"}})
             return
@@ -73,9 +216,10 @@ class FakeOpenAIProviderHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": {"message": "reasoning_effort is unsupported"}})
             return
         include_usage = "missing-usage" not in model
+        summary = "fake chat output" if include_usage else "fake missing usage"
         body: dict[str, Any] = {
             "id": "fake-chat-completion",
-            "choices": [{"message": {"content": json.dumps({"summary": "fake chat output"})}}],
+            "choices": [{"message": {"content": json.dumps(_schema_output(schema, summary))}}],
         }
         if include_usage:
             body["usage"] = {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}
@@ -86,6 +230,7 @@ class FakeOpenAIProviderHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(encoded)))
+        self.send_header("x-request-id", "fake-openai-request")
         self.end_headers()
         self.wfile.write(encoded)
 
