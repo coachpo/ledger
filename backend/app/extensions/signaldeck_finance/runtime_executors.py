@@ -19,9 +19,7 @@ from app.extensions.signaldeck_finance.runtime_prediction_markets import (
     PREDICTION_MARKETS_LOOKUP_TOOL_SPEC,
 )
 from app.extensions.signaldeck_finance.runtime_reports import REPORT_LOOKUP_TOOL_SPEC
-from app.extensions.signaldeck_finance.runtime_sec_filings import (
-    SEC_FILINGS_LOOKUP_TOOL_SPEC,
-)
+from app.extensions.signaldeck_finance.runtime_sec_filings import SEC_FILINGS_LOOKUP_TOOL_SPEC
 
 FINANCE_WORKSPACE_RUNTIME_TOOL_SPECS: tuple[RuntimeToolSpec, ...] = (
     REPORT_LOOKUP_TOOL_SPEC,

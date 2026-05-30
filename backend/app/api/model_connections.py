@@ -4,10 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.api.dependencies import (
-    get_model_connection_probe_service,
-    get_model_connection_service,
-)
+from app.api.dependencies import get_model_connection_probe_service, get_model_connection_service
 from app.schemas.model_connection import (
     ModelConnectionCapabilityProbeRead,
     ModelConnectionCapabilityProbeRequest,

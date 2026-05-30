@@ -22,7 +22,6 @@ def _metadata_without_none(payload: Mapping[str, Any]) -> dict[str, Any]:
 class ModelGatewayConnectionConfig:
     id: int
     name: str
-    connection_kind: str
     base_url: str
     model_id: str
     reasoning_effort: str | None

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, Text, UniqueConstraint
 from sqlalchemy import text as sql_text
@@ -40,7 +40,7 @@ _LEGACY_API_STYLE_TO_PROTOCOL_PROFILE = {
 
 
 def _default_capabilities_payload() -> dict[str, Any]:
-    return json.loads(_MODEL_CONNECTION_DEFAULT_CAPABILITIES_JSON)
+    return cast(dict[str, Any], json.loads(_MODEL_CONNECTION_DEFAULT_CAPABILITIES_JSON))
 
 
 class ModelConnection(IdMixin, TimestampMixin, Base):
@@ -49,10 +49,6 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
         CheckConstraint(
             "status IN ('active')",
             name="ck_model_connections_status",
-        ),
-        CheckConstraint(
-            "connection_kind IN ('provider', 'deterministic_smoke')",
-            name="ck_model_connections_connection_kind",
         ),
         CheckConstraint(
             "reasoning_effort IS NULL OR (length(btrim(reasoning_effort)) BETWEEN 1 AND 128)",
@@ -106,12 +102,6 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
         nullable=False,
         default="active",
         server_default="active",
-    )
-    connection_kind: Mapped[str] = mapped_column(
-        String(40),
-        nullable=False,
-        default="provider",
-        server_default="provider",
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")

@@ -9,7 +9,6 @@ from pydantic import ValidationError
 from app.models.model_connection import ModelConnection
 from app.schemas.model_connection import (
     ModelConnectionCapabilities,
-    ModelConnectionKind,
     ModelConnectionOutputStrategyPolicy,
     ModelConnectionParallelToolCallsPolicy,
     ModelConnectionProtocolProfile,
@@ -29,7 +28,6 @@ MODEL_CONNECTION_RUNTIME_SNAPSHOT_KEYS = (
     "reasoning_policy",
     "streaming_policy",
     "probe_cache_ttl_seconds",
-    "connection_kind",
     "api_style",
     "timeout_seconds",
 )
@@ -47,7 +45,6 @@ class ModelConnectionRuntimeSnapshot:
     reasoning_policy: str
     streaming_policy: str
     probe_cache_ttl_seconds: int
-    connection_kind: str | None
     api_style: str
     timeout_seconds: int
 
@@ -69,7 +66,6 @@ def build_model_connection_runtime_snapshot(
         "reasoning_policy": connection.reasoning_policy,
         "streaming_policy": connection.streaming_policy,
         "probe_cache_ttl_seconds": connection.probe_cache_ttl_seconds,
-        "connection_kind": connection.connection_kind,
         "api_style": connection.api_style,
         "timeout_seconds": connection.timeout_seconds,
     }
@@ -84,7 +80,9 @@ def parse_model_connection_runtime_snapshot(
     protocol_profile = _parse_protocol_profile(snapshot)
     base_url = _required_snapshot_text(snapshot, "base_url", "baseUrl")
     model_id = _required_snapshot_text(snapshot, "model_id", "modelId")
-    reasoning_effort = _snapshot_reasoning_effort(_get(snapshot, "reasoning_effort", "reasoningEffort"))
+    reasoning_effort = _snapshot_reasoning_effort(
+        _get(snapshot, "reasoning_effort", "reasoningEffort")
+    )
     capabilities = _dump_capabilities(_parse_capabilities(snapshot, protocol_profile))
     output_strategy_policy = _parse_policy(
         snapshot,
@@ -119,9 +117,6 @@ def parse_model_connection_runtime_snapshot(
         field_name="probe_cache_ttl_seconds",
         default_value=900,
     )
-    connection_kind = _snapshot_connection_kind(
-        _get(snapshot, "connection_kind", "connectionKind")
-    )
     api_style = _required_snapshot_text(snapshot, "api_style", "apiStyle")
     expected_api_style = _protocol_profile_to_api_style(protocol_profile)
     if api_style != expected_api_style:
@@ -143,7 +138,6 @@ def parse_model_connection_runtime_snapshot(
         reasoning_policy=reasoning_policy,
         streaming_policy=streaming_policy,
         probe_cache_ttl_seconds=probe_cache_ttl_seconds,
-        connection_kind=connection_kind,
         api_style=api_style,
         timeout_seconds=timeout_seconds,
     )
@@ -163,7 +157,6 @@ def snapshot_to_json(
         "reasoning_policy": snapshot.reasoning_policy,
         "streaming_policy": snapshot.streaming_policy,
         "probe_cache_ttl_seconds": snapshot.probe_cache_ttl_seconds,
-        "connection_kind": snapshot.connection_kind,
         "api_style": snapshot.api_style,
         "timeout_seconds": snapshot.timeout_seconds,
     }
@@ -206,20 +199,6 @@ def _snapshot_reasoning_effort(value: object) -> str | None:
             "Model connection snapshot reasoning_effort must be at most 128 characters"
         )
     return normalized
-
-
-def _snapshot_connection_kind(value: object) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError("Model connection snapshot connection_kind must be a string or null")
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError("Model connection snapshot connection_kind must be a non-empty string")
-    try:
-        return ModelConnectionKind(normalized).value
-    except ValueError as exc:
-        raise ValueError("Model connection snapshot connection_kind is invalid") from exc
 
 
 def _parse_protocol_profile(snapshot: Mapping[str, object]) -> str:
@@ -281,7 +260,7 @@ def _parse_policy(
     if value is None:
         value = default_value
     try:
-        return enum_type(str(value)).value
+        return cast(str, enum_type(str(value)).value)
     except ValueError as exc:
         raise ValueError(f"Model connection snapshot {field_name} is invalid") from exc
 

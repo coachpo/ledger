@@ -1088,7 +1088,6 @@ class PackageExecutionPlanBuilder:
         return PackageResolvedModelBinding(
             key=str(getattr(binding, "key", key)),
             name=str(getattr(binding, "name", key)),
-            connection_kind=str(getattr(binding, "connection_kind", "provider")),
             protocol_profile=protocol_profile,
             base_url=str(getattr(binding, "base_url", "")),
             model_id=str(getattr(binding, "model_id", "")),

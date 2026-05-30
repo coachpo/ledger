@@ -18,9 +18,9 @@ from app.schemas.model_connection import (
     ModelConnectionCreate,
     ModelConnectionListItemRead,
     ModelConnectionListRead,
-    ModelConnectionRead,
     ModelConnectionOutputStrategyPolicy,
     ModelConnectionParallelToolCallsPolicy,
+    ModelConnectionRead,
     ModelConnectionReasoningPolicy,
     ModelConnectionStreamingPolicy,
     ModelConnectionUpdate,
@@ -32,12 +32,8 @@ from app.services.execution_plan import PackageResolvedModelBinding
 from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_dto import ModelConnectionTestRequest
-from app.services.model_gateway_openai import (
-    DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI,
-)
-from app.services.model_gateway_openai import (
-    OpenAIProtocolAdapter,
-)
+from app.services.model_gateway_openai import DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI
+from app.services.model_gateway_openai import OpenAIProtocolAdapter
 
 
 @dataclass(frozen=True)
@@ -65,9 +61,7 @@ class ModelConnectionService:
 
     def list_connections(self) -> ModelConnectionListRead:
         items = self.repository.list_connections()
-        return ModelConnectionListRead(
-            items=[self._to_list_item_read(item) for item in items]
-        )
+        return ModelConnectionListRead(items=[self._to_list_item_read(item) for item in items])
 
     def get_connection(self, connection_id: int) -> ModelConnectionRead:
         return self._to_read(self._get_model(connection_id))
@@ -124,7 +118,6 @@ class ModelConnectionService:
         connection = ModelConnection(
             key=payload.key,
             status="active",
-            connection_kind=payload.connection_kind.value,
             protocol_profile=payload.protocol_profile.value,
             name=payload.name,
             description=payload.description,
@@ -166,10 +159,6 @@ class ModelConnectionService:
         reset_connection_test_result = False
 
         reset_probe_cache = True
-        if "connection_kind" in payload.model_fields_set and payload.connection_kind is not None:
-            connection.connection_kind = payload.connection_kind.value
-            reset_connection_test_result = True
-            reset_probe_cache = True
         if "protocol_profile" in payload.model_fields_set and payload.protocol_profile is not None:
             connection.protocol_profile = payload.protocol_profile.value
             connection.capabilities = dump_model_connection_capabilities(
@@ -310,7 +299,6 @@ class ModelConnectionService:
             "key": resolution.key,
             "name": resolution.name,
             "description": connection.description,
-            "connection_kind": resolution.connection_kind,
             "protocol_profile": resolution.protocol_profile,
             "base_url": resolution.base_url,
             "model_id": resolution.model_id,

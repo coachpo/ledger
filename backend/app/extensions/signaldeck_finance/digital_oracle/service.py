@@ -143,8 +143,11 @@ class DigitalOraclePhase1Service:
             calls.append(
                 _ProviderCall(
                     provider=venue,
-                    call=lambda provider=provider, provider_query=provider_query: (
-                        provider.lookup_prediction_markets(provider_query)
+                    call=cast(
+                        Callable[[], DigitalOraclePredictionMarketsProviderResult],
+                        lambda provider=provider, provider_query=provider_query: (
+                            provider.lookup_prediction_markets(provider_query)
+                        ),
                     ),
                 )
             )

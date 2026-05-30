@@ -659,7 +659,6 @@ class AgentService:
                 agent.model_connection_snapshot
             )
             model_connection_snapshot = snapshot_to_json(parsed_model_connection_snapshot)
-            model_connection_snapshot["connection_kind"] = model_connection.connection_kind.value
         except ValueError as exc:
             raise business_rule_error(
                 "agent_model_connection_snapshot_invalid",

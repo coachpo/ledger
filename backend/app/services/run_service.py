@@ -97,9 +97,7 @@ from app.services.memory_follow_up_service import MemoryFollowUpEvaluator, Memor
 from app.services.memory_service import MemoryLookupContext, MemoryService
 from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.model_gateway import ModelExecutionGateway
-from app.services.model_gateway_openai import (
-    DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI,
-)
+from app.services.model_gateway_openai import DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     OutputSchemaCompilerError,

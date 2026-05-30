@@ -20,9 +20,7 @@ from app.schemas.model_connection import (
 from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_dto import ModelCapabilityProbeRequest
-from app.services.model_gateway_openai import (
-    DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI,
-)
+from app.services.model_gateway_openai import DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI
 from app.services.model_gateway_openai import OpenAIProtocolAdapter
 
 

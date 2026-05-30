@@ -31,12 +31,13 @@ class CompatibilityResolutionService:
         except ValidationError:
             return default_model_connection_capabilities(connection.protocol_profile)
 
-    def resolve_connection(self, connection: ModelConnection) -> ModelConnectionCompatibilityResolution:
+    def resolve_connection(
+        self, connection: ModelConnection
+    ) -> ModelConnectionCompatibilityResolution:
         return ModelConnectionCompatibilityResolution.model_validate(
             {
                 "key": connection.key,
                 "name": connection.name,
-                "connectionKind": connection.connection_kind,
                 "protocolProfile": connection.protocol_profile,
                 "baseUrl": connection.base_url,
                 "modelId": connection.model_id,
@@ -47,7 +48,9 @@ class CompatibilityResolutionService:
                 "reasoningPolicy": connection.reasoning_policy,
                 "streamingPolicy": connection.streaming_policy,
                 "probeCacheTtlSeconds": connection.probe_cache_ttl_seconds,
-                "apiStyle": api_style_for_model_connection_protocol_profile(connection.protocol_profile),
+                "apiStyle": api_style_for_model_connection_protocol_profile(
+                    connection.protocol_profile
+                ),
                 "timeoutSeconds": connection.timeout_seconds,
                 "hasApiKey": self._get_api_key(connection) is not None,
             }
@@ -63,7 +66,6 @@ class CompatibilityResolutionService:
         return ModelGatewayConnectionConfig(
             id=connection.id,
             name=resolved.name,
-            connection_kind=resolved.connection_kind.value,
             base_url=resolved.base_url,
             model_id=resolved.model_id,
             reasoning_effort=resolved.reasoning_effort,
@@ -86,7 +88,6 @@ class CompatibilityResolutionService:
         return ModelGatewayConnectionConfig(
             id=live_connection.id,
             name=binding.name,
-            connection_kind=binding.connection_kind,
             base_url=binding.base_url,
             model_id=binding.model_id,
             reasoning_effort=binding.reasoning_effort,
@@ -108,7 +109,6 @@ class CompatibilityResolutionService:
             {
                 "key": binding.key,
                 "name": binding.name,
-                "connectionKind": binding.connection_kind,
                 "protocolProfile": binding.protocol_profile,
                 "baseUrl": binding.base_url,
                 "modelId": binding.model_id,
@@ -132,7 +132,6 @@ class CompatibilityResolutionService:
         return PackageResolvedModelBinding(
             key=resolution.key,
             name=resolution.name,
-            connection_kind=resolution.connection_kind.value,
             protocol_profile=resolution.protocol_profile.value,
             base_url=resolution.base_url,
             model_id=resolution.model_id,

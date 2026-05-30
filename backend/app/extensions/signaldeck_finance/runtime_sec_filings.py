@@ -425,9 +425,9 @@ def _company_rows(payload: object) -> tuple[Mapping[str, object], ...]:
             cast(Mapping[str, object], value) for value in values if isinstance(value, Mapping)
         )
     if isinstance(payload, list):
-        values = cast(list[object], payload)
+        list_values = cast(list[object], payload)
         return tuple(
-            cast(Mapping[str, object], value) for value in values if isinstance(value, Mapping)
+            cast(Mapping[str, object], value) for value in list_values if isinstance(value, Mapping)
         )
     raise DigitalOracleProviderError(
         "SEC EDGAR returned malformed ticker mapping",

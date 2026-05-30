@@ -23,10 +23,6 @@ from app.agents.runtime_tools.failure_taxonomy import (
     runtime_failure_metadata,
 )
 from app.core.config import get_settings
-from app.extensions.signaldeck_finance.runtime_reports import (
-    REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
-    raise_report_memory_write_retired,
-)
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
@@ -44,18 +40,22 @@ from app.services.model_gateway_dto import (
     ModelConnectionTestResult,
     ModelExecutionRequest,
     ModelExecutionResult,
+    ModelGatewayConnectionConfig,
     ModelGatewayError,
     ModelOutputSchema,
     ModelToolCall,
     ModelToolExecutor,
     ModelToolResult,
 )
-from app.services.model_gateway_dto import (
-    ModelGatewayConnectionConfig as _ResolvedModelConnectionConfig,
-)
 from app.services.model_gateway_openai_responses import OpenAIResponsesAdapter
 from app.services.quote_provider import QuoteProvider
 from app.services.social_sentiment_provider import SocialSentimentSourceAdapter
+
+_RETIRED_REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME = "signaldeck_reports_write"
+_RETIRED_REPORT_MEMORY_WRITE_MESSAGE = (
+    "signaldeck_reports_write is retired; use signaldeck_memory_write for "
+    "canonical platform memory writes."
+)
 
 
 class RunExecutionError(Exception):
@@ -251,7 +251,7 @@ class AgentExecutionService:
         self,
         session: Session,
         agent: RuntimeAgentSpec,
-    ) -> _ResolvedModelConnectionConfig:
+    ) -> ModelGatewayConnectionConfig:
         repository = ModelConnectionRepository(session)
         if isinstance(agent, PackageRuntimeAgentSpec):
             binding = agent.model_binding
@@ -280,12 +280,10 @@ class AgentExecutionService:
                 binding=binding,
                 connection=connection,
             )
-            return (
-                self.compatibility_resolution_service
-                .to_gateway_connection_config_from_package_binding(
-                    binding,
-                    live_connection=connection,
-                )
+            resolver = self.compatibility_resolution_service
+            return resolver.to_gateway_connection_config_from_package_binding(
+                binding,
+                live_connection=connection,
             )
 
         if agent.model_connection_id is None:
@@ -394,7 +392,7 @@ class AgentExecutionService:
         self,
         *,
         agent: RuntimeAgentSpec,
-        model_connection: _ResolvedModelConnectionConfig,
+        model_connection: ModelGatewayConnectionConfig,
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
         capability_references: list[dict[str, object]],
@@ -494,7 +492,7 @@ class AgentExecutionService:
         self,
         *,
         client: Any,
-        model_connection: _ResolvedModelConnectionConfig,
+        model_connection: ModelGatewayConnectionConfig,
         instructions: str,
         response_input: str | list[dict[str, str]],
         text_format: Mapping[str, Any],
@@ -687,8 +685,11 @@ class AgentExecutionService:
         except RuntimeToolError as exc:
             if exc.code != "agent_tool_call_unsupported":
                 raise
-            if tool_call.tool_name == REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME:
-                raise_report_memory_write_retired()
+            if tool_call.tool_name == _RETIRED_REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME:
+                raise RuntimeToolError(
+                    code="report_memory_write_retired",
+                    message=_RETIRED_REPORT_MEMORY_WRITE_MESSAGE,
+                ) from exc
             if AgentExecutionService._is_reserved_native_function_name(tool_call.tool_name):
                 raise
         return mcp_dispatcher.dispatch(

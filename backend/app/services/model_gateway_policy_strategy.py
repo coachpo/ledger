@@ -73,9 +73,12 @@ def select_model_execution_strategies(
     has_tools: bool,
     allow_parallel_tool_calls: bool,
 ) -> ModelExecutionStrategies:
+    tool_call_strategy = "none"
+    if has_tools:
+        tool_call_strategy = "parallel" if allow_parallel_tool_calls else "serialize"
     selected = ModelExecutionStrategies(
         output_strategy=output_strategy,
-        tool_call_strategy="none" if not has_tools else ("parallel" if allow_parallel_tool_calls else "serialize"),
+        tool_call_strategy=tool_call_strategy,
         parallel_tool_calls=allow_parallel_tool_calls if has_tools else False,
     )
     try:

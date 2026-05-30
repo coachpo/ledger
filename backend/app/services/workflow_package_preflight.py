@@ -614,17 +614,6 @@ class WorkflowPackagePreflightService:
             if connection is None:
                 errors.append({"field": path, "issue": f"Model connection {key!r} was not found"})
                 continue
-            if binding.connection_kind == "deterministic_smoke":
-                warnings.append(
-                    {
-                        "field": path,
-                        "issue": "Deterministic smoke connection will run offline",
-                        "severity": "warning",
-                        "connectionKind": binding.connection_kind,
-                    }
-                )
-                bindings[binding.key] = binding
-                continue
             if require_api_key and not binding.has_api_key:
                 errors.append({"field": path, "issue": "API key is not configured"})
                 continue

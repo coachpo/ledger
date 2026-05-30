@@ -9,12 +9,12 @@ import openai
 from openai import OpenAI
 
 from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
-from app.agents.runtime_tools.types import RuntimeToolError
 from app.agents.runtime_tools.failure_taxonomy import (
     PROVIDER_NETWORK_FAILURE,
     PROVIDER_TRANSPORT_FAILURE,
     provider_status_failure_classification,
 )
+from app.agents.runtime_tools.types import RuntimeToolError
 from app.schemas.model_connection import build_model_connection_openai_base_url
 from app.services.model_gateway_dto import (
     ModelCapabilityProbeOutcome,
@@ -742,9 +742,7 @@ class OpenAIProtocolAdapter:
                 pending_tool_calls = self._extract_pending_chat_tool_calls(message)
             except ModelGatewayError as exc:
                 if tool_retry_state.can_retry(exc):
-                    messages.append(
-                        {"role": "user", "content": tool_retry_state.record_retry(exc)}
-                    )
+                    messages.append({"role": "user", "content": tool_retry_state.record_retry(exc)})
                     continue
                 if is_retryable_tool_call_failure(exc):
                     raise tool_retry_state.exhausted_error(exc) from exc

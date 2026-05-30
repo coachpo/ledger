@@ -435,8 +435,7 @@ class OpenAIResponsesAdapter:
             raise ModelGatewayError(
                 code="model_output_validation_failed",
                 message=(
-                    "Model response did not return valid JSON for the selected output "
-                    "strategy."
+                    "Model response did not return valid JSON for the selected output " "strategy."
                 ),
                 details=[{"field": "output", "issue": "Response body is not valid JSON"}],
             ) from exc

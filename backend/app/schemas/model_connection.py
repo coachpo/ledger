@@ -119,11 +119,6 @@ class ModelConnectionStreamingPolicy(str, Enum):  # noqa: UP042
     FORBID = "forbid"
 
 
-class ModelConnectionKind(str, Enum):  # noqa: UP042
-    PROVIDER = "provider"
-    DETERMINISTIC_SMOKE = "deterministic_smoke"
-
-
 _PROTOCOL_PROFILE_TO_API_STYLE = {
     ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS.value: "chat_completions",
     ModelConnectionProtocolProfile.OPENAI_RESPONSES.value: "responses",
@@ -262,7 +257,6 @@ class ModelConnectionCreate(CamelModel):
     key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
-    connection_kind: ModelConnectionKind = ModelConnectionKind.PROVIDER
     protocol_profile: ModelConnectionProtocolProfile = (
         ModelConnectionProtocolProfile.OPENAI_RESPONSES
     )
@@ -310,7 +304,6 @@ class ModelConnectionCreate(CamelModel):
 class ModelConnectionUpdate(CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
-    connection_kind: ModelConnectionKind | None = None
     protocol_profile: ModelConnectionProtocolProfile | None = None
     base_url: str | None = None
     model_id: str | None = Field(default=None, min_length=1, max_length=200)
@@ -346,7 +339,7 @@ class ModelConnectionUpdate(CamelModel):
     def validate_reasoning_effort(cls, value: object) -> str | None:
         return _normalize_reasoning_effort(value)
 
-    @field_validator("timeout_seconds", "connection_kind", "protocol_profile", mode="before")
+    @field_validator("timeout_seconds", "protocol_profile", mode="before")
     @classmethod
     def reject_null_scalar_updates(cls, value: object, info: ValidationInfo) -> object:
         if value is None:
@@ -373,7 +366,6 @@ class ModelConnectionListItemRead(CamelModel):
     key: str
     name: str
     description: str
-    connection_kind: ModelConnectionKind
     protocol_profile: ModelConnectionProtocolProfile
     base_url: str
     model_id: str
@@ -461,7 +453,6 @@ class ModelConnectionCapabilityProbeRead(CamelModel):
 class ModelConnectionCompatibilityResolution(CamelModel):
     key: str
     name: str
-    connection_kind: ModelConnectionKind
     protocol_profile: ModelConnectionProtocolProfile
     base_url: str
     model_id: str
@@ -504,9 +495,6 @@ class ModelConnectionCompatibilityResolution(CamelModel):
         if not isinstance(value, dict):
             return value
         normalized = dict(value)
-        connection_kind = normalized.get("connectionKind", normalized.get("connection_kind"))
-        if connection_kind is None:
-            normalized["connectionKind"] = ModelConnectionKind.PROVIDER.value
         name = normalized.get("name")
         if (not isinstance(name, str) or not name.strip()) and normalized.get("key") is not None:
             normalized["name"] = normalized["key"]
@@ -514,9 +502,7 @@ class ModelConnectionCompatibilityResolution(CamelModel):
             normalized["timeoutSeconds"] = 60
         if "hasApiKey" not in normalized and "has_api_key" not in normalized:
             normalized["hasApiKey"] = False
-        protocol_profile = normalized.get("protocolProfile") or normalized.get(
-            "protocol_profile"
-        )
+        protocol_profile = normalized.get("protocolProfile") or normalized.get("protocol_profile")
         api_style = normalized.get("apiStyle") or normalized.get("api_style")
         if protocol_profile is None:
             if api_style == "chat_completions":
@@ -550,10 +536,7 @@ class ModelConnectionCompatibilityResolution(CamelModel):
             normalized["capabilities"] = default_model_connection_capabilities(
                 protocol_profile_enum
             )
-        if (
-            "outputStrategyPolicy" not in normalized
-            and "output_strategy_policy" not in normalized
-        ):
+        if "outputStrategyPolicy" not in normalized and "output_strategy_policy" not in normalized:
             normalized["outputStrategyPolicy"] = (
                 ModelConnectionOutputStrategyPolicy.PREFER_STRICT_SCHEMA.value
             )
@@ -568,10 +551,7 @@ class ModelConnectionCompatibilityResolution(CamelModel):
             normalized["reasoningPolicy"] = ModelConnectionReasoningPolicy.ALLOW.value
         if "streamingPolicy" not in normalized and "streaming_policy" not in normalized:
             normalized["streamingPolicy"] = ModelConnectionStreamingPolicy.ALLOW.value
-        if (
-            "probeCacheTtlSeconds" not in normalized
-            and "probe_cache_ttl_seconds" not in normalized
-        ):
+        if "probeCacheTtlSeconds" not in normalized and "probe_cache_ttl_seconds" not in normalized:
             normalized["probeCacheTtlSeconds"] = 900
         return normalized
 
@@ -585,7 +565,6 @@ __all__ = [
     "ModelConnectionConnectionTestRead",
     "ModelConnectionCompatibilityResolution",
     "ModelConnectionCreate",
-    "ModelConnectionKind",
     "ModelConnectionListItemRead",
     "ModelConnectionListRead",
     "ModelConnectionOutputStrategyPolicy",
