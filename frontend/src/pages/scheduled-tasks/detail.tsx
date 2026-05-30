@@ -1,0 +1,2408 @@
+import {
+  AlertCircle,
+  Archive,
+  CalendarClock,
+  ChevronDown,
+  CopyPlus,
+  ExternalLink,
+  Loader2,
+  PauseCircle,
+  PlayCircle,
+  RotateCcw,
+  Save,
+  Trash2,
+} from "lucide-react";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router";
+import { toast } from "sonner";
+
+import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  useArchiveScheduledTask,
+  usePreviewUnsavedScheduledTask,
+  useRunScheduledTaskNow,
+  useScheduledTask,
+  useScheduledTaskFires,
+  useUpdateScheduledTask,
+} from "@/hooks/use-scheduled-tasks";
+import {
+  useCreateWorkflowPackageRuntimeInputPersonalEntry,
+  useDeleteWorkflowPackageRuntimeInputPersonalEntry,
+  useUpdateWorkflowPackageRuntimeInputPersonalEntry,
+  useWorkflowPackageRuntimeInputRegistry,
+} from "@/hooks/use-workflow-packages";
+import { ApiRequestError } from "@/lib/api-client";
+import { formatDateTime } from "@/lib/format";
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import {
+  createLaunchParametersTemplate,
+  resetLaunchParametersTemplate,
+} from "@/lib/platform-authoring/schema/schema-template";
+import {
+  buildRuntimeInputs,
+  createRuntimeInputRow,
+  createRuntimeInputRows,
+  type RuntimeInputRow,
+} from "@/lib/runtime-inputs";
+import type { ApiErrorDetail, UnknownRecord } from "@/lib/types/common";
+import type {
+  ScheduleDayOfWeek,
+  ScheduleFireListRead,
+  ScheduleFireRead,
+  ScheduleFireStatus,
+  ScheduleIntervalUnit,
+  ScheduleMisfirePolicy,
+  ScheduleOverlapPolicy,
+  SchedulePreviewRead,
+  ScheduleRead,
+  ScheduleRecurrence,
+  ScheduleRecurrenceType,
+  ScheduleStatus,
+  ScheduleUpdateRequest,
+  ScheduleValidationError,
+  ScheduleWriteStatus,
+} from "@/lib/types/schedule";
+import type { WorkflowPackageRuntimeInputEntryRead } from "@/lib/types/workflow-package";
+
+type DiagnosticSeverity = "error" | "warning" | "info";
+
+type ScheduleDiagnostic = {
+  message: string;
+  severity: DiagnosticSeverity;
+  title: string;
+};
+
+type FireHistoryState = {
+  error: Error | null;
+  fires: readonly ScheduleFireRead[];
+  isError: boolean;
+  isPending: boolean;
+  totalCount: number;
+};
+
+type RunNowFeedback = {
+  fireId: number;
+  message: string;
+  runId: number;
+  severity: DiagnosticSeverity;
+  title: string;
+};
+
+type ScheduleEditorDraft = {
+  atLocalTime: string;
+  daysOfMonth: number[];
+  daysOfWeek: ScheduleDayOfWeek[];
+  endsAt: string;
+  every: number;
+  intervalUnit: ScheduleIntervalUnit;
+  misfireGraceSeconds: number;
+  misfirePolicy: ScheduleMisfirePolicy;
+  overlapPolicy: ScheduleOverlapPolicy;
+  recurrenceType: ScheduleRecurrenceType;
+  startsAt: string;
+  status: ScheduleWriteStatus;
+  timezone: string;
+};
+
+type SavedInputEntryMode = "history" | "personal";
+
+type ScheduleInputDraft = {
+  inputTemplate: UnknownRecord;
+  templateVars: UnknownRecord;
+};
+
+const SAVED_INPUT_ENTRY_LIMIT = 20;
+
+const SCHEDULE_PLACEHOLDER_EXAMPLES = [
+  "schedule.id",
+  "schedule.name",
+  "schedule.timezone",
+  "schedule.packageKey",
+  "schedule.workflowKey",
+  "fire.scheduledFor",
+  "fire.scheduledLocalDate",
+  "fire.scheduledLocalTime",
+  "fire.scheduledLocalDateTime",
+  "window.start",
+  "window.end",
+  "window.startDate",
+  "window.endDate",
+  "lastRun.id",
+  "lastRun.status",
+  "lastRun.completedAt",
+  "vars.<key>",
+] as const;
+
+const EXACT_SCHEDULE_PLACEHOLDER_EXPRESSIONS = new Set([
+  "schedule.id",
+  "schedule.name",
+  "schedule.timezone",
+  "schedule.packageKey",
+  "schedule.workflowKey",
+  "fire.id",
+  "fire.reason",
+  "fire.scheduledFor",
+  "fire.scheduledLocalDate",
+  "fire.scheduledLocalTime",
+  "fire.scheduledLocalDateTime",
+  "fire.materializedAt",
+  "window.start",
+  "window.end",
+  "window.startDate",
+  "window.endDate",
+  "lastRun.id",
+  "lastRun.status",
+  "lastRun.completedAt",
+]);
+
+const PLACEHOLDER_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
+const TEMPLATE_VAR_KEY_PATTERN = /^[A-Za-z0-9_.-]+$/;
+
+const DAY_OF_WEEK_OPTIONS: Array<{ label: string; value: ScheduleDayOfWeek }> = [
+  { label: "Monday", value: "mon" },
+  { label: "Tuesday", value: "tue" },
+  { label: "Wednesday", value: "wed" },
+  { label: "Thursday", value: "thu" },
+  { label: "Friday", value: "fri" },
+  { label: "Saturday", value: "sat" },
+  { label: "Sunday", value: "sun" },
+];
+
+const MONTH_DAY_OPTIONS = Array.from({ length: 31 }, (_, index) => index + 1);
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function isNotFoundError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.status === 404;
+}
+
+function isUnknownRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseScheduleInputTemplateJson(value: string): UnknownRecord {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed) as unknown;
+  } catch {
+    throw new Error("Scheduled input template JSON must be valid JSON.");
+  }
+  if (!isUnknownRecord(parsed)) {
+    throw new Error("Scheduled input template JSON must be a valid object.");
+  }
+  return parsed;
+}
+
+function isSupportedPlaceholderExpression(expression: string): boolean {
+  if (EXACT_SCHEDULE_PLACEHOLDER_EXPRESSIONS.has(expression)) {
+    return true;
+  }
+  if (!expression.startsWith("vars.")) {
+    return false;
+  }
+  const key = expression.slice("vars.".length);
+  return Boolean(key) && TEMPLATE_VAR_KEY_PATTERN.test(key);
+}
+
+function collectUnsupportedPlaceholders(value: unknown, field = "inputTemplate"): ScheduleValidationError[] {
+  if (typeof value === "string") {
+    const issues: ScheduleValidationError[] = [];
+    for (const match of value.matchAll(PLACEHOLDER_PATTERN)) {
+      const expression = match[1]?.trim() ?? "";
+      if (!expression || !isSupportedPlaceholderExpression(expression)) {
+        issues.push({
+          field,
+          issue: `Unsupported placeholder \"${expression || match[0]}\". Use only schedule.*, fire.*, window.*, lastRun.*, or vars.<key>.`,
+        });
+      }
+    }
+    return issues;
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => collectUnsupportedPlaceholders(item, `${field}[${index}]`));
+  }
+  if (isUnknownRecord(value)) {
+    return Object.entries(value).flatMap(([key, nestedValue]) =>
+      collectUnsupportedPlaceholders(nestedValue, `${field}.${key}`),
+    );
+  }
+  return [];
+}
+
+function scheduleInputDraftErrors(inputTemplateText: string): ScheduleValidationError[] {
+  try {
+    const inputTemplate = parseScheduleInputTemplateJson(inputTemplateText);
+    return collectUnsupportedPlaceholders(inputTemplate);
+  } catch (error) {
+    return [
+      {
+        field: "inputTemplate",
+        issue: error instanceof Error ? error.message : "Scheduled input template JSON must be valid.",
+      },
+    ];
+  }
+}
+
+function newestRuntimeInputEntries(
+  entries: readonly WorkflowPackageRuntimeInputEntryRead[],
+  timestampKey: "createdAt" | "updatedAt",
+): WorkflowPackageRuntimeInputEntryRead[] {
+  return [...entries].sort((left, right) => {
+    const timestampDelta = Date.parse(right[timestampKey]) - Date.parse(left[timestampKey]);
+    return timestampDelta === 0 ? right.id - left.id : timestampDelta;
+  });
+}
+
+function savedInputEntryLabel(entry: WorkflowPackageRuntimeInputEntryRead, mode: SavedInputEntryMode): string {
+  const name = entry.name?.trim();
+  if (name) {
+    return name;
+  }
+  if (mode === "history" && entry.sourceRunId) {
+    return `Run #${entry.sourceRunId}`;
+  }
+  return mode === "history" ? `History #${entry.id}` : `Preset #${entry.id}`;
+}
+
+function formatOptionalDateTime(value: string | null, fallback: string): string {
+  return value ? formatDateTime(value) : fallback;
+}
+
+function formatDateTimeLocalInput(value: string | null): string {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function serializeDateTimeLocalInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const date = new Date(trimmed);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function clampPositiveInteger(value: number, fallback: number): number {
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback;
+}
+
+function scheduleDraftFromRead(schedule: ScheduleRead): ScheduleEditorDraft {
+  const baseDraft: ScheduleEditorDraft = {
+    atLocalTime: "09:00",
+    daysOfMonth: [1],
+    daysOfWeek: ["mon", "tue", "wed", "thu", "fri"],
+    endsAt: formatDateTimeLocalInput(schedule.endsAt),
+    every: 1,
+    intervalUnit: "hours",
+    misfireGraceSeconds: schedule.misfireGraceSeconds,
+    misfirePolicy: schedule.misfirePolicy,
+    overlapPolicy: schedule.overlapPolicy,
+    recurrenceType: schedule.recurrence.type,
+    startsAt: formatDateTimeLocalInput(schedule.startsAt),
+    status: schedule.status === "enabled" ? "enabled" : "paused",
+    timezone: schedule.timezone,
+  };
+
+  if (schedule.recurrence.type === "interval") {
+    return {
+      ...baseDraft,
+      every: schedule.recurrence.every,
+      intervalUnit: schedule.recurrence.unit,
+    };
+  }
+  if (schedule.recurrence.type === "daily") {
+    return { ...baseDraft, atLocalTime: schedule.recurrence.atLocalTime };
+  }
+  if (schedule.recurrence.type === "weekly") {
+    return {
+      ...baseDraft,
+      atLocalTime: schedule.recurrence.atLocalTime,
+      daysOfWeek: schedule.recurrence.daysOfWeek,
+    };
+  }
+  return {
+    ...baseDraft,
+    atLocalTime: schedule.recurrence.atLocalTime,
+    daysOfMonth: schedule.recurrence.daysOfMonth,
+  };
+}
+
+function recurrenceFromDraft(draft: ScheduleEditorDraft): ScheduleRecurrence {
+  if (draft.recurrenceType === "interval") {
+    return {
+      every: clampPositiveInteger(draft.every, 1),
+      type: "interval",
+      unit: draft.intervalUnit,
+    };
+  }
+  if (draft.recurrenceType === "daily") {
+    return { atLocalTime: draft.atLocalTime, type: "daily" };
+  }
+  if (draft.recurrenceType === "weekly") {
+    return {
+      atLocalTime: draft.atLocalTime,
+      daysOfWeek: draft.daysOfWeek,
+      type: "weekly",
+    };
+  }
+  return {
+    atLocalTime: draft.atLocalTime,
+    daysOfMonth: draft.daysOfMonth,
+    type: "monthly",
+  };
+}
+
+function scheduleUpdatePayloadFromDraft(draft: ScheduleEditorDraft): ScheduleUpdateRequest {
+  return {
+    endsAt: serializeDateTimeLocalInput(draft.endsAt),
+    misfireGraceSeconds: clampPositiveInteger(draft.misfireGraceSeconds, 86_400),
+    misfirePolicy: draft.misfirePolicy,
+    overlapPolicy: draft.overlapPolicy,
+    recurrence: recurrenceFromDraft(draft),
+    startsAt: serializeDateTimeLocalInput(draft.startsAt),
+    status: draft.status,
+    timezone: draft.timezone.trim(),
+  };
+}
+
+function toggleDraftValue<T>(values: readonly T[], value: T, enabled: boolean): T[] {
+  if (enabled) {
+    return values.includes(value) ? [...values] : [...values, value];
+  }
+  return values.filter((item) => item !== value);
+}
+
+function formatStatusLabel(value: string): string {
+  return value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function formatDayOfWeek(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function pluralizeUnit(value: number, unit: string): string {
+  return value === 1 ? unit.slice(0, -1) : unit;
+}
+
+function formatRecurrence(recurrence: ScheduleRecurrence): string {
+  if (recurrence.type === "interval") {
+    return `Every ${recurrence.every} ${pluralizeUnit(recurrence.every, recurrence.unit)}`;
+  }
+  if (recurrence.type === "daily") {
+    return `Daily at ${recurrence.atLocalTime}`;
+  }
+  if (recurrence.type === "weekly") {
+    return `Weekly ${recurrence.daysOfWeek.map(formatDayOfWeek).join(", ")} at ${recurrence.atLocalTime}`;
+  }
+  return `Monthly day ${recurrence.daysOfMonth.join(", ")} at ${recurrence.atLocalTime}`;
+}
+
+function statusBadgeVariant(status: ScheduleStatus) {
+  if (status === "archived") {
+    return "secondary" as const;
+  }
+  return status === "enabled" ? ("secondary" as const) : ("outline" as const);
+}
+
+function latestStatusBadgeVariant(status: ScheduleFireStatus | null) {
+  if (status === "failed") {
+    return "destructive" as const;
+  }
+  if (status === "queued") {
+    return "secondary" as const;
+  }
+  return "outline" as const;
+}
+
+function fireStatusBadgeVariant(status: ScheduleFireStatus) {
+  if (status === "failed") {
+    return "destructive" as const;
+  }
+  if (status === "queued") {
+    return "secondary" as const;
+  }
+  return "outline" as const;
+}
+
+function formatFireReason(value: string): string {
+  return value === "manual" ? "Manual fire" : "Scheduled fire";
+}
+
+function fireIssueMessage(fire: ScheduleFireRead): string | null {
+  if (fire.skipReason) {
+    return `Skipped: ${formatStatusLabel(fire.skipReason)}`;
+  }
+  if (fire.errorCode || fire.errorMessage) {
+    return [fire.errorCode ? formatStatusLabel(fire.errorCode) : null, fire.errorMessage]
+      .filter(Boolean)
+      .join(" — ");
+  }
+  if (fire.status === "skipped") {
+    return "Skipped without a backend-provided reason.";
+  }
+  if (fire.status === "failed") {
+    return "Failed without a backend-provided error message.";
+  }
+  return null;
+}
+
+function fireLocalSummary(fire: ScheduleFireRead): string {
+  if (fire.scheduledLocalDateTime) {
+    return fire.scheduledLocalDateTime;
+  }
+  if (fire.scheduledLocalDate || fire.scheduledLocalTime) {
+    return [fire.scheduledLocalDate, fire.scheduledLocalTime].filter(Boolean).join(" ");
+  }
+  return "No local occurrence recorded";
+}
+
+function fireHistoryFromRead(read: ScheduleFireListRead | undefined): FireHistoryState {
+  return {
+    error: null,
+    fires: read?.items ?? [],
+    isError: false,
+    isPending: false,
+    totalCount: read?.totalCount ?? 0,
+  };
+}
+
+function buildRunNowFeedback(schedule: ScheduleRead, fire: ScheduleFireRead, runId: number): RunNowFeedback {
+  const issue = fireIssueMessage(fire);
+  if (issue) {
+    return {
+      fireId: fire.id,
+      message: `Manual fire #${fire.id} recorded ${issue}. Opening run #${runId} for evidence.`,
+      runId,
+      severity: fire.status === "failed" ? "error" : "warning",
+      title: "Manual fire needs attention",
+    };
+  }
+  if (schedule.overlapPolicy === "queue") {
+    return {
+      fireId: fire.id,
+      message: `Manual fire #${fire.id} queued run #${runId}. Overlap policy is queue, so active schedule runs may overlap instead of being skipped.`,
+      runId,
+      severity: "warning",
+      title: "Manual fire queued with overlap allowed",
+    };
+  }
+  return {
+    fireId: fire.id,
+    message: `Scheduled task queued as run #${runId}. Opening run detail.`,
+    runId,
+    severity: "info",
+    title: "Manual fire queued",
+  };
+}
+
+function buildScheduleDiagnostics(schedule: ScheduleRead): ScheduleDiagnostic[] {
+  const diagnostics: ScheduleDiagnostic[] = [];
+
+  if (schedule.status === "archived") {
+    diagnostics.push({
+      message:
+        "Archived schedules preserve audit history but cannot be edited, previewed, or run now.",
+      severity: "error",
+      title: "Schedule archived",
+    });
+  }
+
+  if (schedule.status === "enabled" && !schedule.nextFireAt) {
+    diagnostics.push({
+      message:
+        "The schedule is enabled, but the backend did not return a future nextFireAt value.",
+      severity: "error",
+      title: "No upcoming fire",
+    });
+  }
+
+  if (schedule.latestStatus === "failed") {
+    diagnostics.push({
+      message:
+        "The most recent materialized fire failed before a successful queued run was recorded.",
+      severity: "error",
+      title: "Latest fire failed",
+    });
+  }
+
+  if (schedule.status === "paused") {
+    diagnostics.push({
+      message:
+        "Paused schedules keep their configuration and history but will not materialize new scheduled fires.",
+      severity: "warning",
+      title: "Schedule paused",
+    });
+  }
+
+  diagnostics.push({
+    message:
+      "Detail reads currently omit inputTemplate and templateVars; the Inputs tab starts from the current workflow schema and saves only an explicit draft.",
+    severity: "info",
+    title: "Inputs use schema draft source",
+  });
+
+  if (!schedule.latestFireId) {
+    diagnostics.push({
+      message:
+        "No fire rows have been summarized for this schedule yet. History remains empty until the first scheduled or manual fire.",
+      severity: "info",
+      title: "No fire history yet",
+    });
+  }
+
+  return diagnostics;
+}
+
+function StatusBadge({ status }: { status: ScheduleStatus }) {
+  return (
+    <Badge
+      className="capitalize"
+      data-testid={`scheduled-task-detail-status-${status}`}
+      variant={statusBadgeVariant(status)}
+    >
+      {status}
+    </Badge>
+  );
+}
+
+function LatestStatusBadge({ status }: { status: ScheduleFireStatus | null }) {
+  return (
+    <Badge variant={latestStatusBadgeVariant(status)}>
+      {status ? formatStatusLabel(status) : "No latest status"}
+    </Badge>
+  );
+}
+
+function DetailPageSkeleton() {
+  return (
+    <WorkspacePageShell
+      bodyAriaLabel="Scheduled task detail loading workspace"
+      bodyClassName="gap-4"
+      contextBar={<Skeleton className="h-24 w-full" />}
+      testId="scheduled-task-detail-page"
+    >
+      <div data-testid="scheduled-task-detail-loading" className="grid gap-3 xl:grid-cols-3">
+        <Skeleton className="h-36 w-full" />
+        <Skeleton className="h-36 w-full" />
+        <Skeleton className="h-36 w-full" />
+      </div>
+      <Skeleton className="h-96 w-full" />
+    </WorkspacePageShell>
+  );
+}
+
+function DetailPageMessage({
+  description,
+  testId,
+  title,
+}: {
+  description: string;
+  testId: string;
+  title: string;
+}) {
+  return (
+    <WorkspacePageShell
+      bodyAriaLabel="Scheduled task detail message workspace"
+      bodyClassName="gap-4"
+      contextBar={
+        <PageContextBar
+          description="Open a saved scheduled task to inspect its schedule, inputs, history, and diagnostics."
+          title="Scheduled Task Detail"
+        />
+      }
+      testId="scheduled-task-detail-page"
+    >
+      <Card className="min-w-0 border-destructive/30 bg-destructive/5 shadow-sm" data-testid={testId}>
+        <CardHeader>
+          <CardTitle className="flex min-w-0 items-center gap-2 text-destructive">
+            <AlertCircle />
+            {title}
+          </CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button asChild size="sm" variant="outline">
+            <Link to="/scheduled-tasks">Back to Scheduled Tasks</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </WorkspacePageShell>
+  );
+}
+
+function ScheduleHeader({ schedule }: { schedule: ScheduleRead }) {
+  return (
+    <div
+      className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start"
+      data-testid="scheduled-task-detail-header"
+    >
+      <PageContextBar
+        className="min-w-0 border-0 bg-transparent shadow-none"
+        description={schedule.description ?? "Inspect and manage this saved Workflow Package schedule."}
+        meta={
+          <span
+            className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-normal text-muted-foreground"
+            data-testid="scheduled-task-detail-identity-line"
+          >
+            <Badge variant="outline">Package #{schedule.packageId}</Badge>
+            <span className="min-w-0 break-all font-mono">{schedule.packageKey}</span>
+            <span className="min-w-0 break-all font-mono">{schedule.workflowKey}</span>
+          </span>
+        }
+        status={<StatusBadge status={schedule.status} />}
+        title={schedule.name}
+      />
+      <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 lg:pt-4 lg:justify-end">
+        <Button asChild size="sm" variant="outline">
+          <Link to="/scheduled-tasks">Back to list</Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link to={`/workflow-packages/${schedule.packageId}`}>Open package</Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link to={`/scheduled-tasks/new?duplicateFrom=${schedule.id}`}>
+            <CopyPlus data-icon="inline-start" />
+            Duplicate
+          </Link>
+        </Button>
+        {schedule.latestRunId ? (
+          <Button asChild size="sm" variant="outline">
+            <Link to={`/runs/${schedule.latestRunId}`}>
+              <ExternalLink data-icon="inline-start" />
+              Latest run
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({
+  action,
+  children,
+  description,
+  testId,
+  title,
+}: {
+  action?: ReactNode;
+  children: ReactNode;
+  description: string;
+  testId: string;
+  title: string;
+}) {
+  return (
+    <Card className="min-w-0 gap-4" data-testid={testId}>
+      <CardHeader className="px-4 pt-4">
+        <div className="min-w-0">
+          <CardTitle className="text-sm font-semibold tracking-tight">{title}</CardTitle>
+          <CardDescription className="mt-1 text-xs leading-5">{description}</CardDescription>
+        </div>
+        {action ? <CardAction>{action}</CardAction> : null}
+      </CardHeader>
+      <CardContent className="min-w-0 px-4 pb-4 text-sm">{children}</CardContent>
+    </Card>
+  );
+}
+
+function DetailRows({ rows }: { rows: Array<[string, React.ReactNode]> }) {
+  return (
+    <dl className="grid min-w-0 gap-3 text-xs sm:grid-cols-2">
+      {rows.map(([label, value]) => (
+        <div className="min-w-0" key={label}>
+          <dt className="font-medium text-muted-foreground">{label}</dt>
+          <dd className="min-w-0 break-words text-foreground">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function SummaryPanels({ schedule }: { schedule: ScheduleRead }) {
+  return (
+    <div className="grid min-w-0 gap-3 xl:grid-cols-3" data-testid="scheduled-task-detail-summary-grid">
+      <SummaryCard
+        description="The saved Workflow Package artifact and workflow key targeted by this schedule."
+        testId="scheduled-task-detail-package-summary"
+        title="Package / workflow"
+      >
+        <DetailRows
+          rows={[
+            ["Package key", <span className="font-mono">{schedule.packageKey}</span>],
+            ["Workflow key", <span className="font-mono">{schedule.workflowKey}</span>],
+            ["Package id", `#${schedule.packageId}`],
+            ["Schedule id", `#${schedule.id}`],
+          ]}
+        />
+      </SummaryCard>
+      <SummaryCard
+        action={<CalendarClock className="text-muted-foreground" />}
+        description="Backend-owned next occurrence summary computed from recurrence and timezone."
+        testId="scheduled-task-detail-next-fire-summary"
+        title="Next fire"
+      >
+        <div className="flex min-w-0 flex-col gap-3">
+          <p className="break-words text-base font-semibold tracking-tight">
+            {formatOptionalDateTime(schedule.nextFireAt, "No upcoming fire")}
+          </p>
+          <DetailRows
+            rows={[
+              ["Recurrence", formatRecurrence(schedule.recurrence)],
+              ["Timezone", schedule.timezone],
+              ["Starts", formatOptionalDateTime(schedule.startsAt, "No start bound")],
+              ["Ends", formatOptionalDateTime(schedule.endsAt, "No end bound")],
+            ]}
+          />
+        </div>
+      </SummaryCard>
+      <SummaryCard
+        description="Latest fire and linked run identifiers are derived by the backend read model."
+        testId="scheduled-task-detail-latest-run-summary"
+        title="Latest run"
+      >
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <LatestStatusBadge status={schedule.latestStatus} />
+            {schedule.latestRunId ? (
+              <Button asChild size="sm" variant="outline">
+                <Link to={`/runs/${schedule.latestRunId}`}>Open run #{schedule.latestRunId}</Link>
+              </Button>
+            ) : null}
+          </div>
+          <DetailRows
+            rows={[
+              ["Latest fire", schedule.latestFireId ? `#${schedule.latestFireId}` : "None"],
+              ["Latest run", schedule.latestRunId ? `#${schedule.latestRunId}` : "None"],
+              ["Updated", formatDateTime(schedule.updatedAt)],
+              ["Created", formatDateTime(schedule.createdAt)],
+            ]}
+          />
+        </div>
+      </SummaryCard>
+    </div>
+  );
+}
+
+function DiagnosticsStrip({ diagnostics }: { diagnostics: readonly ScheduleDiagnostic[] }) {
+  const blockingCount = diagnostics.filter((item) => item.severity === "error").length;
+  const warningCount = diagnostics.filter((item) => item.severity === "warning").length;
+
+  return (
+    <Card className="min-w-0 gap-4" data-testid="scheduled-task-detail-diagnostics-strip">
+      <CardHeader className="px-4 pt-4">
+        <div className="min-w-0">
+          <CardTitle className="text-sm font-semibold tracking-tight">Diagnostics</CardTitle>
+          <CardDescription className="mt-1 text-xs leading-5">
+            Blocking schedule issues stay visible in-page instead of relying on toast-only feedback.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="flex min-w-0 flex-col gap-3 px-4 pb-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+          <Badge variant={blockingCount > 0 ? "destructive" : "secondary"}>
+            {blockingCount} blocking
+          </Badge>
+          <Badge variant={warningCount > 0 ? "outline" : "secondary"}>
+            {warningCount} warning
+          </Badge>
+          <Badge variant="outline">{diagnostics.length} total diagnostics</Badge>
+        </div>
+        <div className="grid min-w-0 gap-2 lg:grid-cols-2">
+          {diagnostics.map((diagnostic) => (
+            <Alert
+              className="min-w-0"
+              key={`${diagnostic.severity}-${diagnostic.title}`}
+              variant={diagnostic.severity === "error" ? "destructive" : "default"}
+            >
+              <AlertCircle />
+              <AlertTitle>{diagnostic.title}</AlertTitle>
+              <AlertDescription>{diagnostic.message}</AlertDescription>
+            </Alert>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RunNowFeedbackAlert({ feedback }: { feedback: RunNowFeedback | null }) {
+  if (!feedback) {
+    return null;
+  }
+
+  return (
+    <Alert
+      data-testid="scheduled-task-run-now-feedback"
+      variant={feedback.severity === "error" ? "destructive" : "default"}
+    >
+      <AlertCircle />
+      <AlertTitle>{feedback.title}</AlertTitle>
+      <AlertDescription>
+        <span>{feedback.message}</span>{" "}
+        <Link className="font-medium underline underline-offset-4" to={`/runs/${feedback.runId}`}>
+          Open run #{feedback.runId}
+        </Link>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function StickyScheduleActionBar({
+  mutationPending,
+  schedule,
+  onArchive,
+  onRunNow,
+  onToggleStatus,
+}: {
+  mutationPending: boolean;
+  schedule: ScheduleRead;
+  onArchive: () => void;
+  onRunNow: () => void;
+  onToggleStatus: () => void;
+}) {
+  const isArchived = schedule.status === "archived";
+  const toggleLabel = schedule.status === "enabled" ? "Pause" : "Resume";
+  const disabledReason = isArchived
+    ? "Archived schedules are read-only. Duplicate this schedule to create a new active draft."
+    : mutationPending
+      ? "Schedule action already in progress."
+      : null;
+  const disabledReasonId = "scheduled-task-detail-action-disabled-reason";
+
+  return (
+    <div
+      className="sticky top-0 z-10 flex min-w-0 flex-col gap-2 rounded-xl border bg-background/95 p-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:flex-row sm:items-center sm:justify-between"
+      data-testid="scheduled-task-detail-actions"
+    >
+      <p className="min-w-0 text-sm text-muted-foreground">
+        Use the Schedule tab for recurrence and policy edits; use Inputs to preview and save scheduled fire parameters.
+      </p>
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+        {disabledReason ? (
+          <p className="text-xs text-muted-foreground" id={disabledReasonId}>
+            {disabledReason}
+          </p>
+        ) : null}
+        <Button
+          aria-describedby={disabledReason ? disabledReasonId : undefined}
+          className="w-full sm:w-auto"
+          data-testid="schedule-run-now"
+          disabled={Boolean(disabledReason)}
+          size="sm"
+          type="button"
+          onClick={onRunNow}
+        >
+          <PlayCircle data-icon="inline-start" />
+          Run now
+        </Button>
+        <Button
+          className="w-full sm:w-auto"
+          disabled={Boolean(disabledReason)}
+          size="sm"
+          type="button"
+          variant="outline"
+          onClick={onToggleStatus}
+        >
+          {schedule.status === "enabled" ? (
+            <PauseCircle data-icon="inline-start" />
+          ) : (
+            <RotateCcw data-icon="inline-start" />
+          )}
+          {toggleLabel}
+        </Button>
+        <Button
+          className="w-full sm:w-auto"
+          disabled={isArchived || mutationPending}
+          size="sm"
+          type="button"
+          variant="destructive"
+          onClick={onArchive}
+        >
+          <Archive data-icon="inline-start" />
+          Archive
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+type ScheduleFieldProps = {
+  children: ReactNode;
+  description?: string;
+  htmlFor?: string;
+  label: string;
+};
+
+function ScheduleField({ children, description, htmlFor, label }: ScheduleFieldProps) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+      {description ? <p className="text-xs leading-5 text-muted-foreground">{description}</p> : null}
+    </div>
+  );
+}
+
+function ScheduleConfigurationEditor({
+  disabled,
+  isSaving,
+  schedule,
+  onSave,
+}: {
+  disabled: boolean;
+  isSaving: boolean;
+  schedule: ScheduleRead;
+  onSave: (payload: ScheduleUpdateRequest) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<ScheduleEditorDraft>(() => scheduleDraftFromRead(schedule));
+
+  useEffect(() => {
+    setDraft(scheduleDraftFromRead(schedule));
+  }, [schedule]);
+
+  const controlDisabled = disabled || isSaving;
+  const updateDraft = (updates: Partial<ScheduleEditorDraft>) => {
+    setDraft((current) => ({ ...current, ...updates }));
+  };
+  const saveDraft = async () => {
+    await onSave(scheduleUpdatePayloadFromDraft(draft));
+  };
+
+  return (
+    <div className="flex min-w-0 flex-col gap-5" data-testid="scheduled-task-recurrence-editor">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-3">
+        <ScheduleField
+          description="Enabled schedules materialize future occurrences. Paused schedules keep configuration and history without creating scheduled fires."
+          label="Enabled state"
+        >
+          <div className="flex items-center gap-3 rounded-lg border p-3">
+            <Switch
+              aria-label="Schedule enabled"
+              checked={draft.status === "enabled"}
+              disabled={controlDisabled}
+              onCheckedChange={(checked) => updateDraft({ status: checked ? "enabled" : "paused" })}
+            />
+            <span className="text-sm font-medium">{draft.status === "enabled" ? "Enabled" : "Paused"}</span>
+          </div>
+        </ScheduleField>
+        <ScheduleField
+          description="Use an IANA timezone such as America/New_York. Daily, weekly, and monthly times are interpreted as local wall-clock times in this zone."
+          htmlFor="schedule-timezone"
+          label="Timezone"
+        >
+          <Input
+            id="schedule-timezone"
+            value={draft.timezone}
+            disabled={controlDisabled}
+            onChange={(event) => updateDraft({ timezone: event.target.value })}
+          />
+        </ScheduleField>
+        <ScheduleField
+          description="The backend owns nextFireAt. DST spring-forward gaps roll forward to the next valid local minute; fall-back repeated times fire once at the earliest repeated instant."
+          htmlFor="schedule-recurrence-type"
+          label="Recurrence"
+        >
+          <Select
+            value={draft.recurrenceType}
+            onValueChange={(value: ScheduleRecurrenceType) => updateDraft({ recurrenceType: value })}
+            disabled={controlDisabled}
+          >
+            <SelectTrigger id="schedule-recurrence-type" aria-label="Recurrence type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="interval">Interval</SelectItem>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="monthly">Monthly</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </ScheduleField>
+      </div>
+
+      {draft.recurrenceType === "interval" ? (
+        <div className="grid min-w-0 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <ScheduleField description="The first interval fire is anchor + interval, never immediate." htmlFor="schedule-interval-every" label="Every">
+            <Input
+              id="schedule-interval-every"
+              min={1}
+              type="number"
+              value={draft.every}
+              disabled={controlDisabled}
+              onChange={(event) => updateDraft({ every: Number.parseInt(event.target.value, 10) || 1 })}
+            />
+          </ScheduleField>
+          <ScheduleField htmlFor="schedule-interval-unit" label="Interval unit">
+            <Select
+              value={draft.intervalUnit}
+              onValueChange={(value: ScheduleIntervalUnit) => updateDraft({ intervalUnit: value })}
+              disabled={controlDisabled}
+            >
+              <SelectTrigger id="schedule-interval-unit" aria-label="Interval unit">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="minutes">Minutes</SelectItem>
+                  <SelectItem value="hours">Hours</SelectItem>
+                  <SelectItem value="days">Days</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </ScheduleField>
+        </div>
+      ) : null}
+
+      {draft.recurrenceType !== "interval" ? (
+        <ScheduleField
+          description="Local time is resolved in the timezone above, including deterministic DST gap/repeat handling."
+          htmlFor="schedule-at-local-time"
+          label="At local time"
+        >
+          <Input
+            id="schedule-at-local-time"
+            type="time"
+            value={draft.atLocalTime}
+            disabled={controlDisabled}
+            onChange={(event) => updateDraft({ atLocalTime: event.target.value })}
+          />
+        </ScheduleField>
+      ) : null}
+
+      {draft.recurrenceType === "weekly" ? (
+        <ScheduleField
+          description="At least one day stays selected so the backend receives a valid weekly daysOfWeek array."
+          label="Days of week"
+        >
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {DAY_OF_WEEK_OPTIONS.map((option) => {
+              const checked = draft.daysOfWeek.includes(option.value);
+              const disableLastChecked = checked && draft.daysOfWeek.length === 1;
+              return (
+                <label key={option.value} className="flex min-w-0 items-center gap-2 rounded-md border p-2 text-sm">
+                  <Checkbox
+                    checked={checked}
+                    disabled={controlDisabled || disableLastChecked}
+                    onCheckedChange={(nextChecked) =>
+                      updateDraft({
+                        daysOfWeek: toggleDraftValue(draft.daysOfWeek, option.value, nextChecked === true),
+                      })
+                    }
+                  />
+                  <span>{option.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        </ScheduleField>
+      ) : null}
+
+      {draft.recurrenceType === "monthly" ? (
+        <ScheduleField
+          description="Invalid dates for a month are skipped, never clamped to the last day of that month."
+          label="Days of month"
+        >
+          <div className="grid min-w-0 grid-cols-4 gap-2 sm:grid-cols-8 lg:grid-cols-12">
+            {MONTH_DAY_OPTIONS.map((day) => {
+              const checked = draft.daysOfMonth.includes(day);
+              const disableLastChecked = checked && draft.daysOfMonth.length === 1;
+              return (
+                <label key={day} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                  <Checkbox
+                    checked={checked}
+                    disabled={controlDisabled || disableLastChecked}
+                    onCheckedChange={(nextChecked) =>
+                      updateDraft({
+                        daysOfMonth: toggleDraftValue(draft.daysOfMonth, day, nextChecked === true).sort(
+                          (left, right) => left - right,
+                        ),
+                      })
+                    }
+                  />
+                  <span>{day}</span>
+                </label>
+              );
+            })}
+          </div>
+        </ScheduleField>
+      ) : null}
+
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <ScheduleField
+          description="Leave blank for no lower bound. Interval schedules anchor to startsAt when supplied."
+          htmlFor="schedule-starts-at"
+          label="Starts at"
+        >
+          <Input
+            id="schedule-starts-at"
+            type="datetime-local"
+            value={draft.startsAt}
+            disabled={controlDisabled}
+            onChange={(event) => updateDraft({ startsAt: event.target.value })}
+          />
+        </ScheduleField>
+        <ScheduleField
+          description="Leave blank for no upper bound. When no future occurrence exists, nextFireAt becomes empty."
+          htmlFor="schedule-ends-at"
+          label="Ends at"
+        >
+          <Input
+            id="schedule-ends-at"
+            type="datetime-local"
+            value={draft.endsAt}
+            disabled={controlDisabled}
+            onChange={(event) => updateDraft({ endsAt: event.target.value })}
+          />
+        </ScheduleField>
+      </div>
+
+      <div className="grid min-w-0 gap-4 lg:grid-cols-3">
+        <ScheduleField
+          description="Skip records a skipped fire when an earlier run is still queued or running; queue creates another ordinary queued run even with overlap."
+          htmlFor="schedule-overlap-policy"
+          label="Overlap policy"
+        >
+          <Select
+            value={draft.overlapPolicy}
+            onValueChange={(value: ScheduleOverlapPolicy) => updateDraft({ overlapPolicy: value })}
+            disabled={controlDisabled}
+          >
+            <SelectTrigger id="schedule-overlap-policy" aria-label="Overlap policy">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="skip">Skip overlapping fire</SelectItem>
+                <SelectItem value="queue">Queue overlapping run</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </ScheduleField>
+        <ScheduleField
+          description="Skip advances to the next future occurrence. Catch-up one materializes only the latest missed eligible occurrence within the grace window."
+          htmlFor="schedule-misfire-policy"
+          label="Misfire policy"
+        >
+          <Select
+            value={draft.misfirePolicy}
+            onValueChange={(value: ScheduleMisfirePolicy) => updateDraft({ misfirePolicy: value })}
+            disabled={controlDisabled}
+          >
+            <SelectTrigger id="schedule-misfire-policy" aria-label="Misfire policy">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="skip">Skip missed occurrence</SelectItem>
+                <SelectItem value="catchUpOne">Catch up one</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </ScheduleField>
+        <ScheduleField
+          description="Grace is measured in seconds. Missed occurrences older than this window are not backfilled."
+          htmlFor="schedule-misfire-grace"
+          label="Misfire grace seconds"
+        >
+          <Input
+            id="schedule-misfire-grace"
+            min={1}
+            type="number"
+            value={draft.misfireGraceSeconds}
+            disabled={controlDisabled}
+            onChange={(event) =>
+              updateDraft({ misfireGraceSeconds: Number.parseInt(event.target.value, 10) || 1 })
+            }
+          />
+        </ScheduleField>
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-2 rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+        <p>
+          Payload shape: save sends status, timezone, recurrence, startsAt, endsAt, overlapPolicy, misfirePolicy, and misfireGraceSeconds directly to the schedule PATCH endpoint.
+        </p>
+        <p>
+          Raw cron is intentionally not the primary editor; structured interval, daily, weekly, and monthly recurrence controls own the saved schedule shape.
+        </p>
+      </div>
+
+      <div className="flex justify-end">
+        <Button disabled={controlDisabled} type="button" onClick={() => void saveDraft()}>
+          {isSaving ? "Saving schedule..." : "Save schedule configuration"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ScheduleInputValidationAlert({
+  errors,
+  testId,
+  title,
+}: {
+  errors: readonly ScheduleValidationError[] | readonly ApiErrorDetail[];
+  testId: string;
+  title: string;
+}) {
+  if (errors.length === 0) {
+    return null;
+  }
+
+  return (
+    <Alert data-testid={testId} variant="destructive">
+      <AlertCircle />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>
+        <ul className="flex list-disc flex-col gap-1 pl-5">
+          {errors.map((error) => (
+            <li className="min-w-0 break-words" key={`${error.field}-${error.issue}`}>
+              <code className="break-all rounded bg-muted/40 px-1 py-0.5 text-xs">{error.field}</code>: {error.issue}
+            </li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function ScheduledSavedInputEntryRow({
+  deletePending,
+  entry,
+  mode,
+  updatePending,
+  onDelete,
+  onLoad,
+  onUpdate,
+}: {
+  deletePending: boolean;
+  entry: WorkflowPackageRuntimeInputEntryRead;
+  mode: SavedInputEntryMode;
+  updatePending: boolean;
+  onDelete: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+  onLoad: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+  onUpdate: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+}) {
+  const label = savedInputEntryLabel(entry, mode);
+  const timestamp = mode === "history" ? entry.createdAt : entry.updatedAt;
+
+  return (
+    <div className="flex min-w-0 flex-col gap-2 rounded-lg border bg-background/60 p-3" data-testid={`scheduled-input-${mode}-${entry.id}`}>
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <p className="min-w-0 max-w-full truncate text-sm font-medium">{label}</p>
+            {entry.stale.stale ? (
+              <Badge className="border-chart-3/30 bg-chart-3/10 text-chart-3" variant="outline">
+                Stale
+              </Badge>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {mode === "history" ? "Captured from a package run" : "Updated"} {formatDateTime(timestamp)}
+          </p>
+        </div>
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
+          <Button
+            aria-label={`Load ${mode} scheduled input ${label}`}
+            className="h-7 px-2 text-xs"
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={() => onLoad(entry)}
+          >
+            Load
+          </Button>
+          {mode === "personal" ? (
+            <>
+              <Button
+                aria-label={`Overwrite personal scheduled input ${label}`}
+                className="h-7 px-2 text-xs"
+                disabled={updatePending}
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={() => onUpdate(entry)}
+              >
+                {updatePending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                Overwrite
+              </Button>
+              <Button
+                aria-label={`Delete personal scheduled input ${label}`}
+                className="h-7 px-2 text-xs"
+                disabled={deletePending}
+                size="sm"
+                type="button"
+                variant="ghost"
+                onClick={() => onDelete(entry)}
+              >
+                {deletePending ? (
+                  <Loader2 className="animate-spin" data-icon="inline-start" />
+                ) : (
+                  <Trash2 className="size-3" data-icon="inline-start" />
+                )}
+                Delete
+              </Button>
+            </>
+          ) : null}
+        </div>
+      </div>
+      {entry.stale.stale ? (
+        <div className="rounded-md border border-chart-3/30 bg-chart-3/10 px-2 py-1 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">Saved against older workflow metadata.</p>
+          {entry.stale.reasons.length > 0 ? (
+            <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-4">
+              {entry.stale.reasons.map((reason) => (
+                <li key={`${entry.id}-${reason.field}-${reason.issue}`}>
+                  {reason.field}: {reason.issue}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ScheduledSavedInputsTabs({
+  createDisabled,
+  createPending,
+  deletePending,
+  error,
+  historyEntries,
+  loading,
+  personalEntries,
+  presetName,
+  updatePending,
+  workflowKey,
+  onCreate,
+  onDelete,
+  onLoad,
+  onPresetNameChange,
+  onUpdate,
+}: {
+  createDisabled: boolean;
+  createPending: boolean;
+  deletePending: boolean;
+  error: Error | null;
+  historyEntries: readonly WorkflowPackageRuntimeInputEntryRead[];
+  loading: boolean;
+  personalEntries: readonly WorkflowPackageRuntimeInputEntryRead[];
+  presetName: string;
+  updatePending: boolean;
+  workflowKey: string;
+  onCreate: () => void;
+  onDelete: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+  onLoad: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+  onPresetNameChange: (value: string) => void;
+  onUpdate: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+}) {
+  const personalLimitReached = personalEntries.length >= SAVED_INPUT_ENTRY_LIMIT;
+  const sortedPersonal = newestRuntimeInputEntries(personalEntries, "updatedAt");
+  const sortedHistory = newestRuntimeInputEntries(historyEntries, "createdAt");
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3" data-testid="scheduled-input-saved-inputs-helper">
+      <div className="flex min-w-0 flex-col gap-1">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Schedule input presets</h3>
+          <Badge variant="outline">{workflowKey || "workflow"}</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Load personal presets or reuse run history as a starting point for this scheduled fire template.
+        </p>
+      </div>
+      {loading ? (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3 animate-spin" />
+          Loading saved inputs for {workflowKey || "this workflow"}...
+        </p>
+      ) : null}
+      {error ? (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Saved scheduled inputs unavailable</AlertTitle>
+          <AlertDescription>{error.message}</AlertDescription>
+        </Alert>
+      ) : null}
+      <Tabs className="min-w-0 gap-3" defaultValue="presets">
+        <TabsList className="w-full justify-start sm:w-fit">
+          <TabsTrigger value="presets">
+            Presets
+            <Badge className="ml-1" variant="secondary">
+              {personalEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="history">
+            History
+            <Badge className="ml-1" variant="secondary">
+              {historyEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent className="min-w-0" value="presets">
+          <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+              <Input
+                aria-label="Scheduled input preset name"
+                className="h-8 min-w-0 text-xs"
+                placeholder="Preset name"
+                value={presetName}
+                onChange={(event) => onPresetNameChange(event.target.value)}
+              />
+              <Button
+                className="h-8 w-full text-xs sm:w-auto"
+                disabled={createDisabled || createPending || personalLimitReached}
+                size="sm"
+                type="button"
+                onClick={onCreate}
+              >
+                {createPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
+                Save current template
+              </Button>
+            </div>
+            {personalLimitReached ? (
+              <p className="text-xs text-destructive">Personal presets are capped at 20 per workflow. Delete one before saving another.</p>
+            ) : null}
+            {sortedPersonal.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No personal presets saved for this workflow.</p>
+            ) : null}
+            <div className="flex min-w-0 flex-col gap-2">
+              {sortedPersonal.map((entry) => (
+                <ScheduledSavedInputEntryRow
+                  key={entry.id}
+                  deletePending={deletePending}
+                  entry={entry}
+                  mode="personal"
+                  updatePending={updatePending}
+                  onDelete={onDelete}
+                  onLoad={onLoad}
+                  onUpdate={onUpdate}
+                />
+              ))}
+            </div>
+          </div>
+        </TabsContent>
+        <TabsContent className="min-w-0" value="history">
+          <div className="flex min-w-0 flex-col gap-3">
+            {sortedHistory.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No runtime input history yet for this workflow.</p>
+            ) : null}
+            <div className="flex min-w-0 flex-col gap-2">
+              {sortedHistory.map((entry) => (
+                <ScheduledSavedInputEntryRow
+                  key={entry.id}
+                  deletePending={false}
+                  entry={entry}
+                  mode="history"
+                  updatePending={false}
+                  onDelete={onDelete}
+                  onLoad={onLoad}
+                  onUpdate={onUpdate}
+                />
+              ))}
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function ScheduleTemplateVarsEditor({
+  disabled,
+  rows,
+  onRowsChange,
+}: {
+  disabled: boolean;
+  rows: RuntimeInputRow[];
+  onRowsChange: (rows: RuntimeInputRow[]) => void;
+}) {
+  const updateRow = (rowId: string, field: "key" | "value", value: string) => {
+    onRowsChange(rows.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)));
+  };
+
+  return (
+    <div className="min-w-0 rounded-xl border bg-card p-3" data-testid="scheduled-input-template-vars">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="min-w-0">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Template variables</span>
+          <p className="text-xs leading-5 text-muted-foreground">
+            Rows become <code>{"vars.<key>"}</code> placeholders during scheduled preview and materialization.
+          </p>
+        </div>
+        <Button
+          className="ml-auto h-7 px-2 text-xs"
+          disabled={disabled}
+          size="sm"
+          type="button"
+          variant="outline"
+          onClick={() => onRowsChange([...rows, createRuntimeInputRow("scheduled-template-vars")])}
+        >
+          Add variable
+        </Button>
+      </div>
+      <div className="mt-2 flex min-w-0 flex-col gap-2">
+        {rows.length === 0 ? (
+          <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs italic text-muted-foreground">No template variables yet.</p>
+        ) : null}
+        {rows.map((row) => (
+          <div key={row.id} className="grid min-w-0 gap-2 sm:grid-cols-[minmax(8rem,14rem)_minmax(0,1fr)_2rem]">
+            <Input
+              aria-label={`Template variable key ${row.key || row.id}`}
+              className="h-8 min-w-0 text-xs"
+              disabled={disabled}
+              placeholder="portfolioSlug"
+              value={row.key}
+              onChange={(event) => updateRow(row.id, "key", event.target.value)}
+            />
+            <Input
+              aria-label={`Template variable value ${row.key || row.id}`}
+              className="h-8 min-w-0 text-xs"
+              disabled={disabled}
+              placeholder="core_portfolio"
+              value={row.value}
+              onChange={(event) => updateRow(row.id, "value", event.target.value)}
+            />
+            <Button
+              aria-label={`Remove template variable ${row.key || row.id}`}
+              className="size-8"
+              disabled={disabled}
+              size="icon"
+              type="button"
+              variant="ghost"
+              onClick={() => onRowsChange(rows.filter((item) => item.id !== row.id))}
+            >
+              <Trash2 className="size-3" />
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SchedulePlaceholderReference() {
+  return (
+    <Collapsible className="min-w-0 rounded-xl border bg-card p-3" data-testid="scheduled-input-placeholder-reference">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">Allowed scheduled placeholders</h3>
+          <p className="text-xs leading-5 text-muted-foreground">Only these allowlisted namespaces are accepted. The browser validates namespace shape; the backend performs the final render and schema validation.</p>
+        </div>
+        <CollapsibleTrigger asChild>
+          <Button className="h-7 shrink-0 gap-1 px-2 text-xs" size="sm" type="button" variant="ghost">
+            Reference
+            <ChevronDown className="size-3" />
+          </Button>
+        </CollapsibleTrigger>
+      </div>
+      <CollapsibleContent className="pt-3">
+        <div className="flex min-w-0 flex-col gap-3 border-t pt-3">
+          <div className="flex min-w-0 flex-wrap gap-2">
+            {SCHEDULE_PLACEHOLDER_EXAMPLES.map((example) => (
+              <Badge className="font-mono" key={example} variant="outline">
+                {`{{${example}}}`}
+              </Badge>
+            ))}
+          </div>
+          <p className="text-xs leading-5 text-muted-foreground">
+            Exact-placeholder strings preserve JSON types. Embedded placeholders render as strings. Missing values, array indexing, functions, filters, arithmetic, secrets, and environment access fail preview/materialization.
+          </p>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function ScheduleInputPreview({ preview }: { preview: SchedulePreviewRead | null }) {
+  if (!preview) {
+    return (
+      <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-xs leading-5 text-muted-foreground" data-testid="schedule-input-preview-empty">
+        Preview the next scheduled fire to render placeholders and run backend schema validation before saving.
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3" data-testid="schedule-input-preview">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <Badge variant={preview.ready ? "secondary" : "destructive"}>{preview.ready ? "Ready" : "Not ready"}</Badge>
+        <span className="text-xs text-muted-foreground">Scheduled for {preview.scheduledFor ? formatDateTime(preview.scheduledFor) : "not available"}</span>
+      </div>
+      <ScheduleInputValidationAlert
+        errors={preview.validationErrors}
+        testId="scheduled-input-preview-validation-feedback"
+        title="Preview validation failed"
+      />
+      <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+        <div className="min-w-0">
+          <p className="mb-1 text-xs font-medium text-muted-foreground">Rendered parameters</p>
+          <pre className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 text-xs">{stringifyJson(preview.renderedParameters)}</pre>
+        </div>
+        <div className="min-w-0">
+          <p className="mb-1 text-xs font-medium text-muted-foreground">Template context</p>
+          <pre className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 text-xs">{stringifyJson(preview.templateContext)}</pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduledInputsEditor({
+  disabled,
+  isSaving,
+  schedule,
+  onSave,
+}: {
+  disabled: boolean;
+  isSaving: boolean;
+  schedule: ScheduleRead;
+  onSave: (payload: ScheduleUpdateRequest, successMessage?: string) => Promise<void>;
+}) {
+  const runtimeInputRegistry = useWorkflowPackageRuntimeInputRegistry(schedule.packageId, schedule.workflowKey);
+  const createPersonalEntry = useCreateWorkflowPackageRuntimeInputPersonalEntry();
+  const updatePersonalEntry = useUpdateWorkflowPackageRuntimeInputPersonalEntry();
+  const deletePersonalEntry = useDeleteWorkflowPackageRuntimeInputPersonalEntry();
+  const previewScheduledInputs = usePreviewUnsavedScheduledTask();
+  const [inputTemplateText, setInputTemplateText] = useState(() => stringifyJson({}));
+  const [templateVarRows, setTemplateVarRows] = useState<RuntimeInputRow[]>(() => createRuntimeInputRows("scheduled-template-vars"));
+  const [personalPresetName, setPersonalPresetName] = useState("");
+  const [previewRead, setPreviewRead] = useState<SchedulePreviewRead | null>(null);
+  const [previewRequestErrors, setPreviewRequestErrors] = useState<ScheduleValidationError[]>([]);
+  const inputTemplateEditedRef = useRef(false);
+  const lastTemplateIdentityRef = useRef<string | null>(null);
+
+  const inputSchema = runtimeInputRegistry.data?.currentMetadata?.inputSchema;
+  const inputSchemaFingerprint = runtimeInputRegistry.data?.currentMetadata?.schemaFingerprint ?? stringifyJson(inputSchema);
+  const inputTemplate = useMemo(() => createLaunchParametersTemplate(inputSchema), [inputSchema]);
+  const schemaTemplateText = useMemo(() => resetLaunchParametersTemplate(inputTemplate), [inputTemplate]);
+  const templateIdentity = `${schedule.packageId}:${schedule.workflowKey}:${inputSchemaFingerprint}`;
+  const draftErrors = useMemo(() => scheduleInputDraftErrors(inputTemplateText), [inputTemplateText]);
+  const controlDisabled = disabled || isSaving;
+  const canUseNextFire = Boolean(schedule.nextFireAt);
+
+  useEffect(() => {
+    if (lastTemplateIdentityRef.current === templateIdentity) {
+      return;
+    }
+    lastTemplateIdentityRef.current = templateIdentity;
+    setPreviewRead(null);
+    setPreviewRequestErrors([]);
+    if (!inputTemplateEditedRef.current) {
+      setInputTemplateText(schemaTemplateText);
+    }
+  }, [schemaTemplateText, templateIdentity]);
+
+  const updateInputTemplateText = (value: string) => {
+    inputTemplateEditedRef.current = true;
+    setInputTemplateText(value);
+    setPreviewRead(null);
+    setPreviewRequestErrors([]);
+  };
+
+  const resetInputTemplate = () => {
+    inputTemplateEditedRef.current = false;
+    setInputTemplateText(schemaTemplateText);
+    setPreviewRead(null);
+    setPreviewRequestErrors([]);
+  };
+
+  const buildDraft = (): ScheduleInputDraft | null => {
+    if (draftErrors.length > 0) {
+      toast.error(draftErrors[0]?.issue ?? "Fix scheduled input template errors first.");
+      return null;
+    }
+    return {
+      inputTemplate: parseScheduleInputTemplateJson(inputTemplateText),
+      templateVars: buildRuntimeInputs(templateVarRows),
+    };
+  };
+
+  const previewDraft = async (draft: ScheduleInputDraft): Promise<SchedulePreviewRead | null> => {
+    if (!schedule.nextFireAt) {
+      const errors = [{ field: "scheduledFor", issue: "Next fire is unavailable, so the scheduled input template cannot be rendered yet." }];
+      setPreviewRequestErrors(errors);
+      setPreviewRead(null);
+      toast.error(errors[0].issue);
+      return null;
+    }
+    try {
+      const result = await previewScheduledInputs.mutateAsync({
+        packageId: schedule.packageId,
+        workflowKey: schedule.workflowKey,
+        timezone: schedule.timezone,
+        recurrence: schedule.recurrence,
+        scheduledFor: schedule.nextFireAt,
+        inputTemplate: draft.inputTemplate,
+        templateVars: draft.templateVars,
+      });
+      setPreviewRead(result);
+      setPreviewRequestErrors([]);
+      if (result.ready) {
+        toast.success("Scheduled input preview rendered for the next fire");
+      } else {
+        toast.warning("Scheduled input preview returned validation errors");
+      }
+      return result;
+    } catch (error) {
+      const errors = error instanceof ApiRequestError && error.details.length > 0
+        ? error.details
+        : [{ field: "preview", issue: errorMessage(error, "Scheduled input preview failed.") }];
+      setPreviewRequestErrors(errors);
+      setPreviewRead(null);
+      toast.error(errorMessage(error, "Scheduled input preview failed."));
+      return null;
+    }
+  };
+
+  const previewCurrentDraft = async () => {
+    const draft = buildDraft();
+    if (!draft) {
+      return;
+    }
+    await previewDraft(draft);
+  };
+
+  const saveInputTemplate = async () => {
+    const draft = buildDraft();
+    if (!draft) {
+      return;
+    }
+    const preview = await previewDraft(draft);
+    if (!preview?.ready) {
+      return;
+    }
+    await onSave(
+      {
+        inputTemplate: draft.inputTemplate,
+        templateVars: draft.templateVars,
+      },
+      "Scheduled input template saved",
+    );
+  };
+
+  const loadSavedInput = (entry: WorkflowPackageRuntimeInputEntryRead) => {
+    inputTemplateEditedRef.current = true;
+    setInputTemplateText(stringifyJson(entry.payload));
+    setPreviewRead(null);
+    setPreviewRequestErrors([]);
+    toast.success("Saved scheduled input loaded into the template editor");
+  };
+
+  const savePersonalInput = async () => {
+    const name = personalPresetName.trim();
+    if (!name) {
+      toast.error("Name this scheduled input preset before saving it.");
+      return;
+    }
+    const draft = buildDraft();
+    if (!draft) {
+      return;
+    }
+    try {
+      await createPersonalEntry.mutateAsync({
+        packageId: schedule.packageId,
+        payload: { name, payload: draft.inputTemplate },
+        workflowKey: schedule.workflowKey,
+      });
+      setPersonalPresetName("");
+      toast.success("Saved scheduled input preset");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to save scheduled input preset."));
+    }
+  };
+
+  const overwritePersonalInput = async (entry: WorkflowPackageRuntimeInputEntryRead) => {
+    const draft = buildDraft();
+    if (!draft) {
+      return;
+    }
+    const name = personalPresetName.trim() || entry.name;
+    try {
+      await updatePersonalEntry.mutateAsync({
+        entryId: entry.id,
+        packageId: schedule.packageId,
+        payload: { name: name || null, payload: draft.inputTemplate },
+        workflowKey: schedule.workflowKey,
+      });
+      setPersonalPresetName("");
+      toast.success("Updated scheduled input preset");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to update scheduled input preset."));
+    }
+  };
+
+  const deletePersonalInput = async (entry: WorkflowPackageRuntimeInputEntryRead) => {
+    try {
+      await deletePersonalEntry.mutateAsync({
+        entryId: entry.id,
+        packageId: schedule.packageId,
+        workflowKey: schedule.workflowKey,
+      });
+      toast.success("Deleted scheduled input preset");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to delete scheduled input preset."));
+    }
+  };
+
+  return (
+    <div className="flex min-w-0 flex-col gap-4" data-testid="scheduled-inputs-editor">
+      <Alert>
+        <AlertCircle />
+        <AlertTitle>Inputs start from the current workflow schema</AlertTitle>
+        <AlertDescription>
+          Schedule detail reads do not hydrate saved inputTemplate or templateVars yet, so this editor seeds from the workflow input schema and only persists the explicit draft you save here.
+        </AlertDescription>
+      </Alert>
+      {!inputTemplate.schemaSupported ? (
+        <Alert data-testid="scheduled-input-schema-template-warning">
+          <AlertCircle />
+          <AlertTitle>Schema template started empty</AlertTitle>
+          <AlertDescription>{inputTemplate.reason ?? "The workflow input schema could not seed a JSON object template."}</AlertDescription>
+        </Alert>
+      ) : null}
+      {!canUseNextFire ? (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Next fire preview unavailable</AlertTitle>
+          <AlertDescription>The backend did not return nextFireAt, so scheduled input preview and save are blocked until a future occurrence exists.</AlertDescription>
+        </Alert>
+      ) : null}
+      <ScheduleInputValidationAlert errors={draftErrors} testId="scheduled-input-json-validation-feedback" title="Scheduled input template needs attention" />
+      <ScheduleInputValidationAlert errors={previewRequestErrors} testId="scheduled-input-preview-request-feedback" title="Scheduled input preview failed" />
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]" data-testid="scheduled-input-console-grid">
+        <div className="flex min-w-0 flex-col gap-3" data-testid="scheduled-input-json-panel">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <Label htmlFor="schedule-input-template-json">Scheduled input template JSON</Label>
+            <Button disabled={controlDisabled} size="sm" type="button" variant="outline" onClick={resetInputTemplate}>
+              Reset to schema template
+            </Button>
+          </div>
+          <Textarea
+            id="schedule-input-template-json"
+            aria-label="Scheduled input template JSON"
+            className="min-h-72 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
+            disabled={controlDisabled}
+            rows={14}
+            value={inputTemplateText}
+            onChange={(event) => updateInputTemplateText(event.target.value)}
+          />
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button
+              disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
+              type="button"
+              variant="outline"
+              onClick={() => void previewCurrentDraft()}
+            >
+              {previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+              Preview next fire
+            </Button>
+            <Button
+              disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
+              type="button"
+              onClick={() => void saveInputTemplate()}
+            >
+              {isSaving || previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+              Save scheduled inputs
+            </Button>
+          </div>
+          <ScheduleInputPreview preview={previewRead} />
+        </div>
+        <div className="flex min-w-0 flex-col gap-3">
+          <SchedulePlaceholderReference />
+          <ScheduleTemplateVarsEditor disabled={controlDisabled} rows={templateVarRows} onRowsChange={setTemplateVarRows} />
+          <ScheduledSavedInputsTabs
+            createDisabled={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching || !personalPresetName.trim() || draftErrors.length > 0}
+            createPending={createPersonalEntry.isPending}
+            deletePending={deletePersonalEntry.isPending}
+            error={runtimeInputRegistry.isError ? runtimeInputRegistry.error : null}
+            historyEntries={runtimeInputRegistry.data?.history ?? []}
+            loading={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching}
+            personalEntries={runtimeInputRegistry.data?.personal ?? []}
+            presetName={personalPresetName}
+            updatePending={updatePersonalEntry.isPending}
+            workflowKey={schedule.workflowKey}
+            onCreate={() => void savePersonalInput()}
+            onDelete={(entry) => void deletePersonalInput(entry)}
+            onLoad={loadSavedInput}
+            onPresetNameChange={setPersonalPresetName}
+            onUpdate={(entry) => void overwritePersonalInput(entry)}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FireHistoryRow({ fire }: { fire: ScheduleFireRead }) {
+  const issue = fireIssueMessage(fire);
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3" data-testid={`scheduled-task-fire-${fire.id}`}>
+      <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold tracking-tight">Fire #{fire.id}</p>
+            <Badge className="capitalize" variant={fireStatusBadgeVariant(fire.status)}>
+              {formatStatusLabel(fire.status)}
+            </Badge>
+            <Badge variant="outline">{formatFireReason(fire.reason)}</Badge>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            Occurrence {formatDateTime(fire.scheduledFor)} · Local {fireLocalSummary(fire)}
+          </p>
+        </div>
+        {fire.runId ? (
+          <Button asChild className="w-full lg:w-auto" size="sm" variant="outline">
+            <Link aria-label={`Open run #${fire.runId} for fire #${fire.id}`} to={`/runs/${fire.runId}`}>
+              Open run #{fire.runId}
+              <ExternalLink data-icon="inline-end" />
+            </Link>
+          </Button>
+        ) : (
+          <Button className="w-full lg:w-auto" disabled size="sm" type="button" variant="outline">
+            No linked run
+          </Button>
+        )}
+      </div>
+      <DetailRows
+        rows={[
+          ["Fire key", <span className="font-mono">{fire.fireKey}</span>],
+          ["Materialized", formatOptionalDateTime(fire.materializedAt, "Not materialized")],
+          ["Created", formatDateTime(fire.createdAt)],
+          ["Linked run", fire.runId ? `#${fire.runId}` : "None"],
+        ]}
+      />
+      {issue ? (
+        <Alert data-testid={`scheduled-task-fire-issue-${fire.id}`} variant={fire.status === "failed" ? "destructive" : "default"}>
+          <AlertCircle />
+          <AlertTitle>{fire.status === "failed" ? "Fire failed" : "Fire skipped"}</AlertTitle>
+          <AlertDescription>{issue}</AlertDescription>
+        </Alert>
+      ) : null}
+      <div className="min-w-0">
+        <p className="mb-1 text-xs font-medium text-muted-foreground">Rendered parameters</p>
+        <pre className="max-h-56 overflow-auto rounded-md bg-muted/40 p-3 text-xs" data-testid={`scheduled-task-fire-parameters-${fire.id}`}>
+          {stringifyJson(fire.renderedParameters)}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+function normalizeFireHistoryState(history: FireHistoryState | undefined): FireHistoryState {
+  return history ?? {
+    error: null,
+    fires: [],
+    isError: false,
+    isPending: false,
+    totalCount: 0,
+  };
+}
+
+function FireHistoryPanel({ history, latestRunId }: { history: FireHistoryState | undefined; latestRunId: number | null }) {
+  const safeHistory = normalizeFireHistoryState(history);
+
+  if (safeHistory.isPending) {
+    return <p className="text-xs text-muted-foreground">Loading fire history...</p>;
+  }
+  if (safeHistory.isError) {
+    return (
+      <Alert data-testid="scheduled-task-fire-history-error" variant="destructive">
+        <AlertCircle />
+        <AlertTitle>Fire history unavailable</AlertTitle>
+        <AlertDescription>{safeHistory.error?.message ?? "Failed to load schedule fire history."}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3" data-testid="scheduled-task-fire-history-panel">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+          <Badge variant="secondary">{safeHistory.fires.length} shown</Badge>
+          <Badge variant="outline">{safeHistory.totalCount} total fires</Badge>
+        </div>
+        {latestRunId ? (
+          <Button asChild className="w-full sm:w-auto" size="sm" variant="outline">
+            <Link to={`/runs/${latestRunId}`}>
+              Open latest run #{latestRunId}
+              <ExternalLink data-icon="inline-end" />
+            </Link>
+          </Button>
+        ) : (
+          <Button className="w-full sm:w-auto" disabled size="sm" type="button" variant="outline">
+            No latest run yet
+          </Button>
+        )}
+      </div>
+      {safeHistory.fires.length === 0 ? (
+        <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs italic text-muted-foreground">
+          No fire history yet. Scheduled or manual fires will appear here with rendered parameters and run links.
+        </p>
+      ) : null}
+      <div className="flex min-w-0 flex-col gap-3">
+        {safeHistory.fires.map((fire) => (
+          <FireHistoryRow fire={fire} key={fire.id} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FireHistoryDiagnosticsPanel({ history }: { history: FireHistoryState | undefined }) {
+  const safeHistory = normalizeFireHistoryState(history);
+
+  if (safeHistory.isPending) {
+    return <p className="text-xs text-muted-foreground">Loading recent fire diagnostics...</p>;
+  }
+  if (safeHistory.isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle />
+        <AlertTitle>Recent fire diagnostics unavailable</AlertTitle>
+        <AlertDescription>{safeHistory.error?.message ?? "Failed to load schedule fire history."}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  const failedFires = safeHistory.fires.filter((fire) => fire.status === "failed");
+  const skippedFires = safeHistory.fires.filter((fire) => fire.status === "skipped");
+  const queuedFires = safeHistory.fires.filter((fire) => fire.status === "queued");
+  const issueFires = safeHistory.fires.filter((fire) => fireIssueMessage(fire));
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3" data-testid="scheduled-task-fire-diagnostics-panel">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+        <Badge variant={failedFires.length > 0 ? "destructive" : "secondary"}>{failedFires.length} failed</Badge>
+        <Badge variant={skippedFires.length > 0 ? "outline" : "secondary"}>{skippedFires.length} skipped</Badge>
+        <Badge variant="outline">{queuedFires.length} queued</Badge>
+      </div>
+      {issueFires.length === 0 ? (
+        <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          No skipped or failed fires in the loaded history window.
+        </p>
+      ) : null}
+      {issueFires.map((fire) => (
+        <div className="min-w-0 rounded-lg border bg-background/60 p-3" data-testid={`scheduled-task-fire-diagnostic-${fire.id}`} key={fire.id}>
+          <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
+            <Badge variant={fireStatusBadgeVariant(fire.status)}>{formatStatusLabel(fire.status)}</Badge>
+            <span className="text-xs font-medium">Fire #{fire.id}</span>
+            {fire.runId ? (
+              <Link className="text-xs font-medium underline underline-offset-4" to={`/runs/${fire.runId}`}>
+                Open run #{fire.runId}
+              </Link>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground">{fireIssueMessage(fire)}</p>
+          <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-muted/40 p-3 text-xs">
+            {stringifyJson(fire.renderedParameters)}
+          </pre>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ScheduleTabs({
+  diagnostics,
+  fireHistory,
+  mutationPending,
+  schedule,
+  onSaveSchedule,
+}: {
+  diagnostics: readonly ScheduleDiagnostic[];
+  fireHistory: FireHistoryState | undefined;
+  mutationPending: boolean;
+  schedule: ScheduleRead;
+  onSaveSchedule: (payload: ScheduleUpdateRequest, successMessage?: string) => Promise<void>;
+}) {
+  return (
+    <Tabs className="min-h-0 min-w-0 flex-1" defaultValue="schedule">
+      <TabsList className="max-w-full flex-wrap justify-start" aria-label="Scheduled task detail sections">
+        <TabsTrigger value="schedule">Schedule</TabsTrigger>
+        <TabsTrigger value="inputs">Inputs</TabsTrigger>
+        <TabsTrigger value="history">History</TabsTrigger>
+        <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
+      </TabsList>
+      <TabsContent className="min-w-0" forceMount value="schedule">
+        <SummaryCard
+          description="Edit recurrence and scheduler policy values with structured controls that save to the backend schedule payload."
+          testId="scheduled-task-detail-tab-schedule"
+          title="Schedule configuration"
+        >
+          <ScheduleConfigurationEditor
+            disabled={schedule.status === "archived"}
+            isSaving={mutationPending}
+            schedule={schedule}
+            onSave={onSaveSchedule}
+          />
+        </SummaryCard>
+      </TabsContent>
+      <TabsContent className="min-w-0" forceMount value="inputs">
+        <SummaryCard
+          description="Edit the scheduled input JSON template, preview the next fire render, and reuse workflow-scoped saved inputs without creating a schedule-only preset store."
+          testId="scheduled-task-detail-tab-inputs"
+          title="Inputs"
+        >
+          <ScheduledInputsEditor
+            disabled={schedule.status === "archived"}
+            isSaving={mutationPending}
+            schedule={schedule}
+            onSave={onSaveSchedule}
+          />
+        </SummaryCard>
+      </TabsContent>
+      <TabsContent className="min-w-0" forceMount value="history">
+        <SummaryCard
+          description="Recent schedule fire occurrences include status, reasons, rendered parameters, and explicit run links."
+          testId="scheduled-task-detail-tab-history"
+          title="History"
+        >
+          <FireHistoryPanel history={fireHistory} latestRunId={schedule.latestRunId} />
+        </SummaryCard>
+      </TabsContent>
+      <TabsContent className="min-w-0" forceMount value="diagnostics">
+        <SummaryCard
+          description="Inline diagnostics summarize blockers, schedule state warnings, and known shell limitations."
+          testId="scheduled-task-detail-tab-diagnostics"
+          title="Diagnostics detail"
+        >
+          <div className="flex min-w-0 flex-col gap-3">
+            {diagnostics.map((diagnostic) => (
+              <Alert
+                key={`${diagnostic.severity}-${diagnostic.title}`}
+                variant={diagnostic.severity === "error" ? "destructive" : "default"}
+              >
+                <AlertCircle />
+                <AlertTitle>{diagnostic.title}</AlertTitle>
+                <AlertDescription>{diagnostic.message}</AlertDescription>
+              </Alert>
+            ))}
+            <FireHistoryDiagnosticsPanel history={fireHistory} />
+          </div>
+        </SummaryCard>
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+export function ScheduledTaskDetailPage() {
+  const { scheduleId } = useParams<{ scheduleId: string }>();
+  const navigate = useNavigate();
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [runNowFeedback, setRunNowFeedback] = useState<RunNowFeedback | null>(null);
+  const scheduleQuery = useScheduledTask(scheduleId);
+  const firesQuery = useScheduledTaskFires(scheduleId, { limit: 20 });
+  const updateSchedule = useUpdateScheduledTask();
+  const runNow = useRunScheduledTaskNow();
+  const archiveSchedule = useArchiveScheduledTask();
+
+  if (!scheduleId) {
+    return (
+      <DetailPageMessage
+        description="The scheduled task route is missing a schedule id."
+        testId="scheduled-task-detail-not-found"
+        title="Scheduled task not found"
+      />
+    );
+  }
+
+  if (scheduleQuery.isPending) {
+    return <DetailPageSkeleton />;
+  }
+
+  if (scheduleQuery.isError) {
+    return isNotFoundError(scheduleQuery.error) ? (
+      <DetailPageMessage
+        description="No scheduled task exists for this route. It may have been archived or removed from this environment."
+        testId="scheduled-task-detail-not-found"
+        title="Scheduled task not found"
+      />
+    ) : (
+      <DetailPageMessage
+        description={errorMessage(scheduleQuery.error, "Failed to load scheduled task.")}
+        testId="scheduled-task-detail-error"
+        title="Failed to load scheduled task"
+      />
+    );
+  }
+
+  if (!scheduleQuery.data) {
+    return (
+      <DetailPageMessage
+        description="No scheduled task exists for this route."
+        testId="scheduled-task-detail-not-found"
+        title="Scheduled task not found"
+      />
+    );
+  }
+
+  const schedule = scheduleQuery.data;
+  const diagnostics = buildScheduleDiagnostics(schedule);
+  const fireHistory = {
+    ...fireHistoryFromRead(firesQuery?.data),
+    error: firesQuery?.error ?? null,
+    isError: firesQuery?.isError ?? false,
+    isPending: firesQuery?.isPending ?? false,
+  };
+  const mutationPending = updateSchedule.isPending || runNow.isPending || archiveSchedule.isPending;
+
+  const toggleScheduleStatus = async () => {
+    if (schedule.status === "archived") {
+      return;
+    }
+    const nextStatus: ScheduleWriteStatus = schedule.status === "enabled" ? "paused" : "enabled";
+    try {
+      await updateSchedule.mutateAsync({
+        scheduleId: schedule.id,
+        payload: { status: nextStatus },
+      });
+      toast.success(`Scheduled task ${nextStatus === "enabled" ? "resumed" : "paused"}`);
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to update scheduled task status."));
+    }
+  };
+
+  const runScheduleNow = async () => {
+    const scheduledFor = new Date().toISOString();
+    try {
+      const result = await runNow.mutateAsync({
+        scheduleId: schedule.id,
+        payload: {
+          idempotencyKey: `manual-${schedule.id}-${scheduledFor}`,
+          scheduledFor,
+        },
+      });
+      const feedback = buildRunNowFeedback(schedule, result.fire, result.run.id);
+      setRunNowFeedback(feedback);
+      if (feedback.severity === "info") {
+        toast.success(feedback.message);
+      } else if (feedback.severity === "error") {
+        toast.error(feedback.message);
+      } else {
+        toast.warning(feedback.message);
+      }
+      navigate(`/runs/${result.run.id}`);
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to run scheduled task now."));
+    }
+  };
+
+  const saveScheduleConfiguration = async (
+    payload: ScheduleUpdateRequest,
+    successMessage = "Scheduled task configuration saved",
+  ) => {
+    if (schedule.status === "archived") {
+      return;
+    }
+    try {
+      await updateSchedule.mutateAsync({
+        scheduleId: schedule.id,
+        payload,
+      });
+      toast.success(successMessage);
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to save scheduled task configuration."));
+    }
+  };
+
+  const confirmArchive = async () => {
+    try {
+      await archiveSchedule.mutateAsync(schedule.id);
+      toast.success("Scheduled task archived");
+      setArchiveDialogOpen(false);
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to archive scheduled task."));
+    }
+  };
+
+  return (
+    <WorkspacePageShell
+      bodyAriaLabel="Scheduled task detail workspace"
+      bodyClassName="gap-3"
+      contextBar={<ScheduleHeader schedule={schedule} />}
+      testId="scheduled-task-detail-page"
+    >
+      <SummaryPanels schedule={schedule} />
+      <DiagnosticsStrip diagnostics={diagnostics} />
+      <StickyScheduleActionBar
+        mutationPending={mutationPending}
+        schedule={schedule}
+        onArchive={() => setArchiveDialogOpen(true)}
+        onRunNow={() => void runScheduleNow()}
+        onToggleStatus={() => void toggleScheduleStatus()}
+      />
+      <RunNowFeedbackAlert feedback={runNowFeedback} />
+      <ScheduleTabs
+        diagnostics={diagnostics}
+        fireHistory={fireHistory}
+        mutationPending={mutationPending}
+        schedule={schedule}
+        onSaveSchedule={saveScheduleConfiguration}
+      />
+      <ConfirmDeleteDialog
+        confirmLabel="Archive scheduled task"
+        description={`Archive ${schedule.name}? Existing fire and run audit history stays available, but the schedule will stop materializing future runs.`}
+        isPending={archiveSchedule.isPending}
+        open={archiveDialogOpen}
+        title="Archive scheduled task"
+        onConfirm={confirmArchive}
+        onOpenChange={setArchiveDialogOpen}
+      />
+    </WorkspacePageShell>
+  );
+}
