@@ -1,5 +1,6 @@
 import {
   Box,
+  CalendarClock,
   FileUp,
   MoreHorizontal,
   PackagePlus,
@@ -160,6 +161,16 @@ function WorkflowPackagesPageActions() {
         >
           <FileUp data-icon="inline-start" />
           Import Package
+        </Link>
+      </Button>
+      <Button asChild size="sm" variant="outline">
+        <Link
+          aria-label="Create scheduled task"
+          data-testid="workflow-packages-scheduled-tasks-new"
+          to="/scheduled-tasks/new"
+        >
+          <CalendarClock data-icon="inline-start" />
+          Schedule Task
         </Link>
       </Button>
       <Button asChild size="sm">

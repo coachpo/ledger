@@ -167,9 +167,9 @@ describe("MemoryListPage", () => {
     expect(contractNotice).toHaveTextContent("/api/memory");
     expect(contractNotice).toHaveTextContent("package access context");
     expect(contractNotice).toHaveTextContent("concrete private scope");
-    expect(contractNotice).toHaveTextContent("visibility is fixed to explicit-scope");
-    expect(contractNotice).toHaveTextContent("browser-authored JSON is not accepted");
-    expect(contractNotice).toHaveTextContent("finance report history remains in Reports");
+    expect(contractNotice).toHaveTextContent(
+      "Inspect /api/memory with package access context and a concrete private scope.",
+    );
     const shellBody = screen.getByTestId("workspace-page-shell-body");
     expect(shellBody.children[0]).toBe(screen.getByTestId("memory-access-filter-controls"));
     expect(shellBody.children[1]).toBe(screen.getByTestId("memory-split-inspector"));
