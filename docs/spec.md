@@ -30,7 +30,7 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 
 - `backend/app/main.py` owns app creation, exception handlers, CORS, and health.
 - `backend/app/api/router.py` composes preserved `/api/v1` finance routes behind extension gates.
-- `backend/app/api/platform_router.py` mounts `/api/memory`, `/api/workflow-packages`, `/api/model-connections`, `/api/extensions`, `/api/tools`, and `/api/runs`.
+- `backend/app/api/platform_router.py` mounts `/api/memory`, `/api/workflow-packages`, `/api/schedules`, `/api/model-connections`, `/api/extensions`, `/api/tools`, and `/api/runs`.
 - `backend/app/extensions/signaldeck_finance/` contributes current finance/product/provider routes, tools, hooks, and registrars as `signaldeck.finance`.
 - `backend/app/api/dependencies.py` is the service composition root.
 - `backend/app/core/telemetry.py` owns optional Logfire setup and trace/span id formatting.
@@ -39,7 +39,7 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 ## Frontend Architecture
 
 - `frontend/src/App.tsx` creates the TanStack Query client, theme provider, error boundary, and router provider.
-- `frontend/src/routes.ts` defines flat routes for dashboard, portfolios, templates, reports, Workflow Packages, Model Connections, Extensions, Runs, and Memory. Tools are linked through package authoring metadata, not a standalone route.
+- `frontend/src/routes.ts` defines flat routes for dashboard, portfolios, templates, reports, Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Runs, and Memory. Tools are linked through package authoring metadata, not a standalone route.
 - `frontend/src/components/layout.tsx` owns sidebar labels, breadcrumbs, and the app shell.
 - `frontend/src/extensions/runtime-helpers.ts` assembles finance routes/nav from extension state; `ExtensionRead` is the slim `{key,label,enabled}` contract.
 - API helpers live under `frontend/src/lib/api/`; wire types live under `frontend/src/lib/types/`; query keys live in `frontend/src/lib/query-keys.ts`.
@@ -69,6 +69,7 @@ Template/report series use runtime inputs plus report metadata tags to resolve p
 | Workflow packages            | `GET/POST /api/workflow-packages`, `GET/PATCH/DELETE /api/workflow-packages/{packageId}`, `GET /api/workflow-packages/{packageId}/manifest`, `POST /api/workflow-packages/validate-manifest`, `POST /api/workflow-packages/import`    |
 | Package secret bindings      | `GET /api/workflow-packages/{packageId}/secret-bindings`, `PUT/DELETE /api/workflow-packages/{packageId}/secret-bindings/{key}`                                                                                                       |
 | Package exports and launches | `GET /api/workflow-packages/{packageId}/export`, `POST /api/workflow-packages/{packageId}/preflight`, `GET /api/workflow-packages/{packageId}/launch`, `POST /api/workflow-packages/{packageId}/launches`                             |
+| Scheduled Tasks              | `GET/POST /api/schedules`, `POST /api/schedules/preview`, `GET/PATCH /api/schedules/{scheduleId}`, `POST /api/schedules/{scheduleId}/archive`, `POST /api/schedules/{scheduleId}/preview`, `POST /api/schedules/{scheduleId}/run-now`, `GET /api/schedules/{scheduleId}/fires` |
 | Model connections            | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test`, `POST /api/model-connections/{connectionId}/capability-probe`              |
 | Extensions                   | `GET /api/extensions`, `PATCH /api/extensions/{extensionKey}`                                                                                                                                                                         |
 | Tools                        | `GET /api/tools`                                                                                                                                                                                                                      |
@@ -105,9 +106,25 @@ Tool failure metadata is typed with `failureClass`, `source`, `phase`, `retryabl
 
 Model-feedback retries use one bounded correction attempt and record redacted `toolCallRetry` metadata. Retry admission is based on typed taxonomy, not free-form error text, provider status text, or exception class names alone.
 
+## Scheduled Tasks
+
+Scheduled Tasks is a platform-core, package-first surface at `/scheduled-tasks` and `/api/schedules`. Each schedule targets one current Workflow Package and one workflow key, and due fires create ordinary queued Workflow Package runs with `scheduleId`, `scheduleFireId`, `scheduledFor`, and `scheduleReason` provenance. It is not a finance-owned route and it is not a legacy orchestration surface.
+
+Recurrence v1 is structured. `interval` uses `every` plus `unit` values of `minutes`, `hours`, or `days`. `daily` uses `atLocalTime`. `weekly` uses unique `daysOfWeek` values plus `atLocalTime`. `monthly` uses unique `daysOfMonth` values plus `atLocalTime`; invalid dates for a month are skipped. Schedules require a valid IANA `timezone`. Local wall-clock recurrence is converted to UTC for storage and API timestamps. DST spring gaps roll forward to the next valid local minute, and DST fall repeated local times fire once at the earliest valid repeated instant. `nextFireAt` is server-owned and becomes `null` when no future occurrence remains or when the schedule is archived.
+
+Materialization honors `overlapPolicy` values of `skip` and `queue`. Skip records a skipped fire with `skipReason="schedule_overlap_active"` when a linked run is still queued or running. Misfire policy is `skip` or `catchUpOne`; `catchUpOne` materializes only the latest eligible missed occurrence inside `misfireGraceSeconds`, while skip records the latest missed occurrence with `skipReason="schedule_misfire_skipped"` and advances to the next future occurrence.
+
+Scheduled inputs are JSON object templates, not scripts. The allowed placeholder namespaces are `schedule`, `fire`, `window`, `lastRun`, and `vars`. Supported fire fields include `scheduledFor`, `scheduledLocalDate`, `scheduledLocalTime`, and `scheduledLocalDateTime`. Exact placeholder strings preserve the resolved JSON value type; embedded placeholders render as strings. Missing values, unsupported expressions, array indexing, functions, filters, arithmetic, secrets, and environment access fail preview or materialization. Rendered parameters are validated against the workflow input schema before a run is queued. Fire rows persist rendered parameters for audit.
+
+`POST /api/schedules/preview` renders an unsaved draft for a required `scheduledFor` instant without persisting fires or runs. `POST /api/schedules/{scheduleId}/preview` renders the stored schedule for the supplied `scheduledFor`, or for `nextFireAt` when omitted; archived schedules reject preview, and a stored schedule with no next fire returns a not-ready preview. Detail reads intentionally omit `inputTemplate` and `templateVars`, so the current UI seeds the Inputs tab from the workflow schema and only saves an explicit overwrite after a ready preview.
+
+`POST /api/schedules/{scheduleId}/run-now` requires `idempotencyKey` and `scheduledFor`, creates a manual fire through the same scheduled-run materialization path, and returns the compact queued run summary. Repeating the same schedule, scheduled time, and key returns the same fire and run. Paused schedules may run now and remain paused. Archived schedules reject run-now. The UI navigates to `/runs/:runId` for queue and execution evidence after run-now succeeds.
+
+`POST /api/schedules/{scheduleId}/archive` sets `status` to `archived`, clears future scheduling, preserves schedule fire and linked run history, and rejects later patch, preview, and run-now actions. `GET /api/schedules/{scheduleId}/fires` returns paged fire history with status, reason, local scheduled fields, rendered parameters, skip or error details, and linked run id. The detail page currently loads a limited recent history window, not a second run monitor.
+
 ## Runs, Scheduler, Reruns, And Forks
 
-The launch surface is `/workflow-packages/:packageId/run`, labeled `Launch Workflow Package`. It reads launch metadata, runs preflight, posts selected workflow key plus `parameters`, creates a durable queued run, and polls backend-owned progress/queue state while the explicit scheduler worker claims queued runs.
+The launch surface is `/workflow-packages/:packageId/run`, labeled `Launch Workflow Package`. It reads launch metadata, runs preflight, posts selected workflow key plus `parameters`, creates a durable queued run, and polls backend-owned progress/queue state while the explicit scheduler worker materializes due Scheduled Tasks and claims queued runs.
 
 Run detail includes `steps`, agent `invocations`, `operationInvocations`, `memoryArtifacts`, `memoryEvents`, `extensionDependencies`, `graphMetadata.modelGateway.failureTaxonomy`, bounded `toolCallRetries`, and `packageProvenance`. Run package provenance carries sanitized `resolvedModelConnections` from `ModelConnectionCompatibilityResolution` with protocol profile, model id, sanitized endpoint identity, backend-derived capabilities, policies, probe cache TTL, timeout, and `hasApiKey`; it never includes raw API keys, headers, or provider payloads.
 
