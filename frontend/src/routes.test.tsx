@@ -35,6 +35,9 @@ import type { ExtensionListRead } from "./lib/types/extension";
 import { NotFoundPage } from "./pages/not-found";
 import { RouteErrorPage } from "./pages/route-error";
 import { MemoryListPage } from "./pages/memory/list";
+import { ScheduledTaskDetailPage } from "./pages/scheduled-tasks/detail";
+import { ScheduledTaskEditorPage } from "./pages/scheduled-tasks/editor";
+import { ScheduledTasksListPage } from "./pages/scheduled-tasks/list";
 import { WorkflowPackageEditorPage } from "./pages/workflow-packages/editor";
 import { WorkflowPackageLaunchPage } from "./pages/workflow-packages/launch";
 import { router } from "./routes";
@@ -211,6 +214,22 @@ describe("router", () => {
       stateVariants: ["loading", "ready", "error", "empty", "unauthorized"],
       testId: "route-memory-list",
     });
+    expect(getRouteMetadataByPattern("/scheduled-tasks")).toMatchObject({
+      archetype: "inventory",
+      breadcrumb: { title: "Scheduled Tasks" },
+      nav: {
+        group: "Agent Platform",
+        label: "Scheduled Tasks",
+        path: "/scheduled-tasks",
+        sidebar: true,
+        testId: "nav-scheduled-tasks",
+      },
+      owner: { kind: "platform" },
+      shellMode: "scroll",
+      widthMode: "wide",
+      stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
+      testId: "route-scheduled-tasks-list",
+    });
     expect(getRouteMetadataByPattern("/runs")).toMatchObject({
       archetype: "inventory",
       owner: { kind: "platform" },
@@ -321,6 +340,44 @@ describe("router", () => {
       shellMode: "scroll",
       widthMode: "readable",
     });
+    expect(getRouteMetadataByPattern("/scheduled-tasks/new")).toMatchObject({
+      archetype: "editor",
+      breadcrumb: {
+        parent: { href: "/scheduled-tasks", title: "Scheduled Tasks" },
+        title: "New Scheduled Task",
+      },
+      shellMode: "fullHeight",
+      widthMode: "full",
+      stateVariants: expect.arrayContaining([
+        "creating",
+        "saving",
+        "validating",
+        "error",
+      ]),
+      testId: "route-scheduled-task-new",
+    });
+    expect(
+      getRouteMetadataByPattern("/scheduled-tasks/:scheduleId"),
+    ).toMatchObject({
+      archetype: "console",
+      breadcrumb: {
+        parent: { href: "/scheduled-tasks", title: "Scheduled Tasks" },
+        title: "Scheduled Task Detail",
+      },
+      shellMode: "fullHeight",
+      widthMode: "full",
+      stateVariants: expect.arrayContaining([
+        "loading",
+        "ready",
+        "editing",
+        "saving",
+        "validating",
+        "error",
+        "notFound",
+        "polling",
+      ]),
+      testId: "route-scheduled-task-detail",
+    });
     expect(getRouteMetadataByPattern("/templates/new")).toMatchObject({
       archetype: "editor",
       shellMode: "fullHeight",
@@ -383,6 +440,8 @@ describe("router", () => {
       "/model-connections/new",
       "/model-connections/:modelConnectionId/edit",
       "/memory",
+      "/scheduled-tasks/new",
+      "/scheduled-tasks/:scheduleId",
       "/runs/:runId",
     ]);
   });
@@ -428,7 +487,7 @@ describe("router", () => {
     }
   });
 
-  it("keeps global model connection, canonical memory, and run routes", () => {
+  it("keeps global model connection, canonical memory, scheduled tasks, and run routes", () => {
     expect(matchRoutes(router.routes, "/model-connections")).not.toBeNull();
     expect(matchRoutes(router.routes, "/model-connections/new")).not.toBeNull();
     expect(
@@ -440,6 +499,25 @@ describe("router", () => {
     );
     expect(matchedRouteComponent("/api/memory")).toBe(NotFoundPage);
     expect(getRouteMetadataForPathname("/api/memory")).toBe(
+      unknownRouteMetadata,
+    );
+    expect(matchedRouteComponent("/scheduled-tasks")).toBe(
+      ScheduledTasksListPage,
+    );
+    expect(matchedRouteComponent("/scheduled-tasks/new")).toBe(
+      ScheduledTaskEditorPage,
+    );
+    expect(matchedRouteComponent("/scheduled-tasks/123")).toBe(
+      ScheduledTaskDetailPage,
+    );
+    expect(getRouteMetadataForPathname("/scheduled-tasks")?.testId).toBe(
+      "route-scheduled-tasks-list",
+    );
+    expect(getRouteMetadataForPathname("/scheduled-tasks/123")?.testId).toBe(
+      "route-scheduled-task-detail",
+    );
+    expect(matchedRouteComponent("/api/schedules")).toBe(NotFoundPage);
+    expect(getRouteMetadataForPathname("/api/schedules")).toBe(
       unknownRouteMetadata,
     );
     expect(matchRoutes(router.routes, "/runs")).not.toBeNull();

@@ -90,6 +90,8 @@ const representativeShellRoutes = [
   { label: "inventory", pathname: "/workflow-packages" },
   { label: "editor", pathname: "/workflow-packages/import" },
   { label: "workflow launch console", pathname: "/workflow-packages/88/run" },
+  { label: "scheduled tasks inventory", pathname: "/scheduled-tasks" },
+  { label: "scheduled task detail", pathname: "/scheduled-tasks/42" },
   { label: "run detail console", pathname: "/runs/42" },
   { label: "system state", pathname: "/extensions" },
 ] as const;
@@ -180,6 +182,30 @@ describe("Layout", () => {
                   element={
                     <div data-testid="memory-workspace-content">
                       Memory inspection workspace
+                    </div>
+                  }
+                />
+                <Route
+                  path="scheduled-tasks"
+                  element={
+                    <div data-testid="scheduled-tasks-list-content">
+                      Scheduled tasks inventory content
+                    </div>
+                  }
+                />
+                <Route
+                  path="scheduled-tasks/new"
+                  element={
+                    <div data-testid="scheduled-task-new-content">
+                      Scheduled task creation workspace
+                    </div>
+                  }
+                />
+                <Route
+                  path="scheduled-tasks/:scheduleId"
+                  element={
+                    <div data-testid="scheduled-task-detail-content">
+                      Scheduled task detail workspace
                     </div>
                   }
                 />
@@ -488,6 +514,58 @@ describe("Layout", () => {
     );
     expect(
       screen.getByTestId("workflow-package-launch-page").parentElement,
+    ).toHaveClass("h-full");
+  });
+
+  it("labels scheduled tasks routes with metadata-owned breadcrumbs and shell modes", () => {
+    const listMetadata = getRouteMetadataForPathname("/scheduled-tasks");
+    renderLayout("/scheduled-tasks");
+    expect(screen.getByTestId("nav-scheduled-tasks")).toHaveTextContent(
+      listMetadata.nav.label,
+    );
+    expect(screen.getByTestId(listMetadata.testId)).toHaveAttribute(
+      "data-route-shell-mode",
+      "scroll",
+    );
+    expect(
+      within(screen.getByRole("banner")).getByText(
+        listMetadata.breadcrumb.title,
+      ),
+    ).toBeInTheDocument();
+
+    const newMetadata = getRouteMetadataForPathname("/scheduled-tasks/new");
+    renderLayout("/scheduled-tasks/new");
+    expect(
+      within(screen.getAllByRole("banner")[1]).getByText(
+        newMetadata.breadcrumb.parent?.title ?? "",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getAllByRole("banner")[1]).getByText(
+        newMetadata.breadcrumb.title,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId(newMetadata.testId)).toHaveAttribute(
+      "data-route-shell-mode",
+      "fullHeight",
+    );
+    expect(
+      screen.getByTestId("scheduled-task-new-content").parentElement,
+    ).toHaveClass("h-full");
+
+    const detailMetadata = getRouteMetadataForPathname("/scheduled-tasks/42");
+    renderLayout("/scheduled-tasks/42");
+    expect(
+      within(screen.getAllByRole("banner")[2]).getByText(
+        detailMetadata.breadcrumb.title,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId(detailMetadata.testId)).toHaveAttribute(
+      "data-route-shell-mode",
+      "fullHeight",
+    );
+    expect(
+      screen.getByTestId("scheduled-task-detail-content").parentElement,
     ).toHaveClass("h-full");
   });
 

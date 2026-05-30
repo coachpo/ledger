@@ -11,6 +11,9 @@ import { NotFoundPage } from "./pages/not-found";
 import { RouteErrorPage } from "./pages/route-error";
 import { RunsDetailPage } from "./pages/runs/detail";
 import { RunsListPage } from "./pages/runs/list";
+import { ScheduledTaskDetailPage } from "./pages/scheduled-tasks/detail";
+import { ScheduledTaskEditorPage } from "./pages/scheduled-tasks/editor";
+import { ScheduledTasksListPage } from "./pages/scheduled-tasks/list";
 import { WorkflowPackageEditorPage } from "./pages/workflow-packages/editor";
 import { WorkflowPackageImportPage } from "./pages/workflow-packages/import-page";
 import { WorkflowPackageLaunchPage } from "./pages/workflow-packages/launch";
@@ -38,6 +41,9 @@ const platformRoutes: AppRouteDefinition[] = [
     Component: ModelConnectionsEditorPage,
   },
   { path: "memory", Component: MemoryListPage },
+  { path: "scheduled-tasks", Component: ScheduledTasksListPage },
+  { path: "scheduled-tasks/new", Component: ScheduledTaskEditorPage },
+  { path: "scheduled-tasks/:scheduleId", Component: ScheduledTaskDetailPage },
   { path: "runs", Component: RunsListPage },
   { path: "runs/:runId", Component: RunsDetailPage },
 ];

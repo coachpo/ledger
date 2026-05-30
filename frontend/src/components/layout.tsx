@@ -28,7 +28,10 @@ import { useSidebar } from "./ui/sidebar-context";
 
 import { assembleNavGroups, type NavItem } from "@/extensions/runtime-helpers";
 import { useExtensions } from "@/hooks/use-extensions";
-import { getRouteMetadataForPathname } from "@/routes.metadata";
+import {
+  getRouteMetadataForPathname,
+  type RouteWidthMode,
+} from "@/routes.metadata";
 
 function isNavItemActive(pathname: string, item: NavItem) {
   return item.to === "/"
@@ -107,7 +110,7 @@ function AppSidebar() {
   );
 }
 
-function routeWidthWrapperClassName(widthMode: string) {
+function routeWidthWrapperClassName(widthMode: RouteWidthMode) {
   switch (widthMode) {
     case "compact":
       return "min-h-full min-w-0 max-w-full [&>*]:mx-auto [&>*]:min-w-0 [&>*]:w-full [&>*]:max-w-4xl";
