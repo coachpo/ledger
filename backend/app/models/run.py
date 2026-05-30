@@ -37,6 +37,10 @@ class Run(IdMixin, TimestampMixin, Base):
             name="ck_runs_concurrency_policy",
         ),
         CheckConstraint("attempt_count >= 0", name="ck_runs_attempt_count_non_negative"),
+        CheckConstraint(
+            "schedule_reason IS NULL OR schedule_reason IN ('scheduled', 'manual')",
+            name="ck_runs_schedule_reason",
+        ),
         Index("ix_runs_status", "status"),
         Index("ix_runs_queue_claim", "status", "queued_at", "id"),
         Index("ix_runs_target", "target_kind", "target_id", "target_version"),
@@ -56,6 +60,16 @@ class Run(IdMixin, TimestampMixin, Base):
         Index("ix_runs_workflow_package", "workflow_package_id"),
         Index("ix_runs_workflow_package_key", "workflow_package_key"),
         Index("ix_runs_workflow_package_workflow_key", "workflow_package_workflow_key"),
+        Index("ix_runs_schedule", "schedule_id"),
+        Index("ix_runs_schedule_status", "schedule_id", "status"),
+        Index("ix_runs_schedule_fire", "schedule_fire_id"),
+        Index("ix_runs_scheduled_for", "scheduled_for"),
+        Index(
+            "uq_runs_schedule_fire",
+            "schedule_fire_id",
+            unique=True,
+            postgresql_where=sql_text("schedule_fire_id IS NOT NULL"),
+        ),
     )
 
     agent_id: Mapped[int | None] = mapped_column(
@@ -77,6 +91,24 @@ class Run(IdMixin, TimestampMixin, Base):
     )
     workflow_package_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
     workflow_package_workflow_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    schedule_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "workflow_package_schedules.id",
+            ondelete="SET NULL",
+            name="fk_runs_schedule_id",
+        ),
+        nullable=True,
+    )
+    schedule_fire_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "workflow_package_schedule_fires.id",
+            ondelete="SET NULL",
+            name="fk_runs_schedule_fire_id",
+        ),
+        nullable=True,
+    )
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    schedule_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
     extension_dependencies: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,

@@ -31,6 +31,10 @@ from app.models.workflow_package import (
     WorkflowPackageRuntimeInputEntry,
     WorkflowPackageSecretBinding,
 )
+from app.models.workflow_package_schedule import (
+    WorkflowPackageSchedule,
+    WorkflowPackageScheduleFire,
+)
 
 __all__ = [
     "Agent",
@@ -64,5 +68,7 @@ __all__ = [
     "WorkflowAgentRef",
     "WorkflowPackage",
     "WorkflowPackageRuntimeInputEntry",
+    "WorkflowPackageSchedule",
+    "WorkflowPackageScheduleFire",
     "WorkflowPackageSecretBinding",
 ]
