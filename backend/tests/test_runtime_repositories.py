@@ -28,6 +28,7 @@ from app.models.run_fork import RunFork
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
+from app.models.workflow_package_schedule import WorkflowPackageSchedule
 from app.repositories.agent import AgentRepository
 from app.repositories.capability import CapabilityRepository
 from app.repositories.mcp_server import McpServerRepository
@@ -37,6 +38,10 @@ from app.repositories.run import RunRepository
 from app.repositories.run_fork import RunForkRepository
 from app.repositories.workflow import WorkflowRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
+from app.repositories.workflow_package_schedule import (
+    WorkflowPackageScheduleFireRepository,
+    WorkflowPackageScheduleRepository,
+)
 from app.schemas.capability import CapabilityDraftCreate, CapabilityDraftUpdate
 from app.schemas.mcp_server import McpServerCreate, McpServerTransport, McpServerUpdate
 from app.schemas.model_connection import default_model_connection_capabilities
@@ -1714,6 +1719,133 @@ def test_run_detail_loads_fork_artifact_without_requiring_legacy_backfill(
         assert legacy_detail.lineage_root_run_id == source_run_id
         assert legacy_detail.forked_from_step_index == 2
         assert legacy_detail.resume_step_index == 2
+
+
+def _create_schedule_fixture(
+    repo: WorkflowPackageScheduleRepository,
+    package: WorkflowPackage,
+    *,
+    name: str,
+    status: str = "enabled",
+    next_fire_at: datetime | None,
+) -> WorkflowPackageSchedule:
+    return repo.create_schedule(
+        package_id=package.id,
+        workflow_key="daily_research",
+        name=name,
+        timezone="UTC",
+        recurrence={"type": "daily", "atLocalTime": "09:00"},
+        status=status,
+        next_fire_at=next_fire_at,
+    )
+
+
+def test_due_schedule_selection_is_lock_safe_and_deterministic(
+    session_factory: sessionmaker[Session],
+) -> None:
+    now = datetime(2026, 6, 1, 10, 2, tzinfo=UTC_TZ)
+    with session_factory() as session:
+        package = _seed_workflow_package_target(session, key_prefix="schedule_due")
+        repo = WorkflowPackageScheduleRepository(session)
+        first_due = _create_schedule_fixture(
+            repo,
+            package,
+            name="First due",
+            next_fire_at=datetime(2026, 6, 1, 10, 0, tzinfo=UTC_TZ),
+        )
+        second_due = _create_schedule_fixture(
+            repo,
+            package,
+            name="Second due",
+            next_fire_at=datetime(2026, 6, 1, 10, 1, tzinfo=UTC_TZ),
+        )
+        _ = _create_schedule_fixture(
+            repo,
+            package,
+            name="Future",
+            next_fire_at=datetime(2026, 6, 1, 10, 3, tzinfo=UTC_TZ),
+        )
+        _ = _create_schedule_fixture(
+            repo,
+            package,
+            name="Paused due",
+            status="paused",
+            next_fire_at=datetime(2026, 6, 1, 9, 0, tzinfo=UTC_TZ),
+        )
+        _ = _create_schedule_fixture(
+            repo,
+            package,
+            name="Archived due",
+            status="archived",
+            next_fire_at=datetime(2026, 6, 1, 8, 0, tzinfo=UTC_TZ),
+        )
+        session.commit()
+        first_due_id = first_due.id
+        second_due_id = second_due.id
+
+    with session_factory() as session:
+        selected = WorkflowPackageScheduleRepository(session).list_due(now=now, limit=10)
+        assert [schedule.id for schedule in selected] == [first_due_id, second_due_id]
+
+    first_session = session_factory()
+    second_session = session_factory()
+    try:
+        first_locked = WorkflowPackageScheduleRepository(first_session).list_due_for_update(
+            now=now,
+            limit=1,
+        )
+        assert [schedule.id for schedule in first_locked] == [first_due_id]
+
+        second_locked = WorkflowPackageScheduleRepository(second_session).list_due_for_update(
+            now=now,
+            limit=10,
+        )
+        assert [schedule.id for schedule in second_locked] == [second_due_id]
+    finally:
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()
+
+
+def test_schedule_fire_idempotency_inserts_one_row_per_schedule_fire_key(
+    session_factory: sessionmaker[Session],
+) -> None:
+    scheduled_for = datetime(2026, 6, 1, 13, 0, tzinfo=UTC_TZ)
+    with session_factory() as session:
+        package = _seed_workflow_package_target(session, key_prefix="schedule_fire_idempotency")
+        schedule = _create_schedule_fixture(
+            WorkflowPackageScheduleRepository(session),
+            package,
+            name="Daily research",
+            next_fire_at=scheduled_for,
+        )
+        session.flush()
+        fire_repo = WorkflowPackageScheduleFireRepository(session)
+
+        first_fire = fire_repo.insert_idempotent(
+            schedule_id=schedule.id,
+            fire_key="daily-research-2026-06-01T13:00:00Z",
+            scheduled_for=scheduled_for,
+            rendered_parameters={"ticker": "NVDA"},
+        )
+        session.flush()
+        duplicate_fire = fire_repo.insert_idempotent(
+            schedule_id=schedule.id,
+            fire_key="daily-research-2026-06-01T13:00:00Z",
+            scheduled_for=scheduled_for,
+            rendered_parameters={"ticker": "MSFT"},
+        )
+        session.flush()
+
+        assert duplicate_fire.id == first_fire.id
+        assert fire_repo.count_for_schedule(schedule.id) == 1
+        existing_fire = fire_repo.get_by_schedule_fire_key(
+            schedule_id=schedule.id,
+            fire_key="daily-research-2026-06-01T13:00:00Z",
+        )
+        assert existing_fire is not None
+        assert existing_fire.id == first_fire.id
 
 
 def test_run_repository_claim_next_queued_serializes_same_package_scope(
