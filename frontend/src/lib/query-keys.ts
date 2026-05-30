@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { GetMarketHistoryParams, GetMarketQuotesParams } from "./types/market-data";
 import type { ModelConnectionListParams } from "./types/model-connection";
 import type { RunListParams } from "./types/run";
+import type { ScheduleFireListParams, ScheduleListParams } from "./types/schedule";
 
 const apiRoot = ["api"] as const;
 const platformApiRoot = [...apiRoot, "platform"] as const;
@@ -55,6 +56,24 @@ function normalizeRunListParams(params: RunListParams = {}) {
     workflowKey: normalizeOptionalText(params.workflowKey),
     workflowPackageId: params.workflowPackageId,
     workflowPackageKey: normalizeOptionalText(params.workflowPackageKey),
+  });
+}
+
+function normalizeScheduleListParams(params: ScheduleListParams = {}) {
+  return omitUndefined({
+    limit: params.limit,
+    offset: params.offset ?? 0,
+    packageId: params.packageId,
+    packageKey: normalizeOptionalText(params.packageKey),
+    status: params.status,
+    workflowKey: normalizeOptionalText(params.workflowKey),
+  });
+}
+
+function normalizeScheduleFireListParams(params: ScheduleFireListParams = {}) {
+  return omitUndefined({
+    limit: params.limit,
+    offset: params.offset ?? 0,
   });
 }
 const portfoliosQueryKeys = {
@@ -123,6 +142,26 @@ function workflowPackageRuntimeInputRegistryRoot(packageId: IdParam) {
 function normalizeWorkflowKey(workflowKey: string | null | undefined) {
   return workflowKey?.trim() ?? "";
 }
+
+const schedulesRoot = [...platformApiRoot, "schedules"] as const;
+
+const schedulesQueryKeys = {
+  all: schedulesRoot,
+  detail: (scheduleId: IdParam) =>
+    [...schedulesRoot, "detail", normalizeId(scheduleId)] as const,
+  fires: (scheduleId: IdParam, params: ScheduleFireListParams = {}) =>
+    [
+      ...schedulesRoot,
+      "fires",
+      normalizeId(scheduleId),
+      normalizeScheduleFireListParams(params),
+    ] as const,
+  firesScope: (scheduleId: IdParam) =>
+    [...schedulesRoot, "fires", normalizeId(scheduleId)] as const,
+  list: (params: ScheduleListParams = {}) =>
+    [...schedulesRoot, "list", normalizeScheduleListParams(params)] as const,
+  lists: () => [...schedulesRoot, "list"] as const,
+} as const;
 
 const workflowPackagesQueryKeys = {
   all: workflowPackagesRoot,
@@ -200,6 +239,7 @@ const platformQueryKeys = {
     all: [...platformApiRoot, "tools"] as const,
     list: () => [...platformApiRoot, "tools", "list"] as const,
   },
+  schedules: schedulesQueryKeys,
   runs: {
     all: [...platformApiRoot, "runs"] as const,
     lists: () => [...platformApiRoot, "runs", "list"] as const,

@@ -127,6 +127,7 @@ describe("query keys", () => {
       "modelConnections",
       "extensions",
       "tools",
+      "schedules",
       "runs",
       "workflowPackages",
     ]);
@@ -136,6 +137,47 @@ describe("query keys", () => {
     expect(Reflect.has(queryKeys.platform, "outputSchemas")).toBe(false);
     expect(Reflect.has(queryKeys.platform, "workflows")).toBe(false);
     expect(Reflect.has(queryKeys.platform.workflowPackages, "versions")).toBe(false);
+  });
+
+  it("normalizes schedule list and fire-history filters", () => {
+    expect(queryKeys.platform.schedules.detail("44")).toEqual(
+      queryKeys.platform.schedules.detail(44),
+    );
+    expect(queryKeys.platform.schedules.lists()).toEqual([
+      "api",
+      "platform",
+      "schedules",
+      "list",
+    ]);
+    expect(
+      queryKeys.platform.schedules.list({
+        offset: 0,
+        packageKey: " research_package ",
+        status: "enabled",
+        workflowKey: " daily_research ",
+      }),
+    ).toEqual([
+      "api",
+      "platform",
+      "schedules",
+      "list",
+      {
+        offset: 0,
+        packageKey: "research_package",
+        status: "enabled",
+        workflowKey: "daily_research",
+      },
+    ]);
+    expect(queryKeys.platform.schedules.fires("44", { limit: 50 })).toEqual(
+      queryKeys.platform.schedules.fires(44, { limit: 50 }),
+    );
+    expect(queryKeys.platform.schedules.firesScope(44)).toEqual([
+      "api",
+      "platform",
+      "schedules",
+      "fires",
+      "44",
+    ]);
   });
 
   it("normalizes package run filters", () => {
