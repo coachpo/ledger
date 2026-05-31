@@ -3,14 +3,15 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file covers long-lived worker entrypoints in `app/workers/`.
 
 ## OVERVIEW
-`app/workers/` owns the out-of-request execution loop for queued Workflow Package runs. The current worker surface is the scheduler in `run_scheduler.py`, which claims queued runs, maintains leases and heartbeats, recovers stale leases, resolves the enabled execution-provider bundle, and hands execution to `RunService`.
+`app/workers/` owns the out-of-request execution loop for package automation. The current worker surface is the scheduler in `run_scheduler.py`, which materializes due Scheduled Task fires into queued Workflow Package runs, claims queued runs, maintains leases and heartbeats, recovers stale leases, resolves the enabled execution-provider bundle, and hands execution to `RunService`.
 
 The worker is platform-core runtime infrastructure. It is not a finance route surface and it is not a browser-facing scheduler product.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Scheduler entrypoint | `run_scheduler.py` | `main()`, `RunSchedulerWorker`, advisory lock, claim loop, heartbeats, and lease release |
+| Scheduler entrypoint | `run_scheduler.py` | `main()`, `RunSchedulerWorker`, advisory lock, due-schedule materialization, claim loop, heartbeats, and lease release |
+| Due schedule materialization | `../services/workflow_package_schedule_materializer.py`, `../services/workflow_package_schedule_service.py` | finds eligible schedules, renders scheduled inputs, records fires, and queues ordinary runs |
 | Queue semantics | `../services/run_queue_service.py` | claim, heartbeat, stale-lease recovery, and release rules |
 | Run execution handoff | `../services/run_service.py` | executes claimed runs after the worker obtains a lease |
 | Extension-aware providers | `../services/extension_service.py` | resolves the enabled execution-provider bundle before execution |
@@ -19,6 +20,7 @@ The worker is platform-core runtime infrastructure. It is not a finance route su
 ## CONVENTIONS
 - Keep worker startup explicit: `main()` initializes the database, then runs `RunSchedulerWorker().run_forever()`.
 - Only one worker process may hold the scheduler advisory lock at a time.
+- Due Scheduled Task materialization runs through `WorkflowPackageScheduleMaterializer` before run execution; the worker should not inline recurrence math or scheduled-input rendering.
 - Queue claiming, lease heartbeats, stale-lease recovery, and lease release stay in `RunQueueService`; do not fork that logic in the worker.
 - The worker resolves the execution-provider bundle through `ExtensionService` at execution time so extension state stays live.
 - `run_forever()` owns the long-lived polling loop; `run_once()` is the bounded helper for tests and targeted execution.
