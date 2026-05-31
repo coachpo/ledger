@@ -22,14 +22,14 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Text templates | `text_template.py` | stored template names and content |
 | Reports | `report.py` | slug-addressed markdown snapshots with source and metadata |
 | Extension state | `extension.py` | persisted enable/disable state for statically resident extension keys |
-| Platform package entities | `workflow_package.py` | package headers plus immutable package version artifacts |
-| Platform global entities | `model_connection.py`, `run.py` | saved model connections plus persisted global run detail and package provenance |
+| Platform package entities | `workflow_package.py`, `workflow_package_schedule.py` | package headers, immutable package version artifacts, package-backed schedules, and schedule fire history |
+| Platform global entities | `model_connection.py`, `run.py` | saved model connections plus persisted global run detail, schedule provenance, and package provenance |
 ## CONVENTIONS
 - ORM models use `Mapped[...]` annotations and `mapped_column(...)`.
 - Use explicit table names via `__tablename__` and explicit indexes or `CheckConstraint`s.
 - Relationships use `relationship()` only when the code actually needs them.
 - Models should be persistence-oriented: columns, constraints, defaults, and relationships only.
-- Unique constraints enforce business rules such as unique portfolio slugs, balance labels per portfolio, template names, extension keys, versioned platform keys, and quote-cache lookup keys.
+- Unique constraints enforce business rules such as unique portfolio slugs, balance labels per portfolio, template names, extension keys, schedule fire keys, versioned platform keys, and quote-cache lookup keys.
 - Use mixins from `base.py` instead of repeating `id`, `created_at`, or `updated_at` columns.
 
 ## ANTI-PATTERNS

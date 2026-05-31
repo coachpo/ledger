@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers `app/db/`.
 
 ## OVERVIEW
-`app/db/` owns engine/session creation, PostgreSQL-only database initialization, cache resets for tests, numeric-id guardrails, and in-code schema upgrades for preserved product tables, statically resident extension state, and current agent-platform tables. `upgrades.py` is also the supported startup repair path for extension-state canonicalization, current-package/reference-table creation, run-fork tables, stale-run recovery, and retired-table cleanup.
+`app/db/` owns engine/session creation, PostgreSQL-only database initialization, cache resets for tests, numeric-id guardrails, and in-code schema upgrades for preserved product tables, statically resident extension state, and current agent-platform tables. `upgrades.py` is also the supported startup repair path for extension-state canonicalization, current-package/reference-table creation, schedule tables, run-fork tables, stale-run recovery, and retired-table cleanup.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -16,7 +16,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Request-scoped sessions | `engine.py` | `get_db_session()` generator used by API dependencies |
 | App startup DB init | `session.py` | `init_db()` composes model import, validation, table creation, and upgrade helpers |
 | Engine / id validation | `validation.py` | PostgreSQL requirement and numeric-id guardrails |
-| Schema upgrades | `upgrades.py` | preserved-table backfills, `extension_states` repair/seeding, platform reference tables, run scheduler metadata/indexes, `run_forks`, startup recovery, and legacy-table cleanup |
+| Schema upgrades | `upgrades.py` | preserved-table backfills, `extension_states` repair/seeding, platform reference tables, schedule tables/indexes, run scheduler metadata/indexes, `run_forks`, startup recovery, and legacy-table cleanup |
 | Test cache resets | `engine.py` | `reset_db_caches()` for isolated test databases |
 
 ## CONVENTIONS
@@ -46,7 +46,7 @@ uv run pytest tests/test_api.py tests/test_runtime_db_upgrades.py tests/test_leg
 ```
 
 ## NOTES
-- `upgrades.py` backfills missing portfolio slugs, adds `balances.operation_type`, upgrades `reports` with `slug`/`source`/`metadata`, adds `market_quotes.name`, repairs and seeds `extension_states`, creates current agent-platform/reference tables including `run_forks`, backfills placeholder model connections from legacy agent models, recovers stale agent-platform runs, and drops retired backend tables.
+- `upgrades.py` backfills missing portfolio slugs, adds `balances.operation_type`, upgrades `reports` with `slug`/`source`/`metadata`, adds `market_quotes.name`, repairs and seeds `extension_states`, creates current agent-platform/reference tables including schedules, schedule fires, and `run_forks`, backfills placeholder model connections from legacy agent models, recovers stale agent-platform runs, and drops retired backend tables.
 - `upgrades.py` also owns the package-startup cutover marker table used to avoid re-running one-way artifact migrations.
 - `session.py` imports the full model package, validates the engine and numeric-id schema, creates tables, and runs upgrade helpers.
 - `create_app(init_database=False)` lets tests control initialization explicitly through fixtures.
