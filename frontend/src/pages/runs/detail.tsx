@@ -21,6 +21,11 @@ import {
   sortedInvocations,
   sortedOperationInvocations,
 } from "./detail-helpers";
+import {
+  resolveRunDetailTab,
+  withRunDetailTab,
+  type RunDetailTabKey,
+} from "./detail-tabs";
 import { RunDetailSectionStack, RunForkDialog } from "./detail-sections";
 import {
   resolveRunInspectionState,
@@ -204,10 +209,21 @@ export function RunsDetailPage() {
     searchParams,
     steps,
   });
+  const selectedTab = resolveRunDetailTab({
+    rawHash: location.hash,
+    rawInspect: searchParams.get("inspect"),
+    rawMode: searchParams.get("mode"),
+    rawPane: searchParams.get("pane"),
+    rawTab: searchParams.get("tab"),
+  });
   const terminalInvocationsCount = allInvocations.filter((invocation) =>
     isTerminalStatus(invocation.status),
   ).length;
   const canRerunRun = run.targetKind === "workflowPackage";
+
+  const updateSelectedTab = (tab: RunDetailTabKey) => {
+    setSearchParams((current) => withRunDetailTab(current, tab));
+  };
 
   const selectInspection = (
     target: RunInspectionTarget,
@@ -319,6 +335,7 @@ export function RunsDetailPage() {
 
   const primaryModeWorkspace = (
     <RunDetailSectionStack
+      {...{ onTabChange: updateSelectedTab, selectedTab }}
       activeInspection={activeInspection}
       allInvocationsCount={allInvocations.length}
       copiedInvocations={copiedInvocations}
@@ -446,10 +463,11 @@ export function RunsDetailPage() {
                   </span>
                   <span
                     className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-normal text-muted-foreground"
-                    data-testid="runs-detail-identity-line">
-                    <Badge variant="outline">{targetKindLabel}</Badge>  
-                      {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
-                      {run.packageProvenance ? (
+                    data-testid="runs-detail-identity-line"
+                  >
+                    <Badge variant="outline">{targetKindLabel}</Badge>
+                    {run.packageProvenance?.workflowPackageKey ?? run.targetKey}
+                    {run.packageProvenance ? (
                       <span className="min-w-0 max-w-full break-words">
                         {run.packageProvenance.workflowPackageName}
                       </span>

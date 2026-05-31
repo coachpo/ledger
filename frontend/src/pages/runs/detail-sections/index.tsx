@@ -37,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/components/ui/utils";
 import { formatDateTime } from "@/lib/format";
 import type {
@@ -61,6 +62,11 @@ import {
   sortedOperationInvocations,
   type TraceSpanEntry,
 } from "../detail-helpers";
+import {
+  RUN_DETAIL_TAB_LABELS,
+  RUN_DETAIL_TAB_ORDER,
+  type RunDetailTabKey,
+} from "../detail-tabs";
 import {
   inspectionPaneLabel,
   inspectionPanesForTarget,
@@ -2337,6 +2343,7 @@ type RunDetailSectionStackProps = {
     pane?: RunInspectionPane,
     mode?: RunInspectionMode,
   ) => void;
+  onTabChange: (tab: RunDetailTabKey) => void;
   plannedInvocations: number;
   plannedSteps: number;
   run: RunRead;
@@ -2345,7 +2352,12 @@ type RunDetailSectionStackProps = {
   targetKindLabel: string;
   terminalInvocationsCount: number;
   traceSpanEntries: TraceSpanEntry[];
+  selectedTab: RunDetailTabKey;
 };
+
+function isRunDetailTabKey(value: string): value is RunDetailTabKey {
+  return RUN_DETAIL_TAB_ORDER.includes(value as RunDetailTabKey);
+}
 
 export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
   const {
@@ -2356,92 +2368,79 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
     isCurrentFork,
     onOpenFork,
     onSelect,
+    onTabChange,
     plannedInvocations,
     plannedSteps,
     run,
     runProgress,
+    selectedTab,
     steps,
     targetKindLabel,
     terminalInvocationsCount,
     traceSpanEntries,
   } = props;
 
-  return (
-    <div className="grid min-w-0 gap-3" data-testid="runs-stacked-workspace">
-      <section className="min-w-0" data-testid="runs-stacked-section-summary">
-        <RunOverviewWorkspace
-          allInvocationsCount={allInvocationsCount}
-          run={run}
-          runProgress={runProgress}
-          targetKindLabel={targetKindLabel}
-          terminalInvocationsCount={terminalInvocationsCount}
-          traceSpanEntries={traceSpanEntries}
-        />
-      </section>
-      <section
-        className="min-w-0"
-        data-testid="runs-stacked-section-final-output"
-      >
-        <RunFinalOutputPane run={run} />
-      </section>
-      <section
-        className="min-w-0"
-        data-testid="runs-stacked-section-output-provenance"
-      >
-        <RunOutputWorkspace run={run} />
-      </section>
-      <section
-        className="min-w-0"
-        data-testid="runs-stacked-section-evidence-availability"
-      >
-        <RunEvidenceAvailabilitySection run={run} />
-      </section>
-      <section
-        className="min-w-0"
-        data-testid="runs-stacked-section-diagnostics"
-      >
-        <RunDiagnosticsWorkspace run={run} steps={steps} />
-      </section>
-      <section className="min-w-0" data-testid="runs-stacked-section-execution">
-        <ExecutionOutline
-          activeInspection={activeInspection}
-          copiedInvocations={copiedInvocations}
-          copiedSteps={copiedSteps}
-          isCurrentFork={isCurrentFork}
-          onOpenFork={onOpenFork}
-          onSelect={onSelect}
-          plannedInvocations={plannedInvocations}
-          plannedSteps={plannedSteps}
-          run={run}
-          steps={steps}
-          traceSpanEntries={traceSpanEntries}
-        />
-      </section>
-      <section className="min-w-0" data-testid="runs-stacked-section-inputs">
-        <RunInputWorkspace run={run} />
-      </section>
-      <section className="min-w-0" data-testid="runs-stacked-section-memory">
-        <RunMemoryWorkspace run={run} />
-      </section>
-      <section className="min-w-0" data-testid="runs-stacked-section-runtime">
-        <div
-          className="grid min-w-0 gap-3"
-          data-testid="runs-runtime-workspace"
-        >
-          <RunRuntimeProfileSection run={run} />
-          <RunTokensWorkspace run={run} />
-        </div>
-      </section>
-      <section className="min-w-0" data-testid="runs-stacked-section-lineage">
-        <RunLineageWorkspace
-          copiedInvocations={copiedInvocations}
-          copiedSteps={copiedSteps}
-          isCurrentFork={isCurrentFork}
-          plannedInvocations={plannedInvocations}
-          plannedSteps={plannedSteps}
-          run={run}
-        />
-      </section>
+  const overviewContent = (
+    <div
+      className="grid min-w-0 gap-3"
+      data-testid="runs-overview-tab-workspace"
+    >
+      <RunOverviewWorkspace
+        allInvocationsCount={allInvocationsCount}
+        run={run}
+        runProgress={runProgress}
+        targetKindLabel={targetKindLabel}
+        terminalInvocationsCount={terminalInvocationsCount}
+        traceSpanEntries={traceSpanEntries}
+      />
+      <RunEvidenceAvailabilitySection run={run} />
+    </div>
+  );
+
+  const outputContent = (
+    <div
+      className="grid min-w-0 gap-3"
+      data-testid="runs-output-tab-workspace"
+    >
+      <RunFinalOutputPane run={run} />
+      <RunOutputWorkspace run={run} />
+    </div>
+  );
+
+  const executionContent = (
+    <div
+      className="grid min-w-0 gap-3"
+      data-testid="runs-execution-tab-workspace"
+    >
+      <RunDiagnosticsWorkspace run={run} steps={steps} />
+      <ExecutionOutline
+        activeInspection={activeInspection}
+        copiedInvocations={copiedInvocations}
+        copiedSteps={copiedSteps}
+        isCurrentFork={isCurrentFork}
+        onOpenFork={onOpenFork}
+        onSelect={onSelect}
+        plannedInvocations={plannedInvocations}
+        plannedSteps={plannedSteps}
+        run={run}
+        steps={steps}
+        traceSpanEntries={traceSpanEntries}
+      />
+    </div>
+  );
+
+  const inputContent = <RunInputWorkspace run={run} />;
+
+  const runtimeContent = <RunRuntimeProfileSection run={run} />;
+
+  const usageContent = <RunTokensWorkspace run={run} />;
+
+  const memoryContent = (
+    <div
+      className="grid min-w-0 gap-3"
+      data-testid="runs-memory-tab-workspace"
+    >
+      <RunMemoryWorkspace run={run} />
       {run.memoryArtifacts.length > 0 ? (
         <CollapsibleDetailPanel
           description="These artifacts summarize memory rows written for human audit; they do not replace the event groups above."
@@ -2459,6 +2458,68 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
         </CollapsibleDetailPanel>
       ) : null}
     </div>
+  );
+
+  const lineageContent = (
+    <RunLineageWorkspace
+      copiedInvocations={copiedInvocations}
+      copiedSteps={copiedSteps}
+      isCurrentFork={isCurrentFork}
+      plannedInvocations={plannedInvocations}
+      plannedSteps={plannedSteps}
+      run={run}
+    />
+  );
+
+  const tabContentByKey: Record<RunDetailTabKey, ReactNode> = {
+    execution: executionContent,
+    input: inputContent,
+    lineage: lineageContent,
+    memory: memoryContent,
+    output: outputContent,
+    overview: overviewContent,
+    runtime: runtimeContent,
+    usage: usageContent,
+  };
+
+  return (
+    <Tabs
+      className="min-w-0 gap-3"
+      data-testid="runs-detail-tabs"
+      onValueChange={(value) => {
+        if (isRunDetailTabKey(value)) {
+          onTabChange(value);
+        }
+      }}
+      value={selectedTab}
+    >
+      <div
+        className="max-w-full overflow-x-auto pb-1"
+        data-testid="runs-detail-tab-list-scroll"
+      >
+        <TabsList aria-label="Run detail sections" className="min-w-max">
+          {RUN_DETAIL_TAB_ORDER.map((tab) => (
+            <TabsTrigger
+              data-testid={`runs-detail-tab-trigger-${tab}`}
+              key={tab}
+              value={tab}
+            >
+              {RUN_DETAIL_TAB_LABELS[tab]}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </div>
+      {RUN_DETAIL_TAB_ORDER.map((tab) => (
+        <TabsContent
+          className="min-w-0"
+          data-testid={`runs-detail-tab-panel-${tab}`}
+          key={tab}
+          value={tab}
+        >
+          {selectedTab === tab ? tabContentByKey[tab] : null}
+        </TabsContent>
+      ))}
+    </Tabs>
   );
 }
 
