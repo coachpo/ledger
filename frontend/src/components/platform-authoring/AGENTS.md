@@ -26,7 +26,7 @@ platform-authoring/
 | Schema builder UI | `schema-composer/schema-composer.tsx` | object/array/scalar/discriminated-union editor surface |
 | Workflow builder UI | `workflow-builder/workflow-builder-wizard.tsx` | step composition, slots, wire bindings, validation feedback |
 | Resource selectors | `refs/*.tsx` | package-local agent/capability/MCP/output-schema ref inputs |
-| Structured previews | `inspectors/structured-value-inspector.tsx` | read-only nested value display |
+| Structured previews | `inspectors/structured-value-inspector.tsx`, `inspectors/exact-json-preview.tsx` | read-only nested value display and exact JSON preview panes |
 
 ## CONVENTIONS
 - Components receive drafts, IR nodes, refs, and callbacks from pages; they do not fetch or mutate server state.
