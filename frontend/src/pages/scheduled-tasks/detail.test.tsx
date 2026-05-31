@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ComponentProps, PropsWithChildren } from "react";
 import { MemoryRouter, Route, Routes, useParams } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -83,6 +84,19 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useDeleteWorkflowPackageRuntimeInputPersonalEntry: () => useDeleteRuntimeInputPersonalEntryMock(),
   useUpdateWorkflowPackageRuntimeInputPersonalEntry: () => useUpdateRuntimeInputPersonalEntryMock(),
   useWorkflowPackageRuntimeInputRegistry: (...args: unknown[]) => useWorkflowPackageRuntimeInputRegistryMock(...args),
+}));
+
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: PropsWithChildren) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: PropsWithChildren) => <div>{children}</div>,
+  DropdownMenuGroup: ({ children }: PropsWithChildren) => <div>{children}</div>,
+  DropdownMenuSeparator: () => <div />,
+  DropdownMenuItem: ({ children, onSelect, ...props }: PropsWithChildren<{ onSelect?: () => void; variant?: string } & Omit<ComponentProps<"button">, "onSelect">>) => (
+    <button {...props} type="button" onClick={() => onSelect?.()}>
+      {children}
+    </button>
+  ),
+  DropdownMenuTrigger: ({ children }: PropsWithChildren) => <div>{children}</div>,
 }));
 
 function scheduleFixture(overrides: Partial<ScheduleRead> = {}): ScheduleRead {
@@ -425,10 +439,7 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByText("No scheduled task exists for this route.")).toBeVisible();
   });
 
-  it("renders the ready metadata-owned console shell with summaries, diagnostics, actions, and tabs", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
-
+  it("renders a cleaner management header, compact summaries, and isolated top-level tabs", async () => {
     renderDetailPage();
 
     const shell = screen.getByTestId("scheduled-task-detail-page");
@@ -438,90 +449,96 @@ describe("ScheduledTaskDetailPage", () => {
     expect(header).toBeVisible();
     expect(screen.getByRole("heading", { name: "Daily market brief" })).toBeVisible();
     expect(within(header).getByTestId("scheduled-task-detail-status-enabled")).toHaveTextContent("enabled");
-    expect(screen.getByTestId("scheduled-task-detail-identity-line")).toHaveTextContent(
-      "market_research_package",
-    );
-    expect(screen.getByTestId("scheduled-task-detail-identity-line")).toHaveTextContent(
-      "daily_research",
-    );
-    expect(screen.getByRole("link", { name: "Back to list" })).toHaveAttribute(
-      "href",
-      "/scheduled-tasks",
-    );
-    expect(screen.getByRole("link", { name: "Open package" })).toHaveAttribute(
-      "href",
-      "/workflow-packages/12",
-    );
-    expect(screen.getByRole("link", { name: /duplicate/i })).toHaveAttribute(
-      "href",
-      "/scheduled-tasks/new?duplicateFrom=44",
-    );
-    expect(within(header).getByRole("link", { name: /latest run/i })).toHaveAttribute(
-      "href",
-      "/runs/2104",
-    );
+    expect(screen.getByRole("link", { name: "Scheduled Tasks" })).toHaveAttribute("href", "/scheduled-tasks");
+    expect(within(header).getByTestId("schedule-run-now")).toBeVisible();
 
-    const summaryGrid = screen.getByTestId("scheduled-task-detail-summary-grid");
-    expect(summaryGrid).toHaveClass("grid", "min-w-0");
-    expect(screen.getByTestId("scheduled-task-detail-package-summary")).toHaveTextContent(
-      "Package / workflow",
-    );
-    expect(screen.getByTestId("scheduled-task-detail-next-fire-summary")).toHaveTextContent(
-      "Weekly Mon, Tue, Wed, Thu, Fri at 09:00",
-    );
-    expect(screen.getByTestId("scheduled-task-detail-next-fire-summary")).toHaveTextContent(
-      "America/New_York",
-    );
-    expect(screen.getByTestId("scheduled-task-detail-latest-run-summary")).toHaveTextContent(
-      "Latest fire#801",
-    );
-    expect(screen.getByTestId("scheduled-task-detail-latest-run-summary")).toHaveTextContent(
-      "Latest run#2104",
-    );
-
-    const diagnostics = screen.getByTestId("scheduled-task-detail-diagnostics-strip");
-    expect(diagnostics).toHaveTextContent("0 blocking");
-    expect(diagnostics).toHaveTextContent("Inputs use schema draft source");
-    expect(diagnostics).toHaveTextContent("inputTemplate and templateVars");
-
-    const actionBar = screen.getByTestId("scheduled-task-detail-actions");
-    expect(actionBar).toHaveClass("sticky", "flex", "min-w-0", "flex-col", "sm:flex-row");
-    expect(within(actionBar).getByTestId("schedule-run-now")).toBeVisible();
-
-    fireEvent.click(within(actionBar).getByRole("button", { name: "Pause" }));
+    fireEvent.click(within(header).getByRole("button", { name: "Disable" }));
     expect(updateScheduleMock).toHaveBeenCalledWith({
       payload: { status: "paused" },
       scheduleId: 44,
     });
 
+    const summaryGrid = screen.getByTestId("scheduled-task-detail-summary-grid");
+    expect(summaryGrid).toHaveClass("grid", "min-w-0");
+    expect(screen.getByTestId("scheduled-task-detail-next-run-summary")).toHaveTextContent("Next run");
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Target workflow");
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("market_research_package");
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("daily_research");
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("Package id");
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("Schedule id");
+    expect(screen.getByTestId("scheduled-task-detail-last-run-summary")).toHaveTextContent("Last run");
+    expect(screen.getByTestId("scheduled-task-detail-health-summary")).toHaveTextContent("Health");
+    expect(screen.queryByTestId("scheduled-task-detail-diagnostics-strip")).not.toBeInTheDocument();
+    expect(screen.queryByText("Inputs use schema draft source")).not.toBeInTheDocument();
+
+    expect(screen.getByRole("tab", { name: "Overview" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Schedule" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Inputs" })).toBeVisible();
-    expect(screen.getByRole("tab", { name: "History" })).toBeVisible();
-    expect(screen.getByRole("tab", { name: "Diagnostics" })).toBeVisible();
-    expect(screen.getByTestId("scheduled-task-detail-tab-schedule")).toHaveTextContent(
-      "Schedule configuration",
-    );
+    expect(screen.getByRole("tab", { name: "Runs" })).toBeVisible();
+    expect(screen.queryByRole("tab", { name: "Diagnostics" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "History" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
-    expect(screen.getByTestId("scheduled-task-detail-tab-inputs")).toHaveTextContent(
-      "Scheduled input template JSON",
-    );
-    expect(screen.getByLabelText("Scheduled input template JSON")).toHaveValue(
-      JSON.stringify({ asOfDate: "", portfolioSlug: "" }, null, 2),
-    );
+    const overviewPanel = screen.getByTestId("scheduled-task-detail-tab-overview");
+    const schedulePanel = screen.getByTestId("scheduled-task-detail-tab-schedule");
+    expect(overviewPanel).toHaveAttribute("data-state", "active");
+    expect(schedulePanel).toHaveAttribute("data-state", "inactive");
+    expect(schedulePanel).toHaveClass("data-[state=inactive]:hidden");
+    expect(overviewPanel).toHaveTextContent("Ready for scheduled runs");
 
-    fireEvent.click(screen.getByRole("tab", { name: "History" }));
-    expect(screen.getByTestId("scheduled-task-detail-tab-history")).toHaveTextContent(
-      "Open latest run #2104",
+    fireEvent.pointerDown(within(header).getByRole("button", { name: "More actions" }));
+    expect((await screen.findByText("Open package")).closest("a")).toHaveAttribute(
+      "href",
+      "/workflow-packages/12",
     );
-
-    fireEvent.click(screen.getByRole("tab", { name: "Diagnostics" }));
-    expect(screen.getByTestId("scheduled-task-detail-tab-diagnostics")).toHaveTextContent(
-      "Inputs use schema draft source",
+    expect((await screen.findByText(/duplicate/i)).closest("a")).toHaveAttribute(
+      "href",
+      "/scheduled-tasks/new?duplicateFrom=44",
     );
+    fireEvent.click(await screen.findByText("Archive"));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("Archive scheduled task");
   });
 
-  it("renders archived schedules as read-only while preserving duplicate and history affordances", () => {
+  it("keeps unsaved schedule edits when switching top-level tabs", async () => {
+    renderDetailPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
+    expect(screen.getByTestId("scheduled-task-detail-tab-schedule")).toHaveTextContent("Schedule configuration");
+    expect(screen.queryByText("Weekly Mon, Tue, Wed, Thu, Fri at 09:00")).not.toBeInTheDocument();
+    expect(screen.queryByText("Advanced options")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Timezone"), { target: { value: "UTC" } });
+    fireEvent.click(screen.getByRole("button", { name: "Advanced options" }));
+    fireEvent.change(screen.getByLabelText("Misfire grace seconds"), { target: { value: "42" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
+
+    expect(screen.getByLabelText("Timezone")).toHaveValue("UTC");
+    expect(screen.getByLabelText("Misfire grace seconds")).toHaveValue(42);
+    expect(screen.getByRole("button", { name: "Advanced options" })).toBeVisible();
+    expect(screen.getByLabelText("Timezone")).not.toHaveValue(scheduleFixture().timezone);
+  });
+
+  it("shows actionable health once and keeps info diagnostics in developer details", () => {
+    useScheduledTaskMock.mockReturnValue({
+      data: scheduleFixture({ latestStatus: "failed", status: "paused" }),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderDetailPage();
+
+    const health = screen.getByTestId("scheduled-task-detail-health-summary");
+    expect(health).toHaveTextContent("Latest fire failed");
+    expect(health).toHaveTextContent("Schedule paused");
+    expect(screen.getAllByText("Latest fire failed")).toHaveLength(1);
+    expect(screen.queryByText("Inputs use schema draft source")).not.toBeInTheDocument();
+
+    fireEvent.click(within(health).getByRole("button", { name: "Developer details" }));
+    expect(screen.getByText("Inputs use schema draft source")).toBeVisible();
+  });
+
+  it("renders archived schedules as read-only while preserving duplicate and runs affordances", async () => {
     useScheduledTaskMock.mockReturnValue({
       data: scheduleFixture({
         archivedAt: "2026-05-29T10:00:00Z",
@@ -534,25 +551,47 @@ describe("ScheduledTaskDetailPage", () => {
 
     renderDetailPage();
 
-    const actionBar = screen.getByTestId("scheduled-task-detail-actions");
-    expect(actionBar).toHaveTextContent("Archived schedules are read-only");
-    expect(within(actionBar).getByTestId("schedule-run-now")).toBeDisabled();
-    expect(within(actionBar).getByRole("button", { name: "Resume" })).toBeDisabled();
-    expect(within(actionBar).getByRole("button", { name: "Archive" })).toBeDisabled();
-    expect(screen.getByRole("link", { name: /duplicate/i })).toHaveAttribute(
+    const header = screen.getByTestId("scheduled-task-detail-header");
+    expect(within(header).getByTestId("schedule-run-now")).toBeDisabled();
+    expect(within(header).getByRole("button", { name: "Enable" })).toBeDisabled();
+    expect(screen.getByTestId("scheduled-task-detail-health-summary")).toHaveTextContent("Schedule archived");
+
+    fireEvent.pointerDown(within(header).getByRole("button", { name: "More actions" }));
+    expect((await screen.findByText(/duplicate/i)).closest("a")).toHaveAttribute(
       "href",
       "/scheduled-tasks/new?duplicateFrom=44",
     );
-    expect(screen.getAllByRole("link", { name: "Open run #2104" })[0]).toHaveAttribute(
-      "href",
-      "/runs/2104",
-    );
+    expect(await screen.findByText("Archive")).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
     expect(screen.getByLabelText("Schedule enabled")).toBeDisabled();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
-    expect(screen.getByLabelText("Scheduled input template JSON")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Preview next fire" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Save scheduled inputs" })).toBeDisabled();
+    expect(screen.getByText("Start a custom draft from the workflow defaults.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Customize inputs" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+    expect(screen.getAllByRole("link", { name: "Open run #2104" })[0]).toHaveAttribute("href", "/runs/2104");
+  });
+
+  it("keeps run-now disabled for archived schedules even when runs are empty", () => {
+    useScheduledTaskMock.mockReturnValue({
+      data: scheduleFixture({
+        archivedAt: "2026-05-29T10:00:00Z",
+        latestFireId: null,
+        latestRunId: null,
+        status: "archived",
+      }),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    useScheduledTaskFiresMock.mockReturnValue(undefined);
+
+    renderDetailPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+    expect(within(screen.getByTestId("scheduled-task-detail-tab-runs")).getByRole("button", { name: "Run now" })).toBeDisabled();
   });
 
   it("renders fire history panels safely when the fire-history hook state is missing", () => {
@@ -560,20 +599,15 @@ describe("ScheduledTaskDetailPage", () => {
 
     renderDetailPage();
 
-    fireEvent.click(screen.getByRole("tab", { name: "History" }));
-    const history = screen.getByTestId("scheduled-task-detail-tab-history");
-    expect(history).toHaveTextContent("0 shown");
-    expect(history).toHaveTextContent("0 total fires");
-    expect(history).toHaveTextContent("No fire history yet");
-
-    fireEvent.click(screen.getByRole("tab", { name: "Diagnostics" }));
-    const fireDiagnostics = screen.getByTestId("scheduled-task-fire-diagnostics-panel");
-    expect(fireDiagnostics).toHaveTextContent("0 failed");
-    expect(fireDiagnostics).toHaveTextContent("0 skipped");
-    expect(fireDiagnostics).toHaveTextContent("0 queued");
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+    const history = screen.getByTestId("scheduled-task-detail-tab-runs");
+    expect(history).toHaveTextContent("No runs yet");
+    expect(history).toHaveTextContent("Scheduled and manual runs will appear here.");
+    expect(within(history).getByRole("button", { name: "Run now" })).toBeVisible();
+    expect(screen.queryByRole("tab", { name: "Diagnostics" })).not.toBeInTheDocument();
   });
 
-  it("renders fire history loading and error states without hiding diagnostics", () => {
+  it("renders runs loading and error states without a default diagnostics tab", () => {
     useScheduledTaskFiresMock.mockReturnValue({
       data: undefined,
       error: null,
@@ -581,10 +615,9 @@ describe("ScheduledTaskDetailPage", () => {
       isPending: true,
     });
     const loadingView = renderDetailPage();
-    fireEvent.click(screen.getByRole("tab", { name: "History" }));
-    expect(screen.getByText("Loading fire history...")).toBeVisible();
-    fireEvent.click(screen.getByRole("tab", { name: "Diagnostics" }));
-    expect(screen.getByText("Loading recent fire diagnostics...")).toBeVisible();
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+    expect(screen.getByText("Loading runs...")).toBeVisible();
+    expect(screen.queryByRole("tab", { name: "Diagnostics" })).not.toBeInTheDocument();
     loadingView.unmount();
 
     useScheduledTaskFiresMock.mockReturnValue({
@@ -594,12 +627,11 @@ describe("ScheduledTaskDetailPage", () => {
       isPending: false,
     });
     renderDetailPage();
-    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
     expect(screen.getByTestId("scheduled-task-fire-history-error")).toHaveTextContent(
       "Fire history API unavailable",
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Diagnostics" }));
-    expect(screen.getByText("Recent fire diagnostics unavailable")).toBeVisible();
+    expect(screen.queryByText("Recent fire diagnostics unavailable")).not.toBeInTheDocument();
   });
 
   it("renders fire history with reasons, rendered parameters, linked runs, and run-now history navigation", async () => {
@@ -642,8 +674,8 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     expect(useScheduledTaskFiresMock).toHaveBeenCalledWith("44", { limit: 20 });
-    fireEvent.click(screen.getByRole("tab", { name: "History" }));
-    const history = screen.getByTestId("scheduled-task-detail-tab-history");
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+    const history = screen.getByTestId("scheduled-task-detail-tab-runs");
     expect(history).toHaveTextContent("3 total fires");
     expect(history).toHaveTextContent("Fire #801");
     expect(history).toHaveTextContent("Queued");
@@ -664,7 +696,7 @@ describe("ScheduledTaskDetailPage", () => {
       "/runs/2104",
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Diagnostics" }));
+    fireEvent.click(within(history).getByRole("button", { name: "Developer details" }));
     const fireDiagnostics = screen.getByTestId("scheduled-task-fire-diagnostics-panel");
     expect(fireDiagnostics).toHaveTextContent("1 failed");
     expect(fireDiagnostics).toHaveTextContent("1 skipped");
@@ -739,20 +771,23 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.queryByTestId("scheduled-task-run-now-feedback")).not.toBeInTheDocument();
   });
 
-  it("renders recurrence helper text for DST, overlap, and misfire behavior", () => {
+  it("keeps basic schedule controls visible and advanced scheduler options collapsed by default", () => {
     renderDetailPage();
 
+    fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
     const scheduleTab = screen.getByTestId("scheduled-task-detail-tab-schedule");
     expect(scheduleTab).toHaveTextContent("Schedule configuration");
-    expect(scheduleTab).toHaveTextContent("DST spring-forward gaps roll forward");
-    expect(scheduleTab).toHaveTextContent("fall-back repeated times fire once");
-    expect(scheduleTab).toHaveTextContent("Skip records a skipped fire");
-    expect(scheduleTab).toHaveTextContent("queue creates another ordinary queued run");
-    expect(scheduleTab).toHaveTextContent("Catch-up one materializes only the latest missed eligible occurrence");
-    expect(scheduleTab).toHaveTextContent("Raw cron is intentionally not the primary editor");
     expect(screen.getByLabelText("Schedule enabled")).toBeChecked();
     expect(screen.getByLabelText("Timezone")).toHaveValue("America/New_York");
     expect(screen.getByLabelText("At local time")).toHaveValue("09:00");
+    expect(screen.queryByLabelText("Overlap policy")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Misfire policy")).not.toBeInTheDocument();
+    expect(screen.queryByText(/PATCH endpoint/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Advanced options" }));
+    expect(screen.getByLabelText("Overlap policy")).toBeVisible();
+    expect(screen.getByLabelText("Misfire policy")).toBeVisible();
+    expect(screen.getByLabelText("Misfire grace seconds")).toBeVisible();
   });
 
   it("serializes recurrence and policy edits to the canonical backend update payload", async () => {
@@ -769,6 +804,8 @@ describe("ScheduledTaskDetailPage", () => {
 
     renderDetailPage();
 
+    fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced options" }));
     fireEvent.click(screen.getByLabelText("Schedule enabled"));
     fireEvent.change(screen.getByLabelText("Timezone"), { target: { value: "Europe/London" } });
     await chooseSelectOption("Recurrence type", "Interval");
@@ -780,7 +817,7 @@ describe("ScheduledTaskDetailPage", () => {
     await chooseSelectOption("Misfire policy", /skip missed occurrence/i);
     fireEvent.change(screen.getByLabelText("Misfire grace seconds"), { target: { value: "7200" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save schedule configuration" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
 
     await waitFor(() => expect(updateScheduleMock).toHaveBeenCalledTimes(1));
     expect(updateScheduleMock).toHaveBeenCalledWith({
@@ -806,10 +843,11 @@ describe("ScheduledTaskDetailPage", () => {
   it("serializes weekly and monthly recurrence arrays without raw JSON editing", async () => {
     renderDetailPage();
 
+    fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
     expect(screen.queryByText(/raw json/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Sunday"));
     fireEvent.click(screen.getByLabelText("Wednesday"));
-    fireEvent.click(screen.getByRole("button", { name: "Save schedule configuration" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
 
     await waitFor(() => expect(updateScheduleMock).toHaveBeenCalledTimes(1));
     expect(updateScheduleMock).toHaveBeenLastCalledWith(
@@ -827,7 +865,7 @@ describe("ScheduledTaskDetailPage", () => {
     updateScheduleMock.mockClear();
     await chooseSelectOption("Recurrence type", "Monthly");
     fireEvent.click(screen.getByLabelText("15"));
-    fireEvent.click(screen.getByRole("button", { name: "Save schedule configuration" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
 
     await waitFor(() => expect(updateScheduleMock).toHaveBeenCalledTimes(1));
     expect(updateScheduleMock).toHaveBeenLastCalledWith(
@@ -843,18 +881,23 @@ describe("ScheduledTaskDetailPage", () => {
     );
   });
 
-  it("scheduled inputs render placeholder help, schema reset, and next-fire preview", async () => {
+  it("scheduled inputs start with workflow defaults and keep placeholders/presets collapsed until customization", async () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
     const editor = screen.getByTestId("scheduled-inputs-editor");
-    expect(editor).toHaveTextContent("Inputs start from the current workflow schema");
+    expect(editor).toHaveTextContent("Start a custom draft from the workflow defaults.");
+    expect(screen.queryByLabelText("Scheduled input template JSON")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("scheduled-input-placeholder-reference")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
+    const inputJson = screen.getByLabelText("Scheduled input template JSON") as HTMLTextAreaElement;
+    expect(screen.queryByTestId("scheduled-input-placeholder-reference")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Placeholders and presets" }));
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Allowed scheduled placeholders");
     fireEvent.click(within(screen.getByTestId("scheduled-input-placeholder-reference")).getByRole("button", { name: "Reference" }));
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{fire.scheduledLocalDate}}");
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{vars.<key>}}");
-
-    const inputJson = screen.getByLabelText("Scheduled input template JSON") as HTMLTextAreaElement;
     expect(inputJson.value).toBe(JSON.stringify({ asOfDate: "", portfolioSlug: "" }, null, 2));
     fireEvent.change(inputJson, {
       target: {
@@ -864,7 +907,7 @@ describe("ScheduledTaskDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     fireEvent.change(screen.getByLabelText(/Template variable key/i), { target: { value: "portfolioSlug" } });
     fireEvent.change(screen.getByLabelText(/Template variable value/i), { target: { value: "core_portfolio" } });
-    fireEvent.click(screen.getByRole("button", { name: "Preview next fire" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview next run" }));
 
     await waitFor(() => expect(previewScheduledInputsMock).toHaveBeenCalledWith({
       inputTemplate: { asOfDate: "{{fire.scheduledLocalDate}}", portfolioSlug: "{{vars.portfolioSlug}}" },
@@ -883,10 +926,41 @@ describe("ScheduledTaskDetailPage", () => {
     expect(inputJson.value).toBe(JSON.stringify({ asOfDate: "", portfolioSlug: "" }, null, 2));
   });
 
+  it("keeps custom inputs and edited template vars when switching top-level tabs", async () => {
+    renderDetailPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Placeholders and presets" }));
+
+    const inputJson = screen.getByLabelText("Scheduled input template JSON") as HTMLTextAreaElement;
+    fireEvent.change(inputJson, {
+      target: {
+        value: JSON.stringify({ asOfDate: "{{fire.scheduledLocalDate}}", portfolioSlug: "{{vars.portfolioSlug}}" }),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    fireEvent.change(screen.getByPlaceholderText("portfolioSlug"), { target: { value: "portfolioSlug" } });
+    fireEvent.change(screen.getByPlaceholderText("core_portfolio"), { target: { value: "core_portfolio" } });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+
+    expect(screen.getByRole("radio", { name: "Customize inputs" })).toBeChecked();
+    expect(screen.getByLabelText("Scheduled input template JSON")).toHaveValue(
+      JSON.stringify({ asOfDate: "{{fire.scheduledLocalDate}}", portfolioSlug: "{{vars.portfolioSlug}}" }, null, 2),
+    );
+    expect(screen.getByLabelText("Template variable key portfolioSlug")).toHaveValue("portfolioSlug");
+    expect(screen.getByLabelText("Template variable value portfolioSlug")).toHaveValue("core_portfolio");
+    expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Allowed scheduled placeholders");
+  });
+
   it("scheduled inputs save only after a ready preview returns canonical template payloads", async () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Placeholders and presets" }));
     fireEvent.change(screen.getByLabelText("Scheduled input template JSON"), {
       target: {
         value: JSON.stringify({ asOfDate: "{{fire.scheduledLocalDate}}", portfolioSlug: "{{vars.portfolioSlug}}" }),
@@ -895,7 +969,7 @@ describe("ScheduledTaskDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     fireEvent.change(screen.getByLabelText(/Template variable key/i), { target: { value: "portfolioSlug" } });
     fireEvent.change(screen.getByLabelText(/Template variable value/i), { target: { value: "core_portfolio" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save scheduled inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save inputs" }));
 
     await waitFor(() => expect(previewScheduledInputsMock).toHaveBeenCalledWith({
       inputTemplate: { asOfDate: "{{fire.scheduledLocalDate}}", portfolioSlug: "{{vars.portfolioSlug}}" },
@@ -927,11 +1001,12 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
     const inputsTab = screen.getByTestId("scheduled-task-detail-tab-inputs");
     expect(inputsTab).toHaveTextContent("Next fire preview unavailable");
     expect(inputsTab).toHaveTextContent("preview and save are blocked");
-    expect(screen.getByRole("button", { name: "Preview next fire" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Save scheduled inputs" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Preview next run" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save inputs" })).toBeDisabled();
     expect(previewScheduledInputsMock).not.toHaveBeenCalled();
     expect(updateScheduleMock).not.toHaveBeenCalled();
   });
@@ -940,17 +1015,18 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
     const inputJson = screen.getByLabelText("Scheduled input template JSON");
     fireEvent.change(inputJson, { target: { value: "[]" } });
     expect(screen.getByTestId("scheduled-input-json-validation-feedback")).toHaveTextContent("must be a valid object");
-    expect(screen.getByRole("button", { name: "Preview next fire" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Save scheduled inputs" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Preview next run" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save inputs" })).toBeDisabled();
     expect(previewScheduledInputsMock).not.toHaveBeenCalled();
 
     fireEvent.change(inputJson, { target: { value: '{"ticker":"{{inputs.ticker}}"}' } });
     expect(screen.getByTestId("scheduled-input-json-validation-feedback")).toHaveTextContent("Unsupported placeholder");
     expect(screen.getByTestId("scheduled-input-json-validation-feedback")).toHaveTextContent("inputs.ticker");
-    expect(screen.getByRole("button", { name: "Preview next fire" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Preview next run" })).toBeDisabled();
   });
 
   it("scheduled inputs show preview validation failures and avoid saving rejected drafts", async () => {
@@ -962,10 +1038,12 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Placeholders and presets" }));
     fireEvent.change(screen.getByLabelText("Scheduled input template JSON"), {
       target: { value: JSON.stringify({ asOfDate: "{{fire.scheduledLocalDate}}", extra: true }) },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save scheduled inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save inputs" }));
 
     const feedback = await screen.findByTestId("scheduled-input-preview-validation-feedback");
     expect(feedback).toHaveTextContent("parameters.extra");
@@ -982,6 +1060,8 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Placeholders and presets" }));
     const helper = await screen.findByTestId("scheduled-input-saved-inputs-helper");
     expect(helper).toHaveTextContent("Schedule input presets");
     expect(helper).toHaveTextContent("1/20");
