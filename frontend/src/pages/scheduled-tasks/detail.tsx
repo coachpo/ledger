@@ -252,7 +252,7 @@ function collectUnsupportedPlaceholders(value: unknown, field = "inputTemplate")
       if (!expression || !isSupportedPlaceholderExpression(expression)) {
         issues.push({
           field,
-          issue: `Unsupported placeholder \"${expression || match[0]}\". Use only schedule.*, fire.*, window.*, lastRun.*, or vars.<key>.`,
+          issue: `Unsupported placeholder "${expression || match[0]}". Use only schedule.*, fire.*, window.*, lastRun.*, or vars.<key>.`,
         });
       }
     }
