@@ -189,9 +189,8 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     expect(screen.getByTestId("runs-mode-workspace")).toContainElement(
       screen.getByTestId("runs-execution-outline"),
     );
-    expect(screen.getByTestId("runs-detail-section-execution-steps")).toHaveAttribute(
+    expect(screen.getByTestId("runs-detail-section-execution-steps")).not.toHaveAttribute(
       "data-slot",
-      "collapsible",
     );
     outlineRender.unmount();
     searchParamsMock = new URLSearchParams("mode=metadata");

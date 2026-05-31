@@ -1,5 +1,3 @@
-import { Activity, Download, FileText } from "lucide-react";
-
 import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
 import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
@@ -8,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RunRead } from "@/lib/types/run";
 
 import { formatQueueReasonTitle, type TraceSpanEntry } from "../detail-helpers";
-import { RunDetailEmptyState, RunDetailSectionBlock } from "./shared";
+import { RunDetailContentSection, RunDetailEmptyState } from "./shared";
 
 function formatRawPayload(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? "";
@@ -123,12 +121,11 @@ export function RunPayloadPane({
 
 export function RunFinalOutputPane({ run }: { run: RunRead }) {
   return (
-    <RunDetailSectionBlock
-      blockId="final-output"
-      cardTestId="runs-detail-final-output-card"
+    <RunDetailContentSection
       contentClassName="space-y-5"
       description="Rendered payload view for the immutable run result."
-      icon={Download}
+      sectionId="final-output"
+      testId="runs-detail-final-output-card"
       title="Final output"
     >
       {run.finalOutput !== null ? (
@@ -144,7 +141,7 @@ export function RunFinalOutputPane({ run }: { run: RunRead }) {
           </RunDetailEmptyState>
         </section>
       )}
-    </RunDetailSectionBlock>
+    </RunDetailContentSection>
   );
 }
 
@@ -153,10 +150,10 @@ export function RunOutputWorkspace({ run }: { run: RunRead }) {
 
   return (
     <div className="grid min-w-0 gap-3" data-testid="runs-output-workspace">
-      <RunDetailSectionBlock
-        blockId="output-provenance"
+      <RunDetailContentSection
         description="Output provenance stays beside the rendered payload without duplicating final output detail."
-        icon={FileText}
+        sectionId="output-provenance"
+        testId="runs-detail-section-output-provenance"
         title="Output provenance"
       >
         <EvidenceCluster
@@ -170,7 +167,7 @@ export function RunOutputWorkspace({ run }: { run: RunRead }) {
           ]}
           layout="grid"
         />
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
     </div>
   );
 }
@@ -180,12 +177,11 @@ export function RunInputWorkspace({ run }: { run: RunRead }) {
 
   return (
     <div className="grid min-w-0 gap-3" data-testid="runs-input-workspace">
-      <RunDetailSectionBlock
-        blockId="run-input"
-        cardTestId="runs-detail-input-card"
+      <RunDetailContentSection
         contentClassName="space-y-5"
         description="Launch payload captured with the immutable run snapshot."
-        icon={FileText}
+        sectionId="run-input"
+        testId="runs-detail-input-card"
         title="Run input"
       >
         <RunPayloadPane
@@ -193,11 +189,11 @@ export function RunInputWorkspace({ run }: { run: RunRead }) {
           testId="runs-detail-input"
           value={run.input}
         />
-      </RunDetailSectionBlock>
-      <RunDetailSectionBlock
-        blockId="input-provenance"
+      </RunDetailContentSection>
+      <RunDetailContentSection
         description="Input provenance stays beside the launch payload without duplicating run input detail."
-        icon={FileText}
+        sectionId="input-provenance"
+        testId="runs-detail-section-input-provenance"
         title="Input provenance"
       >
         <EvidenceCluster
@@ -216,7 +212,7 @@ export function RunInputWorkspace({ run }: { run: RunRead }) {
           ]}
           layout="grid"
         />
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
     </div>
   );
 }
@@ -247,10 +243,10 @@ export function RunOverviewWorkspace({
       className="grid min-w-0 gap-3"
       data-testid="runs-overview-workspace"
     >
-      <RunDetailSectionBlock
-        blockId="operational-overview"
+      <RunDetailContentSection
         description="Operational availability and progress cues for this immutable run snapshot."
-        icon={Activity}
+        sectionId="operational-overview"
+        testId="runs-detail-section-operational-overview"
         title="Operational overview"
       >
         <div className="flex min-w-0 flex-col gap-3">
@@ -296,7 +292,7 @@ export function RunOverviewWorkspace({
             <Progress className="min-w-0" value={runProgress} />
           </div>
         </div>
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
     </section>
   );
 }
@@ -306,10 +302,10 @@ export function RunEvidenceAvailabilitySection({ run }: { run: RunRead }) {
     run.packageProvenance?.resolvedModelConnections.length ?? 0;
 
   return (
-    <RunDetailSectionBlock
-      blockId="evidence-availability"
+    <RunDetailContentSection
       description="Evidence availability without opening the secondary evidence modes."
-      icon={FileText}
+      sectionId="evidence-availability"
+      testId="runs-detail-section-evidence-availability"
       title="Evidence availability"
     >
       <EvidenceCluster
@@ -332,6 +328,6 @@ export function RunEvidenceAvailabilitySection({ run }: { run: RunRead }) {
         ]}
         layout="grid"
       />
-    </RunDetailSectionBlock>
+    </RunDetailContentSection>
   );
 }

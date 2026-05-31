@@ -13,7 +13,14 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Activity, AlertCircle, FileText, GitBranch, Download } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  Download,
+  FileText,
+  GitBranch,
+  type LucideIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 
@@ -99,10 +106,9 @@ import {
 import { CAPABILITY_LABELS, CAPABILITY_ORDER } from "./runtime-metadata";
 import { RunRuntimeProfileSection, RunTokensWorkspace } from "./runtime";
 import {
-  CollapsibleConsoleSection,
-  CollapsibleDetailPanel,
   CompactModeEmptyState,
   DetailGrid,
+  RunDetailContentSection,
   RunDetailEmptyState,
   RunDetailSectionBlock,
   RunDetailTableFrame,
@@ -173,6 +179,28 @@ const MEMORY_EVENT_GROUPS: MemoryEventGroupDefinition[] = [
     title: "Audit trail",
   },
 ];
+
+const RUN_DETAIL_TAB_ICONS: Record<RunDetailTabKey, LucideIcon> = {
+  execution: Activity,
+  input: FileText,
+  lineage: GitBranch,
+  memory: FileText,
+  output: Download,
+  overview: Activity,
+  runtime: Activity,
+  usage: Activity,
+};
+
+const RUN_DETAIL_TAB_DESCRIPTIONS: Record<RunDetailTabKey, string> = {
+  execution: "Diagnostics and execution steps for this run.",
+  input: "Launch input and provenance captured with the run snapshot.",
+  lineage: "Fork, replay, copied-step, and historical lineage evidence.",
+  memory: "Run-scoped memory evidence and compact artifacts.",
+  output: "Final output and output provenance for this run.",
+  overview: "Operational status and evidence availability for this run.",
+  runtime: "Runtime profile, selected strategies, and capability matrix.",
+  usage: "Token accounting and invocation usage rows.",
+};
 
 type StepIndicatorState = "completed" | "executing" | "neutral";
 
@@ -740,17 +768,17 @@ export function RunLineageWorkspace({
         className="grid min-w-0 gap-3"
         data-testid="runs-lineage-workspace"
       >
-        <RunDetailSectionBlock
-          blockId="lineage"
+        <RunDetailContentSection
           description="Fork, snapshot, and historical boundaries appear here when the run has upstream lineage."
-          icon={GitBranch}
-          title="Lineage"
+          sectionId="lineage-summary"
+          testId="runs-detail-section-lineage-summary"
+          title="Lineage summary"
         >
           <CompactModeEmptyState testId="runs-lineage-empty">
             No fork, snapshot replay, copied-step, or historical lineage
             boundary is recorded for this run.
           </CompactModeEmptyState>
-        </RunDetailSectionBlock>
+        </RunDetailContentSection>
       </section>
     );
   }
@@ -760,11 +788,11 @@ export function RunLineageWorkspace({
       className="grid min-w-0 gap-3"
       data-testid="runs-lineage-workspace"
     >
-      <RunDetailSectionBlock
-        blockId="lineage"
+      <RunDetailContentSection
         description="Lineage boundaries stay isolated from execution rows with fork, snapshot, and historical context."
-        icon={GitBranch}
-        title="Lineage"
+        sectionId="lineage-summary"
+        testId="runs-detail-section-lineage-summary"
+        title="Lineage summary"
       >
         <EvidenceCluster
           items={[
@@ -799,7 +827,7 @@ export function RunLineageWorkspace({
           ]}
           layout="grid"
         />
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
       <RunLineageEvidence
         copiedInvocations={copiedInvocations}
         copiedSteps={copiedSteps}
@@ -1048,17 +1076,17 @@ export function RunDiagnosticsWorkspace({
         className="grid min-w-0 gap-3"
         data-testid="runs-diagnostics-workspace"
       >
-        <RunDetailSectionBlock
-          blockId="diagnostics"
+        <RunDetailContentSection
           description="Warnings, failures, unsupported capabilities, and retry/fork safety checks appear here."
-          icon={AlertCircle}
+          sectionId="diagnostics"
+          testId="runs-detail-section-diagnostics"
           title="Diagnostics"
         >
           <CompactModeEmptyState testId="runs-diagnostics-empty">
             No run diagnostics, queue warnings, runtime capability warnings, or
             safety blockers are recorded.
           </CompactModeEmptyState>
-        </RunDetailSectionBlock>
+        </RunDetailContentSection>
       </section>
     );
   }
@@ -1068,12 +1096,11 @@ export function RunDiagnosticsWorkspace({
       className="grid min-w-0 gap-3"
       data-testid="runs-diagnostics-workspace"
     >
-      <RunDetailSectionBlock
-        blockId="diagnostics"
+      <RunDetailContentSection
         description="Warnings stay visually separate from destructive failures so degraded runs are not confused with failed ones."
-        icon={AlertCircle}
+        sectionId="diagnostics"
+        testId="runs-detail-section-diagnostics"
         title="Diagnostics"
-        tone={errorCount > 0 ? "danger" : "warning"}
       >
         <div className="grid min-w-0 gap-3">
           <ResourceStatusStrip
@@ -1134,7 +1161,7 @@ export function RunDiagnosticsWorkspace({
             </Table>
           </RunDetailTableFrame>
         </div>
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
     </section>
   );
 }
@@ -1149,31 +1176,31 @@ export function RunMemoryWorkspace({ run }: { run: RunRead }) {
         className="grid min-w-0 gap-3"
         data-testid="runs-memory-workspace"
       >
-        <RunDetailSectionBlock
-          blockId="memory"
+        <RunDetailContentSection
           description="Memory retrieval, write, review, audit, and compact artifact evidence appears here when recorded."
-          icon={FileText}
-          title="Memory"
+          sectionId="memory-evidence"
+          testId="runs-detail-section-memory-evidence"
+          title="Memory evidence"
         >
           <CompactModeEmptyState testId="runs-memory-empty">
             No retrieval, write, review, audit, or compact memory artifact
             evidence was recorded for this run.
           </CompactModeEmptyState>
-        </RunDetailSectionBlock>
+        </RunDetailContentSection>
       </section>
     );
   }
 
   return (
     <section className="grid min-w-0 gap-3" data-testid="runs-memory-workspace">
-      <RunDetailSectionBlock
-        blockId="memory"
+      <RunDetailContentSection
         description="Memory retrieval, write, review, audit, and compact artifact evidence appears here when recorded."
-        icon={FileText}
-        title="Memory"
+        sectionId="memory-evidence"
+        testId="runs-detail-section-memory-evidence"
+        title="Memory evidence"
       >
         <RunMemoryEvidence run={run} />
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
     </section>
   );
 }
@@ -1312,10 +1339,10 @@ export function ExecutionOutline({
       className="flex h-full min-h-0 min-w-0 flex-col bg-background"
       data-testid="runs-execution-outline"
     >
-      <CollapsibleConsoleSection
-        blockId="execution-steps"
+      <RunDetailContentSection
         description="Step and invocation rows stay visible while selected row detail expands inline."
-        icon={Activity}
+        sectionId="execution-steps"
+        testId="runs-detail-section-execution-steps"
         title="Execution steps"
       >
         {steps.length === 0 ? (
@@ -1570,7 +1597,7 @@ export function ExecutionOutline({
             </RunDetailTableFrame>
           </div>
         )}
-      </CollapsibleConsoleSection>
+      </RunDetailContentSection>
     </section>
   );
 }
@@ -1838,7 +1865,7 @@ function MemoryEventGroupSection({
   events: RunMemoryEventRead[];
 }) {
   return (
-    <CollapsibleDetailPanel
+    <RunDetailContentSection
       description={
         <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
           <span>{definition.description}</span>
@@ -1847,6 +1874,7 @@ function MemoryEventGroupSection({
           </Badge>
         </span>
       }
+      sectionId={`memory-group-${definition.key}`}
       testId={`runs-memory-group-${definition.key}`}
       title={definition.title}
     >
@@ -1859,7 +1887,7 @@ function MemoryEventGroupSection({
       ) : (
         <p className="text-sm text-muted-foreground">{definition.emptyCopy}</p>
       )}
-    </CollapsibleDetailPanel>
+    </RunDetailContentSection>
   );
 }
 
@@ -1896,8 +1924,9 @@ function RunMemoryEvidence({ run }: { run: RunRead }) {
   const hasArtifacts = run.memoryArtifacts.length > 0;
 
   return (
-    <CollapsibleDetailPanel
+    <RunDetailContentSection
       description="Run-scoped memory events and compact artifacts."
+      sectionId="run-memory-evidence"
       testId="runs-memory-evidence"
       title="Run memory evidence"
     >
@@ -1917,7 +1946,7 @@ function RunMemoryEvidence({ run }: { run: RunRead }) {
             />
           ))
         : null}
-    </CollapsibleDetailPanel>
+    </RunDetailContentSection>
   );
 }
 
@@ -2442,8 +2471,9 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
     >
       <RunMemoryWorkspace run={run} />
       {run.memoryArtifacts.length > 0 ? (
-        <CollapsibleDetailPanel
+        <RunDetailContentSection
           description="These artifacts summarize memory rows written for human audit; they do not replace the event groups above."
+          sectionId="memory-compact-artifacts"
           testId="runs-memory-compact-artifacts"
           title="Compact artifact slice"
         >
@@ -2455,7 +2485,7 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
               />
             ))}
           </div>
-        </CollapsibleDetailPanel>
+        </RunDetailContentSection>
       ) : null}
     </div>
   );
@@ -2516,7 +2546,16 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
           key={tab}
           value={tab}
         >
-          {selectedTab === tab ? tabContentByKey[tab] : null}
+          {selectedTab === tab ? (
+            <RunDetailSectionBlock
+              blockId={tab}
+              description={RUN_DETAIL_TAB_DESCRIPTIONS[tab]}
+              icon={RUN_DETAIL_TAB_ICONS[tab]}
+              title={RUN_DETAIL_TAB_LABELS[tab]}
+            >
+              {tabContentByKey[tab]}
+            </RunDetailSectionBlock>
+          ) : null}
         </TabsContent>
       ))}
     </Tabs>

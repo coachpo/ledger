@@ -706,6 +706,51 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-tab-panel-output")).toBeVisible();
   });
 
+  it.each([
+    ["output", "Output"],
+    ["execution", "Execution"],
+    ["overview", "Overview"],
+    ["input", "Input"],
+    ["runtime", "Runtime"],
+    ["usage", "Usage"],
+    ["memory", "Memory"],
+    ["lineage", "Lineage"],
+  ] satisfies Array<[RunDetailTabKey, string]>)(
+    "renders the %s tab as one always-open tab-titled block",
+    (tab, label) => {
+      useRunMock.mockReturnValue(
+        queryResult(
+          buildRun({
+            packageProvenance: buildPackageProvenance({
+              resolvedModelConnections: [buildResolvedModelConnection({})],
+            }),
+          }),
+        ),
+      );
+      searchParamsMock = new URLSearchParams(
+        tab === "output" ? "" : `tab=${tab}`,
+      );
+
+      render(<RunsDetailPage />);
+
+      const panel = screen.getByTestId(`runs-detail-tab-panel-${tab}`);
+      const blocks = panel.querySelectorAll(
+        '[data-run-detail-section-block="true"]',
+      );
+      expect(blocks).toHaveLength(1);
+      const [block] = Array.from(blocks) as HTMLElement[];
+      expect(
+        within(block).getByTestId(`runs-detail-section-title-${tab}`),
+      ).toHaveTextContent(label);
+      expect(
+        within(block).queryByRole("button", { name: "Toggle" }),
+      ).not.toBeInTheDocument();
+      expect(
+        block.querySelector('[data-state="open"], [data-state="closed"]'),
+      ).toBeNull();
+    },
+  );
+
   it("scopes high-frequency top-level tab panels to their mapped blocks", () => {
     const run = buildRun({
       packageProvenance: buildPackageProvenance({
@@ -879,20 +924,14 @@ describe("RunsDetailPage", () => {
       ["runtime-profile", "Runtime profile"],
       ["selected-strategies", "Selected strategies"],
       ["capability-matrix", "Capability matrix"],
-    ].forEach(([blockId, title]) => {
-      const block = within(runtimePanel).getByTestId(
-        `runs-detail-section-${blockId}`,
+    ].forEach(([sectionId, title]) => {
+      const section = within(runtimePanel).getByTestId(
+        `runs-detail-section-${sectionId}`,
       );
-      expect(block).toHaveAttribute("data-run-detail-section-block", "true");
+      expect(section).not.toHaveAttribute("data-run-detail-section-block");
       expect(
-        within(block).getByTestId(`runs-detail-section-icon-${blockId}`),
-      ).toHaveAttribute("aria-hidden", "true");
-      expect(
-        within(block).getByTestId(`runs-detail-section-title-${blockId}`),
-      ).toHaveTextContent(title);
-      expect(
-        within(block).getByTestId(`runs-detail-section-description-${blockId}`),
-      ).toHaveClass("text-xs", "leading-5", "text-muted-foreground");
+        within(section).getByRole("heading", { name: title }),
+      ).toBeVisible();
     });
     expect(
       within(runtimePanel).queryByRole("heading", { name: "Token accounting" }),
@@ -938,38 +977,28 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps final output and run input collapsed content free of extra top padding", () => {
+  it("keeps final output and run input content always visible without collapsible padding chrome", () => {
     useRunMock.mockReturnValue(queryResult(buildRun()));
 
     const outputRender = render(<RunsDetailPage />);
     const finalOutputCard = screen.getByTestId("runs-detail-final-output-card");
     expect(finalOutputCard).not.toHaveClass("min-h-[136px]");
-    expect(screen.getByTestId("runs-detail-section-final-output")).toHaveAttribute(
-      "data-state",
-      "closed",
-    );
-    expect(finalOutputCard.querySelector("[data-slot='card-content']")).toHaveClass(
-      "space-y-5",
-    );
+    expect(finalOutputCard).not.toHaveAttribute("data-run-detail-section-block");
     expect(
-      finalOutputCard.querySelector("[data-slot='card-content']"),
-    ).not.toHaveClass("pt-6");
+      finalOutputCard.querySelector('[data-state="open"], [data-state="closed"]'),
+    ).toBeNull();
+    expect(screen.getByTestId("runs-detail-final-output")).toBeVisible();
     outputRender.unmount();
 
     searchParamsMock = new URLSearchParams("tab=input");
     render(<RunsDetailPage />);
     const runInputCard = screen.getByTestId("runs-detail-input-card");
     expect(runInputCard).not.toHaveClass("min-h-[136px]");
-    expect(screen.getByTestId("runs-detail-section-run-input")).toHaveAttribute(
-      "data-state",
-      "closed",
-    );
-    expect(runInputCard.querySelector("[data-slot='card-content']")).toHaveClass(
-      "space-y-5",
-    );
-    expect(runInputCard.querySelector("[data-slot='card-content']")).not.toHaveClass(
-      "pt-6",
-    );
+    expect(runInputCard).not.toHaveAttribute("data-run-detail-section-block");
+    expect(
+      runInputCard.querySelector('[data-state="open"], [data-state="closed"]'),
+    ).toBeNull();
+    expect(screen.getByTestId("runs-detail-input")).toBeVisible();
   });
 
   it.each([
@@ -1922,13 +1951,10 @@ describe("RunsDetailPage", () => {
     const finalOutput = within(finalOutputCard).getByTestId(
       "runs-detail-final-output",
     );
-    expect(finalOutputCard).toHaveAttribute("data-slot", "card");
+    expect(finalOutputCard).not.toHaveAttribute("data-run-detail-section-block");
     expect(
-      finalOutputCard.querySelector("[data-slot='card-content']"),
-    ).toHaveClass("space-y-5");
-    expect(
-      finalOutputCard.querySelector("[data-slot='card-content']"),
-    ).not.toHaveClass("pt-6");
+      finalOutputCard.querySelector('[data-state="open"], [data-state="closed"]'),
+    ).toBeNull();
     expect(finalOutput).toHaveTextContent(/normalized/i);
     expect(finalOutput).toHaveClass(
       "flex",
@@ -1974,7 +2000,7 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.getByTestId("runs-detail-section-execution-steps"),
-    ).toHaveAttribute("data-slot", "collapsible");
+    ).not.toHaveAttribute("data-slot");
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(
       /copied origin/i,
     );
@@ -2116,12 +2142,10 @@ describe("RunsDetailPage", () => {
     const runInputRender = render(<RunsDetailPage />);
     const runInputCard = screen.getByTestId("runs-detail-input-card");
     const runInput = within(runInputCard).getByTestId("runs-detail-input");
+    expect(runInputCard).not.toHaveAttribute("data-run-detail-section-block");
     expect(
-      runInputCard.querySelector("[data-slot='card-content']"),
-    ).toHaveClass("space-y-5");
-    expect(
-      runInputCard.querySelector("[data-slot='card-content']"),
-    ).not.toHaveClass("pt-6");
+      runInputCard.querySelector('[data-state="open"], [data-state="closed"]'),
+    ).toBeNull();
     expect(runInput).toHaveTextContent(/AAPL/i);
     expect(runInput).toHaveClass("flex", "flex-col", "min-w-0", "gap-3");
     expect(runInput).not.toHaveClass("overflow-hidden", "text-xs");
@@ -2732,8 +2756,10 @@ describe("RunsDetailPage", () => {
       }),
     ).toBeVisible();
     expect(
-      within(memoryWorkspace).getByRole("heading", { name: /^memory$/i }),
-    ).toBeVisible();
+      within(screen.getByTestId("runs-detail-section-memory")).getByTestId(
+        "runs-detail-section-title-memory",
+      ),
+    ).toHaveTextContent("Memory");
     expect(
       screen.getByRole("heading", { name: /retrieved context/i }),
     ).toBeVisible();
@@ -3182,13 +3208,14 @@ describe("RunsDetailPage", () => {
     const pendingFinalOutput = within(pendingFinalOutputCard).getByTestId(
       "runs-detail-final-output",
     );
-    expect(pendingFinalOutputCard).toHaveAttribute("data-slot", "card");
+    expect(pendingFinalOutputCard).not.toHaveAttribute(
+      "data-run-detail-section-block",
+    );
     expect(
-      pendingFinalOutputCard.querySelector("[data-slot='card-content']"),
-    ).toHaveClass("space-y-5");
-    expect(
-      pendingFinalOutputCard.querySelector("[data-slot='card-content']"),
-    ).not.toHaveClass("pt-6");
+      pendingFinalOutputCard.querySelector(
+        '[data-state="open"], [data-state="closed"]',
+      ),
+    ).toBeNull();
     expect(pendingFinalOutput).toHaveTextContent(
       "No final output payload was recorded for this run.",
     );

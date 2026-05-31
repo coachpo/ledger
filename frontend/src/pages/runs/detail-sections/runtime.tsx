@@ -1,5 +1,3 @@
-import { Activity } from "lucide-react";
-
 import { ConsoleSection } from "@/components/shared/console-section";
 import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
@@ -34,8 +32,8 @@ import { formatQueueReasonTitle, runStatusTone, sortedInvocations } from "../det
 import { CAPABILITY_LABELS, CAPABILITY_ORDER } from "./runtime-metadata";
 import {
   CompactModeEmptyState,
+  RunDetailContentSection,
   RunDetailEmptyState,
-  RunDetailSectionBlock,
   RunDetailTableFrame,
   type DetailItem,
 } from "./shared";
@@ -248,16 +246,16 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
   const provenance = run.packageProvenance;
   if (run.targetKind !== "workflowPackage" || !provenance) {
     return (
-      <RunDetailSectionBlock
-        blockId="runtime-profile"
+      <RunDetailContentSection
         description="Runtime profile data is only recorded for Workflow Package runs."
-        icon={Activity}
+        sectionId="runtime-profile"
+        testId="runs-detail-section-runtime-profile"
         title="Runtime profile"
       >
         <RunDetailEmptyState testId="runs-runtime-profile-empty">
           No runtime profile was recorded for this run.
         </RunDetailEmptyState>
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
     );
   }
 
@@ -274,10 +272,10 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
 
   return (
     <div className="grid min-w-0 gap-3" data-testid="runs-runtime-profile">
-      <RunDetailSectionBlock
-        blockId="runtime-profile"
+      <RunDetailContentSection
         description="Frozen provider, model, policy, and capability rows captured when the run executed."
-        icon={Activity}
+        sectionId="runtime-profile"
+        testId="runs-detail-section-runtime-profile"
         title="Runtime profile"
       >
         {resolvedModelConnections.length === 0 ? (
@@ -357,12 +355,12 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
             </Table>
           </RunDetailTableFrame>
         )}
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
 
-      <RunDetailSectionBlock
-        blockId="selected-strategies"
+      <RunDetailContentSection
         description="Adapter-selected strategy metadata is repeated invocation evidence, so it stays in rows."
-        icon={Activity}
+        sectionId="selected-strategies"
+        testId="runs-detail-section-selected-strategies"
         title="Selected strategies"
       >
         {strategySummaries.length === 0 ? (
@@ -428,12 +426,12 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
             </RunDetailTableFrame>
           </div>
         )}
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
 
-      <RunDetailSectionBlock
-        blockId="capability-matrix"
+      <RunDetailContentSection
         description="Capability probes are row-first so repeated provider evidence stays comparable."
-        icon={Activity}
+        sectionId="capability-matrix"
+        testId="runs-detail-section-capability-matrix"
         title="Capability matrix"
       >
         {resolvedModelConnections.length === 0 ? (
@@ -490,7 +488,7 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
             </Table>
           </RunDetailTableFrame>
         )}
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
     </div>
   );
 }
@@ -594,26 +592,26 @@ export function RunTokensWorkspace({ run }: { run: RunRead }) {
         className="grid min-w-0 gap-3"
         data-testid="runs-tokens-workspace"
       >
-        <RunDetailSectionBlock
-          blockId="token-accounting"
+        <RunDetailContentSection
           description="Token usage appears here when the backend reports run-level or invocation-level accounting."
-          icon={Activity}
+          sectionId="token-accounting"
+          testId="runs-detail-section-token-accounting"
           title="Token accounting"
         >
           <CompactModeEmptyState testId="runs-tokens-empty">
             No token accounting was reported for this run.
           </CompactModeEmptyState>
-        </RunDetailSectionBlock>
+        </RunDetailContentSection>
       </section>
     );
   }
 
   return (
     <section className="grid min-w-0 gap-3" data-testid="runs-tokens-workspace">
-      <RunDetailSectionBlock
-        blockId="token-accounting"
+      <RunDetailContentSection
         description="Run-level accounting stays split across total, inherited, and newly executed usage."
-        icon={Activity}
+        sectionId="token-accounting"
+        testId="runs-detail-section-token-accounting"
         title="Token accounting"
       >
         <div className="grid min-w-0 gap-3">
@@ -670,12 +668,12 @@ export function RunTokensWorkspace({ run }: { run: RunRead }) {
             </div>
           </dl>
         </div>
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
 
-      <RunDetailSectionBlock
-        blockId="invocation-usage-rows"
+      <RunDetailContentSection
         description="Per-invocation token fields and provider usage metadata stay row-based for auditability."
-        icon={Activity}
+        sectionId="invocation-usage-rows"
+        testId="runs-detail-section-invocation-usage-rows"
         title="Invocation usage rows"
       >
         {tokenRows.length === 0 && strategySummaries.length === 0 ? (
@@ -737,7 +735,7 @@ export function RunTokensWorkspace({ run }: { run: RunRead }) {
             </Table>
           </RunDetailTableFrame>
         )}
-      </RunDetailSectionBlock>
+      </RunDetailContentSection>
     </section>
   );
 }

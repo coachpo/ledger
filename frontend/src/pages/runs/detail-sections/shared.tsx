@@ -1,12 +1,6 @@
 import { type ReactNode } from "react";
 
 import { ConsoleSection } from "@/components/shared/console-section";
-import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { cn } from "@/components/ui/utils";
 import { type LucideIcon } from "lucide-react";
 
@@ -88,30 +82,21 @@ export function RunDetailSectionBlock({
   tone = "default",
 }: RunDetailSectionBlockProps) {
   return (
-    <Collapsible
+    <div
       className="min-w-0"
       data-run-detail-section-block="true"
       data-testid={`runs-detail-section-${blockId}`}
-      defaultOpen={false}
     >
       <ConsoleSection
         actions={
-          <div className="flex min-w-0 flex-wrap justify-end gap-2">
-            {actions}
-            <CollapsibleTrigger asChild>
-              <Button
-                className="cursor-pointer"
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Toggle
-              </Button>
-            </CollapsibleTrigger>
-          </div>
+          actions ? (
+            <div className="flex min-w-0 flex-wrap justify-end gap-2">
+              {actions}
+            </div>
+          ) : undefined
         }
         className={cardClassName}
-        contentClassName={contentClassName}
+        contentClassName={cn("grid min-w-0 gap-3", contentClassName)}
         description={
           <RunDetailSectionDescription blockId={blockId}>
             {description}
@@ -123,14 +108,9 @@ export function RunDetailSectionBlock({
         }
         tone={tone}
       >
-        <CollapsibleContent
-          className="grid min-w-0 gap-3 data-[state=closed]:hidden"
-          forceMount
-        >
-          {children}
-        </CollapsibleContent>
+        {children}
       </ConsoleSection>
-    </Collapsible>
+    </div>
   );
 }
 
@@ -173,68 +153,50 @@ export function RunDetailTableFrame({
   );
 }
 
-export function CollapsibleConsoleSection({
-  blockId,
+export function RunDetailContentSection({
   children,
+  className,
+  contentClassName,
   description,
-  icon,
-  title,
-}: {
-  blockId: string;
-  children: ReactNode;
-  description: ReactNode;
-  icon: LucideIcon;
-  title: ReactNode;
-}) {
-  return (
-    <RunDetailSectionBlock
-      blockId={blockId}
-      description={description}
-      icon={icon}
-      title={title}
-    >
-      {children}
-    </RunDetailSectionBlock>
-  );
-}
-
-export function CollapsibleDetailPanel({
-  children,
-  description,
+  sectionId,
   testId,
   title,
 }: {
   children: ReactNode;
-  description: ReactNode;
-  testId: string;
+  className?: string;
+  contentClassName?: string;
+  description?: ReactNode;
+  sectionId?: string;
+  testId?: string;
   title: ReactNode;
 }) {
+  const headingId = sectionId
+    ? `runs-detail-content-section-title-${sectionId}`
+    : undefined;
+
   return (
-    <Collapsible className="min-w-0" data-testid={testId} defaultOpen={false}>
-      <ConsoleSection
-        actions={
-          <CollapsibleTrigger asChild>
-            <Button
-              className="cursor-pointer"
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              Toggle
-            </Button>
-          </CollapsibleTrigger>
-        }
-        description={description}
-        title={title}
-      >
-        <CollapsibleContent
-          className="grid min-w-0 gap-3 data-[state=closed]:hidden"
-          forceMount
+    <section
+      aria-labelledby={headingId}
+      className={cn("min-w-0 space-y-3", className)}
+      data-testid={testId}
+    >
+      <div className="space-y-1">
+        <h3
+          className="text-sm font-semibold tracking-tight text-foreground"
+          id={headingId}
         >
-          {children}
-        </CollapsibleContent>
-      </ConsoleSection>
-    </Collapsible>
+          {title}
+        </h3>
+        {description ? (
+          <div className="text-xs leading-5 text-muted-foreground">
+            {description}
+          </div>
+        ) : null}
+      </div>
+      <div className={cn("grid min-w-0 gap-3", contentClassName)}>
+        {children}
+      </div>
+    </section>
   );
 }
 
