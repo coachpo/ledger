@@ -196,22 +196,32 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     outlineRender.unmount();
     searchParamsMock = new URLSearchParams("mode=metadata");
     const auditRender = render(<RunsDetailPage />);
-    expect(screen.getByRole("heading", { name: "Metadata" })).toBeVisible();
-    expect(screen.queryByTestId("runs-audit-row-trace-root"))
-      .not.toBeInTheDocument();
-    const finalOutputAuditRow = screen.getByTestId("runs-audit-row-payload-output");
-    expect(finalOutputAuditRow).toHaveTextContent(/final output payload/i);
-    expect(finalOutputAuditRow).not.toHaveTextContent(
-      /\bCaptured\b|\bPending\b|Not produced/i,
+    expect(
+      screen.queryByTestId("runs-detail-section-metadata"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Metadata" }),
+    ).not.toBeInTheDocument();
+    [
+      "runs-audit-table",
+      "runs-audit-row-trace-root",
+      "runs-audit-row-payload-output",
+      "runs-audit-row-payload-input",
+      "runs-audit-row-trace-operation-2001",
+      "runs-audit-row-trace-operation-2002",
+      "runs-audit-row-memory-groups",
+    ].forEach((testId) => {
+      expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(
+      /webhook_result/i,
     );
-    expect(
-      screen.getByTestId("runs-audit-row-trace-operation-2001"),
-    ).toHaveTextContent(/webhook_result\/span-operation/i);
-    expect(
-      screen.getByTestId("runs-audit-row-trace-operation-2002"),
-    ).toHaveTextContent(/webhook_retry\/span-operation-failed/i);
-    expect(screen.getByTestId("runs-audit-row-memory-groups")).toHaveTextContent(
-      /0 events/i,
+    expect(screen.getByTestId("runs-detail-input")).toHaveTextContent(/NVDA/i);
+    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(
+      /webhook_result\/span-operation/i,
+    );
+    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(
+      /webhook_retry\/span-operation-failed/i,
     );
 
     auditRender.unmount();

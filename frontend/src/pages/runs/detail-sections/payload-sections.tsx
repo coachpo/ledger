@@ -155,7 +155,7 @@ export function RunOutputWorkspace({ run }: { run: RunRead }) {
     <div className="grid min-w-0 gap-3" data-testid="runs-output-workspace">
       <RunDetailSectionBlock
         blockId="output-provenance"
-        description="Output provenance stays beside the rendered payload while raw payload detail is available from metadata rows."
+        description="Output provenance stays beside the rendered payload without duplicating final output detail."
         icon={FileText}
         title="Output provenance"
       >
@@ -196,7 +196,7 @@ export function RunInputWorkspace({ run }: { run: RunRead }) {
       </RunDetailSectionBlock>
       <RunDetailSectionBlock
         blockId="input-provenance"
-        description="Input provenance stays beside the launch payload while raw payload detail is available from metadata rows."
+        description="Input provenance stays beside the launch payload without duplicating run input detail."
         icon={FileText}
         title="Input provenance"
       >

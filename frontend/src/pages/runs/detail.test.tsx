@@ -701,7 +701,6 @@ describe("RunsDetailPage", () => {
       ["runs-detail-section-invocation-usage-rows", "Invocation usage rows"],
       ["runs-detail-section-lineage", "Lineage"],
       ["runs-memory-compact-artifacts", "Compact artifact slice"],
-      ["runs-detail-section-metadata", "Metadata"],
     ];
     const sections = expectedSections.map(([sectionId, title]) => {
       const section = within(stack).getByTestId(sectionId);
@@ -761,7 +760,6 @@ describe("RunsDetailPage", () => {
       ["token-accounting", "Token accounting"],
       ["invocation-usage-rows", "Invocation usage rows"],
       ["lineage", "Lineage"],
-      ["metadata", "Metadata"],
     ];
 
     expectedBlocks.forEach(([blockId, title]) => {
@@ -1180,7 +1178,7 @@ describe("RunsDetailPage", () => {
     );
   });
 
-  it("renders selected execution and metadata evidence inline without an inspector pane", () => {
+  it("renders selected execution evidence inline without an inspector pane", () => {
     const run = buildRun({
       memoryArtifacts: [
         {
@@ -1256,118 +1254,41 @@ describe("RunsDetailPage", () => {
     expect(searchParamsMock.has("pane")).toBe(false);
     selectedInvocationRender.unmount();
 
-    searchParamsMock = new URLSearchParams("mode=metadata");
-    const metadataRender = render(<RunsDetailPage />);
-    const inputAuditRow = screen.getByTestId("runs-audit-row-payload-input");
-    expect(inputAuditRow).toHaveAttribute("role", "button");
-    expect(inputAuditRow.querySelector("button")).toBeNull();
-    fireEvent.click(inputAuditRow);
-    applyLatestSearchParamsUpdate("mode=metadata");
-    expect(searchParamsMock.get("mode")).toBe("metadata");
-    metadataRender.unmount();
-
-    const selectedMetadataRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-detail-section-metadata")).toHaveAttribute(
-      "data-slot",
-      "collapsible",
+    searchParamsMock = new URLSearchParams(
+      "mode=metadata&inspect=run&pane=input",
     );
-    expect(
-      screen.getByTestId("runs-audit-row-payload-input-inline-evidence"),
-    ).toHaveTextContent(/AAPL/i);
-    fireEvent.click(screen.getByTestId("runs-audit-row-payload-input"));
-    applyLatestSearchParamsUpdate("mode=metadata&inspect=run&pane=input");
-    expect(searchParamsMock.get("mode")).toBe("metadata");
-    expect(searchParamsMock.has("inspect")).toBe(false);
-    expect(searchParamsMock.has("pane")).toBe(false);
-    selectedMetadataRender.unmount();
-
-    const closedMetadataRender = render(<RunsDetailPage />);
-    expect(
-      screen.getByTestId("runs-audit-row-payload-input"),
-    ).not.toHaveAttribute("data-state", "selected");
-    expect(
-      screen.queryByTestId("runs-audit-row-payload-input-inline-evidence"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("runs-audit-row-payload-output-inline-evidence"),
-    ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("runs-audit-row-payload-output"));
-    applyLatestSearchParamsUpdate("mode=metadata");
-    expect(searchParamsMock.get("mode")).toBe("metadata");
-    expect(searchParamsMock.get("inspect")).toBe("run");
-    expect(searchParamsMock.get("pane")).toBe("finalOutput");
-    closedMetadataRender.unmount();
-
-    const reopenedMetadataRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-audit-row-payload-output")).toHaveAttribute(
-      "data-state",
-      "selected",
-    );
-    expect(
-      screen.getByTestId("runs-audit-row-payload-output-inline-evidence"),
-    ).toHaveTextContent(/All clear/i);
-    reopenedMetadataRender.unmount();
-
-    searchParamsMock = new URLSearchParams("mode=metadata");
-    const traceRender = render(<RunsDetailPage />);
-    const traceAuditRow = screen.getByTestId("runs-audit-row-trace-agent-1001");
-    expect(traceAuditRow).toHaveAttribute("role", "button");
-    expect(traceAuditRow.querySelector("button")).toBeNull();
-    fireEvent.keyDown(traceAuditRow, { key: "Enter" });
-    applyLatestSearchParamsUpdate("mode=metadata");
-    traceRender.unmount();
-
-    const selectedTraceRender = render(<RunsDetailPage />);
-    const traceInlineEvidence = screen.getByTestId(
-      "runs-audit-row-trace-agent-1001-inline-evidence",
-    );
-    expect(traceInlineEvidence).toHaveTextContent(/analysis/i);
-    fireEvent.click(
-      within(traceInlineEvidence).getByRole("button", { name: /run input/i }),
-    );
-    applyLatestSearchParamsUpdate(
-      "mode=metadata&inspect=invocation%3A1001&pane=output",
-    );
-    expect(searchParamsMock.get("mode")).toBe("metadata");
-    selectedTraceRender.unmount();
-
-    const tracePaneRender = render(<RunsDetailPage />);
-    expect(
-      screen.getByTestId("runs-audit-row-trace-agent-1001-inline-evidence"),
-    ).toHaveTextContent(/AAPL/i);
-    tracePaneRender.unmount();
-
-    searchParamsMock = new URLSearchParams("mode=metadata");
-    const artifactRender = render(<RunsDetailPage />);
-    const artifactAuditRow = screen.getByTestId(
-      "runs-audit-row-artifact-memory_701",
-    );
-    expect(artifactAuditRow).toHaveAttribute("role", "button");
-    expect(artifactAuditRow.querySelector("button")).toBeNull();
-    fireEvent.click(artifactAuditRow);
-    applyLatestSearchParamsUpdate("mode=metadata");
-    artifactRender.unmount();
-
-    const selectedArtifactRender = render(<RunsDetailPage />);
-    const artifactInlineEvidence = screen.getByTestId(
-      "runs-audit-row-artifact-memory_701-inline-evidence",
-    );
-    expect(artifactInlineEvidence).toHaveTextContent(/portfolio_manager@3/i);
-    fireEvent.click(
-      within(artifactInlineEvidence).getByRole("button", {
-        name: /provenance/i,
-      }),
-    );
-    applyLatestSearchParamsUpdate(
-      "mode=metadata&inspect=memory%3Amemory_701&pane=details",
-    );
-    expect(searchParamsMock.get("mode")).toBe("metadata");
-    selectedArtifactRender.unmount();
-
     render(<RunsDetailPage />);
+
     expect(
-      screen.getByTestId("runs-audit-row-artifact-memory_701-inline-evidence"),
-    ).toHaveTextContent(/Provenance/i);
+      screen.queryByTestId("runs-detail-section-metadata"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Metadata" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(
+      /All clear/i,
+    );
+    expect(screen.getByTestId("runs-detail-input")).toHaveTextContent(/AAPL/i);
+    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(
+      /analysis\/span-1/i,
+    );
+    expect(
+      screen.getByTestId("runs-memory-compact-artifact-memory_701"),
+    ).toHaveTextContent(/AAPL decision memory/i);
+    [
+      "runs-audit-table",
+      "runs-audit-row-payload-input",
+      "runs-audit-row-payload-output",
+      "runs-audit-row-memory-groups",
+      "runs-audit-row-trace-agent-1001",
+      "runs-audit-row-artifact-memory_701",
+      "runs-audit-row-payload-input-inline-evidence",
+      "runs-audit-row-payload-output-inline-evidence",
+      "runs-audit-row-trace-agent-1001-inline-evidence",
+      "runs-audit-row-artifact-memory_701-inline-evidence",
+    ].forEach((testId) => {
+      expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
+    });
   });
 
   it("updates inspection URL state without clearing modal state", () => {
@@ -1863,16 +1784,29 @@ describe("RunsDetailPage", () => {
     runtimeModeRender.unmount();
     searchParamsMock = new URLSearchParams("mode=metadata");
     const auditModeRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-audit-table")).toBeVisible();
     expect(
-      screen.queryByTestId("runs-audit-row-trace-root"),
+      screen.queryByTestId("runs-detail-section-metadata"),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByTestId("runs-audit-row-payload-output"),
-    ).toHaveTextContent(/final output payload/i);
-    expect(
-      screen.getByTestId("runs-audit-row-trace-agent-1002"),
-    ).toHaveTextContent(/decision\/span-2/i);
+      screen.queryByRole("heading", { name: "Metadata" }),
+    ).not.toBeInTheDocument();
+    [
+      "runs-audit-table",
+      "runs-audit-row-trace-root",
+      "runs-audit-row-payload-output",
+      "runs-audit-row-payload-input",
+      "runs-audit-row-memory-groups",
+      "runs-audit-row-trace-agent-1002",
+    ].forEach((testId) => {
+      expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(
+      /normalized/i,
+    );
+    expect(screen.getByTestId("runs-detail-input")).toHaveTextContent(/AAPL/i);
+    expect(screen.getByTestId("runs-step-2-trace-summary")).toHaveTextContent(
+      /decision\/span-2/i,
+    );
 
     auditModeRender.unmount();
     searchParamsMock = new URLSearchParams("mode=execution");
@@ -2247,7 +2181,7 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("groups graph metadata and renders compact memory artifact audit links", () => {
+  it("groups graph metadata and renders compact memory artifact report-link counts", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
@@ -2348,34 +2282,29 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
 
     defaultRender.unmount();
-    searchParamsMock = new URLSearchParams(
-      "mode=metadata&inspect=memory:memory_701&pane=details",
-    );
+    searchParamsMock = new URLSearchParams("mode=metadata");
     render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-memory-artifacts")).toBeInTheDocument();
-    const artifact = screen.getByTestId("runs-memory-artifact-memory_701");
-    expect(artifact).toHaveTextContent("AAPL decision memory");
-    expect(artifact).toHaveTextContent(/pending/i);
-    expect(artifact).toHaveTextContent(/portfolio_manager@3/i);
-    expect(artifact).toHaveTextContent(/workflow market_review/i);
-    expect(artifact).toHaveTextContent(/slot decision/i);
-    expect(artifact).toHaveTextContent(/run #42/i);
-    expect(artifact).toHaveTextContent(/loop review_loop.*iteration 2/i);
     expect(
-      within(artifact).getByRole("link", { name: /open canonical memory/i }),
-    ).toHaveAttribute(
-      "href",
-      "/memory?memoryId=memory_701&packageKey=market_review_package&runId=42&workflowKey=market_review&agentKey=portfolio_manager",
+      screen.queryByTestId("runs-detail-section-metadata"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Metadata" }),
+    ).not.toBeInTheDocument();
+    const compactArtifact = screen.getByTestId(
+      "runs-memory-compact-artifact-memory_701",
     );
+    expect(compactArtifact).toHaveTextContent("AAPL decision memory");
+    expect(compactArtifact).toHaveTextContent(/pending/i);
+    expect(compactArtifact).toHaveTextContent(/portfolio_manager@3/i);
+    expect(compactArtifact).toHaveTextContent(/workflow market_review/i);
+    expect(compactArtifact).toHaveTextContent(/slot decision/i);
+    expect(compactArtifact).toHaveTextContent(/run #42/i);
     expect(
-      within(artifact).getByRole("link", { name: /open report/i }),
-    ).toHaveAttribute("href", "/reports/memory_aapl_decision");
+      screen.queryByTestId("runs-memory-artifacts"),
+    ).not.toBeInTheDocument();
     expect(
-      within(artifact).getByRole("link", { name: /download/i }),
-    ).toHaveAttribute("download");
-    expect(
-      within(artifact).getByRole("link", { name: /download/i }),
-    ).toHaveAttribute("href", "/api/v1/reports/memory_aapl_decision/download");
+      screen.queryByTestId("runs-audit-row-artifact-memory_701"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders memory artifacts without report actions when audit links are absent", () => {
@@ -2402,22 +2331,31 @@ describe("RunsDetailPage", () => {
       ),
     );
 
-    searchParamsMock = new URLSearchParams(
-      "mode=metadata&inspect=memory:memory_702&pane=details",
-    );
+    searchParamsMock = new URLSearchParams("mode=metadata");
     render(<RunsDetailPage />);
 
-    const artifact = screen.getByTestId("runs-memory-artifact-memory_702");
+    expect(
+      screen.queryByTestId("runs-detail-section-metadata"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Metadata" }),
+    ).not.toBeInTheDocument();
+    const artifact = screen.getByTestId(
+      "runs-memory-compact-artifact-memory_702",
+    );
     expect(artifact).toHaveTextContent("AAPL risk memory");
     expect(artifact).toHaveTextContent(/active/i);
     expect(artifact).toHaveTextContent(/risk_manager@1/i);
     expect(artifact).toHaveTextContent(/workflow market_review/i);
     expect(artifact).toHaveTextContent(/run #42/i);
     expect(
-      within(artifact).queryByRole("link", { name: /open report/i }),
+      screen.queryByRole("link", { name: /open report/i }),
     ).not.toBeInTheDocument();
     expect(
-      within(artifact).queryByRole("link", { name: /download/i }),
+      screen.queryByRole("link", { name: /download/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-audit-row-artifact-memory_702"),
     ).not.toBeInTheDocument();
   });
 

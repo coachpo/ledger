@@ -1172,230 +1172,6 @@ export function RunMemoryWorkspace({ run }: { run: RunRead }) {
   );
 }
 
-export function RunAuditEvidenceSection({
-  activeInspection,
-  copiedInvocations,
-  copiedSteps,
-  isCurrentFork,
-  onOpenFork,
-  onSelect,
-  plannedInvocations,
-  plannedSteps,
-  run,
-  steps,
-  traceSpanEntries,
-}: {
-  activeInspection: RunInspectionState;
-  copiedInvocations: number;
-  copiedSteps: number;
-  isCurrentFork: boolean;
-  onOpenFork: (stepIndex: number, invocationId: number) => void;
-  onSelect: (
-    target: RunInspectionTarget,
-    pane?: RunInspectionPane,
-    mode?: RunInspectionMode,
-  ) => void;
-  plannedInvocations: number;
-  plannedSteps: number;
-  run: RunRead;
-  steps: RunStepRead[];
-  traceSpanEntries: TraceSpanEntry[];
-}) {
-  const groupedEvents = groupedMemoryEvents(run.memoryEvents ?? []);
-  const reportAuditLinks = run.memoryArtifacts.filter(
-    (artifact) => artifact.auditLinks?.report,
-  ).length;
-  const rows: Array<{
-    category: string;
-    id: string;
-    pane?: RunInspectionPane;
-    summary: ReactNode;
-    target: RunInspectionTarget;
-    title: string;
-    tone?: "secondary" | "destructive" | "outline";
-  }> = [
-    {
-      category: "Payload",
-      id: "payload-output",
-      pane: "finalOutput",
-      summary: "Final output payload",
-      target: { type: "run" },
-      title: "Final output",
-      tone: "outline",
-    },
-    {
-      category: "Payload",
-      id: "payload-input",
-      pane: "input",
-      summary: "Launch input captured",
-      target: { type: "run" },
-      title: "Run input",
-      tone: "secondary",
-    },
-    {
-      category: "Memory",
-      id: "memory-groups",
-      pane: "memory",
-      summary: `${run.memoryEvents.length} event${run.memoryEvents.length === 1 ? "" : "s"} · ${groupedEvents.retrievedContext.length} retrieved · ${groupedEvents.memoryWrites.length} write/reuse · ${groupedEvents.reviewFollowUp.length} review · ${groupedEvents.auditTrail.length} audit`,
-      target: { type: "run" },
-      title: "Memory event groups",
-      tone: run.memoryEvents.length > 0 ? "secondary" : "outline",
-    },
-    ...traceSpanEntries.map((entry) => ({
-      category: "Trace span",
-      id: `trace-${entry.invocationKind}-${entry.invocationId}`,
-      pane: "output" as RunInspectionPane,
-      summary: `Step ${entry.stepIndex} · ${entry.slot}/${entry.spanId}`,
-      target:
-        entry.invocationKind === "operation"
-          ? ({
-              type: "operationInvocation",
-              invocationId: entry.invocationId,
-            } satisfies RunInspectionTarget)
-          : ({
-              type: "agentInvocation",
-              invocationId: entry.invocationId,
-            } satisfies RunInspectionTarget),
-      title:
-        entry.invocationKind === "operation"
-          ? `Operation invocation #${entry.invocationId}`
-          : `Agent invocation #${entry.invocationId}`,
-      tone: "secondary" as const,
-    })),
-    ...run.memoryArtifacts.map((artifact) => ({
-      category: artifact.auditLinks?.report ? "Report artifact" : "Artifact",
-      id: `artifact-${artifact.memoryId}`,
-      pane: "details" as RunInspectionPane,
-      summary: `${artifact.status} · ${memoryProvenanceLabel(artifact)}`,
-      target: {
-        type: "memoryArtifact" as const,
-        memoryId: artifact.memoryId,
-      },
-      title: artifact.summary,
-      tone: artifact.auditLinks?.report
-        ? ("secondary" as const)
-        : ("outline" as const),
-    })),
-  ];
-
-  return (
-    <CollapsibleConsoleSection
-      blockId="metadata"
-      description="Trace, payload, memory, and report evidence rows expand inline with contextual raw detail."
-      icon={FileText}
-      title="Metadata"
-    >
-      <div className="grid min-w-0 gap-3">
-        <ResourceStatusStrip
-          items={[
-            {
-              label: "Trace spans",
-              value: traceSpanEntries.length,
-              tone: traceSpanEntries.length > 0 ? "success" : "warning",
-            },
-            {
-              label: "Memory events",
-              value: run.memoryEvents.length,
-            },
-            {
-              label: "Artifacts",
-              value: run.memoryArtifacts.length,
-            },
-            {
-              label: "Report links",
-              value: reportAuditLinks,
-            },
-          ]}
-        />
-        <RunDetailTableFrame testId="runs-audit-table">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Evidence row</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Summary</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.flatMap((row) => {
-                const targetMatches = isInspectionTargetEqual(
-                  activeInspection.target,
-                  row.target,
-                );
-                const paneMatches =
-                  !row.pane || activeInspection.pane === row.pane;
-                const isActive =
-                  activeInspection.selected !== false &&
-                  targetMatches &&
-                  (row.target.type === "run" ? paneMatches : true);
-                const shouldRenderInline =
-                  isActive && activeInspection.mode === "metadata";
-                const selectRow = () =>
-                  onSelect(row.target, row.pane, "metadata");
-                const dataRow = (
-                  <TableRow
-                    aria-label={`${row.title} evidence row`}
-                    className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    data-state={isActive ? "selected" : undefined}
-                    data-testid={`runs-audit-row-${row.id}`}
-                    key={row.id}
-                    onClick={selectRow}
-                    onKeyDown={(event) =>
-                      handleSelectableRowKeyDown(event, selectRow)
-                    }
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <TableCell className="min-w-56 whitespace-normal align-top">
-                      <span className="block w-full rounded-md px-2 py-1.5 text-left font-medium text-foreground">
-                        {row.title}
-                      </span>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <Badge variant={row.tone ?? "outline"}>
-                        {row.category}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="min-w-80 whitespace-normal align-top text-muted-foreground">
-                      {row.summary}
-                    </TableCell>
-                  </TableRow>
-                );
-                if (!shouldRenderInline) {
-                  return [dataRow];
-                }
-                return [
-                  dataRow,
-                  <TableRow key={`${row.id}-inline`}>
-                    <TableCell
-                      className="whitespace-normal p-3 align-top"
-                      colSpan={3}
-                    >
-                      <RunInlineEvidence
-                        activeInspection={activeInspection}
-                        copiedInvocations={copiedInvocations}
-                        copiedSteps={copiedSteps}
-                        isCurrentFork={isCurrentFork}
-                        onOpenFork={onOpenFork}
-                        onSelect={onSelect}
-                        plannedInvocations={plannedInvocations}
-                        plannedSteps={plannedSteps}
-                        run={run}
-                        steps={steps}
-                        testId={`runs-audit-row-${row.id}-inline-evidence`}
-                      />
-                    </TableCell>
-                  </TableRow>,
-                ];
-              })}
-            </TableBody>
-          </Table>
-        </RunDetailTableFrame>
-      </div>
-    </CollapsibleConsoleSection>
-  );
-}
-
 function handleSelectableRowKeyDown(
   event: KeyboardEvent<HTMLTableRowElement>,
   onSelect: () => void,
@@ -2682,21 +2458,6 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
           </div>
         </CollapsibleDetailPanel>
       ) : null}
-      <section className="min-w-0" data-testid="runs-stacked-section-metadata">
-        <RunAuditEvidenceSection
-          activeInspection={activeInspection}
-          copiedInvocations={copiedInvocations}
-          copiedSteps={copiedSteps}
-          isCurrentFork={isCurrentFork}
-          onOpenFork={onOpenFork}
-          onSelect={onSelect}
-          plannedInvocations={plannedInvocations}
-          plannedSteps={plannedSteps}
-          run={run}
-          steps={steps}
-          traceSpanEntries={traceSpanEntries}
-        />
-      </section>
     </div>
   );
 }
@@ -2795,7 +2556,7 @@ function RunInlineEvidence({
     content =
       activeInspection.mode === "inputs" ? (
         <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
-          Select an input field or metadata row to inspect raw detail.
+          Select an input field to inspect raw detail.
         </div>
       ) : (
         <RunPayloadPane
@@ -2825,7 +2586,7 @@ function RunInlineEvidence({
     content =
       activeInspection.mode === "memory" ? (
         <CompactModeEmptyState testId="runs-memory-inspector-empty">
-          Select a memory artifact or audit row to inspect raw detail.
+          Select a memory artifact to inspect raw detail.
         </CompactModeEmptyState>
       ) : (
         <RunMemoryEvidence run={run} />
@@ -2834,7 +2595,7 @@ function RunInlineEvidence({
     content =
       activeInspection.mode === "outputs" ? (
         <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
-          Select an output field or metadata row to inspect raw detail.
+          Select an output field to inspect raw detail.
         </div>
       ) : (
         <RunFinalOutputPane run={run} />
