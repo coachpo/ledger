@@ -23,6 +23,7 @@ src/lib/api/
 ├── reports.ts             # list/detail, compile, upload, download URL
 ├── extensions.ts          # statically resident extension list/toggle state
 ├── workflow-packages.ts   # package manifest, version, preflight, launch, import, export
+├── schedules.ts           # Scheduled Task CRUD, preview, fire history, and run-now requests
 ├── tools.ts               # read-only server-declared tool catalog
 ├── model-connections.ts   # saved model endpoint CRUD and connection testing
 ├── memory.ts              # explicit-scope platform memory list/detail/revision/event reads
@@ -34,7 +35,7 @@ src/lib/api/
 |---|---|---|
 | Shared fetch/error behavior | `../api-client.ts` | base URL, error envelope parsing, query encoding, v1 and platform helpers |
 | Preserved product contracts | `portfolios.ts`, `balances.ts`, `positions.ts`, `trading-operations.ts`, `market-data.ts`, `templates.ts`, `reports.ts` | browser-facing `/api/v1` helpers |
-| Agent-platform contracts | `extensions.ts`, `workflow-packages.ts`, `tools.ts`, `model-connections.ts`, `memory.ts`, `runs.ts` | package-first `/api/*` helpers for extension state, package authoring, read-only tool metadata, model bindings, explicit-scope Memory reads, and run inspection |
+| Agent-platform contracts | `extensions.ts`, `workflow-packages.ts`, `schedules.ts`, `tools.ts`, `model-connections.ts`, `memory.ts`, `runs.ts` | package-first `/api/*` helpers for extension state, package authoring, Scheduled Tasks, read-only tool metadata, model bindings, explicit-scope Memory reads, and run inspection |
 | CSV import endpoints | `positions.ts` | preview/commit upload helpers |
 | Report download helper | `reports.ts` | builds the absolute markdown download URL |
 
@@ -43,6 +44,7 @@ src/lib/api/
 - Route network calls through `request()` or `requestPlatform()` from `api-client.ts`.
 - Keep upload/download specifics here: multipart report upload, CSV preview/commit, and markdown download URLs should not leak into hooks or pages.
 - Keep preserved `/api/v1` resource paths and current unversioned platform `/api/*` paths separate in the module layer.
+- `schedules.ts` owns `/api/schedules` path helpers for list/detail/create/update/archive, fire history, unsaved/saved preview, and run-now; do not split run-now into run helpers.
 - `memory.ts` uses POST reads because every list/detail/revision/event call must carry an explicit package access context; do not turn it into a global browser search helper.
 - Match backend casing exactly; request/response types come from `../types/*` rather than inline object literals.
 
@@ -55,5 +57,5 @@ src/lib/api/
 
 ## NOTES
 - The frontend does not ship v2, Studio, Tryout, or orchestration API helpers in this folder.
-- Platform resources, including extension state, Memory, and global tool discovery for package authoring, use the unversioned `/api/*` helpers, while portfolios, templates, and reports stay on `/api/v1`.
+- Platform resources, including extension state, Scheduled Tasks, Memory, and global tool discovery for package authoring, use the unversioned `/api/*` helpers, while portfolios, templates, and reports stay on `/api/v1`.
 - Keep this file aligned with `src/hooks/AGENTS.md`, `src/lib/types/AGENTS.md`, and the live files under `src/lib/api/`.

@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/lib/`.
 
 ## OVERVIEW
-`src/lib/` owns the frontend API contract, query-key naming, derived portfolio analytics, formatting helpers, markdown formatting, report grouping helpers, runtime-input row helpers, and shared type definitions for portfolios, market data, templates, reports, extensions, Memory, and the current agent-platform domains.
+`src/lib/` owns the frontend API contract, query-key naming, derived portfolio analytics, formatting helpers, markdown formatting, report grouping helpers, runtime-input row helpers, and shared type definitions for portfolios, market data, templates, reports, extensions, Memory, Scheduled Tasks, and the current agent-platform domains.
 
 Extension model: statically resident extension state.
 
@@ -20,8 +20,8 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Task | Location | Notes |
 |---|---|---|
 | HTTP wrapper / error mapping | `api-client.ts` | `request()`, `requestPlatform()`, `ApiRequestError`, URL helpers, CSV form-data helpers |
-| API endpoint functions | `api/*.ts` | domain-specific modules for portfolios, balances, positions, trading operations, market data, templates, reports, extensions, Memory, and agent-platform resources |
-| Shared wire types | `types/*.ts` | domain-specific type definitions for preserved product, extension state, Memory, and platform routes |
+| API endpoint functions | `api/*.ts` | domain-specific modules for portfolios, balances, positions, trading operations, market data, templates, reports, extensions, Scheduled Tasks, Memory, and agent-platform resources |
+| Shared wire types | `types/*.ts` | domain-specific type definitions for preserved product, extension state, Scheduled Tasks, Memory, and platform routes |
 | Query key factory | `query-keys.ts` | hierarchical keys, param normalization, and preserved-product plus platform/extension cache namespaces |
 | Portfolio analytics | `portfolio-analytics.ts` | quote enrichment, market value, PnL, allocation |
 | Display formatting | `format.ts` | currency, decimal, percent, date/datetime, compact numbers |
@@ -29,7 +29,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Runtime input helpers | `runtime-inputs.ts` | row ids, row-to-map conversion, shared editor/report-generation helpers |
 | Platform authoring helpers | `platform-authoring/AGENTS.md` | schema/value/ref/workflow/agent IR, codecs, factories, validation |
 | Report grouping | `report-grouping.ts` | report list filtering, grouping, and sort helpers |
-| Unit coverage | `api.test.ts`, `query-keys.test.ts`, `portfolio-analytics.test.ts`, `format.test.ts`, `markdown-format.test.ts` | contract and helper regressions |
+| Unit coverage | `api.test.ts`, `api/schedules.test.ts`, `query-keys.test.ts`, `portfolio-analytics.test.ts`, `format.test.ts`, `markdown-format.test.ts` | contract and helper regressions |
 
 ## CONVENTIONS
 - `api-client.ts` is the only place that should know the base URL, query-string encoding, and error-envelope parsing.
@@ -41,7 +41,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Report flows use `queryKeys.reports.*`; `downloadReportUrl()` stays in the API layer because it builds the absolute file URL from the configured API base.
 - `runtime-inputs.ts` is the shared translator between editable key/value rows and trimmed `TemplateRuntimeInputs` maps for preview and report generation.
 - `report-grouping.ts` is frontend-only derived-view logic; backend report endpoints stay flat while grouping/search/sort are composed locally.
-- Platform flows use `requestPlatform()`-backed helpers and `queryKeys.platform.*`; keep route-specific polling, Memory access gating, extension-state filtering, or mutation policy in hooks rather than embedding it in pages.
+- Platform flows use `requestPlatform()`-backed helpers and `queryKeys.platform.*`; keep route-specific polling, Scheduled Task invalidation, Memory access gating, extension-state filtering, or mutation policy in hooks rather than embedding it in pages.
 - Report detail queries are slug-scoped, not numeric-id scoped, even though some shared helper signatures still use generic `IdParam` naming.
 
 ## ANTI-PATTERNS
@@ -50,7 +50,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Do not create API functions outside the `api/*.ts` domain modules.
 - Do not invent new query-key shapes outside `query-keys.ts`.
 - Do not duplicate backend contract types when `types/*.ts` already exposes them.
-- Do not change template, CSV, error-envelope, report, extension, Memory, or platform contract shapes here without updating the backend contract and the calling hooks/pages.
+- Do not change template, CSV, error-envelope, report, extension, Scheduled Task, Memory, or platform contract shapes here without updating the backend contract and the calling hooks/pages.
 - Do not change `api/` helpers or `types/` contracts in isolation; keep request helpers and wire shapes in sync.
 - Do not mix presentation-only formatting into API wrapper code.
 
