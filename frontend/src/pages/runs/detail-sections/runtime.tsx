@@ -22,7 +22,6 @@ import type {
   RunStepStatus,
 } from "@/lib/types/run";
 import type {
-  ModelConnectionCapabilities,
   ModelConnectionCapabilityStatus,
   ModelConnectionOutputStrategyPolicy,
   ModelConnectionParallelToolCallsPolicy,
@@ -32,6 +31,7 @@ import type {
 } from "@/lib/types/model-connection";
 
 import { formatQueueReasonTitle, runStatusTone, sortedInvocations } from "../detail-helpers";
+import { CAPABILITY_LABELS, CAPABILITY_ORDER } from "./runtime-metadata";
 import {
   CompactModeEmptyState,
   RunDetailEmptyState,
@@ -77,34 +77,6 @@ const STREAMING_POLICY_LABELS: Record<ModelConnectionStreamingPolicy, string> =
     allow: "Allow streaming",
     forbid: "Forbid streaming",
   };
-
-export const CAPABILITY_ORDER: (keyof ModelConnectionCapabilities)[] = [
-  "textGeneration",
-  "chatCompletions",
-  "responsesApi",
-  "streaming",
-  "nativeToolCalls",
-  "parallelToolCalls",
-  "jsonObjectOutput",
-  "strictJsonSchemaOutput",
-  "reasoningHints",
-  "usageReporting",
-  "systemMessages",
-];
-
-export const CAPABILITY_LABELS: Record<keyof ModelConnectionCapabilities, string> = {
-  textGeneration: "Text generation",
-  chatCompletions: "Chat completions",
-  responsesApi: "Responses API",
-  streaming: "Streaming",
-  nativeToolCalls: "Native tool calls",
-  parallelToolCalls: "Parallel tool calls",
-  jsonObjectOutput: "JSON object output",
-  strictJsonSchemaOutput: "Strict JSON schema output",
-  reasoningHints: "Reasoning hints",
-  usageReporting: "Usage reporting",
-  systemMessages: "System messages",
-};
 
 function capabilityStatusLabel(
   status: ModelConnectionCapabilityStatus,

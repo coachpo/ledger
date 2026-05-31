@@ -90,7 +90,8 @@ import {
   RunOverviewWorkspace,
   RunPayloadPane,
 } from "./payload-sections";
-import { CAPABILITY_LABELS, CAPABILITY_ORDER, RunRuntimeProfileSection, RunTokensWorkspace } from "./runtime";
+import { CAPABILITY_LABELS, CAPABILITY_ORDER } from "./runtime-metadata";
+import { RunRuntimeProfileSection, RunTokensWorkspace } from "./runtime";
 import {
   CollapsibleConsoleSection,
   CollapsibleDetailPanel,
