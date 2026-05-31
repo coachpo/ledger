@@ -37,9 +37,9 @@ import {
   RunDetailEmptyState,
   RunDetailSectionBlock,
   RunDetailTableFrame,
-  statusVariant,
   type DetailItem,
 } from "./shared";
+import { statusVariant } from "./shared-helpers";
 
 const PROTOCOL_PROFILE_LABELS: Record<ModelConnectionProtocolProfile, string> =
   {

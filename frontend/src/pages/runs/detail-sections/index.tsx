@@ -100,11 +100,9 @@ import {
   RunDetailEmptyState,
   RunDetailSectionBlock,
   RunDetailTableFrame,
-  formatOptional,
-  formatTimestamp,
-  statusVariant,
   type DetailItem,
 } from "./shared";
+import { formatOptional, formatTimestamp, statusVariant } from "./shared-helpers";
 
 type MemoryEventGroupKey =
   | "retrievedContext"
