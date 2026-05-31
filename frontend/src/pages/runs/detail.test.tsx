@@ -7,7 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import type {
   RunAgentInvocationRead,
@@ -24,16 +24,19 @@ import type {
 } from "@/lib/types/model-connection";
 
 import { RunsDetailPage } from "./detail";
+import type { RunDetailTabKey } from "./detail-tabs";
 
 const createRunRerunMutateAsyncMock = vi.fn();
 const createRunForkMutateAsyncMock = vi.fn();
 const navigateMock = vi.fn();
 const setSearchParamsMock = vi.fn();
+const runDetailSectionStackPropsMock = vi.fn();
 const useCreateRunForkMock = vi.fn();
 const useCreateRunRerunMock = vi.fn();
 const useRunForkDraftMock = vi.fn();
 const useRunRerunDraftMock = vi.fn();
 const useRunMock = vi.fn();
+let locationHashMock = "";
 let searchParamsMock = new URLSearchParams();
 
 vi.mock("react-router", () => ({
@@ -41,7 +44,7 @@ vi.mock("react-router", () => ({
     <a href={to}>{children}</a>
   ),
   useLocation: () => ({
-    hash: "",
+    hash: locationHashMock,
     pathname: "/runs/42",
     search: searchParamsMock.toString(),
   }),
@@ -57,6 +60,24 @@ vi.mock("@/hooks/use-runs", () => ({
   useRunForkDraft: (...args: unknown[]) => useRunForkDraftMock(...args),
   useRunRerunDraft: (...args: unknown[]) => useRunRerunDraftMock(...args),
 }));
+
+vi.mock("./detail-sections", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./detail-sections")>();
+
+  return {
+    ...actual,
+    RunDetailSectionStack: (
+      props: ComponentProps<typeof actual.RunDetailSectionStack> & {
+        onTabChange?: (tab: RunDetailTabKey) => void;
+        selectedTab?: RunDetailTabKey;
+      },
+    ) => {
+      const ActualRunDetailSectionStack = actual.RunDetailSectionStack;
+      runDetailSectionStackPropsMock(props);
+      return <ActualRunDetailSectionStack {...props} />;
+    },
+  };
+});
 
 vi.mock("@xyflow/react", () => ({
   applyNodeChanges: (
@@ -609,11 +630,26 @@ function applyLatestSearchParamsUpdate(currentSearch: string) {
   searchParamsMock = updater(new URLSearchParams(currentSearch));
 }
 
+type ObservedRunDetailSectionStackProps = {
+  onTabChange: (tab: RunDetailTabKey) => void;
+  selectedTab: RunDetailTabKey;
+};
+
+function latestRunDetailSectionStackProps(): ObservedRunDetailSectionStackProps {
+  const props = runDetailSectionStackPropsMock.mock.calls.at(-1)?.[0];
+  if (!props) {
+    throw new Error("Expected RunDetailSectionStack to be rendered.");
+  }
+  return props as ObservedRunDetailSectionStackProps;
+}
+
 describe("RunsDetailPage", () => {
   beforeEach(() => {
     createRunRerunMutateAsyncMock.mockReset();
     createRunForkMutateAsyncMock.mockReset();
     navigateMock.mockReset();
+    locationHashMock = "";
+    runDetailSectionStackPropsMock.mockReset();
     searchParamsMock = new URLSearchParams();
     setSearchParamsMock.mockReset();
     useCreateRunForkMock.mockReset();
@@ -637,133 +673,216 @@ describe("RunsDetailPage", () => {
     useRunMock.mockReset();
   });
 
-  it("renders all run inspection sections in one stacked workspace without the page tab console", () => {
-    useRunMock.mockReturnValue(
-      queryResult(
-        buildRun({
-          memoryArtifacts: [
-            {
-              createdAt: NOW,
-              memoryId: "memory_safe",
-              provenance: {
-                agentKey: "portfolio_manager",
-                agentVersion: 3,
-                createdByType: "agent",
-                runId: 42,
-                slot: "decision",
-                workflowKey: "market_review",
-              },
-              sourceGraphMetadata: null,
-              status: "active",
-              summary: "Compact safe memory",
-            },
-          ],
-          memoryEvents: [
-            buildMemoryEvent({ id: 9101, eventType: "retrieved" }),
-            buildMemoryEvent({ id: 9102, eventType: "written" }),
-            buildMemoryEvent({ id: 9103, eventType: "reviewed" }),
-            buildMemoryEvent({ id: 9104, eventType: "failed" }),
-          ],
-          packageProvenance: buildPackageProvenance({
-            resolvedModelConnections: [buildResolvedModelConnection({})],
-          }),
-        }),
-      ),
-    );
+  it("renders the top-level run detail tabs shell in contract order with Output selected by default", () => {
+    useRunMock.mockReturnValue(queryResult(buildRun()));
 
     render(<RunsDetailPage />);
 
-    expect(screen.queryByTestId("runs-tab-console")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("tablist", { name: /run inspection tabs/i }),
-    ).not.toBeInTheDocument();
-
-    const stack = screen.getByTestId("runs-stacked-workspace");
-    const expectedSections = [
-      ["runs-detail-section-operational-overview", "Operational overview"],
-      ["runs-detail-section-final-output", "Final output"],
-      ["runs-detail-section-output-provenance", "Output provenance"],
-      ["runs-detail-section-evidence-availability", "Evidence availability"],
-      ["runs-detail-section-diagnostics", "Diagnostics"],
-      ["runs-detail-section-execution-steps", "Execution steps"],
-      ["runs-detail-section-run-input", "Run input"],
-      ["runs-detail-section-input-provenance", "Input provenance"],
-      ["runs-detail-section-memory", "Memory"],
-      ["runs-memory-evidence", "Run memory evidence"],
-      ["runs-memory-group-retrievedContext", "Retrieved context"],
-      ["runs-memory-group-memoryWrites", "Memory written and reused"],
-      ["runs-memory-group-reviewFollowUp", "Review and follow-up"],
-      ["runs-memory-group-auditTrail", "Audit trail"],
-      ["runs-detail-section-runtime-profile", "Runtime profile"],
-      ["runs-detail-section-selected-strategies", "Selected strategies"],
-      ["runs-detail-section-capability-matrix", "Capability matrix"],
-      ["runs-detail-section-token-accounting", "Token accounting"],
-      ["runs-detail-section-invocation-usage-rows", "Invocation usage rows"],
-      ["runs-detail-section-lineage", "Lineage"],
-      ["runs-memory-compact-artifacts", "Compact artifact slice"],
+    const tabs = screen.getByTestId("runs-detail-tabs");
+    const expectedTabs = [
+      ["output", "Output"],
+      ["execution", "Execution"],
+      ["overview", "Overview"],
+      ["input", "Input"],
+      ["runtime", "Runtime"],
+      ["usage", "Usage"],
+      ["memory", "Memory"],
+      ["lineage", "Lineage"],
     ];
-    const sections = expectedSections.map(([sectionId, title]) => {
-      const section = within(stack).getByTestId(sectionId);
-      expect(section).toHaveTextContent(title);
-      return section;
+    const tabList = within(tabs).getByRole("tablist", {
+      name: /run detail sections/i,
     });
-
-    expect(sections).toHaveLength(expectedSections.length);
-    sections.slice(1).forEach((section, index) => {
-      expect(
-        sections[index].compareDocumentPosition(section) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-    });
-    expect(
-      within(stack).getByTestId("runs-output-workspace"),
-    ).toBeInTheDocument();
-    expect(
-      within(stack).getByTestId("runs-detail-section-output-provenance"),
-    ).not.toHaveTextContent(
-      /\bCaptured\b|\bPending\b|Not produced|Availability/i,
+    const triggers = expectedTabs.map(([key]) =>
+      within(tabs).getByTestId(`runs-detail-tab-trigger-${key}`),
     );
-    sections.forEach((section) => {
-      expect(section).toHaveAttribute("data-slot", "collapsible");
-      expect(section).toHaveAttribute("data-state", "closed");
-    });
+
+    expect(within(tabList).getAllByRole("tab")).toEqual(triggers);
+    expect(triggers.map((trigger) => trigger.textContent)).toEqual(
+      expectedTabs.map(([, label]) => label),
+    );
+    expect(latestRunDetailSectionStackProps().selectedTab).toBe("output");
+    expect(triggers[0]).toHaveAttribute("aria-selected", "true");
+    expect(triggers[0]).toHaveAttribute("data-state", "active");
+    expect(screen.getByTestId("runs-detail-tab-panel-output")).toBeVisible();
   });
 
-  it("renders every stacked run detail block with shared iconized section chrome", () => {
-    useRunMock.mockReturnValue(
-      queryResult(
-        buildRun({
-          memoryEvents: [buildMemoryEvent()],
-          packageProvenance: buildPackageProvenance({
-            resolvedModelConnections: [buildResolvedModelConnection({})],
-          }),
-        }),
+  it("scopes high-frequency top-level tab panels to their mapped blocks", () => {
+    const run = buildRun({
+      packageProvenance: buildPackageProvenance({
+        resolvedModelConnections: [buildResolvedModelConnection({})],
+      }),
+    });
+    const renderTab = (tab: RunDetailTabKey) => {
+      searchParamsMock = new URLSearchParams(
+        tab === "output" ? "" : `tab=${tab}`,
+      );
+      useRunMock.mockReturnValue(queryResult(run));
+      return render(<RunsDetailPage />);
+    };
+
+    const outputRender = renderTab("output");
+    const outputPanel = screen.getByTestId("runs-detail-tab-panel-output");
+    expect(
+      within(outputPanel).getByRole("heading", { name: "Final output" }),
+    ).toBeVisible();
+    expect(
+      within(outputPanel).getByRole("heading", { name: "Output provenance" }),
+    ).toBeVisible();
+    expect(
+      within(screen.getByTestId("runs-detail-final-output")).getByRole(
+        "tab",
+        { name: "Rendered" },
       ),
+    ).toBeVisible();
+    expect(
+      within(screen.getByTestId("runs-detail-final-output")).getByRole(
+        "tab",
+        { name: "Raw" },
+      ),
+    ).toBeVisible();
+    expect(
+      within(outputPanel).queryByRole("heading", { name: "Execution steps" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(outputPanel).queryByRole("heading", { name: "Diagnostics" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(outputPanel).queryByRole("heading", {
+        name: "Operational overview",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(outputPanel).queryByRole("heading", { name: "Run input" }),
+    ).not.toBeInTheDocument();
+    outputRender.unmount();
+
+    const executionRender = renderTab("execution");
+    const executionPanel = screen.getByTestId("runs-detail-tab-panel-execution");
+    const diagnostics = within(executionPanel).getByTestId(
+      "runs-detail-section-diagnostics",
     );
+    const executionSteps = within(executionPanel).getByTestId(
+      "runs-detail-section-execution-steps",
+    );
+    expect(diagnostics).toBeVisible();
+    expect(executionSteps).toBeVisible();
+    expect(
+      diagnostics.compareDocumentPosition(executionSteps) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      within(executionPanel).queryByRole("heading", { name: "Final output" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(executionPanel).queryByRole("heading", {
+        name: "Output provenance",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(executionPanel).queryByRole("heading", {
+        name: "Operational overview",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(executionPanel).queryByRole("heading", { name: "Run input" }),
+    ).not.toBeInTheDocument();
+    executionRender.unmount();
 
-    render(<RunsDetailPage />);
+    const overviewRender = renderTab("overview");
+    const overviewPanel = screen.getByTestId("runs-detail-tab-panel-overview");
+    expect(
+      within(overviewPanel).getByRole("heading", {
+        name: "Operational overview",
+      }),
+    ).toBeVisible();
+    expect(
+      within(overviewPanel).getByRole("heading", {
+        name: "Evidence availability",
+      }),
+    ).toBeVisible();
+    expect(
+      within(overviewPanel).queryByRole("heading", { name: "Final output" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(overviewPanel).queryByRole("heading", { name: "Execution steps" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(overviewPanel).queryByRole("heading", { name: "Run input" }),
+    ).not.toBeInTheDocument();
+    overviewRender.unmount();
 
-    const stack = screen.getByTestId("runs-stacked-workspace");
-    const expectedBlocks = [
-      ["operational-overview", "Operational overview"],
-      ["final-output", "Final output"],
-      ["output-provenance", "Output provenance"],
-      ["evidence-availability", "Evidence availability"],
-      ["diagnostics", "Diagnostics"],
-      ["execution-steps", "Execution steps"],
-      ["run-input", "Run input"],
-      ["input-provenance", "Input provenance"],
-      ["memory", "Memory"],
+    renderTab("input");
+    const inputPanel = screen.getByTestId("runs-detail-tab-panel-input");
+    expect(
+      within(inputPanel).getByRole("heading", { name: "Run input" }),
+    ).toBeVisible();
+    expect(
+      within(inputPanel).getByRole("heading", { name: "Input provenance" }),
+    ).toBeVisible();
+    expect(
+      within(screen.getByTestId("runs-detail-input")).getByRole("tab", {
+        name: "Rendered",
+      }),
+    ).toBeVisible();
+    expect(
+      within(screen.getByTestId("runs-detail-input")).getByRole("tab", {
+        name: "Raw",
+      }),
+    ).toBeVisible();
+    expect(
+      within(inputPanel).queryByRole("heading", { name: "Final output" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(inputPanel).queryByRole("heading", { name: "Execution steps" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(inputPanel).queryByRole("heading", {
+        name: "Evidence availability",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("scopes lower-frequency top-level tab panels to their mapped blocks", () => {
+    const run = buildRun({
+      memoryArtifacts: [
+        {
+          memoryId: "memory_safe",
+          summary: "Compact safe memory",
+          status: "active",
+          createdAt: NOW,
+          provenance: {
+            agentKey: "portfolio_manager",
+            agentVersion: 3,
+            createdByType: "agent",
+            runId: 42,
+            slot: "decision",
+            workflowKey: "market_review",
+          },
+          sourceGraphMetadata: null,
+        },
+      ],
+      memoryEvents: [buildMemoryEvent()],
+      packageProvenance: buildPackageProvenance({
+        resolvedModelConnections: [buildResolvedModelConnection({})],
+      }),
+      sourceRunId: 41,
+    });
+    const renderTab = (tab: RunDetailTabKey) => {
+      searchParamsMock = new URLSearchParams(`tab=${tab}`);
+      useRunMock.mockReturnValue(queryResult(run));
+      return render(<RunsDetailPage />);
+    };
+
+    const runtimeRender = renderTab("runtime");
+    const runtimePanel = screen.getByTestId("runs-detail-tab-panel-runtime");
+    [
       ["runtime-profile", "Runtime profile"],
       ["selected-strategies", "Selected strategies"],
       ["capability-matrix", "Capability matrix"],
-      ["token-accounting", "Token accounting"],
-      ["invocation-usage-rows", "Invocation usage rows"],
-      ["lineage", "Lineage"],
-    ];
-
-    expectedBlocks.forEach(([blockId, title]) => {
-      const block = within(stack).getByTestId(`runs-detail-section-${blockId}`);
+    ].forEach(([blockId, title]) => {
+      const block = within(runtimePanel).getByTestId(
+        `runs-detail-section-${blockId}`,
+      );
       expect(block).toHaveAttribute("data-run-detail-section-block", "true");
       expect(
         within(block).getByTestId(`runs-detail-section-icon-${blockId}`),
@@ -775,34 +894,82 @@ describe("RunsDetailPage", () => {
         within(block).getByTestId(`runs-detail-section-description-${blockId}`),
       ).toHaveClass("text-xs", "leading-5", "text-muted-foreground");
     });
+    expect(
+      within(runtimePanel).queryByRole("heading", { name: "Token accounting" }),
+    ).not.toBeInTheDocument();
+    runtimeRender.unmount();
+
+    const usageRender = renderTab("usage");
+    const usagePanel = screen.getByTestId("runs-detail-tab-panel-usage");
+    expect(
+      within(usagePanel).getByRole("heading", { name: "Token accounting" }),
+    ).toBeVisible();
+    expect(
+      within(usagePanel).getByRole("heading", {
+        name: "Invocation usage rows",
+      }),
+    ).toBeVisible();
+    expect(
+      within(usagePanel).queryByRole("heading", { name: "Runtime profile" }),
+    ).not.toBeInTheDocument();
+    usageRender.unmount();
+
+    const memoryRender = renderTab("memory");
+    const memoryPanel = screen.getByTestId("runs-detail-tab-panel-memory");
+    expect(within(memoryPanel).getByTestId("runs-memory-workspace")).toBeVisible();
+    expect(
+      within(memoryPanel).getByTestId("runs-memory-compact-artifacts"),
+    ).toHaveTextContent(/compact artifact slice/i);
+    expect(
+      within(memoryPanel).getByTestId(
+        "runs-memory-compact-artifact-memory_safe",
+      ),
+    ).toHaveTextContent(/Compact safe memory/i);
+    expect(
+      within(memoryPanel).queryByRole("heading", { name: "Lineage" }),
+    ).not.toBeInTheDocument();
+    memoryRender.unmount();
+
+    renderTab("lineage");
+    const lineagePanel = screen.getByTestId("runs-detail-tab-panel-lineage");
+    expect(within(lineagePanel).getByTestId("runs-lineage-workspace")).toBeVisible();
+    expect(
+      within(lineagePanel).queryByTestId("runs-memory-compact-artifacts"),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps final output and run input collapsed content free of extra top padding", () => {
     useRunMock.mockReturnValue(queryResult(buildRun()));
 
-    render(<RunsDetailPage />);
-
+    const outputRender = render(<RunsDetailPage />);
     const finalOutputCard = screen.getByTestId("runs-detail-final-output-card");
-    const runInputCard = screen.getByTestId("runs-detail-input-card");
-    const collapsedBlocks = [
-      { card: finalOutputCard, sectionId: "runs-detail-section-final-output" },
-      { card: runInputCard, sectionId: "runs-detail-section-run-input" },
-    ];
-
     expect(finalOutputCard).not.toHaveClass("min-h-[136px]");
+    expect(screen.getByTestId("runs-detail-section-final-output")).toHaveAttribute(
+      "data-state",
+      "closed",
+    );
+    expect(finalOutputCard.querySelector("[data-slot='card-content']")).toHaveClass(
+      "space-y-5",
+    );
+    expect(
+      finalOutputCard.querySelector("[data-slot='card-content']"),
+    ).not.toHaveClass("pt-6");
+    outputRender.unmount();
+
+    searchParamsMock = new URLSearchParams("tab=input");
+    render(<RunsDetailPage />);
+    const runInputCard = screen.getByTestId("runs-detail-input-card");
     expect(runInputCard).not.toHaveClass("min-h-[136px]");
-    collapsedBlocks.forEach(({ card, sectionId }) => {
-      expect(screen.getByTestId(sectionId)).toHaveAttribute(
-        "data-state",
-        "closed",
-      );
-      expect(card.querySelector("[data-slot='card-content']")).toHaveClass(
-        "space-y-5",
-      );
-      expect(card.querySelector("[data-slot='card-content']")).not.toHaveClass(
-        "pt-6",
-      );
-    });
+    expect(screen.getByTestId("runs-detail-section-run-input")).toHaveAttribute(
+      "data-state",
+      "closed",
+    );
+    expect(runInputCard.querySelector("[data-slot='card-content']")).toHaveClass(
+      "space-y-5",
+    );
+    expect(runInputCard.querySelector("[data-slot='card-content']")).not.toHaveClass(
+      "pt-6",
+    );
   });
 
   it.each([
@@ -823,9 +990,94 @@ describe("RunsDetailPage", () => {
       "data-run-mode",
       expectedMode,
     );
-    expect(screen.getByTestId("runs-stacked-workspace")).toBeVisible();
+    expect(screen.getByTestId("runs-detail-tab-panel-output")).toBeVisible();
+    expect(screen.queryByTestId("runs-stacked-workspace")).not.toBeInTheDocument();
 
     rendered.unmount();
+  });
+
+  it.each([
+    [
+      "valid tab wins over legacy hints",
+      "tab=input&mode=execution&inspect=step%3A1",
+      "",
+      "input",
+    ],
+    [
+      "missing tab infers execution from legacy mode and inspect",
+      "mode=execution&inspect=step%3A1",
+      "",
+      "execution",
+    ],
+    [
+      "memory mode with memory inspect infers memory",
+      "mode=memory&inspect=memory%3Amemory_701",
+      "",
+      "memory",
+    ],
+    [
+      "invalid tab infers memory from raw legacy state",
+      "tab=unknown&mode=memory&inspect=memory%3Amemory_701",
+      "",
+      "memory",
+    ],
+    ["metadata mode infers overview", "mode=metadata", "", "overview"],
+    ["tokens mode infers usage", "mode=tokens", "", "usage"],
+    ["step hash infers execution", "", "#step-2", "execution"],
+  ])(
+    "passes controlled top-level tab state when %s",
+    (_label, search, hash, expectedTab) => {
+      useRunMock.mockReturnValue(queryResult(buildRun()));
+      searchParamsMock = new URLSearchParams(search);
+      locationHashMock = hash;
+
+      render(<RunsDetailPage />);
+
+      expect(latestRunDetailSectionStackProps().selectedTab).toBe(expectedTab);
+    },
+  );
+
+  it("falls back to output without raw URL hints instead of inspection defaults", () => {
+    useRunMock.mockReturnValue(queryResult(buildRun({ status: "running" })));
+
+    render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
+      "data-run-mode",
+      "execution",
+    );
+    expect(latestRunDetailSectionStackProps().selectedTab).toBe("output");
+  });
+
+  it.each(["#run-context", "#memory-701"])(
+    "ignores unsupported hash %s for top-level tab inference",
+    (hash) => {
+      useRunMock.mockReturnValue(queryResult(buildRun()));
+      locationHashMock = hash;
+
+      render(<RunsDetailPage />);
+
+      expect(latestRunDetailSectionStackProps().selectedTab).toBe("output");
+    },
+  );
+
+  it("updates only the top-level tab while preserving detail search params", () => {
+    const initialSearch =
+      "tab=execution&inspect=invocation%3A1001&pane=output&rerun=1&fork=1&resumeStepIndex=1&invocationId=1001";
+    useRunMock.mockReturnValue(queryResult(buildRun()));
+    searchParamsMock = new URLSearchParams(initialSearch);
+
+    render(<RunsDetailPage />);
+    latestRunDetailSectionStackProps().onTabChange("input");
+    applyLatestSearchParamsUpdate(initialSearch);
+
+    expect(searchParamsMock.get("tab")).toBe("input");
+    expect(searchParamsMock.get("inspect")).toBe("invocation:1001");
+    expect(searchParamsMock.get("pane")).toBe("output");
+    expect(searchParamsMock.get("rerun")).toBe("1");
+    expect(searchParamsMock.get("fork")).toBe("1");
+    expect(searchParamsMock.get("resumeStepIndex")).toBe("1");
+    expect(searchParamsMock.get("invocationId")).toBe("1001");
   });
 
   it("defaults failed runs to execution and the first failing context", () => {
@@ -854,6 +1106,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
+    searchParamsMock = new URLSearchParams("tab=execution");
     const failedRender = render(<RunsDetailPage />);
 
     expect(screen.queryByTestId("runs-tab-console")).not.toBeInTheDocument();
@@ -881,7 +1134,7 @@ describe("RunsDetailPage", () => {
       "summary",
     );
     expect(screen.getByTestId("runs-overview-workspace")).toBeVisible();
-    expect(screen.getByTestId("runs-execution-outline")).toBeVisible();
+    expect(screen.queryByTestId("runs-execution-outline")).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("split-inspector-right-pane"),
     ).not.toBeInTheDocument();
@@ -926,10 +1179,24 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByTestId("runs-memory-inspector-empty"),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-memory-compact-artifacts"),
+    ).not.toBeInTheDocument();
     memoryRender.unmount();
 
-    useRunMock.mockReturnValue(queryResult(tokenlessRun));
     searchParamsMock = new URLSearchParams("mode=runtime");
+    const runtimeRender = render(<RunsDetailPage />);
+    const runtimePanel = screen.getByTestId("runs-detail-tab-panel-runtime");
+    expect(
+      within(runtimePanel).getByTestId("runs-runtime-profile-empty"),
+    ).toHaveTextContent(/no runtime profile was recorded/i);
+    expect(
+      within(runtimePanel).queryByTestId("runs-tokens-workspace"),
+    ).not.toBeInTheDocument();
+    runtimeRender.unmount();
+
+    useRunMock.mockReturnValue(queryResult(tokenlessRun));
+    searchParamsMock = new URLSearchParams("mode=tokens");
     const tokensRender = render(<RunsDetailPage />);
     const tokensWorkspace = screen.getByTestId("runs-tokens-workspace");
     expect(tokensWorkspace).toBeVisible();
@@ -1047,6 +1314,25 @@ describe("RunsDetailPage", () => {
     memoryRender.unmount();
 
     searchParamsMock = new URLSearchParams("mode=runtime");
+    const runtimeRender = render(<RunsDetailPage />);
+    const runtimePanel = screen.getByTestId("runs-detail-tab-panel-runtime");
+    expect(
+      within(runtimePanel).getByRole("heading", { name: "Runtime profile" }),
+    ).toBeVisible();
+    expect(
+      within(runtimePanel).getByRole("heading", {
+        name: "Selected strategies",
+      }),
+    ).toBeVisible();
+    expect(
+      within(runtimePanel).getByRole("heading", { name: "Capability matrix" }),
+    ).toBeVisible();
+    expect(
+      within(runtimePanel).queryByRole("heading", { name: "Token accounting" }),
+    ).not.toBeInTheDocument();
+    runtimeRender.unmount();
+
+    searchParamsMock = new URLSearchParams("mode=tokens");
     render(<RunsDetailPage />);
     const tokensWorkspace = screen.getByTestId("runs-tokens-workspace");
     expect(tokensWorkspace).toHaveTextContent(/token accounting/i);
@@ -1255,7 +1541,7 @@ describe("RunsDetailPage", () => {
     selectedInvocationRender.unmount();
 
     searchParamsMock = new URLSearchParams(
-      "mode=metadata&inspect=run&pane=input",
+      "mode=metadata&tab=memory&inspect=run&pane=input",
     );
     render(<RunsDetailPage />);
 
@@ -1265,13 +1551,12 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByRole("heading", { name: "Metadata" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(
-      /All clear/i,
-    );
-    expect(screen.getByTestId("runs-detail-input")).toHaveTextContent(/AAPL/i);
-    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(
-      /analysis\/span-1/i,
-    );
+    expect(screen.getByTestId("runs-detail-tab-panel-memory")).toBeVisible();
+    expect(
+      screen.queryByTestId("runs-detail-final-output"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-detail-input")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-step-1-trace-summary")).not.toBeInTheDocument();
     expect(
       screen.getByTestId("runs-memory-compact-artifact-memory_701"),
     ).toHaveTextContent(/AAPL decision memory/i);
@@ -1293,6 +1578,7 @@ describe("RunsDetailPage", () => {
 
   it("updates inspection URL state without clearing modal state", () => {
     useRunMock.mockReturnValue(queryResult(buildRun()));
+    searchParamsMock = new URLSearchParams("tab=execution");
 
     render(<RunsDetailPage />);
 
@@ -1529,7 +1815,6 @@ describe("RunsDetailPage", () => {
       ],
     });
     useRunMock.mockReturnValue(queryResult(run));
-
     const defaultRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-page")).toBeInTheDocument();
@@ -1555,6 +1840,7 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByTestId("split-inspector-right-pane"),
     ).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-detail-tab-panel-output")).toBeVisible();
     expect(
       screen.getAllByRole("heading", { name: /final output/i })[0],
     ).toBeVisible();
@@ -1562,11 +1848,11 @@ describe("RunsDetailPage", () => {
       screen.getByRole("heading", { name: /output provenance/i }),
     ).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: /input provenance/i }),
-    ).toBeVisible();
+      screen.queryByRole("heading", { name: /input provenance/i }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: /operational overview/i }),
-    ).toBeVisible();
+      screen.queryByRole("heading", { name: /operational overview/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-context-frame")).toHaveClass(
       "min-h-0",
       "overflow-y-auto",
@@ -1610,9 +1896,6 @@ describe("RunsDetailPage", () => {
     );
     expect(screen.getByTestId("runs-detail-state-summary")).toHaveTextContent(
       /failure: step 2/i,
-    );
-    expect(screen.getByTestId("runs-detail-identity-line")).toHaveTextContent(
-      /market review package/i,
     );
     expect(screen.getByTestId("runs-detail-metadata-line")).toHaveTextContent(
       /lineage from run #41/i,
@@ -1782,7 +2065,7 @@ describe("RunsDetailPage", () => {
     expect(screen.queryByText(/executed cost/i)).not.toBeInTheDocument();
 
     runtimeModeRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=metadata");
+    searchParamsMock = new URLSearchParams("mode=metadata&tab=execution");
     const auditModeRender = render(<RunsDetailPage />);
     expect(
       screen.queryByTestId("runs-detail-section-metadata"),
@@ -1800,10 +2083,11 @@ describe("RunsDetailPage", () => {
     ].forEach((testId) => {
       expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
     });
-    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(
-      /normalized/i,
-    );
-    expect(screen.getByTestId("runs-detail-input")).toHaveTextContent(/AAPL/i);
+    expect(screen.getByTestId("runs-detail-tab-panel-execution")).toBeVisible();
+    expect(
+      screen.queryByTestId("runs-detail-final-output"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-detail-input")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-2-trace-summary")).toHaveTextContent(
       /decision\/span-2/i,
     );
@@ -1852,7 +2136,9 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
 
     runInputRender.unmount();
-    searchParamsMock = new URLSearchParams("inspect=step:1");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&mode=execution&inspect=step:1",
+    );
     const stepSummaryRender = render(<RunsDetailPage />);
     expect(
       screen.queryByTestId("runs-inspection-split-layout"),
@@ -1914,7 +2200,9 @@ describe("RunsDetailPage", () => {
     ).toHaveTextContent(/research_agent/i);
 
     stepSummaryRender.unmount();
-    searchParamsMock = new URLSearchParams("inspect=step:1&pane=lineage");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&inspect=step:1&pane=lineage",
+    );
     const stepLineageRender = render(<RunsDetailPage />);
     const stepLineage = screen.getByTestId("runs-step-1-lineage-summary");
     const stepLineageDiagram = within(stepLineage).getByTestId(
@@ -1965,7 +2253,9 @@ describe("RunsDetailPage", () => {
     ).toBeVisible();
 
     invalidRunPaneRender.unmount();
-    searchParamsMock = new URLSearchParams("inspect=step:1&pane=request");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&mode=execution&inspect=step:1&pane=request",
+    );
     const invalidStepPaneRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-step-1-summary")).toBeInTheDocument();
     expect(
@@ -2099,6 +2389,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
+    searchParamsMock = new URLSearchParams("tab=runtime");
     const defaultRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-runtime-profile")).toBeVisible();
@@ -2282,7 +2573,7 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
 
     defaultRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=metadata");
+    searchParamsMock = new URLSearchParams("mode=metadata&tab=memory");
     render(<RunsDetailPage />);
     expect(
       screen.queryByTestId("runs-detail-section-metadata"),
@@ -2331,7 +2622,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
-    searchParamsMock = new URLSearchParams("mode=metadata");
+    searchParamsMock = new URLSearchParams("mode=metadata&tab=memory");
     render(<RunsDetailPage />);
 
     expect(
@@ -2533,7 +2824,9 @@ describe("RunsDetailPage", () => {
 
   it("renders a single-node step lineage diagram when no upstream source exists", () => {
     useRunMock.mockReturnValue(queryResult(buildRun()));
-    searchParamsMock = new URLSearchParams("inspect=step:1&pane=lineage");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&inspect=step:1&pane=lineage",
+    );
 
     render(<RunsDetailPage />);
 
@@ -2581,8 +2874,8 @@ describe("RunsDetailPage", () => {
           id: 43,
           input: { topic: "macro" },
           packageProvenance: buildPackageProvenance({
-            workflowPackageKey: "signaldeck_advisory_research_memory",
-            workflowPackageName: "SignalDeck Advisory Research with Memory",
+            workflowPackageKey: "market_review_package",
+            workflowPackageName: "Market Review Package",
           }),
           steps: [
             buildStep({
@@ -2627,7 +2920,7 @@ describe("RunsDetailPage", () => {
     );
 
     searchParamsMock = new URLSearchParams("mode=execution");
-    render(<RunsDetailPage />);
+    const packageTargetRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-execution-table")).toHaveClass(
       "border-transparent",
@@ -2637,7 +2930,7 @@ describe("RunsDetailPage", () => {
       /workflow package/i,
     );
     expect(screen.getByTestId("runs-detail-identity-line")).toHaveTextContent(
-      /SignalDeck Advisory Research with Memory/i,
+      /market review package/i,
     );
     expect(
       screen.queryByText(/captured package id: 12/i),
@@ -2651,6 +2944,8 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByText(/captured through invocation spans/i),
     ).not.toBeInTheDocument();
+
+    packageTargetRender.unmount();
   });
 
   it("renders structured final and aggregated output for nested payloads", () => {
@@ -2691,7 +2986,7 @@ describe("RunsDetailPage", () => {
     );
 
     defaultRender.unmount();
-    searchParamsMock = new URLSearchParams("inspect=step:1");
+    searchParamsMock = new URLSearchParams("tab=execution&mode=execution&inspect=step:1");
     render(<RunsDetailPage />);
 
     const aggregatedOutput = screen.getByTestId(
@@ -2753,7 +3048,7 @@ describe("RunsDetailPage", () => {
     expect(finalOutput.querySelector("table")).toBeInTheDocument();
 
     defaultRender.unmount();
-    searchParamsMock = new URLSearchParams("inspect=step:1");
+    searchParamsMock = new URLSearchParams("tab=execution&mode=execution&inspect=step:1");
     render(<RunsDetailPage />);
 
     const aggregatedOutput = screen.getByTestId(
@@ -2852,7 +3147,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
-    searchParamsMock = new URLSearchParams("pane=request");
+    searchParamsMock = new URLSearchParams("tab=execution&pane=request");
     const stepsRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
@@ -2964,6 +3259,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
+    searchParamsMock = new URLSearchParams("tab=overview");
     const queuedReasonRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-status")).toHaveTextContent(
@@ -3302,7 +3598,9 @@ describe("RunsDetailPage", () => {
   });
 
   it("updates URL params when the selected invocation fork action is clicked", () => {
-    searchParamsMock = new URLSearchParams("inspect=invocation:1001");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&mode=execution&inspect=invocation:1001",
+    );
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
 
     render(<RunsDetailPage />);
@@ -3332,8 +3630,12 @@ describe("RunsDetailPage", () => {
     expect(nextParams.has("stepIndex")).toBe(false);
   });
 
-  it("uses selected invocation fork actions and no ambiguous step shortcut for mixed or multi-invocation steps", () => {
-    searchParamsMock = new URLSearchParams("inspect=invocation:1001");
+  it(
+    "uses selected invocation fork actions and no ambiguous step shortcut for mixed or multi-invocation steps",
+    () => {
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&mode=execution&inspect=invocation:1001",
+    );
     useRunMock.mockReturnValue(
       queryResult(
         buildReplayableWorkflowRun({
@@ -3415,7 +3717,9 @@ describe("RunsDetailPage", () => {
       ).queryByRole("button", { name: /fork from this invocation/i }),
     ).not.toBeInTheDocument();
 
-    searchParamsMock = new URLSearchParams("inspect=invocation:1003");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&mode=execution&inspect=invocation:1003",
+    );
     rerender(<RunsDetailPage />);
 
     expect(

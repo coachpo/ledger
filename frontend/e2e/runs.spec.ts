@@ -214,31 +214,76 @@ test.describe("Runs inventory monitor", () => {
     await expect(
       page.getByRole("heading", { name: new RegExp(`Run #${runId}`) }),
     ).toContainText(targetKey);
-    await expect(
-      page.getByRole("heading", { name: "Operational overview" }),
-    ).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Final output" })).toBeVisible();
+
+    const tabs = page.getByTestId("runs-detail-tabs");
+    const expectedTabs = [
+      ["output", "Output"],
+      ["execution", "Execution"],
+      ["overview", "Overview"],
+      ["input", "Input"],
+      ["runtime", "Runtime"],
+      ["usage", "Usage"],
+      ["memory", "Memory"],
+      ["lineage", "Lineage"],
+    ] as const;
+    const tabList = tabs.getByRole("tablist", { name: /run detail sections/i });
+    const triggers = expectedTabs.map(([key]) =>
+      tabs.getByTestId(`runs-detail-tab-trigger-${key}`),
+    );
+
+    await expect(tabList.getByRole("tab")).toHaveCount(expectedTabs.length);
+    await expect(tabList.getByRole("tab")).toHaveText(
+      expectedTabs.map(([, label]) => label),
+    );
+    await expect(triggers[0]).toHaveAttribute("aria-selected", "true");
+    await expect(triggers[0]).toHaveAttribute("data-state", "active");
+    await expect(page.getByTestId("runs-detail-tab-panel-output")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-tab-panel-execution")).toHaveCount(0);
+    await expect(page.getByTestId("runs-detail-tab-panel-input")).toHaveCount(0);
+    await expect(page.getByTestId("runs-detail-tab-panel-runtime")).toHaveCount(0);
+    await expect(page.getByTestId("runs-detail-final-output")).toBeVisible();
     await expect(
       page.getByText("Rendered payload view for the immutable run result."),
     ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Output provenance" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Evidence availability" }),
-    ).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Diagnostics" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Run input" })).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Input provenance" }),
-    ).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Memory" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Runtime profile" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Token accounting" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Lineage" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Output provenance" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Diagnostics" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Execution steps" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Run input" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Input provenance" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Runtime profile" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Token accounting" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Lineage" })).toHaveCount(0);
     await expect(page.getByTestId("runs-detail-section-metadata")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: /^Metadata$/ })).toHaveCount(0);
+
+    await page.getByTestId("runs-detail-tab-trigger-execution").click();
+    await expect(page.getByTestId("runs-detail-tab-panel-execution")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-tab-panel-output")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Diagnostics" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Final output" })).toHaveCount(0);
+
+    await page.getByTestId("runs-detail-tab-trigger-input").click();
+    await expect(page.getByTestId("runs-detail-tab-panel-input")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Run input" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Input provenance" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Diagnostics" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Final output" })).toHaveCount(0);
+
+    await page.getByTestId("runs-detail-tab-trigger-runtime").click();
+    await expect(page.getByTestId("runs-detail-tab-panel-runtime")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Runtime profile" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Selected strategies" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Capability matrix" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Run input" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Final output" })).toHaveCount(0);
+
+    await page.getByTestId("runs-detail-tab-trigger-lineage").click();
+    await expect(page.getByTestId("runs-detail-tab-panel-lineage")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Lineage" })).toBeVisible();
+    await expect(page.getByTestId("runs-lineage-workspace")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Runtime profile" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Final output" })).toHaveCount(0);
 
     await page.getByTestId("runs-detail-rerun").click();
     const rerunDialog = page.getByRole("dialog", {

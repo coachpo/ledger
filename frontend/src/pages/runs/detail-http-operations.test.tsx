@@ -213,16 +213,11 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     ].forEach((testId) => {
       expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
     });
-    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(
-      /webhook_result/i,
-    );
-    expect(screen.getByTestId("runs-detail-input")).toHaveTextContent(/NVDA/i);
-    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(
-      /webhook_result\/span-operation/i,
-    );
-    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(
-      /webhook_retry\/span-operation-failed/i,
-    );
+    expect(screen.getByTestId("runs-detail-tab-panel-overview")).toBeVisible();
+    expect(screen.getByTestId("runs-overview-workspace")).toBeVisible();
+    expect(screen.queryByTestId("runs-detail-final-output")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-detail-input")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-step-1-trace-summary")).not.toBeInTheDocument();
 
     auditRender.unmount();
     searchParamsMock = new URLSearchParams("mode=summary");
@@ -258,7 +253,7 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     expect(searchParamsMock.has("inspect")).toBe(false);
     expect(searchParamsMock.has("pane")).toBe(false);
     selectedOperationRender.unmount();
-    searchParamsMock = new URLSearchParams("inspect=step:1");
+    searchParamsMock = new URLSearchParams("tab=execution&inspect=step:1");
     const stepSummaryRender = render(<RunsDetailPage />);
     expect(within(screen.getByTestId("runs-step-1-inline-evidence")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
     const aggregatedOutput = screen.getByTestId("runs-step-1-aggregated-output");
@@ -269,7 +264,9 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     expect(aggregatedOutput).not.toHaveTextContent("slack-secret-value");
     expect(aggregatedOutput).not.toHaveTextContent("body-secret-value");
     stepSummaryRender.unmount();
-    searchParamsMock = new URLSearchParams("inspect=operation:2001&pane=request");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&inspect=operation:2001&pane=request",
+    );
     const requestRender = render(<RunsDetailPage />);
     const requestMetadata = screen.getByTestId("runs-operation-2001-request-metadata");
     expect(requestMetadata).toHaveTextContent(/redacted/i);
@@ -278,17 +275,23 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     expect(screen.getByTestId("runs-operation-2001-request-metadata-raw")).toHaveAttribute("data-wide-payload", "scroll");
     requestRender.unmount();
 
-    searchParamsMock = new URLSearchParams("inspect=operation:2001&pane=response");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&inspect=operation:2001&pane=response",
+    );
     const responseRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-operation-2001-response-metadata")).toHaveTextContent(/statusCode/i);
     responseRender.unmount();
 
-    searchParamsMock = new URLSearchParams("inspect=operation:2001&pane=output");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&inspect=operation:2001&pane=output",
+    );
     const outputRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-operation-2001-output-preview")).toHaveTextContent(/queued/i);
     outputRender.unmount();
 
-    searchParamsMock = new URLSearchParams("inspect=operation:2002&pane=error");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&inspect=operation:2002&pane=error",
+    );
     const failedRender = render(<RunsDetailPage />);
     const activeEvidence = within(
       screen.getByTestId("runs-operation-2002-inline-evidence"),
