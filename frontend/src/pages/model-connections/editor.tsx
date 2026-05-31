@@ -686,14 +686,7 @@ export function ModelConnectionsEditorPage() {
               {isEditing ? "Edit Model Connection" : "Create Model Connection"}
             </span>
           }
-          description="Save endpoint settings and credentials. Backend evidence stays read-only and refreshes through saved-record actions."
-          meta={
-            <span>
-              Test Connection checks reachability on the saved endpoint only.
-              Probe Required Capabilities refreshes backend-owned capability
-              evidence separately.
-            </span>
-          }
+          description="Save endpoint settings and credentials."
           status={
             <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>
