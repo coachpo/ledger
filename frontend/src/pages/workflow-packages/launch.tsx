@@ -723,7 +723,7 @@ function StickyLaunchActionBar({
       data-testid="workflow-package-run-actions"
     >
       <p className="min-w-0 text-sm text-muted-foreground">
-        Preflight the package, then launch a run with the runtime JSON below.
+        Review the runtime JSON above, preflight the package, then launch a run.
       </p>
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
         {launchDisabledReason ? (
@@ -1331,15 +1331,6 @@ export function WorkflowPackageLaunchPage() {
         workflowKey={resolvedWorkflowKey}
       />
 
-      <StickyLaunchActionBar
-        launchDisabledReason={launchDisabledReason}
-        launchPending={createLaunch.isPending}
-        launchQueryPending={launchQuery.isPending}
-        preflightPending={preflightPackage.isPending}
-        onLaunch={() => void launchPackage()}
-        onPreflight={() => void runLaunchPreflight()}
-      />
-
       <div data-testid="workflow-package-launch-tab">
         <Card className="min-w-0 gap-4" data-testid="workflow-package-run-config">
           <CardHeader className="px-4 pt-4">
@@ -1429,6 +1420,15 @@ export function WorkflowPackageLaunchPage() {
           </CardContent>
         </Card>
       </div>
+
+      <StickyLaunchActionBar
+        launchDisabledReason={launchDisabledReason}
+        launchPending={createLaunch.isPending}
+        launchQueryPending={launchQuery.isPending}
+        preflightPending={preflightPackage.isPending}
+        onLaunch={() => void launchPackage()}
+        onPreflight={() => void runLaunchPreflight()}
+      />
     </WorkspacePageShell>
   );
 }
