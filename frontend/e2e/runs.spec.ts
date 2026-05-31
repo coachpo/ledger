@@ -214,14 +214,31 @@ test.describe("Runs inventory monitor", () => {
     await expect(
       page.getByRole("heading", { name: new RegExp(`Run #${runId}`) }),
     ).toContainText(targetKey);
+    await expect(
+      page.getByRole("heading", { name: "Operational overview" }),
+    ).toBeVisible();
     await expect(page.getByRole("heading", { name: "Final output" })).toBeVisible();
     await expect(
       page.getByText("Rendered payload view for the immutable run result."),
     ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Output provenance" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Evidence availability" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Diagnostics" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Run input" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Input provenance" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Memory" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Runtime profile" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Metadata" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Token accounting" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Lineage" })).toBeVisible();
+    await expect(page.getByTestId("runs-detail-section-metadata")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /^Metadata$/ })).toHaveCount(0);
 
     await page.getByTestId("runs-detail-rerun").click();
     const rerunDialog = page.getByRole("dialog", {
