@@ -2,7 +2,7 @@
 
 > Inherits `/AGENTS.md`. This file governs the live reference docs in `docs/`.
 >
-> Status: Docs consolidation reference for branch `feature/ui` at `a6aeea0`.
+> Status: Docs consolidation reference for branch `main` at `11e6d64`.
 
 ## OVERVIEW
 
@@ -20,7 +20,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | ------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Product scope      | `prd.md`          | Goals, non-goals, product areas, success criteria, and package-first platform framing.                                                          |
 | Requirements       | `requirements.md` | Functional/nonfunctional requirements and acceptance criteria.                                                                                  |
-| Technical behavior | `spec.md`         | Runtime topology, API conventions, backend/frontend architecture, validation gates, platform contracts, memory, and removed-surface boundaries. |
+| Technical behavior | `spec.md`         | Runtime topology, API conventions, Scheduled Tasks, backend/frontend architecture, validation gates, platform contracts, memory, and removed-surface boundaries. |
 | Data model         | `data-model.md`   | Current tables, JSONB contracts, persistence boundaries, memory tables, and schema-repair rules.                                                |
 | Test strategy      | `test-plan.md`    | Quality gates, coverage matrix, E2E ports, route-family coverage, and stale-claim guards.                                                       |
 | Docs governance    | `AGENTS.md`       | Ownership rules, obsolete-content rules, anti-patterns, and consolidation policy.                                                               |
@@ -43,6 +43,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Document `/api/memory` and `/memory` as platform-core explicit-private-scope memory surfaces; keep runtime shared namespace grants server-derived and keep historical agent reports plus `signaldeck.reports.lookup` under finance/report ownership.
 - Document Model Connection compatibility as backend-owned read/provenance truth; public writes may select `protocolProfile` but must not author capabilities, runtime policies, probe TTL, `apiStyle`, or `compatibilityProfile`.
 - Document tool-call recovery as typed and narrow: only pre-dispatch parser/schema/argument validation failures can use the bounded model-feedback retry path.
+- Document Scheduled Tasks as the package-first automation surface: `/api/schedules`, `/scheduled-tasks`, structured recurrence, scheduler materialization, fire history, and queued run provenance.
 - Finance-specific examples must not silently rewrite shared platform contracts.
 - PRD and requirements overlap is intentional: product framing lives in `prd.md`, testable requirements live in `requirements.md`.
 
