@@ -16,10 +16,10 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | ------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Run inventory      | `list.tsx`                                                            | filters, polling monitor, progress, token usage, and timing summary                                                                                                       |
 | Run detail         | `detail.tsx`                                                          | progress cards, lineage diagrams, inspection panes, rerun dialog, invocation-specific fork dialog, trace linkage, final output, memory evidence, and per-agent accordions |
-| Fork/rerun helpers | `rerun-dialog.tsx`, `inspection-state.ts`                             | root-parameter rerun modal plus URL-backed inspection-pane state                                                                                                          |
+| Fork/rerun helpers | `rerun-dialog.tsx`, `inspection-state.ts`, `detail-tabs.ts`            | root-parameter rerun modal plus URL-backed inspection-pane and tab state                                                                                                  |
 | Run hooks          | `../../hooks/use-runs.ts`                                             | list/detail queries, rerun draft/create hooks, fork draft/create hooks, and refetch intervals                                                                             |
 | Shared formatting  | `../../lib/format.ts`, `../platform-resource-shared.tsx`              | timestamps, badges, and JSON helpers                                                                                                                                      |
-| Route coverage     | `list.test.tsx`, `detail.test.tsx`, `detail-http-operations.test.tsx` | list polling, detail rendering, fork/rerun behavior, and HTTP operation coverage                                                                                          |
+| Route coverage     | `list.test.tsx`, `detail.test.tsx`, `detail-tabs.test.ts`, `detail-http-operations.test.tsx` | list polling, detail rendering, URL tab resolution, fork/rerun behavior, and HTTP operation coverage                                                                      |
 
 ## CONVENTIONS
 
@@ -50,10 +50,10 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 ```bash
 cd frontend
-pnpm test:run src/pages/runs/list.test.tsx src/pages/runs/detail.test.tsx src/pages/runs/detail-http-operations.test.tsx
+pnpm test:run src/pages/runs/list.test.tsx src/pages/runs/detail.test.tsx src/pages/runs/detail-tabs.test.ts src/pages/runs/detail-http-operations.test.tsx
 ```
 
 ## NOTES
 
-- The detail page uses URL-backed route state for rerun, fork, and inspection-pane views so deep links can reopen the same context.
+- The detail page uses URL-backed route state for rerun, fork, selected tabs, and inspection-pane views so deep links can reopen the same context.
 - Fork edits one selected agent invocation input only; rerun edits root launch parameters only.
