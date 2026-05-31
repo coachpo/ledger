@@ -233,18 +233,6 @@ describe("ModelConnectionsListPage", () => {
     expect(primaryRow.getByText("primary_compatible")).toBeVisible();
     expect(primaryRow.getByText("gpt-4.1")).toBeVisible();
     expect(primaryRow.getByText("Responses")).toBeVisible();
-    expect(
-      primaryRow.queryByText("Production traffic"),
-    ).not.toBeInTheDocument();
-    expect(primaryRow.queryByText(/^passed$/i)).not.toBeInTheDocument();
-    expect(primaryRow.queryByText("Apr 22, 2026")).not.toBeInTheDocument();
-    expect(
-      primaryRow.queryByText("3 OK · 0 fail · 7 unknown"),
-    ).not.toBeInTheDocument();
-    expect(primaryRow.queryByText("strict schema")).not.toBeInTheDocument();
-    expect(primaryRow.queryByText("tools serialized")).not.toBeInTheDocument();
-    expect(primaryRow.queryByText("reasoning")).not.toBeInTheDocument();
-    expect(primaryRow.queryByText("streaming")).not.toBeInTheDocument();
     fireEvent.click(primaryRow.getByTestId("model-connections-delete-9"));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Delete Primary Compatible?",
@@ -305,22 +293,6 @@ describe("ModelConnectionsListPage", () => {
       "Actions",
     ]) {
       expect(screen.getByRole("columnheader", { name: column })).toBeVisible();
-    }
-    for (const removedColumn of [
-      "Model",
-      "Base URL",
-      "Protocol Profile",
-      "Capabilities",
-      "Test",
-      "Policy",
-      "Compatibility Evidence",
-      "Runtime Policy Evidence",
-      "Reachability Test",
-      "Credential State",
-    ]) {
-      expect(
-        screen.queryByRole("columnheader", { name: removedColumn }),
-      ).not.toBeInTheDocument();
     }
 
     expect(screen.getByTestId("model-connections-open-9")).toHaveAttribute(

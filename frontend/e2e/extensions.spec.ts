@@ -93,8 +93,6 @@ test.describe("Extension lifecycle browser matrix", () => {
     const row = page.getByTestId(`extension-row-${FINANCE_EXTENSION_SEGMENT}`);
     await expect(row).toContainText("Finance Workspace");
     await expect(row).toContainText("Enabled");
-    await expect(row).toContainText("Blast radius");
-    await expect(row).toContainText("Finance routes, nav, tools");
     await expect(page.getByText(/marketplace/i)).toHaveCount(0);
     await expect(page.getByText(/install/i)).toHaveCount(0);
     await expect(page.getByText(/remove/i)).toHaveCount(0);

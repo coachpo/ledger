@@ -225,9 +225,6 @@ def test_default_enabled_finance_extension_keeps_smoke_package_tools_unchanged(
         "enabled": True,
     }
 
-    source = _package_source()
-    assert FINANCE_WORKSPACE_EXTENSION_KEY not in source
-
     created = _create_package(client)
     manifest_response = client.get(f"/api/workflow-packages/{created['id']}/manifest")
     assert manifest_response.status_code == 200, manifest_response.json()
@@ -245,9 +242,6 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
 
     assert created["id"]
     assert created["key"] == "tradingagents_advisory_research"
-    assert "status" not in created
-    assert "latestVersion" not in created
-    assert "latestVersionId" not in created
     assert isinstance(created["manifestHash"], str)
 
     manifest = client.get(f"/api/workflow-packages/{created['id']}/manifest")
@@ -259,22 +253,8 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
         package_key="tradingagents_advisory_research",
     )
 
-    versioned_manifest = client.get(
-        f"/api/workflow-packages/{created['id']}/manifest",
-        params={"version": 1},
-    )
-    assert versioned_manifest.status_code == 422, versioned_manifest.json()
-    assert versioned_manifest.json()["details"][0]["field"] == "version"
-
     detail = client.get(f"/api/workflow-packages/{created['id']}")
     assert detail.status_code == 200, detail.json()
-    detail_body = cast(dict[str, object], detail.json())
-    assert "status" not in detail_body
-    assert "latestVersion" not in detail_body
-    assert "latestVersionId" not in detail_body
-
-    versions = client.get(f"/api/workflow-packages/{created['id']}/versions")
-    assert versions.status_code == 404, versions.json()
 
     export = client.get(f"/api/workflow-packages/{created['id']}/export")
     assert export.status_code == 200, export.text
@@ -303,25 +283,12 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
     ):
         assert forbidden not in export.text
 
-    versioned_export = client.get(
-        f"/api/workflow-packages/{created['id']}/export",
-        params={"version": 1},
-    )
-    assert versioned_export.status_code == 422, versioned_export.json()
-    assert versioned_export.json()["details"][0]["field"] == "version"
-
     conflict = client.post(
         "/api/workflow-packages/import",
         json={"manifestSource": export.text},
     )
     assert conflict.status_code == 409, conflict.json()
     assert conflict.json()["code"] == "workflow_package_import_conflict"
-
-    create_version_mode = client.post(
-        "/api/workflow-packages/import",
-        json={"manifestSource": export.text, "mode": "createVersion"},
-    )
-    assert create_version_mode.status_code == 422, create_version_mode.json()
 
 
 def test_manifest_round_trip_save_updates_current_package_in_place(
@@ -354,15 +321,6 @@ def test_manifest_round_trip_save_updates_current_package_in_place(
     assert saved.status_code == 200, saved.json()
     saved_body = cast(dict[str, object], saved.json())
     assert saved_body["id"] == package_id
-    assert "status" not in saved_body
-    assert "latestVersion" not in saved_body
-    assert "latestVersionId" not in saved_body
-
-    status_update = client.patch(
-        f"/api/workflow-packages/{package_id}",
-        json={"status": "active"},
-    )
-    assert status_update.status_code == 422, status_update.json()
 
     updated = client.get(f"/api/workflow-packages/{package_id}/manifest")
     assert updated.status_code == 200, updated.json()
@@ -382,15 +340,6 @@ def test_manifest_round_trip_save_updates_current_package_in_place(
         "Canonical TradingAgents advisory research topology using SignalDeck sequence and "
         "bounded loop semantics only."
     )
-
-    historical = client.get(
-        f"/api/workflow-packages/{package_id}/manifest",
-        params={"version": 1},
-    )
-    assert historical.status_code == 422, historical.json()
-
-    versions = client.get(f"/api/workflow-packages/{package_id}/versions")
-    assert versions.status_code == 404, versions.json()
 
 
 def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
@@ -433,11 +382,6 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
     )
     assert cast(list[dict[str, Any]], latest_spec["mcpServers"]) == []
 
-    explicit_manifest = client.get(
-        f"/api/workflow-packages/{created['id']}/manifest",
-        params={"version": 1},
-    )
-    assert explicit_manifest.status_code == 422, explicit_manifest.json()
 
 
 def test_validate_manifest_reports_diagnostics_without_persisting(

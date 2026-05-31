@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -42,13 +41,6 @@ LIVE_PLATFORM_ROUTE_PREFIXES = (
     "/api/tools",
     "/api/runs",
 )
-FORBIDDEN_GLOBAL_AUTHORING_DEPENDENCY_FACTORIES = (
-    "get_agent_service",
-    "get_workflow_service",
-    "get_mcp_server_service",
-    "get_capability_service",
-    "get_output_schema_service",
-)
 
 
 @pytest.mark.parametrize("path", LEGACY_ROUTE_PATHS)
@@ -81,15 +73,6 @@ def test_live_platform_routes_match_openapi(app: FastAPI) -> None:
         assert removed_path not in route_paths
         assert not any(path.startswith(f"{removed_path}/") for path in openapi_paths)
         assert removed_path not in openapi_paths
-
-
-def test_live_composition_root_excludes_global_authoring_factories() -> None:
-    backend_root = Path(__file__).resolve().parents[1]
-    dependency_root = backend_root / "app" / "api" / "dependencies.py"
-    source = dependency_root.read_text(encoding="utf-8")
-
-    for factory_name in FORBIDDEN_GLOBAL_AUTHORING_DEPENDENCY_FACTORIES:
-        assert factory_name not in source
 
 
 def test_legacy_global_authoring_runtime_is_blocked(

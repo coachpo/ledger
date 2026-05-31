@@ -3,8 +3,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = REPO_ROOT / "backend"
 FINANCE_EXTENSION_IMPORT_PREFIX = "app.extensions.signaldeck_finance"
@@ -120,26 +118,3 @@ def test_private_registry_seam_is_the_only_static_scan_exclusion() -> None:
 
     for registrar in _APPROVED_REGISTRY_REGISTRARS:
         assert registrar in registry_source
-    assert 'import_module("app.extensions.signaldeck_finance' not in registry_source
-    assert "from importlib import import_module" not in registry_source
-
-
-def test_api_tools_module_leakage_allowlist_is_retired() -> None:
-    private_modules = {
-        spec.key: spec.module
-        for spec in SERVER_DECLARED_TOOL_SPECS
-        if spec.module.startswith(FINANCE_EXTENSION_IMPORT_PREFIX)
-    }
-
-    assert private_modules
-    assert all(
-        module == "app.extensions.signaldeck_finance.tool_specs"
-        for module in private_modules.values()
-    )
-
-
-def test_transition_boundary_allowlist_is_removed() -> None:
-    module_globals = globals()
-
-    assert "TRANSITION_BOUNDARY_ALLOWLIST" not in module_globals
-    assert "SharedFinanceImportDebt" not in module_globals

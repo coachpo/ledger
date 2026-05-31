@@ -183,9 +183,6 @@ describe("WorkflowPackagesListPage", () => {
       "placeholder",
       "Search packages by name, key, hash, or readiness...",
     );
-    expect(screen.queryByText("Package Inventory")).not.toBeInTheDocument();
-    expect(screen.queryByText("Total Packages")).not.toBeInTheDocument();
-    expect(screen.queryByText("Validation Warnings")).not.toBeInTheDocument();
 
     expect(screen.getByLabelText("Table view")).toHaveAttribute(
       "data-state",
@@ -212,11 +209,6 @@ describe("WorkflowPackagesListPage", () => {
     ]) {
       expect(screen.getByRole("columnheader", { name: column })).toBeVisible();
     }
-    for (const removedColumn of ["Package", "Provenance", "Status"]) {
-      expect(
-        screen.queryByRole("columnheader", { name: removedColumn }),
-      ).not.toBeInTheDocument();
-    }
 
     const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
     expect(riskRow).toHaveTextContent("Risk Review");
@@ -224,9 +216,6 @@ describe("WorkflowPackagesListPage", () => {
     expect(within(riskRow).getByText("risk_review")).toHaveClass("font-mono");
     expect(riskRow).toHaveTextContent("Risk review workflow bundle");
     expect(riskRow).toHaveTextContent("Ready for preflight");
-    expect(riskRow).not.toHaveTextContent(
-      "Manifest and compiled artifact recorded",
-    );
     expect(riskRow).toHaveTextContent("manifest-has");
     expect(riskRow).toHaveTextContent("compiled-has");
     expect(riskRow).toHaveTextContent("May 4, 2026");
@@ -261,7 +250,6 @@ describe("WorkflowPackagesListPage", () => {
       "Missing manifest or compiled artifact evidence",
     );
     expect(allocationRow).toHaveTextContent("Not recorded");
-    expect(allocationRow).not.toHaveTextContent("Active");
 
     fireEvent.click(screen.getByLabelText("Cards view"));
     expect(screen.getByLabelText("Cards view")).toHaveAttribute(

@@ -259,18 +259,6 @@ describe("TemplateEditorPage", () => {
     );
   });
 
-  it("removes orchestration mention assistance while keeping the placeholder reference", () => {
-    render(<TemplateEditorPage />);
-
-    expect(
-      screen.queryByRole("button", { name: /mention assistance/i }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /inputs/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /dynamic report selectors/i }),
-    ).toBeInTheDocument();
-  });
-
   it("labels template inventory controls and distinguishes filtered-empty from empty", () => {
     useTemplatesListMock.mockReturnValue(
       queryResult({

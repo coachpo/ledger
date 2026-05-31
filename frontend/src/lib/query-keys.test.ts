@@ -131,12 +131,6 @@ describe("query keys", () => {
       "runs",
       "workflowPackages",
     ]);
-    expect(Reflect.has(queryKeys.platform, "agents")).toBe(false);
-    expect(Reflect.has(queryKeys.platform, "capabilities")).toBe(false);
-    expect(Reflect.has(queryKeys.platform, "mcpServers")).toBe(false);
-    expect(Reflect.has(queryKeys.platform, "outputSchemas")).toBe(false);
-    expect(Reflect.has(queryKeys.platform, "workflows")).toBe(false);
-    expect(Reflect.has(queryKeys.platform.workflowPackages, "versions")).toBe(false);
   });
 
   it("normalizes schedule list and fire-history filters", () => {

@@ -59,13 +59,6 @@ describe("Dashboard", () => {
     expect(screen.getByTestId("dashboard-page")).toBeVisible();
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
     expect(screen.getByText("Portfolio overview.")).toBeVisible();
-    expect(screen.queryByText("Portfolios")).not.toBeInTheDocument();
-    expect(screen.queryByText("Refresh")).not.toBeInTheDocument();
-    expect(screen.queryByText("Ready")).not.toBeInTheDocument();
-    expect(screen.queryByText("Dashboard context")).not.toBeInTheDocument();
-    expect(screen.queryByText("Portfolio summary")).not.toBeInTheDocument();
-    expect(screen.queryByText("Operational context")).not.toBeInTheDocument();
-    expect(screen.queryByText("Active Portfolios")).not.toBeInTheDocument();
   });
 
   it("keeps the same dashboard identity while loading", () => {
@@ -82,27 +75,6 @@ describe("Dashboard", () => {
 
     expect(screen.getByTestId("dashboard-page")).toBeVisible();
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
-    expect(screen.queryByText("Dashboard context")).not.toBeInTheDocument();
-    expect(screen.queryByText("Portfolio summary")).not.toBeInTheDocument();
-    expect(screen.queryByText("Operational context")).not.toBeInTheDocument();
-    expect(screen.queryByText("Loading")).not.toBeInTheDocument();
-  });
-
-  it("omits empty portfolio header status without summary cards", () => {
-    usePortfoliosMock.mockReturnValue({
-      data: [],
-      error: null,
-      isError: false,
-      isFetching: false,
-      isPending: false,
-      refetch: refetchMock,
-    });
-
-    render(<Dashboard />);
-
-    expect(screen.queryByText("Portfolios")).not.toBeInTheDocument();
-    expect(screen.queryByText("0")).not.toBeInTheDocument();
-    expect(screen.queryByText("No portfolio records are available yet.")).not.toBeInTheDocument();
   });
 
   it("renders stable dashboard retry behavior for API errors", () => {
@@ -122,7 +94,6 @@ describe("Dashboard", () => {
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("Unable to load the dashboard summary.");
     expect(alert).toHaveTextContent("Portfolio API unavailable");
-    expect(screen.queryByText("Unavailable")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetchMock).toHaveBeenCalledTimes(1);

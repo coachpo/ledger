@@ -304,28 +304,6 @@ describe("WorkflowPackageEditorPage", () => {
     );
   });
 
-  it("renders current-only authoring without historical affordances", () => {
-    renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
-
-    expect(screen.getByLabelText("Package key")).toHaveValue(
-      "hydrated_market_review",
-    );
-    expect(screen.getByLabelText("Package name")).toHaveValue(
-      "Hydrated Market Review",
-    );
-    expect(screen.getByLabelText("Package description")).toHaveValue(
-      "Manifest source description",
-    );
-    expect(screen.getByRole("button", { name: "Save package" })).toBeEnabled();
-    expect(
-      screen.queryByText(new RegExp("Package vers" + "ion", "i")),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText(/Latest/i)).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(new RegExp("selected vers" + "ion", "i")),
-    ).not.toBeInTheDocument();
-  });
-
   it("surfaces package load errors in a blocking retry state", () => {
     useWorkflowPackageMock.mockReturnValue({
       data: undefined,

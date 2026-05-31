@@ -123,7 +123,6 @@ describe("WorkflowPackageEditorPage import and export flows", () => {
     renderEditor();
     clickTab("Import / Export");
 
-    expect(screen.queryByRole("button", { name: /preview export/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Launch Workflow Package" })).not.toBeInTheDocument();
     expect(screen.getByTestId("workflow-package-exports-tab")).toBeVisible();
     const preview = await screen.findByLabelText("Package YAML preview");

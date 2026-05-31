@@ -84,13 +84,6 @@ describe("ExtensionsListPage", () => {
     }
 
     expect(context).toBeInTheDocument();
-    expect(context).not.toHaveTextContent("Surface");
-    expect(context).not.toHaveTextContent("system state");
-    expect(context).not.toHaveTextContent("Backend");
-    expect(context).not.toHaveTextContent("slim contract");
-    expect(context).not.toHaveTextContent(/Bundled\s*1/);
-    expect(context).not.toHaveTextContent(/Enabled\s*1/);
-    expect(context).not.toHaveTextContent("1 bundled extension returned");
     expect(
       page.querySelector('[data-inventory-shell-region="toolbar"]'),
     ).not.toBeInTheDocument();

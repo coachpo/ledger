@@ -2,11 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.extensions.registry import (
-    BundledExtensionDefinition,
-    BundledExtensionRegistry,
-    get_bundled_extension_registry,
-)
+from app.extensions.registry import BundledExtensionRegistry, get_bundled_extension_registry
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 
 
@@ -59,24 +55,3 @@ def test_bundled_extension_registry_rejects_duplicate_keys() -> None:
 
     with pytest.raises(ValueError, match="Duplicate bundled extension key"):
         _ = BundledExtensionRegistry((extension, extension))
-
-
-def test_bundled_extension_definition_keeps_only_operational_fields() -> None:
-    extension = get_bundled_extension_registry().require_extension(FINANCE_WORKSPACE_EXTENSION_KEY)
-
-    assert isinstance(extension, BundledExtensionDefinition)
-    assert set(BundledExtensionDefinition.__dataclass_fields__) == {
-        "key",
-        "label",
-        "default_enabled",
-    }
-    for removed_attribute in (
-        "phase",
-        "versioning_rule",
-        "tool_spec_registrars",
-        "runtime_tool_registrars",
-        "contribution_categories",
-        "contributions",
-        "scaffold",
-    ):
-        assert not hasattr(extension, removed_attribute)

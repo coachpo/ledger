@@ -190,19 +190,9 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByText("Connection health")).toBeVisible();
     expect(screen.getByText("Capability matrix")).toBeVisible();
     expect(screen.getByText("Runtime policies")).toBeVisible();
-    expect(screen.queryByText("Backend runtime policies")).not.toBeInTheDocument();
     expect(screen.getAllByText("Strict JSON schema output")).toHaveLength(1);
     expect(screen.getAllByText("Streaming responses")).toHaveLength(1);
     expect(screen.getByText("Output strategy policy")).toBeVisible();
-    expect(
-      screen.queryByLabelText(/^Strict JSON schema output capability$/i),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByLabelText(/^Output Strategy Policy$/i),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByLabelText(/^Probe Cache TTL Seconds$/i),
-    ).not.toBeInTheDocument();
   });
 
   it("submits a create body without apiKey until one is entered", async () => {

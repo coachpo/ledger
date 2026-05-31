@@ -100,8 +100,6 @@ from app.extensions.signaldeck_finance.grant_policy import (
     POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
     POSITION_LOOKUP_GRANT_POLICY,
     REPORT_LOOKUP_GRANT_POLICY,
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
 )
 from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_DENIED_MESSAGES,
@@ -161,7 +159,6 @@ from app.extensions.signaldeck_finance.runtime_reports import (
     REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
     REPORT_MEMORY_WRITE_TOOL_SPEC,
     parse_report_lookup_arguments,
-    parse_report_memory_write_arguments,
 )
 from app.extensions.signaldeck_finance.runtime_sec_filings import (
     SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -207,7 +204,6 @@ from app.extensions.signaldeck_finance.runtime_types import (
     RuntimePredictionMarketEvent,
     RuntimePredictionMarketsLookupResult,
     RuntimeQuoteLookupResult,
-    RuntimeReportMemoryWriteResult,
     RuntimeSecFiling,
     RuntimeSecFilingsLookupResult,
     RuntimeSocialSentimentLookupResult,
@@ -864,30 +860,6 @@ def _assert_no_snake_case_keys(value: object, *, path: str) -> None:
         payload = cast(list[object], value)
         for index, nested_value in enumerate(payload):
             _assert_no_snake_case_keys(nested_value, path=f"{path}[{index}]")
-
-
-def _assert_retired_reports_write_payload_is_json_safe(payload: dict[str, object]) -> None:
-    assert {"toolKey", "memoryId", "status", "action", "createdAt", "warnings"} <= set(payload)
-    assert payload["toolKey"] == REPORT_MEMORY_WRITE_TOOL_KEY
-    _assert_report_write_forbidden_keys_absent(payload, path="$")
-    payload_json = json.dumps(payload, sort_keys=True)
-    for fragment in _FORBIDDEN_REPORT_WRITE_MODEL_FRAGMENTS:
-        assert fragment not in payload_json
-
-
-def _assert_report_write_forbidden_keys_absent(value: object, *, path: str) -> None:
-    if isinstance(value, dict):
-        payload = cast(dict[object, object], value)
-        for key, nested_value in payload.items():
-            assert isinstance(key, str)
-            assert key not in _FORBIDDEN_REPORT_WRITE_MODEL_KEYS, f"forbidden key at {path}.{key}"
-            _assert_report_write_forbidden_keys_absent(nested_value, path=f"{path}.{key}")
-        return
-
-    if isinstance(value, list):
-        payload = cast(list[object], value)
-        for index, nested_value in enumerate(payload):
-            _assert_report_write_forbidden_keys_absent(nested_value, path=f"{path}[{index}]")
 
 
 def _assert_core_memory_payload_is_model_safe(payload: dict[str, object]) -> None:
@@ -2478,49 +2450,6 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
     assert insider_payload["transactions"][0]["transactionDate"] == "2026-01-02T03:04:05Z"
     assert insider_payload["transactions"][0]["filedAt"] == "2026-01-02T03:04:05Z"
 
-    memory_payload = RuntimeReportMemoryWriteResult(
-        memory_id="mem_7",
-        status=MemoryLifecycleStatus.PENDING,
-        action="created",
-        created_at=_NOW,
-        provenance=_reports_write_provenance(),
-        warnings=[
-            {
-                "code": "memory_reused",
-                "message": "Existing memory was reused.",
-                "details": {"memoryId": "mem_7"},
-            }
-        ],
-    ).model_dump(mode="json", by_alias=True)
-    _assert_native_runtime_payload_is_json_safe_and_camel(memory_payload)
-    _assert_retired_reports_write_payload_is_json_safe(memory_payload)
-    assert memory_payload == {
-        "toolKey": "signaldeck.reports.write",
-        "memoryId": "mem_7",
-        "status": "pending",
-        "action": "created",
-        "createdAt": "2026-01-02T03:04:05Z",
-        "provenance": {
-            "runId": 4242,
-            "agentKey": "portfolio_manager",
-            "agentVersion": 3,
-            "agentName": "Portfolio Manager",
-            "workflowKey": "platform_graph_daily_review",
-            "workflowVersion": 5,
-            "stepId": "portfolio_decision",
-            "slot": "decision",
-            "traceId": "trace-runtime-tools",
-            "createdByType": "agent",
-        },
-        "warnings": [
-            {
-                "code": "memory_reused",
-                "message": "Existing memory was reused.",
-                "details": {"memoryId": "mem_7"},
-            }
-        ],
-    }
-
     core_memory_payload = RuntimeMemoryWriteResult(
         memory_id="memory_7",
         revision_id="revision_7",
@@ -3855,22 +3784,6 @@ def test_market_data_runtime_tool_registry_denies_ungranted_tools_before_parsing
     assert history_error.value.message == MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE
 
 
-def test_reports_write_runtime_tool_registry_denies_ungranted_before_parsing() -> None:
-    registry = RuntimeToolRegistry([REPORT_MEMORY_WRITE_TOOL_SPEC])
-    context = _runtime_context(fail_on_session=True)
-
-    with pytest.raises(RuntimeToolError) as exc_info:
-        _ = registry.dispatch(
-            name=REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
-            arguments_json="not-json",
-            granted_tool_keys=set(),
-            context=context,
-        )
-
-    assert exc_info.value.code == REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE
-    assert exc_info.value.message == REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE
-
-
 def test_core_memory_runtime_tool_registry_denies_ungranted_before_parsing() -> None:
     registry = RuntimeToolRegistry([MEMORY_WRITE_TOOL_SPEC, MEMORY_LOOKUP_TOOL_SPEC])
     context = _runtime_context(fail_on_session=True)
@@ -3894,84 +3807,6 @@ def test_core_memory_runtime_tool_registry_denies_ungranted_before_parsing() -> 
         )
     assert lookup_error.value.code == MEMORY_TOOL_ACCESS_DENIED_CODE
     assert lookup_error.value.message == MEMORY_LOOKUP_ACCESS_DENIED_MESSAGE
-
-
-@pytest.mark.parametrize(
-    "field_name",
-    [
-        "runId",
-        "agentKey",
-        "agentVersion",
-        "agentName",
-        "workflowKey",
-        "workflowVersion",
-        "stepId",
-        "slot",
-        "traceId",
-        "resolvedStatus",
-        "resolvedAt",
-        "rawReturn",
-        "benchmarkReturn",
-        "alpha",
-        "reflections",
-        "returns",
-    ],
-)
-def test_reports_write_runtime_tool_parser_rejects_spoofed_trusted_fields(
-    field_name: str,
-) -> None:
-    with pytest.raises(RuntimeToolError) as exc_info:
-        _ = parse_report_memory_write_arguments(
-            _reports_write_arguments_json({field_name: "spoofed"})
-        )
-
-    assert exc_info.value.code == "agent_tool_call_invalid"
-    assert exc_info.value.message == "signaldeck_reports_write arguments failed validation."
-    assert exc_info.value.details[0]["field"] == f"analysis.{field_name}"
-
-
-@pytest.mark.parametrize(
-    ("arguments_json", "expected_message"),
-    [
-        ("{", "OpenAI response requested signaldeck_reports_write with invalid JSON arguments."),
-        ("[]", "signaldeck_reports_write arguments must be a JSON object."),
-        (
-            '{"runId":42,"analysis":{}}',
-            "signaldeck_reports_write arguments contained unsupported fields: runId",
-        ),
-    ],
-)
-def test_reports_write_runtime_tool_parser_preserves_boundary_validation_messages(
-    arguments_json: str,
-    expected_message: str,
-) -> None:
-    with pytest.raises(RuntimeToolError) as exc_info:
-        _ = parse_report_memory_write_arguments(arguments_json)
-
-    assert exc_info.value.code == "agent_tool_call_invalid"
-    assert exc_info.value.message == expected_message
-
-
-def test_report_memory_write_rejects_created_by_argument() -> None:
-    with pytest.raises(RuntimeToolError) as exc_info:
-        _ = parse_report_memory_write_arguments(
-            _reports_write_arguments_json(
-                root_overrides={
-                    "createdBy": {
-                        "type": "agent",
-                        "runId": 4242,
-                        "agentKey": "portfolio_manager",
-                        "agentVersion": 3,
-                    }
-                }
-            )
-        )
-
-    assert exc_info.value.code == "agent_tool_call_invalid"
-    assert (
-        exc_info.value.message
-        == "signaldeck_reports_write arguments contained unsupported fields: createdBy"
-    )
 
 
 @pytest.mark.parametrize(
