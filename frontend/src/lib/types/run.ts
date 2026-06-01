@@ -335,6 +335,7 @@ export interface RunListItemRead extends RunTargetIdentityRead {
   progress: RunProgressRead;
   queue: RunQueueRead | null;
   traceId: string | null;
+  workflowKey: string | null;
   queuedAt: string;
   startedAt: string | null;
   finishedAt: string | null;

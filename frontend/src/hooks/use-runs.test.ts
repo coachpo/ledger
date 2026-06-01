@@ -62,6 +62,7 @@ function runListWithStatuses(statuses: RunStatus[]): RunListRead {
       targetKind: "workflowPackage",
       totalTokens: 0,
       traceId: null,
+      workflowKey: null,
     })),
   };
 }

@@ -52,6 +52,7 @@ describe("RunsListPage", () => {
             targetKind: "workflow",
             totalTokens: 0,
             traceId: null,
+            workflowKey: null,
           },
           {
             finishedAt: null,
@@ -73,10 +74,11 @@ describe("RunsListPage", () => {
               state: "blocked",
             },
             targetId: 42,
-            targetKey: "queued_review",
+            targetKey: "queued_review_package",
             targetKind: "workflowPackage",
             totalTokens: 0,
             traceId: null,
+            workflowKey: "queued_review",
           },
           {
             finishedAt: null,
@@ -96,6 +98,7 @@ describe("RunsListPage", () => {
             targetKind: "workflowPackage",
             totalTokens: 21,
             traceId: "trace-15",
+            workflowKey: "market_review",
           },
           {
             finishedAt: "2026-04-20T10:03:00Z",
@@ -115,6 +118,7 @@ describe("RunsListPage", () => {
             targetKind: "agent",
             totalTokens: 13,
             traceId: "trace-16",
+            workflowKey: null,
           },
         ],
       },
@@ -189,6 +193,7 @@ describe("RunsListPage", () => {
     expect(screen.getByLabelText("Target key")).toBeVisible();
     expect(screen.getByLabelText("Target kind")).toBeVisible();
     expect(screen.getByLabelText("Run status")).toBeVisible();
+    expect(screen.queryByLabelText("Workflow key")).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-monitor-filter-card")).not.toBeInTheDocument();
 
     const table = screen.getByRole("table");
@@ -214,6 +219,7 @@ describe("RunsListPage", () => {
     expect(screen.getAllByText("Workflow")[0]).toBeVisible();
     expect(screen.getAllByText("Agent")[0]).toBeVisible();
     expect(screen.getAllByText(/^queued_review$/i)[0]).toBeVisible();
+    expect(screen.getAllByText(/^queued_review_package$/i)[0]).toBeVisible();
     expect(screen.getAllByText(/^market_review_package$/i)[0]).toBeVisible();
     expect(screen.getAllByText(/^macro_agent$/i)[0]).toBeVisible();
     expect(screen.getByText(/workflow id: 40/i)).toBeVisible();
@@ -221,6 +227,12 @@ describe("RunsListPage", () => {
       screen.getByText(/captured snapshot: market_review_package/i),
     ).toBeVisible();
     expect(screen.getByText(/package id at launch: #41/i)).toBeVisible();
+    expect(screen.getByTestId("runs-row-15")).toHaveTextContent(
+      /workflow key:\s*market_review/i,
+    );
+    expect(screen.getByTestId("runs-row-17")).toHaveTextContent(
+      /workflow key:\s*queued_review/i,
+    );
     expect(screen.getByText(/agent id: 12/i)).toBeVisible();
     expect(screen.getByText(/trace-15/i)).toBeVisible();
     expect(
@@ -276,7 +288,7 @@ describe("RunsListPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps target filters route-owned while polling through the runs hook", () => {
+  it("keeps target filters route-owned while polling through the runs hook", async () => {
     render(<RunsListPage />);
 
     expect(useRunsMock).toHaveBeenLastCalledWith(
@@ -285,6 +297,8 @@ describe("RunsListPage", () => {
         status: undefined,
         targetKey: undefined,
         targetKind: undefined,
+        workflowKey: undefined,
+        workflowPackageKey: undefined,
       },
       { refetchInterval: 2000 },
     );
@@ -299,12 +313,42 @@ describe("RunsListPage", () => {
         status: undefined,
         targetKey: undefined,
         targetKind: undefined,
+        workflowKey: undefined,
+        workflowPackageKey: undefined,
       },
       { refetchInterval: 2000 },
     );
     expect(screen.queryByTestId("runs-monitor-filter-card")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Target key")).toHaveValue(
       " market_review_package ",
+    );
+
+    const targetKind = screen.getByRole("combobox", { name: /target kind/i });
+    targetKind.focus();
+    fireEvent.keyDown(targetKind, { key: "ArrowDown" });
+    fireEvent.click(
+      await screen.findByRole("option", { name: "workflow package" }),
+    );
+
+    expect(screen.getByLabelText("Package key")).toHaveValue(
+      " market_review_package ",
+    );
+    expect(screen.getByLabelText("Workflow key")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Workflow key"), {
+      target: { value: " market_review " },
+    });
+
+    expect(useRunsMock).toHaveBeenLastCalledWith(
+      {
+        limit: 50,
+        status: undefined,
+        targetKey: undefined,
+        targetKind: "workflowPackage",
+        workflowKey: "market_review",
+        workflowPackageKey: "market_review_package",
+      },
+      { refetchInterval: 2000 },
     );
   });
 });
