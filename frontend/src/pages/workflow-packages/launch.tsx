@@ -350,6 +350,7 @@ function DiagnosticList({
 }
 
 function SavedInputEntryRow(props: {
+  actionsDisabled: boolean;
   deletePending: boolean;
   entry: WorkflowPackageRuntimeInputEntryRead;
   mode: SavedInputEntryMode;
@@ -359,6 +360,7 @@ function SavedInputEntryRow(props: {
   onUpdate: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
 }) {
   const {
+    actionsDisabled,
     deletePending,
     entry,
     mode,
@@ -398,6 +400,7 @@ function SavedInputEntryRow(props: {
         <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
           <Button
             className="h-7 px-2 text-xs"
+            disabled={actionsDisabled}
             size="sm"
             type="button"
             variant="outline"
@@ -410,7 +413,7 @@ function SavedInputEntryRow(props: {
             <>
               <Button
                 className="h-7 px-2 text-xs"
-                disabled={updatePending}
+                disabled={actionsDisabled || updatePending}
                 size="sm"
                 type="button"
                 variant="outline"
@@ -424,7 +427,7 @@ function SavedInputEntryRow(props: {
               </Button>
               <Button
                 className="h-7 px-2 text-xs"
-                disabled={deletePending}
+                disabled={actionsDisabled || deletePending}
                 size="sm"
                 type="button"
                 variant="ghost"
@@ -872,6 +875,7 @@ function SavedInputsTabs(props: {
     updatePending,
     workflowKey,
   } = props;
+  const workflowSelected = Boolean(workflowKey);
   const personalLimitReached =
     personalEntries.length >= SAVED_INPUT_ENTRY_LIMIT;
   const sortedPersonal = newestRuntimeInputEntries(
@@ -893,13 +897,13 @@ function SavedInputsTabs(props: {
             : "Choose a workflow to load saved personal presets or launch history."}
         </p>
       </div>
-      {loading ? (
+      {workflowSelected && loading ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
-          Loading saved inputs for {workflowKey || "this workflow"}...
+          Loading saved inputs for {workflowKey}...
         </p>
       ) : null}
-      {error ? (
+      {workflowSelected && error ? (
         <Alert variant="destructive">
           <AlertCircle />
           <AlertTitle>Saved inputs unavailable</AlertTitle>
@@ -908,13 +912,13 @@ function SavedInputsTabs(props: {
       ) : null}
       <Tabs className="min-w-0 gap-3" defaultValue="presets">
         <TabsList className="w-full justify-start sm:w-fit">
-          <TabsTrigger value="presets">
+          <TabsTrigger disabled={!workflowSelected} value="presets">
             Presets
             <Badge className="ml-1" variant="secondary">
               {personalEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="history">
+          <TabsTrigger disabled={!workflowSelected} value="history">
             History
             <Badge className="ml-1" variant="secondary">
               {historyEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}
@@ -926,6 +930,7 @@ function SavedInputsTabs(props: {
             <Input
               className="h-8 min-w-0 text-xs"
               aria-label="Personal preset name"
+              disabled={!workflowSelected}
               placeholder="Preset name"
               value={presetName}
               onChange={(event) => onPresetNameChange(event.target.value)}
@@ -945,13 +950,13 @@ function SavedInputsTabs(props: {
               Save current JSON
             </Button>
           </div>
-          {personalLimitReached ? (
+          {workflowSelected && personalLimitReached ? (
             <p className="text-xs text-destructive">
               Personal presets are capped at 20 per workflow. Delete one before
               saving another.
             </p>
           ) : null}
-          {sortedPersonal.length === 0 ? (
+          {workflowSelected && sortedPersonal.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               No personal presets saved for this workflow.
             </p>
@@ -960,6 +965,7 @@ function SavedInputsTabs(props: {
             {sortedPersonal.map((entry) => (
               <SavedInputEntryRow
                 key={entry.id}
+                actionsDisabled={!workflowSelected}
                 deletePending={deletePending}
                 entry={entry}
                 mode="personal"
@@ -972,7 +978,7 @@ function SavedInputsTabs(props: {
           </div>
         </TabsContent>
         <TabsContent className="min-w-0 space-y-3" value="history">
-          {sortedHistory.length === 0 ? (
+          {workflowSelected && sortedHistory.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               No launch history yet.
             </p>
@@ -981,6 +987,7 @@ function SavedInputsTabs(props: {
             {sortedHistory.map((entry) => (
               <SavedInputEntryRow
                 key={entry.id}
+                actionsDisabled={!workflowSelected}
                 deletePending={false}
                 entry={entry}
                 mode="history"
@@ -1038,6 +1045,7 @@ export function WorkflowPackageLaunchPage() {
     [workflowOptions, resolvedWorkflowKey],
   );
   const activeWorkflowKey = selectedManifestWorkflow?.key ?? "";
+  const workflowSelected = Boolean(activeWorkflowKey);
   const launchQuery = useWorkflowPackageLaunch(
     packageId,
     activeWorkflowKey || undefined,
@@ -1054,10 +1062,23 @@ export function WorkflowPackageLaunchPage() {
     useUpdateWorkflowPackageRuntimeInputPersonalEntry();
   const deletePersonalEntry =
     useDeleteWorkflowPackageRuntimeInputPersonalEntry();
-  const launchRead = activeWorkflowKey ? launchQuery.data : undefined;
+  const launchRead = workflowSelected ? launchQuery.data : undefined;
   const launchMetadataError =
-    activeWorkflowKey && launchQuery.isError ? launchQuery.error : null;
-  const launchMetadataPending = Boolean(activeWorkflowKey) && launchQuery.isPending;
+    workflowSelected && launchQuery.isError ? launchQuery.error : null;
+  const launchMetadataPending = workflowSelected && launchQuery.isPending;
+  const savedInputsError =
+    workflowSelected && runtimeInputRegistry.isError
+      ? runtimeInputRegistry.error
+      : null;
+  const savedInputsLoading =
+    workflowSelected &&
+    (runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching);
+  const savedHistoryEntries = workflowSelected
+    ? (runtimeInputRegistry.data?.history ?? [])
+    : [];
+  const savedPersonalEntries = workflowSelected
+    ? (runtimeInputRegistry.data?.personal ?? [])
+    : [];
   const readinessRead = preflightRead ?? launchRead;
   const diagnostics = useMemo(
     () => diagnosticsFromLaunch(readinessRead),
@@ -1130,27 +1151,6 @@ export function WorkflowPackageLaunchPage() {
     },
     [resolvedWorkflowKey, workflowTemplateText],
   );
-
-  useEffect(() => {
-    if (
-      manifestQuery.isPending ||
-      manifestQuery.isError ||
-      manifestWorkflowOptions.length !== 1
-    ) {
-      return;
-    }
-    const onlyWorkflowKey = manifestWorkflowOptions[0]?.key ?? "";
-    if (!onlyWorkflowKey || resolvedWorkflowKey) {
-      return;
-    }
-    updateWorkflowKey(onlyWorkflowKey);
-  }, [
-    manifestQuery.isError,
-    manifestQuery.isPending,
-    manifestWorkflowOptions,
-    resolvedWorkflowKey,
-    updateWorkflowKey,
-  ]);
 
   useEffect(() => {
     if (lastTemplateIdentityRef.current === launchFormIdentity) {
@@ -1227,6 +1227,9 @@ export function WorkflowPackageLaunchPage() {
   };
 
   const loadSavedInput = (entry: WorkflowPackageRuntimeInputEntryRead) => {
+    if (!workflowSelected) {
+      return;
+    }
     parametersEditedRef.current = true;
     setParametersText(stringifyJson(entry.payload));
     setRuntimeInputErrors([]);
@@ -1399,7 +1402,7 @@ export function WorkflowPackageLaunchPage() {
         ? "This package manifest does not declare any workflows."
         : resolvedWorkflowKey && !selectedManifestWorkflow
           ? "Selected workflow is no longer present in the current manifest. Choose a workflow to continue."
-          : manifestWorkflowOptions.length > 1 && !activeWorkflowKey
+          : !workflowSelected
             ? "Choose a workflow to continue."
             : null;
   const workflowSelectionError = manifestQuery.isError
@@ -1439,7 +1442,7 @@ export function WorkflowPackageLaunchPage() {
         ? "Workflow actions disabled because this manifest has no workflows."
         : resolvedWorkflowKey && !selectedManifestWorkflow
           ? "Workflow actions disabled until you choose a valid manifest workflow."
-          : manifestWorkflowOptions.length > 1 && !activeWorkflowKey
+          : !workflowSelected
             ? "Choose a workflow to continue."
             : null;
   const preflightCompleted = Boolean(preflightRead);
@@ -1497,7 +1500,7 @@ export function WorkflowPackageLaunchPage() {
             <CardAction>
               <Button
                 className="w-full sm:w-auto"
-                disabled={!activeWorkflowKey}
+                disabled={!workflowSelected}
                 size="sm"
                 type="button"
                 variant="outline"
@@ -1584,6 +1587,7 @@ export function WorkflowPackageLaunchPage() {
                   id="runtime-json"
                   aria-label="Runtime inputs JSON"
                   className="min-h-72 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
+                  disabled={!workflowSelected}
                   rows={14}
                   value={parametersText}
                   onChange={(event) => updateParametersText(event.target.value)}
@@ -1591,21 +1595,16 @@ export function WorkflowPackageLaunchPage() {
               </div>
               <SavedInputsTabs
                 createDisabled={
-                  !activeWorkflowKey ||
-                  runtimeInputRegistry.isPending ||
-                  runtimeInputRegistry.isFetching ||
+                  !workflowSelected ||
+                  savedInputsLoading ||
                   !personalPresetName.trim()
                 }
                 createPending={createPersonalEntry.isPending}
                 deletePending={deletePersonalEntry.isPending}
-                error={
-                  runtimeInputRegistry.isError ? runtimeInputRegistry.error : null
-                }
-                historyEntries={runtimeInputRegistry.data?.history ?? []}
-                loading={
-                  runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching
-                }
-                personalEntries={runtimeInputRegistry.data?.personal ?? []}
+                error={savedInputsError}
+                historyEntries={savedHistoryEntries}
+                loading={savedInputsLoading}
+                personalEntries={savedPersonalEntries}
                 presetName={personalPresetName}
                 updatePending={updatePersonalEntry.isPending}
                 workflowKey={activeWorkflowKey}

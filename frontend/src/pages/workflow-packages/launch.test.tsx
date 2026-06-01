@@ -202,6 +202,11 @@ async function chooseWorkflow(optionName: string | RegExp) {
   fireEvent.click(await screen.findByRole("option", { name: optionName }));
 }
 
+async function selectSingleWorkflow() {
+  await chooseWorkflow(/^Market Review$/);
+  await waitFor(() => expect(workflowSelector()).toHaveTextContent("Market Review"));
+}
+
 async function completeReadyPreflight() {
   fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
   await waitFor(() =>
@@ -253,15 +258,17 @@ describe("WorkflowPackageLaunchPage", () => {
     fireEvent.click(within(identity).getByRole("button", { name: "Details" }));
     expect(screen.getByTestId("workflow-package-launch-details")).toHaveTextContent("Market Review Package");
     expect(screen.getByTestId("workflow-package-launch-details")).toHaveTextContent("manifest-hash-123");
-    expect(screen.getByText("Run preflight to load launch metadata and validate this package before launch.")).toBeVisible();
-    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Market Review"));
+    expect(screen.getByTestId("workflow-package-launch-next-step")).toHaveTextContent(
+      "Choose a workflow to continue.",
+    );
+    expect(workflowSelector()).toHaveTextContent("Choose a workflow");
     const readiness = screen.getByTestId("workflow-package-preflight-status");
-    expect(readiness).toHaveTextContent("Metadata loaded");
+    expect(readiness).toHaveTextContent("Metadata missing");
     expect(readiness).toHaveTextContent("Preflight pending");
     expect(readiness).toHaveTextContent("Workflow");
-    expect(readiness).toHaveTextContent("market_review");
-    expect(readiness).toHaveTextContent("Manifest recorded");
-    expect(readiness).toHaveTextContent("Input schema available");
+    expect(readiness).toHaveTextContent("Workflow selection required");
+    expect(readiness).toHaveTextContent("Manifest not recorded");
+    expect(readiness).toHaveTextContent("Input schema unavailable");
     expect(readiness).not.toHaveTextContent("Blocking");
     expect(readiness).not.toHaveTextContent("Warnings");
     const runConfig = screen.getByTestId("workflow-package-run-config");
@@ -272,20 +279,30 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByLabelText("Runtime inputs JSON")).toHaveClass("max-w-full", "overflow-x-auto", "whitespace-pre");
     const actionBar = screen.getByTestId("workflow-package-run-actions");
     expect(actionBar).toHaveClass("sticky", "flex", "min-w-0", "flex-col", "sm:flex-row");
-    expect(within(actionBar).getByRole("button", { name: /run preflight/i })).toBeVisible();
+    const preflightButton = within(actionBar).getByRole("button", {
+      name: /run preflight/i,
+    });
+    expect(preflightButton).toBeVisible();
+    expect(preflightButton).toBeDisabled();
     const launchButton = within(actionBar).getByRole("button", { name: /launch run/i });
     expect(launchButton).toBeDisabled();
-    expect(launchButton).toHaveAccessibleDescription("Launch disabled until preflight completes.");
+    expect(launchButton).toHaveAccessibleDescription("Choose a workflow to continue.");
+    expect(screen.getByLabelText("Runtime inputs JSON")).toBeDisabled();
     expect(screen.getByRole("tablist")).toBeVisible();
-    expect(screen.getByRole("tab", { name: /presets/i })).toBeVisible();
-    expect(screen.getByRole("tab", { name: /history/i })).toBeVisible();
+    expect(screen.getByRole("tab", { name: /presets/i })).toBeDisabled();
+    expect(screen.getByRole("tab", { name: /history/i })).toBeDisabled();
     expect(screen.queryByTestId("workflow-package-launch-context")).not.toBeInTheDocument();
     expect(screen.queryByTestId("workflow-package-constraint-inspector")).not.toBeInTheDocument();
     expect(screen.queryByTestId("workflow-package-editor-shell")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: /workflow/i })).not.toBeInTheDocument();
     expect(useWorkflowPackageMock).toHaveBeenCalledWith("42");
     expect(useWorkflowPackageManifestMock).toHaveBeenCalledWith("42");
-    await waitFor(() => expect(useWorkflowPackageLaunchMock).toHaveBeenLastCalledWith("42", "market_review"));
+    await waitFor(() =>
+      expect(useWorkflowPackageLaunchMock).toHaveBeenLastCalledWith(
+        "42",
+        undefined,
+      ),
+    );
   });
 
   it("separates capability blockers from warnings before run creation", async () => {
@@ -319,7 +336,7 @@ describe("WorkflowPackageLaunchPage", () => {
     });
     renderLaunchPage();
 
-    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Market Review"));
+    await selectSingleWorkflow();
     const readiness = screen.getByTestId("workflow-package-preflight-status");
     expect(readiness).toHaveTextContent("Blocking");
     expect(readiness).toHaveTextContent("Warnings");
@@ -352,26 +369,30 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.queryByTestId("workflow-package-launch-tab")).not.toBeInTheDocument();
   });
 
-  it("shows launch metadata missing, loading, and load-error states", () => {
+  it("shows launch metadata missing, loading, and load-error states", async () => {
     useWorkflowPackageLaunchMock.mockReturnValue({ data: undefined, error: null, isError: false, isPending: false });
     const missingView = renderLaunchPage();
-    expect(screen.getByText("Run preflight to load launch metadata and validate this package before launch.")).toBeVisible();
+    expect(screen.getByTestId("workflow-package-launch-next-step")).toHaveTextContent(
+      "Choose a workflow to continue.",
+    );
     const missingReadiness = screen.getByTestId("workflow-package-preflight-status");
     expect(missingReadiness).toHaveTextContent("Metadata missing");
     expect(missingReadiness).toHaveTextContent("Preflight pending");
-    expect(missingReadiness).toHaveTextContent("market_review");
+    expect(missingReadiness).toHaveTextContent("Workflow selection required");
     expect(missingReadiness).toHaveTextContent("Manifest not recorded");
     expect(missingReadiness).toHaveTextContent("Input schema unavailable");
     missingView.unmount();
 
     useWorkflowPackageLaunchMock.mockReturnValue({ data: undefined, error: null, isError: false, isPending: true });
     const loadingView = renderLaunchPage();
+    await selectSingleWorkflow();
     expect(screen.getByText("Loading launch metadata...")).toBeVisible();
     expect(screen.getByTestId("workflow-package-preflight-status")).toHaveTextContent("Metadata loading");
     loadingView.unmount();
 
     useWorkflowPackageLaunchMock.mockReturnValue({ data: undefined, error: new Error("Launch metadata failed"), isError: true, isPending: false });
     const errorView = renderLaunchPage();
+    await selectSingleWorkflow();
     expect(screen.getAllByText("Launch metadata unavailable").length).toBeGreaterThan(0);
     expect(screen.getByTestId("workflow-package-preflight-status")).toHaveTextContent("Launch metadata unavailable");
     expect(screen.getByTestId("workflow-package-launch-metadata-error")).toHaveTextContent("Launch metadata failed");
@@ -421,13 +442,22 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByRole("button", { name: /run preflight/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /launch run/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save current JSON" })).toBeDisabled();
+    expect(screen.getByLabelText("Runtime inputs JSON")).toBeDisabled();
+    expect(screen.getByLabelText("Personal preset name")).toBeDisabled();
     expect(screen.getByTestId("runtime-input-saved-inputs-helper")).toHaveTextContent("workflow pending");
+    expect(screen.getByTestId("runtime-input-saved-inputs-helper")).not.toHaveTextContent(
+      /loading saved inputs for this workflow/i,
+    );
 
     await chooseWorkflow(/^News Research$/);
 
     await waitFor(() => expect(workflowSelector()).toHaveTextContent("News Research"));
     expect(screen.getByTestId("workflow-package-launch-next-step")).toHaveTextContent("Run preflight to load launch metadata and validate this package before launch.");
     expect(screen.getByRole("button", { name: /run preflight/i })).not.toBeDisabled();
+    expect(screen.getByRole("tab", { name: /presets/i })).not.toBeDisabled();
+    expect(screen.getByRole("tab", { name: /history/i })).not.toBeDisabled();
+    expect(screen.getByLabelText("Runtime inputs JSON")).not.toBeDisabled();
+    expect(screen.getByLabelText("Personal preset name")).not.toBeDisabled();
     expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
       JSON.stringify({ query: "" }, null, 2),
     );
@@ -472,6 +502,8 @@ describe("WorkflowPackageLaunchPage", () => {
 
     const view = renderLaunchPage();
 
+    expect(workflowSelector()).toHaveTextContent("Choose a workflow");
+    await chooseWorkflow(/^Retired Workflow$/);
     await waitFor(() => expect(workflowSelector()).toHaveTextContent("Retired Workflow"));
     expect(screen.getByRole("button", { name: /run preflight/i })).not.toBeDisabled();
     expect(screen.getByTestId("runtime-input-saved-inputs-helper")).toHaveTextContent(
@@ -550,7 +582,7 @@ describe("WorkflowPackageLaunchPage", () => {
   it("launches a package run after preflight and navigates to run detail", async () => {
     renderLaunchPage();
 
-    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Market Review"));
+    await selectSingleWorkflow();
     const launchPanel = await screen.findByTestId("workflow-package-launch-tab");
     expect(within(launchPanel).getByRole("combobox", { name: /workflow/i })).toBeVisible();
     expect(screen.queryByRole("textbox", { name: "Ticker" })).not.toBeInTheDocument();
@@ -577,7 +609,7 @@ describe("WorkflowPackageLaunchPage", () => {
     });
     renderLaunchPage();
 
-    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Market Review"));
+    await selectSingleWorkflow();
     fireEvent.change(screen.getByLabelText("Runtime inputs JSON"), { target: { value: '{"ticker":"AAPL"}' } });
     fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
 
@@ -605,6 +637,7 @@ describe("WorkflowPackageLaunchPage", () => {
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry({ history: [olderHistory, newerHistory], personal: [personal] }));
     renderLaunchPage();
 
+    await selectSingleWorkflow();
     const helper = await screen.findByTestId("runtime-input-saved-inputs-helper");
     expect(within(helper).getByText("Saved inputs")).toBeVisible();
     expect(within(helper).getByText("1/20")).toBeVisible();
@@ -662,6 +695,7 @@ describe("WorkflowPackageLaunchPage", () => {
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry({ isFetching: true, personal: personalEntries }));
     renderLaunchPage();
 
+    await selectSingleWorkflow();
     const helper = await screen.findByTestId("runtime-input-saved-inputs-helper");
     expect(within(helper).getByText(/loading saved inputs for market_review/i)).toBeVisible();
     expect(within(helper).getByText("20/20")).toBeVisible();
@@ -786,6 +820,7 @@ describe("WorkflowPackageLaunchPage", () => {
       isPending: false,
     });
     renderLaunchPage();
+    await selectSingleWorkflow();
     const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
     expect(runtimeJson.value).toBe(JSON.stringify({
       defaultLimit: 10,
@@ -943,6 +978,7 @@ describe("WorkflowPackageLaunchPage", () => {
   it("rejects non-object raw JSON locally", async () => {
     renderLaunchPage();
 
+    await selectSingleWorkflow();
     await completeReadyPreflight();
     preflightPackageMock.mockClear();
     fireEvent.change(await screen.findByLabelText("Runtime inputs JSON"), { target: { value: "[]" } });
@@ -962,6 +998,7 @@ describe("WorkflowPackageLaunchPage", () => {
     }));
     renderLaunchPage();
 
+    await selectSingleWorkflow();
     fireEvent.change(await screen.findByLabelText("Runtime inputs JSON"), { target: { value: '{"ticker":"AAPL","extra":true}' } });
     await completeReadyPreflight();
     fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
@@ -989,6 +1026,7 @@ describe("WorkflowPackageLaunchPage", () => {
     });
     renderLaunchPage();
 
+    await selectSingleWorkflow();
     const schemaWarning = await screen.findByTestId("runtime-input-schema-template-warning");
     expect(within(schemaWarning).getByText("Schema template started empty")).toBeVisible();
     fireEvent.click(within(schemaWarning).getByRole("button", { name: "Details" }));
