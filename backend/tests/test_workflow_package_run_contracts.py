@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -27,6 +27,7 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.models.workflow_package import WorkflowPackage
+from app.models.workflow_package_schedule import WorkflowPackageSchedule
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.memory import (
     MemoryLifecycleStatus,
@@ -135,6 +136,12 @@ class _RuntimeRecordingOpenAIClient:
 
 
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
+_TRADINGAGENTS_CANONICAL_SCHEDULES = (
+    ("TradingAgents Advisory Research · 2m", "advisory_research"),
+    ("TradingAgents Market Research · 2m", "market_research"),
+    ("TradingAgents News Research · 2m", "news_research"),
+    ("TradingAgents Fundamentals Research · 2m", "fundamentals_research"),
+)
 _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
     Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
 )
@@ -2400,6 +2407,77 @@ def test_tradingagents_advisory_research_runtime_fails_when_extension_disabled_a
     assert detail["error"] == "Extension is disabled"
     dependencies = cast(list[dict[str, object]], detail["extensionDependencies"])
     assert set(dependencies[0]) == {"extensionKey", "surfaces", "fields"}
+
+
+def test_tradingagents_schedule_materializer_persists_matching_workflow_key_snapshots_for_all_canonical_schedules(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_tradingagents_model_connection(session_factory)
+    package = _create_tradingagents_package(client)
+    package_id = cast(int, package["id"])
+    materialized_at = datetime.fromisoformat("2026-01-01T00:00:00+00:00")
+
+    with session_factory() as session:
+        schedules = (
+            session.query(WorkflowPackageSchedule)
+            .filter(WorkflowPackageSchedule.package_id == package_id)
+            .order_by(WorkflowPackageSchedule.id)
+            .all()
+        )
+        assert {(schedule.name, schedule.workflow_key) for schedule in schedules} == set(
+            _TRADINGAGENTS_CANONICAL_SCHEDULES
+        )
+        for schedule in schedules:
+            schedule.next_fire_at = materialized_at
+        session.commit()
+
+    result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(
+        now=materialized_at
+    )
+
+    assert result.processed_count == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
+    assert result.queued_count == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
+
+    with session_factory() as session:
+        schedules = (
+            session.query(WorkflowPackageSchedule)
+            .filter(WorkflowPackageSchedule.package_id == package_id)
+            .order_by(WorkflowPackageSchedule.id)
+            .all()
+        )
+        runs = (
+            session.query(Run)
+            .filter(Run.schedule_id.in_([schedule.id for schedule in schedules]))
+            .order_by(Run.id)
+            .all()
+        )
+        snapshots = (
+            session.query(RunWorkflowPackageSnapshot)
+            .filter(RunWorkflowPackageSnapshot.run_id.in_([run.id for run in runs]))
+            .order_by(RunWorkflowPackageSnapshot.run_id)
+            .all()
+        )
+        snapshots_by_run_id = {snapshot.run_id: snapshot for snapshot in snapshots}
+        runs_by_schedule_id = {cast(int, run.schedule_id): run for run in runs}
+
+        assert len(runs) == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
+        assert len(snapshots) == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
+        for schedule in schedules:
+            run = runs_by_schedule_id[schedule.id]
+            snapshot = snapshots_by_run_id[run.id]
+            fire = WorkflowPackageScheduleService(session).list_fire_history(schedule.id).items[0]
+
+            assert fire.status == FireStatus.QUEUED
+            assert run.status == "queued"
+            assert run.schedule_id == schedule.id
+            assert run.schedule_fire_id == fire.id
+            assert run.scheduled_for == materialized_at
+            assert run.workflow_package_workflow_key == schedule.workflow_key
+            assert snapshot.workflow_package_id == package_id
+            assert snapshot.workflow_key == schedule.workflow_key
+            assert snapshot.launch_parameters == run.input
+            assert schedule.next_fire_at == materialized_at + timedelta(minutes=2)
 
 
 def test_scheduled_run_snapshot_materializer_creates_normal_package_run(

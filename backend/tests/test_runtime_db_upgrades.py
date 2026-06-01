@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
 
@@ -342,12 +343,105 @@ _TRADINGAGENTS_FIXTURE_PATH = (
     / "workflow_packages"
     / "tradingagents_advisory_research.yaml"
 )
-_TRADINGAGENTS_DEMO_PATH = (
-    Path(__file__).parents[2] / "demo" / "tradingagents_advisory_research.yaml"
-)
 _TRADINGAGENTS_PRESET_SQL_PATH = (
     Path(__file__).parents[1] / "app" / "db" / "tradingagents_advisory_research.sql"
 )
+_TRADINGAGENTS_LAUNCH_METADATA_BY_WORKFLOW_KEY = {
+    "advisory_research": (
+        "Advisory Research",
+        "TradingAgents advisory research inputs",
+    ),
+    "market_research": (
+        "Market Research",
+        "TradingAgents market research inputs",
+    ),
+    "news_research": (
+        "News Research",
+        "TradingAgents news research inputs",
+    ),
+    "fundamentals_research": (
+        "Fundamentals Research",
+        "TradingAgents fundamentals research inputs",
+    ),
+}
+_TRADINGAGENTS_CANONICAL_SCHEDULE_NAMES_BY_WORKFLOW_KEY = {
+    "advisory_research": "TradingAgents Advisory Research · 2m",
+    "market_research": "TradingAgents Market Research · 2m",
+    "news_research": "TradingAgents News Research · 2m",
+    "fundamentals_research": "TradingAgents Fundamentals Research · 2m",
+}
+_TRADINGAGENTS_CANONICAL_SCHEDULE_RECURRENCE = {
+    "type": "interval",
+    "every": 2,
+    "unit": "minutes",
+}
+_TRADINGAGENTS_CANONICAL_SCHEDULE_INPUT_TEMPLATES = {
+    "advisory_research": {
+        "ticker": "SPY",
+        "asOfDate": "{{fire.scheduledLocalDate}}",
+        "horizonDays": 30,
+        "portfolioId": "",
+        "outputLanguage": "English",
+        "benchmarkSymbol": "SPY",
+        "maxRiskDebateRounds": 2,
+        "maxInvestmentDebateRounds": 2,
+    },
+    "market_research": {
+        "ticker": "SPY",
+        "asOfDate": "{{fire.scheduledLocalDate}}",
+        "horizonDays": 30,
+        "outputLanguage": "English",
+        "benchmarkSymbol": "SPY",
+    },
+    "news_research": {
+        "ticker": "SPY",
+        "asOfDate": "{{fire.scheduledLocalDate}}",
+        "horizonDays": 30,
+        "outputLanguage": "English",
+    },
+    "fundamentals_research": {
+        "ticker": "SPY",
+        "asOfDate": "{{fire.scheduledLocalDate}}",
+        "horizonDays": 30,
+        "outputLanguage": "English",
+    },
+}
+
+
+def _tradingagents_schedule_descriptions_from_fixture() -> dict[str, str | None]:
+    fixture_source = _TRADINGAGENTS_FIXTURE_PATH.read_text(encoding="utf-8")
+    compiled = compile_workflow_package_manifest(fixture_source)
+    package_definition = cast(Mapping[str, object], compiled["packageDefinition"])
+    spec = cast(Mapping[str, object], package_definition["spec"])
+    workflows = cast(list[Mapping[str, object]], spec["workflows"])
+    return {
+        str(workflow["key"]): cast(str | None, workflow.get("description"))
+        for workflow in workflows
+    }
+
+
+def _tradingagents_schedule_specs() -> tuple[dict[str, object], ...]:
+    descriptions = _tradingagents_schedule_descriptions_from_fixture()
+    return tuple(
+        {
+            "workflow_key": workflow_key,
+            "name": _TRADINGAGENTS_CANONICAL_SCHEDULE_NAMES_BY_WORKFLOW_KEY[workflow_key],
+            "description": descriptions[workflow_key],
+            "timezone": "UTC",
+            "recurrence": _TRADINGAGENTS_CANONICAL_SCHEDULE_RECURRENCE,
+            "overlap_policy": "skip",
+            "misfire_policy": "catchUpOne",
+            "misfire_grace_seconds": 86400,
+            "input_template": _TRADINGAGENTS_CANONICAL_SCHEDULE_INPUT_TEMPLATES[workflow_key],
+            "template_vars": {},
+        }
+        for workflow_key in (
+            "advisory_research",
+            "market_research",
+            "news_research",
+            "fundamentals_research",
+        )
+    )
 
 
 def _insert_representable_workflow_package(
@@ -490,6 +584,8 @@ def _assert_tradingagents_preset_launchable(
     *,
     package_id: int,
     workflow_key: str,
+    expected_name: str,
+    expected_input_schema_title: str,
 ) -> None:
     with engine.begin() as connection:
         connection.execute(
@@ -529,8 +625,71 @@ def _assert_tradingagents_preset_launchable(
 
     assert launch.package_key == _TRADINGAGENTS_PRESET_KEY
     assert launch.workflow_key == workflow_key
+    assert launch.name == expected_name
+    assert cast(dict[str, object], launch.input_schema)["title"] == expected_input_schema_title
     assert launch.ready is True
     assert launch.blocking_errors == []
+
+
+def _tradingagents_preset_schedule_rows(connection: Connection) -> list[Mapping[str, object]]:
+    schedule_names = [str(spec["name"]) for spec in _tradingagents_schedule_specs()]
+    return cast(
+        list[Mapping[str, object]],
+        connection.execute(
+            text(
+                """
+                SELECT
+                    schedule.id,
+                    schedule.package_id,
+                    schedule.workflow_key,
+                    schedule.name,
+                    schedule.description,
+                    schedule.status,
+                    schedule.timezone,
+                    schedule.recurrence,
+                    schedule.next_fire_at,
+                    schedule.overlap_policy,
+                    schedule.misfire_policy,
+                    schedule.misfire_grace_seconds,
+                    schedule.input_template,
+                    schedule.template_vars
+                FROM workflow_package_schedules AS schedule
+                JOIN workflow_packages AS package
+                  ON package.id = schedule.package_id
+                WHERE package.key = :package_key
+                  AND schedule.name IN :schedule_names
+                ORDER BY schedule.name ASC, schedule.id ASC
+                """
+            ).bindparams(bindparam("schedule_names", expanding=True)),
+            {
+                "package_key": _TRADINGAGENTS_PRESET_KEY,
+                "schedule_names": schedule_names,
+            },
+        )
+        .mappings()
+        .all(),
+    )
+
+
+
+def _assert_tradingagents_preset_schedule_row(
+    row: Mapping[str, object],
+    spec: Mapping[str, object],
+    *,
+    expected_status: str,
+) -> None:
+    assert row["workflow_key"] == spec["workflow_key"]
+    assert row["name"] == spec["name"]
+    assert row["description"] == spec["description"]
+    assert row["status"] == expected_status
+    assert row["timezone"] == spec["timezone"]
+    assert row["recurrence"] == spec["recurrence"]
+    assert row["overlap_policy"] == spec["overlap_policy"]
+    assert row["misfire_policy"] == spec["misfire_policy"]
+    assert row["misfire_grace_seconds"] == spec["misfire_grace_seconds"]
+    assert row["input_template"] == spec["input_template"]
+    assert row["template_vars"] == spec["template_vars"]
+
 
 
 def _seed_stock_analysis_upgrade_rows(connection) -> int:
@@ -3375,14 +3534,8 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
     database_url: str,
 ) -> None:
     fixture_source = _TRADINGAGENTS_FIXTURE_PATH.read_text(encoding="utf-8")
-    demo_source = _TRADINGAGENTS_DEMO_PATH.read_text(encoding="utf-8")
     preset_sql = _TRADINGAGENTS_PRESET_SQL_PATH.read_text(encoding="utf-8")
     fixture_compiled = compile_workflow_package_manifest(fixture_source)
-    demo_compiled = compile_workflow_package_manifest(demo_source)
-    assert demo_compiled["manifestHash"] == fixture_compiled["manifestHash"]
-    assert demo_compiled["compiledHash"] == fixture_compiled["compiledHash"]
-    assert demo_compiled["packageDefinition"] == fixture_compiled["packageDefinition"]
-    assert demo_compiled["compiledPlan"] == fixture_compiled["compiledPlan"]
     assert "INSERT INTO workflow_packages" in preset_sql
     assert "ON CONFLICT (key) DO UPDATE" in preset_sql
     assert "WHERE NOT EXISTS" not in preset_sql
@@ -3477,7 +3630,6 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
 
         serialized_preset = (
             fixture_source
-            + demo_source
             + json.dumps(row["package_definition"], sort_keys=True)
             + json.dumps(row["compiled_plan"], sort_keys=True)
         )
@@ -3498,12 +3650,22 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
         assert run_count == 0
 
         package_id = int(row["package_id"])
-        workflows = cast(list[dict[str, object]], expected_compiled_plan["workflows"])
-        _assert_tradingagents_preset_launchable(
-            engine,
-            package_id=package_id,
-            workflow_key=str(workflows[0]["key"]),
-        )
+        for workflow_key in (
+            "advisory_research",
+            "market_research",
+            "news_research",
+            "fundamentals_research",
+        ):
+            expected_name, expected_input_schema_title = (
+                _TRADINGAGENTS_LAUNCH_METADATA_BY_WORKFLOW_KEY[workflow_key]
+            )
+            _assert_tradingagents_preset_launchable(
+                engine,
+                package_id=package_id,
+                workflow_key=workflow_key,
+                expected_name=expected_name,
+                expected_input_schema_title=expected_input_schema_title,
+            )
 
         upgrade_legacy_schema(engine)
         with engine.connect() as connection:
@@ -3524,6 +3686,155 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
         assert idempotent_row["package_id"] == package_id
     finally:
         engine.dispose()
+
+
+def test_init_db_seeds_tradingagents_preset_schedules_idempotently(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    specs = _tradingagents_schedule_specs()
+
+    try:
+        with engine.connect() as connection:
+            first_rows = _tradingagents_preset_schedule_rows(connection)
+        assert len(first_rows) == len(specs)
+        first_rows_by_name = {str(row["name"]): row for row in first_rows}
+        assert first_rows_by_name.keys() == {
+            str(spec["name"])
+            for spec in specs
+        }
+        for spec in specs:
+            _assert_tradingagents_preset_schedule_row(
+                first_rows_by_name[str(spec["name"])],
+                spec,
+                expected_status="enabled",
+            )
+        first_ids_by_name = {str(row["name"]): cast(int, row["id"]) for row in first_rows}
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            second_rows = _tradingagents_preset_schedule_rows(connection)
+        assert len(second_rows) == len(specs)
+        second_rows_by_name = {str(row["name"]): row for row in second_rows}
+        assert {str(row["name"]) for row in second_rows} == set(first_rows_by_name)
+        for spec in specs:
+            _assert_tradingagents_preset_schedule_row(
+                second_rows_by_name[str(spec["name"])],
+                spec,
+                expected_status="enabled",
+            )
+        assert {
+            str(row["name"]): cast(int, row["id"])
+            for row in second_rows
+        } == first_ids_by_name
+    finally:
+        engine.dispose()
+
+
+
+def test_init_db_preserves_due_tradingagents_preset_schedule_next_fire_at(
+    database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seeded_at = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+    restart_at = seeded_at + timedelta(minutes=5)
+    monkeypatch.setattr(upgrades, "utcnow", lambda: seeded_at)
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    advisory_schedule_name = _TRADINGAGENTS_CANONICAL_SCHEDULE_NAMES_BY_WORKFLOW_KEY[
+        "advisory_research"
+    ]
+
+    try:
+        with engine.connect() as connection:
+            seeded_row = next(
+                row
+                for row in _tradingagents_preset_schedule_rows(connection)
+                if row["name"] == advisory_schedule_name
+            )
+        initial_next_fire_at = cast(datetime, seeded_row["next_fire_at"])
+        assert initial_next_fire_at == seeded_at + timedelta(minutes=2)
+        assert initial_next_fire_at < restart_at
+
+        monkeypatch.setattr(upgrades, "utcnow", lambda: restart_at)
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            refreshed_row = next(
+                row
+                for row in _tradingagents_preset_schedule_rows(connection)
+                if cast(int, row["id"]) == cast(int, seeded_row["id"])
+            )
+        assert refreshed_row["next_fire_at"] == initial_next_fire_at
+        assert cast(datetime, refreshed_row["next_fire_at"]) <= restart_at
+    finally:
+        engine.dispose()
+
+
+
+def test_init_db_preserves_paused_tradingagents_preset_schedule_state(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    specs = _tradingagents_schedule_specs()
+    paused_spec = next(
+        spec
+        for spec in specs
+        if spec["workflow_key"] == "news_research"
+    )
+
+    try:
+        with engine.begin() as connection:
+            seeded_row = next(
+                row
+                for row in _tradingagents_preset_schedule_rows(connection)
+                if row["name"] == paused_spec["name"]
+            )
+            schedule_id = cast(int, seeded_row["id"])
+            connection.execute(
+                text(
+                    """
+                    UPDATE workflow_package_schedules
+                    SET workflow_key = 'legacy_news_research',
+                        description = 'Legacy paused preset',
+                        status = 'paused',
+                        timezone = 'America/Los_Angeles',
+                        recurrence = CAST(:recurrence AS jsonb),
+                        overlap_policy = 'queue',
+                        misfire_policy = 'skip',
+                        misfire_grace_seconds = 1,
+                        input_template = CAST(:input_template AS jsonb),
+                        template_vars = CAST(:template_vars AS jsonb)
+                    WHERE id = :schedule_id
+                    """
+                ),
+                {
+                    "schedule_id": schedule_id,
+                    "recurrence": json.dumps({"type": "daily", "atLocalTime": "09:00"}),
+                    "input_template": json.dumps({"ticker": "QQQ"}),
+                    "template_vars": json.dumps({"legacy": True}),
+                },
+            )
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            rows = _tradingagents_preset_schedule_rows(connection)
+        assert len(rows) == len(specs)
+        refreshed = next(
+            row for row in rows if cast(int, row["id"]) == schedule_id
+        )
+        _assert_tradingagents_preset_schedule_row(
+            refreshed,
+            paused_spec,
+            expected_status="paused",
+        )
+    finally:
+        engine.dispose()
+
 
 
 def test_init_db_removes_cost_columns_and_deletes_non_package_runtime_rows(

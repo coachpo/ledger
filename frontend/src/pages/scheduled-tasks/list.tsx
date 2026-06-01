@@ -20,8 +20,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -39,6 +46,10 @@ import {
   useScheduledTasks,
   useUpdateScheduledTask,
 } from "@/hooks/use-scheduled-tasks";
+import {
+  useWorkflowPackageManifest,
+  useWorkflowPackages,
+} from "@/hooks/use-workflow-packages";
 import { formatDateTime } from "@/lib/format";
 import type {
   ScheduleFireStatus,
@@ -48,8 +59,16 @@ import type {
   ScheduleStatus,
   ScheduleWriteStatus,
 } from "@/lib/types/schedule";
+import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
+import {
+  getWorkflowOptions,
+  type WorkflowOption,
+} from "@/lib/workflow-options";
 
 const ACTIVE_STATUS_FILTER = "__active__";
+const ALL_PACKAGES_FILTER = "__all_packages__";
+const ALL_WORKFLOWS_FILTER = "__all_workflows__";
+
 type ScheduleStatusFilter = ScheduleStatus | typeof ACTIVE_STATUS_FILTER;
 
 function statusFilterToParams(
@@ -170,6 +189,44 @@ function sortSchedules(items: readonly ScheduleRead[]): ScheduleRead[] {
   });
 }
 
+function createUnknownWorkflowOption(workflowKey: string): WorkflowOption {
+  return {
+    description: "Missing manifest workflow",
+    inputSchema: {},
+    key: workflowKey,
+    label: `Unknown workflow: ${workflowKey}`,
+  };
+}
+
+function buildWorkflowFilterOptions({
+  manifestOptions,
+  schedules,
+  selectedPackageKey,
+}: {
+  manifestOptions: readonly WorkflowOption[];
+  schedules: readonly ScheduleRead[];
+  selectedPackageKey: string;
+}): WorkflowOption[] {
+  const seenKeys = new Set(manifestOptions.map((option) => option.key));
+  const staleOptions: WorkflowOption[] = [];
+
+  for (const schedule of schedules) {
+    const workflowKey = schedule.workflowKey.trim();
+    if (
+      schedule.packageKey !== selectedPackageKey ||
+      !workflowKey ||
+      seenKeys.has(workflowKey)
+    ) {
+      continue;
+    }
+
+    seenKeys.add(workflowKey);
+    staleOptions.push(createUnknownWorkflowOption(workflowKey));
+  }
+
+  return [...manifestOptions, ...staleOptions];
+}
+
 function LoadingState() {
   return (
     <Card>
@@ -243,68 +300,100 @@ function ScheduleStatusFilters({
   );
 }
 
-function TextFilter({
+function SelectFilter({
+  disabled = false,
   id,
+  items,
   label,
   testId,
   value,
-  onChange,
+  onValueChange,
 }: {
+  disabled?: boolean;
   id: string;
+  items: ReadonlyArray<{ label: string; value: string }>;
   label: string;
   testId: string;
   value: string;
-  onChange: (value: string) => void;
+  onValueChange: (value: string) => void;
 }) {
   return (
     <div className="flex min-w-40 flex-col gap-1">
       <Label className="sr-only" htmlFor={id}>
         {label}
       </Label>
-      <Input
-        aria-label={label}
-        className="h-8 text-xs"
-        data-testid={testId}
-        id={id}
-        placeholder={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      <Select disabled={disabled} value={value} onValueChange={onValueChange}>
+        <SelectTrigger
+          aria-label={label}
+          className="min-w-40 text-xs"
+          data-testid={testId}
+          id={id}
+          size="sm"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {items.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
     </div>
   );
 }
+
 function ScheduleFilters({
+  packageItems,
   packageKey,
   status,
+  workflowDisabled,
+  workflowItems,
   workflowKey,
   onPackageKeyChange,
   onStatusChange,
   onWorkflowKeyChange,
 }: {
+  packageItems: ReadonlyArray<{ label: string; value: string }>;
   packageKey: string;
   status: ScheduleStatusFilter;
+  workflowDisabled: boolean;
+  workflowItems: ReadonlyArray<{ label: string; value: string }>;
   workflowKey: string;
   onPackageKeyChange: (value: string) => void;
   onStatusChange: (status: ScheduleStatusFilter) => void;
   onWorkflowKeyChange: (value: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-start gap-2">
       <ScheduleStatusFilters status={status} onStatusChange={onStatusChange} />
-      <TextFilter
+      <SelectFilter
         id="scheduled-tasks-package-filter"
-        label="Package key"
+        items={packageItems}
+        label="Package"
         testId="scheduled-tasks-filter-package"
-        value={packageKey}
-        onChange={onPackageKeyChange}
+        value={packageKey || ALL_PACKAGES_FILTER}
+        onValueChange={onPackageKeyChange}
       />
-      <TextFilter
-        id="scheduled-tasks-workflow-filter"
-        label="Workflow key"
-        testId="scheduled-tasks-filter-workflow"
-        value={workflowKey}
-        onChange={onWorkflowKeyChange}
-      />
+      <div className="flex min-w-40 flex-col gap-1">
+        <SelectFilter
+          disabled={workflowDisabled}
+          id="scheduled-tasks-workflow-filter"
+          items={workflowItems}
+          label="Workflow"
+          testId="scheduled-tasks-filter-workflow"
+          value={workflowKey || ALL_WORKFLOWS_FILTER}
+          onValueChange={onWorkflowKeyChange}
+        />
+        {workflowDisabled ? (
+          <p className="text-xs text-muted-foreground">
+            Choose a package first to filter by workflow.
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -671,15 +760,38 @@ export function ScheduledTasksListPage() {
   const runNow = useRunScheduledTaskNow();
   const deleteSchedule = useDeleteScheduledTask();
   const deleteSchedules = useDeleteScheduledTasks();
+  const workflowPackagesQuery = useWorkflowPackages();
+  const resolvedPackageKey = normalizeFilter(packageKey) ?? "";
+  const resolvedWorkflowKey = normalizeFilter(workflowKey) ?? "";
+  const selectedPackage = useMemo<WorkflowPackageRead | null>(
+    () =>
+      workflowPackagesQuery.data?.items.find(
+        (workflowPackage) => workflowPackage.key === resolvedPackageKey,
+      ) ?? null,
+    [resolvedPackageKey, workflowPackagesQuery.data?.items],
+  );
+  const manifestQuery = useWorkflowPackageManifest(selectedPackage?.id);
+  const manifestWorkflowOptions = useMemo(
+    () =>
+      manifestQuery.data
+        ? getWorkflowOptions(manifestQuery.data, resolvedWorkflowKey || null)
+        : resolvedWorkflowKey
+          ? [createUnknownWorkflowOption(resolvedWorkflowKey)]
+          : [],
+    [manifestQuery.data, resolvedWorkflowKey],
+  );
 
   const listParams = useMemo<ScheduleListParams>(
     () => ({
       limit: 50,
-      packageKey: normalizeFilter(packageKey),
+      packageKey: resolvedPackageKey || undefined,
       status: statusFilterToParams(statusFilter),
-      workflowKey: normalizeFilter(workflowKey),
+      workflowKey:
+        resolvedPackageKey && resolvedWorkflowKey
+          ? resolvedWorkflowKey
+          : undefined,
     }),
-    [packageKey, statusFilter, workflowKey],
+    [resolvedPackageKey, resolvedWorkflowKey, statusFilter],
   );
   const schedulesQuery = useScheduledTasks(listParams);
   const schedules = useMemo(
@@ -690,6 +802,38 @@ export function ScheduledTasksListPage() {
     () => filterSchedules(schedules, search),
     [schedules, search],
   );
+  const workflowOptions = useMemo(
+    () =>
+      resolvedPackageKey
+        ? buildWorkflowFilterOptions({
+            manifestOptions: manifestWorkflowOptions,
+            schedules,
+            selectedPackageKey: resolvedPackageKey,
+          })
+        : [],
+    [manifestWorkflowOptions, resolvedPackageKey, schedules],
+  );
+  const packageItems = useMemo(
+    () => [
+      { label: "All packages", value: ALL_PACKAGES_FILTER },
+      ...(workflowPackagesQuery.data?.items ?? []).map((workflowPackage) => ({
+        label: workflowPackage.name || workflowPackage.key,
+        value: workflowPackage.key,
+      })),
+    ],
+    [workflowPackagesQuery.data?.items],
+  );
+  const workflowItems = useMemo(
+    () => [
+      { label: "All workflows", value: ALL_WORKFLOWS_FILTER },
+      ...workflowOptions.map((option) => ({
+        label: option.label,
+        value: option.key,
+      })),
+    ],
+    [workflowOptions],
+  );
+  const workflowFilterDisabled = !resolvedPackageKey;
   const selectedSchedules = useMemo(
     () =>
       filteredSchedules.filter((schedule) => selectedScheduleIds.has(schedule.id)),
@@ -713,6 +857,24 @@ export function ScheduledTasksListPage() {
       workflowKey.trim() ||
       statusFilter !== ACTIVE_STATUS_FILTER,
   );
+
+  const updatePackageFilter = (nextValue: string) => {
+    const nextPackageKey =
+      nextValue === ALL_PACKAGES_FILTER ? "" : normalizeFilter(nextValue) ?? "";
+
+    if (nextPackageKey === resolvedPackageKey) {
+      return;
+    }
+
+    setPackageKey(nextPackageKey);
+    setWorkflowKey("");
+  };
+
+  const updateWorkflowFilter = (nextValue: string) => {
+    setWorkflowKey(
+      nextValue === ALL_WORKFLOWS_FILTER ? "" : normalizeFilter(nextValue) ?? "",
+    );
+  };
 
   const setSchedulesSelected = (
     schedulesToUpdate: readonly ScheduleRead[],
@@ -833,12 +995,15 @@ export function ScheduledTasksListPage() {
       toolbar={{
         filters: (
           <ScheduleFilters
-            packageKey={packageKey}
+            packageItems={packageItems}
+            packageKey={resolvedPackageKey}
             status={statusFilter}
-            workflowKey={workflowKey}
-            onPackageKeyChange={setPackageKey}
+            workflowDisabled={workflowFilterDisabled}
+            workflowItems={workflowItems}
+            workflowKey={resolvedWorkflowKey}
+            onPackageKeyChange={updatePackageFilter}
             onStatusChange={setStatusFilter}
-            onWorkflowKeyChange={setWorkflowKey}
+            onWorkflowKeyChange={updateWorkflowFilter}
           />
         ),
         resultSummary: `${filteredSchedules.length} of ${

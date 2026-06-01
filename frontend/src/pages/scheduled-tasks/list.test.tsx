@@ -10,6 +10,10 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ScheduleRead } from "@/lib/types/schedule";
+import type {
+  WorkflowPackageManifestRead,
+  WorkflowPackageRead,
+} from "@/lib/types/workflow-package";
 
 import { ScheduledTasksListPage } from "./list";
 
@@ -25,6 +29,8 @@ const {
   useRunScheduledTaskNowMock,
   useScheduledTasksMock,
   useUpdateScheduledTaskMock,
+  useWorkflowPackageManifestMock,
+  useWorkflowPackagesMock,
 } = vi.hoisted(() => ({
   deleteScheduleMock: vi.fn(),
   deleteSchedulesMock: vi.fn(),
@@ -37,6 +43,8 @@ const {
   useRunScheduledTaskNowMock: vi.fn(),
   useScheduledTasksMock: vi.fn(),
   useUpdateScheduledTaskMock: vi.fn(),
+  useWorkflowPackageManifestMock: vi.fn(),
+  useWorkflowPackagesMock: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({
@@ -52,6 +60,12 @@ vi.mock("@/hooks/use-scheduled-tasks", () => ({
   useRunScheduledTaskNow: () => useRunScheduledTaskNowMock(),
   useScheduledTasks: (...args: unknown[]) => useScheduledTasksMock(...args),
   useUpdateScheduledTask: () => useUpdateScheduledTaskMock(),
+}));
+
+vi.mock("@/hooks/use-workflow-packages", () => ({
+  useWorkflowPackageManifest: (...args: unknown[]) =>
+    useWorkflowPackageManifestMock(...args),
+  useWorkflowPackages: () => useWorkflowPackagesMock(),
 }));
 
 function scheduleFixture(overrides: Partial<ScheduleRead> = {}): ScheduleRead {
@@ -84,6 +98,56 @@ function scheduleFixture(overrides: Partial<ScheduleRead> = {}): ScheduleRead {
   };
 }
 
+function workflowPackageFixture(
+  overrides: Partial<WorkflowPackageRead> = {},
+): WorkflowPackageRead {
+  return {
+    compiledHash: "compiled-hash-1",
+    createdAt: "2026-05-01T10:00:00Z",
+    description: "Workflow package",
+    id: 12,
+    key: "market_research_package",
+    manifestHash: "manifest-hash-1",
+    name: "Market Research Package",
+    updatedAt: "2026-05-30T10:00:00Z",
+    ...overrides,
+  };
+}
+
+function workflowManifestFixture({
+  packageId = 12,
+  packageKey = "market_research_package",
+  workflows = [
+    {
+      description: "Daily research flow",
+      key: "daily_research",
+      label: "Daily Research",
+    },
+    {
+      description: "News research flow",
+      key: "news_research",
+      label: "News Research",
+    },
+  ],
+}: {
+  packageId?: number;
+  packageKey?: string;
+  workflows?: Array<{ description: string; key: string; label: string }>;
+} = {}): WorkflowPackageManifestRead {
+  return {
+    compiledHash: `compiled-${packageKey}`,
+    manifestHash: `manifest-${packageKey}`,
+    manifestSource: "apiVersion: signaldeck.workflowPackage/v1",
+    packageDefinition: {
+      spec: {
+        workflows,
+      },
+    },
+    packageId,
+    packageKey,
+  };
+}
+
 function renderPage() {
   return render(
     <MemoryRouter>
@@ -91,6 +155,24 @@ function renderPage() {
     </MemoryRouter>,
   );
 }
+
+function packageSelector() {
+  return screen.getByRole("combobox", { name: /package/i });
+}
+
+function workflowSelector() {
+  return screen.getByRole("combobox", { name: /workflow/i });
+}
+
+async function chooseSelectOption(
+  selector: HTMLElement,
+  optionName: string | RegExp,
+) {
+  selector.focus();
+  fireEvent.keyDown(selector, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: optionName }));
+}
+
 describe("ScheduledTasksListPage", () => {
   beforeEach(() => {
     deleteScheduleMock.mockReset();
@@ -104,6 +186,8 @@ describe("ScheduledTasksListPage", () => {
     useRunScheduledTaskNowMock.mockReset();
     useScheduledTasksMock.mockReset();
     useUpdateScheduledTaskMock.mockReset();
+    useWorkflowPackageManifestMock.mockReset();
+    useWorkflowPackagesMock.mockReset();
     deleteScheduleMock.mockResolvedValue(undefined);
     deleteSchedulesMock.mockImplementation(
       (_variables: unknown, options?: { onSuccess?: () => void }) =>
@@ -126,6 +210,47 @@ describe("ScheduledTasksListPage", () => {
     useUpdateScheduledTaskMock.mockReturnValue({
       isPending: false,
       mutateAsync: updateScheduleMock,
+    });
+    useWorkflowPackagesMock.mockReturnValue({
+      data: {
+        items: [
+          workflowPackageFixture(),
+          workflowPackageFixture({
+            id: 21,
+            key: "allocation_package",
+            name: "Allocation Package",
+          }),
+        ],
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    useWorkflowPackageManifestMock.mockImplementation((packageId?: string | number) => {
+      const normalizedPackageId = Number(packageId);
+      const data =
+        normalizedPackageId === 12
+          ? workflowManifestFixture()
+          : normalizedPackageId === 21
+            ? workflowManifestFixture({
+                packageId: 21,
+                packageKey: "allocation_package",
+                workflows: [
+                  {
+                    description: "Allocation check flow",
+                    key: "allocation_check",
+                    label: "Allocation Check",
+                  },
+                ],
+              })
+            : undefined;
+
+      return {
+        data,
+        error: null,
+        isError: false,
+        isPending: false,
+      };
     });
     useScheduledTasksMock.mockReturnValue({
       data: { items: [], limit: 50, offset: 0, totalCount: 0 },
@@ -226,6 +351,12 @@ describe("ScheduledTasksListPage", () => {
     expect(screen.getByLabelText("Search scheduled tasks")).toBeVisible();
     expect(screen.getByTestId("scheduled-tasks-filter-enabled")).toBeVisible();
     expect(screen.getByTestId("scheduled-tasks-filter-package")).toBeVisible();
+    expect(screen.getByTestId("scheduled-tasks-filter-workflow")).toBeVisible();
+    expect(packageSelector()).toHaveTextContent("All packages");
+    expect(workflowSelector()).toBeDisabled();
+    expect(
+      screen.getByText("Choose a package first to filter by workflow."),
+    ).toBeVisible();
     expect(screen.getByText("2 of 2 scheduled tasks shown")).toBeVisible();
 
     const table = screen.getByRole("table");
@@ -318,7 +449,7 @@ describe("ScheduledTasksListPage", () => {
     expect(dailyRow).not.toHaveAttribute("aria-label");
   });
 
-  it("keeps filters routed through schedule hooks while search stays local", () => {
+  it("keeps package and workflow selector filters routed through schedule hooks while search stays local", async () => {
     useScheduledTasksMock.mockReturnValue({
       data: {
         items: [scheduleFixture()],
@@ -339,6 +470,7 @@ describe("ScheduledTasksListPage", () => {
       status: undefined,
       workflowKey: undefined,
     });
+    expect(workflowSelector()).toBeDisabled();
 
     fireEvent.click(screen.getByTestId("scheduled-tasks-filter-enabled"));
     expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
@@ -348,24 +480,21 @@ describe("ScheduledTasksListPage", () => {
       workflowKey: undefined,
     });
 
-    fireEvent.change(screen.getByTestId("scheduled-tasks-filter-package"), {
-      target: { value: " market_research " },
-    });
+    await chooseSelectOption(packageSelector(), "Market Research Package");
     expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
       limit: 50,
-      packageKey: "market_research",
+      packageKey: "market_research_package",
       status: "enabled",
       workflowKey: undefined,
     });
+    expect(workflowSelector()).not.toBeDisabled();
 
-    fireEvent.change(screen.getByTestId("scheduled-tasks-filter-workflow"), {
-      target: { value: " daily " },
-    });
+    await chooseSelectOption(workflowSelector(), "Daily Research");
     expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
       limit: 50,
-      packageKey: "market_research",
+      packageKey: "market_research_package",
       status: "enabled",
-      workflowKey: "daily",
+      workflowKey: "daily_research",
     });
 
     fireEvent.change(screen.getByLabelText("Search scheduled tasks"), {
@@ -373,13 +502,107 @@ describe("ScheduledTasksListPage", () => {
     });
     expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
       limit: 50,
-      packageKey: "market_research",
+      packageKey: "market_research_package",
       status: "enabled",
-      workflowKey: "daily",
+      workflowKey: "daily_research",
     });
     expect(
       screen.getByText("No scheduled tasks match this search or filters."),
     ).toBeVisible();
+  });
+
+  it("clears and disables workflow filtering until a package is selected", async () => {
+    useScheduledTasksMock.mockReturnValue({
+      data: {
+        items: [scheduleFixture()],
+        limit: 50,
+        offset: 0,
+        totalCount: 1,
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderPage();
+
+    expect(workflowSelector()).toBeDisabled();
+    expect(
+      screen.getByText("Choose a package first to filter by workflow."),
+    ).toBeVisible();
+
+    await chooseSelectOption(packageSelector(), "Market Research Package");
+    expect(workflowSelector()).not.toBeDisabled();
+
+    await chooseSelectOption(workflowSelector(), "Daily Research");
+    expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
+      limit: 50,
+      packageKey: "market_research_package",
+      status: undefined,
+      workflowKey: "daily_research",
+    });
+
+    await chooseSelectOption(packageSelector(), "All packages");
+    expect(workflowSelector()).toBeDisabled();
+    expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
+      limit: 50,
+      packageKey: undefined,
+      status: undefined,
+      workflowKey: undefined,
+    });
+  });
+
+  it("shows manifest-order workflow options and keeps stale workflow keys selectable", async () => {
+    useScheduledTasksMock.mockReturnValue({
+      data: {
+        items: [
+          scheduleFixture(),
+          scheduleFixture({
+            id: 45,
+            latestFireId: null,
+            latestRunId: null,
+            latestStatus: null,
+            name: "Stale workflow schedule",
+            workflowKey: "retired_workflow",
+          }),
+        ],
+        limit: 50,
+        offset: 0,
+        totalCount: 2,
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderPage();
+
+    await chooseSelectOption(packageSelector(), "Market Research Package");
+
+    const selector = workflowSelector();
+    selector.focus();
+    fireEvent.keyDown(selector, { key: "ArrowDown" });
+
+    const options = await screen.findAllByRole("option");
+    expect(options.map((option) => option.textContent?.trim())).toEqual([
+      "All workflows",
+      "Daily Research",
+      "News Research",
+      "Unknown workflow: retired_workflow",
+    ]);
+
+    fireEvent.click(
+      await screen.findByRole("option", {
+        name: "Unknown workflow: retired_workflow",
+      }),
+    );
+
+    expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
+      limit: 50,
+      packageKey: "market_research_package",
+      status: undefined,
+      workflowKey: "retired_workflow",
+    });
   });
 
   it("disables pending row actions while keeping navigation links explicit", () => {

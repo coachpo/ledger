@@ -72,10 +72,12 @@ import {
   useCreateWorkflowPackageRuntimeInputPersonalEntry,
   useDeleteWorkflowPackageRuntimeInputPersonalEntry,
   useUpdateWorkflowPackageRuntimeInputPersonalEntry,
+  useWorkflowPackageManifest,
   useWorkflowPackageRuntimeInputRegistry,
 } from "@/hooks/use-workflow-packages";
 import { ApiRequestError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/format";
+import { getWorkflowOptions } from "@/lib/workflow-options";
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import {
   createLaunchParametersTemplate,
@@ -212,6 +214,50 @@ const DAY_OF_WEEK_OPTIONS: Array<{ label: string; value: ScheduleDayOfWeek }> = 
 ];
 
 const MONTH_DAY_OPTIONS = Array.from({ length: 31 }, (_, index) => index + 1);
+
+const STALE_WORKFLOW_RUNTIME_INPUTS_UNAVAILABLE_MESSAGE =
+  "Runtime inputs are unavailable because this schedule references a workflow that is no longer in the package manifest.";
+const PENDING_WORKFLOW_RUNTIME_INPUTS_UNAVAILABLE_MESSAGE =
+  "Runtime inputs are unavailable until the current package manifest finishes loading.";
+const ERROR_WORKFLOW_RUNTIME_INPUTS_UNAVAILABLE_MESSAGE =
+  "Runtime inputs are unavailable until the current package manifest can be loaded.";
+const MISSING_WORKFLOW_RUNTIME_INPUTS_UNAVAILABLE_MESSAGE =
+  "Runtime inputs are unavailable until this schedule resolves to a current manifest workflow.";
+
+type ScheduleWorkflowState = {
+  activeWorkflowKey: string;
+  isStale: boolean;
+  workflowDisplayLabel: string;
+};
+
+function resolveScheduleWorkflowState(schedule: ScheduleRead, manifest: unknown): ScheduleWorkflowState {
+  const persistedWorkflowKey = schedule.workflowKey.trim();
+  if (!manifest) {
+    return {
+      activeWorkflowKey: "",
+      isStale: false,
+      workflowDisplayLabel: persistedWorkflowKey || "workflow",
+    };
+  }
+
+  const workflowOptions = getWorkflowOptions(
+    manifest as Parameters<typeof getWorkflowOptions>[0],
+    persistedWorkflowKey || null,
+  );
+  const displayWorkflowLabel =
+    workflowOptions.find((option) => option.key === persistedWorkflowKey)?.label ??
+    persistedWorkflowKey ??
+    "workflow";
+  const manifestWorkflow = getWorkflowOptions(
+    manifest as Parameters<typeof getWorkflowOptions>[0],
+  ).find((option) => option.key === persistedWorkflowKey);
+
+  return {
+    activeWorkflowKey: manifestWorkflow?.key ?? "",
+    isStale: Boolean(persistedWorkflowKey) && !manifestWorkflow,
+    workflowDisplayLabel: displayWorkflowLabel || "workflow",
+  };
+}
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
@@ -645,13 +691,17 @@ function DetailPageMessage({
 
 function ScheduleHeader({
   mutationPending,
+  runNowDisabled,
   schedule,
+  workflowDisplayLabel,
   onDelete,
   onRunNow,
   onToggleStatus,
 }: {
   mutationPending: boolean;
+  runNowDisabled: boolean;
   schedule: ScheduleRead;
+  workflowDisplayLabel: string;
   onDelete: () => void;
   onRunNow: () => void;
   onToggleStatus: () => void;
@@ -675,7 +725,7 @@ function ScheduleHeader({
             <span aria-hidden="true">/</span>
             <span className="min-w-0 break-all font-mono">{schedule.packageKey}</span>
             <span aria-hidden="true">/</span>
-            <span className="min-w-0 break-all font-mono">{schedule.workflowKey}</span>
+            <span className="min-w-0 break-all font-mono">{workflowDisplayLabel}</span>
           </span>
         }
         status={<StatusBadge status={schedule.status} />}
@@ -685,7 +735,7 @@ function ScheduleHeader({
         <Button
           className="w-full sm:w-auto"
           data-testid="schedule-run-now"
-          disabled={actionDisabled}
+          disabled={actionDisabled || runNowDisabled}
           size="sm"
           type="button"
           onClick={onRunNow}
@@ -782,6 +832,20 @@ function DetailRows({ rows }: { rows: Array<[string, React.ReactNode]> }) {
   );
 }
 
+function StaleWorkflowAlert({ workflowKey }: { workflowKey: string }) {
+  return (
+    <Alert data-testid="scheduled-task-stale-workflow-warning" variant="default">
+      <AlertCircle />
+      <AlertTitle>Workflow no longer available</AlertTitle>
+      <AlertDescription>
+        This schedule still references <span className="font-mono">{workflowKey}</span>, but that workflow is no
+        longer present in the current package manifest. Preview, run now, and runtime inputs are disabled until the
+        schedule target is recreated.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function actionableDiagnostics(diagnostics: readonly ScheduleDiagnostic[]): ScheduleDiagnostic[] {
   return diagnostics.filter((diagnostic) => diagnostic.severity !== "info");
 }
@@ -816,9 +880,13 @@ function DeveloperDetails({ diagnostics }: { diagnostics: readonly ScheduleDiagn
 function SummaryPanels({
   diagnostics,
   schedule,
+  workflowDisplayLabel,
+  workflowIsStale,
 }: {
   diagnostics: readonly ScheduleDiagnostic[];
   schedule: ScheduleRead;
+  workflowDisplayLabel: string;
+  workflowIsStale: boolean;
 }) {
   const visibleDiagnostics = actionableDiagnostics(diagnostics);
 
@@ -847,12 +915,15 @@ function SummaryPanels({
         testId="scheduled-task-detail-target-summary"
         title="Target workflow"
       >
-        <DetailRows
-          rows={[
-            ["Package", <span className="font-mono">{schedule.packageKey}</span>],
-            ["Workflow", <span className="font-mono">{schedule.workflowKey}</span>],
-          ]}
-        />
+        <div className="flex min-w-0 flex-col gap-3">
+          <DetailRows
+            rows={[
+              ["Package", <span className="font-mono">{schedule.packageKey}</span>],
+              ["Workflow", <span className="font-mono">{workflowDisplayLabel}</span>],
+            ]}
+          />
+          {workflowIsStale ? <StaleWorkflowAlert workflowKey={schedule.workflowKey} /> : null}
+        </div>
       </SummaryCard>
       <SummaryCard
         description="Most recent scheduled or manual run evidence."
@@ -1630,6 +1701,27 @@ function SchedulePlaceholderReference() {
   );
 }
 
+function workflowInputsUnavailableReason(params: {
+  manifestError: boolean;
+  manifestPending: boolean;
+  workflowKey: string;
+  workflowState: ScheduleWorkflowState;
+}): string | null {
+  if (params.manifestPending) {
+    return PENDING_WORKFLOW_RUNTIME_INPUTS_UNAVAILABLE_MESSAGE;
+  }
+  if (params.manifestError) {
+    return ERROR_WORKFLOW_RUNTIME_INPUTS_UNAVAILABLE_MESSAGE;
+  }
+  if (params.workflowState.isStale) {
+    return STALE_WORKFLOW_RUNTIME_INPUTS_UNAVAILABLE_MESSAGE;
+  }
+  if (!params.workflowState.activeWorkflowKey || !params.workflowKey.trim()) {
+    return MISSING_WORKFLOW_RUNTIME_INPUTS_UNAVAILABLE_MESSAGE;
+  }
+  return null;
+}
+
 function ScheduleInputPreview({ preview }: { preview: SchedulePreviewRead | null }) {
   if (!preview) {
     return (
@@ -1665,17 +1757,21 @@ function ScheduleInputPreview({ preview }: { preview: SchedulePreviewRead | null
 }
 
 function ScheduledInputsEditor({
+  activeWorkflowKey,
   disabled,
   isSaving,
   schedule,
+  workflowInputsUnavailableReason,
   onSave,
 }: {
+  activeWorkflowKey: string;
   disabled: boolean;
   isSaving: boolean;
   schedule: ScheduleRead;
+  workflowInputsUnavailableReason: string | null;
   onSave: (payload: ScheduleUpdateRequest, successMessage?: string) => Promise<void>;
 }) {
-  const runtimeInputRegistry = useWorkflowPackageRuntimeInputRegistry(schedule.packageId, schedule.workflowKey);
+  const runtimeInputRegistry = useWorkflowPackageRuntimeInputRegistry(schedule.packageId, activeWorkflowKey);
   const createPersonalEntry = useCreateWorkflowPackageRuntimeInputPersonalEntry();
   const updatePersonalEntry = useUpdateWorkflowPackageRuntimeInputPersonalEntry();
   const deletePersonalEntry = useDeleteWorkflowPackageRuntimeInputPersonalEntry();
@@ -1693,7 +1789,7 @@ function ScheduledInputsEditor({
   const inputSchemaFingerprint = runtimeInputRegistry.data?.currentMetadata?.schemaFingerprint ?? stringifyJson(inputSchema);
   const inputTemplate = useMemo(() => createLaunchParametersTemplate(inputSchema), [inputSchema]);
   const schemaTemplateText = useMemo(() => resetLaunchParametersTemplate(inputTemplate), [inputTemplate]);
-  const templateIdentity = `${schedule.packageId}:${schedule.workflowKey}:${inputSchemaFingerprint}`;
+  const templateIdentity = `${schedule.packageId}:${activeWorkflowKey}:${inputSchemaFingerprint}`;
   const draftErrors = useMemo(() => scheduleInputDraftErrors(inputTemplateText), [inputTemplateText]);
   const controlDisabled = disabled || isSaving;
   const canUseNextFire = Boolean(schedule.nextFireAt);
@@ -1709,6 +1805,16 @@ function ScheduledInputsEditor({
       setInputTemplateText(schemaTemplateText);
     }
   }, [schemaTemplateText, templateIdentity]);
+
+  if (workflowInputsUnavailableReason) {
+    return (
+      <Alert data-testid="scheduled-inputs-unavailable" variant="default">
+        <AlertCircle />
+        <AlertTitle>Runtime inputs unavailable</AlertTitle>
+        <AlertDescription>{workflowInputsUnavailableReason}</AlertDescription>
+      </Alert>
+    );
+  }
 
   const updateInputTemplateText = (value: string) => {
     inputTemplateEditedRef.current = true;
@@ -1752,7 +1858,7 @@ function ScheduledInputsEditor({
     try {
       const result = await previewScheduledInputs.mutateAsync({
         packageId: schedule.packageId,
-        workflowKey: schedule.workflowKey,
+        workflowKey: activeWorkflowKey,
         timezone: schedule.timezone,
         recurrence: schedule.recurrence,
         scheduledFor: schedule.nextFireAt,
@@ -1826,7 +1932,7 @@ function ScheduledInputsEditor({
       await createPersonalEntry.mutateAsync({
         packageId: schedule.packageId,
         payload: { name, payload: draft.inputTemplate },
-        workflowKey: schedule.workflowKey,
+        workflowKey: activeWorkflowKey,
       });
       setPersonalPresetName("");
       toast.success("Saved scheduled input preset");
@@ -1846,7 +1952,7 @@ function ScheduledInputsEditor({
         entryId: entry.id,
         packageId: schedule.packageId,
         payload: { name: name || null, payload: draft.inputTemplate },
-        workflowKey: schedule.workflowKey,
+        workflowKey: activeWorkflowKey,
       });
       setPersonalPresetName("");
       toast.success("Updated scheduled input preset");
@@ -1860,7 +1966,7 @@ function ScheduledInputsEditor({
       await deletePersonalEntry.mutateAsync({
         entryId: entry.id,
         packageId: schedule.packageId,
-        workflowKey: schedule.workflowKey,
+        workflowKey: activeWorkflowKey,
       });
       toast.success("Deleted scheduled input preset");
     } catch (error) {
@@ -1982,7 +2088,7 @@ function ScheduledInputsEditor({
                   personalEntries={runtimeInputRegistry.data?.personal ?? []}
                   presetName={personalPresetName}
                   updatePending={updatePersonalEntry.isPending}
-                  workflowKey={schedule.workflowKey}
+                  workflowKey={activeWorkflowKey}
                   onCreate={() => void savePersonalInput()}
                   onDelete={(entry) => void deletePersonalInput(entry)}
                   onLoad={loadSavedInput}
@@ -2188,14 +2294,24 @@ function ScheduleTabs({
   mutationPending,
   onRunNow,
   onSaveSchedule,
+  runNowDisabled,
   schedule,
+  workflowDisplayLabel,
+  workflowIsStale,
+  workflowInputsUnavailableReason,
+  workflowRegistryKey,
 }: {
   diagnostics: readonly ScheduleDiagnostic[];
   fireHistory: FireHistoryState | undefined;
   mutationPending: boolean;
   onRunNow: () => void;
   onSaveSchedule: (payload: ScheduleUpdateRequest, successMessage?: string) => Promise<void>;
+  runNowDisabled: boolean;
   schedule: ScheduleRead;
+  workflowDisplayLabel: string;
+  workflowIsStale: boolean;
+  workflowInputsUnavailableReason: string | null;
+  workflowRegistryKey: string;
 }) {
   const [activeTab, setActiveTab] = useState<"overview" | "schedule" | "inputs" | "runs">("overview");
 
@@ -2213,7 +2329,12 @@ function ScheduleTabs({
         forceMount
         value="overview"
       >
-        <SummaryPanels diagnostics={diagnostics} schedule={schedule} />
+        <SummaryPanels
+          diagnostics={diagnostics}
+          schedule={schedule}
+          workflowDisplayLabel={workflowDisplayLabel}
+          workflowIsStale={workflowIsStale}
+        />
       </TabsContent>
       <TabsContent
         className="m-0 min-w-0 data-[state=inactive]:hidden"
@@ -2238,9 +2359,11 @@ function ScheduleTabs({
       >
         <SummaryCard description="Start a custom draft from the workflow defaults or update values for future runs." title="Inputs">
           <ScheduledInputsEditor
+            activeWorkflowKey={workflowRegistryKey}
             disabled={false}
             isSaving={mutationPending}
             schedule={schedule}
+            workflowInputsUnavailableReason={workflowInputsUnavailableReason}
             onSave={onSaveSchedule}
           />
         </SummaryCard>
@@ -2257,7 +2380,7 @@ function ScheduleTabs({
               history={fireHistory}
               latestRunId={schedule.latestRunId}
               onRunNow={onRunNow}
-              runNowDisabled={mutationPending}
+              runNowDisabled={runNowDisabled}
             />
           </SummaryCard>
           <Collapsible className="min-w-0">
@@ -2285,6 +2408,7 @@ export function ScheduledTaskDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [runNowFeedback, setRunNowFeedback] = useState<RunNowFeedback | null>(null);
   const scheduleQuery = useScheduledTask(scheduleId);
+  const workflowManifestQuery = useWorkflowPackageManifest(scheduleQuery.data?.packageId);
   const firesQuery = useScheduledTaskFires(scheduleId, { limit: 20 });
   const updateSchedule = useUpdateScheduledTask();
   const runNow = useRunScheduledTaskNow();
@@ -2331,6 +2455,17 @@ export function ScheduledTaskDetailPage() {
   }
 
   const schedule = scheduleQuery.data;
+  const workflowState = resolveScheduleWorkflowState(
+    schedule,
+    workflowManifestQuery.data,
+  );
+  const workflowScopedActionUnavailableReason =
+    workflowInputsUnavailableReason({
+      manifestError: workflowManifestQuery.isError,
+      manifestPending: workflowManifestQuery.isPending,
+      workflowKey: schedule.workflowKey,
+      workflowState,
+    });
   const diagnostics = buildScheduleDiagnostics(schedule);
   const fireHistory = {
     ...fireHistoryFromRead(firesQuery?.data),
@@ -2339,6 +2474,8 @@ export function ScheduledTaskDetailPage() {
     isPending: firesQuery?.isPending ?? false,
   };
   const mutationPending = updateSchedule.isPending || runNow.isPending || deleteSchedule.isPending;
+  const runNowDisabled =
+    mutationPending || Boolean(workflowScopedActionUnavailableReason);
 
   const toggleScheduleStatus = async () => {
     const nextStatus: ScheduleWriteStatus = schedule.status === "enabled" ? "paused" : "enabled";
@@ -2354,6 +2491,10 @@ export function ScheduledTaskDetailPage() {
   };
 
   const runScheduleNow = async () => {
+    if (workflowScopedActionUnavailableReason) {
+      return;
+    }
+
     const scheduledFor = new Date().toISOString();
     try {
       const result = await runNow.mutateAsync({
@@ -2414,7 +2555,9 @@ export function ScheduledTaskDetailPage() {
       contextBar={
         <ScheduleHeader
           mutationPending={mutationPending}
+          runNowDisabled={runNowDisabled}
           schedule={schedule}
+          workflowDisplayLabel={workflowState.workflowDisplayLabel}
           onDelete={() => setDeleteDialogOpen(true)}
           onRunNow={() => void runScheduleNow()}
           onToggleStatus={() => void toggleScheduleStatus()}
@@ -2429,7 +2572,12 @@ export function ScheduledTaskDetailPage() {
         mutationPending={mutationPending}
         onRunNow={() => void runScheduleNow()}
         onSaveSchedule={saveScheduleConfiguration}
+        runNowDisabled={runNowDisabled}
         schedule={schedule}
+        workflowDisplayLabel={workflowState.workflowDisplayLabel}
+        workflowIsStale={workflowState.isStale}
+        workflowInputsUnavailableReason={workflowScopedActionUnavailableReason}
+        workflowRegistryKey={workflowState.activeWorkflowKey}
       />
       <ConfirmDeleteDialog
         confirmLabel="Delete scheduled task"

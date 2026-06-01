@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -14,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_REGISTRY
+from app.core.formatting import to_utc, utcnow
 from app.db.validation import validate_supported_database_engine
 from app.extensions.registry import get_bundled_extension_registry
 from app.models.agent import (
@@ -146,8 +148,62 @@ _EXTENSION_STATE_CREATE_CANONICAL_TABLE_SQL = f"""
     """
 _PRESET_PACKAGE_SQL_FILE = "".join(("trading", "agents", "_", "advisory", "_", "research", ".sql"))
 _PRESET_PACKAGE_KEY = _PRESET_PACKAGE_SQL_FILE.removesuffix(".sql")
-_PRESET_PACKAGE_MANIFEST_HASH = "8957538a4cb23b1c069581c7da5516e8cc26997161398f5d6068bd654b992eb1"
-_PRESET_PACKAGE_COMPILED_HASH = "8156cb4962d2064217c607d66942d6b8baadce842f838fb8e8d48f93a582daf2"
+_PRESET_PACKAGE_MANIFEST_HASH = "3d05ed8a6533618b6a955dc0ac368c3dd229d8ecb002667f5b887ece4f4081f1"
+_PRESET_PACKAGE_COMPILED_HASH = "a62916f90c24b61c419d05dbfe8b22274cafdfd0ebff52493509140b25468936"
+_PRESET_PACKAGE_SCHEDULE_RECURRENCE = {"type": "interval", "every": 2, "unit": "minutes"}
+_PRESET_PACKAGE_SCHEDULE_DEFAULTS = {
+    "timezone": "UTC",
+    "overlap_policy": "skip",
+    "misfire_policy": "catchUpOne",
+    "misfire_grace_seconds": 86400,
+}
+_PRESET_PACKAGE_SCHEDULE_SPECS = (
+    {
+        "workflow_key": "advisory_research",
+        "name": "TradingAgents Advisory Research · 2m",
+        "input_template": {
+            "ticker": "SPY",
+            "asOfDate": "{{fire.scheduledLocalDate}}",
+            "horizonDays": 30,
+            "portfolioId": "",
+            "outputLanguage": "English",
+            "benchmarkSymbol": "SPY",
+            "maxRiskDebateRounds": 2,
+            "maxInvestmentDebateRounds": 2,
+        },
+    },
+    {
+        "workflow_key": "market_research",
+        "name": "TradingAgents Market Research · 2m",
+        "input_template": {
+            "ticker": "SPY",
+            "asOfDate": "{{fire.scheduledLocalDate}}",
+            "horizonDays": 30,
+            "outputLanguage": "English",
+            "benchmarkSymbol": "SPY",
+        },
+    },
+    {
+        "workflow_key": "news_research",
+        "name": "TradingAgents News Research · 2m",
+        "input_template": {
+            "ticker": "SPY",
+            "asOfDate": "{{fire.scheduledLocalDate}}",
+            "horizonDays": 30,
+            "outputLanguage": "English",
+        },
+    },
+    {
+        "workflow_key": "fundamentals_research",
+        "name": "TradingAgents Fundamentals Research · 2m",
+        "input_template": {
+            "ticker": "SPY",
+            "asOfDate": "{{fire.scheduledLocalDate}}",
+            "horizonDays": 30,
+            "outputLanguage": "English",
+        },
+    },
+)
 _DB_UPGRADE_MARKER_TABLE = "db_upgrade_markers"
 _WORKFLOW_PACKAGE_STARTUP_CUTOVER_MARKER_KEY = "workflow_package_artifact_cutover_v1"
 
@@ -2826,6 +2882,228 @@ def _insert_browser_proven_package_preset(connection: Connection, preset_sql_pat
     connection.exec_driver_sql(preset_sql_path.read_text(encoding="utf-8"))
 
 
+
+def _browser_proven_package_preset_schedule_definitions(
+    package_definition: object,
+    compiled_plan: object,
+) -> tuple[dict[str, object], ...]:
+    workflow_descriptions: dict[str, str | None] = {}
+
+    def _collect_descriptions(payload: object) -> None:
+        if not isinstance(payload, Mapping):
+            return
+        spec = payload.get("spec")
+        if isinstance(spec, Mapping):
+            workflows = spec.get("workflows")
+            if isinstance(workflows, list):
+                for workflow in workflows:
+                    if not isinstance(workflow, Mapping) or workflow.get("key") is None:
+                        continue
+                    workflow_descriptions[str(workflow["key"])] = cast(
+                        str | None,
+                        workflow.get("description"),
+                    )
+        workflows = payload.get("workflows")
+        if isinstance(workflows, list):
+            for workflow in workflows:
+                if not isinstance(workflow, Mapping) or workflow.get("key") is None:
+                    continue
+                workflow_descriptions.setdefault(
+                    str(workflow["key"]),
+                    cast(str | None, workflow.get("description")),
+                )
+
+    _collect_descriptions(package_definition)
+    _collect_descriptions(compiled_plan)
+
+    return tuple(
+        {
+            "workflow_key": spec["workflow_key"],
+            "name": spec["name"],
+            "description": workflow_descriptions.get(str(spec["workflow_key"])),
+            "timezone": _PRESET_PACKAGE_SCHEDULE_DEFAULTS["timezone"],
+            "recurrence": _PRESET_PACKAGE_SCHEDULE_RECURRENCE,
+            "overlap_policy": _PRESET_PACKAGE_SCHEDULE_DEFAULTS["overlap_policy"],
+            "misfire_policy": _PRESET_PACKAGE_SCHEDULE_DEFAULTS["misfire_policy"],
+            "misfire_grace_seconds": _PRESET_PACKAGE_SCHEDULE_DEFAULTS[
+                "misfire_grace_seconds"
+            ],
+            "input_template": spec["input_template"],
+            "template_vars": {},
+        }
+        for spec in _PRESET_PACKAGE_SCHEDULE_SPECS
+    )
+
+
+
+def _browser_proven_package_preset_schedule_next_fire_at(
+    *,
+    created_at: datetime,
+    starts_at: datetime | None,
+    ends_at: datetime | None,
+    reference_now: datetime,
+) -> datetime | None:
+    delta = timedelta(minutes=2)
+    now = to_utc(reference_now)
+    compare_at = to_utc(starts_at) if starts_at is not None and to_utc(starts_at) > now else now
+    first = to_utc(starts_at or created_at) + delta
+    candidate = first
+    if first < compare_at:
+        candidate = first + (delta * (int((compare_at - first) // delta) + 1))
+    if ends_at is not None and candidate > to_utc(ends_at):
+        return None
+    return candidate
+
+
+
+def _ensure_browser_proven_package_preset_schedules(connection: Connection) -> None:
+    preset_row = (
+        connection.execute(
+            text(
+                """
+                SELECT id, package_definition, compiled_plan
+                FROM workflow_packages
+                WHERE key = :package_key
+                """
+            ),
+            {"package_key": _PRESET_PACKAGE_KEY},
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if preset_row is None:
+        return
+
+    schedule_specs = _browser_proven_package_preset_schedule_definitions(
+        _jsonb_payload(preset_row["package_definition"]),
+        _jsonb_payload(preset_row["compiled_plan"]),
+    )
+    schedule_names = [str(spec["name"]) for spec in schedule_specs]
+    existing_rows = (
+        connection.execute(
+            text(
+                """
+                SELECT id, name, status, created_at, starts_at, ends_at, next_fire_at
+                FROM workflow_package_schedules
+                WHERE package_id = :package_id
+                  AND name IN :schedule_names
+                ORDER BY name ASC,
+                    CASE WHEN status = 'paused' THEN 0 ELSE 1 END ASC,
+                    id ASC
+                """
+            ).bindparams(bindparam("schedule_names", expanding=True)),
+            {
+                "package_id": preset_row["id"],
+                "schedule_names": schedule_names,
+            },
+        )
+        .mappings()
+        .all()
+    )
+    rows_by_name: dict[str, list[Mapping[str, object]]] = {}
+    for row in existing_rows:
+        rows_by_name.setdefault(str(row["name"]), []).append(cast(Mapping[str, object], row))
+
+    seeded_at = utcnow()
+    insert_statement = text(
+        """
+        INSERT INTO workflow_package_schedules (
+            package_id, workflow_key, name, description, status, timezone,
+            recurrence, starts_at, ends_at, next_fire_at, overlap_policy,
+            misfire_policy, misfire_grace_seconds, input_template,
+            template_vars, created_at, updated_at
+        ) VALUES (
+            :package_id, :workflow_key, :name, :description, :status, :timezone,
+            CAST(:recurrence AS jsonb), NULL, NULL, :next_fire_at,
+            :overlap_policy, :misfire_policy, :misfire_grace_seconds,
+            CAST(:input_template AS jsonb), CAST(:template_vars AS jsonb),
+            :created_at, :updated_at
+        )
+        """
+    )
+    update_statement = text(
+        """
+        UPDATE workflow_package_schedules
+        SET workflow_key = :workflow_key,
+            name = :name,
+            description = :description,
+            status = :status,
+            timezone = :timezone,
+            recurrence = CAST(:recurrence AS jsonb),
+            next_fire_at = :next_fire_at,
+            overlap_policy = :overlap_policy,
+            misfire_policy = :misfire_policy,
+            misfire_grace_seconds = :misfire_grace_seconds,
+            input_template = CAST(:input_template AS jsonb),
+            template_vars = CAST(:template_vars AS jsonb),
+            updated_at = :updated_at
+        WHERE id = :schedule_id
+        """
+    )
+
+    for spec in schedule_specs:
+        matching_rows = rows_by_name.get(str(spec["name"]), [])
+        if matching_rows:
+            matching_row = matching_rows[0]
+            next_fire_at = cast(datetime | None, matching_row["next_fire_at"])
+            if next_fire_at is None or to_utc(next_fire_at) > seeded_at:
+                next_fire_at = _browser_proven_package_preset_schedule_next_fire_at(
+                    created_at=cast(datetime, matching_row["created_at"]),
+                    starts_at=cast(datetime | None, matching_row["starts_at"]),
+                    ends_at=cast(datetime | None, matching_row["ends_at"]),
+                    reference_now=seeded_at,
+                )
+            connection.execute(
+                update_statement,
+                {
+                    "schedule_id": matching_row["id"],
+                    "workflow_key": spec["workflow_key"],
+                    "name": spec["name"],
+                    "description": spec["description"],
+                    "status": "paused"
+                    if str(matching_row["status"]) == "paused"
+                    else "enabled",
+                    "timezone": spec["timezone"],
+                    "recurrence": json.dumps(spec["recurrence"], sort_keys=True),
+                    "next_fire_at": next_fire_at,
+                    "overlap_policy": spec["overlap_policy"],
+                    "misfire_policy": spec["misfire_policy"],
+                    "misfire_grace_seconds": spec["misfire_grace_seconds"],
+                    "input_template": json.dumps(spec["input_template"], sort_keys=True),
+                    "template_vars": json.dumps(spec["template_vars"], sort_keys=True),
+                    "updated_at": seeded_at,
+                },
+            )
+            continue
+
+        connection.execute(
+            insert_statement,
+            {
+                "package_id": preset_row["id"],
+                "workflow_key": spec["workflow_key"],
+                "name": spec["name"],
+                "description": spec["description"],
+                "status": "enabled",
+                "timezone": spec["timezone"],
+                "recurrence": json.dumps(spec["recurrence"], sort_keys=True),
+                "next_fire_at": _browser_proven_package_preset_schedule_next_fire_at(
+                    created_at=seeded_at,
+                    starts_at=None,
+                    ends_at=None,
+                    reference_now=seeded_at,
+                ),
+                "overlap_policy": spec["overlap_policy"],
+                "misfire_policy": spec["misfire_policy"],
+                "misfire_grace_seconds": spec["misfire_grace_seconds"],
+                "input_template": json.dumps(spec["input_template"], sort_keys=True),
+                "template_vars": json.dumps(spec["template_vars"], sort_keys=True),
+                "created_at": seeded_at,
+                "updated_at": seeded_at,
+            },
+        )
+
+
+
 def _ensure_browser_proven_package_preset(engine: Engine, table_names: set[str]) -> None:
     if "workflow_packages" not in table_names:
         return
@@ -2859,6 +3137,8 @@ def _ensure_browser_proven_package_preset(engine: Engine, table_names: set[str])
                 {"package_key": _PRESET_PACKAGE_KEY},
             )
             _insert_browser_proven_package_preset(connection, preset_sql_path)
+
+        _ensure_browser_proven_package_preset_schedules(connection)
 
         if not marker_applied:
             _mark_upgrade_applied(

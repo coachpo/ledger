@@ -12,6 +12,7 @@ import type {
   ScheduleRunNowRead,
 } from "@/lib/types/schedule";
 import type {
+  WorkflowPackageManifestRead,
   WorkflowPackageRuntimeInputEntryRead,
   WorkflowPackageRuntimeInputRegistryRead,
 } from "@/lib/types/workflow-package";
@@ -38,6 +39,7 @@ const {
   useScheduledTaskMock,
   useUpdateRuntimeInputPersonalEntryMock,
   useUpdateScheduledTaskMock,
+  useWorkflowPackageManifestMock,
   useWorkflowPackageRuntimeInputRegistryMock,
 } = vi.hoisted(() => ({
   deleteScheduleMock: vi.fn(),
@@ -59,6 +61,7 @@ const {
   useScheduledTaskMock: vi.fn(),
   useUpdateRuntimeInputPersonalEntryMock: vi.fn(),
   useUpdateScheduledTaskMock: vi.fn(),
+  useWorkflowPackageManifestMock: vi.fn(),
   useWorkflowPackageRuntimeInputRegistryMock: vi.fn(),
 }));
 
@@ -83,6 +86,7 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useCreateWorkflowPackageRuntimeInputPersonalEntry: () => useCreateRuntimeInputPersonalEntryMock(),
   useDeleteWorkflowPackageRuntimeInputPersonalEntry: () => useDeleteRuntimeInputPersonalEntryMock(),
   useUpdateWorkflowPackageRuntimeInputPersonalEntry: () => useUpdateRuntimeInputPersonalEntryMock(),
+  useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
   useWorkflowPackageRuntimeInputRegistry: (...args: unknown[]) => useWorkflowPackageRuntimeInputRegistryMock(...args),
 }));
 
@@ -126,6 +130,34 @@ function scheduleFixture(overrides: Partial<ScheduleRead> = {}): ScheduleRead {
     updatedAt: "2026-05-30T10:00:00Z",
     workflowKey: "daily_research",
     ...overrides,
+  };
+}
+
+function workflowPackageManifestFixture(workflowKeys: string[] = ["daily_research"]): WorkflowPackageManifestRead {
+  return {
+    compiledHash: "compiled-hash-123",
+    manifestHash: "manifest-hash-123",
+    manifestSource: "apiVersion: signaldeck.workflowPackage/v1",
+    packageDefinition: {
+      spec: {
+        workflows: workflowKeys.map((key) => ({
+          description: `${key} description`,
+          inputSchema: {
+            properties: {
+              asOfDate: { title: "As of date", type: "string" },
+              portfolioSlug: { title: "Portfolio slug", type: "string" },
+            },
+            required: ["asOfDate", "portfolioSlug"],
+            type: "object",
+          },
+          key,
+          label: key === "daily_research" ? "Daily research" : key,
+          name: key,
+        })),
+      },
+    },
+    packageId: 12,
+    packageKey: "market_research_package",
   };
 }
 
@@ -319,6 +351,7 @@ describe("ScheduledTaskDetailPage", () => {
     useScheduledTaskMock.mockReset();
     useUpdateRuntimeInputPersonalEntryMock.mockReset();
     useUpdateScheduledTaskMock.mockReset();
+    useWorkflowPackageManifestMock.mockReset();
     useWorkflowPackageRuntimeInputRegistryMock.mockReset();
 
     deleteScheduleMock.mockResolvedValue(undefined);
@@ -355,6 +388,12 @@ describe("ScheduledTaskDetailPage", () => {
     useDeleteRuntimeInputPersonalEntryMock.mockReturnValue({
       isPending: false,
       mutateAsync: deleteRuntimeInputPersonalEntryMock,
+    });
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: workflowPackageManifestFixture(),
+      error: null,
+      isError: false,
+      isPending: false,
     });
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry());
     useScheduledTaskFiresMock.mockReturnValue({
@@ -467,7 +506,7 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByTestId("scheduled-task-detail-next-run-summary")).toHaveTextContent("Next run");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Target workflow");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("market_research_package");
-    expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("daily_research");
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Daily research");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("Package id");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("Schedule id");
     expect(screen.getByTestId("scheduled-task-detail-last-run-summary")).toHaveTextContent("Last run");
@@ -850,6 +889,143 @@ describe("ScheduledTaskDetailPage", () => {
         }),
       }),
     );
+  });
+
+  it("gates stale workflow schedules without widening the schedule update contract", async () => {
+    useScheduledTaskMock.mockReturnValue({
+      data: scheduleFixture({ workflowKey: "retired_workflow" }),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: workflowPackageManifestFixture(["daily_research", "news_research"]),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderDetailPage();
+
+    expect(useWorkflowPackageManifestMock).toHaveBeenCalledWith(12);
+    expect(useWorkflowPackageRuntimeInputRegistryMock).toHaveBeenCalledWith(12, "");
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent(
+      "Unknown workflow: retired_workflow",
+    );
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent(
+      "Workflow no longer available",
+    );
+    expect(screen.getByTestId("schedule-run-now")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Disable" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+    const inputsTab = screen.getByTestId("scheduled-task-detail-tab-inputs");
+    expect(inputsTab).toHaveTextContent(
+      "Runtime inputs are unavailable because this schedule references a workflow that is no longer in the package manifest.",
+    );
+    expect(screen.queryByRole("button", { name: "Customize inputs" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Preview next run" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save inputs" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
+    fireEvent.change(screen.getByLabelText("Timezone"), { target: { value: "Europe/London" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
+
+    await waitFor(() => expect(updateScheduleMock).toHaveBeenCalledWith({
+      payload: {
+        endsAt: null,
+        misfireGraceSeconds: 86400,
+        misfirePolicy: "catchUpOne",
+        overlapPolicy: "skip",
+        recurrence: {
+          atLocalTime: "09:00",
+          daysOfWeek: ["mon", "tue", "wed", "thu", "fri"],
+          type: "weekly",
+        },
+        startsAt: null,
+        status: "enabled",
+        timezone: "Europe/London",
+      },
+      scheduleId: 44,
+    }));
+    expect(runNowMock).not.toHaveBeenCalled();
+    expect(previewScheduledInputsMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      expectedMessage:
+        "Runtime inputs are unavailable until the current package manifest finishes loading.",
+      manifestState: {
+        data: undefined,
+        error: null,
+        isError: false,
+        isPending: true,
+      },
+      name: "pending",
+    },
+    {
+      expectedMessage:
+        "Runtime inputs are unavailable until the current package manifest can be loaded.",
+      manifestState: {
+        data: undefined,
+        error: new Error("Manifest fetch failed"),
+        isError: true,
+        isPending: false,
+      },
+      name: "error",
+    },
+  ])(
+    "hard-blocks workflow-scoped actions while manifest resolution is $name",
+    ({ expectedMessage, manifestState }) => {
+      useWorkflowPackageManifestMock.mockReturnValue(manifestState);
+
+      renderDetailPage();
+
+      expect(useWorkflowPackageManifestMock).toHaveBeenCalledWith(12);
+      expect(useWorkflowPackageRuntimeInputRegistryMock).toHaveBeenCalledWith(12, "");
+      expect(screen.getByTestId("schedule-run-now")).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Disable" })).toBeEnabled();
+      expect(runNowMock).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+      const inputsTab = screen.getByTestId("scheduled-task-detail-tab-inputs");
+      expect(inputsTab).toHaveTextContent(expectedMessage);
+      expect(screen.getByTestId("scheduled-inputs-unavailable")).toHaveTextContent(
+        "Runtime inputs unavailable",
+      );
+      expect(screen.queryByRole("button", { name: "Customize inputs" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Preview next run" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Save inputs" })).not.toBeInTheDocument();
+      expect(previewScheduledInputsMock).not.toHaveBeenCalled();
+      expect(updateScheduleMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({ inputTemplate: expect.anything() }),
+        }),
+      );
+    },
+  );
+
+  it("keeps valid workflow schedules on the normal manifest-driven path", () => {
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: workflowPackageManifestFixture(["daily_research", "news_research"]),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderDetailPage();
+
+    expect(useWorkflowPackageManifestMock).toHaveBeenCalledWith(12);
+    expect(useWorkflowPackageRuntimeInputRegistryMock).toHaveBeenCalledWith(12, "daily_research");
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Daily research");
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("Unknown workflow:");
+    expect(screen.getByTestId("schedule-run-now")).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+    expect(screen.getByRole("button", { name: "Customize inputs" })).toBeEnabled();
+    expect(screen.queryByText("Runtime inputs are unavailable because this schedule references a workflow that is no longer in the package manifest.")).not.toBeInTheDocument();
   });
 
   it("scheduled inputs start with workflow defaults and keep placeholders/presets collapsed until customization", async () => {

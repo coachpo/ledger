@@ -1,5 +1,5 @@
 import { AlertCircle, CalendarClock, Loader2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -9,16 +9,29 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   useCreateScheduledTask,
   usePreviewUnsavedScheduledTask,
 } from "@/hooks/use-scheduled-tasks";
+import {
+  useWorkflowPackageManifest,
+  useWorkflowPackages,
+} from "@/hooks/use-workflow-packages";
 import { formatDateTime } from "@/lib/format";
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import { buildRuntimeInputs, createRuntimeInputRow, type RuntimeInputRow } from "@/lib/runtime-inputs";
 import type { UnknownRecord } from "@/lib/types/common";
 import type { ScheduleCreateRequest, SchedulePreviewRead } from "@/lib/types/schedule";
+import { getWorkflowOptions } from "@/lib/workflow-options";
 
 function parseJsonObject(value: string): UnknownRecord {
   const parsed = JSON.parse(value) as unknown;
@@ -80,6 +93,11 @@ function defaultInputTemplateText() {
   return stringifyJson({});
 }
 
+type WorkflowPackageOption = {
+  label: string;
+  value: string;
+};
+
 function ScheduleInputPreview({ preview }: { preview: SchedulePreviewRead | null }) {
   if (!preview) {
     return (
@@ -139,6 +157,7 @@ export function ScheduledTaskEditorPage() {
   const navigate = useNavigate();
   const createSchedule = useCreateScheduledTask();
   const previewSchedule = usePreviewUnsavedScheduledTask();
+  const workflowPackagesQuery = useWorkflowPackages();
   const [preview, setPreview] = useState<SchedulePreviewRead | null>(null);
   const [draft, setDraft] = useState<NewScheduleDraft>(() => ({
     atLocalTime: "09:00",
@@ -153,6 +172,9 @@ export function ScheduledTaskEditorPage() {
     workflowKey: "",
   }));
   const isPending = createSchedule.isPending || previewSchedule.isPending;
+  const selectedPackageId = draft.packageId.trim();
+  const selectedWorkflowKey = draft.workflowKey.trim();
+  const manifestQuery = useWorkflowPackageManifest(selectedPackageId || undefined);
   const inputTemplateError = useMemo(() => {
     try {
       parseJsonObject(draft.inputTemplateText);
@@ -166,6 +188,82 @@ export function ScheduledTaskEditorPage() {
     setDraft((current) => ({ ...current, ...updates }));
     setPreview(null);
   };
+
+  const packageOptions = useMemo<WorkflowPackageOption[]>(
+    () =>
+      (workflowPackagesQuery.data?.items ?? []).map((workflowPackage) => ({
+        label: `${workflowPackage.name} · ${workflowPackage.key} · #${workflowPackage.id}`,
+        value: String(workflowPackage.id),
+      })),
+    [workflowPackagesQuery.data?.items],
+  );
+  const workflowOptions = useMemo(
+    () => (manifestQuery.data ? getWorkflowOptions(manifestQuery.data, selectedWorkflowKey || null) : []),
+    [manifestQuery.data, selectedWorkflowKey],
+  );
+  const selectedWorkflowOption = useMemo(
+    () => workflowOptions.find((option) => option.key === selectedWorkflowKey) ?? null,
+    [selectedWorkflowKey, workflowOptions],
+  );
+  const packageListError =
+    workflowPackagesQuery.error instanceof Error
+      ? workflowPackagesQuery.error.message
+      : "Failed to load saved workflow packages.";
+  const manifestError =
+    manifestQuery.error instanceof Error
+      ? manifestQuery.error.message
+      : "Failed to load workflow options for the selected package.";
+  const hasZeroWorkflowPackage =
+    Boolean(selectedPackageId) &&
+    !manifestQuery.isPending &&
+    !manifestQuery.isError &&
+    Boolean(manifestQuery.data) &&
+    workflowOptions.length === 0;
+  const workflowSelectorDisabled =
+    !selectedPackageId ||
+    manifestQuery.isPending ||
+    manifestQuery.isError ||
+    workflowOptions.length === 0;
+  const canSubmitTarget =
+    Boolean(selectedPackageId) &&
+    Boolean(selectedWorkflowKey) &&
+    !manifestQuery.isPending &&
+    !manifestQuery.isError &&
+    !hasZeroWorkflowPackage;
+  const workflowPlaceholder = !selectedPackageId
+    ? "Select a workflow package first"
+    : manifestQuery.isPending
+      ? "Loading workflows..."
+      : manifestQuery.isError
+        ? "Workflows unavailable"
+        : workflowOptions.length === 0
+          ? "No workflows available"
+          : "Select workflow...";
+
+  useEffect(() => {
+    if (!selectedPackageId || manifestQuery.isPending || manifestQuery.isError || !manifestQuery.data) {
+      return;
+    }
+
+    if (workflowOptions.length === 1) {
+      const onlyWorkflowKey = workflowOptions[0]?.key ?? "";
+      if (onlyWorkflowKey && selectedWorkflowKey !== onlyWorkflowKey) {
+        updateDraft({ workflowKey: onlyWorkflowKey });
+      }
+      return;
+    }
+
+    if (selectedWorkflowKey && !workflowOptions.some((option) => option.key === selectedWorkflowKey)) {
+      updateDraft({ workflowKey: "" });
+    }
+  }, [
+    manifestQuery.data,
+    manifestQuery.isError,
+    manifestQuery.isPending,
+    selectedPackageId,
+    selectedWorkflowKey,
+    workflowOptions,
+  ]);
 
   const previewCurrentDraft = async () => {
     try {
@@ -208,11 +306,43 @@ export function ScheduledTaskEditorPage() {
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base"><CalendarClock className="size-4" /> Schedule target</CardTitle>
-          <CardDescription>Use a saved Workflow Package id and workflow key. The schedule targets the current package artifact at fire time.</CardDescription>
+          <CardDescription>Choose a saved Workflow Package, then select one workflow from that package's manifest before previewing or saving.</CardDescription>
         </CardHeader>
         <CardContent className="grid min-w-0 gap-4 lg:grid-cols-2">
-          <div className="flex flex-col gap-2"><Label htmlFor="schedule-package-id">Package id</Label><Input id="schedule-package-id" data-testid="schedule-package-id" inputMode="numeric" value={draft.packageId} onChange={(event) => updateDraft({ packageId: event.target.value })} /></div>
-          <div className="flex flex-col gap-2"><Label htmlFor="schedule-workflow-key">Workflow key</Label><Input id="schedule-workflow-key" data-testid="schedule-workflow-key" value={draft.workflowKey} onChange={(event) => updateDraft({ workflowKey: event.target.value })} /></div>
+          {workflowPackagesQuery.isError ? <Alert className="lg:col-span-2" variant="destructive"><AlertCircle /><AlertTitle>Workflow packages could not be loaded</AlertTitle><AlertDescription>{packageListError}</AlertDescription></Alert> : null}
+          {manifestQuery.isError && selectedPackageId ? <Alert className="lg:col-span-2" variant="destructive"><AlertCircle /><AlertTitle>Workflow options unavailable</AlertTitle><AlertDescription>{manifestError}</AlertDescription></Alert> : null}
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="schedule-package-select">Workflow package</Label>
+            <Select value={selectedPackageId} onValueChange={(packageId) => updateDraft({ packageId, workflowKey: "" })}>
+              <SelectTrigger aria-label="Workflow package" data-testid="schedule-package-select" id="schedule-package-select">
+                <SelectValue placeholder={workflowPackagesQuery.isPending ? "Loading workflow packages..." : "Select workflow package..."} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {packageOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="schedule-workflow-select">Workflow</Label>
+            <Select disabled={workflowSelectorDisabled} value={selectedWorkflowKey} onValueChange={(workflowKey) => updateDraft({ workflowKey })}>
+              <SelectTrigger aria-label="Workflow" data-testid="schedule-workflow-select" id="schedule-workflow-select">
+                <SelectValue placeholder={workflowPlaceholder} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {workflowOptions.map((option) => (
+                    <SelectItem key={option.key} value={option.key}>{option.label}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            {selectedWorkflowOption?.description ? <p className="text-xs text-muted-foreground">{selectedWorkflowOption.description}</p> : null}
+          </div>
+          {hasZeroWorkflowPackage ? <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground lg:col-span-2" data-testid="schedule-workflow-empty-state">This Workflow Package does not define any workflows. Choose a different package before previewing or saving this schedule.</div> : null}
           <div className="flex flex-col gap-2"><Label htmlFor="schedule-name">Schedule name</Label><Input id="schedule-name" data-testid="schedule-name" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} /></div>
           <div className="flex flex-col gap-2"><Label htmlFor="schedule-timezone">Timezone</Label><Input id="schedule-timezone" value={draft.timezone} onChange={(event) => updateDraft({ timezone: event.target.value })} /></div>
           <div className="flex flex-col gap-2"><Label htmlFor="schedule-at-local-time">Daily local time</Label><Input id="schedule-at-local-time" type="time" value={draft.atLocalTime} onChange={(event) => updateDraft({ atLocalTime: event.target.value })} /></div>
@@ -230,8 +360,8 @@ export function ScheduledTaskEditorPage() {
           <div className="flex min-w-0 flex-col gap-2"><Label htmlFor="schedule-input-template-json">Scheduled input template JSON</Label><Textarea id="schedule-input-template-json" aria-label="Scheduled input template JSON" className="min-h-56 font-mono text-xs" data-testid="schedule-input-template-json" value={draft.inputTemplateText} onChange={(event) => updateDraft({ inputTemplateText: event.target.value })} /></div>
           <TemplateVariableRows rows={draft.templateVarRows} onRowsChange={(rows) => updateDraft({ templateVarRows: rows })} />
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <Button data-testid="schedule-input-preview-trigger" disabled={isPending || Boolean(inputTemplateError)} type="button" variant="outline" onClick={() => void previewCurrentDraft()}>{previewSchedule.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null} Preview next fire</Button>
-            <Button data-testid="schedule-save" disabled={isPending || Boolean(inputTemplateError)} type="button" onClick={() => void saveSchedule()}>{createSchedule.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null} Save schedule</Button>
+            <Button data-testid="schedule-input-preview-trigger" disabled={isPending || Boolean(inputTemplateError) || !canSubmitTarget} type="button" variant="outline" onClick={() => void previewCurrentDraft()}>{previewSchedule.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null} Preview next fire</Button>
+            <Button data-testid="schedule-save" disabled={isPending || Boolean(inputTemplateError) || !canSubmitTarget} type="button" onClick={() => void saveSchedule()}>{createSchedule.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null} Save schedule</Button>
           </div>
           <ScheduleInputPreview preview={preview} />
         </CardContent>

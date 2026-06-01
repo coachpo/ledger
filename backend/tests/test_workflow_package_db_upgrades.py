@@ -38,6 +38,12 @@ _REMOVED_RUN_PROVENANCE_COLUMNS = {
     "launch_snapshot",
 }
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
+_EXPECTED_TRADINGAGENTS_MANIFEST_WORKFLOW_KEYS = (
+    "advisory_research",
+    "market_research",
+    "news_research",
+    "fundamentals_research",
+)
 _DB_UPGRADE_MARKER_TABLE = "db_upgrade_markers"
 
 
@@ -146,6 +152,18 @@ def _assert_clean_preset_artifacts(row: RowMapping) -> None:
     removed_budget_field = "budget" + "Usd"
     assert removed_validation_column not in serialized_preset
     assert removed_budget_field not in serialized_preset
+
+
+def _manifest_workflow_keys(row: RowMapping) -> tuple[str, ...]:
+    package_definition = row["package_definition"]
+    assert isinstance(package_definition, dict)
+    spec = package_definition.get("spec")
+    assert isinstance(spec, dict)
+    workflows = spec.get("workflows")
+    assert isinstance(workflows, list)
+    return tuple(
+        str(workflow.get("key")) for workflow in workflows if isinstance(workflow, Mapping)
+    )
 
 
 def _foreign_key_signature(
@@ -383,6 +401,35 @@ def test_workflow_package_upgrade_drops_obsolete_package_row_state_columns(
         _assert_workflow_package_schema(engine)
     finally:
         engine.dispose()
+
+
+def test_init_db_seeds_tradingagents_preset_with_canonical_manifest_workflow_keys(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.connect() as connection:
+            row = (
+                connection.execute(
+                    text(
+                        """
+                        SELECT package_definition
+                        FROM workflow_packages
+                        WHERE key = :package_key
+                        """
+                    ),
+                    {"package_key": _TRADINGAGENTS_PRESET_KEY},
+                )
+                .mappings()
+                .one()
+            )
+
+        assert _manifest_workflow_keys(row) == _EXPECTED_TRADINGAGENTS_MANIFEST_WORKFLOW_KEYS
+    finally:
+        engine.dispose()
+
 
 
 def test_workflow_package_upgrade_reseeds_stale_first_party_preset_row(

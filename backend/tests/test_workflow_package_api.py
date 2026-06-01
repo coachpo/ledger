@@ -482,41 +482,50 @@ def test_launch_and_preflight_accept_secondary_tradingagents_workflow_key(
     created = _create_package(client)
     package_id = cast(int, created["id"])
 
-    launch = client.get(
-        f"/api/workflow-packages/{package_id}/launch",
-        params={"workflowKey": "news_research"},
-    )
-    assert launch.status_code == 200, launch.json()
-    launch_body = cast(dict[str, object], launch.json())
-    assert launch_body["workflowKey"] == "news_research"
-    assert launch_body["name"] == "News Research"
-    assert launch_body["ready"] is True
-    input_schema = cast(dict[str, object], launch_body["inputSchema"])
-    assert input_schema["title"] == "TradingAgents news research inputs"
+    for workflow_key, expected_name, expected_title in (
+        ("market_research", "Market Research", "TradingAgents market research inputs"),
+        ("news_research", "News Research", "TradingAgents news research inputs"),
+        (
+            "fundamentals_research",
+            "Fundamentals Research",
+            "TradingAgents fundamentals research inputs",
+        ),
+    ):
+        launch = client.get(
+            f"/api/workflow-packages/{package_id}/launch",
+            params={"workflowKey": workflow_key},
+        )
+        assert launch.status_code == 200, launch.json()
+        launch_body = cast(dict[str, object], launch.json())
+        assert launch_body["workflowKey"] == workflow_key
+        assert launch_body["name"] == expected_name
+        assert launch_body["ready"] is True
+        input_schema = cast(dict[str, object], launch_body["inputSchema"])
+        assert input_schema["title"] == expected_title
 
-    preflight = client.post(
-        f"/api/workflow-packages/{package_id}/preflight",
-        params={"workflowKey": "news_research"},
-    )
-    assert preflight.status_code == 200, preflight.json()
-    preflight_body = cast(dict[str, object], preflight.json())
-    assert preflight_body["workflowKey"] == "news_research"
-    assert preflight_body["name"] == "News Research"
-    assert preflight_body["ready"] is True
+        preflight = client.post(
+            f"/api/workflow-packages/{package_id}/preflight",
+            params={"workflowKey": workflow_key},
+        )
+        assert preflight.status_code == 200, preflight.json()
+        preflight_body = cast(dict[str, object], preflight.json())
+        assert preflight_body["workflowKey"] == workflow_key
+        assert preflight_body["name"] == expected_name
+        assert preflight_body["ready"] is True
 
-    created_launch = client.post(
-        f"/api/workflow-packages/{package_id}/launches",
-        json={
-            "workflowKey": "news_research",
-            "parameters": {
-                "ticker": "AAPL",
-                "asOfDate": "2026-05-08",
-                "horizonDays": 30,
+        created_launch = client.post(
+            f"/api/workflow-packages/{package_id}/launches",
+            json={
+                "workflowKey": workflow_key,
+                "parameters": {
+                    "ticker": "AAPL",
+                    "asOfDate": "2026-05-08",
+                    "horizonDays": 30,
+                },
             },
-        },
-    )
-    assert created_launch.status_code == 201, created_launch.json()
-    assert created_launch.json()["workflowKey"] == "news_research"
+        )
+        assert created_launch.status_code == 201, created_launch.json()
+        assert created_launch.json()["workflowKey"] == workflow_key
 
 
 def test_launch_blocks_failed_model_connection(

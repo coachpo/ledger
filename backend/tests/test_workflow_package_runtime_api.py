@@ -22,7 +22,10 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_fork import RunFork
 from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
-from app.models.workflow_package_schedule import WorkflowPackageScheduleFire
+from app.models.workflow_package_schedule import (
+    WorkflowPackageSchedule,
+    WorkflowPackageScheduleFire,
+)
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.schedule import (
@@ -72,6 +75,13 @@ _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
     "signaldeck.prediction_markets.lookup",
     "signaldeck.sec_filings.lookup",
     "signaldeck.market_sentiment.lookup",
+)
+_TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
+_TRADINGAGENTS_CANONICAL_SCHEDULES = (
+    ("TradingAgents Advisory Research · 2m", "advisory_research"),
+    ("TradingAgents Market Research · 2m", "market_research"),
+    ("TradingAgents News Research · 2m", "news_research"),
+    ("TradingAgents Fundamentals Research · 2m", "fundamentals_research"),
 )
 
 
@@ -602,9 +612,22 @@ def _create_package_from_source(
     return body
 
 
+def _seeded_tradingagents_package(client: TestClient) -> dict[str, Any]:
+    packages_response = client.get("/api/workflow-packages")
+    assert packages_response.status_code == 200, packages_response.json()
+    package_items = cast(list[dict[str, Any]], packages_response.json()["items"])
+    for package in package_items:
+        if package["key"] == _TRADINGAGENTS_PRESET_KEY:
+            return package
+    raise AssertionError("TradingAgents advisory preset was not seeded")
+
+
 def _seed_model_connection(
     session_factory: sessionmaker[Session],
     *,
+    key: str = "package_runtime_model",
+    name: str = "Package Runtime Model",
+    description: str = "Package runtime model binding.",
     api_key: str | None = "test-api-key",
     base_url: str = "https://provider-runtime.example.test/v1",
     model_id: str = "gpt-package-v1",
@@ -619,10 +642,10 @@ def _seed_model_connection(
         payload = {} if api_key is None else {"apiKey": api_key}
         session.add(
             ModelConnection(
-                key="package_runtime_model",
+                key=key,
                 status="active",
-                name="Package Runtime Model",
-                description="Package runtime model binding.",
+                name=name,
+                description=description,
                 base_url=base_url,
                 model_id=model_id,
                 reasoning_effort="high",
@@ -3191,6 +3214,118 @@ def test_schedule_api_patch_rejects_null_for_non_nullable_fields(
     assert detail_body["overlapPolicy"] == "skip"
     assert detail_body["misfirePolicy"] == "catchUpOne"
     assert detail_body["misfireGraceSeconds"] == 86400
+
+
+def test_schedule_api_lists_seeded_tradingagents_preset_schedules(
+    client: TestClient,
+) -> None:
+    listed = client.get(
+        "/api/schedules",
+        params={"packageKey": "tradingagents_advisory_research", "limit": 50},
+    )
+
+    assert listed.status_code == 200, listed.json()
+    listed_body = cast(dict[str, Any], listed.json())
+    items = cast(list[dict[str, Any]], listed_body["items"])
+    assert listed_body["totalCount"] == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
+    assert len(items) == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
+    schedules_by_name = {item["name"]: item for item in items}
+    assert set(schedules_by_name) == {
+        name for name, _workflow_key in _TRADINGAGENTS_CANONICAL_SCHEDULES
+    }
+    for name, workflow_key in _TRADINGAGENTS_CANONICAL_SCHEDULES:
+        item = schedules_by_name[name]
+        assert item["packageKey"] == "tradingagents_advisory_research"
+        assert item["workflowKey"] == workflow_key
+        assert item["status"] == "enabled"
+        assert item["timezone"] == "UTC"
+        assert item["recurrence"] == {"type": "interval", "every": 2, "unit": "minutes"}
+        assert item["overlapPolicy"] == "skip"
+        assert item["misfirePolicy"] == "catchUpOne"
+        assert item["misfireGraceSeconds"] == 86400
+
+
+def test_tradingagents_schedule_materializer_queues_all_canonical_schedules_without_provider_execution(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    _seed_model_connection(
+        session_factory,
+        key="tradingagents_primary_model",
+        name="TradingAgents Primary Model",
+        description="Preflight model binding.",
+        base_url="https://api.openai.com/v1",
+        model_id="gpt-5.5-mini",
+    )
+    package = _seeded_tradingagents_package(client)
+    package_id = cast(int, package["id"])
+    materialized_at = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        schedules = (
+            session.query(WorkflowPackageSchedule)
+            .filter(WorkflowPackageSchedule.package_id == package_id)
+            .order_by(WorkflowPackageSchedule.id)
+            .all()
+        )
+        assert {(schedule.name, schedule.workflow_key) for schedule in schedules} == set(
+            _TRADINGAGENTS_CANONICAL_SCHEDULES
+        )
+        for schedule in schedules:
+            schedule.next_fire_at = materialized_at
+        session.commit()
+
+    result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(
+        now=materialized_at
+    )
+
+    assert result.processed_count == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
+    assert result.queued_count == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
+
+    with session_factory() as session:
+        schedules = (
+            session.query(WorkflowPackageSchedule)
+            .filter(WorkflowPackageSchedule.package_id == package_id)
+            .order_by(WorkflowPackageSchedule.id)
+            .all()
+        )
+        runs = (
+            session.query(Run)
+            .filter(Run.schedule_id.in_([schedule.id for schedule in schedules]))
+            .order_by(Run.id)
+            .all()
+        )
+        fires = (
+            session.query(WorkflowPackageScheduleFire)
+            .filter(
+                WorkflowPackageScheduleFire.schedule_id.in_([schedule.id for schedule in schedules])
+            )
+            .order_by(WorkflowPackageScheduleFire.id)
+            .all()
+        )
+        fires_by_schedule_id = {fire.schedule_id: fire for fire in fires}
+        runs_by_schedule_id = {cast(int, run.schedule_id): run for run in runs}
+
+        assert len(runs) == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
+        assert len(fires) == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
+        for schedule in schedules:
+            fire = fires_by_schedule_id[schedule.id]
+            run = runs_by_schedule_id[schedule.id]
+
+            assert fire.status == FireStatus.QUEUED.value
+            assert run.status == "queued"
+            assert run.schedule_id == schedule.id
+            assert run.schedule_fire_id == fire.id
+            assert run.scheduled_for == materialized_at
+            assert run.workflow_package_id == package_id
+            assert run.workflow_package_workflow_key == schedule.workflow_key
+            assert schedule.next_fire_at == materialized_at + timedelta(minutes=2)
+
+    assert _RuntimeRecordingOpenAIClient.init_calls == []
+    assert _RuntimeRecordingOpenAIClient.create_calls == []
 
 
 def test_schedule_api_schedule_preview_run_now_fire_history_contract(

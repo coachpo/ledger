@@ -8,7 +8,7 @@ import {
   SquarePen,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
@@ -32,6 +32,14 @@ import {
 } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -44,11 +52,13 @@ import {
   useUpdateWorkflowPackageRuntimeInputPersonalEntry,
   useWorkflowPackage,
   useWorkflowPackageLaunch,
+  useWorkflowPackageManifest,
   useWorkflowPackageRuntimeInputRegistry,
 } from "@/hooks/use-workflow-packages";
 import { ApiRequestError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/format";
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import { getWorkflowOptions } from "@/lib/workflow-options";
 import {
   createLaunchParametersTemplate,
   parseLaunchParametersJson,
@@ -81,6 +91,10 @@ function isUnknownRecord(value: unknown): value is UnknownRecord {
 }
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function launchTemplateTextForInputSchema(inputSchema: unknown): string {
+  return resetLaunchParametersTemplate(createLaunchParametersTemplate(inputSchema));
 }
 
 function diagnosticFromRecord(
@@ -553,10 +567,12 @@ function LaunchReadinessSummary({
   metadataError,
   preflightCompleted,
   preflightPending,
+  primaryStatusOverride,
   readinessRead,
   ready,
   warningCount,
-  workflowKey,
+  workflowTone,
+  workflowValue,
 }: {
   blockingCount: number;
   diagnostics: readonly PackageDiagnostic[];
@@ -564,10 +580,12 @@ function LaunchReadinessSummary({
   metadataError: unknown;
   preflightCompleted: boolean;
   preflightPending: boolean;
+  primaryStatusOverride?: string | null;
   readinessRead: WorkflowPackageLaunchRead | undefined;
   ready: boolean;
   warningCount: number;
-  workflowKey: string;
+  workflowTone: ReadinessChipTone;
+  workflowValue: string;
 }) {
   const blockingDiagnostics = diagnostics.filter(
     (diagnostic) => diagnostic.severity === "error",
@@ -575,19 +593,21 @@ function LaunchReadinessSummary({
   const warningDiagnostics = diagnostics.filter(
     (diagnostic) => diagnostic.severity === "warning",
   );
-  const primaryStatusMessage = metadataError
-    ? "Launch metadata unavailable"
-    : preflightPending
-      ? "Preflight is validating launch metadata."
-      : !preflightCompleted
-        ? "Run preflight to load launch metadata and validate this package before launch."
-        : ready
-          ? "Ready to launch."
-          : blockingCount > 0
-            ? "Resolve blocking launch diagnostics before launching."
-            : warningCount > 0
-              ? "Preflight completed with warnings."
-              : "Preflight completed, but launch readiness was not confirmed.";
+  const primaryStatusMessage =
+    primaryStatusOverride ??
+    (metadataError
+      ? "Launch metadata unavailable"
+      : preflightPending
+        ? "Preflight is validating launch metadata."
+        : !preflightCompleted
+          ? "Run preflight to load launch metadata and validate this package before launch."
+          : ready
+            ? "Ready to launch."
+            : blockingCount > 0
+              ? "Resolve blocking launch diagnostics before launching."
+              : warningCount > 0
+                ? "Preflight completed with warnings."
+                : "Preflight completed, but launch readiness was not confirmed.");
   const metadataValue = metadataError
     ? "Launch metadata unavailable"
     : isLoadingMetadata
@@ -657,8 +677,8 @@ function LaunchReadinessSummary({
           />
           <ReadinessStatusChip
             label="Workflow"
-            tone={workflowKey || readinessRead?.workflowKey ? "success" : "warning"}
-            value={workflowKey || readinessRead?.workflowKey || "Workflow not selected"}
+            tone={workflowTone}
+            value={workflowValue}
           />
           <ReadinessStatusChip
             label="Manifest"
@@ -704,6 +724,7 @@ function StickyLaunchActionBar({
   launchDisabledReason,
   launchPending,
   launchQueryPending,
+  preflightBlocked,
   preflightPending,
   onLaunch,
   onPreflight,
@@ -711,6 +732,7 @@ function StickyLaunchActionBar({
   launchDisabledReason: string | null;
   launchPending: boolean;
   launchQueryPending: boolean;
+  preflightBlocked: boolean;
   preflightPending: boolean;
   onLaunch: () => void;
   onPreflight: () => void;
@@ -736,7 +758,7 @@ function StickyLaunchActionBar({
         ) : null}
         <Button
           className="w-full sm:w-auto"
-          disabled={preflightPending || launchQueryPending}
+          disabled={preflightBlocked || preflightPending || launchQueryPending}
           type="button"
           variant="outline"
           onClick={onPreflight}
@@ -863,10 +885,12 @@ function SavedInputsTabs(props: {
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Saved inputs</h3>
-          <Badge variant="outline">{workflowKey || "workflow"}</Badge>
+          <Badge variant="outline">{workflowKey || "workflow pending"}</Badge>
         </div>
         <p className="text-xs text-muted-foreground">
-          Load saved personal presets or reuse launch history for this workflow.
+          {workflowKey
+            ? "Load saved personal presets or reuse launch history for this workflow."
+            : "Choose a workflow to load saved personal presets or launch history."}
         </p>
       </div>
       {loading ? (
@@ -991,15 +1015,38 @@ export function WorkflowPackageLaunchPage() {
   const resolvedWorkflowKey = workflowKey.trim();
 
   const packageQuery = useWorkflowPackage(packageId);
+  const manifestQuery = useWorkflowPackageManifest(packageId);
+  const manifestWorkflowOptions = useMemo(
+    () => (manifestQuery.data ? getWorkflowOptions(manifestQuery.data) : []),
+    [manifestQuery.data],
+  );
+  const selectedManifestWorkflow = useMemo(
+    () =>
+      manifestWorkflowOptions.find((option) => option.key === resolvedWorkflowKey) ??
+      null,
+    [manifestWorkflowOptions, resolvedWorkflowKey],
+  );
+  const workflowOptions = useMemo(
+    () =>
+      manifestQuery.data
+        ? getWorkflowOptions(manifestQuery.data, resolvedWorkflowKey || null)
+        : [],
+    [manifestQuery.data, resolvedWorkflowKey],
+  );
+  const selectedWorkflowOption = useMemo(
+    () => workflowOptions.find((option) => option.key === resolvedWorkflowKey) ?? null,
+    [workflowOptions, resolvedWorkflowKey],
+  );
+  const activeWorkflowKey = selectedManifestWorkflow?.key ?? "";
   const launchQuery = useWorkflowPackageLaunch(
     packageId,
-    resolvedWorkflowKey || undefined,
+    activeWorkflowKey || undefined,
   );
   const preflightPackage = usePreflightWorkflowPackage();
   const createLaunch = useCreateWorkflowPackageLaunch();
   const runtimeInputRegistry = useWorkflowPackageRuntimeInputRegistry(
     packageId,
-    resolvedWorkflowKey,
+    activeWorkflowKey,
   );
   const createPersonalEntry =
     useCreateWorkflowPackageRuntimeInputPersonalEntry();
@@ -1007,7 +1054,10 @@ export function WorkflowPackageLaunchPage() {
     useUpdateWorkflowPackageRuntimeInputPersonalEntry();
   const deletePersonalEntry =
     useDeleteWorkflowPackageRuntimeInputPersonalEntry();
-  const launchRead = launchQuery.data;
+  const launchRead = activeWorkflowKey ? launchQuery.data : undefined;
+  const launchMetadataError =
+    activeWorkflowKey && launchQuery.isError ? launchQuery.error : null;
+  const launchMetadataPending = Boolean(activeWorkflowKey) && launchQuery.isPending;
   const readinessRead = preflightRead ?? launchRead;
   const diagnostics = useMemo(
     () => diagnosticsFromLaunch(readinessRead),
@@ -1019,16 +1069,27 @@ export function WorkflowPackageLaunchPage() {
   const warningCount = diagnostics.filter(
     (diagnostic) => diagnostic.severity === "warning",
   ).length;
-  const ready = readinessRead?.ready === true && blockingCount === 0;
+  const ready =
+    Boolean(activeWorkflowKey) &&
+    readinessRead?.ready === true &&
+    blockingCount === 0;
+  const effectiveInputSchema = useMemo(
+    () =>
+      launchRead?.inputSchema ??
+      selectedManifestWorkflow?.inputSchema ??
+      selectedWorkflowOption?.inputSchema ??
+      {},
+    [launchRead?.inputSchema, selectedManifestWorkflow, selectedWorkflowOption],
+  );
   const inputSchemaFingerprint = useMemo(
-    () => stringifyJson(launchRead?.inputSchema),
-    [launchRead?.inputSchema],
+    () => stringifyJson(effectiveInputSchema),
+    [effectiveInputSchema],
   );
   const inputSchemaSnapshot = useMemo(
     () =>
       inputSchemaFingerprint
         ? (JSON.parse(inputSchemaFingerprint) as unknown)
-        : undefined,
+        : {},
     [inputSchemaFingerprint],
   );
   const inputTemplate = useMemo(
@@ -1039,13 +1100,57 @@ export function WorkflowPackageLaunchPage() {
     () => resetLaunchParametersTemplate(inputTemplate),
     [inputTemplate],
   );
-  const launchFormIdentity = `${packageId ?? ""}:${resolvedWorkflowKey}:${inputSchemaFingerprint}`;
+  const launchFormIdentity = `${packageId ?? ""}:${activeWorkflowKey}:${inputSchemaFingerprint}`;
+  const workflowTemplateText = useCallback(
+    (nextWorkflowKey: string) => {
+      const nextWorkflow = manifestWorkflowOptions.find(
+        (option) => option.key === nextWorkflowKey,
+      );
+      return nextWorkflow
+        ? launchTemplateTextForInputSchema(nextWorkflow.inputSchema)
+        : stringifyJson({});
+    },
+    [manifestWorkflowOptions],
+  );
+  const updateWorkflowKey = useCallback(
+    (nextWorkflowKey: string) => {
+      const normalizedWorkflowKey = nextWorkflowKey.trim();
+      if (normalizedWorkflowKey === resolvedWorkflowKey) {
+        return;
+      }
+      parametersEditedRef.current = false;
+      setWorkflowKey(normalizedWorkflowKey);
+      setPreflightRead(undefined);
+      setRuntimeInputErrors([]);
+      setParametersText(
+        normalizedWorkflowKey
+          ? workflowTemplateText(normalizedWorkflowKey)
+          : stringifyJson({}),
+      );
+    },
+    [resolvedWorkflowKey, workflowTemplateText],
+  );
 
   useEffect(() => {
-    if (launchRead?.workflowKey && !workflowKey) {
-      setWorkflowKey(launchRead.workflowKey);
+    if (
+      manifestQuery.isPending ||
+      manifestQuery.isError ||
+      manifestWorkflowOptions.length !== 1
+    ) {
+      return;
     }
-  }, [launchRead?.workflowKey, workflowKey]);
+    const onlyWorkflowKey = manifestWorkflowOptions[0]?.key ?? "";
+    if (!onlyWorkflowKey || resolvedWorkflowKey) {
+      return;
+    }
+    updateWorkflowKey(onlyWorkflowKey);
+  }, [
+    manifestQuery.isError,
+    manifestQuery.isPending,
+    manifestWorkflowOptions,
+    resolvedWorkflowKey,
+    updateWorkflowKey,
+  ]);
 
   useEffect(() => {
     if (lastTemplateIdentityRef.current === launchFormIdentity) {
@@ -1133,7 +1238,7 @@ export function WorkflowPackageLaunchPage() {
       try {
         const result = await preflightPackage.mutateAsync({
           packageId,
-          payload: { parameters: {}, workflowKey: resolvedWorkflowKey || null },
+          payload: { parameters: {}, workflowKey: activeWorkflowKey || null },
         });
         setPreflightRead(result);
         const resultDiagnostics = diagnosticsFromLaunch(result);
@@ -1160,7 +1265,7 @@ export function WorkflowPackageLaunchPage() {
     };
 
   const savePersonalInput = async () => {
-    if (!resolvedWorkflowKey) {
+    if (!activeWorkflowKey) {
       return;
     }
     const name = personalPresetName.trim();
@@ -1176,7 +1281,7 @@ export function WorkflowPackageLaunchPage() {
       await createPersonalEntry.mutateAsync({
         packageId,
         payload: { name, payload },
-        workflowKey: resolvedWorkflowKey,
+        workflowKey: activeWorkflowKey,
       });
       setPersonalPresetName("");
       toast.success("Saved personal runtime input preset");
@@ -1192,7 +1297,7 @@ export function WorkflowPackageLaunchPage() {
   const overwritePersonalInput = async (
     entry: WorkflowPackageRuntimeInputEntryRead,
   ) => {
-    if (!resolvedWorkflowKey) {
+    if (!activeWorkflowKey) {
       return;
     }
     const payload = parseCurrentRuntimeInputs();
@@ -1205,7 +1310,7 @@ export function WorkflowPackageLaunchPage() {
         entryId: entry.id,
         packageId,
         payload: { name: name || null, payload },
-        workflowKey: resolvedWorkflowKey,
+        workflowKey: activeWorkflowKey,
       });
       setPersonalPresetName("");
       toast.success("Updated personal runtime input preset");
@@ -1221,14 +1326,14 @@ export function WorkflowPackageLaunchPage() {
   const deletePersonalInput = async (
     entry: WorkflowPackageRuntimeInputEntryRead,
   ) => {
-    if (!resolvedWorkflowKey) {
+    if (!activeWorkflowKey) {
       return;
     }
     try {
       await deletePersonalEntry.mutateAsync({
         entryId: entry.id,
         packageId,
-        workflowKey: resolvedWorkflowKey,
+        workflowKey: activeWorkflowKey,
       });
       toast.success("Deleted personal runtime input preset");
     } catch (error) {
@@ -1238,14 +1343,6 @@ export function WorkflowPackageLaunchPage() {
           : "Failed to delete personal runtime input preset.",
       );
     }
-  };
-
-  const updateWorkflowKey = (nextWorkflowKey: string) => {
-    parametersEditedRef.current = false;
-    setWorkflowKey(nextWorkflowKey);
-    setPreflightRead(undefined);
-    setParametersText(parameterTemplateText);
-    setRuntimeInputErrors([]);
   };
 
   const updateParametersText = (nextParametersText: string) => {
@@ -1278,7 +1375,7 @@ export function WorkflowPackageLaunchPage() {
     try {
       const run = await createLaunch.mutateAsync({
         packageId,
-        payload: { parameters, workflowKey: resolvedWorkflowKey || null },
+        payload: { parameters, workflowKey: activeWorkflowKey || null },
       });
       toast.success("Package run queued");
       navigate(`/runs/${run.id}`);
@@ -1294,22 +1391,75 @@ export function WorkflowPackageLaunchPage() {
     }
   };
 
+  const workflowSelectionMessage = manifestQuery.isPending
+    ? "Loading workflows from this package manifest."
+    : manifestQuery.isError
+      ? "Workflow selector unavailable until the package manifest loads."
+      : manifestWorkflowOptions.length === 0
+        ? "This package manifest does not declare any workflows."
+        : resolvedWorkflowKey && !selectedManifestWorkflow
+          ? "Selected workflow is no longer present in the current manifest. Choose a workflow to continue."
+          : manifestWorkflowOptions.length > 1 && !activeWorkflowKey
+            ? "Choose a workflow to continue."
+            : null;
+  const workflowSelectionError = manifestQuery.isError
+    ? errorMessage(manifestQuery.error, "Failed to load manifest workflows.")
+    : null;
+  const workflowDescription =
+    workflowSelectionMessage || !selectedWorkflowOption?.description
+      ? null
+      : selectedWorkflowOption.description;
+  const workflowStatusTone: ReadinessChipTone = workflowSelectionError
+    ? "danger"
+    : manifestQuery.isPending
+      ? "warning"
+      : activeWorkflowKey
+        ? "success"
+        : manifestWorkflowOptions.length === 0
+          ? "warning"
+          : resolvedWorkflowKey
+            ? "danger"
+            : "warning";
+  const workflowStatusValue = workflowSelectionError
+    ? "Manifest unavailable"
+    : manifestQuery.isPending
+      ? "Loading workflows"
+      : activeWorkflowKey
+        ? activeWorkflowKey
+        : manifestWorkflowOptions.length === 0
+          ? "No workflows declared"
+          : resolvedWorkflowKey
+            ? "Workflow no longer available"
+            : "Workflow selection required";
+  const workflowActionBlockReason = manifestQuery.isPending
+    ? "Workflow actions disabled while manifest workflows load."
+    : manifestQuery.isError
+      ? "Workflow actions disabled until manifest workflows are available."
+      : manifestWorkflowOptions.length === 0
+        ? "Workflow actions disabled because this manifest has no workflows."
+        : resolvedWorkflowKey && !selectedManifestWorkflow
+          ? "Workflow actions disabled until you choose a valid manifest workflow."
+          : manifestWorkflowOptions.length > 1 && !activeWorkflowKey
+            ? "Choose a workflow to continue."
+            : null;
   const preflightCompleted = Boolean(preflightRead);
-  const launchDisabledReason = createLaunch.isPending
-    ? "Launch request is already in progress."
-    : preflightPackage.isPending
-      ? "Launch disabled while preflight is running."
-      : launchQuery.isPending
-        ? "Launch disabled while launch metadata loads."
-        : launchQuery.isError
-          ? "Launch disabled until launch metadata is available."
-          : !preflightCompleted
-            ? "Launch disabled until preflight completes."
-            : blockingCount > 0
-              ? "Launch disabled until blocking diagnostics are resolved."
-              : !ready
-                ? "Launch disabled until this package is ready."
-                : null;
+  const launchDisabledReason = workflowActionBlockReason
+    ? workflowActionBlockReason
+    : createLaunch.isPending
+      ? "Launch request is already in progress."
+      : preflightPackage.isPending
+        ? "Launch disabled while preflight is running."
+        : launchMetadataPending
+          ? "Launch disabled while launch metadata loads."
+          : launchMetadataError
+            ? "Launch disabled until launch metadata is available."
+            : !preflightCompleted
+              ? "Launch disabled until preflight completes."
+              : blockingCount > 0
+                ? "Launch disabled until blocking diagnostics are resolved."
+                : !ready
+                  ? "Launch disabled until this package is ready."
+                  : null;
 
   return (
     <WorkspacePageShell
@@ -1321,14 +1471,16 @@ export function WorkflowPackageLaunchPage() {
       <LaunchReadinessSummary
         blockingCount={blockingCount}
         diagnostics={diagnostics}
-        isLoadingMetadata={launchQuery.isPending}
-        metadataError={launchQuery.isError ? launchQuery.error : null}
+        isLoadingMetadata={launchMetadataPending}
+        metadataError={launchMetadataError}
         preflightCompleted={preflightCompleted}
         preflightPending={preflightPackage.isPending}
+        primaryStatusOverride={workflowSelectionMessage}
         readinessRead={readinessRead}
         ready={ready}
         warningCount={warningCount}
-        workflowKey={resolvedWorkflowKey}
+        workflowTone={workflowStatusTone}
+        workflowValue={workflowStatusValue}
       />
 
       <div data-testid="workflow-package-launch-tab">
@@ -1339,12 +1491,13 @@ export function WorkflowPackageLaunchPage() {
                 Runtime inputs
               </CardTitle>
               <CardDescription className="mt-1 text-xs leading-5">
-                Select a workflow key and provide a JSON object for launch.
+                Choose a workflow from the manifest and provide a JSON object for launch.
               </CardDescription>
             </div>
             <CardAction>
               <Button
                 className="w-full sm:w-auto"
+                disabled={!activeWorkflowKey}
                 size="sm"
                 type="button"
                 variant="outline"
@@ -1355,15 +1508,61 @@ export function WorkflowPackageLaunchPage() {
             </CardAction>
           </CardHeader>
           <CardContent className="min-w-0 space-y-4 px-4 pb-4">
-            <div className="min-w-0 space-y-2">
-              <Label htmlFor="workflow-key">Workflow key</Label>
-              <Input
-                id="workflow-key"
-                aria-label="Workflow key"
-                placeholder="Workflow key"
-                value={workflowKey}
-                onChange={(event) => updateWorkflowKey(event.target.value)}
-              />
+            <div className="flex min-w-0 flex-col gap-2">
+              <Label htmlFor="workflow-selector">Workflow</Label>
+              <Select
+                disabled={
+                  manifestQuery.isPending ||
+                  manifestQuery.isError ||
+                  workflowOptions.length === 0
+                }
+                value={resolvedWorkflowKey || undefined}
+                onValueChange={updateWorkflowKey}
+              >
+                <SelectTrigger aria-label="Workflow" id="workflow-selector">
+                  <SelectValue placeholder="Choose a workflow" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {workflowOptions.length > 0 ? (
+                      workflowOptions.map((option) => (
+                        <SelectItem key={option.key} value={option.key}>
+                          {option.label}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem disabled value="workflow-unavailable">
+                        {manifestQuery.isPending
+                          ? "Loading workflows..."
+                          : manifestQuery.isError
+                            ? "Workflow manifest unavailable"
+                            : "No workflows available"}
+                      </SelectItem>
+                    )}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {workflowSelectionMessage ? (
+                <Alert
+                  data-testid="workflow-package-workflow-selector-feedback"
+                  variant={workflowSelectionError ? "destructive" : "default"}
+                >
+                  <AlertCircle />
+                  <AlertTitle>Workflow selection</AlertTitle>
+                  <AlertDescription>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span>{workflowSelectionMessage}</span>
+                      {workflowSelectionError ? (
+                        <span>{workflowSelectionError}</span>
+                      ) : null}
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              ) : workflowDescription ? (
+                <p className="text-xs text-muted-foreground">
+                  {workflowDescription}
+                </p>
+              ) : null}
             </div>
             {!inputTemplate.schemaSupported ? (
               <SchemaTemplateWarning
@@ -1392,7 +1591,7 @@ export function WorkflowPackageLaunchPage() {
               </div>
               <SavedInputsTabs
                 createDisabled={
-                  !resolvedWorkflowKey ||
+                  !activeWorkflowKey ||
                   runtimeInputRegistry.isPending ||
                   runtimeInputRegistry.isFetching ||
                   !personalPresetName.trim()
@@ -1409,7 +1608,7 @@ export function WorkflowPackageLaunchPage() {
                 personalEntries={runtimeInputRegistry.data?.personal ?? []}
                 presetName={personalPresetName}
                 updatePending={updatePersonalEntry.isPending}
-                workflowKey={resolvedWorkflowKey}
+                workflowKey={activeWorkflowKey}
                 onCreate={() => void savePersonalInput()}
                 onDelete={(entry) => void deletePersonalInput(entry)}
                 onLoad={loadSavedInput}
@@ -1424,7 +1623,8 @@ export function WorkflowPackageLaunchPage() {
       <StickyLaunchActionBar
         launchDisabledReason={launchDisabledReason}
         launchPending={createLaunch.isPending}
-        launchQueryPending={launchQuery.isPending}
+        launchQueryPending={launchMetadataPending}
+        preflightBlocked={Boolean(workflowActionBlockReason)}
         preflightPending={preflightPackage.isPending}
         onLaunch={() => void launchPackage()}
         onPreflight={() => void runLaunchPreflight()}

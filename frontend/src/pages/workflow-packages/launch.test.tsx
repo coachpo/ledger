@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "@/lib/api-client";
 import type {
   WorkflowPackageLaunchRead,
+  WorkflowPackageManifestRead,
   WorkflowPackageRead,
   WorkflowPackageRuntimeInputEntryRead,
 } from "@/lib/types/workflow-package";
@@ -24,6 +25,7 @@ const {
   usePreflightPackageMock,
   useUpdateRuntimeInputPersonalEntryMock,
   useWorkflowPackageLaunchMock,
+  useWorkflowPackageManifestMock,
   useWorkflowPackageMock,
   useWorkflowPackageRuntimeInputRegistryMock,
 } = vi.hoisted(() => ({
@@ -39,6 +41,7 @@ const {
   usePreflightPackageMock: vi.fn(),
   useUpdateRuntimeInputPersonalEntryMock: vi.fn(),
   useWorkflowPackageLaunchMock: vi.fn(),
+  useWorkflowPackageManifestMock: vi.fn(),
   useWorkflowPackageMock: vi.fn(),
   useWorkflowPackageRuntimeInputRegistryMock: vi.fn(),
 }));
@@ -60,6 +63,7 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useUpdateWorkflowPackageRuntimeInputPersonalEntry: () => useUpdateRuntimeInputPersonalEntryMock(),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
   useWorkflowPackageLaunch: (...args: unknown[]) => useWorkflowPackageLaunchMock(...args),
+  useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
   useWorkflowPackageRuntimeInputRegistry: (...args: unknown[]) => useWorkflowPackageRuntimeInputRegistryMock(...args),
 }));
 
@@ -73,6 +77,44 @@ const packageRead: WorkflowPackageRead = {
   name: "Market Review Package",
   updatedAt: "2026-05-05T10:00:00Z",
 };
+
+function manifestRead(
+  workflows: Array<{
+    description?: string;
+    inputSchema?: Record<string, unknown>;
+    key: string;
+    label?: string;
+    name?: string;
+  }>,
+): WorkflowPackageManifestRead {
+  return {
+    compiledHash: "compiled-hash-123",
+    manifestHash: "manifest-hash-123",
+    manifestSource: "apiVersion: signaldeck.workflowPackage/v1",
+    packageDefinition: {
+      spec: {
+        workflows,
+      },
+    },
+    packageId: 42,
+    packageKey: "market_review_package",
+  };
+}
+
+const singleWorkflowManifestRead = manifestRead([
+  {
+    description: "Run market review",
+    inputSchema: {
+      properties: {
+        ticker: { description: "Ticker symbol", title: "Ticker", type: "string" },
+      },
+      required: ["ticker"],
+      type: "object",
+    },
+    key: "market_review",
+    name: "Market Review",
+  },
+]);
 
 const launchRead: WorkflowPackageLaunchRead = {
   blockingErrors: [],
@@ -149,6 +191,17 @@ function renderLaunchPage(initialEntry = "/workflow-packages/42/run") {
   );
 }
 
+function workflowSelector() {
+  return screen.getByRole("combobox", { name: /workflow/i });
+}
+
+async function chooseWorkflow(optionName: string | RegExp) {
+  const selector = workflowSelector();
+  selector.focus();
+  fireEvent.keyDown(selector, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: optionName }));
+}
+
 async function completeReadyPreflight() {
   fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
   await waitFor(() =>
@@ -166,6 +219,7 @@ describe("WorkflowPackageLaunchPage", () => {
     deleteRuntimeInputPersonalEntryMock.mockReset();
     useWorkflowPackageMock.mockReset();
     useWorkflowPackageLaunchMock.mockReset();
+    useWorkflowPackageManifestMock.mockReset();
     useWorkflowPackageRuntimeInputRegistryMock.mockReset();
     preflightPackageMock.mockResolvedValue(launchRead);
     createLaunchMock.mockResolvedValue({ createdAt: "2026-05-08T10:00:00Z", id: 99, status: "queued", workflowKey: "market_review", workflowPackageId: 42, workflowPackageKey: "market_review_package" });
@@ -173,6 +227,7 @@ describe("WorkflowPackageLaunchPage", () => {
     updateRuntimeInputPersonalEntryMock.mockResolvedValue(runtimeInputEntry({ id: 7, name: "Updated preset", slot: "personal" }));
     deleteRuntimeInputPersonalEntryMock.mockResolvedValue(undefined);
     useWorkflowPackageMock.mockReturnValue({ data: packageRead, error: null, isError: false, isPending: false });
+    useWorkflowPackageManifestMock.mockReturnValue({ data: singleWorkflowManifestRead, error: null, isError: false, isPending: false });
     useWorkflowPackageLaunchMock.mockReturnValue({ data: launchRead, error: null, isError: false, isPending: false });
     usePreflightPackageMock.mockReturnValue({ isPending: false, mutateAsync: preflightPackageMock });
     useCreateLaunchMock.mockReturnValue({ isPending: false, mutateAsync: createLaunchMock });
@@ -199,10 +254,12 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByTestId("workflow-package-launch-details")).toHaveTextContent("Market Review Package");
     expect(screen.getByTestId("workflow-package-launch-details")).toHaveTextContent("manifest-hash-123");
     expect(screen.getByText("Run preflight to load launch metadata and validate this package before launch.")).toBeVisible();
+    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Market Review"));
     const readiness = screen.getByTestId("workflow-package-preflight-status");
     expect(readiness).toHaveTextContent("Metadata loaded");
     expect(readiness).toHaveTextContent("Preflight pending");
     expect(readiness).toHaveTextContent("Workflow");
+    expect(readiness).toHaveTextContent("market_review");
     expect(readiness).toHaveTextContent("Manifest recorded");
     expect(readiness).toHaveTextContent("Input schema available");
     expect(readiness).not.toHaveTextContent("Blocking");
@@ -225,7 +282,9 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.queryByTestId("workflow-package-launch-context")).not.toBeInTheDocument();
     expect(screen.queryByTestId("workflow-package-constraint-inspector")).not.toBeInTheDocument();
     expect(screen.queryByTestId("workflow-package-editor-shell")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /workflow/i })).not.toBeInTheDocument();
     expect(useWorkflowPackageMock).toHaveBeenCalledWith("42");
+    expect(useWorkflowPackageManifestMock).toHaveBeenCalledWith("42");
     await waitFor(() => expect(useWorkflowPackageLaunchMock).toHaveBeenLastCalledWith("42", "market_review"));
   });
 
@@ -260,9 +319,7 @@ describe("WorkflowPackageLaunchPage", () => {
     });
     renderLaunchPage();
 
-    await waitFor(() =>
-      expect(screen.getByLabelText("Workflow key")).toHaveValue("market_review"),
-    );
+    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Market Review"));
     const readiness = screen.getByTestId("workflow-package-preflight-status");
     expect(readiness).toHaveTextContent("Blocking");
     expect(readiness).toHaveTextContent("Warnings");
@@ -302,7 +359,7 @@ describe("WorkflowPackageLaunchPage", () => {
     const missingReadiness = screen.getByTestId("workflow-package-preflight-status");
     expect(missingReadiness).toHaveTextContent("Metadata missing");
     expect(missingReadiness).toHaveTextContent("Preflight pending");
-    expect(missingReadiness).toHaveTextContent("Workflow not selected");
+    expect(missingReadiness).toHaveTextContent("market_review");
     expect(missingReadiness).toHaveTextContent("Manifest not recorded");
     expect(missingReadiness).toHaveTextContent("Input schema unavailable");
     missingView.unmount();
@@ -324,12 +381,178 @@ describe("WorkflowPackageLaunchPage", () => {
     errorView.unmount();
   });
 
+  it("requires explicit workflow selection for multi-workflow packages before preflight or saved-input actions", async () => {
+    const advisorySchema = {
+      properties: {
+        ticker: { title: "Ticker", type: "string" },
+      },
+      required: ["ticker"],
+      type: "object",
+    };
+    const newsSchema = {
+      properties: {
+        query: { title: "Query", type: "string" },
+      },
+      required: ["query"],
+      type: "object",
+    };
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: manifestRead([
+        { description: "Advisory workflow", inputSchema: advisorySchema, key: "advisory_research", name: "Advisory Research" },
+        { description: "News workflow", inputSchema: newsSchema, key: "news_research", name: "News Research" },
+      ]),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    useWorkflowPackageLaunchMock.mockImplementation((_packageId, workflowKey) => ({
+      data: workflowKey === "news_research"
+        ? { ...launchRead, description: "News workflow", inputSchema: newsSchema, name: "News Research", workflowKey: "news_research" }
+        : { ...launchRead, description: "Advisory workflow", inputSchema: advisorySchema, name: "Advisory Research", workflowKey: "advisory_research" },
+      error: null,
+      isError: false,
+      isPending: false,
+    }));
+
+    renderLaunchPage();
+
+    expect(workflowSelector()).toHaveTextContent("Choose a workflow");
+    expect(screen.getByTestId("workflow-package-launch-next-step")).toHaveTextContent("Choose a workflow to continue");
+    expect(screen.getByRole("button", { name: /run preflight/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /launch run/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save current JSON" })).toBeDisabled();
+    expect(screen.getByTestId("runtime-input-saved-inputs-helper")).toHaveTextContent("workflow pending");
+
+    await chooseWorkflow(/^News Research$/);
+
+    await waitFor(() => expect(workflowSelector()).toHaveTextContent("News Research"));
+    expect(screen.getByTestId("workflow-package-launch-next-step")).toHaveTextContent("Run preflight to load launch metadata and validate this package before launch.");
+    expect(screen.getByRole("button", { name: /run preflight/i })).not.toBeDisabled();
+    expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
+      JSON.stringify({ query: "" }, null, 2),
+    );
+  });
+
+  it("keeps a stale selected workflow visible instead of remapping to the only current manifest workflow", async () => {
+    const retiredSchema = {
+      properties: {
+        symbol: { title: "Symbol", type: "string" },
+      },
+      required: ["symbol"],
+      type: "object",
+    };
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: manifestRead([
+        {
+          description: "Retired workflow",
+          inputSchema: retiredSchema,
+          key: "retired_workflow",
+          name: "Retired Workflow",
+        },
+      ]),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    useWorkflowPackageLaunchMock.mockImplementation((_packageId, workflowKey) => ({
+      data:
+        workflowKey === "retired_workflow"
+          ? {
+              ...launchRead,
+              description: "Retired workflow",
+              inputSchema: retiredSchema,
+              name: "Retired Workflow",
+              workflowKey: "retired_workflow",
+            }
+          : launchRead,
+      error: null,
+      isError: false,
+      isPending: false,
+    }));
+
+    const view = renderLaunchPage();
+
+    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Retired Workflow"));
+    expect(screen.getByRole("button", { name: /run preflight/i })).not.toBeDisabled();
+    expect(screen.getByTestId("runtime-input-saved-inputs-helper")).toHaveTextContent(
+      "retired_workflow",
+    );
+
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: singleWorkflowManifestRead,
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    view.rerender(
+      <MemoryRouter initialEntries={["/workflow-packages/42/run"]}>
+        <Routes>
+          <Route path="/workflow-packages/:packageId/run" element={<WorkflowPackageLaunchPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(workflowSelector()).toHaveTextContent(
+        "Unknown workflow: retired_workflow",
+      ),
+    );
+    expect(screen.getByTestId("workflow-package-launch-next-step")).toHaveTextContent(
+      "Selected workflow is no longer present in the current manifest. Choose a workflow to continue.",
+    );
+    expect(screen.getByRole("button", { name: /run preflight/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /launch run/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save current JSON" })).toBeDisabled();
+    expect(screen.getByTestId("runtime-input-saved-inputs-helper")).toHaveTextContent(
+      "workflow pending",
+    );
+    expect(workflowSelector()).not.toHaveTextContent("Market Review");
+    await waitFor(() =>
+      expect(useWorkflowPackageLaunchMock).toHaveBeenLastCalledWith(
+        "42",
+        undefined,
+      ),
+    );
+    expect(useWorkflowPackageRuntimeInputRegistryMock).toHaveBeenLastCalledWith(
+      "42",
+      "",
+    );
+  });
+
+  it("shows explicit manifest-empty and manifest-error workflow selector states", () => {
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: manifestRead([]),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    const emptyView = renderLaunchPage();
+
+    expect(screen.getByTestId("workflow-package-launch-next-step")).toHaveTextContent("This package manifest does not declare any workflows.");
+    expect(screen.getByRole("button", { name: /run preflight/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /launch run/i })).toBeDisabled();
+    emptyView.unmount();
+
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: undefined,
+      error: new Error("Manifest fetch failed"),
+      isError: true,
+      isPending: false,
+    });
+    renderLaunchPage();
+
+    expect(screen.getByTestId("workflow-package-launch-next-step")).toHaveTextContent("Workflow selector unavailable until the package manifest loads.");
+    expect(screen.getByText("Manifest fetch failed")).toBeVisible();
+    expect(screen.getByRole("button", { name: /run preflight/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /launch run/i })).toBeDisabled();
+  });
+
   it("launches a package run after preflight and navigates to run detail", async () => {
     renderLaunchPage();
 
-    await waitFor(() => expect(screen.getByLabelText("Workflow key")).toHaveValue("market_review"));
+    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Market Review"));
     const launchPanel = await screen.findByTestId("workflow-package-launch-tab");
-    expect(within(launchPanel).queryByText("Workflow")).not.toBeInTheDocument();
+    expect(within(launchPanel).getByRole("combobox", { name: /workflow/i })).toBeVisible();
     expect(screen.queryByRole("textbox", { name: "Ticker" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Runtime inputs JSON"), { target: { value: '{"ticker":"AAPL"}' } });
     await completeReadyPreflight();
@@ -354,7 +577,7 @@ describe("WorkflowPackageLaunchPage", () => {
     });
     renderLaunchPage();
 
-    await waitFor(() => expect(screen.getByLabelText("Workflow key")).toHaveValue("market_review"));
+    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Market Review"));
     fireEvent.change(screen.getByLabelText("Runtime inputs JSON"), { target: { value: '{"ticker":"AAPL"}' } });
     fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
 
@@ -447,6 +670,95 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByRole("button", { name: "Save current JSON" })).toBeDisabled();
   });
 
+  it("keeps saved personal inputs isolated by workflow key when switching workflows", async () => {
+    const advisorySchema = {
+      properties: {
+        ticker: { title: "Ticker", type: "string" },
+      },
+      required: ["ticker"],
+      type: "object",
+    };
+    const newsSchema = {
+      properties: {
+        lookbackDays: { title: "Lookback Days", type: "integer" },
+        query: { title: "Query", type: "string" },
+      },
+      required: ["query"],
+      type: "object",
+    };
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: manifestRead([
+        { description: "Advisory workflow", inputSchema: advisorySchema, key: "advisory_research", name: "Advisory Research" },
+        { description: "News workflow", inputSchema: newsSchema, key: "news_research", name: "News Research" },
+      ]),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    useWorkflowPackageLaunchMock.mockImplementation((_packageId, workflowKey) => ({
+      data: workflowKey === "news_research"
+        ? { ...launchRead, description: "News workflow", inputSchema: newsSchema, name: "News Research", workflowKey: "news_research" }
+        : { ...launchRead, description: "Advisory workflow", inputSchema: advisorySchema, name: "Advisory Research", workflowKey: "advisory_research" },
+      error: null,
+      isError: false,
+      isPending: false,
+    }));
+    useWorkflowPackageRuntimeInputRegistryMock.mockImplementation((_packageId, workflowKey) => {
+      if (workflowKey === "news_research") {
+        return runtimeInputRegistry({
+          personal: [
+            runtimeInputEntry({
+              id: 19,
+              name: "Breaking News",
+              payload: { lookbackDays: 7, query: "AI earnings" },
+              slot: "personal",
+              workflowKey: "news_research",
+            }),
+          ],
+        });
+      }
+      if (workflowKey === "advisory_research") {
+        return runtimeInputRegistry({
+          personal: [
+            runtimeInputEntry({
+              id: 7,
+              name: "Baseline preset",
+              payload: { ticker: "MSFT" },
+              slot: "personal",
+              workflowKey: "advisory_research",
+            }),
+          ],
+        });
+      }
+      return runtimeInputRegistry();
+    });
+
+    renderLaunchPage();
+
+    await chooseWorkflow(/^Advisory Research$/);
+    const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
+    await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2)));
+    expect(screen.getByRole("button", { name: "Load personal input Baseline preset" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Load personal input Baseline preset" }));
+    expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "MSFT" }, null, 2));
+
+    fireEvent.change(runtimeJson, { target: { value: '{"ticker":"AAPL"}' } });
+    await chooseWorkflow(/^News Research$/);
+
+    await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ query: "" }, null, 2)));
+    expect(screen.getByTestId("runtime-input-saved-inputs-helper")).toHaveTextContent("news_research");
+    expect(screen.queryByRole("button", { name: "Load personal input Baseline preset" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Load personal input Breaking News" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Load personal input Breaking News" }));
+    expect(runtimeJson.value).toBe(JSON.stringify({ lookbackDays: 7, query: "AI earnings" }, null, 2));
+
+    await chooseWorkflow(/^Advisory Research$/);
+
+    await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2)));
+    expect(screen.getByTestId("runtime-input-saved-inputs-helper")).toHaveTextContent("advisory_research");
+    expect(screen.getByRole("button", { name: "Load personal input Baseline preset" })).toBeVisible();
+  });
+
   it("submits raw launch parameters from the schema-derived template", async () => {
     useWorkflowPackageLaunchMock.mockReturnValue({
       data: {
@@ -509,17 +821,37 @@ describe("WorkflowPackageLaunchPage", () => {
     }));
   });
 
-  it("resets raw JSON launch state when workflow key or schema identity changes", async () => {
-    const resetLaunchRead: WorkflowPackageLaunchRead = {
-      ...launchRead,
-      inputSchema: { properties: { ticker: { title: "Ticker", type: "string" } }, required: ["ticker"], type: "object" },
-      workflowKey: "reset_workflow",
+  it("resets raw JSON launch state when workflow selection or schema identity changes", async () => {
+    const sharedSchema = {
+      properties: { ticker: { title: "Ticker", type: "string" } },
+      required: ["ticker"],
+      type: "object",
     };
-    useWorkflowPackageLaunchMock.mockReturnValue({ data: resetLaunchRead, error: null, isError: false, isPending: false });
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: manifestRead([
+        { description: "Reset workflow", inputSchema: sharedSchema, key: "reset_workflow", name: "Reset Workflow" },
+        { description: "Alternate workflow", inputSchema: sharedSchema, key: "alternate_workflow", name: "Alternate Workflow" },
+      ]),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    useWorkflowPackageLaunchMock.mockImplementation((_packageId, workflowKey) => ({
+      data: {
+        ...launchRead,
+        inputSchema: sharedSchema,
+        name: workflowKey === "alternate_workflow" ? "Alternate Workflow" : "Reset Workflow",
+        workflowKey: workflowKey === "alternate_workflow" ? "alternate_workflow" : "reset_workflow",
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    }));
     const view = renderLaunchPage();
 
+    await chooseWorkflow(/^Reset Workflow$/);
     const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
-    expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2));
+    await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2)));
     fireEvent.change(runtimeJson, { target: { value: '{"ticker":"AAPL"}' } });
     expect(runtimeJson.value).toBe('{"ticker":"AAPL"}');
 
@@ -527,10 +859,15 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2));
     fireEvent.change(runtimeJson, { target: { value: '{"ticker":"MSFT"}' } });
 
-    fireEvent.change(screen.getByLabelText("Workflow key"), { target: { value: "alternate_workflow" } });
+    await chooseWorkflow(/^Alternate Workflow$/);
     await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2)));
     useWorkflowPackageLaunchMock.mockReturnValue({
-      data: { ...resetLaunchRead, inputSchema: { properties: { symbol: { title: "Symbol", type: "string" } }, required: ["symbol"], type: "object" } },
+      data: {
+        ...launchRead,
+        inputSchema: { properties: { symbol: { title: "Symbol", type: "string" } }, required: ["symbol"], type: "object" },
+        name: "Alternate Workflow",
+        workflowKey: "alternate_workflow",
+      },
       error: null,
       isError: false,
       isPending: false,
@@ -544,21 +881,45 @@ describe("WorkflowPackageLaunchPage", () => {
     await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ symbol: "" }, null, 2)));
   });
 
-  it("preserves user-entered runtime JSON when workflow metadata rebinds after key change", async () => {
-    const initialLaunchRead: WorkflowPackageLaunchRead = {
-      ...launchRead,
-      inputSchema: { properties: { ticker: { title: "Ticker", type: "string" } }, required: ["ticker"], type: "object" },
-      workflowKey: "reset_workflow",
+  it("preserves user-entered runtime JSON when workflow metadata rebinds after selector changes", async () => {
+    const sharedSchema = {
+      properties: { ticker: { title: "Ticker", type: "string" } },
+      required: ["ticker"],
+      type: "object",
     };
-    useWorkflowPackageLaunchMock.mockReturnValue({ data: initialLaunchRead, error: null, isError: false, isPending: false });
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: manifestRead([
+        { description: "Reset workflow", inputSchema: sharedSchema, key: "reset_workflow", name: "Reset Workflow" },
+        { description: "Alternate workflow", inputSchema: sharedSchema, key: "alternate_workflow", name: "Alternate Workflow" },
+      ]),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    useWorkflowPackageLaunchMock.mockImplementation((_packageId, workflowKey) => ({
+      data: {
+        ...launchRead,
+        inputSchema: sharedSchema,
+        name: workflowKey === "alternate_workflow" ? "Alternate Workflow" : "Reset Workflow",
+        workflowKey: workflowKey === "alternate_workflow" ? "alternate_workflow" : "reset_workflow",
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    }));
     const view = renderLaunchPage();
 
-    await waitFor(() => expect(screen.getByLabelText("Workflow key")).toHaveValue("reset_workflow"));
+    await chooseWorkflow(/^Reset Workflow$/);
     const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
-    fireEvent.change(screen.getByLabelText("Workflow key"), { target: { value: "alternate_workflow" } });
+    await chooseWorkflow(/^Alternate Workflow$/);
     fireEvent.change(runtimeJson, { target: { value: '{"ticker":"AAPL"}' } });
     useWorkflowPackageLaunchMock.mockReturnValue({
-      data: { ...initialLaunchRead, workflowKey: "alternate_workflow" },
+      data: {
+        ...launchRead,
+        inputSchema: sharedSchema,
+        name: "Alternate Workflow",
+        workflowKey: "alternate_workflow",
+      },
       error: null,
       isError: false,
       isPending: false,
