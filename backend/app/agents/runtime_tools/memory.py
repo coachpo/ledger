@@ -552,7 +552,7 @@ def _trusted_memory_provenance(
         raise RuntimeToolError(
             code="agent_tool_dependency_missing",
             message=(
-                f"{function_name} requires runtime context fields: " f"{', '.join(missing_fields)}."
+                f"{function_name} requires runtime context fields: {', '.join(missing_fields)}."
             ),
         )
     assert context.run_id is not None

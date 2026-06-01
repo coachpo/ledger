@@ -671,7 +671,6 @@ def _tradingagents_preset_schedule_rows(connection: Connection) -> list[Mapping[
     )
 
 
-
 def _assert_tradingagents_preset_schedule_row(
     row: Mapping[str, object],
     spec: Mapping[str, object],
@@ -689,7 +688,6 @@ def _assert_tradingagents_preset_schedule_row(
     assert row["misfire_grace_seconds"] == spec["misfire_grace_seconds"]
     assert row["input_template"] == spec["input_template"]
     assert row["template_vars"] == spec["template_vars"]
-
 
 
 def _seed_stock_analysis_upgrade_rows(connection) -> int:
@@ -3700,10 +3698,7 @@ def test_init_db_seeds_tradingagents_preset_schedules_idempotently(
             first_rows = _tradingagents_preset_schedule_rows(connection)
         assert len(first_rows) == len(specs)
         first_rows_by_name = {str(row["name"]): row for row in first_rows}
-        assert first_rows_by_name.keys() == {
-            str(spec["name"])
-            for spec in specs
-        }
+        assert first_rows_by_name.keys() == {str(spec["name"]) for spec in specs}
         for spec in specs:
             _assert_tradingagents_preset_schedule_row(
                 first_rows_by_name[str(spec["name"])],
@@ -3725,13 +3720,9 @@ def test_init_db_seeds_tradingagents_preset_schedules_idempotently(
                 spec,
                 expected_status="enabled",
             )
-        assert {
-            str(row["name"]): cast(int, row["id"])
-            for row in second_rows
-        } == first_ids_by_name
+        assert {str(row["name"]): cast(int, row["id"]) for row in second_rows} == first_ids_by_name
     finally:
         engine.dispose()
-
 
 
 def test_init_db_preserves_due_tradingagents_preset_schedule_next_fire_at(
@@ -3773,18 +3764,13 @@ def test_init_db_preserves_due_tradingagents_preset_schedule_next_fire_at(
         engine.dispose()
 
 
-
 def test_init_db_preserves_paused_tradingagents_preset_schedule_state(
     database_url: str,
 ) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
     specs = _tradingagents_schedule_specs()
-    paused_spec = next(
-        spec
-        for spec in specs
-        if spec["workflow_key"] == "news_research"
-    )
+    paused_spec = next(spec for spec in specs if spec["workflow_key"] == "news_research")
 
     try:
         with engine.begin() as connection:
@@ -3824,9 +3810,7 @@ def test_init_db_preserves_paused_tradingagents_preset_schedule_state(
         with engine.connect() as connection:
             rows = _tradingagents_preset_schedule_rows(connection)
         assert len(rows) == len(specs)
-        refreshed = next(
-            row for row in rows if cast(int, row["id"]) == schedule_id
-        )
+        refreshed = next(row for row in rows if cast(int, row["id"]) == schedule_id)
         _assert_tradingagents_preset_schedule_row(
             refreshed,
             paused_spec,
@@ -3834,7 +3818,6 @@ def test_init_db_preserves_paused_tradingagents_preset_schedule_state(
         )
     finally:
         engine.dispose()
-
 
 
 def test_init_db_removes_cost_columns_and_deletes_non_package_runtime_rows(

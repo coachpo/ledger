@@ -293,7 +293,7 @@ class MemoryNamespaceSelector(CamelModel):
 
     @property
     def qualified_key(self) -> str:
-        return f"{self.owner_package_key}{MEMORY_NAMESPACE_SCOPE_SEPARATOR}" f"{self.namespace_key}"
+        return f"{self.owner_package_key}{MEMORY_NAMESPACE_SCOPE_SEPARATOR}{self.namespace_key}"
 
     def to_scope(self) -> MemoryScope:
         return MemoryScope(scope_type=MemoryScopeType.NAMESPACE, scope_key=self.qualified_key)

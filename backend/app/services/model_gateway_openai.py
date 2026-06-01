@@ -397,7 +397,7 @@ class OpenAIProtocolAdapter:
         raise ModelGatewayError(
             code="agent_model_connection_api_style_unsupported",
             message=(
-                "Model connection uses unsupported API style " f"{request.connection.api_style!r}."
+                f"Model connection uses unsupported API style {request.connection.api_style!r}."
             ),
         )
 
@@ -674,7 +674,7 @@ class OpenAIProtocolAdapter:
     def _probe_api_style_error(connection: ModelGatewayConnectionConfig) -> ModelGatewayError:
         return ModelGatewayError(
             code="agent_model_connection_api_style_unsupported",
-            message=("Model connection uses unsupported API style " f"{connection.api_style!r}."),
+            message=(f"Model connection uses unsupported API style {connection.api_style!r}."),
         )
 
     @staticmethod
@@ -1048,7 +1048,7 @@ class OpenAIProtocolAdapter:
             raise ModelGatewayError(
                 code="model_output_validation_failed",
                 message=(
-                    "Model response did not return valid JSON for the selected output " "strategy."
+                    "Model response did not return valid JSON for the selected output strategy."
                 ),
                 details=[{"field": "output", "issue": "Response body is not valid JSON"}],
             ) from exc

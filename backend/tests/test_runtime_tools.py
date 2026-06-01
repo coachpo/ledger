@@ -816,9 +816,9 @@ def _assert_recursive_strict_schema(schema: object, *, path: str) -> None:
         assert isinstance(required, list), f"{path}.required must be a list"
         required_names = [cast(str, value) for value in required]
         property_names = [cast(str, key) for key in property_mapping]
-        assert (
-            payload.get("additionalProperties") is False
-        ), f"{path}.additionalProperties must be false"
+        assert payload.get("additionalProperties") is False, (
+            f"{path}.additionalProperties must be false"
+        )
         assert set(required_names) == set(property_names), f"{path}.required must match properties"
         for key, value in property_mapping.items():
             _assert_recursive_strict_schema(value, path=f"{path}.properties.{key}")
@@ -6087,7 +6087,7 @@ def test_edgar_sec_filings_provider_maps_company_submissions_to_normalized_filin
     assert [filing.form_type for filing in result.filings] == ["10-K", "8-K"]
     assert result.filings[0].accepted_at == datetime(2026, 2, 20, 16, 30, 1, tzinfo=UTC)
     assert result.filings[0].url == (
-        "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000010/" "nvda-20260131.htm"
+        "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000010/nvda-20260131.htm"
     )
     assert result.filings[0].description == "Annual report"
 

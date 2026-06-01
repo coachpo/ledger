@@ -242,7 +242,7 @@ def _parse_required_indicator_argument(value: object) -> MarketSentimentIndicato
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                f"{MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME} " "indicator must use: fear_greed."
+                f"{MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME} indicator must use: fear_greed."
             ),
         )
     return "fear_greed"

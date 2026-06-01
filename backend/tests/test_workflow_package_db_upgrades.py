@@ -431,7 +431,6 @@ def test_init_db_seeds_tradingagents_preset_with_canonical_manifest_workflow_key
         engine.dispose()
 
 
-
 def test_workflow_package_upgrade_reseeds_stale_first_party_preset_row(
     database_url: str,
 ) -> None:

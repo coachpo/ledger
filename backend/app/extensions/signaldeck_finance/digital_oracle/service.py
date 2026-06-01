@@ -405,9 +405,11 @@ def create_digital_oracle_phase1_service(
     )
 
 
-def _gather_provider_calls[
-    T
-](calls: Sequence[_ProviderCall[T]], *, operation: str,) -> tuple[_ProviderOutcome[T], ...]:
+def _gather_provider_calls[T](
+    calls: Sequence[_ProviderCall[T]],
+    *,
+    operation: str,
+) -> tuple[_ProviderOutcome[T], ...]:
     if not calls:
         return ()
     if len(calls) == 1:
@@ -424,9 +426,11 @@ def _gather_provider_calls[
     return tuple(outcomes_by_index[index] for index in sorted(outcomes_by_index))
 
 
-def _execute_provider_call[
-    T
-](call: _ProviderCall[T], *, operation: str,) -> _ProviderOutcome[T]:
+def _execute_provider_call[T](
+    call: _ProviderCall[T],
+    *,
+    operation: str,
+) -> _ProviderOutcome[T]:
     try:
         return _ProviderOutcome(provider=call.provider, result=call.call())
     except DigitalOracleProviderError as exc:

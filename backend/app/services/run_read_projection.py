@@ -140,9 +140,7 @@ class RunReadProjection:
                     run,
                     serial_blocker_run_id=self.run_repository.serial_queue_blocker_run_ids_by_run_id(
                         [run.id]
-                    ).get(
-                        run.id
-                    ),
+                    ).get(run.id),
                 ),
                 "scheduleId": run.schedule_id,
                 "scheduleFireId": run.schedule_fire_id,

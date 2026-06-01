@@ -48,8 +48,8 @@ _IDENTIFIER_RE: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _PLACEHOLDER_RE: Final = re.compile(r"{{\s*([^{}]+?)\s*}}")
 _EXACT_PLACEHOLDER_RE: Final = re.compile(r"^\s*{{\s*([^{}]+?)\s*}}\s*$")
 _ESCAPED_LITERAL_RE: Final = re.compile(r"\\{{(.*?)}}")
-_ESCAPED_OPEN: Final = "\uFFF0"
-_ESCAPED_CLOSE: Final = "\uFFF1"
+_ESCAPED_OPEN: Final = "\ufff0"
+_ESCAPED_CLOSE: Final = "\ufff1"
 
 
 @dataclass(frozen=True)

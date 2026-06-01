@@ -282,7 +282,7 @@ def _parse_json_object(arguments_json: str, *, function_name: str) -> dict[str, 
     except json.JSONDecodeError as exc:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=("OpenAI response requested " f"{function_name} with invalid JSON arguments."),
+            message=(f"OpenAI response requested {function_name} with invalid JSON arguments."),
         ) from exc
     if not isinstance(raw_payload, dict):
         raise RuntimeToolError(
@@ -319,9 +319,7 @@ def _parse_required_query_argument(value: object) -> str:
     if not normalized:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=(
-                f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} " "query must not be empty."
-            ),
+            message=(f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} query must not be empty."),
         )
     return normalized
 
@@ -407,8 +405,7 @@ def _parse_optional_boolean_argument(value: object, *, field_name: str) -> bool:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} "
-                f"{field_name} must be a boolean."
+                f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} must be a boolean."
             ),
         )
     return value

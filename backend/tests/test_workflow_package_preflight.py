@@ -709,7 +709,7 @@ def test_preflight_warns_when_required_model_capabilities_are_unproven(
             "modelConnectionKey": "compat_fixture_tools_disabled",
             "requirement": "nativeToolCalls",
             "issue": (
-                "This workflow requires native tool calls, but support has not been " "proven yet."
+                "This workflow requires native tool calls, but support has not been proven yet."
             ),
             "severity": "warning",
         },

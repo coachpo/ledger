@@ -294,8 +294,7 @@ def _parse_form_types_argument(value: object) -> tuple[str, ...] | None:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} "
-                "formTypes must be an array of strings."
+                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} formTypes must be an array of strings."
             ),
         )
     form_types: list[str] = []
@@ -339,7 +338,7 @@ def _parse_optional_date_argument(value: object, field_name: str) -> date | None
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} " "must be a string date."
+                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} must be a string date."
             ),
         )
     raw_value = value.strip()
@@ -347,8 +346,7 @@ def _parse_optional_date_argument(value: object, field_name: str) -> date | None
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} "
-                "must be a valid ISO date."
+                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} must be a valid ISO date."
             ),
         )
     try:
@@ -357,8 +355,7 @@ def _parse_optional_date_argument(value: object, field_name: str) -> date | None
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} "
-                "must be a valid ISO date."
+                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} must be a valid ISO date."
             ),
         ) from exc
 
@@ -386,9 +383,7 @@ def _parse_optional_integer_argument(
     if isinstance(value, bool) or not isinstance(value, int):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=(
-                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} " "must be an integer."
-            ),
+            message=(f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} must be an integer."),
         )
     if value < minimum:
         raise RuntimeToolError(
@@ -402,8 +397,7 @@ def _parse_optional_integer_argument(
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} "
-                f"must be at most {maximum}."
+                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} must be at most {maximum}."
             ),
         )
     return int(value)

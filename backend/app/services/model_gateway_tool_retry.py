@@ -184,7 +184,7 @@ def _bounded_text(value: object, *, default: str) -> str:
     if not text:
         text = default
     if len(text) > _MAX_DETAIL_TEXT_LENGTH:
-        return f"{text[:_MAX_DETAIL_TEXT_LENGTH - 3]}..."
+        return f"{text[: _MAX_DETAIL_TEXT_LENGTH - 3]}..."
     return text
 
 

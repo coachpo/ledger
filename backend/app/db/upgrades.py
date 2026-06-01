@@ -568,10 +568,7 @@ $$,
             ),
             "CREATE INDEX IF NOT EXISTS ix_runs_source_run ON runs (source_run_id)",
             "CREATE INDEX IF NOT EXISTS ix_runs_lineage_root ON runs (lineage_root_run_id)",
-            (
-                "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package "
-                "ON runs (workflow_package_id)"
-            ),
+            ("CREATE INDEX IF NOT EXISTS ix_runs_workflow_package ON runs (workflow_package_id)"),
             (
                 "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_key "
                 "ON runs (workflow_package_key)"
@@ -917,7 +914,7 @@ _WORKFLOW_PACKAGE_TABLE_STATEMENTS: tuple[str, ...] = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS ix_workflow_packages_key ON workflow_packages (key)",
-    ("CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_key " "ON workflow_packages (key)"),
+    ("CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_key ON workflow_packages (key)"),
     (
         "CREATE INDEX IF NOT EXISTS ix_workflow_packages_manifest_hash "
         "ON workflow_packages (manifest_hash)"
@@ -1179,8 +1176,8 @@ _RUN_WORKFLOW_PACKAGE_REMOVED_PROVENANCE_COLUMNS = (
     "launch_snapshot",
 )
 _RUN_WORKFLOW_PACKAGE_PROVENANCE_INDEXES: tuple[str, ...] = (
-    ("CREATE INDEX IF NOT EXISTS ix_runs_workflow_package " "ON runs (workflow_package_id)"),
-    ("CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_key " "ON runs (workflow_package_key)"),
+    ("CREATE INDEX IF NOT EXISTS ix_runs_workflow_package ON runs (workflow_package_id)"),
+    ("CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_key ON runs (workflow_package_key)"),
     (
         "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_workflow_key "
         "ON runs (workflow_package_workflow_key)"
@@ -1516,10 +1513,7 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
         "CREATE INDEX IF NOT EXISTS ix_run_memory_events_run_type_created_at "
         "ON run_memory_events (run_id, event_type, created_at)"
     ),
-    (
-        "CREATE INDEX IF NOT EXISTS ix_run_memory_events_run_step "
-        "ON run_memory_events (run_step_id)"
-    ),
+    ("CREATE INDEX IF NOT EXISTS ix_run_memory_events_run_step ON run_memory_events (run_step_id)"),
     (
         "CREATE INDEX IF NOT EXISTS ix_run_memory_events_agent_invocation "
         "ON run_memory_events (run_agent_invocation_id)"
@@ -2649,8 +2643,7 @@ def _ensure_workflow_package_current_artifact_columns(
             package_columns.discard("status")
         connection.exec_driver_sql("DROP INDEX IF EXISTS uq_workflow_packages_active_key")
         connection.exec_driver_sql(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_key "
-            "ON workflow_packages (key)"
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_key ON workflow_packages (key)"
         )
         for column_name, column_type in column_definitions.items():
             if column_name not in package_columns:
@@ -2882,7 +2875,6 @@ def _insert_browser_proven_package_preset(connection: Connection, preset_sql_pat
     connection.exec_driver_sql(preset_sql_path.read_text(encoding="utf-8"))
 
 
-
 def _browser_proven_package_preset_schedule_definitions(
     package_definition: object,
     compiled_plan: object,
@@ -2925,15 +2917,12 @@ def _browser_proven_package_preset_schedule_definitions(
             "recurrence": _PRESET_PACKAGE_SCHEDULE_RECURRENCE,
             "overlap_policy": _PRESET_PACKAGE_SCHEDULE_DEFAULTS["overlap_policy"],
             "misfire_policy": _PRESET_PACKAGE_SCHEDULE_DEFAULTS["misfire_policy"],
-            "misfire_grace_seconds": _PRESET_PACKAGE_SCHEDULE_DEFAULTS[
-                "misfire_grace_seconds"
-            ],
+            "misfire_grace_seconds": _PRESET_PACKAGE_SCHEDULE_DEFAULTS["misfire_grace_seconds"],
             "input_template": spec["input_template"],
             "template_vars": {},
         }
         for spec in _PRESET_PACKAGE_SCHEDULE_SPECS
     )
-
 
 
 def _browser_proven_package_preset_schedule_next_fire_at(
@@ -2953,7 +2942,6 @@ def _browser_proven_package_preset_schedule_next_fire_at(
     if ends_at is not None and candidate > to_utc(ends_at):
         return None
     return candidate
-
 
 
 def _ensure_browser_proven_package_preset_schedules(connection: Connection) -> None:
@@ -3060,9 +3048,7 @@ def _ensure_browser_proven_package_preset_schedules(connection: Connection) -> N
                     "workflow_key": spec["workflow_key"],
                     "name": spec["name"],
                     "description": spec["description"],
-                    "status": "paused"
-                    if str(matching_row["status"]) == "paused"
-                    else "enabled",
+                    "status": "paused" if str(matching_row["status"]) == "paused" else "enabled",
                     "timezone": spec["timezone"],
                     "recurrence": json.dumps(spec["recurrence"], sort_keys=True),
                     "next_fire_at": next_fire_at,
@@ -3101,7 +3087,6 @@ def _ensure_browser_proven_package_preset_schedules(connection: Connection) -> N
                 "updated_at": seeded_at,
             },
         )
-
 
 
 def _ensure_browser_proven_package_preset(engine: Engine, table_names: set[str]) -> None:
@@ -4759,7 +4744,7 @@ def _ensure_run_scheduler_metadata_support(engine: Engine, table_names: set[str]
             """
         )
         connection.exec_driver_sql(
-            "UPDATE runs SET attempt_count = 0 " "WHERE attempt_count IS NULL OR attempt_count < 0"
+            "UPDATE runs SET attempt_count = 0 WHERE attempt_count IS NULL OR attempt_count < 0"
         )
         connection.exec_driver_sql(
             "ALTER TABLE runs ALTER COLUMN concurrency_policy SET DEFAULT 'serial'"
