@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const reactQueryState = vi.hoisted(() => ({
   capturedMutationOptions: null as {
     mutationFn?: (variables: unknown) => unknown;
+    onSettled?: (result: unknown, error: unknown, variables: unknown) => unknown;
     onSuccess?: (result: unknown, variables: unknown) => unknown;
   } | null,
   invalidateQueriesMock: vi.fn(),
@@ -12,6 +13,7 @@ const reactQueryState = vi.hoisted(() => ({
 vi.mock("@tanstack/react-query", () => ({
   useMutation: (options: {
     mutationFn?: (variables: unknown) => unknown;
+    onSettled?: (result: unknown, error: unknown, variables: unknown) => unknown;
     onSuccess?: (result: unknown, variables: unknown) => unknown;
   }) => {
     reactQueryState.capturedMutationOptions = options;
@@ -50,6 +52,7 @@ import { queryKeys } from "@/lib/query-keys";
 import {
   useCreateScheduledTask,
   useDeleteScheduledTask,
+  useDeleteScheduledTasks,
   usePreviewScheduledTask,
   usePreviewUnsavedScheduledTask,
   useRunScheduledTaskNow,
@@ -61,6 +64,7 @@ import {
 
 type CapturedMutationOptions = {
   mutationFn?: (variables: unknown) => unknown;
+  onSettled?: (result: unknown, error: unknown, variables: unknown) => unknown;
   onSuccess?: (result: unknown, variables: unknown) => unknown;
 };
 
@@ -227,6 +231,64 @@ describe("useScheduledTasks", () => {
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.runs.detail(2104),
     });
+  });
+
+  it("deletes scheduled tasks in batches and invalidates affected scopes", async () => {
+    vi.mocked(deleteScheduledTask).mockResolvedValue(undefined);
+
+    useDeleteScheduledTasks();
+
+    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    const variables = [
+      { latestRunId: 2104, scheduleId: 44 },
+      { latestRunId: null, scheduleId: 55 },
+    ];
+
+    await mutationOptions.mutationFn?.(variables);
+    expect(deleteScheduledTask).toHaveBeenCalledWith(44);
+    expect(deleteScheduledTask).toHaveBeenCalledWith(55);
+
+    await mutationOptions.onSettled?.(undefined, null, variables);
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.schedules.lists(),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.lists(),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.schedules.detail(44),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.schedules.firesScope(44),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.detail(2104),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.schedules.detail(55),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.schedules.firesScope(55),
+    });
+  });
+
+  it("surfaces the first batch delete failure while settling all scheduled task deletes", async () => {
+    vi.mocked(deleteScheduledTask)
+      .mockRejectedValueOnce(new Error("First delete rejected"))
+      .mockRejectedValueOnce(new Error("Second delete rejected"));
+
+    useDeleteScheduledTasks();
+
+    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await expect(
+      mutationOptions.mutationFn?.([
+        { latestRunId: 2104, scheduleId: 44 },
+        { latestRunId: 2205, scheduleId: 55 },
+      ]),
+    ).rejects.toThrow("First delete rejected");
+    expect(deleteScheduledTask).toHaveBeenCalledTimes(2);
+    expect(deleteScheduledTask).toHaveBeenNthCalledWith(1, 44);
+    expect(deleteScheduledTask).toHaveBeenNthCalledWith(2, 55);
   });
 
   it("invalidates schedule fires and run views after run-now", async () => {

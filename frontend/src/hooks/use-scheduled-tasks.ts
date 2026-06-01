@@ -55,18 +55,38 @@ export type RunScheduledTaskNowVariables = {
 
 type ScheduleReadLike = Pick<ScheduleRead, "id" | "latestRunId">;
 
-function invalidateLinkedRunViews(queryClient: QueryClient, runId?: IdParam | null) {
-  const invalidations = [
-    queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.lists() }),
-  ];
-
-  if (runId !== undefined && runId !== null) {
-    invalidations.push(
-      queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(runId) }),
-    );
+function invalidateLinkedRunDetail(
+  queryClient: QueryClient,
+  runId?: IdParam | null,
+) {
+  if (runId === undefined || runId === null) {
+    return Promise.resolve();
   }
 
-  return Promise.all(invalidations);
+  return queryClient.invalidateQueries({
+    queryKey: queryKeys.platform.runs.detail(runId),
+  });
+}
+
+function invalidateLinkedRunViews(queryClient: QueryClient, runId?: IdParam | null) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.lists() }),
+    invalidateLinkedRunDetail(queryClient, runId),
+  ]);
+}
+
+function invalidateScheduledTaskDetailScope(
+  queryClient: QueryClient,
+  scheduleId: IdParam,
+) {
+  return Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.platform.schedules.detail(scheduleId),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.platform.schedules.firesScope(scheduleId),
+    }),
+  ]);
 }
 
 function invalidateScheduledTaskById(
@@ -76,8 +96,7 @@ function invalidateScheduledTaskById(
 ) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.schedules.lists() }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.platform.schedules.detail(scheduleId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.platform.schedules.firesScope(scheduleId) }),
+    invalidateScheduledTaskDetailScope(queryClient, scheduleId),
     invalidateLinkedRunViews(queryClient, runId),
   ]);
 }
@@ -157,6 +176,37 @@ export function useDeleteScheduledTask() {
     mutationFn: ({ scheduleId }) => deleteScheduledTask(scheduleId),
     onSuccess: async (_result, { scheduleId, latestRunId }) => {
       await invalidateScheduledTaskById(queryClient, scheduleId, latestRunId);
+    },
+  });
+}
+
+export function useDeleteScheduledTasks() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, DeleteScheduledTaskVariables[]>({
+    mutationFn: async (schedules) => {
+      const results = await Promise.allSettled(
+        schedules.map(({ scheduleId }) => deleteScheduledTask(scheduleId)),
+      );
+      const firstRejected = results.find((result) => result.status === "rejected");
+
+      if (firstRejected?.status === "rejected") {
+        throw firstRejected.reason;
+      }
+    },
+    onSettled: async (_result, _error, schedules) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.platform.schedules.lists(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.platform.runs.lists(),
+        }),
+        ...schedules.flatMap(({ scheduleId, latestRunId }) => [
+          invalidateScheduledTaskDetailScope(queryClient, scheduleId),
+          invalidateLinkedRunDetail(queryClient, latestRunId),
+        ]),
+      ]);
     },
   });
 }
