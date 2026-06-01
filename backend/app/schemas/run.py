@@ -492,6 +492,7 @@ class RunListItemRead(CamelModel):
     schedule_fire_id: int | None = None
     scheduled_for: datetime | None = None
     schedule_reason: Literal["scheduled", "manual"] | None = None
+    workflow_key: str | None = None
     total_tokens: int = Field(ge=0)
     trace_id: str | None = None
     queued_at: datetime

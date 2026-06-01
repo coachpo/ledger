@@ -2038,6 +2038,7 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
             "percent": 0,
         },
         "queue": None,
+        "workflowKey": None,
         "totalTokens": 0,
         "traceId": None,
         "queuedAt": queued_at,
@@ -2048,7 +2049,7 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
     list_item = RunListItemRead.model_validate(common_payload)
     detail = RunRead.model_validate(
         {
-            **common_payload,
+            **{key: value for key, value in common_payload.items() if key != "workflowKey"},
             "input": {"ticker": "NVDA"},
             "resumeStepIndex": 1,
             "finalOutput": None,
@@ -2074,6 +2075,10 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
 
     assert list_payload == {
         **common_payload,
+        "scheduleId": None,
+        "scheduleFireId": None,
+        "scheduledFor": None,
+        "scheduleReason": None,
         "queuedAt": "2026-04-20T11:00:00Z",
     }
     assert detail_payload["startedAt"] is None
@@ -2091,6 +2096,10 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
         "status",
         "progress",
         "queue",
+        "scheduleId",
+        "scheduleFireId",
+        "scheduledFor",
+        "scheduleReason",
         "totalTokens",
         "inheritedTokens",
         "executedTokens",

@@ -2852,6 +2852,7 @@ class RunService:
                 "scheduleFireId": run.schedule_fire_id,
                 "scheduledFor": run.scheduled_for,
                 "scheduleReason": run.schedule_reason,
+                "workflowKey": run.workflow_package_workflow_key,
                 "totalTokens": run.total_tokens,
                 "traceId": run.trace_id,
                 "queuedAt": run.queued_at,

@@ -2553,3 +2553,4 @@ def test_scheduled_run_snapshot_materializer_creates_normal_package_run(
     assert api_item["scheduleFireId"] == fire_id
     assert api_item["scheduledFor"] == "2026-06-01T13:00:00Z"
     assert api_item["scheduleReason"] == "scheduled"
+    assert api_item["workflowKey"] == "runtime_workflow"
