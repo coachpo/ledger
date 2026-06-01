@@ -1745,3 +1745,144 @@ spec:
             optional: false
       output:
         from: ${{ nodes.root_sequence.outputs.portfolio_decision }}
+    - key: market_research
+      name: Market Research
+      description: Single-step market research entry point for TradingAgents.
+      inputSchema:
+        type: object
+        title: TradingAgents market research inputs
+        required:
+          - ticker
+          - asOfDate
+        properties:
+          ticker:
+            type: string
+            title: Ticker symbol
+            description: Required equity or asset symbol to research, such as AAPL.
+          asOfDate:
+            type: string
+            title: As-of date
+            description: Required research date in YYYY-MM-DD format for point-in-time context.
+          horizonDays:
+            type: integer
+            title: Horizon in days
+            default: 30
+            description: Optional market research horizon in calendar days.
+          outputLanguage:
+            type: string
+            title: Output language
+            default: English
+            description: Optional language for generated market research reports.
+          benchmarkSymbol:
+            type: string
+            title: Benchmark symbol
+            default: SPY
+            description: Optional benchmark symbol used for relative market context.
+        description: Operator inputs for a focused market research run.
+      flow:
+        kind: sequence
+        id: root_sequence
+        nodes:
+          - kind: step
+            id: market_analysis
+            slot: market_report
+            uses: market_analyst
+            with:
+              ticker: ${{ inputs.ticker }}
+              asOfDate: ${{ inputs.asOfDate }}
+              horizonDays: ${{ inputs.horizonDays }}
+              outputLanguage: ${{ inputs.outputLanguage }}
+              benchmarkSymbol: ${{ inputs.benchmarkSymbol }}
+            optional: false
+      output:
+        from: ${{ nodes.root_sequence.outputs.market_report }}
+    - key: news_research
+      name: News Research
+      description: Single-step news research entry point for TradingAgents.
+      inputSchema:
+        type: object
+        title: TradingAgents news research inputs
+        required:
+          - ticker
+          - asOfDate
+        properties:
+          ticker:
+            type: string
+            title: Ticker symbol
+            description: Required equity or asset symbol to research, such as AAPL.
+          asOfDate:
+            type: string
+            title: As-of date
+            description: Required research date in YYYY-MM-DD format for point-in-time context.
+          horizonDays:
+            type: integer
+            title: Horizon in days
+            default: 30
+            description: Optional news research horizon in calendar days.
+          outputLanguage:
+            type: string
+            title: Output language
+            default: English
+            description: Optional language for generated news research reports.
+        description: Operator inputs for a focused news research run.
+      flow:
+        kind: sequence
+        id: root_sequence
+        nodes:
+          - kind: step
+            id: news_analysis
+            slot: news_report
+            uses: news_analyst
+            with:
+              ticker: ${{ inputs.ticker }}
+              asOfDate: ${{ inputs.asOfDate }}
+              horizonDays: ${{ inputs.horizonDays }}
+              outputLanguage: ${{ inputs.outputLanguage }}
+            optional: false
+      output:
+        from: ${{ nodes.root_sequence.outputs.news_report }}
+    - key: fundamentals_research
+      name: Fundamentals Research
+      description: Single-step fundamentals research entry point for TradingAgents.
+      inputSchema:
+        type: object
+        title: TradingAgents fundamentals research inputs
+        required:
+          - ticker
+          - asOfDate
+        properties:
+          ticker:
+            type: string
+            title: Ticker symbol
+            description: Required equity or asset symbol to research, such as AAPL.
+          asOfDate:
+            type: string
+            title: As-of date
+            description: Required research date in YYYY-MM-DD format for point-in-time context.
+          horizonDays:
+            type: integer
+            title: Horizon in days
+            default: 30
+            description: Optional fundamentals research horizon in calendar days.
+          outputLanguage:
+            type: string
+            title: Output language
+            default: English
+            description: Optional language for generated fundamentals research reports.
+        description: Operator inputs for a focused fundamentals research run.
+      flow:
+        kind: sequence
+        id: root_sequence
+        nodes:
+          - kind: step
+            id: fundamentals_analysis
+            slot: fundamentals_report
+            uses: fundamentals_analyst
+            with:
+              ticker: ${{ inputs.ticker }}
+              asOfDate: ${{ inputs.asOfDate }}
+              horizonDays: ${{ inputs.horizonDays }}
+              outputLanguage: ${{ inputs.outputLanguage }}
+            optional: false
+      output:
+        from: ${{ nodes.root_sequence.outputs.fundamentals_report }}

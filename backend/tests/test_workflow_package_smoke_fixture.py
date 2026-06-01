@@ -126,7 +126,12 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
     compiled_nodes = cast(list[dict[str, object]], compiled_graph["nodes"])
 
     assert compiled_plan["packageKey"] == "tradingagents_advisory_research"
-    assert [workflow["key"] for workflow in workflows] == ["advisory_research"]
+    assert [workflow["key"] for workflow in workflows] == [
+        "advisory_research",
+        "fundamentals_research",
+        "market_research",
+        "news_research",
+    ]
     assert compiled_graph["rootNodeId"] == "root_sequence"
     assert compiled_nodes[0]["kind"] == "sequence"
     assert "kind: sequence\n            id: analyst_research" in roundtrip.source
