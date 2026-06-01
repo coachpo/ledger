@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -14,21 +15,25 @@ import { ScheduledTasksListPage } from "./list";
 
 const {
   deleteScheduleMock,
+  deleteSchedulesMock,
   runNowMock,
   toastErrorMock,
   toastSuccessMock,
   updateScheduleMock,
   useDeleteScheduledTaskMock,
+  useDeleteScheduledTasksMock,
   useRunScheduledTaskNowMock,
   useScheduledTasksMock,
   useUpdateScheduledTaskMock,
 } = vi.hoisted(() => ({
   deleteScheduleMock: vi.fn(),
+  deleteSchedulesMock: vi.fn(),
   runNowMock: vi.fn(),
   toastErrorMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   updateScheduleMock: vi.fn(),
   useDeleteScheduledTaskMock: vi.fn(),
+  useDeleteScheduledTasksMock: vi.fn(),
   useRunScheduledTaskNowMock: vi.fn(),
   useScheduledTasksMock: vi.fn(),
   useUpdateScheduledTaskMock: vi.fn(),
@@ -43,6 +48,7 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/hooks/use-scheduled-tasks", () => ({
   useDeleteScheduledTask: () => useDeleteScheduledTaskMock(),
+  useDeleteScheduledTasks: () => useDeleteScheduledTasksMock(),
   useRunScheduledTaskNow: () => useRunScheduledTaskNowMock(),
   useScheduledTasks: (...args: unknown[]) => useScheduledTasksMock(...args),
   useUpdateScheduledTask: () => useUpdateScheduledTaskMock(),
@@ -88,20 +94,30 @@ function renderPage() {
 describe("ScheduledTasksListPage", () => {
   beforeEach(() => {
     deleteScheduleMock.mockReset();
+    deleteSchedulesMock.mockReset();
     runNowMock.mockReset();
     toastErrorMock.mockReset();
     toastSuccessMock.mockReset();
     updateScheduleMock.mockReset();
     useDeleteScheduledTaskMock.mockReset();
+    useDeleteScheduledTasksMock.mockReset();
     useRunScheduledTaskNowMock.mockReset();
     useScheduledTasksMock.mockReset();
     useUpdateScheduledTaskMock.mockReset();
     deleteScheduleMock.mockResolvedValue(undefined);
+    deleteSchedulesMock.mockImplementation(
+      (_variables: unknown, options?: { onSuccess?: () => void }) =>
+        options?.onSuccess?.(),
+    );
     runNowMock.mockResolvedValue({ run: { id: 3001 }, scheduleId: 44 });
     updateScheduleMock.mockResolvedValue(scheduleFixture({ status: "paused" }));
     useDeleteScheduledTaskMock.mockReturnValue({
       isPending: false,
       mutateAsync: deleteScheduleMock,
+    });
+    useDeleteScheduledTasksMock.mockReturnValue({
+      isPending: false,
+      mutate: deleteSchedulesMock,
     });
     useRunScheduledTaskNowMock.mockReturnValue({
       isPending: false,
@@ -213,6 +229,12 @@ describe("ScheduledTasksListPage", () => {
     expect(screen.getByText("2 of 2 scheduled tasks shown")).toBeVisible();
 
     const table = screen.getByRole("table");
+    expect(table.parentElement).toHaveClass("min-w-0", "overflow-x-auto");
+    expect(
+      screen.getAllByRole("checkbox", {
+        name: "Select all shown scheduled tasks",
+      }),
+    ).toHaveLength(1);
     for (const column of [
       "Schedule",
       "Package / Workflow",
@@ -240,6 +262,11 @@ describe("ScheduledTasksListPage", () => {
     expect(dailyRow).toHaveTextContent("Latest fire: #801");
     expect(dailyRow).toHaveTextContent("Latest run: #2104");
     expect(dailyRow).toHaveTextContent("Queued");
+    expect(
+      within(dailyRow).getByRole("checkbox", {
+        name: "Select scheduled task Daily market brief",
+      }),
+    ).toBeVisible();
 
     expect(
       within(dailyRow).getByRole("link", { name: "Edit schedule Daily market brief" }),
@@ -287,6 +314,7 @@ describe("ScheduledTasksListPage", () => {
     expect(
       within(pausedRow).queryByTestId("scheduled-task-row-action-open-latest-run"),
     ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("scheduled-tasks-bulk-actions")).not.toBeInTheDocument();
     expect(dailyRow).not.toHaveAttribute("aria-label");
   });
 
@@ -355,9 +383,9 @@ describe("ScheduledTasksListPage", () => {
   });
 
   it("disables pending row actions while keeping navigation links explicit", () => {
-    useRunScheduledTaskNowMock.mockReturnValue({
+    useDeleteScheduledTasksMock.mockReturnValue({
       isPending: true,
-      mutateAsync: runNowMock,
+      mutate: deleteSchedulesMock,
     });
     useScheduledTasksMock.mockReturnValue({
       data: {
@@ -391,6 +419,105 @@ describe("ScheduledTasksListPage", () => {
     expect(within(pendingRow).getByRole("button", { name: "Run schedule Market brief pending action now" })).toBeDisabled();
     expect(within(pendingRow).getByRole("button", { name: "Pause schedule Market brief pending action" })).toBeDisabled();
     expect(within(pendingRow).getByRole("button", { name: "Delete schedule Market brief pending action" })).toBeDisabled();
+  });
+
+  it("selects visible schedules and bulk deletes the filtered selection", async () => {
+    useScheduledTasksMock.mockReturnValue({
+      data: {
+        items: [
+          scheduleFixture(),
+          scheduleFixture({
+            description: null,
+            id: 55,
+            latestFireId: null,
+            latestRunId: null,
+            latestStatus: null,
+            name: "Paused allocation check",
+            nextFireAt: null,
+            packageId: 21,
+            packageKey: "allocation_package",
+            recurrence: { every: 4, type: "interval", unit: "hours" },
+            status: "paused",
+            workflowKey: "allocation_check",
+          }),
+        ],
+        limit: 50,
+        offset: 0,
+        totalCount: 2,
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderPage();
+
+    const dailyRow = screen.getByTestId("scheduled-task-row-44");
+    fireEvent.click(
+      within(dailyRow).getByRole("checkbox", {
+        name: "Select scheduled task Daily market brief",
+      }),
+    );
+
+    expect(dailyRow).toHaveAttribute("data-state", "selected");
+    expect(screen.getByText("1 of 2 scheduled tasks selected")).toBeVisible();
+    const bulkActions = screen.getByTestId("scheduled-tasks-bulk-actions");
+    expect(bulkActions).toBeVisible();
+    expect(screen.getByRole("table").compareDocumentPosition(bulkActions)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+
+    fireEvent.change(screen.getByLabelText("Search scheduled tasks"), {
+      target: { value: "allocation" },
+    });
+    expect(screen.queryByTestId("scheduled-task-row-44")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("scheduled-tasks-bulk-actions")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete selected" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Search scheduled tasks"), {
+      target: { value: "" },
+    });
+    expect(screen.getByText("1 of 2 scheduled tasks selected")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.queryByText("1 of 2 scheduled tasks selected")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all shown scheduled tasks" }),
+    );
+    expect(screen.getByText("2 of 2 scheduled tasks selected")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Search scheduled tasks"), {
+      target: { value: "allocation" },
+    });
+    expect(screen.getByText("1 of 1 scheduled tasks selected")).toBeVisible();
+    expect(screen.getByTestId("scheduled-task-row-55")).toHaveAttribute(
+      "data-state",
+      "selected",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected" }));
+
+    expect(deleteSchedulesMock).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Delete selected scheduled tasks");
+    expect(dialog).toHaveTextContent("Delete 1 selected scheduled task?");
+    expect(dialog).toHaveTextContent(
+      "This removes the schedule and its directly owned run history.",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete selected" }));
+
+    await waitFor(() =>
+      expect(deleteSchedulesMock).toHaveBeenCalledWith(
+        [{ latestRunId: null, scheduleId: 55 }],
+        expect.objectContaining({
+          onError: expect.any(Function),
+          onSuccess: expect.any(Function),
+        }),
+      ),
+    );
+    expect(toastSuccessMock).toHaveBeenCalledWith("1 scheduled task deleted");
+    expect(screen.queryByText("1 of 1 scheduled tasks selected")).not.toBeInTheDocument();
   });
 
   it("runs mutations from explicit row buttons", async () => {
@@ -458,6 +585,13 @@ describe("ScheduledTasksListPage", () => {
     });
 
     fireEvent.click(
+      within(dailyRow).getByRole("checkbox", {
+        name: "Select scheduled task Daily market brief",
+      }),
+    );
+    expect(screen.getByText("1 of 2 scheduled tasks selected")).toBeVisible();
+
+    fireEvent.click(
       within(dailyRow).getByRole("button", {
         name: "Delete schedule Daily market brief",
       }),
@@ -465,13 +599,60 @@ describe("ScheduledTasksListPage", () => {
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Delete scheduled task",
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Delete scheduled task" }),
-    );
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Delete scheduled task" }),
+      );
+      await Promise.resolve();
+    });
     expect(deleteScheduleMock).toHaveBeenCalledWith({
       latestRunId: 2104,
       scheduleId: 44,
     });
+    expect(
+      screen.queryByText("1 of 2 scheduled tasks selected"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("retains visible selected rows when bulk delete fails", async () => {
+    deleteSchedulesMock.mockImplementation(
+      (_variables: unknown, options?: { onError?: (error: Error) => void }) =>
+        options?.onError?.(new Error("Bulk delete rejected")),
+    );
+    useScheduledTasksMock.mockReturnValue({
+      data: {
+        items: [scheduleFixture()],
+        limit: 50,
+        offset: 0,
+        totalCount: 1,
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderPage();
+
+    const dailyRow = screen.getByTestId("scheduled-task-row-44");
+    fireEvent.click(
+      within(dailyRow).getByRole("checkbox", {
+        name: "Select scheduled task Daily market brief",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected" }));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Delete selected",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith("Bulk delete rejected"),
+    );
+    expect(screen.getByTestId("scheduled-task-row-44")).toHaveTextContent(
+      "Daily market brief",
+    );
+    expect(screen.getByText("1 of 1 scheduled tasks selected")).toBeVisible();
   });
 
   it("surfaces row mutation failures without changing the visible schedule row", async () => {

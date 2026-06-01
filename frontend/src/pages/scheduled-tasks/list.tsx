@@ -19,6 +19,7 @@ import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -33,6 +34,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   useDeleteScheduledTask,
+  useDeleteScheduledTasks,
   useRunScheduledTaskNow,
   useScheduledTasks,
   useUpdateScheduledTask,
@@ -396,6 +398,11 @@ function LatestActivityCell({ schedule }: { schedule: ScheduleRead }) {
   );
 }
 
+type ScheduleSelectionHandlers = {
+  onDelete: (schedule: ScheduleRead) => void;
+  onSelect: (schedulesToUpdate: readonly ScheduleRead[], selected: boolean) => void;
+};
+
 type ScheduleActionHandlers = {
   mutationPending: boolean;
   onDelete: (schedule: ScheduleRead) => void;
@@ -498,17 +505,40 @@ function ScheduleRowActions({
 }
 
 function ScheduledTasksTable({
+  allFilteredSelected,
   mutationPending,
   schedules,
+  selectedScheduleIds,
+  someFilteredSelected,
   onDelete,
   onRunNow,
+  onSelect,
   onToggleStatus,
-}: ScheduleActionHandlers & { schedules: readonly ScheduleRead[] }) {
+}: {
+  allFilteredSelected: boolean;
+  mutationPending: boolean;
+  schedules: readonly ScheduleRead[];
+  selectedScheduleIds: ReadonlySet<ScheduleRead["id"]>;
+  someFilteredSelected: boolean;
+} & ScheduleActionHandlers & ScheduleSelectionHandlers) {
   return (
     <div className="min-w-0 overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/30 hover:bg-muted/30">
+            <TableHead className="w-9">
+              <Checkbox
+                aria-label="Select all shown scheduled tasks"
+                checked={
+                  allFilteredSelected
+                    ? true
+                    : someFilteredSelected
+                      ? "indeterminate"
+                      : false
+                }
+                onCheckedChange={(checked) => onSelect(schedules, checked === true)}
+              />
+            </TableHead>
             <TableHead>Schedule</TableHead>
             <TableHead>Package / Workflow</TableHead>
             <TableHead>Next fire</TableHead>
@@ -517,36 +547,92 @@ function ScheduledTasksTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {schedules.map((schedule) => (
-            <TableRow
-              data-testid={`scheduled-task-row-${schedule.id}`}
-              key={schedule.id}
-            >
-              <TableCell className="whitespace-normal">
-                <ScheduleIdentityCell schedule={schedule} />
-              </TableCell>
-              <TableCell className="whitespace-normal">
-                <PackageWorkflowCell schedule={schedule} />
-              </TableCell>
-              <TableCell className="whitespace-normal">
-                <NextFireCell schedule={schedule} />
-              </TableCell>
-              <TableCell className="whitespace-normal">
-                <LatestActivityCell schedule={schedule} />
-              </TableCell>
-              <TableCell>
-                <ScheduleRowActions
-                  mutationPending={mutationPending}
-                  schedule={schedule}
-                  onDelete={onDelete}
-                  onRunNow={onRunNow}
-                  onToggleStatus={onToggleStatus}
-                />
-              </TableCell>
-            </TableRow>
-          ))}
+          {schedules.map((schedule) => {
+            const isSelected = selectedScheduleIds.has(schedule.id);
+
+            return (
+              <TableRow
+                data-state={isSelected ? "selected" : undefined}
+                data-testid={`scheduled-task-row-${schedule.id}`}
+                key={schedule.id}
+              >
+                <TableCell>
+                  <Checkbox
+                    aria-label={`Select scheduled task ${schedule.name}`}
+                    checked={isSelected}
+                    onCheckedChange={(checked) =>
+                      onSelect([schedule], checked === true)
+                    }
+                  />
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  <ScheduleIdentityCell schedule={schedule} />
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  <PackageWorkflowCell schedule={schedule} />
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  <NextFireCell schedule={schedule} />
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  <LatestActivityCell schedule={schedule} />
+                </TableCell>
+                <TableCell>
+                  <ScheduleRowActions
+                    mutationPending={mutationPending}
+                    schedule={schedule}
+                    onDelete={onDelete}
+                    onRunNow={onRunNow}
+                    onToggleStatus={onToggleStatus}
+                  />
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
+    </div>
+  );
+}
+
+function ScheduledTasksBulkActions({
+  filteredCount,
+  isPending,
+  selectedCount,
+  onClear,
+  onDeleteSelected,
+}: {
+  filteredCount: number;
+  isPending: boolean;
+  selectedCount: number;
+  onClear: () => void;
+  onDeleteSelected: () => void;
+}) {
+  if (selectedCount === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
+      data-testid="scheduled-tasks-bulk-actions"
+    >
+      <span className="text-xs text-muted-foreground">
+        {selectedCount} of {filteredCount} scheduled tasks selected
+      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          disabled={isPending}
+          size="sm"
+          variant="destructive"
+          onClick={onDeleteSelected}
+        >
+          <Trash2 className="size-3.5" /> Delete selected
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onClear}>
+          Clear
+        </Button>
+      </div>
     </div>
   );
 }
@@ -577,9 +663,14 @@ export function ScheduledTasksListPage() {
   const [packageKey, setPackageKey] = useState("");
   const [workflowKey, setWorkflowKey] = useState("");
   const [deleting, setDeleting] = useState<ScheduleRead | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [selectedScheduleIds, setSelectedScheduleIds] = useState<
+    Set<ScheduleRead["id"]>
+  >(new Set());
   const updateSchedule = useUpdateScheduledTask();
   const runNow = useRunScheduledTaskNow();
   const deleteSchedule = useDeleteScheduledTask();
+  const deleteSchedules = useDeleteScheduledTasks();
 
   const listParams = useMemo<ScheduleListParams>(
     () => ({
@@ -599,14 +690,46 @@ export function ScheduledTasksListPage() {
     () => filterSchedules(schedules, search),
     [schedules, search],
   );
+  const selectedSchedules = useMemo(
+    () =>
+      filteredSchedules.filter((schedule) => selectedScheduleIds.has(schedule.id)),
+    [filteredSchedules, selectedScheduleIds],
+  );
+  const selectedCount = selectedSchedules.length;
+  const allFilteredSelected =
+    filteredSchedules.length > 0 &&
+    filteredSchedules.every((schedule) => selectedScheduleIds.has(schedule.id));
+  const someFilteredSelected = filteredSchedules.some((schedule) =>
+    selectedScheduleIds.has(schedule.id),
+  );
   const mutationPending =
-    updateSchedule.isPending || runNow.isPending || deleteSchedule.isPending;
+    updateSchedule.isPending ||
+    runNow.isPending ||
+    deleteSchedule.isPending ||
+    deleteSchedules.isPending;
   const hasFilters = Boolean(
     search.trim() ||
       packageKey.trim() ||
       workflowKey.trim() ||
       statusFilter !== ACTIVE_STATUS_FILTER,
   );
+
+  const setSchedulesSelected = (
+    schedulesToUpdate: readonly ScheduleRead[],
+    selected: boolean,
+  ) => {
+    setSelectedScheduleIds((previous) => {
+      const next = new Set(previous);
+      schedulesToUpdate.forEach((schedule) => {
+        if (selected) {
+          next.add(schedule.id);
+        } else {
+          next.delete(schedule.id);
+        }
+      });
+      return next;
+    });
+  };
 
   const toggleScheduleStatus = async (schedule: ScheduleRead) => {
     const nextStatus: ScheduleWriteStatus =
@@ -657,12 +780,46 @@ export function ScheduledTasksListPage() {
         scheduleId: deleting.id,
       });
       toast.success("Scheduled task deleted");
+      setSelectedScheduleIds((previous) => {
+        const next = new Set(previous);
+        next.delete(deleting.id);
+        return next;
+      });
       setDeleting(null);
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to delete scheduled task.",
       );
     }
+  };
+
+  const confirmBulkDelete = () => {
+    if (selectedSchedules.length === 0) {
+      return;
+    }
+
+    const count = selectedSchedules.length;
+    deleteSchedules.mutate(
+      selectedSchedules.map((schedule) => ({
+        latestRunId: schedule.latestRunId,
+        scheduleId: schedule.id,
+      })),
+      {
+        onError: (error) =>
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Failed to delete scheduled tasks.",
+          ),
+        onSuccess: () => {
+          toast.success(
+            `${count} ${count === 1 ? "scheduled task" : "scheduled tasks"} deleted`,
+          );
+          setSelectedScheduleIds(new Set());
+          setIsBulkDeleting(false);
+        },
+      },
+    );
   };
 
   return (
@@ -722,13 +879,35 @@ export function ScheduledTasksListPage() {
       !schedulesQuery.isError &&
       filteredSchedules.length > 0 ? (
         <ScheduledTasksTable
+          allFilteredSelected={allFilteredSelected}
           mutationPending={mutationPending}
           schedules={filteredSchedules}
+          selectedScheduleIds={selectedScheduleIds}
+          someFilteredSelected={someFilteredSelected}
           onDelete={setDeleting}
           onRunNow={runScheduleNow}
+          onSelect={setSchedulesSelected}
           onToggleStatus={toggleScheduleStatus}
         />
       ) : null}
+
+      <ScheduledTasksBulkActions
+        filteredCount={filteredSchedules.length}
+        isPending={deleteSchedules.isPending}
+        selectedCount={selectedCount}
+        onClear={() => setSelectedScheduleIds(new Set())}
+        onDeleteSelected={() => setIsBulkDeleting(true)}
+      />
+
+      <ConfirmDeleteDialog
+        confirmLabel="Delete selected"
+        description={`Delete ${selectedCount} selected ${selectedCount === 1 ? "scheduled task" : "scheduled tasks"}? This removes ${selectedCount === 1 ? "the schedule" : "the selected schedules"} and ${selectedCount === 1 ? "its" : "their"} directly owned run history.`}
+        isPending={deleteSchedules.isPending}
+        open={isBulkDeleting}
+        title="Delete selected scheduled tasks"
+        onConfirm={confirmBulkDelete}
+        onOpenChange={setIsBulkDeleting}
+      />
 
       <ConfirmDeleteDialog
         confirmLabel="Delete scheduled task"
