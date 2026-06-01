@@ -297,6 +297,13 @@ test.describe("provider compatibility browser mocks", () => {
 
     await page.goto("/workflow-packages/42/run");
     await expect(page.getByTestId("workflow-package-launch-page")).toBeVisible();
+    const workflowSelector = page.getByRole("combobox", { name: "Workflow" });
+    await expect(workflowSelector).toContainText("Choose a workflow");
+    await expect(page.getByLabel("Runtime inputs JSON")).toBeDisabled();
+    await workflowSelector.click();
+    await page.getByRole("option", { name: "Market Review" }).click();
+    await expect(workflowSelector).toContainText("Market Review");
+    await expect(page.getByLabel("Runtime inputs JSON")).toBeEnabled();
     await expect(page.getByTestId("workflow-package-launch-blockers")).toContainText(
       "This workflow requires native tool calls",
     );
@@ -306,7 +313,7 @@ test.describe("provider compatibility browser mocks", () => {
     await expect(page.getByTestId("workflow-package-preflight-status")).toContainText(
       "Needs attention",
     );
-    await expect(page.getByRole("button", { name: "Launch Run" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Launch Run" })).toBeDisabled();
 
     await page.goto("/runs/42");
     await expect(page.getByTestId("runs-detail-page")).toBeVisible();

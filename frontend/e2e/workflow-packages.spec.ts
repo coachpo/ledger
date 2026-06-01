@@ -249,6 +249,22 @@ async function expectSharedDialogShell(page: Page) {
   ).toBeVisible();
 }
 
+function workflowOptionNameFromKey(workflowKey: string) {
+  return workflowKey
+    .split("_")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+async function selectLaunchWorkflow(page: Page, workflowKey: string) {
+  const workflowSelector = page.getByRole("combobox", { name: "Workflow" });
+  const workflowName = workflowOptionNameFromKey(workflowKey);
+  await workflowSelector.click();
+  await page.getByRole("option", { name: workflowName }).click();
+  await expect(workflowSelector).toContainText(workflowName);
+}
+
 async function launchPackageFromDedicatedPage(
   page: Page,
   packageId: number,
@@ -271,7 +287,9 @@ async function launchPackageFromDedicatedPage(
 
   const launchButton = page.getByRole("button", { name: "Launch Run" });
   const runtimeInputs = page.getByLabel("Runtime inputs JSON");
-  await page.getByLabel("Workflow key").fill(workflowKey);
+  await expect(runtimeInputs).toBeDisabled();
+  await selectLaunchWorkflow(page, workflowKey);
+  await expect(runtimeInputs).toBeEnabled();
   await page.getByRole("button", { name: "Run preflight" }).click();
   await expect(page.getByTestId("workflow-package-preflight-status")).toContainText(
     "Preflight ready",
