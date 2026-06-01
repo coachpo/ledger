@@ -47,7 +47,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -1670,7 +1669,11 @@ function ScheduleTemplateVarsEditor({
 
 function SchedulePlaceholderReference() {
   return (
-    <Collapsible className="min-w-0 rounded-xl border bg-card p-3" data-testid="scheduled-input-placeholder-reference">
+    <Collapsible
+      className="min-w-0 rounded-xl border bg-card p-3"
+      data-testid="scheduled-input-placeholder-reference"
+      defaultOpen
+    >
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">Allowed scheduled placeholders</h3>
@@ -1779,7 +1782,6 @@ function ScheduledInputsEditor({
   const [inputTemplateText, setInputTemplateText] = useState(() => stringifyJson({}));
   const [templateVarRows, setTemplateVarRows] = useState<RuntimeInputRow[]>(() => createRuntimeInputRows("scheduled-template-vars"));
   const [personalPresetName, setPersonalPresetName] = useState("");
-  const [inputMode, setInputMode] = useState<"defaults" | "custom">("defaults");
   const [previewRead, setPreviewRead] = useState<SchedulePreviewRead | null>(null);
   const [previewRequestErrors, setPreviewRequestErrors] = useState<ScheduleValidationError[]>([]);
   const inputTemplateEditedRef = useRef(false);
@@ -1976,130 +1978,88 @@ function ScheduledInputsEditor({
 
   return (
     <div className="flex min-w-0 flex-col gap-4" data-testid="scheduled-inputs-editor">
-      <RadioGroup
-        aria-label="Scheduled input mode"
-        className="grid gap-2 sm:grid-cols-2"
-        value={inputMode}
-        onValueChange={(value) => setInputMode(value === "custom" ? "custom" : "defaults")}
-      >
-        <label className="flex min-w-0 items-center gap-3 rounded-lg border bg-background/60 p-3 text-sm">
-          <RadioGroupItem disabled={controlDisabled} value="defaults" />
-          <span className="font-medium">Start from workflow defaults</span>
-        </label>
-        <label className="flex min-w-0 items-center gap-3 rounded-lg border bg-background/60 p-3 text-sm">
-          <RadioGroupItem disabled={controlDisabled} value="custom" />
-          <span className="font-medium">Customize inputs</span>
-        </label>
-      </RadioGroup>
-
-      {inputMode === "defaults" ? (
-        <div className="rounded-xl border border-dashed bg-muted/20 p-4" data-testid="scheduled-input-defaults-empty">
-          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Start a custom draft from the workflow defaults.</p>
-              <p className="text-xs text-muted-foreground">Choose Customize inputs to create or update values for future runs.</p>
-            </div>
-            <Button disabled={controlDisabled} size="sm" type="button" onClick={() => setInputMode("custom")}>
-              Customize inputs
-            </Button>
-          </div>
+      {!canUseNextFire ? (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Next fire preview unavailable</AlertTitle>
+          <AlertDescription>Next run preview and save are blocked until a future occurrence exists.</AlertDescription>
+        </Alert>
+      ) : null}
+      <ScheduleInputValidationAlert
+        errors={draftErrors}
+        testId="scheduled-input-json-validation-feedback"
+        title="Scheduled input template needs attention"
+      />
+      <ScheduleInputValidationAlert
+        errors={previewRequestErrors}
+        testId="scheduled-input-preview-request-feedback"
+        title="Scheduled input preview failed"
+      />
+      <div className="flex min-w-0 flex-col gap-3" data-testid="scheduled-input-json-panel">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <Label htmlFor="schedule-input-template-json">Scheduled input template JSON</Label>
+          <Button disabled={controlDisabled} size="sm" type="button" variant="outline" onClick={resetInputTemplate}>
+            Reset to schema template
+          </Button>
         </div>
-      ) : (
-        <>
-          {!canUseNextFire ? (
-            <Alert variant="destructive">
-              <AlertCircle />
-              <AlertTitle>Next fire preview unavailable</AlertTitle>
-              <AlertDescription>Next run preview and save are blocked until a future occurrence exists.</AlertDescription>
-            </Alert>
-          ) : null}
-          <ScheduleInputValidationAlert errors={draftErrors} testId="scheduled-input-json-validation-feedback" title="Scheduled input template needs attention" />
-          <ScheduleInputValidationAlert errors={previewRequestErrors} testId="scheduled-input-preview-request-feedback" title="Scheduled input preview failed" />
-          <div className="flex min-w-0 flex-col gap-3" data-testid="scheduled-input-json-panel">
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <Label htmlFor="schedule-input-template-json">Scheduled input template JSON</Label>
-              <Button disabled={controlDisabled} size="sm" type="button" variant="outline" onClick={resetInputTemplate}>
-                Reset to schema template
-              </Button>
-            </div>
-            <Textarea
-              id="schedule-input-template-json"
-              aria-label="Scheduled input template JSON"
-              className="min-h-72 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
-              disabled={controlDisabled}
-              rows={14}
-              value={inputTemplateText}
-              onChange={(event) => updateInputTemplateText(event.target.value)}
-            />
-            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:justify-end">
-              <Button
-                disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
-                type="button"
-                variant="outline"
-                onClick={() => void previewCurrentDraft()}
-              >
-                {previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-                Preview next run
-              </Button>
-              <Button
-                disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
-                type="button"
-                onClick={() => void saveInputTemplate()}
-              >
-                {isSaving || previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-                Save inputs
-              </Button>
-            </div>
-            <ScheduleInputPreview preview={previewRead} />
-          </div>
-          <Collapsible className="min-w-0 rounded-xl border bg-card p-3">
-            <div className="flex min-w-0 items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold">Placeholders and presets</h3>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  Optional helpers for scheduled values, reusable presets, and previous run inputs.
-                </p>
-              </div>
-              <CollapsibleTrigger asChild>
-                <Button className="h-7 shrink-0 gap-1 px-2 text-xs" size="sm" type="button" variant="ghost">
-                  Placeholders and presets
-                  <ChevronDown className="size-3" />
-                </Button>
-              </CollapsibleTrigger>
-            </div>
-            <CollapsibleContent className="pt-3">
-              <div className="flex min-w-0 flex-col gap-3 border-t pt-3">
-                {!inputTemplate.schemaSupported ? (
-                  <Alert data-testid="scheduled-input-schema-template-warning">
-                    <AlertCircle />
-                    <AlertTitle>Schema template started empty</AlertTitle>
-                    <AlertDescription>{inputTemplate.reason ?? "The workflow input schema could not seed a JSON object template."}</AlertDescription>
-                  </Alert>
-                ) : null}
-                <SchedulePlaceholderReference />
-                <ScheduleTemplateVarsEditor disabled={controlDisabled} rows={templateVarRows} onRowsChange={setTemplateVarRows} />
-                <ScheduledSavedInputsTabs
-                  createDisabled={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching || !personalPresetName.trim() || draftErrors.length > 0}
-                  createPending={createPersonalEntry.isPending}
-                  deletePending={deletePersonalEntry.isPending}
-                  error={runtimeInputRegistry.isError ? runtimeInputRegistry.error : null}
-                  historyEntries={runtimeInputRegistry.data?.history ?? []}
-                  loading={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching}
-                  personalEntries={runtimeInputRegistry.data?.personal ?? []}
-                  presetName={personalPresetName}
-                  updatePending={updatePersonalEntry.isPending}
-                  workflowKey={activeWorkflowKey}
-                  onCreate={() => void savePersonalInput()}
-                  onDelete={(entry) => void deletePersonalInput(entry)}
-                  onLoad={loadSavedInput}
-                  onPresetNameChange={setPersonalPresetName}
-                  onUpdate={(entry) => void overwritePersonalInput(entry)}
-                />
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        </>
-      )}
+        <Textarea
+          id="schedule-input-template-json"
+          aria-label="Scheduled input template JSON"
+          className="min-h-72 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
+          disabled={controlDisabled}
+          rows={14}
+          value={inputTemplateText}
+          onChange={(event) => updateInputTemplateText(event.target.value)}
+        />
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button
+            disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
+            type="button"
+            variant="outline"
+            onClick={() => void previewCurrentDraft()}
+          >
+            {previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+            Preview next run
+          </Button>
+          <Button
+            disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
+            type="button"
+            onClick={() => void saveInputTemplate()}
+          >
+            {isSaving || previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+            Save inputs
+          </Button>
+        </div>
+        <ScheduleInputPreview preview={previewRead} />
+      </div>
+      <div className="flex min-w-0 flex-col gap-3">
+        {!inputTemplate.schemaSupported ? (
+          <Alert data-testid="scheduled-input-schema-template-warning">
+            <AlertCircle />
+            <AlertTitle>Schema template started empty</AlertTitle>
+            <AlertDescription>{inputTemplate.reason ?? "The workflow input schema could not seed a JSON object template."}</AlertDescription>
+          </Alert>
+        ) : null}
+        <SchedulePlaceholderReference />
+        <ScheduleTemplateVarsEditor disabled={controlDisabled} rows={templateVarRows} onRowsChange={setTemplateVarRows} />
+        <ScheduledSavedInputsTabs
+          createDisabled={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching || !personalPresetName.trim() || draftErrors.length > 0}
+          createPending={createPersonalEntry.isPending}
+          deletePending={deletePersonalEntry.isPending}
+          error={runtimeInputRegistry.isError ? runtimeInputRegistry.error : null}
+          historyEntries={runtimeInputRegistry.data?.history ?? []}
+          loading={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching}
+          personalEntries={runtimeInputRegistry.data?.personal ?? []}
+          presetName={personalPresetName}
+          updatePending={updatePersonalEntry.isPending}
+          workflowKey={activeWorkflowKey}
+          onCreate={() => void savePersonalInput()}
+          onDelete={(entry) => void deletePersonalInput(entry)}
+          onLoad={loadSavedInput}
+          onPresetNameChange={setPersonalPresetName}
+          onUpdate={(entry) => void overwritePersonalInput(entry)}
+        />
+      </div>
     </div>
   );
 }
@@ -2357,7 +2317,7 @@ function ScheduleTabs({
         forceMount
         value="inputs"
       >
-        <SummaryCard description="Start a custom draft from the workflow defaults or update values for future runs." title="Inputs">
+        <SummaryCard description="Review the workflow-seeded input template, placeholders, presets, and future-run values." title="Inputs">
           <ScheduledInputsEditor
             activeWorkflowKey={workflowRegistryKey}
             disabled={false}

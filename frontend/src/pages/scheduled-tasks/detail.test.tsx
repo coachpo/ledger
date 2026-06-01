@@ -1024,25 +1024,24 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByTestId("schedule-run-now")).toBeEnabled();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
-    expect(screen.getByRole("button", { name: "Customize inputs" })).toBeEnabled();
+    expect(screen.getByLabelText("Scheduled input template JSON")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Customize inputs" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start from workflow defaults" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Placeholders and presets" })).not.toBeInTheDocument();
     expect(screen.queryByText("Runtime inputs are unavailable because this schedule references a workflow that is no longer in the package manifest.")).not.toBeInTheDocument();
   });
 
-  it("scheduled inputs start with workflow defaults and keep placeholders/presets collapsed until customization", async () => {
+  it("scheduled inputs show the workflow-seeded editor and placeholder examples immediately", async () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
     const editor = screen.getByTestId("scheduled-inputs-editor");
-    expect(editor).toHaveTextContent("Start a custom draft from the workflow defaults.");
-    expect(screen.queryByLabelText("Scheduled input template JSON")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("scheduled-input-placeholder-reference")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
     const inputJson = screen.getByLabelText("Scheduled input template JSON") as HTMLTextAreaElement;
-    expect(screen.queryByTestId("scheduled-input-placeholder-reference")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Placeholders and presets" }));
+    expect(editor).not.toHaveTextContent("Start a custom draft from the workflow defaults.");
+    expect(screen.queryByRole("button", { name: "Customize inputs" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start from workflow defaults" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Placeholders and presets" })).not.toBeInTheDocument();
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Allowed scheduled placeholders");
-    fireEvent.click(within(screen.getByTestId("scheduled-input-placeholder-reference")).getByRole("button", { name: "Reference" }));
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{fire.scheduledLocalDate}}");
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{vars.<key>}}");
     expect(inputJson.value).toBe(JSON.stringify({ asOfDate: "", portfolioSlug: "" }, null, 2));
@@ -1077,8 +1076,6 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
-    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
-    fireEvent.click(screen.getByRole("button", { name: "Placeholders and presets" }));
 
     const inputJson = screen.getByLabelText("Scheduled input template JSON") as HTMLTextAreaElement;
     fireEvent.change(inputJson, {
@@ -1093,7 +1090,7 @@ describe("ScheduledTaskDetailPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
 
-    expect(screen.getByRole("radio", { name: "Customize inputs" })).toBeChecked();
+    expect(screen.queryByRole("button", { name: "Customize inputs" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Scheduled input template JSON")).toHaveValue(
       JSON.stringify({ asOfDate: "{{fire.scheduledLocalDate}}", portfolioSlug: "{{vars.portfolioSlug}}" }, null, 2),
     );
@@ -1106,8 +1103,6 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
-    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
-    fireEvent.click(screen.getByRole("button", { name: "Placeholders and presets" }));
     fireEvent.change(screen.getByLabelText("Scheduled input template JSON"), {
       target: {
         value: JSON.stringify({ asOfDate: "{{fire.scheduledLocalDate}}", portfolioSlug: "{{vars.portfolioSlug}}" }),
@@ -1148,7 +1143,6 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
-    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
     const inputsTab = screen.getByTestId("scheduled-task-detail-tab-inputs");
     expect(inputsTab).toHaveTextContent("Next fire preview unavailable");
     expect(inputsTab).toHaveTextContent("preview and save are blocked");
@@ -1162,7 +1156,6 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
-    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
     const inputJson = screen.getByLabelText("Scheduled input template JSON");
     fireEvent.change(inputJson, { target: { value: "[]" } });
     expect(screen.getByTestId("scheduled-input-json-validation-feedback")).toHaveTextContent("must be a valid object");
@@ -1185,8 +1178,6 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
-    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
-    fireEvent.click(screen.getByRole("button", { name: "Placeholders and presets" }));
     fireEvent.change(screen.getByLabelText("Scheduled input template JSON"), {
       target: { value: JSON.stringify({ asOfDate: "{{fire.scheduledLocalDate}}", extra: true }) },
     });
@@ -1207,8 +1198,6 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
-    fireEvent.click(screen.getByRole("button", { name: "Customize inputs" }));
-    fireEvent.click(screen.getByRole("button", { name: "Placeholders and presets" }));
     const helper = await screen.findByTestId("scheduled-input-saved-inputs-helper");
     expect(helper).toHaveTextContent("Schedule input presets");
     expect(helper).toHaveTextContent("1/20");
