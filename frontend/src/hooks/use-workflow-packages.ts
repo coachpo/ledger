@@ -413,14 +413,23 @@ export function useImportWorkflowPackage() {
 
 export function useWorkflowPackageLaunch(
   packageId: IdParam | undefined,
-  workflowKey?: string,
+  workflowKey: string | null | undefined,
 ): UseQueryResult<WorkflowPackageLaunchRead, Error> {
-  const resolvedPackageId = packageId ?? "";
+  const hasPackageId = hasWorkflowPackageId(packageId);
+  const resolvedPackageId = hasPackageId ? packageId : "";
+  const resolvedWorkflowKey = normalizeWorkflowKeyInput(workflowKey);
 
   return useQuery({
-    queryKey: queryKeys.platform.workflowPackages.launch(resolvedPackageId, workflowKey),
-    queryFn: ({ signal }) => getWorkflowPackageLaunch(resolvedPackageId, { signal, workflowKey }),
-    enabled: Boolean(packageId),
+    queryKey: queryKeys.platform.workflowPackages.launch(
+      resolvedPackageId,
+      resolvedWorkflowKey || undefined,
+    ),
+    queryFn: ({ signal }) =>
+      getWorkflowPackageLaunch(resolvedPackageId, {
+        signal,
+        workflowKey: resolvedWorkflowKey || undefined,
+      }),
+    enabled: hasPackageId && Boolean(resolvedWorkflowKey),
   });
 }
 

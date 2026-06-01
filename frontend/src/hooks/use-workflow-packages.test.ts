@@ -80,6 +80,7 @@ import {
   useUpdateWorkflowPackageRuntimeInputPersonalEntry,
   useValidateWorkflowPackageManifest,
   useWorkflowPackage,
+  useWorkflowPackageLaunch,
   useWorkflowPackageRuntimeInputRegistry,
   useWorkflowPackages,
 } from "./use-workflow-packages";
@@ -230,6 +231,26 @@ describe("useWorkflowPackages", () => {
       expect.objectContaining({
         enabled: true,
         queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(15, "summarize"),
+      }),
+    );
+  });
+
+  it("gates workflow launch metadata queries until a workflow key is selected", () => {
+    useWorkflowPackageLaunch(15, "   ");
+    expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        enabled: false,
+        queryKey: queryKeys.platform.workflowPackages.launch(15),
+      }),
+    );
+
+    useWorkflowPackageLaunch(15, " summarize ");
+    expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        enabled: true,
+        queryKey: queryKeys.platform.workflowPackages.launch(15, "summarize"),
       }),
     );
   });
