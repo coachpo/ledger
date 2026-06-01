@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -3729,7 +3729,7 @@ def test_init_db_preserves_due_tradingagents_preset_schedule_next_fire_at(
     database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    seeded_at = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+    seeded_at = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
     restart_at = seeded_at + timedelta(minutes=5)
     monkeypatch.setattr(upgrades, "utcnow", lambda: seeded_at)
     init_db(database_url)

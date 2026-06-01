@@ -2409,7 +2409,7 @@ def test_tradingagents_advisory_research_runtime_fails_when_extension_disabled_a
     assert set(dependencies[0]) == {"extensionKey", "surfaces", "fields"}
 
 
-def test_tradingagents_schedule_materializer_persists_matching_workflow_key_snapshots_for_all_canonical_schedules(
+def test_tradingagents_materializer_persists_workflow_key_snapshots_for_canonical_schedules(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:

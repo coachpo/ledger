@@ -3245,7 +3245,7 @@ def test_schedule_api_lists_seeded_tradingagents_preset_schedules(
         assert item["misfireGraceSeconds"] == 86400
 
 
-def test_tradingagents_schedule_materializer_queues_all_canonical_schedules_without_provider_execution(
+def test_tradingagents_materializer_queues_canonical_schedules_without_provider_execution(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
