@@ -39,7 +39,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), where `source` filters the canonical report origins `compiled`, `uploaded`, `external`, and `agent`. Compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`; upload uses `multipart/form-data` markdown plus optional metadata; `POST /reports` supports direct true external JSON creation only.
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
 - Workflow Package routes are canonical for platform authoring. The mounted platform routers are Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs. Package manifests keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
-- Scheduled Task routes expose package-first automation only: list/detail/create/update/archive, fire history, unsaved/saved preview, and run-now. They delegate recurrence, template rendering, idempotency, and run materialization to services.
+- Scheduled Task routes expose package-first automation only: list/detail/create/update/delete, fire history, unsaved/saved preview, and run-now. They delegate recurrence, template rendering, idempotency, run materialization, and schedule-owned cleanup to services.
 - Legacy global authoring route modules have been deleted after cutover proof. Do not recreate them, remount them, document them as live, or treat them as compatibility aliases.
 - Do not change runtime tool keys or OpenAI function names here.
 

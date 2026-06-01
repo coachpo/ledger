@@ -101,3 +101,24 @@ def test_workflow_package_openapi_is_current_package_only(client: TestClient) ->
             operation = cast(dict[str, object], raw_operation)
             parameters = cast(list[dict[str, object]], operation.get("parameters") or [])
             assert all(parameter["name"] != "version" for parameter in parameters)
+
+
+def test_schedule_openapi_exposes_hard_delete_operation(client: TestClient) -> None:
+    openapi = cast(dict[str, object], client.get("/openapi.json").json())
+    paths = cast(dict[str, dict[str, object]], openapi["paths"])
+
+    assert "/api/schedules/{scheduleId}" in paths
+
+    delete_operation = cast(dict[str, object], paths["/api/schedules/{scheduleId}"]["delete"])
+    delete_responses = cast(dict[str, dict[str, object]], delete_operation["responses"])
+    assert "204" in delete_responses
+    assert "content" not in delete_responses["204"]
+
+
+def test_schedule_openapi_removes_archive_route(client: TestClient) -> None:
+    openapi = cast(dict[str, object], client.get("/openapi.json").json())
+    paths = cast(dict[str, dict[str, object]], openapi["paths"])
+    schedule_paths = {path for path in paths if path.startswith("/api/schedules/")}
+
+    assert "/api/schedules/{scheduleId}/archive" not in paths
+    assert all(not path.endswith("/archive") for path in schedule_paths)

@@ -60,7 +60,7 @@ uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests
 - Market data schemas include `warnings` lists for degraded-state messaging.
 - Trading operation schemas use a discriminated union across BUY/SELL/DIVIDEND/SPLIT payloads.
 - `workflow_package.py` and `workflow_package_manifest.py` carry current package authoring, validation, import/export, preflight, launch, and artifact payloads.
-- `schedule.py` carries Scheduled Task list/detail/create/update/archive, structured recurrence, preview, fire history, and run-now contracts; raw cron is not a live schema shape.
+- `schedule.py` carries Scheduled Task list/detail/create/update/delete, structured recurrence, preview, fire history, and run-now contracts; raw cron is not a live schema shape.
 - `model_connection.py` normalizes OpenAI-family base URLs, rejects empty/null API-key updates, and keeps read payloads secret-safe.
 - `extension.py` exposes statically resident extension state and enable/disable toggle payloads only.
 - `tool.py` exposes read-only server-declared tool metadata.

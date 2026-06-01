@@ -83,12 +83,12 @@ export function updateScheduledTask(
   });
 }
 
-export function archiveScheduledTask(
+export function deleteScheduledTask(
   scheduleId: IdParam,
   signal?: AbortSignal,
-): Promise<ScheduleRead> {
-  return requestPlatform<ScheduleRead>(`${schedulePath(scheduleId)}/archive`, {
-    method: "POST",
+): Promise<void> {
+  return requestPlatform<void>(schedulePath(scheduleId), {
+    method: "DELETE",
     signal,
   });
 }
@@ -140,8 +140,8 @@ export function listScheduledTaskFires(
 }
 
 export const schedulesApi = {
-  archive: archiveScheduledTask,
   create: createScheduledTask,
+  delete: deleteScheduledTask,
   get: getScheduledTask,
   list: listScheduledTasks,
   listFires: listScheduledTaskFires,

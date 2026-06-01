@@ -16,7 +16,7 @@ class WorkflowPackageSchedule(IdMixin, Base):
     __tablename__ = "workflow_package_schedules"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('enabled', 'paused', 'archived')",
+            "status IN ('enabled', 'paused')",
             name="ck_workflow_package_schedules_status",
         ),
         CheckConstraint(
@@ -88,7 +88,6 @@ class WorkflowPackageSchedule(IdMixin, Base):
         default=dict,
         server_default=sql_text("'{}'::jsonb"),
     )
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

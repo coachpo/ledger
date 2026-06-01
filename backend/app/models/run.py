@@ -94,7 +94,7 @@ class Run(IdMixin, TimestampMixin, Base):
     schedule_id: Mapped[int | None] = mapped_column(
         ForeignKey(
             "workflow_package_schedules.id",
-            ondelete="SET NULL",
+            ondelete="CASCADE",
             name="fk_runs_schedule_id",
         ),
         nullable=True,
@@ -102,7 +102,7 @@ class Run(IdMixin, TimestampMixin, Base):
     schedule_fire_id: Mapped[int | None] = mapped_column(
         ForeignKey(
             "workflow_package_schedule_fires.id",
-            ondelete="SET NULL",
+            ondelete="CASCADE",
             name="fk_runs_schedule_fire_id",
         ),
         nullable=True,

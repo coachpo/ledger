@@ -1,6 +1,6 @@
 # Data Model Design
 
-> Status: Live data-model reference for branch `feature/memory` at `51d748b`.
+> Status: Live data-model reference for branch `main` at `1e43bf7`.
 
 ## Overview
 
@@ -27,6 +27,8 @@ The data model follows two boundaries. Finance-owned product tables support pres
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `workflow_packages`                | One mutable current package per stable key, including manifest source, package definition, compiled plan, hashes, dependency keys, and timestamps. Live package rows do not store lifecycle status.                                                                                                                                     |
 | `workflow_package_secret_bindings` | Package-local encrypted secret values keyed by package and binding key; reads expose only presence/timestamps, never raw values.                                                                                                                                                                                                        |
+| `workflow_package_schedules`       | Platform-owned recurring Workflow Package schedule definitions with package/workflow target, enabled or paused status, recurrence, timezone, policies, server-owned next-fire timing, and JSON input template data. There is no live archived state.                                                                                     |
+| `workflow_package_schedule_fires`  | Schedule-owned fire history for materialized scheduled or manual occurrences, including linked run provenance, rendered parameters, local scheduled fields, skip/error data, and status while the owning schedule exists.                                                                                                                |
 | `run_workflow_package_snapshots`   | One immutable executable package snapshot per run, including copied package identity, workflow identity, hashes, manifest/export material, compiled plan, launch inputs, resolved non-secret model runtime profiles, and preflight summary.                                                                                             |
 | `model_connections`                | Global saved provider/model endpoint config, selected `protocol_profile`, backend-owned capability-status JSONB, policy fields, probe cache metadata, encrypted API keys, reachability-test metadata, and archive state. Public writes select protocol and endpoint settings only; compatibility truth is resolved by backend services. |
 | `extension_states`                 | Operational bundled-extension state keyed by `extension_key`, storing only `enabled`.                                                                                                                                                                                                                                                   |
@@ -59,6 +61,8 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 - Public extension state is not a manifest metadata store. It is the `extension_states` key plus `enabled` flag, surfaced as `key`, `label`, and `enabled` through `/api/extensions`.
 - Runs store snapshot-based package id, package key, package hashes, workflow key, local resource refs, resolved model connection refs, launch inputs, and `extension_dependencies` records containing only extension key, surfaces, and fields.
 - Runs store scheduler metadata such as execution scope key, concurrency policy, lease owner/timestamps, attempt count, queued time, and last claimed time. Queue read models derive from persisted scheduler state. Progress read models derive from persisted invocation statuses.
+- Deleting a schedule deletes its schedule-owned fire rows and direct schedule-owned runs. Rerun and fork descendants stay governed by run lineage rather than schedule ownership.
+- Startup repair purges legacy archived schedule rows through the current schedule hard-delete service path, so archived schedule rows are not a current persistence state.
 - Runtime failure metadata stores typed `failureTaxonomy` records and bounded `toolCallRetries` evidence without raw tool arguments or secrets.
 - Reruns may edit root launch parameters. Forks preserve source run input, copy upstream context, persist one `run_forks` artifact, and mark the selected target agent invocation as edited with source invocation provenance. `resume_step_index` is the execution boundary only.
 - Runtime request metadata for HTTP operations must redact sensitive URL query names and all secret-backed headers, query fields, and body fields. Response metadata is bounded and stores redaction-safe URL, status, selected headers, content type, body preview, byte count, hash, and redirect metadata.

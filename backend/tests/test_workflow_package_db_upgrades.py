@@ -329,8 +329,12 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         "updated_at",
     } <= set(model_connection_columns)
     assert "api_style" not in model_connection_columns
-    assert "connection_kind" not in model_connection_columns  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-    assert "ck_model_connections_connection_kind" not in model_connection_check_sql  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+    assert (
+        "connection_kind" not in model_connection_columns
+    )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+    assert (
+        "ck_model_connections_connection_kind" not in model_connection_check_sql
+    )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
 
 
 def test_init_db_creates_current_workflow_package_and_run_snapshot_schema(
@@ -868,8 +872,12 @@ def test_model_connection_upgrade_deletes_legacy_deterministic_smoke_rows_and_dr
             ("primary_provider", "https://api.openai.com/v1"),
             ("provider_on_legacy_smoke_url", legacy_smoke_url),
         ]
-        assert "connection_kind" not in model_connection_columns  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-        assert "ck_model_connections_connection_kind" not in model_connection_check_sql  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+        assert (
+            "connection_kind" not in model_connection_columns
+        )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+        assert (
+            "ck_model_connections_connection_kind" not in model_connection_check_sql
+        )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
     finally:
         engine.dispose()
 
@@ -953,7 +961,11 @@ def test_model_connection_upgrade_scrubs_run_snapshot_kind_keys(database_url: st
             {"key": "legacy_alias_only", "modelId": "openai:gpt-5.4-mini"},
             "preserve-non-object",
         ]
-        assert "connection_kind" not in model_connection_columns  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-        assert "ck_model_connections_connection_kind" not in model_connection_check_sql  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+        assert (
+            "connection_kind" not in model_connection_columns
+        )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
+        assert (
+            "ck_model_connections_connection_kind" not in model_connection_check_sql
+        )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
     finally:
         engine.dispose()

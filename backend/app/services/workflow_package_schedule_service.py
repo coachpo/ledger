@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.errors import business_rule_error, not_found_error
+from app.core.errors import not_found_error
 from app.core.formatting import to_utc, utcnow
 from app.db.engine import get_session_factory
 from app.models.run import Run
@@ -61,7 +61,6 @@ from app.services.workflow_package_schedule_inputs import (
     require_scheduled_input_render_ready,
 )
 
-_ACTIVE_SCHEDULE_STATUSES = (ScheduleStatus.ENABLED.value, ScheduleStatus.PAUSED.value)
 _UNSET: Final = object()
 
 
@@ -146,15 +145,11 @@ class WorkflowPackageScheduleService:
         offset: int = 0,
     ) -> ScheduleListRead:
         resolved_status = _enum_value(status) if status is not None else None
-        active_statuses: Sequence[str] | None = (
-            None if resolved_status else _ACTIVE_SCHEDULE_STATUSES
-        )
         schedules = self.schedule_repository.list_schedules(
             package_id=package_id,
             package_key=package_key,
             workflow_key=workflow_key,
             status=resolved_status,
-            statuses=active_statuses,
             limit=limit,
             offset=offset,
         )
@@ -163,7 +158,6 @@ class WorkflowPackageScheduleService:
             package_key=package_key,
             workflow_key=workflow_key,
             status=resolved_status,
-            statuses=active_statuses,
         )
         return ScheduleListRead.model_validate(
             {
@@ -223,7 +217,6 @@ class WorkflowPackageScheduleService:
     ) -> ScheduleRead:
         try:
             schedule = self._get_schedule_model_for_update(schedule_id)
-            self._require_mutable(schedule)
             fields = self._update_fields(payload)
             if next_fire_at is not _UNSET:
                 fields["next_fire_at"] = next_fire_at
@@ -237,18 +230,13 @@ class WorkflowPackageScheduleService:
             self.session.rollback()
             raise
 
-    def archive_schedule(
-        self,
-        schedule_id: int,
-        *,
-        archived_at: datetime | None = None,
-    ) -> ScheduleRead:
+    def delete_schedule(self, schedule_id: int, *, commit: bool = True) -> None:
+        if not commit:
+            self._delete_schedule_rows(schedule_id)
+            return
         try:
-            schedule = self._get_schedule_model_for_update(schedule_id)
-            archived = self.schedule_repository.archive_schedule(schedule, archived_at=archived_at)
+            self._delete_schedule_rows(schedule_id)
             self.session.commit()
-            self.session.refresh(archived)
-            return self._to_schedule_read(archived)
         except Exception:
             self.session.rollback()
             raise
@@ -328,7 +316,6 @@ class WorkflowPackageScheduleService:
     ) -> SchedulePreviewRead:
         request = payload or SchedulePreviewRequest()
         schedule = self._get_schedule_model(schedule_id)
-        self._require_not_archived(schedule, action="previewed")
         scheduled_for = (
             to_utc(request.scheduled_for) if request.scheduled_for else schedule.next_fire_at
         )
@@ -375,7 +362,6 @@ class WorkflowPackageScheduleService:
         scheduled_for = to_utc(payload.scheduled_for)
         try:
             schedule = self._get_schedule_model_for_update(schedule_id)
-            self._require_not_archived(schedule, action="run now")
             package = self._get_package_model(schedule.package_id)
             metadata = self._preview_fire_metadata(
                 schedule_id=schedule.id,
@@ -740,8 +726,7 @@ class WorkflowPackageScheduleService:
         ends_at: datetime | None,
         anchor_at: datetime,
     ) -> datetime | None:
-        if status == ScheduleStatus.ARCHIVED.value:
-            return None
+        _ = status
         now = utcnow()
         compare_at = to_utc(starts_at) if starts_at and to_utc(starts_at) > now else now
         candidate = self._next_occurrence_at_or_after(
@@ -1157,6 +1142,22 @@ class WorkflowPackageScheduleService:
     def _manual_fire_key(cls, scheduled_for: datetime, idempotency_key: str) -> str:
         return f"manual:{cls._scheduled_fire_key(scheduled_for)}:{idempotency_key}"
 
+    def _delete_schedule_rows(self, schedule_id: int) -> None:
+        schedule = self._get_schedule_model_for_update(schedule_id)
+        fire_ids = self.fire_repository.list_ids_for_schedule(schedule.id)
+        RunService(
+            self.session,
+            self.session_factory,
+            provider_bundle=self.provider_bundle,
+        ).delete_runs_for_schedule(
+            schedule_id=schedule.id,
+            fire_ids=fire_ids,
+            commit=False,
+        )
+        self.session.flush()
+        self.schedule_repository.delete(schedule)
+        self.session.flush()
+
     def _to_preview_read(
         self,
         schedule_id: int | None,
@@ -1264,7 +1265,6 @@ class WorkflowPackageScheduleService:
                 "latestFireId": latest.fire_id,
                 "latestRunId": latest.run_id,
                 "latestStatus": latest.status,
-                "archivedAt": schedule.archived_at,
                 "createdAt": schedule.created_at,
                 "updatedAt": schedule.updated_at,
             }
@@ -1367,18 +1367,6 @@ class WorkflowPackageScheduleService:
         if package is None:
             raise not_found_error("Workflow package")
         return package
-
-    @classmethod
-    def _require_mutable(cls, schedule: WorkflowPackageSchedule) -> None:
-        cls._require_not_archived(schedule, action="modified")
-
-    @staticmethod
-    def _require_not_archived(schedule: WorkflowPackageSchedule, *, action: str) -> None:
-        if schedule.status == ScheduleStatus.ARCHIVED.value:
-            raise business_rule_error(
-                "schedule_archived",
-                f"Archived schedules cannot be {action}",
-            )
 
 
 def _enum_value(value: Enum | str) -> str:

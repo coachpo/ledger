@@ -69,8 +69,8 @@ describe("schedules api", () => {
     expect(init?.method).toBe("GET");
   });
 
-  it("creates, updates, and archives scheduled tasks", async () => {
-    const { archiveScheduledTask, createScheduledTask, updateScheduledTask } = await loadSchedulesApi(
+  it("creates, updates, and deletes scheduled tasks", async () => {
+    const { createScheduledTask, deleteScheduledTask, updateScheduledTask } = await loadSchedulesApi(
       "https://signaldeck.example.com/api/v1/",
     );
     const createPayload = {
@@ -84,7 +84,7 @@ describe("schedules api", () => {
     };
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 44 }, 201));
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 44, status: "paused" }, 200));
-    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 44, status: "archived" }, 200));
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     await createScheduledTask(createPayload);
     let lastCall = getLastFetchCall(fetchMock);
@@ -98,10 +98,10 @@ describe("schedules api", () => {
     expect(lastCall.init?.method).toBe("PATCH");
     expect(lastCall.init?.body).toBe(JSON.stringify({ status: "paused", endsAt: null }));
 
-    await archiveScheduledTask(44);
+    await expect(deleteScheduledTask(44)).resolves.toBeUndefined();
     lastCall = getLastFetchCall(fetchMock);
-    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/schedules/44/archive");
-    expect(lastCall.init?.method).toBe("POST");
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/schedules/44");
+    expect(lastCall.init?.method).toBe("DELETE");
   });
 
   it("previews unsaved and saved scheduled task inputs", async () => {

@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.errors import ApiError
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.runtime_types import (
     MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
@@ -390,7 +391,6 @@ def test_schedule_contract_service_read_models_include_latest_fire_and_run(
 ) -> None:
     scheduled_for = datetime.fromisoformat("2026-06-01T13:00:00+00:00")
     materialized_at = datetime.fromisoformat("2026-06-01T13:00:04+00:00")
-    archived_at = datetime.fromisoformat("2026-06-02T13:00:00+00:00")
     with session_factory() as session:
         package = WorkflowPackage(
             key="schedule_contract_package",
@@ -477,7 +477,14 @@ def test_schedule_contract_service_read_models_include_latest_fire_and_run(
 
         detail = service.get_schedule(schedule.id)
         history = service.list_fire_history(schedule.id)
-        archived = service.archive_schedule(schedule.id, archived_at=archived_at)
+        service.delete_schedule(schedule.id)
+        deleted_run = session.get(Run, run.id)
+
+        with pytest.raises(ApiError, match="Schedule not found"):
+            service.get_schedule(schedule.id)
+
+        with pytest.raises(ApiError, match="Schedule not found"):
+            service.list_fire_history(schedule.id)
 
     assert schedule.package_key == "schedule_contract_package"
     assert schedule.status == ScheduleStatus.ENABLED
@@ -488,9 +495,211 @@ def test_schedule_contract_service_read_models_include_latest_fire_and_run(
     assert detail.latest_status == "queued"
     assert history.items[0].id == fire.id
     assert history.items[0].run_id == run.id
-    assert archived.status == ScheduleStatus.ARCHIVED
-    assert archived.archived_at == archived_at
-    assert archived.next_fire_at is None
+    assert deleted_run is None
+
+
+def test_delete_runs_for_schedule_removes_direct_schedule_runs_only(
+    session_factory: sessionmaker[Session],
+) -> None:
+    scheduled_for = datetime.fromisoformat("2026-06-01T13:00:00+00:00")
+    materialized_at = datetime.fromisoformat("2026-06-01T13:00:04+00:00")
+    with session_factory() as session:
+        package = WorkflowPackage(
+            key="schedule_cleanup_package",
+            name="Schedule Cleanup Package",
+            description="Package used by schedule cleanup tests.",
+            manifest_source=_package_source(package_key="schedule_cleanup_package"),
+            manifest_hash="c" * 64,
+            package_definition={
+                "metadata": {"key": "schedule_cleanup_package", "name": "Schedule Cleanup"}
+            },
+            compiled_plan={"workflows": [{"key": "runtime_workflow"}]},
+            compiled_hash="d" * 64,
+            extension_dependencies=[],
+        )
+        session.add(package)
+        session.commit()
+
+        schedule_service = WorkflowPackageScheduleService(session)
+        schedule = schedule_service.create_schedule(
+            ScheduleCreate(
+                package_id=package.id,
+                workflow_key="runtime_workflow",
+                name="Daily cleanup",
+                timezone="UTC",
+                recurrence=DailyRecurrence(at_local_time="09:00"),
+                input_template={"ticker": "{{vars.ticker}}"},
+                template_vars={"ticker": "NVDA"},
+            ),
+            next_fire_at=scheduled_for,
+        )
+        fire = schedule_service.create_or_get_fire(
+            ScheduleFireMetadata(
+                schedule_id=schedule.id,
+                fire_key="daily-cleanup-2026-06-01T13:00:00Z",
+                reason=FireReason.SCHEDULED,
+                scheduled_for=scheduled_for,
+                scheduled_local_date="2026-06-01",
+                scheduled_local_time="09:00",
+                scheduled_local_datetime="2026-06-01T09:00:00",
+            ),
+            status=FireStatus.QUEUED,
+            materialized_at=materialized_at,
+            rendered_parameters={"ticker": "NVDA"},
+        )
+
+        def _attach_snapshot(run: Run, *, launch_parameters: dict[str, str]) -> None:
+            run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+                workflow_package_id=package.id,
+                workflow_package_key=package.key,
+                workflow_package_name=package.name,
+                workflow_package_description=package.description,
+                workflow_package_status=None,
+                workflow_key="runtime_workflow",
+                workflow_name="Runtime Workflow",
+                workflow_description="",
+                manifest_hash=package.manifest_hash,
+                compiled_hash=package.compiled_hash,
+                manifest_source=package.manifest_source,
+                package_definition=package.package_definition,
+                compiled_plan=package.compiled_plan,
+                extension_dependencies=package.extension_dependencies,
+                local_resource_refs={"workflows": ["runtime_workflow"]},
+                input_schema={},
+                launch_parameters=launch_parameters,
+                resolved_model_connections=[],
+                preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
+            )
+
+        direct_queued = Run(
+            target_kind="workflowPackage",
+            target_id=package.id,
+            target_key=package.key,
+            target_version=1,
+            workflow_package_id=package.id,
+            workflow_package_key=package.key,
+            workflow_package_workflow_key="runtime_workflow",
+            schedule_id=schedule.id,
+            scheduled_for=scheduled_for,
+            schedule_reason=FireReason.SCHEDULED.value,
+            input={"ticker": "NVDA"},
+            status="queued",
+            queued_at=materialized_at,
+        )
+        direct_running = Run(
+            target_kind="workflowPackage",
+            target_id=package.id,
+            target_key=package.key,
+            target_version=1,
+            workflow_package_id=package.id,
+            workflow_package_key=package.key,
+            workflow_package_workflow_key="runtime_workflow",
+            schedule_fire_id=fire.id,
+            scheduled_for=scheduled_for,
+            schedule_reason=FireReason.MANUAL.value,
+            input={"ticker": "MSFT"},
+            status="running",
+            queued_at=materialized_at,
+            started_at=materialized_at,
+        )
+        _attach_snapshot(direct_queued, launch_parameters={"ticker": "NVDA"})
+        _attach_snapshot(direct_running, launch_parameters={"ticker": "MSFT"})
+        session.add_all([direct_queued, direct_running])
+        session.flush()
+
+        rerun_descendant = Run(
+            target_kind="workflowPackage",
+            target_id=package.id,
+            target_key=package.key,
+            target_version=1,
+            workflow_package_id=package.id,
+            workflow_package_key=package.key,
+            workflow_package_workflow_key="runtime_workflow",
+            input={"ticker": "AMZN"},
+            status="queued",
+            queued_at=materialized_at,
+            source_run_id=direct_queued.id,
+            lineage_root_run_id=direct_queued.id,
+        )
+        fork_descendant = Run(
+            target_kind="workflowPackage",
+            target_id=package.id,
+            target_key=package.key,
+            target_version=1,
+            workflow_package_id=package.id,
+            workflow_package_key=package.key,
+            workflow_package_workflow_key="runtime_workflow",
+            input={"ticker": "META"},
+            status="queued",
+            queued_at=materialized_at,
+            source_run_id=direct_running.id,
+            lineage_root_run_id=direct_running.id,
+            forked_from_step_index=1,
+            resume_step_index=1,
+        )
+        _attach_snapshot(rerun_descendant, launch_parameters={"ticker": "AMZN"})
+        _attach_snapshot(fork_descendant, launch_parameters={"ticker": "META"})
+        session.add_all([rerun_descendant, fork_descendant])
+        session.flush()
+
+        session.add_all(
+            [
+                Report(
+                    name="direct_queued_memory",
+                    slug="direct_queued_memory",
+                    source="agent",
+                    content="queued memory",
+                    metadata_={
+                        "analysis": {
+                            "reviewType": "agent_memory",
+                            "versionGroup": "agent_memory/v1",
+                            "runId": direct_queued.id,
+                        }
+                    },
+                ),
+                Report(
+                    name="direct_running_memory",
+                    slug="direct_running_memory",
+                    source="agent",
+                    content="running memory",
+                    metadata_={
+                        "analysis": {
+                            "reviewType": "agent_memory",
+                            "versionGroup": "agent_memory/v1",
+                            "runId": direct_running.id,
+                        }
+                    },
+                ),
+                Report(
+                    name="descendant_memory",
+                    slug="descendant_memory",
+                    source="agent",
+                    content="descendant memory",
+                    metadata_={
+                        "analysis": {
+                            "reviewType": "agent_memory",
+                            "versionGroup": "agent_memory/v1",
+                            "runId": rerun_descendant.id,
+                        }
+                    },
+                ),
+            ]
+        )
+        session.commit()
+        direct_queued_id = direct_queued.id
+        direct_running_id = direct_running.id
+        rerun_descendant_id = rerun_descendant.id
+        fork_descendant_id = fork_descendant.id
+
+        RunService(session).delete_runs_for_schedule(schedule_id=schedule.id, fire_ids=[fire.id])
+        session.expunge_all()
+
+        assert session.get(Run, direct_queued_id) is None
+        assert session.get(Run, direct_running_id) is None
+        assert session.get(Run, rerun_descendant_id) is not None
+        assert session.get(Run, fork_descendant_id) is not None
+        remaining_slugs = {report.slug for report in session.query(Report).all()}
+        assert remaining_slugs == {"descendant_memory"}
 
 
 def test_digital_oracle_package_local_system_prompt_receives_runtime_tool_guidance(

@@ -13,22 +13,22 @@ import type { ScheduleRead } from "@/lib/types/schedule";
 import { ScheduledTasksListPage } from "./list";
 
 const {
-  archiveScheduleMock,
+  deleteScheduleMock,
   runNowMock,
   toastErrorMock,
   toastSuccessMock,
   updateScheduleMock,
-  useArchiveScheduledTaskMock,
+  useDeleteScheduledTaskMock,
   useRunScheduledTaskNowMock,
   useScheduledTasksMock,
   useUpdateScheduledTaskMock,
 } = vi.hoisted(() => ({
-  archiveScheduleMock: vi.fn(),
+  deleteScheduleMock: vi.fn(),
   runNowMock: vi.fn(),
   toastErrorMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   updateScheduleMock: vi.fn(),
-  useArchiveScheduledTaskMock: vi.fn(),
+  useDeleteScheduledTaskMock: vi.fn(),
   useRunScheduledTaskNowMock: vi.fn(),
   useScheduledTasksMock: vi.fn(),
   useUpdateScheduledTaskMock: vi.fn(),
@@ -42,7 +42,7 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/hooks/use-scheduled-tasks", () => ({
-  useArchiveScheduledTask: () => useArchiveScheduledTaskMock(),
+  useDeleteScheduledTask: () => useDeleteScheduledTaskMock(),
   useRunScheduledTaskNow: () => useRunScheduledTaskNowMock(),
   useScheduledTasks: (...args: unknown[]) => useScheduledTasksMock(...args),
   useUpdateScheduledTask: () => useUpdateScheduledTaskMock(),
@@ -50,7 +50,6 @@ vi.mock("@/hooks/use-scheduled-tasks", () => ({
 
 function scheduleFixture(overrides: Partial<ScheduleRead> = {}): ScheduleRead {
   return {
-    archivedAt: null,
     createdAt: "2026-05-01T10:00:00Z",
     description: "Runs before the opening bell",
     endsAt: null,
@@ -88,21 +87,21 @@ function renderPage() {
 }
 describe("ScheduledTasksListPage", () => {
   beforeEach(() => {
-    archiveScheduleMock.mockReset();
+    deleteScheduleMock.mockReset();
     runNowMock.mockReset();
     toastErrorMock.mockReset();
     toastSuccessMock.mockReset();
     updateScheduleMock.mockReset();
-    useArchiveScheduledTaskMock.mockReset();
+    useDeleteScheduledTaskMock.mockReset();
     useRunScheduledTaskNowMock.mockReset();
     useScheduledTasksMock.mockReset();
     useUpdateScheduledTaskMock.mockReset();
-    archiveScheduleMock.mockResolvedValue(scheduleFixture({ status: "archived" }));
+    deleteScheduleMock.mockResolvedValue(undefined);
     runNowMock.mockResolvedValue({ run: { id: 3001 }, scheduleId: 44 });
     updateScheduleMock.mockResolvedValue(scheduleFixture({ status: "paused" }));
-    useArchiveScheduledTaskMock.mockReturnValue({
+    useDeleteScheduledTaskMock.mockReturnValue({
       isPending: false,
-      mutateAsync: archiveScheduleMock,
+      mutateAsync: deleteScheduleMock,
     });
     useRunScheduledTaskNowMock.mockReturnValue({
       isPending: false,
@@ -267,8 +266,11 @@ describe("ScheduledTasksListPage", () => {
     ).toBeVisible();
     expect(
       within(dailyRow).getByRole("button", {
-        name: "Archive schedule Daily market brief",
+        name: "Delete schedule Daily market brief",
       }),
+    ).toBeVisible();
+    expect(
+      within(dailyRow).getByTestId("scheduled-task-row-action-delete"),
     ).toBeVisible();
 
     const pausedRow = screen.getByTestId("scheduled-task-row-55");
@@ -352,7 +354,7 @@ describe("ScheduledTasksListPage", () => {
     ).toBeVisible();
   });
 
-  it("disables archived and pending row actions while keeping navigation links explicit", () => {
+  it("disables pending row actions while keeping navigation links explicit", () => {
     useRunScheduledTaskNowMock.mockReturnValue({
       isPending: true,
       mutateAsync: runNowMock,
@@ -361,11 +363,9 @@ describe("ScheduledTasksListPage", () => {
       data: {
         items: [
           scheduleFixture({
-            archivedAt: "2026-05-29T10:00:00Z",
             id: 66,
             latestRunId: 2206,
-            name: "Archived market brief",
-            status: "archived",
+            name: "Market brief pending action",
           }),
         ],
         limit: 50,
@@ -379,18 +379,18 @@ describe("ScheduledTasksListPage", () => {
 
     renderPage();
 
-    const archivedRow = screen.getByTestId("scheduled-task-row-66");
-    expect(within(archivedRow).getByRole("link", { name: "Edit schedule Archived market brief" })).toHaveAttribute(
+    const pendingRow = screen.getByTestId("scheduled-task-row-66");
+    expect(within(pendingRow).getByRole("link", { name: "Edit schedule Market brief pending action" })).toHaveAttribute(
       "href",
       "/scheduled-tasks/66",
     );
-    expect(within(archivedRow).getByRole("link", { name: "Open latest run for Archived market brief" })).toHaveAttribute(
+    expect(within(pendingRow).getByRole("link", { name: "Open latest run for Market brief pending action" })).toHaveAttribute(
       "href",
       "/runs/2206",
     );
-    expect(within(archivedRow).getByRole("button", { name: "Run schedule Archived market brief now" })).toBeDisabled();
-    expect(within(archivedRow).getByRole("button", { name: "Resume schedule Archived market brief" })).toBeDisabled();
-    expect(within(archivedRow).getByRole("button", { name: "Archive schedule Archived market brief" })).toBeDisabled();
+    expect(within(pendingRow).getByRole("button", { name: "Run schedule Market brief pending action now" })).toBeDisabled();
+    expect(within(pendingRow).getByRole("button", { name: "Pause schedule Market brief pending action" })).toBeDisabled();
+    expect(within(pendingRow).getByRole("button", { name: "Delete schedule Market brief pending action" })).toBeDisabled();
   });
 
   it("runs mutations from explicit row buttons", async () => {
@@ -459,22 +459,25 @@ describe("ScheduledTasksListPage", () => {
 
     fireEvent.click(
       within(dailyRow).getByRole("button", {
-        name: "Archive schedule Daily market brief",
+        name: "Delete schedule Daily market brief",
       }),
     );
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
-      "Archive Daily market brief?",
+      "Delete scheduled task",
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Archive scheduled task" }),
+      screen.getByRole("button", { name: "Delete scheduled task" }),
     );
-    expect(archiveScheduleMock).toHaveBeenCalledWith(44);
+    expect(deleteScheduleMock).toHaveBeenCalledWith({
+      latestRunId: 2104,
+      scheduleId: 44,
+    });
   });
 
   it("surfaces row mutation failures without changing the visible schedule row", async () => {
     runNowMock.mockRejectedValueOnce(new Error("Manual fire rejected"));
     updateScheduleMock.mockRejectedValueOnce(new Error("Status update rejected"));
-    archiveScheduleMock.mockRejectedValueOnce(new Error("Archive rejected"));
+    deleteScheduleMock.mockRejectedValueOnce(new Error("Delete rejected"));
     useScheduledTasksMock.mockReturnValue({
       data: {
         items: [scheduleFixture()],
@@ -497,9 +500,9 @@ describe("ScheduledTasksListPage", () => {
     fireEvent.click(within(dailyRow).getByRole("button", { name: "Pause schedule Daily market brief" }));
     await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("Status update rejected"));
 
-    fireEvent.click(within(dailyRow).getByRole("button", { name: "Archive schedule Daily market brief" }));
-    fireEvent.click(screen.getByRole("button", { name: "Archive scheduled task" }));
-    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("Archive rejected"));
+    fireEvent.click(within(dailyRow).getByRole("button", { name: "Delete schedule Daily market brief" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete scheduled task" }));
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("Delete rejected"));
     expect(screen.getByTestId("scheduled-task-row-44")).toHaveTextContent("Daily market brief");
   });
 });

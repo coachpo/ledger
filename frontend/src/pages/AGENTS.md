@@ -50,7 +50,7 @@ src/pages/
 | Dashboard landing            | `dashboard.tsx`                                                                         | home route summary and retry state                                                                          |
 | Extension state route        | `extensions/AGENTS.md`, `../extensions/AGENTS.md`, `../hooks/use-extensions.ts`         | statically resident extension slim state and enable/disable toggle flow                                                 |
 | Workflow Package pages       | `workflow-packages/AGENTS.md`                                                           | package authoring, validation, preflight, launch, import, and export                                        |
-| Scheduled Task pages         | `scheduled-tasks/AGENTS.md`, `../hooks/use-scheduled-tasks.ts`                          | scheduled package-run inventory, create/detail editors, preview, fire history, archive, and run-now         |
+| Scheduled Task pages         | `scheduled-tasks/AGENTS.md`, `../hooks/use-scheduled-tasks.ts`                          | scheduled package-run inventory, create/detail editors, preview, fire history, delete, and run-now          |
 | Model connection pages       | `model-connections/AGENTS.md`, `../hooks/use-model-connections.ts`                      | saved connection inventory, write-only secrets, delete flow, and connection-test UI                         |
 | Memory route                 | `memory/AGENTS.md`, `../hooks/use-memory.ts`, `../lib/api/memory.ts`                    | `/memory` inventory, explicit package access context, scoped list reads, and inline detail/revision/event panes |
 | Run pages                    | `runs/AGENTS.md`                                                                        | run list, detail, root-parameter rerun, invocation-input fork, trace views, and historical replay lineage reads |
@@ -94,7 +94,7 @@ src/pages/
 - `e2e/extensions.spec.ts` covers enabled, disabled, and re-enabled Finance Workspace states for nav, direct routes, and tool authoring discovery.
 - `e2e/reports.spec.ts` covers seeded report flows plus representative empty and API-error list states for the finance inventory archetype.
 - `e2e/workflow-packages.spec.ts` covers package-first authoring, import/export, launch, run provenance, and wide payload overflow in the run-detail console.
-- `e2e/scheduled-tasks.spec.ts` covers scheduled package-run automation, fire history, archive/read-only states, and run-now links into run detail.
+- `e2e/scheduled-tasks.spec.ts` covers scheduled package-run automation, fire history, delete confirmation and post-delete absence states, and run-now links into run detail.
 
 ## ANTI-PATTERNS
 

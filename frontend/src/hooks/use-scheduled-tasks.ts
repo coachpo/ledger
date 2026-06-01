@@ -6,8 +6,8 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import {
-  archiveScheduledTask,
   createScheduledTask,
+  deleteScheduledTask,
   getScheduledTask,
   listScheduledTaskFires,
   listScheduledTasks,
@@ -41,6 +41,11 @@ export type UpdateScheduledTaskVariables = {
 export type PreviewScheduledTaskVariables = {
   scheduleId: IdParam;
   payload?: SchedulePreviewRequest;
+};
+
+export type DeleteScheduledTaskVariables = {
+  scheduleId: IdParam;
+  latestRunId?: IdParam | null;
 };
 
 export type RunScheduledTaskNowVariables = {
@@ -145,13 +150,13 @@ export function useUpdateScheduledTask() {
   });
 }
 
-export function useArchiveScheduledTask() {
+export function useDeleteScheduledTask() {
   const queryClient = useQueryClient();
 
-  return useMutation<ScheduleRead, Error, IdParam>({
-    mutationFn: (scheduleId) => archiveScheduledTask(scheduleId),
-    onSuccess: async (schedule) => {
-      await invalidateScheduledTaskScope(queryClient, schedule);
+  return useMutation<void, Error, DeleteScheduledTaskVariables>({
+    mutationFn: ({ scheduleId }) => deleteScheduledTask(scheduleId),
+    onSuccess: async (_result, { scheduleId, latestRunId }) => {
+      await invalidateScheduledTaskById(queryClient, scheduleId, latestRunId);
     },
   });
 }

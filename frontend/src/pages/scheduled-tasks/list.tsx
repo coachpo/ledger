@@ -1,5 +1,4 @@
 import {
-  Archive,
   CalendarClock,
   ClipboardList,
   CopyPlus,
@@ -8,6 +7,7 @@ import {
   PlayCircle,
   RotateCcw,
   SquarePen,
+  Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
-  useArchiveScheduledTask,
+  useDeleteScheduledTask,
   useRunScheduledTaskNow,
   useScheduledTasks,
   useUpdateScheduledTask,
@@ -237,13 +237,6 @@ function ScheduleStatusFilters({
       >
         Paused
       </ToggleGroupItem>
-      <ToggleGroupItem
-        className="h-8 px-3 text-xs"
-        data-testid="scheduled-tasks-filter-archived"
-        value="archived"
-      >
-        Archived
-      </ToggleGroupItem>
     </ToggleGroup>
   );
 }
@@ -405,7 +398,7 @@ function LatestActivityCell({ schedule }: { schedule: ScheduleRead }) {
 
 type ScheduleActionHandlers = {
   mutationPending: boolean;
-  onArchive: (schedule: ScheduleRead) => void;
+  onDelete: (schedule: ScheduleRead) => void;
   onRunNow: (schedule: ScheduleRead) => void;
   onToggleStatus: (schedule: ScheduleRead) => void;
 };
@@ -413,11 +406,10 @@ type ScheduleActionHandlers = {
 function ScheduleRowActions({
   mutationPending,
   schedule,
-  onArchive,
+  onDelete,
   onRunNow,
   onToggleStatus,
 }: ScheduleActionHandlers & { schedule: ScheduleRead }) {
-  const isArchived = schedule.status === "archived";
   const toggleLabel = schedule.status === "enabled" ? "Pause" : "Resume";
   const duplicatePath = `/scheduled-tasks/new?duplicateFrom=${schedule.id}`;
 
@@ -437,7 +429,7 @@ function ScheduleRowActions({
         aria-label={`Run schedule ${schedule.name} now`}
         className="cursor-pointer"
         data-testid="scheduled-task-row-action-run-now"
-        disabled={isArchived || mutationPending}
+        disabled={mutationPending}
         size="sm"
         type="button"
         onClick={() => onRunNow(schedule)}
@@ -449,7 +441,7 @@ function ScheduleRowActions({
         aria-label={`${toggleLabel} schedule ${schedule.name}`}
         className="cursor-pointer"
         data-testid="scheduled-task-row-action-pause-resume"
-        disabled={isArchived || mutationPending}
+        disabled={mutationPending}
         size="sm"
         type="button"
         variant="outline"
@@ -473,17 +465,17 @@ function ScheduleRowActions({
         </Link>
       </Button>
       <Button
-        aria-label={`Archive schedule ${schedule.name}`}
+        aria-label={`Delete schedule ${schedule.name}`}
         className="cursor-pointer"
-        data-testid="scheduled-task-row-action-archive"
-        disabled={isArchived || mutationPending}
+        data-testid="scheduled-task-row-action-delete"
+        disabled={mutationPending}
         size="sm"
         type="button"
         variant="destructive"
-        onClick={() => onArchive(schedule)}
+        onClick={() => onDelete(schedule)}
       >
-        <Archive data-icon="inline-start" />
-        Archive
+        <Trash2 data-icon="inline-start" />
+        Delete
       </Button>
       {schedule.latestRunId ? (
         <Button asChild size="sm" variant="outline">
@@ -508,7 +500,7 @@ function ScheduleRowActions({
 function ScheduledTasksTable({
   mutationPending,
   schedules,
-  onArchive,
+  onDelete,
   onRunNow,
   onToggleStatus,
 }: ScheduleActionHandlers & { schedules: readonly ScheduleRead[] }) {
@@ -546,7 +538,7 @@ function ScheduledTasksTable({
                 <ScheduleRowActions
                   mutationPending={mutationPending}
                   schedule={schedule}
-                  onArchive={onArchive}
+                  onDelete={onDelete}
                   onRunNow={onRunNow}
                   onToggleStatus={onToggleStatus}
                 />
@@ -584,10 +576,10 @@ export function ScheduledTasksListPage() {
   );
   const [packageKey, setPackageKey] = useState("");
   const [workflowKey, setWorkflowKey] = useState("");
-  const [archiving, setArchiving] = useState<ScheduleRead | null>(null);
+  const [deleting, setDeleting] = useState<ScheduleRead | null>(null);
   const updateSchedule = useUpdateScheduledTask();
   const runNow = useRunScheduledTaskNow();
-  const archiveSchedule = useArchiveScheduledTask();
+  const deleteSchedule = useDeleteScheduledTask();
 
   const listParams = useMemo<ScheduleListParams>(
     () => ({
@@ -608,7 +600,7 @@ export function ScheduledTasksListPage() {
     [schedules, search],
   );
   const mutationPending =
-    updateSchedule.isPending || runNow.isPending || archiveSchedule.isPending;
+    updateSchedule.isPending || runNow.isPending || deleteSchedule.isPending;
   const hasFilters = Boolean(
     search.trim() ||
       packageKey.trim() ||
@@ -617,9 +609,6 @@ export function ScheduledTasksListPage() {
   );
 
   const toggleScheduleStatus = async (schedule: ScheduleRead) => {
-    if (schedule.status === "archived") {
-      return;
-    }
     const nextStatus: ScheduleWriteStatus =
       schedule.status === "enabled" ? "paused" : "enabled";
 
@@ -658,17 +647,20 @@ export function ScheduledTasksListPage() {
     }
   };
 
-  const confirmArchive = async () => {
-    if (!archiving) {
+  const confirmDelete = async () => {
+    if (!deleting) {
       return;
     }
     try {
-      await archiveSchedule.mutateAsync(archiving.id);
-      toast.success("Scheduled task archived");
-      setArchiving(null);
+      await deleteSchedule.mutateAsync({
+        latestRunId: deleting.latestRunId,
+        scheduleId: deleting.id,
+      });
+      toast.success("Scheduled task deleted");
+      setDeleting(null);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to archive scheduled task.",
+        error instanceof Error ? error.message : "Failed to delete scheduled task.",
       );
     }
   };
@@ -732,22 +724,22 @@ export function ScheduledTasksListPage() {
         <ScheduledTasksTable
           mutationPending={mutationPending}
           schedules={filteredSchedules}
-          onArchive={setArchiving}
+          onDelete={setDeleting}
           onRunNow={runScheduleNow}
           onToggleStatus={toggleScheduleStatus}
         />
       ) : null}
 
       <ConfirmDeleteDialog
-        confirmLabel="Archive scheduled task"
-        description={`Archive ${archiving?.name ?? "this scheduled task"}? Existing fire and run audit history stays available, but the schedule will stop materializing future runs.`}
-        isPending={archiveSchedule.isPending}
-        open={archiving !== null}
-        title="Archive scheduled task"
-        onConfirm={confirmArchive}
+        confirmLabel="Delete scheduled task"
+        description={`Delete ${deleting?.name ?? "this scheduled task"}? This removes the schedule and its directly owned run history.`}
+        isPending={deleteSchedule.isPending}
+        open={deleting !== null}
+        title="Delete scheduled task"
+        onConfirm={confirmDelete}
         onOpenChange={(open) => {
           if (!open) {
-            setArchiving(null);
+            setDeleting(null);
           }
         }}
       />

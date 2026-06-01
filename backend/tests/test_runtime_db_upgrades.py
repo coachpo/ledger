@@ -155,7 +155,6 @@ _SCHEDULE_COLUMNS = {
     "misfire_grace_seconds",
     "input_template",
     "template_vars",
-    "archived_at",
     "created_at",
     "updated_at",
 }
@@ -1060,6 +1059,7 @@ def _assert_schedule_table_shape(engine: Engine) -> None:
     }
 
     assert set(schedule_columns) == _SCHEDULE_COLUMNS
+    assert "archived_at" not in schedule_columns
     assert schedule_columns["package_id"]["nullable"] is False
     assert schedule_columns["workflow_key"]["nullable"] is False
     assert schedule_columns["timezone"]["nullable"] is False
@@ -1067,7 +1067,6 @@ def _assert_schedule_table_shape(engine: Engine) -> None:
     assert schedule_columns["starts_at"]["nullable"] is True
     assert schedule_columns["ends_at"]["nullable"] is True
     assert schedule_columns["next_fire_at"]["nullable"] is True
-    assert schedule_columns["archived_at"]["nullable"] is True
     assert {
         "ix_workflow_package_schedules_package",
         "ix_workflow_package_schedules_package_workflow",
@@ -1076,8 +1075,9 @@ def _assert_schedule_table_shape(engine: Engine) -> None:
     } <= schedule_indexes
     assert all(
         value in schedule_checks["ck_workflow_package_schedules_status"]
-        for value in ("enabled", "paused", "archived")
+        for value in ("enabled", "paused")
     )
+    assert "archived" not in schedule_checks["ck_workflow_package_schedules_status"]
     assert all(
         value in schedule_checks["ck_workflow_package_schedules_overlap_policy"]
         for value in ("skip", "queue")
@@ -1130,11 +1130,11 @@ def _assert_schedule_table_shape(engine: Engine) -> None:
         "uq_runs_schedule_fire",
     } <= run_indexes
     assert all(value in run_checks["ck_runs_schedule_reason"] for value in ("scheduled", "manual"))
-    assert (("schedule_id",), "workflow_package_schedules", "SET NULL") in run_foreign_keys
+    assert (("schedule_id",), "workflow_package_schedules", "CASCADE") in run_foreign_keys
     assert (
         ("schedule_fire_id",),
         "workflow_package_schedule_fires",
-        "SET NULL",
+        "CASCADE",
     ) in run_foreign_keys
     with engine.connect() as connection:
         schedule_fire_index_sql = connection.execute(
@@ -1904,11 +1904,11 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert (("agent_id",), "agents", "CASCADE") in run_foreign_keys
     assert (("workflow_id",), "workflows", "CASCADE") in run_foreign_keys
     assert (("workflow_package_id",), "workflow_packages", "CASCADE") in run_foreign_keys
-    assert (("schedule_id",), "workflow_package_schedules", "SET NULL") in run_foreign_keys
+    assert (("schedule_id",), "workflow_package_schedules", "CASCADE") in run_foreign_keys
     assert (
         ("schedule_fire_id",),
         "workflow_package_schedule_fires",
-        "SET NULL",
+        "CASCADE",
     ) in run_foreign_keys
     assert not any(
         foreign_key[0]
@@ -2170,9 +2170,10 @@ def test_init_db_schedule_creation_creates_tables_and_run_provenance(
                 key="schedule_creation_package",
                 workflow_key="schedule_creation_workflow",
             )
-            schedule_defaults = connection.execute(
-                text(
-                    """
+            schedule_defaults = (
+                connection.execute(
+                    text(
+                        """
                     INSERT INTO workflow_package_schedules (
                         package_id, workflow_key, name, timezone, recurrence,
                         input_template, template_vars
@@ -2181,9 +2182,12 @@ def test_init_db_schedule_creation_creates_tables_and_run_provenance(
                         '{}'::jsonb, '{}'::jsonb
                     ) RETURNING id, status, overlap_policy, misfire_policy, misfire_grace_seconds
                     """
-                ),
-                package,
-            ).mappings().one()
+                    ),
+                    package,
+                )
+                .mappings()
+                .one()
+            )
             schedule_id = schedule_defaults["id"]
             assert schedule_defaults["status"] == "enabled"
             assert schedule_defaults["overlap_policy"] == "skip"
@@ -2203,9 +2207,10 @@ def test_init_db_schedule_creation_creates_tables_and_run_provenance(
                 ),
                 {"schedule_id": schedule_id},
             ).scalar_one()
-            fire_defaults = connection.execute(
-                text(
-                    """
+            fire_defaults = (
+                connection.execute(
+                    text(
+                        """
                     INSERT INTO workflow_package_schedule_fires (
                         schedule_id, fire_key, scheduled_for
                     ) VALUES (
@@ -2213,9 +2218,12 @@ def test_init_db_schedule_creation_creates_tables_and_run_provenance(
                         '2026-06-02T13:00:00Z'
                     ) RETURNING reason, status, rendered_parameters
                     """
-                ),
-                {"schedule_id": schedule_id},
-            ).mappings().one()
+                    ),
+                    {"schedule_id": schedule_id},
+                )
+                .mappings()
+                .one()
+            )
             assert fire_defaults["reason"] == "scheduled"
             assert fire_defaults["status"] == "pending"
             assert fire_defaults["rendered_parameters"] == {}
@@ -2321,9 +2329,10 @@ def test_init_db_schedule_repair_restores_missing_tables_columns_and_indexes(
                 key="schedule_repair_package",
                 workflow_key="schedule_repair_workflow",
             )
-            repaired_schedule = connection.execute(
-                text(
-                    """
+            repaired_schedule = (
+                connection.execute(
+                    text(
+                        """
                     INSERT INTO workflow_package_schedules (
                         package_id, workflow_key, name, timezone
                     ) VALUES (
@@ -2331,12 +2340,16 @@ def test_init_db_schedule_repair_restores_missing_tables_columns_and_indexes(
                     ) RETURNING id, status, recurrence, overlap_policy, misfire_policy,
                         misfire_grace_seconds, input_template, template_vars
                     """
-                ),
-                package,
-            ).mappings().one()
-            repaired_fire = connection.execute(
-                text(
-                    """
+                    ),
+                    package,
+                )
+                .mappings()
+                .one()
+            )
+            repaired_fire = (
+                connection.execute(
+                    text(
+                        """
                     INSERT INTO workflow_package_schedule_fires (
                         schedule_id, fire_key, scheduled_for
                     ) VALUES (
@@ -2344,9 +2357,12 @@ def test_init_db_schedule_repair_restores_missing_tables_columns_and_indexes(
                         '2026-06-01T13:00:00Z'
                     ) RETURNING reason, status, rendered_parameters
                     """
-                ),
-                {"schedule_id": repaired_schedule["id"]},
-            ).mappings().one()
+                    ),
+                    {"schedule_id": repaired_schedule["id"]},
+                )
+                .mappings()
+                .one()
+            )
             assert repaired_schedule["status"] == "enabled"
             assert repaired_schedule["recurrence"] == {}
             assert repaired_schedule["overlap_policy"] == "skip"
@@ -2357,6 +2373,191 @@ def test_init_db_schedule_repair_restores_missing_tables_columns_and_indexes(
             assert repaired_fire["reason"] == "scheduled"
             assert repaired_fire["status"] == "pending"
             assert repaired_fire["rendered_parameters"] == {}
+    finally:
+        engine.dispose()
+
+
+def test_init_db_schedule_repair_deletes_archived_schedules_direct_runs_and_memory_reports(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    archived_report_slug = "agent_memory_archived_schedule_cleanup_run"
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "DROP TABLE IF EXISTS workflow_package_schedule_fires CASCADE"
+            )
+            connection.exec_driver_sql("DROP TABLE IF EXISTS workflow_package_schedules CASCADE")
+            for index_name in (
+                "ix_runs_schedule",
+                "ix_runs_schedule_status",
+                "ix_runs_schedule_fire",
+                "ix_runs_scheduled_for",
+                "uq_runs_schedule_fire",
+            ):
+                connection.exec_driver_sql(f"DROP INDEX IF EXISTS {index_name}")
+            for column_name in (
+                "schedule_id",
+                "schedule_fire_id",
+                "scheduled_for",
+                "schedule_reason",
+            ):
+                connection.exec_driver_sql(
+                    f"ALTER TABLE runs DROP COLUMN IF EXISTS {column_name} CASCADE"
+                )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE workflow_package_schedules (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    package_id INTEGER NOT NULL,
+                    workflow_key VARCHAR(120) NOT NULL,
+                    name VARCHAR(200) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'enabled',
+                    timezone VARCHAR(120) NOT NULL,
+                    next_fire_at TIMESTAMPTZ,
+                    archived_at TIMESTAMPTZ,
+                    CONSTRAINT ck_workflow_package_schedules_status CHECK (
+                        status IN ('enabled', 'paused', 'archived')
+                    ),
+                    CONSTRAINT fk_workflow_package_schedules_package_id
+                        FOREIGN KEY (package_id)
+                        REFERENCES workflow_packages(id)
+                        ON DELETE CASCADE
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE workflow_package_schedule_fires (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    schedule_id INTEGER NOT NULL,
+                    fire_key VARCHAR(255) NOT NULL,
+                    reason VARCHAR(20) NOT NULL DEFAULT 'scheduled',
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    scheduled_for TIMESTAMPTZ NOT NULL,
+                    rendered_parameters JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    CONSTRAINT uq_workflow_package_schedule_fires_schedule_fire_key
+                        UNIQUE (schedule_id, fire_key),
+                    CONSTRAINT ck_workflow_package_schedule_fires_status CHECK (
+                        status IN ('pending', 'queued', 'skipped', 'failed')
+                    ),
+                    CONSTRAINT ck_workflow_package_schedule_fires_reason CHECK (
+                        reason IN ('scheduled', 'manual')
+                    ),
+                    CONSTRAINT fk_workflow_package_schedule_fires_schedule_id
+                        FOREIGN KEY (schedule_id)
+                        REFERENCES workflow_package_schedules(id)
+                        ON DELETE CASCADE
+                )
+                """
+            )
+            connection.exec_driver_sql("ALTER TABLE runs ADD COLUMN schedule_id INTEGER")
+            connection.exec_driver_sql("ALTER TABLE runs ADD COLUMN schedule_fire_id INTEGER")
+            connection.exec_driver_sql("ALTER TABLE runs ADD COLUMN scheduled_for TIMESTAMPTZ")
+            connection.exec_driver_sql("ALTER TABLE runs ADD COLUMN schedule_reason VARCHAR(20)")
+            connection.exec_driver_sql(
+                "ALTER TABLE runs ADD CONSTRAINT fk_runs_schedule_id "
+                "FOREIGN KEY (schedule_id) "
+                "REFERENCES workflow_package_schedules(id) ON DELETE SET NULL"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE runs ADD CONSTRAINT fk_runs_schedule_fire_id "
+                "FOREIGN KEY (schedule_fire_id) "
+                "REFERENCES workflow_package_schedule_fires(id) ON DELETE SET NULL"
+            )
+            package = _insert_representable_workflow_package(
+                connection,
+                key="schedule_archive_cleanup_package",
+                workflow_key="schedule_archive_cleanup_workflow",
+            )
+            archived_schedule_id = int(
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO workflow_package_schedules (
+                            package_id, workflow_key, name, status, timezone, next_fire_at,
+                            archived_at
+                        ) VALUES (
+                            :package_id, :workflow_key, 'Archived cleanup schedule', 'archived',
+                            'UTC', '2026-05-31T13:00:00Z', '2026-05-31T13:30:00Z'
+                        ) RETURNING id
+                        """
+                    ),
+                    package,
+                ).scalar_one()
+            )
+            archived_fire_id = int(
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO workflow_package_schedule_fires (
+                            schedule_id, fire_key, reason, status, scheduled_for,
+                            rendered_parameters
+                        ) VALUES (
+                            :schedule_id, 'archived-cleanup-fire', 'scheduled', 'queued',
+                            '2026-05-31T13:00:00Z', '{}'::jsonb
+                        ) RETURNING id
+                        """
+                    ),
+                    {"schedule_id": archived_schedule_id},
+                ).scalar_one()
+            )
+            archived_run_id = int(
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO runs (
+                            target_kind, target_id, target_key, target_version,
+                            workflow_package_id, workflow_package_key,
+                            workflow_package_workflow_key, schedule_id, schedule_fire_id,
+                            scheduled_for, schedule_reason, status, input
+                        ) VALUES (
+                            'workflowPackage', :package_id, :package_key, 1,
+                            :package_id, :package_key, :workflow_key, :schedule_id,
+                            :schedule_fire_id, '2026-05-31T13:00:00Z', 'scheduled',
+                            'succeeded', '{}'::jsonb
+                        ) RETURNING id
+                        """
+                    ),
+                    {
+                        **package,
+                        "schedule_fire_id": archived_fire_id,
+                        "schedule_id": archived_schedule_id,
+                    },
+                ).scalar_one()
+            )
+            _insert_report_upgrade_row(
+                connection,
+                slug=archived_report_slug,
+                source="agent",
+                metadata=_agent_memory_report_metadata(runId=archived_run_id),
+            )
+
+        init_db(database_url)
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            archived_counts = connection.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM workflow_package_schedules WHERE id = :schedule_id),
+                        (SELECT COUNT(*) FROM workflow_package_schedule_fires WHERE id = :fire_id),
+                        (SELECT COUNT(*) FROM runs WHERE id = :run_id),
+                        (SELECT COUNT(*) FROM reports WHERE slug = :report_slug)
+                    """
+                ),
+                {
+                    "fire_id": archived_fire_id,
+                    "report_slug": archived_report_slug,
+                    "run_id": archived_run_id,
+                    "schedule_id": archived_schedule_id,
+                },
+            ).one()
+
+        assert archived_counts == (0, 0, 0, 0)
     finally:
         engine.dispose()
 

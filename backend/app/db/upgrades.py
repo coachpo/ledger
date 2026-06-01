@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_REGISTRY
 from app.db.validation import validate_supported_database_engine
@@ -951,7 +952,6 @@ _WORKFLOW_PACKAGE_SCHEDULE_COLUMNS: dict[str, str] = {
     "misfire_grace_seconds": "INTEGER NOT NULL DEFAULT 86400",
     "input_template": "JSONB NOT NULL DEFAULT '{}'::jsonb",
     "template_vars": "JSONB NOT NULL DEFAULT '{}'::jsonb",
-    "archived_at": "TIMESTAMPTZ",
     "created_at": "TIMESTAMPTZ NOT NULL DEFAULT NOW()",
     "updated_at": "TIMESTAMPTZ NOT NULL DEFAULT NOW()",
 }
@@ -997,11 +997,10 @@ _WORKFLOW_PACKAGE_SCHEDULE_TABLE_STATEMENTS: tuple[str, ...] = (
         misfire_grace_seconds INTEGER NOT NULL DEFAULT 86400,
         input_template JSONB NOT NULL DEFAULT '{}'::jsonb,
         template_vars JSONB NOT NULL DEFAULT '{}'::jsonb,
-        archived_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         CONSTRAINT ck_workflow_package_schedules_status CHECK (
-            status IN ('enabled', 'paused', 'archived')
+            status IN ('enabled', 'paused')
         ),
         CONSTRAINT ck_workflow_package_schedules_overlap_policy CHECK (
             overlap_policy IN ('skip', 'queue')
@@ -1071,7 +1070,7 @@ _WORKFLOW_PACKAGE_SCHEDULE_CHECKS: tuple[tuple[str, str, str], ...] = (
     (
         "workflow_package_schedules",
         "ck_workflow_package_schedules_status",
-        "status IN ('enabled', 'paused', 'archived')",
+        "status IN ('enabled', 'paused')",
     ),
     (
         "workflow_package_schedules",
@@ -2333,6 +2332,41 @@ def _ensure_runtime_input_registry_table(engine: Engine, table_names: set[str]) 
     table_names.add(_RUNTIME_INPUT_REGISTRY_TABLE_NAME)
 
 
+def _purge_archived_workflow_package_schedules(
+    engine: Engine,
+    schedule_columns: set[str],
+) -> None:
+    archived_predicates = ["status = 'archived'"]
+    if "archived_at" in schedule_columns:
+        archived_predicates.append("archived_at IS NOT NULL")
+
+    archived_schedule_query = f"SELECT id FROM workflow_package_schedules WHERE {' OR '.join(archived_predicates)} ORDER BY id"
+    with engine.connect() as connection:
+        archived_schedule_ids = cast(
+            list[int],
+            connection.execute(text(archived_schedule_query)).scalars().all(),
+        )
+
+    if not archived_schedule_ids:
+        return
+
+    from app.services.workflow_package_schedule_service import WorkflowPackageScheduleService
+
+    repair_session_factory = sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
+        class_=Session,
+    )
+    for schedule_id in archived_schedule_ids:
+        with repair_session_factory() as repair_session:
+            WorkflowPackageScheduleService(
+                repair_session,
+                repair_session_factory,
+            ).delete_schedule(schedule_id)
+
+
 def _ensure_workflow_package_schedule_tables(engine: Engine, table_names: set[str]) -> None:
     if not {"workflow_packages", "runs"} <= table_names:
         return
@@ -2378,6 +2412,15 @@ def _ensure_workflow_package_schedule_tables(engine: Engine, table_names: set[st
                     f"ALTER TABLE runs ADD COLUMN {column_name} {column_type}"
                 )
                 run_columns.add(column_name)
+
+    _purge_archived_workflow_package_schedules(engine, schedule_columns)
+
+    with engine.begin() as connection:
+        if "archived_at" in schedule_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_package_schedules DROP COLUMN IF EXISTS archived_at"
+            )
+            schedule_columns.discard("archived_at")
 
         connection.exec_driver_sql(
             "DELETE FROM workflow_package_schedules AS schedule "
@@ -2461,14 +2504,14 @@ def _ensure_workflow_package_schedule_tables(engine: Engine, table_names: set[st
         connection.exec_driver_sql(
             "ALTER TABLE runs ADD CONSTRAINT fk_runs_schedule_id "
             "FOREIGN KEY (schedule_id) "
-            "REFERENCES workflow_package_schedules(id) ON DELETE SET NULL"
+            "REFERENCES workflow_package_schedules(id) ON DELETE CASCADE"
         )
         for constraint_name in ("fk_runs_schedule_fire_id", "runs_schedule_fire_id_fkey"):
             _drop_constraint_if_exists(connection, "runs", constraint_name)
         connection.exec_driver_sql(
             "ALTER TABLE runs ADD CONSTRAINT fk_runs_schedule_fire_id "
             "FOREIGN KEY (schedule_fire_id) "
-            "REFERENCES workflow_package_schedule_fires(id) ON DELETE SET NULL"
+            "REFERENCES workflow_package_schedule_fires(id) ON DELETE CASCADE"
         )
         for statement in (*index_statements, *_RUN_SCHEDULE_PROVENANCE_INDEXES):
             connection.exec_driver_sql(statement)

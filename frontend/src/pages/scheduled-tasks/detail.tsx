@@ -1,6 +1,5 @@
 import {
   AlertCircle,
-  Archive,
   CalendarClock,
   ChevronDown,
   CopyPlus,
@@ -62,7 +61,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  useArchiveScheduledTask,
+  useDeleteScheduledTask,
   usePreviewUnsavedScheduledTask,
   useRunScheduledTaskNow,
   useScheduledTask,
@@ -437,9 +436,6 @@ function formatStatusLabel(value: string): string {
 }
 
 function statusBadgeVariant(status: ScheduleStatus) {
-  if (status === "archived") {
-    return "secondary" as const;
-  }
   return status === "enabled" ? ("secondary" as const) : ("outline" as const);
 }
 
@@ -536,14 +532,6 @@ function buildRunNowFeedback(schedule: ScheduleRead, fire: ScheduleFireRead, run
 
 function buildScheduleDiagnostics(schedule: ScheduleRead): ScheduleDiagnostic[] {
   const diagnostics: ScheduleDiagnostic[] = [];
-
-  if (schedule.status === "archived") {
-    diagnostics.push({
-      message: "Archived tasks keep their past runs, but you cannot edit or run them from this page.",
-      severity: "error",
-      title: "Schedule archived",
-    });
-  }
 
   if (schedule.status === "enabled" && !schedule.nextFireAt) {
     diagnostics.push({
@@ -658,19 +646,18 @@ function DetailPageMessage({
 function ScheduleHeader({
   mutationPending,
   schedule,
-  onArchive,
+  onDelete,
   onRunNow,
   onToggleStatus,
 }: {
   mutationPending: boolean;
   schedule: ScheduleRead;
-  onArchive: () => void;
+  onDelete: () => void;
   onRunNow: () => void;
   onToggleStatus: () => void;
 }) {
-  const isArchived = schedule.status === "archived";
   const toggleLabel = schedule.status === "enabled" ? "Disable" : "Enable";
-  const actionDisabled = isArchived || mutationPending;
+  const actionDisabled = mutationPending;
 
   return (
     <div
@@ -695,9 +682,6 @@ function ScheduleHeader({
         title={schedule.name}
       />
       <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 lg:justify-end lg:pt-4">
-        {isArchived ? (
-          <p className="text-xs text-muted-foreground">Archived schedules are read-only.</p>
-        ) : null}
         <Button
           className="w-full sm:w-auto"
           data-testid="schedule-run-now"
@@ -744,12 +728,12 @@ function ScheduleHeader({
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              disabled={isArchived || mutationPending}
+              disabled={mutationPending}
               variant="destructive"
-              onSelect={onArchive}
+              onSelect={onDelete}
             >
-              <Archive data-icon="inline-start" />
-              Archive
+              <Trash2 data-icon="inline-start" />
+              Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -2239,7 +2223,7 @@ function ScheduleTabs({
       >
         <SummaryCard description="Update timing, timezone, and advanced run rules for this task." title="Schedule configuration">
           <ScheduleConfigurationEditor
-            disabled={schedule.status === "archived"}
+            disabled={false}
             isSaving={mutationPending}
             schedule={schedule}
             onSave={onSaveSchedule}
@@ -2254,7 +2238,7 @@ function ScheduleTabs({
       >
         <SummaryCard description="Start a custom draft from the workflow defaults or update values for future runs." title="Inputs">
           <ScheduledInputsEditor
-            disabled={schedule.status === "archived"}
+            disabled={false}
             isSaving={mutationPending}
             schedule={schedule}
             onSave={onSaveSchedule}
@@ -2273,7 +2257,7 @@ function ScheduleTabs({
               history={fireHistory}
               latestRunId={schedule.latestRunId}
               onRunNow={onRunNow}
-              runNowDisabled={schedule.status === "archived" || mutationPending}
+              runNowDisabled={mutationPending}
             />
           </SummaryCard>
           <Collapsible className="min-w-0">
@@ -2298,13 +2282,13 @@ function ScheduleTabs({
 export function ScheduledTaskDetailPage() {
   const { scheduleId } = useParams<{ scheduleId: string }>();
   const navigate = useNavigate();
-  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [runNowFeedback, setRunNowFeedback] = useState<RunNowFeedback | null>(null);
   const scheduleQuery = useScheduledTask(scheduleId);
   const firesQuery = useScheduledTaskFires(scheduleId, { limit: 20 });
   const updateSchedule = useUpdateScheduledTask();
   const runNow = useRunScheduledTaskNow();
-  const archiveSchedule = useArchiveScheduledTask();
+  const deleteSchedule = useDeleteScheduledTask();
 
   if (!scheduleId) {
     return (
@@ -2323,7 +2307,7 @@ export function ScheduledTaskDetailPage() {
   if (scheduleQuery.isError) {
     return isNotFoundError(scheduleQuery.error) ? (
       <DetailPageMessage
-        description="No scheduled task exists for this route. It may have been archived or removed from this environment."
+        description="No scheduled task exists for this route. It may have been deleted or removed from this environment."
         testId="scheduled-task-detail-not-found"
         title="Scheduled task not found"
       />
@@ -2354,12 +2338,9 @@ export function ScheduledTaskDetailPage() {
     isError: firesQuery?.isError ?? false,
     isPending: firesQuery?.isPending ?? false,
   };
-  const mutationPending = updateSchedule.isPending || runNow.isPending || archiveSchedule.isPending;
+  const mutationPending = updateSchedule.isPending || runNow.isPending || deleteSchedule.isPending;
 
   const toggleScheduleStatus = async () => {
-    if (schedule.status === "archived") {
-      return;
-    }
     const nextStatus: ScheduleWriteStatus = schedule.status === "enabled" ? "paused" : "enabled";
     try {
       await updateSchedule.mutateAsync({
@@ -2373,9 +2354,6 @@ export function ScheduledTaskDetailPage() {
   };
 
   const runScheduleNow = async () => {
-    if (schedule.status === "archived") {
-      return;
-    }
     const scheduledFor = new Date().toISOString();
     try {
       const result = await runNow.mutateAsync({
@@ -2404,9 +2382,6 @@ export function ScheduledTaskDetailPage() {
     payload: ScheduleUpdateRequest,
     successMessage = "Scheduled task configuration saved",
   ) => {
-    if (schedule.status === "archived") {
-      return;
-    }
     try {
       await updateSchedule.mutateAsync({
         scheduleId: schedule.id,
@@ -2418,13 +2393,17 @@ export function ScheduledTaskDetailPage() {
     }
   };
 
-  const confirmArchive = async () => {
+  const confirmDelete = async () => {
     try {
-      await archiveSchedule.mutateAsync(schedule.id);
-      toast.success("Scheduled task archived");
-      setArchiveDialogOpen(false);
+      await deleteSchedule.mutateAsync({
+        latestRunId: schedule.latestRunId,
+        scheduleId: schedule.id,
+      });
+      toast.success("Scheduled task deleted");
+      setDeleteDialogOpen(false);
+      navigate("/scheduled-tasks");
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to archive scheduled task."));
+      toast.error(errorMessage(error, "Failed to delete scheduled task."));
     }
   };
 
@@ -2436,7 +2415,7 @@ export function ScheduledTaskDetailPage() {
         <ScheduleHeader
           mutationPending={mutationPending}
           schedule={schedule}
-          onArchive={() => setArchiveDialogOpen(true)}
+          onDelete={() => setDeleteDialogOpen(true)}
           onRunNow={() => void runScheduleNow()}
           onToggleStatus={() => void toggleScheduleStatus()}
         />
@@ -2453,13 +2432,13 @@ export function ScheduledTaskDetailPage() {
         schedule={schedule}
       />
       <ConfirmDeleteDialog
-        confirmLabel="Archive scheduled task"
-        description={`Archive ${schedule.name}? Existing fire and run history stays available, but this task will stop creating future runs.`}
-        isPending={archiveSchedule.isPending}
-        open={archiveDialogOpen}
-        title="Archive scheduled task"
-        onConfirm={confirmArchive}
-        onOpenChange={setArchiveDialogOpen}
+        confirmLabel="Delete scheduled task"
+        description={`Delete ${schedule.name}? This removes the schedule and its directly owned run history.`}
+        isPending={deleteSchedule.isPending}
+        open={deleteDialogOpen}
+        title="Delete scheduled task"
+        onConfirm={confirmDelete}
+        onOpenChange={setDeleteDialogOpen}
       />
     </WorkspacePageShell>
   );

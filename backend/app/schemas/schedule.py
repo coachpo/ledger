@@ -17,7 +17,6 @@ _LOCAL_TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 class ScheduleStatus(str, Enum):  # noqa: UP042
     ENABLED = "enabled"
     PAUSED = "paused"
-    ARCHIVED = "archived"
 
 
 class ScheduleWriteStatus(str, Enum):  # noqa: UP042
@@ -285,7 +284,6 @@ class ScheduleRead(CamelModel):
     latest_fire_id: int | None = None
     latest_run_id: int | None = None
     latest_status: str | None = None
-    archived_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -293,7 +291,6 @@ class ScheduleRead(CamelModel):
         "starts_at",
         "ends_at",
         "next_fire_at",
-        "archived_at",
         "created_at",
         "updated_at",
     )

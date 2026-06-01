@@ -24,8 +24,8 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 vi.mock("@/lib/api/schedules", () => ({
-  archiveScheduledTask: vi.fn(),
   createScheduledTask: vi.fn(),
+  deleteScheduledTask: vi.fn(),
   getScheduledTask: vi.fn(),
   listScheduledTaskFires: vi.fn(),
   listScheduledTasks: vi.fn(),
@@ -36,8 +36,8 @@ vi.mock("@/lib/api/schedules", () => ({
 }));
 
 import {
-  archiveScheduledTask,
   createScheduledTask,
+  deleteScheduledTask,
   getScheduledTask,
   listScheduledTaskFires,
   listScheduledTasks,
@@ -48,8 +48,8 @@ import {
 } from "@/lib/api/schedules";
 import { queryKeys } from "@/lib/query-keys";
 import {
-  useArchiveScheduledTask,
   useCreateScheduledTask,
+  useDeleteScheduledTask,
   usePreviewScheduledTask,
   usePreviewUnsavedScheduledTask,
   useRunScheduledTaskNow,
@@ -69,8 +69,8 @@ describe("useScheduledTasks", () => {
     reactQueryState.capturedMutationOptions = null;
     reactQueryState.invalidateQueriesMock.mockReset();
     reactQueryState.useQueryMock.mockReset();
-    vi.mocked(archiveScheduledTask).mockReset();
     vi.mocked(createScheduledTask).mockReset();
+    vi.mocked(deleteScheduledTask).mockReset();
     vi.mocked(getScheduledTask).mockReset();
     vi.mocked(listScheduledTaskFires).mockReset();
     vi.mocked(listScheduledTasks).mockReset();
@@ -204,14 +204,14 @@ describe("useScheduledTasks", () => {
     });
   });
 
-  it("archives scheduled tasks through the API and invalidates schedule scopes", async () => {
-    useArchiveScheduledTask();
+  it("deletes scheduled tasks through the API and invalidates schedule and linked run scopes", async () => {
+    useDeleteScheduledTask();
 
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    await mutationOptions.mutationFn?.(44);
-    expect(archiveScheduledTask).toHaveBeenCalledWith(44);
+    await mutationOptions.mutationFn?.({ scheduleId: 44, latestRunId: 2104 });
+    expect(deleteScheduledTask).toHaveBeenCalledWith(44);
 
-    await mutationOptions.onSuccess?.({ id: 44, latestRunId: 2104 }, 44);
+    await mutationOptions.onSuccess?.(undefined, { scheduleId: 44, latestRunId: 2104 });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.schedules.lists(),
     });
@@ -220,6 +220,9 @@ describe("useScheduledTasks", () => {
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.schedules.firesScope(44),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.lists(),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.runs.detail(2104),

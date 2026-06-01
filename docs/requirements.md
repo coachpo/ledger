@@ -1,6 +1,6 @@
 # Requirements Document
 
-> Status: Live requirements reference for branch `feature/ui` at `a6aeea0`.
+> Status: Live requirements reference for branch `main` at `1e43bf7`.
 
 ## Purpose
 
@@ -19,6 +19,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Model Connection CRUD, encrypted stored secrets, OpenAI-family `protocolProfile` selection, backend-owned compatibility evidence, reachability tests, capability probes, and secret-safe read payloads.
 - Global read-only Tools metadata from the server-declared catalog, filtered by extension state where tools are extension-owned, including the finance-owned phase-1 Digital Oracle-backed tool keys `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`.
 - Dedicated Workflow Package launch console at `/workflow-packages/:packageId/run`, with preflight gating and run creation outside the editor.
+- Scheduled Tasks for recurring Workflow Package runs, including structured recurrence, scheduled input previews, run-now, fire history, and hard delete without a live archive state.
 - Run list/detail, backend-owned progress/queue read models, package provenance, rerun drafts, reruns, fork drafts, invocation-input forks, operation invocation evidence, memory evidence, typed failure taxonomy, and bounded retry evidence.
 - Platform-core `/api/memory` and `/memory` surfaces for explicit-private-scope canonical memory list/detail, revisions, events, resolve, and reflect workflows.
 
@@ -75,6 +76,10 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 ### FR-5 Launches, Runs, Reruns, Forks, And Memory
 
 - Package launches must use the strict launch envelope from `/workflow-packages/:packageId/run` and create durable queued global runs with immutable package provenance.
+- Scheduled Tasks must target one current Workflow Package workflow, use structured recurrence with IANA timezones, and materialize due fires into queued runs with schedule provenance.
+- Scheduled input previews must validate rendered parameters without creating fires or runs; run-now must create an idempotent manual fire and return the linked run summary.
+- Deleting a Scheduled Task must remove the schedule, schedule-owned fires, and direct schedule-owned runs through the schedule delete API. It must not expose restore, tombstone, or soft-delete behavior as a live state.
+- Startup schema repair must purge legacy archived Scheduled Task rows through the current hard-delete path.
 - Launch, rerun, and fork requests must stop after creating queued rows; the explicit scheduler worker must claim and execute queued runs.
 - Runs must expose input, per-step outputs, operation invocations, final output, status, backend-owned progress, queue reason, timing, token usage, optional trace/span ids, package provenance, extension dependencies, memory artifacts, memory events, typed failure taxonomy, bounded tool-call retry metadata, rerun lineage, invocation-input fork lineage, and historical replay lineage when present.
 - Runtime tool-call retries must be admitted only from typed pre-dispatch JSON/object/schema/argument-validation failures, with one bounded model-feedback retry and redacted retry metadata. Provider/network/auth/permission/grant/namespace/extension-disabled/MCP transport/executor/policy/output-schema failures must remain fatal.
@@ -102,7 +107,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 ## Acceptance Criteria
 
 - A user can manage portfolio records, templates, and reports without provider availability.
-- A user can author Workflow Packages, configure Model Connections, select server-declared Tools metadata during package authoring, launch saved package runs from `/workflow-packages/:packageId/run`, inspect Runs, and review explicit-private-scope canonical Memory from the browser.
+- A user can author Workflow Packages, configure Model Connections, select server-declared Tools metadata during package authoring, launch saved package runs from `/workflow-packages/:packageId/run`, schedule recurring package runs, hard-delete Scheduled Tasks, inspect Runs, and review explicit-private-scope canonical Memory from the browser.
 - The Digital Oracle researcher demo path is `demo/digital_oracle_researcher.yaml`; it must grant the three phase-1 finance tools through package-local capability profiles and keep methodology in `systemPrompt`, not a global skill.
 - Package HTTP operations can be authored, bound to package-local secrets, launched, and inspected without exposing raw secret values.
 - Run detail exposes backend-owned progress, queue state, agent invocations, operation invocations, package provenance, extension dependencies, memory artifacts, memory events, typed failure taxonomy, and bounded retry evidence.

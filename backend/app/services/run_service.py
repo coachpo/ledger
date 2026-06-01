@@ -338,6 +338,29 @@ class RunService:
             self.session.rollback()
             raise
 
+    def delete_runs_for_schedule(
+        self,
+        *,
+        schedule_id: int,
+        fire_ids: list[int],
+        commit: bool = True,
+    ) -> None:
+        runs = self.run_repository.list_directly_owned_by_schedule(
+            schedule_id=schedule_id,
+            fire_ids=fire_ids,
+        )
+        if not runs:
+            return
+        if not commit:
+            self._delete_run_rows(runs)
+            return
+        try:
+            self._delete_run_rows(runs)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+
     def _delete_run_rows(self, runs: list[Run]) -> None:
         run_ids = [run.id for run in runs]
         _ = self.report_repository.delete_agent_memory_by_run_ids(run_ids)

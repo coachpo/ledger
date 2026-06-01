@@ -44,7 +44,7 @@ src/lib/api/
 - Route network calls through `request()` or `requestPlatform()` from `api-client.ts`.
 - Keep upload/download specifics here: multipart report upload, CSV preview/commit, and markdown download URLs should not leak into hooks or pages.
 - Keep preserved `/api/v1` resource paths and current unversioned platform `/api/*` paths separate in the module layer.
-- `schedules.ts` owns `/api/schedules` path helpers for list/detail/create/update/archive, fire history, unsaved/saved preview, and run-now; do not split run-now into run helpers.
+- `schedules.ts` owns `/api/schedules` path helpers for list/detail/create/update/delete, fire history, unsaved/saved preview, and run-now; do not split run-now into run helpers.
 - `memory.ts` uses POST reads because every list/detail/revision/event call must carry an explicit package access context; do not turn it into a global browser search helper.
 - Match backend casing exactly; request/response types come from `../types/*` rather than inline object literals.
 

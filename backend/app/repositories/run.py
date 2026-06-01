@@ -214,6 +214,19 @@ class RunRepository(BaseRepository[Run]):
         )
         return self._list(statement)
 
+    def list_directly_owned_by_schedule(
+        self,
+        *,
+        schedule_id: int,
+        fire_ids: Iterable[int],
+    ) -> list[Run]:
+        resolved_fire_ids = list(dict.fromkeys(fire_ids))
+        ownership_filters: list[ColumnElement[bool]] = [self.model.schedule_id == schedule_id]
+        if resolved_fire_ids:
+            ownership_filters.append(self.model.schedule_fire_id.in_(resolved_fire_ids))
+        statement = select(self.model).where(or_(*ownership_filters)).order_by(self.model.id.asc())
+        return self._list(statement)
+
     def _target_owner_filter(
         self,
         *,

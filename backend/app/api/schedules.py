@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.dependencies import get_workflow_package_schedule_service
 from app.schemas.schedule import (
@@ -68,71 +68,72 @@ def preview_unsaved_schedule(
     return service.preview_unsaved_schedule(payload)
 
 
-@router.get("/{schedule_id}", response_model=ScheduleRead)
+@router.get("/{scheduleId}", response_model=ScheduleRead)
 def get_schedule(
-    schedule_id: int,
+    scheduleId: int,
     service: Annotated[
         WorkflowPackageScheduleService,
         Depends(get_workflow_package_schedule_service),
     ],
 ) -> ScheduleRead:
-    return service.get_schedule(schedule_id)
+    return service.get_schedule(scheduleId)
 
 
-@router.patch("/{schedule_id}", response_model=ScheduleRead)
+@router.patch("/{scheduleId}", response_model=ScheduleRead)
 def update_schedule(
-    schedule_id: int,
+    scheduleId: int,
     payload: ScheduleUpdate,
     service: Annotated[
         WorkflowPackageScheduleService,
         Depends(get_workflow_package_schedule_service),
     ],
 ) -> ScheduleRead:
-    return service.update_schedule(schedule_id, payload)
+    return service.update_schedule(scheduleId, payload)
 
 
-@router.post("/{schedule_id}/archive", response_model=ScheduleRead)
-def archive_schedule(
-    schedule_id: int,
+@router.delete("/{scheduleId}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_schedule(
+    scheduleId: int,
     service: Annotated[
         WorkflowPackageScheduleService,
         Depends(get_workflow_package_schedule_service),
     ],
-) -> ScheduleRead:
-    return service.archive_schedule(schedule_id)
+) -> Response:
+    service.delete_schedule(scheduleId)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/{schedule_id}/preview", response_model=SchedulePreviewRead)
+@router.post("/{scheduleId}/preview", response_model=SchedulePreviewRead)
 def preview_schedule(
-    schedule_id: int,
+    scheduleId: int,
     service: Annotated[
         WorkflowPackageScheduleService,
         Depends(get_workflow_package_schedule_service),
     ],
     payload: SchedulePreviewRequest | None = None,
 ) -> SchedulePreviewRead:
-    return service.preview_schedule(schedule_id, payload)
+    return service.preview_schedule(scheduleId, payload)
 
 
 @router.post(
-    "/{schedule_id}/run-now",
+    "/{scheduleId}/run-now",
     response_model=ScheduleRunNowRead,
     status_code=status.HTTP_201_CREATED,
 )
 def run_schedule_now(
-    schedule_id: int,
+    scheduleId: int,
     payload: ScheduleRunNowRequest,
     service: Annotated[
         WorkflowPackageScheduleService,
         Depends(get_workflow_package_schedule_service),
     ],
 ) -> ScheduleRunNowRead:
-    return service.run_schedule_now(schedule_id, payload)
+    return service.run_schedule_now(scheduleId, payload)
 
 
-@router.get("/{schedule_id}/fires", response_model=ScheduleFireListRead)
+@router.get("/{scheduleId}/fires", response_model=ScheduleFireListRead)
 def list_schedule_fires(
-    schedule_id: int,
+    scheduleId: int,
     service: Annotated[
         WorkflowPackageScheduleService,
         Depends(get_workflow_package_schedule_service),
@@ -140,4 +141,4 @@ def list_schedule_fires(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ScheduleFireListRead:
-    return service.list_fire_history(schedule_id, limit=limit, offset=offset)
+    return service.list_fire_history(scheduleId, limit=limit, offset=offset)

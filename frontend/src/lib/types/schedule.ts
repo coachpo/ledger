@@ -1,7 +1,7 @@
 import type { UnknownRecord } from "./common";
 import type { RunStatus } from "./run";
 
-export type ScheduleStatus = "enabled" | "paused" | "archived";
+export type ScheduleStatus = "enabled" | "paused";
 export type ScheduleWriteStatus = "enabled" | "paused";
 export type ScheduleFireStatus = "pending" | "queued" | "skipped" | "failed";
 export type ScheduleFireReason = "scheduled" | "manual";
@@ -91,7 +91,6 @@ export interface ScheduleRead {
   latestFireId: number | null;
   latestRunId: number | null;
   latestStatus: ScheduleFireStatus | null;
-  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

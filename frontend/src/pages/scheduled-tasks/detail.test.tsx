@@ -19,7 +19,7 @@ import type {
 import { ScheduledTaskDetailPage } from "./detail";
 
 const {
-  archiveScheduleMock,
+  deleteScheduleMock,
   createRuntimeInputPersonalEntryMock,
   deleteRuntimeInputPersonalEntryMock,
   previewScheduledInputsMock,
@@ -29,9 +29,9 @@ const {
   toastWarningMock,
   updateRuntimeInputPersonalEntryMock,
   updateScheduleMock,
-  useArchiveScheduledTaskMock,
   useCreateRuntimeInputPersonalEntryMock,
   useDeleteRuntimeInputPersonalEntryMock,
+  useDeleteScheduledTaskMock,
   usePreviewUnsavedScheduledTaskMock,
   useRunScheduledTaskNowMock,
   useScheduledTaskFiresMock,
@@ -40,7 +40,7 @@ const {
   useUpdateScheduledTaskMock,
   useWorkflowPackageRuntimeInputRegistryMock,
 } = vi.hoisted(() => ({
-  archiveScheduleMock: vi.fn(),
+  deleteScheduleMock: vi.fn(),
   createRuntimeInputPersonalEntryMock: vi.fn(),
   deleteRuntimeInputPersonalEntryMock: vi.fn(),
   previewScheduledInputsMock: vi.fn(),
@@ -50,9 +50,9 @@ const {
   toastWarningMock: vi.fn(),
   updateRuntimeInputPersonalEntryMock: vi.fn(),
   updateScheduleMock: vi.fn(),
-  useArchiveScheduledTaskMock: vi.fn(),
   useCreateRuntimeInputPersonalEntryMock: vi.fn(),
   useDeleteRuntimeInputPersonalEntryMock: vi.fn(),
+  useDeleteScheduledTaskMock: vi.fn(),
   usePreviewUnsavedScheduledTaskMock: vi.fn(),
   useRunScheduledTaskNowMock: vi.fn(),
   useScheduledTaskFiresMock: vi.fn(),
@@ -71,7 +71,7 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/hooks/use-scheduled-tasks", () => ({
-  useArchiveScheduledTask: () => useArchiveScheduledTaskMock(),
+  useDeleteScheduledTask: () => useDeleteScheduledTaskMock(),
   usePreviewUnsavedScheduledTask: () => usePreviewUnsavedScheduledTaskMock(),
   useRunScheduledTaskNow: () => useRunScheduledTaskNowMock(),
   useScheduledTask: (...args: unknown[]) => useScheduledTaskMock(...args),
@@ -101,7 +101,6 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
 
 function scheduleFixture(overrides: Partial<ScheduleRead> = {}): ScheduleRead {
   return {
-    archivedAt: null,
     createdAt: "2026-05-01T10:00:00Z",
     description: "Runs before the opening bell",
     endsAt: null,
@@ -276,10 +275,15 @@ function RunDetailRouteProbe() {
   return <div data-testid="run-detail-route">Run detail {runId}</div>;
 }
 
+function ScheduledTasksRouteProbe() {
+  return <div data-testid="scheduled-tasks-route">Scheduled tasks route</div>;
+}
+
 function renderDetailPage(initialEntry = "/scheduled-tasks/44") {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
+        <Route path="/scheduled-tasks" element={<ScheduledTasksRouteProbe />} />
         <Route path="/scheduled-tasks/:scheduleId" element={<ScheduledTaskDetailPage />} />
         <Route path="/runs/:runId" element={<RunDetailRouteProbe />} />
       </Routes>
@@ -296,7 +300,7 @@ async function chooseSelectOption(label: string, optionName: RegExp | string) {
 
 describe("ScheduledTaskDetailPage", () => {
   beforeEach(() => {
-    archiveScheduleMock.mockReset();
+    deleteScheduleMock.mockReset();
     createRuntimeInputPersonalEntryMock.mockReset();
     deleteRuntimeInputPersonalEntryMock.mockReset();
     previewScheduledInputsMock.mockReset();
@@ -306,9 +310,9 @@ describe("ScheduledTaskDetailPage", () => {
     toastWarningMock.mockReset();
     updateRuntimeInputPersonalEntryMock.mockReset();
     updateScheduleMock.mockReset();
-    useArchiveScheduledTaskMock.mockReset();
     useCreateRuntimeInputPersonalEntryMock.mockReset();
     useDeleteRuntimeInputPersonalEntryMock.mockReset();
+    useDeleteScheduledTaskMock.mockReset();
     usePreviewUnsavedScheduledTaskMock.mockReset();
     useRunScheduledTaskNowMock.mockReset();
     useScheduledTaskFiresMock.mockReset();
@@ -317,16 +321,16 @@ describe("ScheduledTaskDetailPage", () => {
     useUpdateScheduledTaskMock.mockReset();
     useWorkflowPackageRuntimeInputRegistryMock.mockReset();
 
-    archiveScheduleMock.mockResolvedValue(scheduleFixture({ status: "archived" }));
+    deleteScheduleMock.mockResolvedValue(undefined);
     createRuntimeInputPersonalEntryMock.mockResolvedValue(runtimeInputEntry({ id: 30, name: "Saved preset", slot: "personal" }));
     deleteRuntimeInputPersonalEntryMock.mockResolvedValue(undefined);
     previewScheduledInputsMock.mockResolvedValue(schedulePreviewResult());
     runNowMock.mockResolvedValue(runNowResult());
     updateRuntimeInputPersonalEntryMock.mockResolvedValue(runtimeInputEntry({ id: 7, name: "Updated preset", slot: "personal" }));
     updateScheduleMock.mockResolvedValue(scheduleFixture({ status: "paused" }));
-    useArchiveScheduledTaskMock.mockReturnValue({
+    useDeleteScheduledTaskMock.mockReturnValue({
       isPending: false,
-      mutateAsync: archiveScheduleMock,
+      mutateAsync: deleteScheduleMock,
     });
     useRunScheduledTaskNowMock.mockReturnValue({
       isPending: false,
@@ -494,8 +498,8 @@ describe("ScheduledTaskDetailPage", () => {
       "href",
       "/scheduled-tasks/new?duplicateFrom=44",
     );
-    fireEvent.click(await screen.findByText("Archive"));
-    expect(screen.getByRole("alertdialog")).toHaveTextContent("Archive scheduled task");
+    fireEvent.click(await screen.findByText("Delete"));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("Delete scheduled task");
   });
 
   it("keeps unsaved schedule edits when switching top-level tabs", async () => {
@@ -538,60 +542,27 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByText("Inputs use schema draft source")).toBeVisible();
   });
 
-  it("renders archived schedules as read-only while preserving duplicate and runs affordances", async () => {
-    useScheduledTaskMock.mockReturnValue({
-      data: scheduleFixture({
-        archivedAt: "2026-05-29T10:00:00Z",
-        status: "archived",
-      }),
-      error: null,
-      isError: false,
-      isPending: false,
-    });
-
+  it("deletes the scheduled task and redirects back to the scheduled-tasks list", async () => {
     renderDetailPage();
 
     const header = screen.getByTestId("scheduled-task-detail-header");
-    expect(within(header).getByTestId("schedule-run-now")).toBeDisabled();
-    expect(within(header).getByRole("button", { name: "Enable" })).toBeDisabled();
-    expect(screen.getByTestId("scheduled-task-detail-health-summary")).toHaveTextContent("Schedule archived");
-
     fireEvent.pointerDown(within(header).getByRole("button", { name: "More actions" }));
-    expect((await screen.findByText(/duplicate/i)).closest("a")).toHaveAttribute(
-      "href",
-      "/scheduled-tasks/new?duplicateFrom=44",
-    );
-    expect(await screen.findByText("Archive")).toBeDisabled();
+    fireEvent.click(await screen.findByText("Delete"));
 
-    fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
-    expect(screen.getByLabelText("Schedule enabled")).toBeDisabled();
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("Delete scheduled task");
+    fireEvent.click(screen.getByRole("button", { name: "Delete scheduled task" }));
 
-    fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
-    expect(screen.getByText("Start a custom draft from the workflow defaults.")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Customize inputs" })).toBeDisabled();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
-    expect(screen.getAllByRole("link", { name: "Open run #2104" })[0]).toHaveAttribute("href", "/runs/2104");
-  });
-
-  it("keeps run-now disabled for archived schedules even when runs are empty", () => {
-    useScheduledTaskMock.mockReturnValue({
-      data: scheduleFixture({
-        archivedAt: "2026-05-29T10:00:00Z",
-        latestFireId: null,
-        latestRunId: null,
-        status: "archived",
+    await waitFor(() =>
+      expect(deleteScheduleMock).toHaveBeenCalledWith({
+        latestRunId: 2104,
+        scheduleId: 44,
       }),
-      error: null,
-      isError: false,
-      isPending: false,
-    });
-    useScheduledTaskFiresMock.mockReturnValue(undefined);
-
-    renderDetailPage();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
-    expect(within(screen.getByTestId("scheduled-task-detail-tab-runs")).getByRole("button", { name: "Run now" })).toBeDisabled();
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("scheduled-tasks-route")).toHaveTextContent(
+        "Scheduled tasks route",
+      ),
+    );
   });
 
   it("renders fire history panels safely when the fire-history hook state is missing", () => {

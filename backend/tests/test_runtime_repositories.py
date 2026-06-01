@@ -1538,6 +1538,10 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "input",
             "sourceRunId",
             "lineageRootRunId",
+            "scheduleId",
+            "scheduleFireId",
+            "scheduledFor",
+            "scheduleReason",
             "replayStepIndex",
             "resumeStepIndex",
             "finalOutput",
@@ -1772,13 +1776,6 @@ def test_due_schedule_selection_is_lock_safe_and_deterministic(
             status="paused",
             next_fire_at=datetime(2026, 6, 1, 9, 0, tzinfo=UTC_TZ),
         )
-        _ = _create_schedule_fixture(
-            repo,
-            package,
-            name="Archived due",
-            status="archived",
-            next_fire_at=datetime(2026, 6, 1, 8, 0, tzinfo=UTC_TZ),
-        )
         session.commit()
         first_due_id = first_due.id
         second_due_id = second_due.id
@@ -1846,6 +1843,95 @@ def test_schedule_fire_idempotency_inserts_one_row_per_schedule_fire_key(
         )
         assert existing_fire is not None
         assert existing_fire.id == first_fire.id
+
+
+def test_run_repository_lists_only_direct_schedule_owned_runs(
+    session_factory: sessionmaker[Session],
+) -> None:
+    scheduled_for = datetime(2026, 6, 1, 13, 0, tzinfo=UTC_TZ)
+    with session_factory() as session:
+        package = _seed_workflow_package_target(session, key_prefix="schedule_run_lookup")
+        schedule_repo = WorkflowPackageScheduleRepository(session)
+        fire_repo = WorkflowPackageScheduleFireRepository(session)
+        schedule = _create_schedule_fixture(
+            schedule_repo,
+            package,
+            name="Daily research",
+            next_fire_at=scheduled_for,
+        )
+        other_schedule = _create_schedule_fixture(
+            schedule_repo,
+            package,
+            name="Other research",
+            next_fire_at=scheduled_for,
+        )
+        session.flush()
+        fire = fire_repo.insert_idempotent(
+            schedule_id=schedule.id,
+            fire_key="daily-research-2026-06-01T13:00:00Z",
+            scheduled_for=scheduled_for,
+            rendered_parameters={"ticker": "NVDA"},
+        )
+        session.flush()
+
+        direct_by_schedule = _build_workflow_package_queue_run(
+            package,
+            queued_at=datetime(2026, 6, 1, 13, 0, tzinfo=UTC_TZ),
+        )
+        direct_by_schedule.schedule_id = schedule.id
+        direct_by_schedule.scheduled_for = scheduled_for
+        direct_by_schedule.schedule_reason = "scheduled"
+
+        direct_by_fire = _build_workflow_package_queue_run(
+            package,
+            queued_at=datetime(2026, 6, 1, 13, 1, tzinfo=UTC_TZ),
+        )
+        direct_by_fire.status = RunStatus.RUNNING.value
+        direct_by_fire.started_at = datetime(2026, 6, 1, 13, 1, tzinfo=UTC_TZ)
+        direct_by_fire.schedule_fire_id = fire.id
+        direct_by_fire.scheduled_for = scheduled_for
+        direct_by_fire.schedule_reason = "manual"
+
+        other_schedule_run = _build_workflow_package_queue_run(
+            package,
+            queued_at=datetime(2026, 6, 1, 13, 2, tzinfo=UTC_TZ),
+        )
+        other_schedule_run.schedule_id = other_schedule.id
+        other_schedule_run.scheduled_for = scheduled_for
+        other_schedule_run.schedule_reason = "scheduled"
+
+        session.add_all([direct_by_schedule, direct_by_fire, other_schedule_run])
+        session.flush()
+
+        rerun_descendant = _build_workflow_package_queue_run(
+            package,
+            queued_at=datetime(2026, 6, 1, 13, 3, tzinfo=UTC_TZ),
+        )
+        rerun_descendant.source_run_id = direct_by_schedule.id
+        rerun_descendant.lineage_root_run_id = direct_by_schedule.id
+
+        fork_descendant = _build_workflow_package_queue_run(
+            package,
+            queued_at=datetime(2026, 6, 1, 13, 4, tzinfo=UTC_TZ),
+        )
+        fork_descendant.source_run_id = direct_by_fire.id
+        fork_descendant.lineage_root_run_id = direct_by_fire.id
+        fork_descendant.forked_from_step_index = 1
+        fork_descendant.resume_step_index = 1
+
+        session.add_all([rerun_descendant, fork_descendant])
+        session.commit()
+        schedule_id = schedule.id
+        fire_id = fire.id
+        direct_by_schedule_id = direct_by_schedule.id
+        direct_by_fire_id = direct_by_fire.id
+
+    with session_factory() as session:
+        selected = RunRepository(session).list_directly_owned_by_schedule(
+            schedule_id=schedule_id,
+            fire_ids=[fire_id],
+        )
+        assert [run.id for run in selected] == [direct_by_schedule_id, direct_by_fire_id]
 
 
 def test_run_repository_claim_next_queued_serializes_same_package_scope(

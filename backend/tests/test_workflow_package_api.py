@@ -383,7 +383,6 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
     assert cast(list[dict[str, Any]], latest_spec["mcpServers"]) == []
 
 
-
 def test_validate_manifest_reports_diagnostics_without_persisting(
     client: TestClient,
     session_factory: sessionmaker[Session],

@@ -23,7 +23,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Report flows | `use-reports.ts` | list/detail, compile with runtime inputs, upload, update, delete |
 | Extension state flows | `use-extensions.ts` | `/api/extensions` list/toggle state, finance cache invalidation, route/tool visibility support |
 | Workflow Package flows | `use-workflow-packages.ts` | package list/detail, manifest CRUD, import, export, secret bindings, runtime-input registry, validation, preflight, launch, and extension-filtered tool reads |
-| Scheduled Task flows | `use-scheduled-tasks.ts` | schedule list/detail/fire queries plus create/update/archive/preview/run-now mutations and linked-run invalidation |
+| Scheduled Task flows | `use-scheduled-tasks.ts` | schedule list/detail/fire queries plus create/update/delete/preview/run-now mutations and linked-run invalidation |
 | Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, delete, connection-test helpers |
 | Memory flows | `use-memory.ts` | explicit-scope memory list/detail/revision/event reads with caller-owned access-context gating |
 | Run flows | `use-runs.ts` | run list/detail reads with package provenance, backend progress/queue payloads, active queued/running polling, plus rerun/fork drafts and create mutations |
@@ -41,7 +41,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Report hooks invalidate `queryKeys.reports.list()` for writes and additionally invalidate slug-scoped detail keys after content edits so the detail route refreshes without a redirect.
 - `useTools()` composes `/api/tools` with `useExtensions()` and returns extension-filtered read-only tool metadata for package capability-profile pickers.
 - Package-first platform hooks invalidate `queryKeys.platform.*` namespaces. Package mutations also refresh launch, preflight, manifest/detail, and runtime-input-registry scopes so saved-input and run-creation surfaces converge after edits/imports/deletes.
-- Scheduled Task hooks use `queryKeys.platform.schedules.*`; create/update/archive/run-now mutations refresh schedule lists/details/fire history and linked run keys so fire history and run detail converge after materialization.
+- Scheduled Task hooks use `queryKeys.platform.schedules.*`; create/update/delete/run-now mutations refresh schedule lists/details/fire history and linked run keys so fire history and run detail converge after materialization or deletion.
 - Memory hooks read through `queryKeys.platform.memory.*`; pages must pass explicit access context payloads and use `enabled` to avoid calling `/api/memory` before a package context and private scope exist.
 - Model-connection connection tests invalidate persisted last-test metadata after save/test flows.
 - `useToggleExtension()` invalidates extension state plus finance workspace caches so routes, nav, and package tool filters converge after enable/disable changes.

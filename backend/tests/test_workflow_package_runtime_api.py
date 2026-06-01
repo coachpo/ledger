@@ -3036,7 +3036,9 @@ def _schedule_api_payload(package_id: int, *, name: str = "Daily market brief") 
 
 def test_schedule_api_schedule_crud_contract_package_first_and_camelcase(
     client: TestClient,
+    session_factory: sessionmaker[Session],
 ) -> None:
+    _seed_model_connection(session_factory)
     created_package = _create_package(client, package_key="schedule_api_crud_package")
     package_id = cast(int, created_package["id"])
 
@@ -3092,30 +3094,54 @@ def test_schedule_api_schedule_crud_contract_package_first_and_camelcase(
     assert patched_body["misfirePolicy"] == "catchUpOne"
     assert patched_body["misfireGraceSeconds"] == 86400
 
-    archived = client.post(f"/api/schedules/{schedule_id}/archive")
-    assert archived.status_code == 200, archived.json()
-    archived_body = archived.json()
-    assert archived_body["status"] == "archived"
-    assert archived_body["archivedAt"] is not None
-    assert archived_body["nextFireAt"] is None
-
-    archived_update = client.patch(f"/api/schedules/{schedule_id}", json={"name": "Nope"})
-    assert archived_update.status_code == 400, archived_update.json()
-    assert archived_update.json()["code"] == "schedule_archived"
-
-    archived_preview = client.post(f"/api/schedules/{schedule_id}/preview", json={})
-    assert archived_preview.status_code == 400, archived_preview.json()
-    assert archived_preview.json()["code"] == "schedule_archived"
-
-    archived_run_now = client.post(
+    run_now = client.post(
         f"/api/schedules/{schedule_id}/run-now",
         json={
-            "idempotencyKey": "archived-reject",
+            "idempotencyKey": "delete-contract-manual-fire",
             "scheduledFor": "2026-06-01T13:00:00Z",
         },
     )
-    assert archived_run_now.status_code == 400, archived_run_now.json()
-    assert archived_run_now.json()["code"] == "schedule_archived"
+    assert run_now.status_code == 201, run_now.json()
+    run_now_body = cast(dict[str, Any], run_now.json())
+    fire_id = int(cast(dict[str, Any], run_now_body["fire"])["id"])
+    run_id = int(cast(dict[str, Any], run_now_body["run"])["id"])
+
+    fire_history_before_delete = client.get(
+        f"/api/schedules/{schedule_id}/fires",
+        params={"limit": 10},
+    )
+    assert fire_history_before_delete.status_code == 200, fire_history_before_delete.json()
+    assert fire_history_before_delete.json()["items"][0]["id"] == fire_id
+
+    run_detail_before_delete = client.get(f"/api/runs/{run_id}")
+    assert run_detail_before_delete.status_code == 200, run_detail_before_delete.json()
+    assert run_detail_before_delete.json()["scheduleId"] == schedule_id
+
+    deleted = client.delete(f"/api/schedules/{schedule_id}")
+    assert deleted.status_code == 204, deleted.text
+    assert deleted.content == b""
+
+    repeated_delete = client.delete(f"/api/schedules/{schedule_id}")
+    assert repeated_delete.status_code == 404, repeated_delete.json()
+
+    deleted_fire_history = client.get(
+        f"/api/schedules/{schedule_id}/fires",
+        params={"limit": 10},
+    )
+    assert deleted_fire_history.status_code == 404, deleted_fire_history.json()
+
+    linked_run_detail = client.get(f"/api/runs/{run_id}")
+    assert linked_run_detail.status_code == 404, linked_run_detail.json()
+
+
+def test_schedule_api_list_rejects_archived_status_filter(client: TestClient) -> None:
+    archived_filter = client.get("/api/schedules", params={"status": "archived"})
+
+    assert archived_filter.status_code == 422, archived_filter.json()
+    archived_filter_body = cast(dict[str, Any], archived_filter.json())
+    assert archived_filter_body["code"] == "validation_error"
+    assert archived_filter_body["message"] == "Request validation failed"
+    assert archived_filter_body["details"][0]["field"] == "status"
 
 
 @pytest.mark.parametrize(

@@ -30,7 +30,6 @@ class WorkflowPackageScheduleRepository(BaseRepository[WorkflowPackageSchedule])
         package_key: str | None = None,
         workflow_key: str | None = None,
         status: str | None = None,
-        statuses: Sequence[str] | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[WorkflowPackageSchedule]:
@@ -46,7 +45,6 @@ class WorkflowPackageScheduleRepository(BaseRepository[WorkflowPackageSchedule])
             package_key=package_key,
             workflow_key=workflow_key,
             status=status,
-            statuses=statuses,
         )
         statement = statement.order_by(
             self.model.next_fire_at.asc().nulls_last(),
@@ -65,7 +63,6 @@ class WorkflowPackageScheduleRepository(BaseRepository[WorkflowPackageSchedule])
         package_key: str | None = None,
         workflow_key: str | None = None,
         status: str | None = None,
-        statuses: Sequence[str] | None = None,
     ) -> int:
         statement = select(func.count(self.model.id))
         if package_key is not None:
@@ -79,7 +76,6 @@ class WorkflowPackageScheduleRepository(BaseRepository[WorkflowPackageSchedule])
             package_key=package_key,
             workflow_key=workflow_key,
             status=status,
-            statuses=statuses,
         )
         return int(self.session.scalar(statement) or 0)
 
@@ -158,18 +154,6 @@ class WorkflowPackageScheduleRepository(BaseRepository[WorkflowPackageSchedule])
             setattr(schedule, field_name, value)
         return self.add(schedule)
 
-    def archive_schedule(
-        self,
-        schedule: WorkflowPackageSchedule,
-        *,
-        archived_at: datetime | None = None,
-    ) -> WorkflowPackageSchedule:
-        archived = archived_at or utcnow()
-        schedule.status = "archived"
-        schedule.archived_at = archived
-        schedule.next_fire_at = None
-        return self.add(schedule)
-
     def _apply_schedule_filters(
         self,
         statement: Any,
@@ -178,7 +162,6 @@ class WorkflowPackageScheduleRepository(BaseRepository[WorkflowPackageSchedule])
         package_key: str | None,
         workflow_key: str | None,
         status: str | None,
-        statuses: Sequence[str] | None,
     ) -> Any:
         if package_id is not None:
             statement = statement.where(self.model.package_id == package_id)
@@ -188,13 +171,19 @@ class WorkflowPackageScheduleRepository(BaseRepository[WorkflowPackageSchedule])
             statement = statement.where(self.model.workflow_key == workflow_key)
         if status is not None:
             statement = statement.where(self.model.status == status)
-        elif statuses is not None:
-            statement = statement.where(self.model.status.in_(tuple(statuses)))
         return statement
 
 
 class WorkflowPackageScheduleFireRepository(BaseRepository[WorkflowPackageScheduleFire]):
     model = WorkflowPackageScheduleFire
+
+    def list_ids_for_schedule(self, schedule_id: int) -> list[int]:
+        statement = (
+            select(self.model.id)
+            .where(self.model.schedule_id == schedule_id)
+            .order_by(self.model.id.asc())
+        )
+        return list(self.session.scalars(statement))
 
     def list_for_schedule(
         self,
