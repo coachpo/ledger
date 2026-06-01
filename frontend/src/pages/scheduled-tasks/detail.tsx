@@ -2317,7 +2317,7 @@ function ScheduleTabs({
 
   return (
     <Tabs className="min-h-0 min-w-0 flex-1 gap-3" value={activeTab} onValueChange={(value) => setActiveTab(value as "overview" | "schedule" | "inputs" | "runs")}>
-      <TabsList aria-label="Scheduled task detail sections" className="h-8 max-w-full justify-start overflow-x-auto">
+      <TabsList aria-label="Scheduled task detail sections" className="h-8 max-w-full shrink-0 justify-start overflow-x-auto">
         <TabsTrigger value="overview">Overview</TabsTrigger>
         <TabsTrigger value="schedule">Schedule</TabsTrigger>
         <TabsTrigger value="inputs">Inputs</TabsTrigger>
@@ -2369,7 +2369,7 @@ function ScheduleTabs({
         </SummaryCard>
       </TabsContent>
       <TabsContent
-        className="m-0 min-w-0 data-[state=inactive]:hidden"
+        className="m-0 min-h-0 min-w-0 overflow-auto data-[state=inactive]:hidden"
         data-testid="scheduled-task-detail-tab-runs"
         forceMount
         value="runs"
