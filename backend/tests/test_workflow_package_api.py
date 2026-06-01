@@ -129,7 +129,12 @@ def _assert_manifest_payload(
     assert mcp_servers == []
 
     workflows = cast(list[dict[str, object]], spec["workflows"])
-    assert workflows and workflows[0]["key"] == "advisory_research"
+    assert [workflow["key"] for workflow in workflows] == [
+        "advisory_research",
+        "market_research",
+        "news_research",
+        "fundamentals_research",
+    ]
 
     forbidden_fragments = (
         "secretPayload",
@@ -467,6 +472,51 @@ def test_launch_metadata_and_create_contract_reject_removed_version(
 
     missing_package = client.get(f"/api/workflow-packages/{created['id']}")
     assert missing_package.status_code == 404, missing_package.json()
+
+
+def test_launch_and_preflight_accept_secondary_tradingagents_workflow_key(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package(client)
+    package_id = cast(int, created["id"])
+
+    launch = client.get(
+        f"/api/workflow-packages/{package_id}/launch",
+        params={"workflowKey": "news_research"},
+    )
+    assert launch.status_code == 200, launch.json()
+    launch_body = cast(dict[str, object], launch.json())
+    assert launch_body["workflowKey"] == "news_research"
+    assert launch_body["name"] == "News Research"
+    assert launch_body["ready"] is True
+    input_schema = cast(dict[str, object], launch_body["inputSchema"])
+    assert input_schema["title"] == "TradingAgents news research inputs"
+
+    preflight = client.post(
+        f"/api/workflow-packages/{package_id}/preflight",
+        params={"workflowKey": "news_research"},
+    )
+    assert preflight.status_code == 200, preflight.json()
+    preflight_body = cast(dict[str, object], preflight.json())
+    assert preflight_body["workflowKey"] == "news_research"
+    assert preflight_body["name"] == "News Research"
+    assert preflight_body["ready"] is True
+
+    created_launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={
+            "workflowKey": "news_research",
+            "parameters": {
+                "ticker": "AAPL",
+                "asOfDate": "2026-05-08",
+                "horizonDays": 30,
+            },
+        },
+    )
+    assert created_launch.status_code == 201, created_launch.json()
+    assert created_launch.json()["workflowKey"] == "news_research"
 
 
 def test_launch_blocks_failed_model_connection(
