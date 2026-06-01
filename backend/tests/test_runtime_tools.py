@@ -816,9 +816,9 @@ def _assert_recursive_strict_schema(schema: object, *, path: str) -> None:
         assert isinstance(required, list), f"{path}.required must be a list"
         required_names = [cast(str, value) for value in required]
         property_names = [cast(str, key) for key in property_mapping]
-        assert payload.get("additionalProperties") is False, (
-            f"{path}.additionalProperties must be false"
-        )
+        assert (
+            payload.get("additionalProperties") is False
+        ), f"{path}.additionalProperties must be false"
         assert set(required_names) == set(property_names), f"{path}.required must match properties"
         for key, value in property_mapping.items():
             _assert_recursive_strict_schema(value, path=f"{path}.properties.{key}")
