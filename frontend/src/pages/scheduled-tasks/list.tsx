@@ -992,6 +992,7 @@ export function ScheduledTasksListPage() {
       }}
       testId="scheduled-tasks-list-page"
       toolbar={{
+        className: "[&>div:first-child]:items-start",
         filters: (
           <ScheduleFilters
             packageItems={packageItems}
