@@ -307,8 +307,6 @@ describe("ModelConnectionsListPage", () => {
     const expandedDetails = screen.getByLabelText(
       "Expanded details for Primary Compatible",
     );
-    expect(within(expandedDetails).getByText("Connection detail")).toBeVisible();
-    expect(within(expandedDetails).getByText("Production traffic")).toBeVisible();
     expect(expandedDetails.querySelector('[data-slot="badge"]')).toBeNull();
     expect(within(expandedDetails).getByText("Capability support")).toBeVisible();
     expect(

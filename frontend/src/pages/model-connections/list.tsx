@@ -344,18 +344,24 @@ function CompactDetailGroup({
 }
 
 function ModelConnectionDetailSections({
+  ariaLabel,
   className,
   connection,
+  role,
 }: {
+  ariaLabel?: string;
   className?: string;
   connection: ModelConnectionListItemRead;
+  role?: "group";
 }) {
   return (
     <div
+      aria-label={ariaLabel}
       className={cn(
         "grid min-w-0 gap-x-6 gap-y-2 md:grid-cols-2 xl:grid-cols-4",
         className,
       )}
+      role={role}
     >
       <CompactDetailGroup title="Endpoint">
         <CompactDetailField label="Profile">
@@ -431,24 +437,12 @@ function ModelConnectionDetailsRow({
   return (
     <TableRow className="bg-muted/20 hover:bg-muted/20" id={detailsId}>
       <TableCell colSpan={6} className="whitespace-normal px-3 py-2">
-        <div
-          aria-label={`Expanded details for ${connection.name}`}
-          className="flex min-w-0 flex-col gap-2 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+        <ModelConnectionDetailSections
+          ariaLabel={`Expanded details for ${connection.name}`}
+          className="rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+          connection={connection}
           role="group"
-        >
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-foreground">
-              Connection detail
-            </p>
-            <p className="mt-0.5 break-words leading-5">
-              {connection.description || "No description provided."}
-            </p>
-          </div>
-          <ModelConnectionDetailSections
-            className="border-t pt-2"
-            connection={connection}
-          />
-        </div>
+        />
       </TableCell>
     </TableRow>
   );
