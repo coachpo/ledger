@@ -1,7 +1,17 @@
+import type { ComponentType } from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { ResourceStatusStrip } from "./resource-status-strip";
+
+async function loadResourceStatusBadge() {
+  const modulePath = "./resource-status-strip";
+  const module = await import(modulePath);
+  return module.ResourceStatusBadge as ComponentType<{
+    label: string;
+    tone?: "neutral" | "success" | "warning" | "danger" | "muted";
+  }>;
+}
 
 describe("ResourceStatusStrip", () => {
   it("renders status items with deterministic tone badges", () => {
@@ -41,5 +51,16 @@ describe("ResourceStatusStrip", () => {
     render(<ResourceStatusStrip emptyLabel="No runtime status" items={[]} />);
 
     expect(screen.getByText("No runtime status")).toHaveClass("border", "bg-muted/30", "text-muted-foreground");
+  });
+
+  it("exports a reusable status badge helper for shared callers", async () => {
+    const ResourceStatusBadge = await loadResourceStatusBadge();
+
+    render(<ResourceStatusBadge label="Queued" tone="warning" />);
+
+    expect(screen.getByText("Queued").closest("[data-slot='badge']")).toHaveAttribute(
+      "data-tone",
+      "warning",
+    );
   });
 });
