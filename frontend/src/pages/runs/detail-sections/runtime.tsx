@@ -117,6 +117,8 @@ type RuntimeStrategySummary = {
 type RuntimeCapabilityCounts = Record<ModelConnectionCapabilityStatus, number>;
 
 const RUNTIME_AUDIT_STRATEGY_LIMIT = 20;
+const RUNTIME_DEFERRED_SECTION_CLASS_NAME =
+  "[content-visibility:auto] [contain-intrinsic-size:auto_960px]";
 
 function formatRuntimeStrategyValue(value: unknown): string {
   if (value === true) {
@@ -358,6 +360,7 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
       </RunDetailContentSection>
 
       <RunDetailContentSection
+        className={RUNTIME_DEFERRED_SECTION_CLASS_NAME}
         description="Adapter-selected strategy metadata is repeated invocation evidence, so it stays in rows."
         sectionId="selected-strategies"
         testId="runs-detail-section-selected-strategies"
@@ -429,6 +432,7 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
       </RunDetailContentSection>
 
       <RunDetailContentSection
+        className={RUNTIME_DEFERRED_SECTION_CLASS_NAME}
         description="Capability probes are row-first so repeated provider evidence stays comparable."
         sectionId="capability-matrix"
         testId="runs-detail-section-capability-matrix"
@@ -671,6 +675,7 @@ export function RunTokensWorkspace({ run }: { run: RunRead }) {
       </RunDetailContentSection>
 
       <RunDetailContentSection
+        className={RUNTIME_DEFERRED_SECTION_CLASS_NAME}
         description="Per-invocation token fields and provider usage metadata stay row-based for auditability."
         sectionId="invocation-usage-rows"
         testId="runs-detail-section-invocation-usage-rows"

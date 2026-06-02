@@ -149,6 +149,10 @@ const LINEAGE_INITIAL_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 const LINEAGE_FIT_VIEW_MAX_ZOOM = 1;
 const LINEAGE_MAX_ZOOM = 1.8;
 const LINEAGE_CANVAS_HEIGHT_CLASS = "h-80";
+const MEMORY_EVENT_GROUP_DEFERRED_SECTION_CLASS_NAME =
+  "[content-visibility:auto] [contain-intrinsic-size:auto_720px]";
+const MEMORY_COMPACT_ARTIFACT_DEFERRED_CLASS_NAME =
+  "[content-visibility:auto] [contain-intrinsic-size:auto_220px]";
 const MEMORY_EVENT_GROUPS: MemoryEventGroupDefinition[] = [
   {
     description: "Memory context used by this run.",
@@ -1866,6 +1870,7 @@ function MemoryEventGroupSection({
 }) {
   return (
     <RunDetailContentSection
+      className={MEMORY_EVENT_GROUP_DEFERRED_SECTION_CLASS_NAME}
       description={
         <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
           <span>{definition.description}</span>
@@ -1898,7 +1903,7 @@ function MemoryArtifactSummaryCard({
 }) {
   return (
     <div
-      className="rounded-md border bg-muted/20 p-3 text-sm"
+      className={`rounded-md border bg-muted/20 p-3 text-sm ${MEMORY_COMPACT_ARTIFACT_DEFERRED_CLASS_NAME}`}
       data-testid={`runs-memory-compact-artifact-${artifact.memoryId}`}
     >
       <div className="flex items-start justify-between gap-3">

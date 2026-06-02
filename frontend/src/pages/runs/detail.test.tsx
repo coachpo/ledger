@@ -244,6 +244,13 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 const NOW = "2026-04-20T10:00:00Z";
+const CONTENT_VISIBILITY_AUTO_CLASS = "[content-visibility:auto]";
+const RUNTIME_DEFERRED_SECTION_SIZE_CLASS =
+  "[contain-intrinsic-size:auto_960px]";
+const MEMORY_EVENT_GROUP_SIZE_CLASS =
+  "[contain-intrinsic-size:auto_720px]";
+const MEMORY_COMPACT_ARTIFACT_SIZE_CLASS =
+  "[contain-intrinsic-size:auto_220px]";
 
 function buildInvocation(
   overrides: Partial<RunAgentInvocationRead> = {},
@@ -2445,6 +2452,149 @@ describe("RunsDetailPage", () => {
     expect(
       screen.getByTestId("runs-runtime-strategy-1-1001"),
     ).toHaveTextContent(/Usage not recorded/i);
+  });
+
+  it("defers only the long runtime, usage, and memory evidence sections", () => {
+    const run = buildRun({
+      memoryArtifacts: [
+        {
+          memoryId: "memory_safe",
+          summary: "Compact safe memory",
+          status: "active",
+          createdAt: NOW,
+          provenance: {
+            agentKey: "portfolio_manager",
+            agentVersion: 3,
+            createdByType: "agent",
+            runId: 42,
+            slot: "decision",
+            workflowKey: "market_review",
+          },
+          sourceGraphMetadata: null,
+        },
+      ],
+      memoryEvents: [
+        buildMemoryEvent({
+          id: 9101,
+          eventType: "retrieved",
+          resultSnapshot: {
+            resultCount: 1,
+            snippets: [{ memoryId: "memory_safe", summary: "Safe memory" }],
+          },
+        }),
+      ],
+      packageProvenance: buildPackageProvenance({
+        resolvedModelConnections: [buildResolvedModelConnection({})],
+      }),
+      steps: [
+        buildStep({
+          invocations: [
+            buildInvocation({
+              graphMetadata: {
+                modelGateway: {
+                  selectedStrategies: {
+                    outputStrategy: "strictJsonSchema",
+                    parallelToolCalls: false,
+                    reasoningEffort: "medium",
+                    reasoningStrategy: "enabled",
+                    streamingStrategy: "disabled",
+                    toolCallStrategy: "none",
+                  },
+                  usage: {
+                    inputTokens: 13,
+                    outputTokens: 8,
+                    totalTokens: 21,
+                  },
+                },
+              },
+            }),
+          ],
+        }),
+      ],
+    });
+    useRunMock.mockReturnValue(queryResult(run));
+
+    searchParamsMock = new URLSearchParams("tab=runtime");
+    const runtimeRender = render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-detail-section-runtime-profile")).not.toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      RUNTIME_DEFERRED_SECTION_SIZE_CLASS,
+    );
+    expect(
+      screen.getByTestId("runs-detail-section-selected-strategies"),
+    ).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      RUNTIME_DEFERRED_SECTION_SIZE_CLASS,
+    );
+    expect(
+      screen.getByTestId("runs-detail-section-capability-matrix"),
+    ).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      RUNTIME_DEFERRED_SECTION_SIZE_CLASS,
+    );
+
+    runtimeRender.unmount();
+    searchParamsMock = new URLSearchParams("tab=usage");
+    const usageRender = render(<RunsDetailPage />);
+
+    expect(
+      screen.getByTestId("runs-detail-section-token-accounting"),
+    ).not.toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      RUNTIME_DEFERRED_SECTION_SIZE_CLASS,
+    );
+    expect(
+      screen.getByTestId("runs-detail-section-invocation-usage-rows"),
+    ).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      RUNTIME_DEFERRED_SECTION_SIZE_CLASS,
+    );
+
+    usageRender.unmount();
+    searchParamsMock = new URLSearchParams("tab=memory");
+    render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-memory-evidence")).not.toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      MEMORY_EVENT_GROUP_SIZE_CLASS,
+    );
+    expect(
+      screen.getByTestId("runs-memory-group-retrievedContext"),
+    ).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      MEMORY_EVENT_GROUP_SIZE_CLASS,
+    );
+    expect(
+      screen.getByTestId("runs-memory-group-memoryWrites"),
+    ).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      MEMORY_EVENT_GROUP_SIZE_CLASS,
+    );
+    expect(
+      screen.getByTestId("runs-memory-group-reviewFollowUp"),
+    ).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      MEMORY_EVENT_GROUP_SIZE_CLASS,
+    );
+    expect(
+      screen.getByTestId("runs-memory-group-auditTrail"),
+    ).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      MEMORY_EVENT_GROUP_SIZE_CLASS,
+    );
+    expect(
+      screen.getByTestId("runs-memory-compact-artifact-memory_safe"),
+    ).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      MEMORY_COMPACT_ARTIFACT_SIZE_CLASS,
+    );
+    expect(
+      screen.getByTestId("runs-memory-compact-artifacts"),
+    ).not.toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      MEMORY_COMPACT_ARTIFACT_SIZE_CLASS,
+    );
   });
 
   it("keeps raw payloads scrollable on mobile without a sheet inspector", () => {
