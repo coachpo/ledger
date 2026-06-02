@@ -25,6 +25,10 @@ describe("WorkspacePageShell", () => {
 
     expect(shell).toHaveClass("h-full", "min-h-0", "overflow-hidden");
     expect(context).toHaveClass("sticky", "top-0", "shrink-0");
+    expect(context).not.toHaveClass(
+      "backdrop-blur",
+      "supports-[backdrop-filter]:bg-background/80",
+    );
     expect(content).toHaveClass("min-h-0", "flex-1", "overflow-hidden");
     expect(rail).toHaveAttribute("aria-label", "Workspace navigation");
     expect(body).toHaveAttribute("aria-label", "Authoring workspace");

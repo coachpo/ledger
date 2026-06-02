@@ -39,7 +39,7 @@ export function WorkspacePageShell({
     >
       <div
         className={cn(
-          "sticky top-0 z-10 shrink-0 border-b border-border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/80",
+          "sticky top-0 z-10 shrink-0 border-b border-border bg-background/95 p-3",
           contextBarClassName,
         )}
         data-testid="workspace-page-shell-context"
