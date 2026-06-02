@@ -2427,7 +2427,7 @@ function ScheduleTabs({
         <TabsTrigger value="runs">Runs</TabsTrigger>
       </TabsList>
       <TabsContent
-        className="m-0 min-w-0 data-[state=inactive]:hidden"
+        className="m-0 min-h-0 min-w-0 overflow-auto data-[state=inactive]:hidden"
         data-testid="scheduled-task-detail-tab-overview"
         forceMount
         value="overview"
@@ -2440,7 +2440,7 @@ function ScheduleTabs({
         />
       </TabsContent>
       <TabsContent
-        className="m-0 min-w-0 data-[state=inactive]:hidden"
+        className="m-0 min-h-0 min-w-0 overflow-auto data-[state=inactive]:hidden"
         data-testid="scheduled-task-detail-tab-schedule"
         forceMount
         value="schedule"
@@ -2455,7 +2455,7 @@ function ScheduleTabs({
         </SummaryCard>
       </TabsContent>
       <TabsContent
-        className="m-0 min-w-0 data-[state=inactive]:hidden"
+        className="m-0 min-h-0 min-w-0 overflow-auto data-[state=inactive]:hidden"
         data-testid="scheduled-task-detail-tab-inputs"
         forceMount
         value="inputs"

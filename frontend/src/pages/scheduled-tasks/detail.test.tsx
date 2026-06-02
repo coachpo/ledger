@@ -546,9 +546,14 @@ describe("ScheduledTaskDetailPage", () => {
 
     const overviewPanel = screen.getByTestId("scheduled-task-detail-tab-overview");
     const schedulePanel = screen.getByTestId("scheduled-task-detail-tab-schedule");
+    const inputsPanel = screen.getByTestId("scheduled-task-detail-tab-inputs");
+    const runsPanel = screen.getByTestId("scheduled-task-detail-tab-runs");
     expect(overviewPanel).toHaveAttribute("data-state", "active");
     expect(schedulePanel).toHaveAttribute("data-state", "inactive");
-    expect(schedulePanel).toHaveClass("data-[state=inactive]:hidden");
+    expect(overviewPanel).toHaveClass("min-h-0", "overflow-auto", "data-[state=inactive]:hidden");
+    expect(schedulePanel).toHaveClass("min-h-0", "overflow-auto", "data-[state=inactive]:hidden");
+    expect(inputsPanel).toHaveClass("min-h-0", "overflow-auto", "data-[state=inactive]:hidden");
+    expect(runsPanel).toHaveClass("min-h-0", "overflow-auto", "data-[state=inactive]:hidden");
     expect(overviewPanel).toHaveTextContent("Ready for scheduled runs");
 
     fireEvent.pointerDown(within(header).getByRole("button", { name: "More actions" }));
