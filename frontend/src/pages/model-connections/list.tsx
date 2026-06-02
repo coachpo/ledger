@@ -11,10 +11,12 @@ import {
 import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
+import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
+import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/components/ui/utils";
 import {
@@ -120,25 +122,16 @@ function ModelConnectionsStateCards({
   search: string;
 }) {
   if (isPending) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center text-sm text-muted-foreground">
-          Loading model connections...
-        </CardContent>
-      </Card>
-    );
+    return <InventoryStatePanel title="Loading model connections..." />;
   }
 
   if (isError) {
-    return (
-      <Card role="alert" aria-live="polite">
-        <CardContent className="py-8 text-center text-sm text-muted-foreground">
-          {error instanceof Error
-            ? error.message
-            : "Failed to load model connections."}
-        </CardContent>
-      </Card>
-    );
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load model connections.";
+
+    return <InventoryStatePanel title={message} tone="danger" />;
   }
 
   if (filteredCount > 0) {
@@ -146,20 +139,18 @@ function ModelConnectionsStateCards({
   }
 
   return (
-    <Card>
-      <CardContent className="space-y-1 py-8 text-center text-sm text-muted-foreground">
-        <p className="font-medium text-foreground">
-          {search.trim()
-            ? "No model connections match this search."
-            : "No model connections exist yet."}
-        </p>
-        <p className="text-xs">
-          {search.trim()
-            ? "Refine the search by connection name, stable key, model, or base URL."
-            : "Create a saved endpoint before launching workflow packages that need model access."}
-        </p>
-      </CardContent>
-    </Card>
+    <InventoryStatePanel
+      description={
+        search.trim()
+          ? "Refine the search by connection name, stable key, model, or base URL."
+          : "Create a saved endpoint before launching workflow packages that need model access."
+      }
+      title={
+        search.trim()
+          ? "No model connections match this search."
+          : "No model connections exist yet."
+      }
+    />
   );
 }
 
@@ -480,131 +471,133 @@ function ModelConnectionsTable({
   };
 
   return (
-    <Table className="table-fixed text-xs">
-      <TableHeader>
-        <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableHead className="w-9 px-2 py-1.5">
-            <Checkbox
-              aria-label="Select all shown model connections"
-              checked={
-                allFilteredSelected
-                  ? true
-                  : someFilteredSelected
-                    ? "indeterminate"
-                    : false
-              }
-              onCheckedChange={(checked) =>
-                onSelect(connections, checked === true)
-              }
-            />
-          </TableHead>
-          <TableHead className="w-[28%] px-2 py-1.5">Name</TableHead>
-          <TableHead className="w-[20%] px-2 py-1.5">Stable key</TableHead>
-          <TableHead className="w-[24%] px-2 py-1.5">Model ID</TableHead>
-          <TableHead className="w-[12%] px-2 py-1.5">Profile</TableHead>
-          <TableHead className="w-[280px] px-2 py-1.5 text-right">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {connections.map((connection) => {
-          const isSelected = selectedConnectionIds.has(connection.id);
-          const isExpanded = expandedConnectionIds.has(connection.id);
-          const detailsId = `model-connection-details-${connection.id}`;
+    <ResourceTableFrame>
+      <Table className="table-fixed text-xs">
+        <TableHeader>
+          <TableRow className="bg-muted/30 hover:bg-muted/30">
+            <TableHead className="w-9 px-2 py-1.5">
+              <Checkbox
+                aria-label="Select all shown model connections"
+                checked={
+                  allFilteredSelected
+                    ? true
+                    : someFilteredSelected
+                      ? "indeterminate"
+                      : false
+                }
+                onCheckedChange={(checked) =>
+                  onSelect(connections, checked === true)
+                }
+              />
+            </TableHead>
+            <TableHead className="w-[28%] px-2 py-1.5">Name</TableHead>
+            <TableHead className="w-[20%] px-2 py-1.5">Stable key</TableHead>
+            <TableHead className="w-[24%] px-2 py-1.5">Model ID</TableHead>
+            <TableHead className="w-[12%] px-2 py-1.5">Profile</TableHead>
+            <TableHead className="w-[280px] px-2 py-1.5 text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {connections.map((connection) => {
+            const isSelected = selectedConnectionIds.has(connection.id);
+            const isExpanded = expandedConnectionIds.has(connection.id);
+            const detailsId = `model-connection-details-${connection.id}`;
 
-          return (
-            <Fragment key={connection.id}>
-              <TableRow
-                data-state={isSelected ? "selected" : undefined}
-                data-testid={`model-connections-row-${connection.id}`}
-              >
-                <TableCell className="px-2 py-1.5">
-                  <Checkbox
-                    aria-label={`Select model connection ${connection.name}`}
-                    checked={isSelected}
-                    onCheckedChange={(checked) =>
-                      onSelect([connection], checked === true)
-                    }
-                  />
-                </TableCell>
-                <TableCell className="min-w-0 px-2 py-1.5">
-                  <ModelConnectionNameCell connection={connection} />
-                </TableCell>
-                <TableCell className="min-w-0 px-2 py-1.5">
-                  <MonospaceTruncate
-                    label="Stable key"
-                    value={connection.key}
-                  />
-                </TableCell>
-                <TableCell className="min-w-0 px-2 py-1.5">
-                  <MonospaceTruncate
-                    label="Model ID"
-                    value={connection.modelId}
-                  />
-                </TableCell>
-                <TableCell className="min-w-0 px-2 py-1.5">
-                  <ProtocolProfileCell connection={connection} />
-                </TableCell>
-                <TableCell className="px-2 py-1.5">
-                  <div className="flex flex-wrap justify-end gap-1.5">
-                    <Button
-                      aria-controls={detailsId}
-                      aria-expanded={isExpanded}
-                      className="h-8 px-2 cursor-pointer"
-                      data-testid={`model-connections-details-${connection.id}`}
-                      onClick={() => toggleDetails(connection.id)}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      {isExpanded ? (
-                        <ChevronDown data-icon="inline-start" />
-                      ) : (
-                        <ChevronRight data-icon="inline-start" />
-                      )}
-                      {isExpanded ? "Hide details" : "Show details"}
-                    </Button>
-                    <Button
-                      asChild
-                      className="h-8 px-2"
-                      size="sm"
-                      variant="outline"
-                    >
-                      <Link
-                        aria-label={`Edit model connection ${connection.name}`}
-                        data-testid={`model-connections-open-${connection.id}`}
-                        to={`/model-connections/${connection.id}/edit`}
+            return (
+              <Fragment key={connection.id}>
+                <TableRow
+                  data-state={isSelected ? "selected" : undefined}
+                  data-testid={`model-connections-row-${connection.id}`}
+                >
+                  <TableCell className="px-2 py-1.5">
+                    <Checkbox
+                      aria-label={`Select model connection ${connection.name}`}
+                      checked={isSelected}
+                      onCheckedChange={(checked) =>
+                        onSelect([connection], checked === true)
+                      }
+                    />
+                  </TableCell>
+                  <TableCell className="min-w-0 px-2 py-1.5">
+                    <ModelConnectionNameCell connection={connection} />
+                  </TableCell>
+                  <TableCell className="min-w-0 px-2 py-1.5">
+                    <MonospaceTruncate
+                      label="Stable key"
+                      value={connection.key}
+                    />
+                  </TableCell>
+                  <TableCell className="min-w-0 px-2 py-1.5">
+                    <MonospaceTruncate
+                      label="Model ID"
+                      value={connection.modelId}
+                    />
+                  </TableCell>
+                  <TableCell className="min-w-0 px-2 py-1.5">
+                    <ProtocolProfileCell connection={connection} />
+                  </TableCell>
+                  <TableCell className="px-2 py-1.5">
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      <Button
+                        aria-controls={detailsId}
+                        aria-expanded={isExpanded}
+                        className="h-8 px-2 cursor-pointer"
+                        data-testid={`model-connections-details-${connection.id}`}
+                        onClick={() => toggleDetails(connection.id)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
                       >
-                        <SquarePen data-icon="inline-start" />
-                        Edit
-                      </Link>
-                    </Button>
-                    <Button
-                      aria-label={`Delete model connection ${connection.name}`}
-                      className="h-8 px-2 cursor-pointer"
-                      data-testid={`model-connections-delete-${connection.id}`}
-                      disabled={deletePending}
-                      onClick={() => onDelete(connection)}
-                      size="sm"
-                      type="button"
-                      variant="destructive"
-                    >
-                      <Trash2 data-icon="inline-start" />
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-              {isExpanded ? (
-                <ModelConnectionDetailsRow
-                  connection={connection}
-                  detailsId={detailsId}
-                />
-              ) : null}
-            </Fragment>
-          );
-        })}
-      </TableBody>
-    </Table>
+                        {isExpanded ? (
+                          <ChevronDown data-icon="inline-start" />
+                        ) : (
+                          <ChevronRight data-icon="inline-start" />
+                        )}
+                        {isExpanded ? "Hide details" : "Show details"}
+                      </Button>
+                      <Button
+                        asChild
+                        className="h-8 px-2"
+                        size="sm"
+                        variant="outline"
+                      >
+                        <Link
+                          aria-label={`Edit model connection ${connection.name}`}
+                          data-testid={`model-connections-open-${connection.id}`}
+                          to={`/model-connections/${connection.id}/edit`}
+                        >
+                          <SquarePen data-icon="inline-start" />
+                          Edit
+                        </Link>
+                      </Button>
+                      <Button
+                        aria-label={`Delete model connection ${connection.name}`}
+                        className="h-8 px-2 cursor-pointer"
+                        data-testid={`model-connections-delete-${connection.id}`}
+                        disabled={deletePending}
+                        onClick={() => onDelete(connection)}
+                        size="sm"
+                        type="button"
+                        variant="destructive"
+                      >
+                        <Trash2 data-icon="inline-start" />
+                        Delete
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+                {isExpanded ? (
+                  <ModelConnectionDetailsRow
+                    connection={connection}
+                    detailsId={detailsId}
+                  />
+                ) : null}
+              </Fragment>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </ResourceTableFrame>
   );
 }
 
@@ -626,27 +619,25 @@ function ModelConnectionsBulkActions({
   }
 
   return (
-    <div
-      data-testid="model-connections-bulk-actions"
-      className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
-    >
-      <span className="text-xs text-muted-foreground">
-        {selectedCount} of {filteredCount} model connections selected
-      </span>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          variant="destructive"
-          disabled={isPending}
-          onClick={onDeleteSelected}
-        >
-          <Trash2 className="size-3.5" /> Delete selected
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onClear}>
-          Clear
-        </Button>
-      </div>
-    </div>
+    <ResourceFilterBar
+      actions={
+        <>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={isPending}
+            onClick={onDeleteSelected}
+          >
+            <Trash2 className="size-3.5" /> Delete selected
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onClear}>
+            Clear
+          </Button>
+        </>
+      }
+      summary={`${selectedCount} of ${filteredCount} model connections selected`}
+      testId="model-connections-bulk-actions"
+    />
   );
 }
 
