@@ -9,6 +9,7 @@ import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
 import { ResourceRowCard } from "@/components/shared/resource-row-card";
+import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -298,7 +299,7 @@ export function PortfolioListPage() {
             ))
           : null}
         {viewMode === "table" && filteredPortfolios.length > 0 ? (
-          <div className="min-w-0 max-w-full rounded-md border">
+          <ResourceTableFrame>
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -404,7 +405,7 @@ export function PortfolioListPage() {
                 })}
               </TableBody>
             </Table>
-          </div>
+          </ResourceTableFrame>
         ) : null}
       </section>
 

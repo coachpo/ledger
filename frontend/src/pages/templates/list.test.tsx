@@ -44,6 +44,14 @@ function queryResult<T>(data: T) {
   };
 }
 
+function templateShellRegions() {
+  return Array.from(
+    screen
+      .getByTestId("templates-list-page")
+      .querySelectorAll("[data-inventory-shell-region]"),
+  ).map((region) => region.getAttribute("data-inventory-shell-region"));
+}
+
 const quarterlyTemplate = {
   id: 7,
   name: "Quarterly Review",
@@ -66,6 +74,56 @@ describe("TemplateListPage", () => {
     deleteTemplatesMutateMock.mockReset();
     useTemplatesListMock.mockReset();
     useTemplatesListMock.mockReturnValue(queryResult([]));
+  });
+
+  it("keeps loading copy in the inventory content while route-owned toolbar controls stay visible", () => {
+    useTemplatesListMock.mockReturnValue({
+      data: undefined,
+      error: null,
+      isError: false,
+      isPending: true,
+    });
+
+    render(<TemplateListPage />);
+
+    expect(templateShellRegions()).toEqual(["context", "toolbar", "content"]);
+    expect(screen.getByRole("link", { name: /new template/i })).toHaveAttribute(
+      "href",
+      "/templates/new",
+    );
+    expect(screen.getByLabelText("Search templates")).toBeVisible();
+    expect(screen.getByRole("radio", { name: /cards view/i })).toBeVisible();
+    expect(screen.getByRole("radio", { name: /table view/i })).toBeVisible();
+    expect(screen.getByText("No templates loaded")).toBeVisible();
+
+    const inventory = screen.getByTestId("templates-inventory");
+    expect(within(inventory).getByText("Loading templates...")).toBeVisible();
+    expect(within(inventory).queryByText("No templates yet.")).not.toBeInTheDocument();
+  });
+
+  it("keeps error copy in the inventory content while route-owned toolbar controls stay visible", () => {
+    useTemplatesListMock.mockReturnValue({
+      data: undefined,
+      error: new Error("Templates API unavailable"),
+      isError: true,
+      isPending: false,
+    });
+
+    render(<TemplateListPage />);
+
+    expect(templateShellRegions()).toEqual(["context", "toolbar", "content"]);
+    expect(screen.getByRole("link", { name: /new template/i })).toHaveAttribute(
+      "href",
+      "/templates/new",
+    );
+    expect(screen.getByLabelText("Search templates")).toBeVisible();
+    expect(screen.getByText("No templates loaded")).toBeVisible();
+
+    const inventory = screen.getByTestId("templates-inventory");
+    expect(within(inventory).getByRole("alert")).toHaveTextContent(
+      "Templates API unavailable",
+    );
+    expect(within(inventory).queryByText("Loading templates...")).not.toBeInTheDocument();
   });
 
   it("keeps compact route controls and the new-template entry visible in the empty state", () => {

@@ -17,10 +17,11 @@ import type { TextTemplateRead } from "@/lib/types/text-template";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
+import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
 import { ResourceRowCard } from "@/components/shared/resource-row-card";
+import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -143,20 +144,18 @@ export function TemplateListPage() {
         data-testid="templates-inventory"
       >
         {templatesQuery.isPending ? (
-          <Card>
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              Loading templates...
-            </CardContent>
-          </Card>
+          <InventoryStatePanel title="Loading templates..." />
         ) : null}
         {templatesQuery.isError ? (
-          <Card role="alert">
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              {templatesQuery.error instanceof Error
+          <InventoryStatePanel
+            description={
+              templatesQuery.error instanceof Error
                 ? templatesQuery.error.message
-                : "Failed to load templates."}
-            </CardContent>
-          </Card>
+                : "Failed to load templates."
+            }
+            tone="danger"
+            title="Failed to load templates"
+          />
         ) : null}
         {!templatesQuery.isPending &&
         !templatesQuery.isError &&
@@ -226,7 +225,7 @@ export function TemplateListPage() {
             ))
           : null}
         {viewMode === "table" && filteredTemplates.length > 0 ? (
-          <div className="min-w-0 max-w-full rounded-md border">
+          <ResourceTableFrame>
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -326,7 +325,7 @@ export function TemplateListPage() {
                 })}
               </TableBody>
             </Table>
-          </div>
+          </ResourceTableFrame>
         ) : null}
       </section>
 

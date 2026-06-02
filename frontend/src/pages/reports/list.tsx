@@ -28,7 +28,9 @@ import type { TextTemplateRead } from "@/lib/types/text-template";
 import { ReportUploadDialog } from "@/components/forms/report-upload-dialog";
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
+import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
 import { GroupedListCard } from "@/components/shared/resource-row-card";
+import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -499,7 +501,7 @@ export function ReportListPage() {
                     );
                   })
                 ) : (
-                  <div className="min-w-0 max-w-full rounded-md border">
+                  <ResourceTableFrame>
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -620,7 +622,7 @@ export function ReportListPage() {
                         })}
                       </TableBody>
                     </Table>
-                  </div>
+                  </ResourceTableFrame>
                 )}
               </CollapsibleContent>
             </Collapsible>
@@ -629,31 +631,29 @@ export function ReportListPage() {
       </div>
 
       {viewMode === "table" && selectedCount > 0 ? (
-        <div
-          data-testid="reports-bulk-actions"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
-        >
-          <span className="text-xs text-muted-foreground">
-            {selectedCount} of {filtered.length} reports selected
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={deleteReportsMutation.isPending}
-              onClick={handleDeleteSelected}
-            >
-              <Trash2 className="size-3.5" /> Delete selected
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setSelectedSlugs(new Set())}
-            >
-              Clear
-            </Button>
-          </div>
-        </div>
+        <ResourceFilterBar
+          actions={
+            <>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={deleteReportsMutation.isPending}
+                onClick={handleDeleteSelected}
+              >
+                <Trash2 className="size-3.5" /> Delete selected
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedSlugs(new Set())}
+              >
+                Clear
+              </Button>
+            </>
+          }
+          summary={`${selectedCount} of ${filtered.length} reports selected`}
+          testId="reports-bulk-actions"
+        />
       ) : null}
 
       <ConfirmDeleteDialog
