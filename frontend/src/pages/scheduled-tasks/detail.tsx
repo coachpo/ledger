@@ -770,9 +770,9 @@ function ScheduleHeader({
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
           <h1 className="min-w-0 text-xl font-semibold tracking-tight">{schedule.name}</h1>
           <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">schedule:{schedule.id}</span>
+          <StatusBadge status={schedule.status} />
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-          <StatusBadge status={schedule.status} />
           <Button
             className="w-full sm:w-auto"
             data-testid="schedule-run-now"
@@ -808,7 +808,10 @@ function ScheduleHeader({
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuGroup>
                 <DropdownMenuItem asChild>
-                  <Link to={`/workflow-packages/${schedule.packageId}`}>Open package</Link>
+                  <Link to={`/workflow-packages/${schedule.packageId}`}>
+                    <ExternalLink data-icon="inline-start" />
+                    Open package
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link to={`/scheduled-tasks/new?duplicateFrom=${schedule.id}`}>

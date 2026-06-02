@@ -499,6 +499,7 @@ describe("ScheduledTaskDetailPage", () => {
     expect(within(headerTopRow).getByText("schedule:44")).toBeVisible();
     expect(within(headerTopRow).getByTestId("scheduled-task-detail-status-enabled")).toHaveTextContent("enabled");
     expect(within(headerTopRow).getByTestId("schedule-run-now")).toBeVisible();
+    expect(headerTopRow.textContent).toContain("Daily market briefschedule:44enabledRun now");
     expect(
       within(header).queryByRole("link", { name: "Scheduled Tasks" }),
     ).not.toBeInTheDocument();
@@ -550,10 +551,9 @@ describe("ScheduledTaskDetailPage", () => {
     expect(overviewPanel).toHaveTextContent("Ready for scheduled runs");
 
     fireEvent.pointerDown(within(header).getByRole("button", { name: "More actions" }));
-    expect((await screen.findByText("Open package")).closest("a")).toHaveAttribute(
-      "href",
-      "/workflow-packages/12",
-    );
+    const openPackageLink = (await screen.findByText("Open package")).closest("a");
+    expect(openPackageLink).toHaveAttribute("href", "/workflow-packages/12");
+    expect(openPackageLink?.querySelector("svg")).not.toBeNull();
     expect((await screen.findByText(/duplicate/i)).closest("a")).toHaveAttribute(
       "href",
       "/scheduled-tasks/new?duplicateFrom=44",
