@@ -10,6 +10,7 @@ import {
   createValueEntryForSchema,
 } from "@/lib/platform-authoring/values/factories";
 import type { ValueEntry, ValueEntryArray, ValueEntryPath } from "@/lib/platform-authoring/values/types";
+import { InlineStatePanel } from "@/components/shared/inline-state-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,9 +107,7 @@ export function ArrayFieldList({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {value.items.length === 0 ? (
-          <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-            {emptyState}
-          </div>
+          <InlineStatePanel description={emptyState} />
         ) : null}
         {value.items.map((item, index) => {
           const itemLabel = `${itemLabelPrefix} ${index + 1}`;

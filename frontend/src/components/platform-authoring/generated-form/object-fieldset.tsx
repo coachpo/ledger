@@ -16,6 +16,7 @@ import type {
   ValueEntryObjectField,
   ValueEntryPath,
 } from "@/lib/platform-authoring/values/types";
+import { InlineStatePanel } from "@/components/shared/inline-state-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -112,9 +113,7 @@ export function ObjectFieldset({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {definedFields.length === 0 ? (
-          <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-            {emptyState}
-          </div>
+          <InlineStatePanel description={emptyState} />
         ) : null}
         {definedFields.map((field) => {
           const existingField = resolvedValue.fields.find((item) => item.key === field.name);

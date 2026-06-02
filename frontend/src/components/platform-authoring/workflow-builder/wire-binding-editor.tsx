@@ -6,6 +6,7 @@ import {
 } from "@/lib/platform-authoring/workflows/codec";
 import { getObjectProperties } from "@/lib/platform-authoring/workflows/validation";
 import type { WireBinding } from "@/lib/platform-authoring/workflows/types";
+import { InlineStatePanel } from "@/components/shared/inline-state-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -308,9 +309,7 @@ export function WireBindingEditor({
       </div>
 
       {binding.source === "none" ? (
-        <div className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
-          Leave this unwired to skip the source entirely.
-        </div>
+        <InlineStatePanel description="Leave this unwired to skip the source entirely." />
       ) : null}
 
       {binding.source !== "none" ? (

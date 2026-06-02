@@ -2,6 +2,7 @@ import { Plus, Trash2 } from "lucide-react";
 
 import { createDefaultSchemaField } from "@/lib/platform-authoring/schema/factories";
 import type { SchemaIRField, SchemaIRNode, SchemaIRObject } from "@/lib/platform-authoring/schema/types";
+import { InlineStatePanel } from "@/components/shared/inline-state-panel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,9 +24,7 @@ export function ObjectFieldsEditor({ depth, node, onChange, renderNode }: Object
   return (
     <div className="flex flex-col gap-4">
       {fields.length === 0 ? (
-        <div className="rounded-md border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
-          Add at least one field to build an object schema.
-        </div>
+        <InlineStatePanel description="Add at least one field to build an object schema." />
       ) : null}
 
       <div className="flex flex-col gap-4">
