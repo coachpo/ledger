@@ -448,10 +448,12 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByRole("button", { name: "Save current JSON" })).toBeDisabled();
     expect(screen.getByLabelText("Runtime inputs JSON")).toBeDisabled();
     expect(screen.getByLabelText("Personal preset name")).toBeDisabled();
-    expect(screen.getByTestId("runtime-input-saved-inputs-helper")).toHaveTextContent("workflow pending");
-    expect(screen.getByTestId("runtime-input-saved-inputs-helper")).not.toHaveTextContent(
-      /loading saved inputs for this workflow/i,
-    );
+    const pendingHelper = screen.getByTestId("runtime-input-saved-inputs-helper");
+    expect(pendingHelper).toHaveTextContent("workflow pending");
+    expect(pendingHelper).not.toHaveTextContent(/loading saved inputs for this workflow/i);
+    expect(pendingHelper).not.toHaveTextContent("No personal presets saved for this workflow.");
+    expect(pendingHelper).not.toHaveTextContent("No launch history yet.");
+    expect(within(pendingHelper).getAllByText("0/20")).toHaveLength(2);
 
     await chooseWorkflow(/^News Research$/);
 
@@ -462,6 +464,10 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByRole("tab", { name: /history/i })).not.toBeDisabled();
     expect(screen.getByLabelText("Runtime inputs JSON")).not.toBeDisabled();
     expect(screen.getByLabelText("Personal preset name")).not.toBeDisabled();
+    expect(screen.getByText("No personal presets saved for this workflow.")).toBeVisible();
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /history/i }), { button: 0 });
+    expect(screen.getByText("No launch history yet.")).toBeVisible();
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /presets/i }), { button: 0 });
     expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
       JSON.stringify({ query: "" }, null, 2),
     );

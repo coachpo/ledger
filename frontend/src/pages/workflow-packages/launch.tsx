@@ -4,14 +4,16 @@ import {
   FileCheck2,
   Loader2,
   PlayCircle,
-  Save,
   SquarePen,
-  Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
+import {
+  SavedRuntimeInputRegistryPanel,
+  type SavedRuntimeInputRegistryEntry,
+} from "@/components/shared/saved-runtime-input-registry-panel";
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -30,7 +32,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -41,7 +42,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
 import {
@@ -80,6 +80,7 @@ type PackageDiagnostic = {
 type SavedInputEntryMode = "history" | "personal";
 
 const SAVED_INPUT_ENTRY_LIMIT = 20;
+const EMPTY_RUNTIME_INPUT_ENTRIES: readonly WorkflowPackageRuntimeInputEntryRead[] = [];
 
 function validPackageId(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -349,120 +350,22 @@ function DiagnosticList({
   );
 }
 
-function SavedInputEntryRow(props: {
-  actionsDisabled: boolean;
-  deletePending: boolean;
-  entry: WorkflowPackageRuntimeInputEntryRead;
-  mode: SavedInputEntryMode;
-  updatePending: boolean;
-  onDelete: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onLoad: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onUpdate: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-}) {
-  const {
-    actionsDisabled,
-    deletePending,
-    entry,
-    mode,
-    onDelete,
-    onLoad,
-    onUpdate,
-    updatePending,
-  } = props;
-  const label = savedInputEntryLabel(entry, mode);
+function savedRuntimeInputRegistryEntry(
+  entry: WorkflowPackageRuntimeInputEntryRead,
+  mode: SavedInputEntryMode,
+): SavedRuntimeInputRegistryEntry {
   const timestamp = mode === "history" ? entry.createdAt : entry.updatedAt;
 
-  return (
-    <div
-      className="min-w-0 space-y-2 rounded-lg border bg-background/60 p-3"
-      data-testid={`saved-input-${mode}-${entry.id}`}
-    >
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <p className="min-w-0 max-w-full truncate text-sm font-medium">
-              {label}
-            </p>
-            {entry.stale.stale ? (
-              <Badge
-                className="border-chart-3/30 bg-chart-3/10 text-chart-3"
-                variant="outline"
-              >
-                Stale
-              </Badge>
-            ) : null}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {mode === "history" ? "Captured" : "Updated"}{" "}
-            {formatDateTime(timestamp)}
-          </p>
-        </div>
-        <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
-          <Button
-            className="h-7 px-2 text-xs"
-            disabled={actionsDisabled}
-            size="sm"
-            type="button"
-            variant="outline"
-            aria-label={`Load ${mode} input ${label}`}
-            onClick={() => onLoad(entry)}
-          >
-            Load
-          </Button>
-          {mode === "personal" ? (
-            <>
-              <Button
-                className="h-7 px-2 text-xs"
-                disabled={actionsDisabled || updatePending}
-                size="sm"
-                type="button"
-                variant="outline"
-                aria-label={`Overwrite personal input ${label}`}
-                onClick={() => onUpdate(entry)}
-              >
-                {updatePending ? (
-                  <Loader2 className="animate-spin" data-icon="inline-start" />
-                ) : null}
-                Overwrite
-              </Button>
-              <Button
-                className="h-7 px-2 text-xs"
-                disabled={actionsDisabled || deletePending}
-                size="sm"
-                type="button"
-                variant="ghost"
-                aria-label={`Delete personal input ${label}`}
-                onClick={() => onDelete(entry)}
-              >
-                {deletePending ? (
-                  <Loader2 className="animate-spin" data-icon="inline-start" />
-                ) : (
-                  <Trash2 className="size-3" data-icon="inline-start" />
-                )}
-                Delete
-              </Button>
-            </>
-          ) : null}
-        </div>
-      </div>
-      {entry.stale.stale ? (
-        <div className="rounded-md border border-chart-3/30 bg-chart-3/10 px-2 py-1 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">
-            Saved against older workflow metadata.
-          </p>
-          {entry.stale.reasons.length > 0 ? (
-            <ul className="mt-1 list-disc space-y-0.5 pl-4">
-              {entry.stale.reasons.map((reason) => (
-                <li key={`${entry.id}-${reason.field}-${reason.issue}`}>
-                  {reason.field}: {reason.issue}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
+  return {
+    id: entry.id,
+    label: savedInputEntryLabel(entry, mode),
+    mode,
+    sourceLabel: `${mode === "history" ? "Captured" : "Updated"} ${formatDateTime(timestamp)}`,
+    stale: entry.stale.stale,
+    staleReasonLines: entry.stale.reasons.map(
+      (reason) => `${reason.field}: ${reason.issue}`,
+    ),
+  };
 }
 
 function PackageDetailsDisclosure({
@@ -841,168 +744,6 @@ function SchemaTemplateWarning({
   );
 }
 
-function SavedInputsTabs(props: {
-  createDisabled: boolean;
-  createPending: boolean;
-  deletePending: boolean;
-  error: Error | null;
-  historyEntries: readonly WorkflowPackageRuntimeInputEntryRead[];
-  loading: boolean;
-  personalEntries: readonly WorkflowPackageRuntimeInputEntryRead[];
-  presetName: string;
-  updatePending: boolean;
-  workflowKey: string;
-  onCreate: () => void;
-  onDelete: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onLoad: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onPresetNameChange: (value: string) => void;
-  onUpdate: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-}) {
-  const {
-    createDisabled,
-    createPending,
-    deletePending,
-    error,
-    historyEntries,
-    loading,
-    onCreate,
-    onDelete,
-    onLoad,
-    onPresetNameChange,
-    onUpdate,
-    personalEntries,
-    presetName,
-    updatePending,
-    workflowKey,
-  } = props;
-  const workflowSelected = Boolean(workflowKey);
-  const personalLimitReached =
-    personalEntries.length >= SAVED_INPUT_ENTRY_LIMIT;
-  const sortedPersonal = newestRuntimeInputEntries(
-    personalEntries,
-    "updatedAt",
-  );
-  const sortedHistory = newestRuntimeInputEntries(historyEntries, "createdAt");
-
-  return (
-    <div className="min-w-0 space-y-3" data-testid="runtime-input-saved-inputs-helper">
-      <div className="flex min-w-0 flex-col gap-1">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold">Saved inputs</h3>
-          <Badge variant="outline">{workflowKey || "workflow pending"}</Badge>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {workflowKey
-            ? "Load saved personal presets or reuse launch history for this workflow."
-            : "Choose a workflow to load saved personal presets or launch history."}
-        </p>
-      </div>
-      {workflowSelected && loading ? (
-        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-3 animate-spin" />
-          Loading saved inputs for {workflowKey}...
-        </p>
-      ) : null}
-      {workflowSelected && error ? (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>Saved inputs unavailable</AlertTitle>
-          <AlertDescription>{error.message}</AlertDescription>
-        </Alert>
-      ) : null}
-      <Tabs className="min-w-0 gap-3" defaultValue="presets">
-        <TabsList className="w-full justify-start sm:w-fit">
-          <TabsTrigger disabled={!workflowSelected} value="presets">
-            Presets
-            <Badge className="ml-1" variant="secondary">
-              {personalEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger disabled={!workflowSelected} value="history">
-            History
-            <Badge className="ml-1" variant="secondary">
-              {historyEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}
-            </Badge>
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent className="min-w-0 space-y-3" value="presets">
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
-            <Input
-              className="h-8 min-w-0 text-xs"
-              aria-label="Personal preset name"
-              disabled={!workflowSelected}
-              placeholder="Preset name"
-              value={presetName}
-              onChange={(event) => onPresetNameChange(event.target.value)}
-            />
-            <Button
-              className="h-8 w-full text-xs sm:w-auto"
-              disabled={createDisabled || createPending || personalLimitReached}
-              size="sm"
-              type="button"
-              onClick={onCreate}
-            >
-              {createPending ? (
-                <Loader2 className="animate-spin" data-icon="inline-start" />
-              ) : (
-                <Save data-icon="inline-start" />
-              )}
-              Save current JSON
-            </Button>
-          </div>
-          {workflowSelected && personalLimitReached ? (
-            <p className="text-xs text-destructive">
-              Personal presets are capped at 20 per workflow. Delete one before
-              saving another.
-            </p>
-          ) : null}
-          {workflowSelected && sortedPersonal.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No personal presets saved for this workflow.
-            </p>
-          ) : null}
-          <div className="space-y-2">
-            {sortedPersonal.map((entry) => (
-              <SavedInputEntryRow
-                key={entry.id}
-                actionsDisabled={!workflowSelected}
-                deletePending={deletePending}
-                entry={entry}
-                mode="personal"
-                updatePending={updatePending}
-                onDelete={onDelete}
-                onLoad={onLoad}
-                onUpdate={onUpdate}
-              />
-            ))}
-          </div>
-        </TabsContent>
-        <TabsContent className="min-w-0 space-y-3" value="history">
-          {workflowSelected && sortedHistory.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No launch history yet.
-            </p>
-          ) : null}
-          <div className="space-y-2">
-            {sortedHistory.map((entry) => (
-              <SavedInputEntryRow
-                key={entry.id}
-                actionsDisabled={!workflowSelected}
-                deletePending={false}
-                entry={entry}
-                mode="history"
-                updatePending={false}
-                onDelete={onDelete}
-                onLoad={onLoad}
-                onUpdate={onUpdate}
-              />
-            ))}
-          </div>
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
 
 export function WorkflowPackageLaunchPage() {
   const { packageId: routePackageId } = useParams<{ packageId: string }>();
@@ -1073,12 +814,34 @@ export function WorkflowPackageLaunchPage() {
   const savedInputsLoading =
     workflowSelected &&
     (runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching);
-  const savedHistoryEntries = workflowSelected
-    ? (runtimeInputRegistry.data?.history ?? [])
-    : [];
-  const savedPersonalEntries = workflowSelected
-    ? (runtimeInputRegistry.data?.personal ?? [])
-    : [];
+  const savedHistoryEntries = useMemo(
+    () =>
+      workflowSelected
+        ? (runtimeInputRegistry.data?.history ?? EMPTY_RUNTIME_INPUT_ENTRIES)
+        : EMPTY_RUNTIME_INPUT_ENTRIES,
+    [runtimeInputRegistry.data?.history, workflowSelected],
+  );
+  const savedPersonalEntries = useMemo(
+    () =>
+      workflowSelected
+        ? (runtimeInputRegistry.data?.personal ?? EMPTY_RUNTIME_INPUT_ENTRIES)
+        : EMPTY_RUNTIME_INPUT_ENTRIES,
+    [runtimeInputRegistry.data?.personal, workflowSelected],
+  );
+  const savedHistoryPanelEntries = useMemo(
+    () =>
+      newestRuntimeInputEntries(savedHistoryEntries, "createdAt").map((entry) =>
+        savedRuntimeInputRegistryEntry(entry, "history"),
+      ),
+    [savedHistoryEntries],
+  );
+  const savedPersonalPanelEntries = useMemo(
+    () =>
+      newestRuntimeInputEntries(savedPersonalEntries, "updatedAt").map((entry) =>
+        savedRuntimeInputRegistryEntry(entry, "personal"),
+      ),
+    [savedPersonalEntries],
+  );
   const readinessRead = preflightRead ?? launchRead;
   const diagnostics = useMemo(
     () => diagnosticsFromLaunch(readinessRead),
@@ -1593,7 +1356,8 @@ export function WorkflowPackageLaunchPage() {
                   onChange={(event) => updateParametersText(event.target.value)}
                 />
               </div>
-              <SavedInputsTabs
+              <SavedRuntimeInputRegistryPanel
+                capMessage="Personal presets are capped at 20 per workflow. Delete one before saving another."
                 createDisabled={
                   !workflowSelected ||
                   savedInputsLoading ||
@@ -1601,18 +1365,60 @@ export function WorkflowPackageLaunchPage() {
                 }
                 createPending={createPersonalEntry.isPending}
                 deletePending={deletePersonalEntry.isPending}
+                disableTabsWhenUnavailable
                 error={savedInputsError}
-                historyEntries={savedHistoryEntries}
+                errorTitle="Saved inputs unavailable"
+                helperCopy={
+                  workflowSelected
+                    ? "Load saved personal presets or reuse launch history for this workflow."
+                    : "Choose a workflow to load saved personal presets or launch history."
+                }
+                historyEmptyMessage="No launch history yet."
+                historyEntries={savedHistoryPanelEntries}
                 loading={savedInputsLoading}
-                personalEntries={savedPersonalEntries}
-                presetName={personalPresetName}
+                loadingMessage={`Loading saved inputs for ${activeWorkflowKey}...`}
+                personalEntries={savedPersonalPanelEntries}
+                personalEmptyMessage="No personal presets saved for this workflow."
+                personalNameLabel="Personal preset name"
+                personalNamePlaceholder="Preset name"
+                personalNameValue={personalPresetName}
+                personalPresetLimit={SAVED_INPUT_ENTRY_LIMIT}
+                rowTestIdPrefix="saved-input"
+                saveLabel="Save current JSON"
+                staleNoticeTitle="Saved against older workflow metadata."
+                testId="runtime-input-saved-inputs-helper"
+                title="Saved inputs"
                 updatePending={updatePersonalEntry.isPending}
+                workflowBadgeFallback="workflow pending"
+                workflowEnabled={workflowSelected}
                 workflowKey={activeWorkflowKey}
                 onCreate={() => void savePersonalInput()}
-                onDelete={(entry) => void deletePersonalInput(entry)}
-                onLoad={loadSavedInput}
-                onPresetNameChange={setPersonalPresetName}
-                onUpdate={(entry) => void overwritePersonalInput(entry)}
+                onDelete={(entry) => {
+                  const savedEntry = savedPersonalEntries.find(
+                    (candidate) => candidate.id === entry.id,
+                  );
+                  if (savedEntry) {
+                    void deletePersonalInput(savedEntry);
+                  }
+                }}
+                onLoad={(entry) => {
+                  const savedEntry =
+                    entry.mode === "history"
+                      ? savedHistoryEntries.find((candidate) => candidate.id === entry.id)
+                      : savedPersonalEntries.find((candidate) => candidate.id === entry.id);
+                  if (savedEntry) {
+                    loadSavedInput(savedEntry);
+                  }
+                }}
+                onOverwrite={(entry) => {
+                  const savedEntry = savedPersonalEntries.find(
+                    (candidate) => candidate.id === entry.id,
+                  );
+                  if (savedEntry) {
+                    void overwritePersonalInput(savedEntry);
+                  }
+                }}
+                onPersonalNameChange={setPersonalPresetName}
               />
             </div>
           </CardContent>
