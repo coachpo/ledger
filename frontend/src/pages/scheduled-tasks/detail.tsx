@@ -9,7 +9,6 @@ import {
   PauseCircle,
   PlayCircle,
   RotateCcw,
-  Save,
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -18,6 +17,10 @@ import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import {
+  SavedRuntimeInputRegistryPanel,
+  type SavedRuntimeInputRegistryEntry,
+} from "@/components/shared/saved-runtime-input-registry-panel";
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -1499,264 +1502,24 @@ function ScheduleInputValidationAlert({
   );
 }
 
-function ScheduledSavedInputEntryRow({
-  deletePending,
-  entry,
-  mode,
-  updatePending,
-  onDelete,
-  onLoad,
-  onUpdate,
-}: {
-  deletePending: boolean;
-  entry: WorkflowPackageRuntimeInputEntryRead;
-  mode: SavedInputEntryMode;
-  updatePending: boolean;
-  onDelete: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onLoad: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onUpdate: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-}) {
-  const label = savedInputEntryLabel(entry, mode);
+function savedRuntimeInputRegistryEntry(
+  entry: WorkflowPackageRuntimeInputEntryRead,
+  mode: SavedInputEntryMode,
+): SavedRuntimeInputRegistryEntry {
   const timestamp = mode === "history" ? entry.createdAt : entry.updatedAt;
 
-  return (
-    <div className="flex min-w-0 flex-col gap-2 rounded-lg border bg-background/60 p-3" data-testid={`scheduled-input-${mode}-${entry.id}`}>
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <p className="min-w-0 max-w-full truncate text-sm font-medium">{label}</p>
-            {entry.stale.stale ? (
-              <Badge className="border-chart-3/30 bg-chart-3/10 text-chart-3" variant="outline">
-                Stale
-              </Badge>
-            ) : null}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {mode === "history" ? "Captured from a package run" : "Updated"} {formatDateTime(timestamp)}
-          </p>
-        </div>
-        <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
-          <Button
-            aria-label={`Load ${mode} scheduled input ${label}`}
-            className="h-7 px-2 text-xs"
-            size="sm"
-            type="button"
-            variant="outline"
-            onClick={() => onLoad(entry)}
-          >
-            Load
-          </Button>
-          {mode === "personal" ? (
-            <>
-              <Button
-                aria-label={`Overwrite personal scheduled input ${label}`}
-                className="h-7 px-2 text-xs"
-                disabled={updatePending}
-                size="sm"
-                type="button"
-                variant="outline"
-                onClick={() => onUpdate(entry)}
-              >
-                {updatePending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-                Overwrite
-              </Button>
-              <Button
-                aria-label={`Delete personal scheduled input ${label}`}
-                className="h-7 px-2 text-xs"
-                disabled={deletePending}
-                size="sm"
-                type="button"
-                variant="ghost"
-                onClick={() => onDelete(entry)}
-              >
-                {deletePending ? (
-                  <Loader2 className="animate-spin" data-icon="inline-start" />
-                ) : (
-                  <Trash2 className="size-3" data-icon="inline-start" />
-                )}
-                Delete
-              </Button>
-            </>
-          ) : null}
-        </div>
-      </div>
-      {entry.stale.stale ? (
-        <div className="rounded-md border border-chart-3/30 bg-chart-3/10 px-2 py-1 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">Saved against older workflow metadata.</p>
-          {entry.stale.reasons.length > 0 ? (
-            <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-4">
-              {entry.stale.reasons.map((reason) => (
-                <li key={`${entry.id}-${reason.field}-${reason.issue}`}>
-                  {reason.field}: {reason.issue}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
+  return {
+    id: entry.id,
+    label: savedInputEntryLabel(entry, mode),
+    mode,
+    sourceLabel: `${mode === "history" ? "Captured from a package run" : "Updated"} ${formatDateTime(timestamp)}`,
+    stale: entry.stale.stale,
+    staleReasonLines: entry.stale.reasons.map(
+      (reason) => `${reason.field}: ${reason.issue}`,
+    ),
+  };
 }
 
-function ScheduledSavedInputsTabs({
-  createDisabled,
-  createPending,
-  deletePending,
-  error,
-  historyEntries,
-  loading,
-  personalEntries,
-  presetName,
-  updatePending,
-  workflowKey,
-  onCreate,
-  onDelete,
-  onLoad,
-  onPresetNameChange,
-  onUpdate,
-}: {
-  createDisabled: boolean;
-  createPending: boolean;
-  deletePending: boolean;
-  error: Error | null;
-  historyEntries: readonly WorkflowPackageRuntimeInputEntryRead[];
-  loading: boolean;
-  personalEntries: readonly WorkflowPackageRuntimeInputEntryRead[];
-  presetName: string;
-  updatePending: boolean;
-  workflowKey: string;
-  onCreate: () => void;
-  onDelete: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onLoad: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onPresetNameChange: (value: string) => void;
-  onUpdate: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-}) {
-  const personalLimitReached = personalEntries.length >= SAVED_INPUT_ENTRY_LIMIT;
-  const sortedPersonal = newestRuntimeInputEntries(personalEntries, "updatedAt");
-  const sortedHistory = newestRuntimeInputEntries(historyEntries, "createdAt");
-
-  return (
-    <div className="flex min-w-0 flex-col gap-3" data-testid="scheduled-input-saved-inputs-helper">
-      <div className="flex min-w-0 flex-col gap-1">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold">Schedule input presets</h3>
-          <Badge variant="outline">{workflowKey || "workflow"}</Badge>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Load personal presets or reuse previous run inputs as a starting point for this task.
-        </p>
-      </div>
-      {loading ? (
-        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-3 animate-spin" />
-          Loading saved inputs for {workflowKey || "this workflow"}...
-        </p>
-      ) : null}
-      {error ? (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>Saved scheduled inputs unavailable</AlertTitle>
-          <AlertDescription>{error.message}</AlertDescription>
-        </Alert>
-      ) : null}
-      <Tabs className="min-w-0 gap-3" defaultValue="presets">
-        <TabsList className="h-auto w-full justify-start overflow-x-auto sm:w-fit">
-          <TabsTrigger value="presets">
-            Presets
-            <Badge className="ml-1" variant="secondary">
-              {personalEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="history">
-            History
-            <Badge className="ml-1" variant="secondary">
-              {historyEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}
-            </Badge>
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent className="min-w-0 data-[state=inactive]:hidden" value="presets">
-          <div className="flex min-w-0 flex-col gap-3">
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/10 px-3 py-2">
-              <p className="text-xs font-medium text-muted-foreground">Personal presets for this workflow</p>
-              <Badge variant="outline">{sortedPersonal.length} saved</Badge>
-            </div>
-            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
-              <div className="flex min-w-0 flex-1 flex-col gap-2">
-                <Label htmlFor="scheduled-input-preset-name">Scheduled input preset name</Label>
-                <Input
-                  id="scheduled-input-preset-name"
-                  name="scheduledInputPresetName"
-                  className="h-8 min-w-0 text-xs"
-                  placeholder="Preset name"
-                  value={presetName}
-                  onChange={(event) => onPresetNameChange(event.target.value)}
-                />
-              </div>
-              <Button
-                className="h-8 w-full text-xs sm:w-auto"
-                disabled={createDisabled || createPending || personalLimitReached}
-                size="sm"
-                type="button"
-                onClick={onCreate}
-              >
-                {createPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
-                Save current template
-              </Button>
-            </div>
-            {personalLimitReached ? (
-              <p className="text-xs text-destructive">Personal presets are capped at 20 per workflow. Delete one before saving another.</p>
-            ) : null}
-            {sortedPersonal.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No personal presets saved for this workflow.</p>
-            ) : null}
-            <div className="flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1">
-              {sortedPersonal.map((entry) => (
-                <ScheduledSavedInputEntryRow
-                  key={entry.id}
-                  deletePending={deletePending}
-                  entry={entry}
-                  mode="personal"
-                  updatePending={updatePending}
-                  onDelete={onDelete}
-                  onLoad={onLoad}
-                  onUpdate={onUpdate}
-                />
-              ))}
-            </div>
-          </div>
-        </TabsContent>
-        <TabsContent className="min-w-0 data-[state=inactive]:hidden" value="history">
-          <div className="flex min-w-0 flex-col gap-3">
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/10 px-3 py-2">
-              <p className="text-xs font-medium text-muted-foreground">Recent run-captured inputs</p>
-              <Badge variant="outline">{sortedHistory.length} saved</Badge>
-            </div>
-            {sortedHistory.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No runtime input history yet for this workflow.</p>
-            ) : null}
-            <div
-              className="scheduled-input-history-list flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1"
-              data-testid="scheduled-input-history-list"
-            >
-              {sortedHistory.map((entry) => (
-                <ScheduledSavedInputEntryRow
-                  key={entry.id}
-                  deletePending={false}
-                  entry={entry}
-                  mode="history"
-                  updatePending={false}
-                  onDelete={onDelete}
-                  onLoad={onLoad}
-                  onUpdate={onUpdate}
-                />
-              ))}
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
 
 function ScheduleTemplateVarsEditor({
   disabled,
@@ -1967,6 +1730,22 @@ function ScheduledInputsEditor({
   const schemaTemplateText = useMemo(() => resetLaunchParametersTemplate(inputTemplate), [inputTemplate]);
   const templateIdentity = `${schedule.packageId}:${activeWorkflowKey}:${inputSchemaFingerprint}`;
   const draftErrors = useMemo(() => scheduleInputDraftErrors(inputTemplateText), [inputTemplateText]);
+  const personalPanelEntries = useMemo(
+    () =>
+      newestRuntimeInputEntries(
+        runtimeInputRegistry.data?.personal ?? [],
+        "updatedAt",
+      ).map((entry) => savedRuntimeInputRegistryEntry(entry, "personal")),
+    [runtimeInputRegistry.data?.personal],
+  );
+  const historyPanelEntries = useMemo(
+    () =>
+      newestRuntimeInputEntries(
+        runtimeInputRegistry.data?.history ?? [],
+        "createdAt",
+      ).map((entry) => savedRuntimeInputRegistryEntry(entry, "history")),
+    [runtimeInputRegistry.data?.history],
+  );
   const controlDisabled = disabled || isSaving;
   const canUseNextFire = Boolean(schedule.nextFireAt);
 
@@ -2226,22 +2005,75 @@ function ScheduledInputsEditor({
         ) : null}
         <SchedulePlaceholderReference />
         <ScheduleTemplateVarsEditor disabled={controlDisabled} rows={templateVarRows} onRowsChange={setTemplateVarRows} />
-        <ScheduledSavedInputsTabs
+        <SavedRuntimeInputRegistryPanel
+          capMessage="Personal presets are capped at 20 per workflow. Delete one before saving another."
           createDisabled={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching || !personalPresetName.trim() || draftErrors.length > 0}
           createPending={createPersonalEntry.isPending}
           deletePending={deletePersonalEntry.isPending}
+          entryLabelNoun="scheduled input"
           error={runtimeInputRegistry.isError ? runtimeInputRegistry.error : null}
-          historyEntries={runtimeInputRegistry.data?.history ?? []}
+          errorTitle="Saved scheduled inputs unavailable"
+          helperCopy="Load personal presets or reuse previous run inputs as a starting point for this task."
+          historyEmptyMessage="No runtime input history yet for this workflow."
+          historyEntries={historyPanelEntries}
+          historyListClassName="scheduled-input-history-list flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1"
+          historyListTestId="scheduled-input-history-list"
+          historySectionLabel="Recent run-captured inputs"
           loading={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching}
-          personalEntries={runtimeInputRegistry.data?.personal ?? []}
-          presetName={personalPresetName}
+          loadingMessage={`Loading saved inputs for ${activeWorkflowKey || "this workflow"}...`}
+          personalEntries={personalPanelEntries}
+          personalEmptyMessage="No personal presets saved for this workflow."
+          personalListClassName="flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1"
+          personalNameInputId="scheduled-input-preset-name"
+          personalNameInputName="scheduledInputPresetName"
+          personalNameLabel="Scheduled input preset name"
+          personalNamePlaceholder="Preset name"
+          personalNameValue={personalPresetName}
+          personalPresetLimit={SAVED_INPUT_ENTRY_LIMIT}
+          personalSectionLabel="Personal presets for this workflow"
+          rowTestIdPrefix="scheduled-input"
+          saveLabel="Save current template"
+          showPersonalNameLabel
+          staleNoticeTitle="Saved against older workflow metadata."
+          tabContentClassName="data-[state=inactive]:hidden"
+          tabsListClassName="h-auto w-full justify-start overflow-x-auto sm:w-fit"
+          testId="scheduled-input-saved-inputs-helper"
+          title="Schedule input presets"
           updatePending={updatePersonalEntry.isPending}
+          workflowBadgeFallback="workflow"
+          workflowEnabled
           workflowKey={activeWorkflowKey}
           onCreate={() => void savePersonalInput()}
-          onDelete={(entry) => void deletePersonalInput(entry)}
-          onLoad={loadSavedInput}
-          onPresetNameChange={setPersonalPresetName}
-          onUpdate={(entry) => void overwritePersonalInput(entry)}
+          onDelete={(entry) => {
+            const savedEntry = (runtimeInputRegistry.data?.personal ?? []).find(
+              (candidate) => candidate.id === entry.id,
+            );
+            if (savedEntry) {
+              void deletePersonalInput(savedEntry);
+            }
+          }}
+          onLoad={(entry) => {
+            const savedEntry =
+              entry.mode === "history"
+                ? (runtimeInputRegistry.data?.history ?? []).find(
+                    (candidate) => candidate.id === entry.id,
+                  )
+                : (runtimeInputRegistry.data?.personal ?? []).find(
+                    (candidate) => candidate.id === entry.id,
+                  );
+            if (savedEntry) {
+              loadSavedInput(savedEntry);
+            }
+          }}
+          onOverwrite={(entry) => {
+            const savedEntry = (runtimeInputRegistry.data?.personal ?? []).find(
+              (candidate) => candidate.id === entry.id,
+            );
+            if (savedEntry) {
+              void overwritePersonalInput(savedEntry);
+            }
+          }}
+          onPersonalNameChange={setPersonalPresetName}
         />
       </div>
     </div>

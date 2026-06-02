@@ -1359,7 +1359,16 @@ describe("ScheduledTaskDetailPage", () => {
   });
 
   it("scheduled inputs reuse workflow runtime-input presets and history with schedule-specific copy", async () => {
-    const personal = runtimeInputEntry({ id: 7, name: "Morning schedule", payload: { asOfDate: "{{fire.scheduledLocalDate}}" }, slot: "personal" });
+    const personal = runtimeInputEntry({
+      id: 7,
+      name: "Morning schedule",
+      payload: { asOfDate: "{{fire.scheduledLocalDate}}" },
+      slot: "personal",
+      stale: {
+        reasons: [{ current: "manifest-hash-123", field: "manifestHash", issue: "Manifest changed", stored: "old-manifest" }],
+        stale: true,
+      },
+    });
     const olderHistory = runtimeInputEntry({ createdAt: "2026-05-08T08:00:00Z", id: 10, payload: { asOfDate: "2026-05-08" }, slot: "history", sourceRunId: 88 });
     const newerHistory = runtimeInputEntry({ createdAt: "2026-05-08T11:00:00Z", id: 11, payload: { asOfDate: "2026-05-09" }, slot: "history", sourceRunId: 99 });
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry({ history: [olderHistory, newerHistory], personal: [personal] }));
@@ -1370,6 +1379,10 @@ describe("ScheduledTaskDetailPage", () => {
     expect(helper).toHaveTextContent("Schedule input presets");
     expect(helper).toHaveTextContent("1/20");
     expect(helper).toHaveTextContent("2/20");
+    const personalRow = screen.getByTestId("scheduled-input-personal-7");
+    expect(within(personalRow).getByText("Stale")).toBeVisible();
+    expect(within(personalRow).getByText("Saved against older workflow metadata.")).toBeVisible();
+    expect(within(personalRow).getByText(/manifestHash: Manifest changed/i)).toBeVisible();
     const inputJson = screen.getByLabelText("Scheduled input template JSON") as HTMLTextAreaElement;
     const presetNameInput = screen.getByLabelText("Scheduled input preset name");
     expect(presetNameInput).toHaveAttribute("id", "scheduled-input-preset-name");
@@ -1399,7 +1412,56 @@ describe("ScheduledTaskDetailPage", () => {
 
     fireEvent.mouseDown(within(helper).getByRole("tab", { name: /history/i }), { button: 0 });
     expect(screen.getByTestId("scheduled-input-history-11").compareDocumentPosition(screen.getByTestId("scheduled-input-history-10")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const newestHistoryRow = screen.getByTestId("scheduled-input-history-11");
+    expect(within(newestHistoryRow).queryByRole("button", { name: /overwrite/i })).not.toBeInTheDocument();
+    expect(within(newestHistoryRow).queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Load history scheduled input Run #99" }));
     expect(inputJson.value).toBe(JSON.stringify({ asOfDate: "2026-05-09" }, null, 2));
+  });
+
+  it("scheduled inputs surface loading, error, and empty helper states without changing the editor shell", async () => {
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
+      runtimeInputRegistry({ isError: true, isFetching: true }),
+    );
+    renderDetailPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+    const helper = await screen.findByTestId("scheduled-input-saved-inputs-helper");
+    expect(helper).toHaveTextContent("Schedule input presets");
+    expect(helper).toHaveTextContent("daily_research");
+    expect(helper).toHaveTextContent("Loading saved inputs for daily_research...");
+    expect(helper).toHaveTextContent("Saved scheduled inputs unavailable");
+    expect(helper).toHaveTextContent("Saved inputs failed");
+    expect(helper).toHaveTextContent("No personal presets saved for this workflow.");
+    fireEvent.mouseDown(within(helper).getByRole("tab", { name: /history/i }), { button: 0 });
+    expect(screen.getByText("No runtime input history yet for this workflow.")).toBeVisible();
+  });
+
+  it("scheduled inputs surface the personal preset cap before saving another entry", async () => {
+    const personalEntries = Array.from({ length: 20 }, (_, index) =>
+      runtimeInputEntry({
+        id: index + 1,
+        name: `Preset ${index + 1}`,
+        slot: "personal",
+        updatedAt: `2026-05-08T10:${String(index).padStart(2, "0")}:00Z`,
+      }),
+    );
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
+      runtimeInputRegistry({ personal: personalEntries }),
+    );
+    renderDetailPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
+    const helper = await screen.findByTestId("scheduled-input-saved-inputs-helper");
+    expect(helper).toHaveTextContent("20/20");
+    expect(helper).toHaveTextContent("0/20");
+    expect(helper).toHaveTextContent("20 saved");
+    expect(helper).toHaveTextContent(
+      "Personal presets are capped at 20 per workflow. Delete one before saving another.",
+    );
+    fireEvent.change(screen.getByLabelText("Scheduled input preset name"), {
+      target: { value: "Overflow preset" },
+    });
+    expect(screen.getByRole("button", { name: "Save current template" })).toBeDisabled();
   });
 });
