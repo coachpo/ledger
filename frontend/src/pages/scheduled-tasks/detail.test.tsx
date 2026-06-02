@@ -541,23 +541,31 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByRole("alertdialog")).toHaveTextContent("Delete scheduled task");
   });
 
-  it("keeps unsaved schedule edits when switching top-level tabs", async () => {
+  it("keeps unsaved schedule name, description, and timing edits when switching top-level tabs", async () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
     expect(screen.getByTestId("scheduled-task-detail-tab-schedule")).toHaveTextContent("Schedule configuration");
+    expect(screen.getByLabelText("Schedule name")).toHaveValue("Daily market brief");
+    expect(screen.getByLabelText("Description")).toHaveValue("Runs before the opening bell");
     expect(screen.queryByText("Weekly Mon, Tue, Wed, Thu, Fri at 09:00")).not.toBeInTheDocument();
     expect(screen.queryByText("Advanced options")).not.toBeInTheDocument();
 
+    fireEvent.change(screen.getByLabelText("Schedule name"), { target: { value: "Premarket notes" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "  Updated before the bell  " } });
     fireEvent.change(screen.getByLabelText("Timezone"), { target: { value: "UTC" } });
     fireEvent.click(screen.getByRole("button", { name: "Advanced options" }));
     fireEvent.change(screen.getByLabelText("Misfire grace seconds"), { target: { value: "42" } });
     fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
     fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
 
+    expect(screen.getByLabelText("Schedule name")).toHaveValue("Premarket notes");
+    expect(screen.getByLabelText("Description")).toHaveValue("  Updated before the bell  ");
     expect(screen.getByLabelText("Timezone")).toHaveValue("UTC");
     expect(screen.getByLabelText("Misfire grace seconds")).toHaveValue(42);
     expect(screen.getByRole("button", { name: "Advanced options" })).toBeVisible();
+    expect(screen.getByLabelText("Schedule name")).not.toHaveValue(scheduleFixture().name);
+    expect(screen.getByLabelText("Description")).not.toHaveValue(scheduleFixture().description);
     expect(screen.getByLabelText("Timezone")).not.toHaveValue(scheduleFixture().timezone);
   });
 
@@ -790,6 +798,10 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByLabelText("Schedule enabled")).toBeChecked();
     expect(screen.getByLabelText("Timezone")).toHaveValue("America/New_York");
     expect(screen.getByLabelText("At local time")).toHaveValue("09:00");
+    expect(screen.getByRole("combobox", { name: "Recurrence" })).toHaveAttribute(
+      "aria-labelledby",
+      "schedule-recurrence-type-label",
+    );
     expect(screen.queryByLabelText("Overlap policy")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Misfire policy")).not.toBeInTheDocument();
     expect(screen.queryByText(/PATCH endpoint/i)).not.toBeInTheDocument();
@@ -797,14 +809,24 @@ describe("ScheduledTaskDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Advanced options" }));
     expect(screen.getByLabelText("Overlap policy")).toBeVisible();
     expect(screen.getByLabelText("Misfire policy")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Overlap policy" })).toHaveAttribute(
+      "aria-labelledby",
+      "schedule-overlap-policy-label",
+    );
+    expect(screen.getByRole("combobox", { name: "Misfire policy" })).toHaveAttribute(
+      "aria-labelledby",
+      "schedule-misfire-policy-label",
+    );
     expect(screen.getByLabelText("Misfire grace seconds")).toBeVisible();
   });
 
-  it("serializes recurrence and policy edits to the canonical backend update payload", async () => {
+  it("serializes schedule metadata, recurrence, and policy edits to the canonical backend update payload", async () => {
     updateScheduleMock.mockResolvedValue(
       scheduleFixture({
+        description: null,
         misfireGraceSeconds: 7200,
         misfirePolicy: "skip",
+        name: "London market brief",
         overlapPolicy: "queue",
         recurrence: { every: 2, type: "interval", unit: "hours" },
         status: "paused",
@@ -815,10 +837,12 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
+    fireEvent.change(screen.getByLabelText("Schedule name"), { target: { value: "London market brief" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "   " } });
     fireEvent.click(screen.getByRole("button", { name: "Advanced options" }));
     fireEvent.click(screen.getByLabelText("Schedule enabled"));
     fireEvent.change(screen.getByLabelText("Timezone"), { target: { value: "Europe/London" } });
-    await chooseSelectOption("Recurrence type", "Interval");
+    await chooseSelectOption("Recurrence", "Interval");
     fireEvent.change(screen.getByLabelText("Every"), { target: { value: "2" } });
     await chooseSelectOption("Interval unit", "Hours");
     fireEvent.change(screen.getByLabelText("Starts at"), { target: { value: "2026-06-02T09:30" } });
@@ -832,9 +856,11 @@ describe("ScheduledTaskDetailPage", () => {
     await waitFor(() => expect(updateScheduleMock).toHaveBeenCalledTimes(1));
     expect(updateScheduleMock).toHaveBeenCalledWith({
       payload: {
+        description: null,
         endsAt: null,
         misfireGraceSeconds: 7200,
         misfirePolicy: "skip",
+        name: "London market brief",
         overlapPolicy: "queue",
         recurrence: {
           every: 2,
@@ -873,7 +899,7 @@ describe("ScheduledTaskDetailPage", () => {
     );
 
     updateScheduleMock.mockClear();
-    await chooseSelectOption("Recurrence type", "Monthly");
+    await chooseSelectOption("Recurrence", "Monthly");
     fireEvent.click(screen.getByLabelText("15"));
     fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
 
@@ -934,9 +960,11 @@ describe("ScheduledTaskDetailPage", () => {
 
     await waitFor(() => expect(updateScheduleMock).toHaveBeenCalledWith({
       payload: {
+        description: "Runs before the opening bell",
         endsAt: null,
         misfireGraceSeconds: 86400,
         misfirePolicy: "catchUpOne",
+        name: "Daily market brief",
         overlapPolicy: "skip",
         recurrence: {
           atLocalTime: "09:00",
@@ -1203,8 +1231,11 @@ describe("ScheduledTaskDetailPage", () => {
     expect(helper).toHaveTextContent("1/20");
     expect(helper).toHaveTextContent("2/20");
     const inputJson = screen.getByLabelText("Scheduled input template JSON") as HTMLTextAreaElement;
+    const presetNameInput = screen.getByLabelText("Scheduled input preset name");
+    expect(presetNameInput).toHaveAttribute("id", "scheduled-input-preset-name");
+    expect(presetNameInput).toHaveAttribute("name", "scheduledInputPresetName");
     fireEvent.change(inputJson, { target: { value: '{"asOfDate":"{{fire.scheduledLocalDate}}"}' } });
-    fireEvent.change(screen.getByLabelText("Scheduled input preset name"), { target: { value: "Reusable schedule" } });
+    fireEvent.change(presetNameInput, { target: { value: "Reusable schedule" } });
     fireEvent.click(screen.getByRole("button", { name: "Save current template" }));
 
     await waitFor(() => expect(createRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({

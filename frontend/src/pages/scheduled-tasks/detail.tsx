@@ -136,11 +136,13 @@ type ScheduleEditorDraft = {
   atLocalTime: string;
   daysOfMonth: number[];
   daysOfWeek: ScheduleDayOfWeek[];
+  description: string;
   endsAt: string;
   every: number;
   intervalUnit: ScheduleIntervalUnit;
   misfireGraceSeconds: number;
   misfirePolicy: ScheduleMisfirePolicy;
+  name: string;
   overlapPolicy: ScheduleOverlapPolicy;
   recurrenceType: ScheduleRecurrenceType;
   startsAt: string;
@@ -392,11 +394,13 @@ function scheduleDraftFromRead(schedule: ScheduleRead): ScheduleEditorDraft {
     atLocalTime: "09:00",
     daysOfMonth: [1],
     daysOfWeek: ["mon", "tue", "wed", "thu", "fri"],
+    description: schedule.description ?? "",
     endsAt: formatDateTimeLocalInput(schedule.endsAt),
     every: 1,
     intervalUnit: "hours",
     misfireGraceSeconds: schedule.misfireGraceSeconds,
     misfirePolicy: schedule.misfirePolicy,
+    name: schedule.name,
     overlapPolicy: schedule.overlapPolicy,
     recurrenceType: schedule.recurrence.type,
     startsAt: formatDateTimeLocalInput(schedule.startsAt),
@@ -455,9 +459,11 @@ function recurrenceFromDraft(draft: ScheduleEditorDraft): ScheduleRecurrence {
 
 function scheduleUpdatePayloadFromDraft(draft: ScheduleEditorDraft): ScheduleUpdateRequest {
   return {
+    description: draft.description.trim() || null,
     endsAt: serializeDateTimeLocalInput(draft.endsAt),
     misfireGraceSeconds: clampPositiveInteger(draft.misfireGraceSeconds, 86_400),
     misfirePolicy: draft.misfirePolicy,
+    name: draft.name.trim(),
     overlapPolicy: draft.overlapPolicy,
     recurrence: recurrenceFromDraft(draft),
     startsAt: serializeDateTimeLocalInput(draft.startsAt),
@@ -1005,12 +1011,19 @@ type ScheduleFieldProps = {
   description?: string;
   htmlFor?: string;
   label: string;
+  labelId?: string;
 };
 
-function ScheduleField({ children, description, htmlFor, label }: ScheduleFieldProps) {
+function ScheduleField({ children, description, htmlFor, label, labelId }: ScheduleFieldProps) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <Label htmlFor={htmlFor}>{label}</Label>
+      {htmlFor ? (
+        <Label htmlFor={htmlFor} id={labelId}>{label}</Label>
+      ) : labelId ? (
+        <div className="text-sm font-medium leading-none" id={labelId}>{label}</div>
+      ) : (
+        <div className="text-sm font-medium leading-none">{label}</div>
+      )}
       {children}
       {description ? <p className="text-xs leading-5 text-muted-foreground">{description}</p> : null}
     </div>
@@ -1044,6 +1057,33 @@ function ScheduleConfigurationEditor({
 
   return (
     <div className="flex min-w-0 flex-col gap-5" data-testid="scheduled-task-recurrence-editor">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <ScheduleField
+          description="This title appears in the scheduled task header and list views."
+          htmlFor="schedule-name"
+          label="Schedule name"
+        >
+          <Input
+            id="schedule-name"
+            value={draft.name}
+            disabled={controlDisabled}
+            onChange={(event) => updateDraft({ name: event.target.value })}
+          />
+        </ScheduleField>
+        <ScheduleField
+          description="Optional operator context. Blank descriptions are cleared when you save."
+          htmlFor="schedule-description"
+          label="Description"
+        >
+          <Textarea
+            id="schedule-description"
+            value={draft.description}
+            disabled={controlDisabled}
+            onChange={(event) => updateDraft({ description: event.target.value })}
+          />
+        </ScheduleField>
+      </div>
+
       <div className="grid min-w-0 gap-4 lg:grid-cols-3">
         <ScheduleField
           description="Enabled tasks keep creating future runs. Paused tasks keep their setup and history without starting new ones."
@@ -1073,15 +1113,15 @@ function ScheduleConfigurationEditor({
         </ScheduleField>
         <ScheduleField
           description="Choose how often this task should run. Time-based schedules follow the timezone above."
-          htmlFor="schedule-recurrence-type"
           label="Recurrence"
+          labelId="schedule-recurrence-type-label"
         >
           <Select
             value={draft.recurrenceType}
             onValueChange={(value: ScheduleRecurrenceType) => updateDraft({ recurrenceType: value })}
             disabled={controlDisabled}
           >
-            <SelectTrigger id="schedule-recurrence-type" aria-label="Recurrence type">
+            <SelectTrigger id="schedule-recurrence-type" aria-labelledby="schedule-recurrence-type-label">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1108,13 +1148,13 @@ function ScheduleConfigurationEditor({
               onChange={(event) => updateDraft({ every: Number.parseInt(event.target.value, 10) || 1 })}
             />
           </ScheduleField>
-          <ScheduleField htmlFor="schedule-interval-unit" label="Interval unit">
+          <ScheduleField label="Interval unit" labelId="schedule-interval-unit-label">
             <Select
               value={draft.intervalUnit}
               onValueChange={(value: ScheduleIntervalUnit) => updateDraft({ intervalUnit: value })}
               disabled={controlDisabled}
             >
-              <SelectTrigger id="schedule-interval-unit" aria-label="Interval unit">
+              <SelectTrigger id="schedule-interval-unit" aria-labelledby="schedule-interval-unit-label">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1251,15 +1291,15 @@ function ScheduleConfigurationEditor({
           <div className="grid min-w-0 gap-4 border-t pt-4 lg:grid-cols-3">
             <ScheduleField
               description="Skip records the occurrence when an earlier run is still queued or running; queue allows another run."
-              htmlFor="schedule-overlap-policy"
               label="Overlap policy"
+              labelId="schedule-overlap-policy-label"
             >
               <Select
                 value={draft.overlapPolicy}
                 onValueChange={(value: ScheduleOverlapPolicy) => updateDraft({ overlapPolicy: value })}
                 disabled={controlDisabled}
               >
-                <SelectTrigger id="schedule-overlap-policy" aria-label="Overlap policy">
+                <SelectTrigger id="schedule-overlap-policy" aria-labelledby="schedule-overlap-policy-label">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1272,15 +1312,15 @@ function ScheduleConfigurationEditor({
             </ScheduleField>
             <ScheduleField
               description="Choose whether missed occurrences are skipped or the latest eligible occurrence is run."
-              htmlFor="schedule-misfire-policy"
               label="Misfire policy"
+              labelId="schedule-misfire-policy-label"
             >
               <Select
                 value={draft.misfirePolicy}
                 onValueChange={(value: ScheduleMisfirePolicy) => updateDraft({ misfirePolicy: value })}
                 disabled={controlDisabled}
               >
-                <SelectTrigger id="schedule-misfire-policy" aria-label="Misfire policy">
+                <SelectTrigger id="schedule-misfire-policy" aria-labelledby="schedule-misfire-policy-label">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1527,14 +1567,18 @@ function ScheduledSavedInputsTabs({
         </TabsList>
         <TabsContent className="min-w-0" value="presets">
           <div className="flex min-w-0 flex-col gap-3">
-            <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
-              <Input
-                aria-label="Scheduled input preset name"
-                className="h-8 min-w-0 text-xs"
-                placeholder="Preset name"
-                value={presetName}
-                onChange={(event) => onPresetNameChange(event.target.value)}
-              />
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <Label htmlFor="scheduled-input-preset-name">Scheduled input preset name</Label>
+                <Input
+                  id="scheduled-input-preset-name"
+                  name="scheduledInputPresetName"
+                  className="h-8 min-w-0 text-xs"
+                  placeholder="Preset name"
+                  value={presetName}
+                  onChange={(event) => onPresetNameChange(event.target.value)}
+                />
+              </div>
               <Button
                 className="h-8 w-full text-xs sm:w-auto"
                 disabled={createDisabled || createPending || personalLimitReached}
