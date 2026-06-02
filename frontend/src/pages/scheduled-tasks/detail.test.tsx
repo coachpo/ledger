@@ -659,7 +659,7 @@ describe("ScheduledTaskDetailPage", () => {
 
     renderDetailPage();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Runs" }), { button: 0 });
     const history = screen.getByTestId("scheduled-task-detail-tab-runs");
     expect(history).toHaveTextContent("No runs yet");
     expect(history).toHaveTextContent("Scheduled and manual runs will appear here.");
@@ -675,7 +675,7 @@ describe("ScheduledTaskDetailPage", () => {
       isPending: true,
     });
     const loadingView = renderDetailPage();
-    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Runs" }), { button: 0 });
     expect(screen.getByText("Loading runs...")).toBeVisible();
     expect(screen.queryByRole("tab", { name: "Diagnostics" })).not.toBeInTheDocument();
     loadingView.unmount();
@@ -687,7 +687,7 @@ describe("ScheduledTaskDetailPage", () => {
       isPending: false,
     });
     renderDetailPage();
-    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Runs" }), { button: 0 });
     expect(screen.getByTestId("scheduled-task-fire-history-error")).toHaveTextContent(
       "Fire history API unavailable",
     );
@@ -734,7 +734,7 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     expect(useScheduledTaskFiresMock).toHaveBeenCalledWith("44", { limit: 20 });
-    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Runs" }), { button: 0 });
     const history = screen.getByTestId("scheduled-task-detail-tab-runs");
     expect(history).toHaveTextContent("3 total fires");
     expect(history).toHaveTextContent("Fire #801");
@@ -1149,7 +1149,11 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{fire.scheduledLocalDate}}");
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{fire.materializedAt}}");
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{vars.<key>}}");
+    expect(screen.queryByTestId("scheduled-input-history-list")).not.toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /history/i }), { button: 0 });
     expect(screen.getByTestId("scheduled-input-history-list")).toHaveClass("overflow-y-auto");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /presets/i }), { button: 0 });
+    expect(screen.queryByTestId("scheduled-input-history-list")).not.toBeInTheDocument();
     expect(inputJson.value).toBe(JSON.stringify({ asOfDate: "", portfolioSlug: "" }, null, 2));
     fireEvent.change(inputJson, {
       target: {

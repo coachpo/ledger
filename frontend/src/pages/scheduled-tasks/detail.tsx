@@ -1672,7 +1672,7 @@ function ScheduledSavedInputsTabs({
             </Badge>
           </TabsTrigger>
         </TabsList>
-        <TabsContent className="min-w-0 data-[state=inactive]:hidden" forceMount value="presets">
+        <TabsContent className="min-w-0 data-[state=inactive]:hidden" value="presets">
           <div className="flex min-w-0 flex-col gap-3">
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/10 px-3 py-2">
               <p className="text-xs font-medium text-muted-foreground">Personal presets for this workflow</p>
@@ -1723,7 +1723,7 @@ function ScheduledSavedInputsTabs({
             </div>
           </div>
         </TabsContent>
-        <TabsContent className="min-w-0 data-[state=inactive]:hidden" forceMount value="history">
+        <TabsContent className="min-w-0 data-[state=inactive]:hidden" value="history">
           <div className="flex min-w-0 flex-col gap-3">
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/10 px-3 py-2">
               <p className="text-xs font-medium text-muted-foreground">Recent run-captured inputs</p>
@@ -2451,7 +2451,6 @@ function ScheduleTabs({
       <TabsContent
         className="m-0 min-h-0 min-w-0 overflow-auto data-[state=inactive]:hidden"
         data-testid="scheduled-task-detail-tab-overview"
-        forceMount
         value="overview"
       >
         <SummaryPanels
@@ -2497,7 +2496,6 @@ function ScheduleTabs({
       <TabsContent
         className="m-0 min-h-0 min-w-0 overflow-auto data-[state=inactive]:hidden"
         data-testid="scheduled-task-detail-tab-runs"
-        forceMount
         value="runs"
       >
         <div className="flex min-w-0 flex-col gap-3">
