@@ -525,6 +525,7 @@ describe("ScheduledTaskDetailPage", () => {
 
     const summaryGrid = screen.getByTestId("scheduled-task-detail-summary-grid");
     expect(summaryGrid).toHaveClass("grid", "min-w-0");
+    expect(summaryGrid).toHaveClass("lg:grid-cols-2", "2xl:grid-cols-4");
     expect(screen.getByTestId("scheduled-task-detail-next-run-summary")).toHaveTextContent("Next run");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Target workflow");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("market_research_package");
@@ -568,6 +569,9 @@ describe("ScheduledTaskDetailPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
     const schedulePanel = screen.getByTestId("scheduled-task-detail-tab-schedule");
     expect(schedulePanel).toHaveTextContent("Schedule configuration");
+    expect(screen.getByTestId("scheduled-task-recurrence-timing-grid")).toHaveClass("grid");
+    expect(screen.getByTestId("scheduled-task-recurrence-interval-row")).toBeInTheDocument();
+    expect(screen.getByTestId("scheduled-task-recurrence-bounds-grid")).toBeInTheDocument();
     expect(screen.getByLabelText("Schedule name")).toHaveValue("Daily market brief");
     expect(screen.getByLabelText("Description")).toHaveValue("Runs before the opening bell");
     expect(within(schedulePanel).queryByText("Weekly Mon, Tue, Wed, Thu, Fri at 09:00")).not.toBeInTheDocument();
@@ -719,6 +723,9 @@ describe("ScheduledTaskDetailPage", () => {
     expect(history).toHaveTextContent("Queued");
     expect(history).toHaveTextContent("Manual fire");
     expect(history).toHaveTextContent("core_portfolio");
+    const fire801 = screen.getByTestId("scheduled-task-fire-801");
+    expect(within(fire801).queryByTestId("scheduled-task-fire-parameters-801")).not.toBeInTheDocument();
+    expect(within(fire801).getByRole("button", { name: "Show details for fire #801" })).toBeVisible();
     expect(history).toHaveTextContent("Fire #800");
     expect(history).toHaveTextContent("Skipped: Schedule Overlap Active");
     expect(history).toHaveTextContent("No linked run");
@@ -736,6 +743,10 @@ describe("ScheduledTaskDetailPage", () => {
     expect(within(history).queryByRole("button", { name: "Developer details" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("scheduled-task-fire-diagnostics-panel")).not.toBeInTheDocument();
     expect(screen.queryByTestId("scheduled-task-fire-diagnostic-799")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show details for fire #801" }));
+    expect(screen.getByTestId("scheduled-task-fire-parameters-801")).toHaveTextContent("asOfDate");
+    expect(screen.getByTestId("scheduled-task-fire-parameters-801")).toHaveTextContent("portfolioSlug");
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("schedule-run-now"));
@@ -1078,14 +1089,26 @@ describe("ScheduledTaskDetailPage", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
     const editor = screen.getByTestId("scheduled-inputs-editor");
+    expect(screen.getByTestId("scheduled-inputs-toolbar")).toHaveTextContent("Reset to schema template");
+    expect(screen.getByTestId("scheduled-inputs-toolbar")).toHaveTextContent("Preview next run");
+    expect(screen.getByTestId("scheduled-inputs-toolbar")).toHaveTextContent("Save inputs");
     const inputJson = screen.getByLabelText("Scheduled input template JSON") as HTMLTextAreaElement;
     expect(editor).not.toHaveTextContent("Start a custom draft from the workflow defaults.");
     expect(screen.queryByRole("button", { name: "Customize inputs" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Start from workflow defaults" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Placeholders and presets" })).not.toBeInTheDocument();
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Allowed scheduled placeholders");
+    expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Schedule");
+    expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Fire");
+    expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Window");
+    expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Last run");
+    expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Vars");
+    expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{fire.id}}");
+    expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{fire.reason}}");
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{fire.scheduledLocalDate}}");
+    expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{fire.materializedAt}}");
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("{{vars.<key>}}");
+    expect(screen.getByTestId("scheduled-input-history-list")).toHaveClass("overflow-y-auto");
     expect(inputJson.value).toBe(JSON.stringify({ asOfDate: "", portfolioSlug: "" }, null, 2));
     fireEvent.change(inputJson, {
       target: {

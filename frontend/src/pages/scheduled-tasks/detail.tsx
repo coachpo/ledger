@@ -159,24 +159,35 @@ type ScheduleInputDraft = {
 
 const SAVED_INPUT_ENTRY_LIMIT = 20;
 
-const SCHEDULE_PLACEHOLDER_EXAMPLES = [
-  "schedule.id",
-  "schedule.name",
-  "schedule.timezone",
-  "schedule.packageKey",
-  "schedule.workflowKey",
-  "fire.scheduledFor",
-  "fire.scheduledLocalDate",
-  "fire.scheduledLocalTime",
-  "fire.scheduledLocalDateTime",
-  "window.start",
-  "window.end",
-  "window.startDate",
-  "window.endDate",
-  "lastRun.id",
-  "lastRun.status",
-  "lastRun.completedAt",
-  "vars.<key>",
+const SCHEDULE_PLACEHOLDER_GROUPS = [
+  {
+    items: ["schedule.id", "schedule.name", "schedule.timezone", "schedule.packageKey", "schedule.workflowKey"],
+    title: "Schedule",
+  },
+  {
+    items: [
+      "fire.id",
+      "fire.reason",
+      "fire.scheduledFor",
+      "fire.scheduledLocalDate",
+      "fire.scheduledLocalTime",
+      "fire.scheduledLocalDateTime",
+      "fire.materializedAt",
+    ],
+    title: "Fire",
+  },
+  {
+    items: ["window.start", "window.end", "window.startDate", "window.endDate"],
+    title: "Window",
+  },
+  {
+    items: ["lastRun.id", "lastRun.status", "lastRun.completedAt"],
+    title: "Last run",
+  },
+  {
+    items: ["vars.<key>"],
+    title: "Vars",
+  },
 ] as const;
 
 const EXACT_SCHEDULE_PLACEHOLDER_EXPRESSIONS = new Set([
@@ -358,6 +369,44 @@ function savedInputEntryLabel(entry: WorkflowPackageRuntimeInputEntryRead, mode:
     return `Run #${entry.sourceRunId}`;
   }
   return mode === "history" ? `History #${entry.id}` : `Preset #${entry.id}`;
+}
+
+function summarizeRenderedParameterValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (value === null) {
+    return "null";
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return "[]";
+    }
+    const preview = value.slice(0, 2).map(summarizeRenderedParameterValue).join(", ");
+    return value.length > 2 ? `[${preview}, ...]` : `[${preview}]`;
+  }
+  if (isUnknownRecord(value)) {
+    const keys = Object.keys(value);
+    if (keys.length === 0) {
+      return "{}";
+    }
+    return keys.length > 2 ? `{${keys.slice(0, 2).join(", ")}, ...}` : `{${keys.join(", ")}}`;
+  }
+  return String(value);
+}
+
+function summarizeRenderedParameters(value: unknown): string[] {
+  if (isUnknownRecord(value)) {
+    const entries = Object.entries(value);
+    return entries.slice(0, 4).map(([key, entryValue]) => `${key}: ${summarizeRenderedParameterValue(entryValue)}`);
+  }
+  if (value === undefined) {
+    return [];
+  }
+  return [summarizeRenderedParameterValue(value)];
 }
 
 function formatOptionalDateTime(value: string | null, fallback: string): string {
@@ -864,15 +913,15 @@ function SummaryCard({
   title: string;
 }) {
   return (
-    <Card className="min-w-0 gap-4" data-testid={testId}>
-      <CardHeader className="px-4 pt-4">
+    <Card className="min-w-0 gap-3" data-testid={testId}>
+      <CardHeader className="gap-1.5 px-4 pt-4 pb-0">
         <div className="min-w-0">
           <CardTitle className="text-sm font-semibold tracking-tight">{title}</CardTitle>
           <CardDescription className="mt-1 text-xs leading-5">{description}</CardDescription>
         </div>
         {action ? <CardAction>{action}</CardAction> : null}
       </CardHeader>
-      <CardContent className="min-w-0 px-4 pb-4 text-sm">{children}</CardContent>
+      <CardContent className="min-w-0 px-4 pt-0 pb-4 text-sm">{children}</CardContent>
     </Card>
   );
 }
@@ -922,7 +971,7 @@ function SummaryPanels({
   const visibleDiagnostics = actionableDiagnostics(diagnostics);
 
   return (
-    <div className="grid min-w-0 gap-3 xl:grid-cols-4" data-testid="scheduled-task-detail-summary-grid">
+    <div className="grid min-w-0 gap-3 lg:grid-cols-2 2xl:grid-cols-4" data-testid="scheduled-task-detail-summary-grid">
       <SummaryCard
         action={<CalendarClock className="text-muted-foreground" />}
         description="The next scheduled occurrence in this task's timezone."
@@ -1109,7 +1158,7 @@ function ScheduleConfigurationEditor({
         </ScheduleField>
       </div>
 
-      <div className="grid min-w-0 gap-4 lg:grid-cols-3">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
         <ScheduleField
           description="Enabled tasks keep creating future runs. Paused tasks keep their setup and history without starting new ones."
           label="Enabled state"
@@ -1124,91 +1173,101 @@ function ScheduleConfigurationEditor({
             <span className="text-sm font-medium">{draft.status === "enabled" ? "Enabled" : "Paused"}</span>
           </div>
         </ScheduleField>
-        <ScheduleField
-          description="Use an IANA timezone such as America/New_York. Daily, weekly, and monthly times are interpreted as local wall-clock times in this zone."
-          htmlFor="schedule-timezone"
-          label="Timezone"
+        <div
+          className="scheduled-task-recurrence-timing-grid grid min-w-0 gap-4 rounded-xl border bg-muted/10 p-4 lg:grid-cols-2 xl:grid-cols-4"
+          data-testid="scheduled-task-recurrence-timing-grid"
         >
-          <Input
-            id="schedule-timezone"
-            value={draft.timezone}
-            disabled={controlDisabled}
-            onChange={(event) => updateDraft({ timezone: event.target.value })}
-          />
-        </ScheduleField>
-        <ScheduleField
-          description="Choose how often this task should run. Time-based schedules follow the timezone above."
-          label="Recurrence"
-          labelId="schedule-recurrence-type-label"
-        >
-          <Select
-            value={draft.recurrenceType}
-            onValueChange={(value: ScheduleRecurrenceType) => updateDraft({ recurrenceType: value })}
-            disabled={controlDisabled}
+          <ScheduleField
+            description="Choose how often this task should run. Time-based schedules follow the timezone above."
+            label="Recurrence"
+            labelId="schedule-recurrence-type-label"
           >
-            <SelectTrigger id="schedule-recurrence-type" aria-labelledby="schedule-recurrence-type-label">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="interval">Interval</SelectItem>
-                <SelectItem value="daily">Daily</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="monthly">Monthly</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </ScheduleField>
-      </div>
-
-      {draft.recurrenceType === "interval" ? (
-        <div className="grid min-w-0 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <ScheduleField description="The first interval fire is anchor + interval, never immediate." htmlFor="schedule-interval-every" label="Every">
-            <Input
-              id="schedule-interval-every"
-              min={1}
-              type="number"
-              value={draft.every}
-              disabled={controlDisabled}
-              onChange={(event) => updateDraft({ every: Number.parseInt(event.target.value, 10) || 1 })}
-            />
-          </ScheduleField>
-          <ScheduleField label="Interval unit" labelId="schedule-interval-unit-label">
             <Select
-              value={draft.intervalUnit}
-              onValueChange={(value: ScheduleIntervalUnit) => updateDraft({ intervalUnit: value })}
+              value={draft.recurrenceType}
+              onValueChange={(value: ScheduleRecurrenceType) => updateDraft({ recurrenceType: value })}
               disabled={controlDisabled}
             >
-              <SelectTrigger id="schedule-interval-unit" aria-labelledby="schedule-interval-unit-label">
+              <SelectTrigger id="schedule-recurrence-type" aria-labelledby="schedule-recurrence-type-label">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value="minutes">Minutes</SelectItem>
-                  <SelectItem value="hours">Hours</SelectItem>
-                  <SelectItem value="days">Days</SelectItem>
+                  <SelectItem value="interval">Interval</SelectItem>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
           </ScheduleField>
+          <ScheduleField
+            description="Use an IANA timezone such as America/New_York. Daily, weekly, and monthly times are interpreted as local wall-clock times in this zone."
+            htmlFor="schedule-timezone"
+            label="Timezone"
+          >
+            <Input
+              id="schedule-timezone"
+              value={draft.timezone}
+              disabled={controlDisabled}
+              onChange={(event) => updateDraft({ timezone: event.target.value })}
+            />
+          </ScheduleField>
+          <div
+            className={`scheduled-task-recurrence-interval-row min-w-0 lg:col-span-2 xl:col-span-2 ${draft.recurrenceType === "interval" ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,9rem)_minmax(0,12rem)]" : "hidden"}`}
+            data-testid="scheduled-task-recurrence-interval-row"
+          >
+            <ScheduleField
+              description="The first interval fire is anchor + interval, never immediate."
+              htmlFor="schedule-interval-every"
+              label="Every"
+            >
+              <Input
+                id="schedule-interval-every"
+                min={1}
+                type="number"
+                value={draft.every}
+                disabled={controlDisabled}
+                onChange={(event) => updateDraft({ every: Number.parseInt(event.target.value, 10) || 1 })}
+              />
+            </ScheduleField>
+            <ScheduleField label="Interval unit" labelId="schedule-interval-unit-label">
+              <Select
+                value={draft.intervalUnit}
+                onValueChange={(value: ScheduleIntervalUnit) => updateDraft({ intervalUnit: value })}
+                disabled={controlDisabled}
+              >
+                <SelectTrigger id="schedule-interval-unit" aria-labelledby="schedule-interval-unit-label">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="minutes">Minutes</SelectItem>
+                    <SelectItem value="hours">Hours</SelectItem>
+                    <SelectItem value="days">Days</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </ScheduleField>
+          </div>
+          {draft.recurrenceType !== "interval" ? (
+            <div className="lg:col-span-2 xl:col-span-2">
+              <ScheduleField
+                description="Local time is resolved in the timezone above, including deterministic DST gap/repeat handling."
+                htmlFor="schedule-at-local-time"
+                label="At local time"
+              >
+                <Input
+                  id="schedule-at-local-time"
+                  type="time"
+                  value={draft.atLocalTime}
+                  disabled={controlDisabled}
+                  onChange={(event) => updateDraft({ atLocalTime: event.target.value })}
+                />
+              </ScheduleField>
+            </div>
+          ) : null}
         </div>
-      ) : null}
-
-      {draft.recurrenceType !== "interval" ? (
-        <ScheduleField
-          description="Local time is resolved in the timezone above, including deterministic DST gap/repeat handling."
-          htmlFor="schedule-at-local-time"
-          label="At local time"
-        >
-          <Input
-            id="schedule-at-local-time"
-            type="time"
-            value={draft.atLocalTime}
-            disabled={controlDisabled}
-            onChange={(event) => updateDraft({ atLocalTime: event.target.value })}
-          />
-        </ScheduleField>
-      ) : null}
+      </div>
 
       {draft.recurrenceType === "weekly" ? (
         <ScheduleField
@@ -1268,7 +1327,10 @@ function ScheduleConfigurationEditor({
         </ScheduleField>
       ) : null}
 
-      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+      <div
+        className="scheduled-task-recurrence-bounds-grid grid min-w-0 gap-4 rounded-xl border bg-muted/10 p-4 sm:grid-cols-2"
+        data-testid="scheduled-task-recurrence-bounds-grid"
+      >
         <ScheduleField
           description="Leave blank for no lower bound. Interval schedules anchor to startsAt when supplied."
           htmlFor="schedule-starts-at"
@@ -1576,7 +1638,7 @@ function ScheduledSavedInputsTabs({
         </Alert>
       ) : null}
       <Tabs className="min-w-0 gap-3" defaultValue="presets">
-        <TabsList className="w-full justify-start sm:w-fit">
+        <TabsList className="h-auto w-full justify-start overflow-x-auto sm:w-fit">
           <TabsTrigger value="presets">
             Presets
             <Badge className="ml-1" variant="secondary">
@@ -1590,8 +1652,12 @@ function ScheduledSavedInputsTabs({
             </Badge>
           </TabsTrigger>
         </TabsList>
-        <TabsContent className="min-w-0" value="presets">
+        <TabsContent className="min-w-0 data-[state=inactive]:hidden" forceMount value="presets">
           <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/10 px-3 py-2">
+              <p className="text-xs font-medium text-muted-foreground">Personal presets for this workflow</p>
+              <Badge variant="outline">{sortedPersonal.length} saved</Badge>
+            </div>
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
               <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <Label htmlFor="scheduled-input-preset-name">Scheduled input preset name</Label>
@@ -1621,7 +1687,7 @@ function ScheduledSavedInputsTabs({
             {sortedPersonal.length === 0 ? (
               <p className="text-xs text-muted-foreground">No personal presets saved for this workflow.</p>
             ) : null}
-            <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1">
               {sortedPersonal.map((entry) => (
                 <ScheduledSavedInputEntryRow
                   key={entry.id}
@@ -1637,12 +1703,19 @@ function ScheduledSavedInputsTabs({
             </div>
           </div>
         </TabsContent>
-        <TabsContent className="min-w-0" value="history">
+        <TabsContent className="min-w-0 data-[state=inactive]:hidden" forceMount value="history">
           <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/10 px-3 py-2">
+              <p className="text-xs font-medium text-muted-foreground">Recent run-captured inputs</p>
+              <Badge variant="outline">{sortedHistory.length} saved</Badge>
+            </div>
             {sortedHistory.length === 0 ? (
               <p className="text-xs text-muted-foreground">No runtime input history yet for this workflow.</p>
             ) : null}
-            <div className="flex min-w-0 flex-col gap-2">
+            <div
+              className="scheduled-input-history-list flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1"
+              data-testid="scheduled-input-history-list"
+            >
               {sortedHistory.map((entry) => (
                 <ScheduledSavedInputEntryRow
                   key={entry.id}
@@ -1757,11 +1830,21 @@ function SchedulePlaceholderReference() {
       </div>
       <CollapsibleContent className="pt-3">
         <div className="flex min-w-0 flex-col gap-3 border-t pt-3">
-          <div className="flex min-w-0 flex-wrap gap-2">
-            {SCHEDULE_PLACEHOLDER_EXAMPLES.map((example) => (
-              <Badge className="font-mono" key={example} variant="outline">
-                {`{{${example}}}`}
-              </Badge>
+          <div className="grid min-w-0 gap-3 lg:grid-cols-2 2xl:grid-cols-5">
+            {SCHEDULE_PLACEHOLDER_GROUPS.map((group) => (
+              <div className="min-w-0 rounded-lg border bg-background/60 p-3" key={group.title}>
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <h4 className="text-xs font-semibold tracking-tight">{group.title}</h4>
+                  <Badge variant="secondary">{group.items.length}</Badge>
+                </div>
+                <div className="mt-2 flex min-w-0 flex-wrap gap-2">
+                  {group.items.map((example) => (
+                    <Badge className="font-mono" key={example} variant="outline">
+                      {`{{${example}}}`}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
@@ -2065,40 +2148,50 @@ function ScheduledInputsEditor({
         title="Scheduled input preview failed"
       />
       <div className="flex min-w-0 flex-col gap-3" data-testid="scheduled-input-json-panel">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <Label htmlFor="schedule-input-template-json">Scheduled input template JSON</Label>
-          <Button disabled={controlDisabled} size="sm" type="button" variant="outline" onClick={resetInputTemplate}>
-            Reset to schema template
-          </Button>
+        <div
+          className="scheduled-inputs-toolbar flex min-w-0 flex-col gap-3 rounded-xl border bg-muted/10 p-3 lg:flex-row lg:items-center lg:justify-between"
+          data-testid="scheduled-inputs-toolbar"
+        >
+          <div className="min-w-0">
+            <Label htmlFor="schedule-input-template-json">Scheduled input template JSON</Label>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Edit the workflow-seeded template, preview the next fire, then save the validated payload back to this task.
+            </p>
+          </div>
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
+            <Button disabled={controlDisabled} size="sm" type="button" variant="outline" onClick={resetInputTemplate}>
+              Reset to schema template
+            </Button>
+            <Button
+              disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={() => void previewCurrentDraft()}
+            >
+              {previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+              Preview next run
+            </Button>
+            <Button
+              disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
+              size="sm"
+              type="button"
+              onClick={() => void saveInputTemplate()}
+            >
+              {isSaving || previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+              Save inputs
+            </Button>
+          </div>
         </div>
         <Textarea
           id="schedule-input-template-json"
           aria-label="Scheduled input template JSON"
-          className="min-h-72 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
+          className="min-h-[18rem] max-h-[30rem] max-w-full overflow-auto whitespace-pre font-mono text-xs leading-5"
           disabled={controlDisabled}
-          rows={14}
+          rows={16}
           value={inputTemplateText}
           onChange={(event) => updateInputTemplateText(event.target.value)}
         />
-        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button
-            disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
-            type="button"
-            variant="outline"
-            onClick={() => void previewCurrentDraft()}
-          >
-            {previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-            Preview next run
-          </Button>
-          <Button
-            disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
-            type="button"
-            onClick={() => void saveInputTemplate()}
-          >
-            {isSaving || previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-            Save inputs
-          </Button>
-        </div>
         <ScheduleInputPreview preview={previewRead} />
       </div>
       <div className="flex min-w-0 flex-col gap-3">
@@ -2135,6 +2228,8 @@ function ScheduledInputsEditor({
 
 function FireHistoryRow({ fire }: { fire: ScheduleFireRead }) {
   const issue = fireIssueMessage(fire);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const parameterSummary = summarizeRenderedParameters(fire.renderedParameters);
 
   return (
     <div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3" data-testid={`scheduled-task-fire-${fire.id}`}>
@@ -2172,6 +2267,18 @@ function FireHistoryRow({ fire }: { fire: ScheduleFireRead }) {
           ["Linked run", fire.runId ? `#${fire.runId}` : "None"],
         ]}
       />
+      <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-dashed bg-muted/15 px-3 py-2 text-xs">
+        <span className="font-medium text-muted-foreground">Parameters</span>
+        {parameterSummary.length > 0 ? (
+          parameterSummary.map((item) => (
+            <Badge className="max-w-full font-mono" key={`${fire.id}-${item}`} variant="secondary">
+              {item}
+            </Badge>
+          ))
+        ) : (
+          <span className="text-muted-foreground">No rendered parameters</span>
+        )}
+      </div>
       {issue ? (
         <Alert data-testid={`scheduled-task-fire-issue-${fire.id}`} variant={fire.status === "failed" ? "destructive" : "default"}>
           <AlertCircle />
@@ -2179,12 +2286,33 @@ function FireHistoryRow({ fire }: { fire: ScheduleFireRead }) {
           <AlertDescription>{issue}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="min-w-0">
-        <p className="mb-1 text-xs font-medium text-muted-foreground">Rendered parameters</p>
-        <pre className="max-h-56 overflow-auto rounded-md bg-muted/40 p-3 text-xs" data-testid={`scheduled-task-fire-parameters-${fire.id}`}>
-          {stringifyJson(fire.renderedParameters)}
-        </pre>
-      </div>
+      <Collapsible className="min-w-0" open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <div className="flex min-w-0 flex-col gap-2 rounded-md border bg-muted/10 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-foreground">Rendered parameters</p>
+            <p className="text-xs text-muted-foreground">Open the full JSON only when you need the expanded payload.</p>
+          </div>
+          <CollapsibleTrigger asChild>
+            <Button
+              aria-label={`${detailsOpen ? "Hide" : "Show"} details for fire #${fire.id}`}
+              className="h-7 shrink-0 gap-1 px-2 text-xs"
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              {detailsOpen ? "Hide details" : "Show details"}
+              <ChevronDown className={`size-3 ${detailsOpen ? "rotate-180" : ""}`} />
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+        <CollapsibleContent className="pt-2">
+          <div className="min-w-0" data-testid={`scheduled-task-fire-details-${fire.id}`}>
+            <pre className="max-h-56 overflow-auto rounded-md bg-muted/40 p-3 text-xs" data-testid={`scheduled-task-fire-parameters-${fire.id}`}>
+              {stringifyJson(fire.renderedParameters)}
+            </pre>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }
