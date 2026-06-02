@@ -4,8 +4,9 @@ import { Link } from "react-router";
 
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
+import { ResourceStatusBadge } from "@/components/shared/resource-status-strip";
+import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -186,15 +187,6 @@ function RunMonitorFilters({
   );
 }
 
-function getStatusBadgeVariant(
-  status: RunStatus,
-): "secondary" | "outline" | "destructive" {
-  if (status === "succeeded") {
-    return "secondary";
-  }
-  return status === "failed" ? "destructive" : "outline";
-}
-
 function RunProgressCell({ run }: { run: RunListItemRead }) {
   return (
     <div
@@ -250,111 +242,109 @@ function RunTimestampCell({ run }: { run: RunListItemRead }) {
 
 function RunsTable({ runs }: { runs: readonly RunListItemRead[] }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableHead>Run</TableHead>
-          <TableHead>Target</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Progress</TableHead>
-          <TableHead>Queue</TableHead>
-          <TableHead>Tokens</TableHead>
-          <TableHead>Timestamps</TableHead>
-          <TableHead className="text-right">Open</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {runs.map((run) => {
-          const runPath = `/runs/${run.id}`;
+    <ResourceTableFrame>
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/30 hover:bg-muted/30">
+            <TableHead>Run</TableHead>
+            <TableHead>Target</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Progress</TableHead>
+            <TableHead>Queue</TableHead>
+            <TableHead>Tokens</TableHead>
+            <TableHead>Timestamps</TableHead>
+            <TableHead className="text-right">Open</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {runs.map((run) => {
+            const runPath = `/runs/${run.id}`;
 
-          return (
-            <TableRow key={run.id} data-testid={`runs-row-${run.id}`}>
-              <TableCell className="min-w-40 whitespace-normal">
-                <div className="flex flex-col gap-1">
-                  <p className="font-medium text-foreground">Run #{run.id}</p>
-                  <p className="break-all font-mono text-xs text-muted-foreground">
-                    Trace: {run.traceId ?? "Not recorded"}
-                  </p>
-                </div>
-              </TableCell>
-              <TableCell className="min-w-64 whitespace-normal">
-                <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  {run.targetKind === "workflowPackage" ? (
-                    <span>
-                      Package key:{" "}
-                      <span className="break-all font-mono text-foreground">
-                        {run.targetKey}
+            return (
+              <TableRow key={run.id} data-testid={`runs-row-${run.id}`}>
+                <TableCell className="min-w-40 whitespace-normal">
+                  <div className="flex flex-col gap-1">
+                    <p className="font-medium text-foreground">Run #{run.id}</p>
+                    <p className="break-all font-mono text-xs text-muted-foreground">
+                      Trace: {run.traceId ?? "Not recorded"}
+                    </p>
+                  </div>
+                </TableCell>
+                <TableCell className="min-w-64 whitespace-normal">
+                  <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    {run.targetKind === "workflowPackage" ? (
+                      <span>
+                        Package key:{" "}
+                        <span className="break-all font-mono text-foreground">
+                          {run.targetKey}
+                        </span>
                       </span>
-                    </span>
-                  ) : run.targetKind === "workflow" ? (
-                    <span>
-                      Workflow key:{" "}
-                      <span className="break-all font-mono text-foreground">
-                        {run.targetKey}
+                    ) : run.targetKind === "workflow" ? (
+                      <span>
+                        Workflow key:{" "}
+                        <span className="break-all font-mono text-foreground">
+                          {run.targetKey}
+                        </span>
                       </span>
-                    </span>
-                  ) : (
-                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                      <Badge variant="outline">
-                        {formatTargetKindLabel(run.targetKind)}
-                      </Badge>
-                      <span className="break-all font-mono">{run.targetKey}</span>
-                    </div>
-                  )}
-                  {run.targetKind === "workflowPackage" && run.workflowKey ? (
-                    <span>
-                      Workflow key:{" "}
-                      <span className="break-all font-mono text-foreground">
-                        {run.workflowKey}
+                    ) : (
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <ResourceStatusBadge label={formatTargetKindLabel(run.targetKind)} />
+                        <span className="break-all font-mono">{run.targetKey}</span>
+                      </div>
+                    )}
+                    {run.targetKind === "workflowPackage" && run.workflowKey ? (
+                      <span>
+                        Workflow key:{" "}
+                        <span className="break-all font-mono text-foreground">
+                          {run.workflowKey}
+                        </span>
                       </span>
-                    </span>
-                  ) : null}
-                  {describeRunTarget(run.targetKind) ? (
-                    <span>{describeRunTarget(run.targetKind)}</span>
-                  ) : null}
-                  {targetIdentity(run) ? <span>{targetIdentity(run)}</span> : null}
-                </div>
-              </TableCell>
-              <TableCell>
-                <Badge
-                  data-tone={statusTone(run.status)}
-                  variant={getStatusBadgeVariant(run.status)}
-                >
-                  {run.status}
-                </Badge>
-              </TableCell>
-              <TableCell className="whitespace-normal">
-                <RunProgressCell run={run} />
-              </TableCell>
-              <TableCell className="whitespace-normal">
-                <RunQueueCell run={run} />
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                {run.totalTokens.toLocaleString()}
-              </TableCell>
-              <TableCell className="whitespace-normal">
-                <RunTimestampCell run={run} />
-              </TableCell>
-              <TableCell>
-                <div className="flex justify-end">
-                  <Button
-                    asChild
-                    data-testid={`runs-row-action-${run.id}`}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Link aria-label={`Open run #${run.id}`} to={runPath}>
-                      Open
-                      <ArrowRight data-icon="inline-end" />
-                    </Link>
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
+                    ) : null}
+                    {describeRunTarget(run.targetKind) ? (
+                      <span>{describeRunTarget(run.targetKind)}</span>
+                    ) : null}
+                    {targetIdentity(run) ? <span>{targetIdentity(run)}</span> : null}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <ResourceStatusBadge
+                    label={run.status}
+                    tone={statusTone(run.status)}
+                  />
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  <RunProgressCell run={run} />
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  <RunQueueCell run={run} />
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {run.totalTokens.toLocaleString()}
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  <RunTimestampCell run={run} />
+                </TableCell>
+                <TableCell>
+                  <div className="flex justify-end">
+                    <Button
+                      asChild
+                      data-testid={`runs-row-action-${run.id}`}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <Link aria-label={`Open run #${run.id}`} to={runPath}>
+                        Open
+                        <ArrowRight data-icon="inline-end" />
+                      </Link>
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </ResourceTableFrame>
   );
 }
 

@@ -20,7 +20,12 @@ import { toast } from "sonner";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
-import { Badge } from "@/components/ui/badge";
+import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import {
+  ResourceStatusBadge,
+  type ResourceStatusTone,
+} from "@/components/shared/resource-status-strip";
+import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -91,7 +96,7 @@ const STATUS_FILTER_OPTIONS = [
 ] as const;
 
 type LocalStatusFilter = (typeof STATUS_FILTER_OPTIONS)[number]["value"];
-type StatusTone = "neutral" | "success" | "warning" | "danger" | "muted" | "active";
+type StatusTone = ResourceStatusTone;
 type ScheduleSortField = "workflow" | "nextRun" | "latestActivity";
 type ScheduleSortDirection = "asc" | "desc";
 type ScheduleSortState = {
@@ -124,15 +129,6 @@ function formatStatusLabel(value: string): string {
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/[-_]/g, " ")
     .replace(/\b\w/g, (match) => match.toUpperCase());
-}
-
-function badgeVariantForTone(
-  tone: StatusTone,
-): "secondary" | "outline" | "destructive" {
-  if (tone === "danger") {
-    return "destructive";
-  }
-  return tone === "success" || tone === "muted" ? "secondary" : "outline";
 }
 
 function scheduleStatusTone(status: ScheduleStatus): StatusTone {
@@ -443,29 +439,6 @@ function LoadingState() {
   );
 }
 
-function StatusBadge({
-  className,
-  label,
-  testId,
-  tone,
-}: {
-  className?: string;
-  label: string;
-  testId?: string;
-  tone: StatusTone;
-}) {
-  return (
-    <Badge
-      className={cn("capitalize", className)}
-      data-testid={testId}
-      data-tone={tone}
-      variant={badgeVariantForTone(tone)}
-    >
-      {label}
-    </Badge>
-  );
-}
-
 function ScheduleStatusFilters({
   status,
   onStatusChange,
@@ -664,7 +637,8 @@ function WorkflowCell({ schedule }: { schedule: ScheduleRead }) {
     <div className="flex min-w-0 flex-col gap-2 whitespace-normal">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="truncate font-semibold text-foreground">{schedule.name}</span>
-        <StatusBadge
+        <ResourceStatusBadge
+          className="capitalize"
           label={formatStatusLabel(schedule.status)}
           testId={`scheduled-task-status-${schedule.status}`}
           tone={scheduleStatusTone(schedule.status)}
@@ -755,7 +729,8 @@ function LatestActivityCell({ schedule }: { schedule: ScheduleRead }) {
       data-testid={`scheduled-task-row-latest-${schedule.id}`}
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <StatusBadge
+        <ResourceStatusBadge
+          className="capitalize"
           label={latestStatus ? formatStatusLabel(latestStatus) : "No latest status"}
           tone={latestStatusTone(latestStatus)}
         />
@@ -1181,65 +1156,67 @@ function ScheduleTable({
 } & ScheduleActionHandlers &
   ScheduleSelectionHandlers) {
   return (
-    <Table className="table-fixed text-xs">
-      <TableHeader>
-        <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableHead className="sticky top-0 z-20 w-9 bg-background px-2 py-1.5">
-            <Checkbox
-              aria-label="Select all shown scheduled tasks"
-              checked={
-                allFilteredSelected
-                  ? true
-                  : someFilteredSelected
-                    ? "indeterminate"
-                    : false
-              }
-              onCheckedChange={(checked) => onSelect(schedules, checked === true)}
+    <ResourceTableFrame>
+      <Table className="table-fixed text-xs">
+        <TableHeader>
+          <TableRow className="bg-muted/30 hover:bg-muted/30">
+            <TableHead className="sticky top-0 z-20 w-9 bg-background px-2 py-1.5">
+              <Checkbox
+                aria-label="Select all shown scheduled tasks"
+                checked={
+                  allFilteredSelected
+                    ? true
+                    : someFilteredSelected
+                      ? "indeterminate"
+                      : false
+                }
+                onCheckedChange={(checked) => onSelect(schedules, checked === true)}
+              />
+            </TableHead>
+            <TableHead
+              aria-sort={getAriaSort("workflow", sortState)}
+              className="sticky top-0 z-10 w-[24%] bg-background px-2 py-1.5"
+            >
+              {renderSortButton({ field: "workflow", label: "Workflow", sortState, onSort })}
+            </TableHead>
+            <TableHead className="sticky top-0 z-10 w-[18%] bg-background px-2 py-1.5">
+              Schedule
+            </TableHead>
+            <TableHead
+              aria-sort={getAriaSort("nextRun", sortState)}
+              className="sticky top-0 z-10 w-[16%] bg-background px-2 py-1.5"
+            >
+              {renderSortButton({ field: "nextRun", label: "Next run", sortState, onSort })}
+            </TableHead>
+            <TableHead
+              aria-sort={getAriaSort("latestActivity", sortState)}
+              className="sticky top-0 z-10 w-[16%] bg-background px-2 py-1.5"
+            >
+              {renderSortButton({ field: "latestActivity", label: "Latest activity", sortState, onSort })}
+            </TableHead>
+            <TableHead className="w-[22rem] bg-background px-2 py-1.5 text-right">
+              Actions
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {schedules.map((schedule) => (
+            <ScheduleRow
+              expanded={expandedScheduleIds.has(schedule.id)}
+              isSelected={selectedScheduleIds.has(schedule.id)}
+              key={schedule.id}
+              mutationPending={mutationPending}
+              schedule={schedule}
+              onDelete={onDelete}
+              onRunNow={onRunNow}
+              onSelect={onSelect}
+              onToggleExpand={onToggleExpand}
+              onToggleStatus={onToggleStatus}
             />
-          </TableHead>
-          <TableHead
-            aria-sort={getAriaSort("workflow", sortState)}
-            className="sticky top-0 z-10 w-[24%] bg-background px-2 py-1.5"
-          >
-            {renderSortButton({ field: "workflow", label: "Workflow", sortState, onSort })}
-          </TableHead>
-          <TableHead className="sticky top-0 z-10 w-[18%] bg-background px-2 py-1.5">
-            Schedule
-          </TableHead>
-          <TableHead
-            aria-sort={getAriaSort("nextRun", sortState)}
-            className="sticky top-0 z-10 w-[16%] bg-background px-2 py-1.5"
-          >
-            {renderSortButton({ field: "nextRun", label: "Next run", sortState, onSort })}
-          </TableHead>
-          <TableHead
-            aria-sort={getAriaSort("latestActivity", sortState)}
-            className="sticky top-0 z-10 w-[16%] bg-background px-2 py-1.5"
-          >
-            {renderSortButton({ field: "latestActivity", label: "Latest activity", sortState, onSort })}
-          </TableHead>
-          <TableHead className="w-[22rem] bg-background px-2 py-1.5 text-right">
-            Actions
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {schedules.map((schedule) => (
-          <ScheduleRow
-            expanded={expandedScheduleIds.has(schedule.id)}
-            isSelected={selectedScheduleIds.has(schedule.id)}
-            key={schedule.id}
-            mutationPending={mutationPending}
-            schedule={schedule}
-            onDelete={onDelete}
-            onRunNow={onRunNow}
-            onSelect={onSelect}
-            onToggleExpand={onToggleExpand}
-            onToggleStatus={onToggleStatus}
-          />
-        ))}
-      </TableBody>
-    </Table>
+          ))}
+        </TableBody>
+      </Table>
+    </ResourceTableFrame>
   );
 }
 
@@ -1391,27 +1368,25 @@ function ScheduledTasksBulkActions({
   }
 
   return (
-    <div
-      className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
-      data-testid="scheduled-tasks-bulk-actions"
-    >
-      <span className="text-xs text-muted-foreground">
-        {selectedCount} of {filteredCount} scheduled tasks selected
-      </span>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          disabled={isPending}
-          size="sm"
-          variant="destructive"
-          onClick={onDeleteSelected}
-        >
-          <Trash2 className="size-3.5" /> Delete selected
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onClear}>
-          Clear
-        </Button>
-      </div>
-    </div>
+    <ResourceFilterBar
+      actions={
+        <>
+          <Button
+            disabled={isPending}
+            size="sm"
+            variant="destructive"
+            onClick={onDeleteSelected}
+          >
+            <Trash2 className="size-3.5" /> Delete selected
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onClear}>
+            Clear
+          </Button>
+        </>
+      }
+      summary={`${selectedCount} of ${filteredCount} scheduled tasks selected`}
+      testId="scheduled-tasks-bulk-actions"
+    />
   );
 }
 

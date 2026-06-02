@@ -26,8 +26,12 @@ import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ProvenanceBadge } from "@/components/shared/provenance-badge";
-import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
-import { Badge } from "@/components/ui/badge";
+import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import {
+  ResourceStatusBadge,
+  ResourceStatusStrip,
+} from "@/components/shared/resource-status-strip";
+import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -424,125 +428,125 @@ function WorkflowPackagesTable({
   someFilteredSelected: boolean;
 } & PackageSelectionHandlers) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableHead className="w-9">
-            <Checkbox
-              aria-label="Select all shown workflow packages"
-              checked={
-                allFilteredSelected
-                  ? true
-                  : someFilteredSelected
-                    ? "indeterminate"
-                    : false
-              }
-              onCheckedChange={(checked) =>
-                onSelect(packages, checked === true)
-              }
-            />
-          </TableHead>
-          <TableHead>Name</TableHead>
-          <TableHead>Key</TableHead>
-          <TableHead>Readiness</TableHead>
-          <TableHead>Manifest hash</TableHead>
-          <TableHead>Compiled hash</TableHead>
-          <TableHead>Updated</TableHead>
-          <TableHead className="text-right">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {packages.map((workflowPackage) => {
-          const isSelected = selectedPackageIds.has(workflowPackage.id);
-          const readiness = getPackageReadiness(workflowPackage);
+    <ResourceTableFrame>
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/30 hover:bg-muted/30">
+            <TableHead className="w-9">
+              <Checkbox
+                aria-label="Select all shown workflow packages"
+                checked={
+                  allFilteredSelected
+                    ? true
+                    : someFilteredSelected
+                      ? "indeterminate"
+                      : false
+                }
+                onCheckedChange={(checked) =>
+                  onSelect(packages, checked === true)
+                }
+              />
+            </TableHead>
+            <TableHead>Name</TableHead>
+            <TableHead>Key</TableHead>
+            <TableHead>Readiness</TableHead>
+            <TableHead>Manifest hash</TableHead>
+            <TableHead>Compiled hash</TableHead>
+            <TableHead>Updated</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {packages.map((workflowPackage) => {
+            const isSelected = selectedPackageIds.has(workflowPackage.id);
+            const readiness = getPackageReadiness(workflowPackage);
 
-          return (
-            <TableRow
-              key={workflowPackage.id}
-              data-state={isSelected ? "selected" : undefined}
-              data-testid={`workflow-packages-row-${workflowPackage.key}`}
-            >
-              <TableCell>
-                <Checkbox
-                  aria-label={`Select workflow package ${workflowPackage.name}`}
-                  checked={isSelected}
-                  onCheckedChange={(checked) =>
-                    onSelect([workflowPackage], checked === true)
-                  }
-                />
-              </TableCell>
-              <TableCell className="min-w-56 whitespace-normal">
-                <div className="flex flex-col gap-1">
-                  <p className="font-medium text-foreground">
-                    {workflowPackage.name}
-                  </p>
-                  <p className="line-clamp-2 text-xs text-muted-foreground">
-                    {workflowPackage.description || "No description provided."}
-                  </p>
-                </div>
-              </TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">
-                {workflowPackage.key}
-              </TableCell>
-              <TableCell className="min-w-56 whitespace-normal">
-                <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
-                  <Badge
-                    data-tone={readiness.tone}
-                    variant={readiness.tone === "success" ? "secondary" : "outline"}
-                  >
-                    {readiness.label}
-                  </Badge>
-                  <span>{readiness.description}</span>
-                </div>
-              </TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">
-                {formatNullableHash(workflowPackage.manifestHash)}
-              </TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">
-                {formatNullableHash(workflowPackage.compiledHash)}
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                {formatDateTime(workflowPackage.updatedAt)}
-              </TableCell>
-              <TableCell>
-                <div className="flex justify-end gap-2">
-                  <Button asChild size="sm" variant="outline">
-                    <Link
-                      aria-label={`Open package ${workflowPackage.name}`}
-                      to={`/workflow-packages/${workflowPackage.id}`}
+            return (
+              <TableRow
+                key={workflowPackage.id}
+                data-state={isSelected ? "selected" : undefined}
+                data-testid={`workflow-packages-row-${workflowPackage.key}`}
+              >
+                <TableCell>
+                  <Checkbox
+                    aria-label={`Select workflow package ${workflowPackage.name}`}
+                    checked={isSelected}
+                    onCheckedChange={(checked) =>
+                      onSelect([workflowPackage], checked === true)
+                    }
+                  />
+                </TableCell>
+                <TableCell className="min-w-56 whitespace-normal">
+                  <div className="flex flex-col gap-1">
+                    <p className="font-medium text-foreground">
+                      {workflowPackage.name}
+                    </p>
+                    <p className="line-clamp-2 text-xs text-muted-foreground">
+                      {workflowPackage.description || "No description provided."}
+                    </p>
+                  </div>
+                </TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {workflowPackage.key}
+                </TableCell>
+                <TableCell className="min-w-56 whitespace-normal">
+                  <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+                    <ResourceStatusBadge
+                      label={readiness.label}
+                      tone={readiness.tone}
+                    />
+                    <span>{readiness.description}</span>
+                  </div>
+                </TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {formatNullableHash(workflowPackage.manifestHash)}
+                </TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {formatNullableHash(workflowPackage.compiledHash)}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {formatDateTime(workflowPackage.updatedAt)}
+                </TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        aria-label={`Open package ${workflowPackage.name}`}
+                        to={`/workflow-packages/${workflowPackage.id}`}
+                      >
+                        <SquarePen data-icon="inline-start" />
+                        Open
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        aria-label={`Launch package ${workflowPackage.name}`}
+                        to={`/workflow-packages/${workflowPackage.id}/run`}
+                      >
+                        <PlayCircle data-icon="inline-start" />
+                        Launch
+                      </Link>
+                    </Button>
+                    <Button
+                      aria-label={`Delete package ${workflowPackage.name}`}
+                      className="cursor-pointer"
+                      disabled={deletePending}
+                      size="sm"
+                      variant="destructive"
+                      type="button"
+                      onClick={() => onDelete(workflowPackage)}
                     >
-                      <SquarePen data-icon="inline-start" />
-                      Open
-                    </Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link
-                      aria-label={`Launch package ${workflowPackage.name}`}
-                      to={`/workflow-packages/${workflowPackage.id}/run`}
-                    >
-                      <PlayCircle data-icon="inline-start" />
-                      Launch
-                    </Link>
-                  </Button>
-                  <Button
-                    aria-label={`Delete package ${workflowPackage.name}`}
-                    className="cursor-pointer"
-                    disabled={deletePending}
-                    size="sm"
-                    variant="destructive"
-                    type="button"
-                    onClick={() => onDelete(workflowPackage)}
-                  >
-                    <Trash2 data-icon="inline-start" />
-                    Delete
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
+                      <Trash2 data-icon="inline-start" />
+                      Delete
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </ResourceTableFrame>
   );
 }
 
@@ -564,27 +568,25 @@ function WorkflowPackagesBulkActions({
   }
 
   return (
-    <div
-      data-testid="workflow-packages-bulk-actions"
-      className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
-    >
-      <span className="text-xs text-muted-foreground">
-        {selectedCount} of {filteredCount} workflow packages selected
-      </span>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          variant="destructive"
-          disabled={isPending}
-          onClick={onDeleteSelected}
-        >
-          <Trash2 className="size-3.5" /> Delete selected
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onClear}>
-          Clear
-        </Button>
-      </div>
-    </div>
+    <ResourceFilterBar
+      actions={
+        <>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={isPending}
+            onClick={onDeleteSelected}
+          >
+            <Trash2 className="size-3.5" /> Delete selected
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onClear}>
+            Clear
+          </Button>
+        </>
+      }
+      summary={`${selectedCount} of ${filteredCount} workflow packages selected`}
+      testId="workflow-packages-bulk-actions"
+    />
   );
 }
 

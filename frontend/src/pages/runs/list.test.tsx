@@ -161,6 +161,19 @@ describe("RunsListPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Runs API unavailable");
   });
 
+  it("expects the run monitor table to sit inside a framed horizontal containment wrapper", () => {
+    render(<RunsListPage />);
+
+    const table = screen.getByRole("table");
+    expect(table.parentElement).toHaveClass("min-w-0", "w-full", "overflow-x-auto");
+    expect(table.parentElement?.parentElement).toHaveClass(
+      "min-w-0",
+      "max-w-full",
+      "rounded-md",
+      "border",
+    );
+  });
+
   it("renders dense run monitor rows, refreshes, and routes to detail", () => {
     render(<RunsListPage />);
 
