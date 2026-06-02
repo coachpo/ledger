@@ -239,19 +239,34 @@ const MISSING_WORKFLOW_RUNTIME_INPUTS_UNAVAILABLE_MESSAGE =
 type ScheduleWorkflowState = {
   activeWorkflowKey: string;
   isStale: boolean;
+  packageDisplayLabel: string;
   workflowDisplayLabel: string;
 };
 
 function resolveScheduleWorkflowState(schedule: ScheduleRead, manifest: unknown): ScheduleWorkflowState {
   const persistedWorkflowKey = schedule.workflowKey.trim();
+  const fallbackPackageLabel = schedule.packageKey.trim() || "package";
   if (!manifest) {
     return {
       activeWorkflowKey: "",
       isStale: false,
+      packageDisplayLabel: fallbackPackageLabel,
       workflowDisplayLabel: persistedWorkflowKey || "workflow",
     };
   }
 
+  const manifestRecord =
+    manifest && typeof manifest === "object" && !Array.isArray(manifest)
+      ? (manifest as UnknownRecord)
+      : null;
+  const packageDefinition = manifestRecord && isUnknownRecord(manifestRecord.packageDefinition)
+    ? manifestRecord.packageDefinition
+    : null;
+  const metadata = packageDefinition && isUnknownRecord(packageDefinition.metadata) ? packageDefinition.metadata : null;
+  const packageDisplayLabel =
+    typeof metadata?.name === "string" && metadata.name.trim().length > 0
+      ? metadata.name.trim()
+      : fallbackPackageLabel;
   const workflowOptions = getWorkflowOptions(
     manifest as Parameters<typeof getWorkflowOptions>[0],
     persistedWorkflowKey || null,
@@ -267,6 +282,7 @@ function resolveScheduleWorkflowState(schedule: ScheduleRead, manifest: unknown)
   return {
     activeWorkflowKey: manifestWorkflow?.key ?? "",
     isStale: Boolean(persistedWorkflowKey) && !manifestWorkflow,
+    packageDisplayLabel,
     workflowDisplayLabel: displayWorkflowLabel || "workflow",
   };
 }
@@ -766,6 +782,7 @@ function DetailPageMessage({
 
 function ScheduleHeader({
   mutationPending,
+  packageDisplayLabel,
   runNowDisabled,
   schedule,
   workflowDisplayLabel,
@@ -774,6 +791,7 @@ function ScheduleHeader({
   onToggleStatus,
 }: {
   mutationPending: boolean;
+  packageDisplayLabel: string;
   runNowDisabled: boolean;
   schedule: ScheduleRead;
   workflowDisplayLabel: string;
@@ -790,7 +808,7 @@ function ScheduleHeader({
   }> = [
     { label: "Pattern", value: formatRecurrence(schedule.recurrence) },
     { label: "Timezone", value: schedule.timezone },
-    { label: "Package", value: schedule.packageKey, valueClassName: "font-mono" },
+    { label: "Package", value: packageDisplayLabel },
     { label: "Workflow", value: workflowDisplayLabel },
     { label: "Updated", value: formatDateTime(schedule.updatedAt) },
   ];
@@ -959,11 +977,13 @@ function actionableDiagnostics(diagnostics: readonly ScheduleDiagnostic[]): Sche
 
 function SummaryPanels({
   diagnostics,
+  packageDisplayLabel,
   schedule,
   workflowDisplayLabel,
   workflowIsStale,
 }: {
   diagnostics: readonly ScheduleDiagnostic[];
+  packageDisplayLabel: string;
   schedule: ScheduleRead;
   workflowDisplayLabel: string;
   workflowIsStale: boolean;
@@ -998,8 +1018,8 @@ function SummaryPanels({
         <div className="flex min-w-0 flex-col gap-3">
           <DetailRows
             rows={[
-              ["Package", <span className="font-mono">{schedule.packageKey}</span>],
-              ["Workflow", <span className="font-mono">{workflowDisplayLabel}</span>],
+              ["Package", packageDisplayLabel],
+              ["Workflow", workflowDisplayLabel],
             ]}
           />
           {workflowIsStale ? <StaleWorkflowAlert workflowKey={schedule.workflowKey} /> : null}
@@ -2397,6 +2417,7 @@ function ScheduleTabs({
   mutationPending,
   onRunNow,
   onSaveSchedule,
+  packageDisplayLabel,
   runNowDisabled,
   schedule,
   workflowDisplayLabel,
@@ -2409,6 +2430,7 @@ function ScheduleTabs({
   mutationPending: boolean;
   onRunNow: () => void;
   onSaveSchedule: (payload: ScheduleUpdateRequest, successMessage?: string) => Promise<void>;
+  packageDisplayLabel: string;
   runNowDisabled: boolean;
   schedule: ScheduleRead;
   workflowDisplayLabel: string;
@@ -2434,6 +2456,7 @@ function ScheduleTabs({
       >
         <SummaryPanels
           diagnostics={diagnostics}
+          packageDisplayLabel={packageDisplayLabel}
           schedule={schedule}
           workflowDisplayLabel={workflowDisplayLabel}
           workflowIsStale={workflowIsStale}
@@ -2645,6 +2668,7 @@ export function ScheduledTaskDetailPage() {
       contextBar={
         <ScheduleHeader
           mutationPending={mutationPending}
+          packageDisplayLabel={workflowState.packageDisplayLabel}
           runNowDisabled={runNowDisabled}
           schedule={schedule}
           workflowDisplayLabel={workflowState.workflowDisplayLabel}
@@ -2662,6 +2686,7 @@ export function ScheduledTaskDetailPage() {
         mutationPending={mutationPending}
         onRunNow={() => void runScheduleNow()}
         onSaveSchedule={saveScheduleConfiguration}
+        packageDisplayLabel={workflowState.packageDisplayLabel}
         runNowDisabled={runNowDisabled}
         schedule={schedule}
         workflowDisplayLabel={workflowState.workflowDisplayLabel}

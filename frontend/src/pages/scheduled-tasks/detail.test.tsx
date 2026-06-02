@@ -133,12 +133,23 @@ function scheduleFixture(overrides: Partial<ScheduleRead> = {}): ScheduleRead {
   };
 }
 
-function workflowPackageManifestFixture(workflowKeys: string[] = ["daily_research"]): WorkflowPackageManifestRead {
+function workflowPackageManifestFixture(
+  workflowKeys: string[] = ["daily_research"],
+  { includeMetadataName = true }: { includeMetadataName?: boolean } = {},
+): WorkflowPackageManifestRead {
   return {
     compiledHash: "compiled-hash-123",
     manifestHash: "manifest-hash-123",
     manifestSource: "apiVersion: signaldeck.workflowPackage/v1",
     packageDefinition: {
+      ...(includeMetadataName
+        ? {
+            metadata: {
+              key: "market_research_package",
+              name: "Market Research Package",
+            },
+          }
+        : {}),
       spec: {
         workflows: workflowKeys.map((key) => ({
           description: `${key} description`,
@@ -511,7 +522,8 @@ describe("ScheduledTaskDetailPage", () => {
     const headerMetaRow = screen.getByTestId("scheduled-task-detail-header-meta-row");
     expect(headerMetaRow).toHaveTextContent("Pattern Weekly Mon, Tue, Wed, Thu, Fri at 09:00");
     expect(headerMetaRow).toHaveTextContent("Timezone America/New_York");
-    expect(headerMetaRow).toHaveTextContent("Package market_research_package");
+    expect(headerMetaRow).toHaveTextContent("Package Market Research Package");
+    expect(headerMetaRow).not.toHaveTextContent("Package market_research_package");
     expect(headerMetaRow).toHaveTextContent("Workflow Daily research");
     expect(headerMetaRow).toHaveTextContent("Updated");
     expect(headerMetaRow).toHaveTextContent("Last run #2104");
@@ -528,7 +540,8 @@ describe("ScheduledTaskDetailPage", () => {
     expect(summaryGrid).toHaveClass("lg:grid-cols-2", "2xl:grid-cols-4");
     expect(screen.getByTestId("scheduled-task-detail-next-run-summary")).toHaveTextContent("Next run");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Target workflow");
-    expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("market_research_package");
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Market Research Package");
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("market_research_package");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Daily research");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("Package id");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("Schedule id");
@@ -1043,6 +1056,9 @@ describe("ScheduledTaskDetailPage", () => {
 
       expect(useWorkflowPackageManifestMock).toHaveBeenCalledWith(12);
       expect(useWorkflowPackageRuntimeInputRegistryMock).toHaveBeenCalledWith(12, "");
+      expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent(
+        "market_research_package",
+      );
       expect(screen.getByTestId("schedule-run-now")).toBeDisabled();
       expect(screen.getByRole("button", { name: "Disable" })).toBeEnabled();
       expect(runNowMock).not.toHaveBeenCalled();
@@ -1064,6 +1080,26 @@ describe("ScheduledTaskDetailPage", () => {
       );
     },
   );
+
+  it("falls back to the package key when the manifest has no package metadata name", () => {
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: workflowPackageManifestFixture(["daily_research", "news_research"], {
+        includeMetadataName: false,
+      }),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderDetailPage();
+
+    expect(screen.getByTestId("scheduled-task-detail-header-meta-row")).toHaveTextContent(
+      "Package market_research_package",
+    );
+    expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent(
+      "market_research_package",
+    );
+  });
 
   it("keeps valid workflow schedules on the normal manifest-driven path", () => {
     useWorkflowPackageManifestMock.mockReturnValue({
