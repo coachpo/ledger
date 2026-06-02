@@ -2529,7 +2529,7 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
       value={selectedTab}
     >
       <div
-        className="max-w-full overflow-x-auto pb-1"
+        className="sticky top-0 z-10 max-w-full overflow-x-auto bg-background/95 pb-1"
         data-testid="runs-detail-tab-list-scroll"
       >
         <TabsList aria-label="Run detail sections" className="min-w-max">

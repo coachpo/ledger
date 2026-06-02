@@ -713,6 +713,99 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-tab-panel-output")).toBeVisible();
   });
 
+  it("keeps run detail tabs sticky while rendering requested sections as flat compact detail grids", () => {
+    const run = buildRun({
+      executedTokens: 2302,
+      id: 362,
+      inheritedTokens: 0,
+      memoryArtifacts: [],
+      memoryEvents: [],
+      packageProvenance: buildPackageProvenance({
+        resolvedModelConnections: [buildResolvedModelConnection({})],
+        workflowKey: "fundamentals_research",
+        workflowName: "Fundamentals Research",
+      }),
+      targetKey: "tradingagents_advisory_research",
+      totalTokens: 2302,
+    });
+    const renderTab = (tab: RunDetailTabKey) => {
+      searchParamsMock = new URLSearchParams(tab === "output" ? "" : `tab=${tab}`);
+      useRunMock.mockReturnValue(queryResult(run));
+      return render(<RunsDetailPage />);
+    };
+    const expectFlatDetailGrid = (testId: string) => {
+      const section = screen.getByTestId(testId);
+      expect(section.querySelector("dl")).toBeInTheDocument();
+      expect(within(section).queryAllByRole("listitem")).toHaveLength(0);
+      expect(section.querySelector(".rounded-lg.border.bg-card")).toBeNull();
+      return section;
+    };
+
+    const outputRender = renderTab("output");
+    expect(screen.getByTestId("runs-detail-tab-list-scroll")).toHaveClass(
+      "sticky",
+      "top-0",
+    );
+    const outputProvenance = expectFlatDetailGrid(
+      "runs-detail-section-output-provenance",
+    );
+    expect(outputProvenance).toHaveTextContent(/Workflow/i);
+    expect(outputProvenance).toHaveTextContent(/Fundamentals Research/i);
+    expect(outputProvenance).toHaveTextContent(/fundamentals_research/i);
+    outputRender.unmount();
+
+    const overviewRender = renderTab("overview");
+    const evidenceAvailability = expectFlatDetailGrid(
+      "runs-detail-section-evidence-availability",
+    );
+    expect(evidenceAvailability).toHaveTextContent(/1 provider\/model row/i);
+    expect(evidenceAvailability).toHaveTextContent(/0 memory events/i);
+    expect(evidenceAvailability).toHaveTextContent(/0 artifacts available/i);
+    expect(evidenceAvailability).toHaveTextContent(/2,302 executed tokens/i);
+    overviewRender.unmount();
+
+    const inputRender = renderTab("input");
+    const inputProvenance = expectFlatDetailGrid(
+      "runs-detail-section-input-provenance",
+    );
+    expect(inputProvenance).toHaveTextContent(/Workflow/i);
+    expect(inputProvenance).toHaveTextContent(/Target/i);
+    expect(inputProvenance).toHaveTextContent(/Run #362 launch snapshot/i);
+    inputRender.unmount();
+
+    const usageRender = renderTab("usage");
+    const tokenAccounting = expectFlatDetailGrid(
+      "runs-detail-section-token-accounting",
+    );
+    expect(tokenAccounting).toHaveTextContent(/Total/i);
+    expect(tokenAccounting).toHaveTextContent(/Executed/i);
+    expect(tokenAccounting).toHaveTextContent(/Inherited/i);
+    expect(tokenAccounting).toHaveTextContent(/Read model total/i);
+    expect(tokenAccounting).toHaveTextContent(/Fresh execution/i);
+    expect(tokenAccounting).toHaveTextContent(/Inherited context/i);
+    expect(tokenAccounting).toHaveTextContent(/No upstream source run boundary/i);
+    usageRender.unmount();
+  });
+
+  it("switches adjacent top-level tab panels through the controlled tab URL updater", () => {
+    useRunMock.mockReturnValue(queryResult(buildRun()));
+    const rendered = render(<RunsDetailPage />);
+
+    latestRunDetailSectionStackProps().onTabChange("execution");
+    applyLatestSearchParamsUpdate("");
+    rendered.rerender(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-detail-tab-panel-execution")).toBeVisible();
+    expect(screen.getByTestId("runs-detail-tab-panel-output")).not.toBeVisible();
+
+    latestRunDetailSectionStackProps().onTabChange("overview");
+    applyLatestSearchParamsUpdate(searchParamsMock.toString());
+    rendered.rerender(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-detail-tab-panel-overview")).toBeVisible();
+    expect(screen.getByTestId("runs-detail-tab-panel-execution")).not.toBeVisible();
+  });
+
   it.each([
     ["output", "Output"],
     ["execution", "Execution"],

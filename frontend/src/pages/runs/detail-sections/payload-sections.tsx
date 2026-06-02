@@ -1,12 +1,15 @@
 import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
-import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RunRead } from "@/lib/types/run";
 
 import { formatQueueReasonTitle, type TraceSpanEntry } from "../detail-helpers";
-import { RunDetailContentSection, RunDetailEmptyState } from "./shared";
+import {
+  DetailGrid,
+  RunDetailContentSection,
+  RunDetailEmptyState,
+} from "./shared";
 
 function formatRawPayload(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? "";
@@ -119,6 +122,25 @@ export function RunPayloadPane({
   );
 }
 
+function CompactDetailValue({
+  description,
+  value,
+}: {
+  description?: string;
+  value: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="break-words">{value}</div>
+      {description ? (
+        <p className="text-xs leading-5 text-muted-foreground">
+          {description}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function RunFinalOutputPane({ run }: { run: RunRead }) {
   return (
     <RunDetailContentSection
@@ -156,16 +178,20 @@ export function RunOutputWorkspace({ run }: { run: RunRead }) {
         testId="runs-detail-section-output-provenance"
         title="Output provenance"
       >
-        <EvidenceCluster
+        <DetailGrid
           items={[
             {
               label: "Workflow",
-              value: provenance?.workflowName ?? "Snapshot workflow",
-              description:
-                provenance?.workflowKey ?? run.targetKey ?? "Not recorded",
+              value: (
+                <CompactDetailValue
+                  description={
+                    provenance?.workflowKey ?? run.targetKey ?? "Not recorded"
+                  }
+                  value={provenance?.workflowName ?? "Snapshot workflow"}
+                />
+              ),
             },
           ]}
-          layout="grid"
         />
       </RunDetailContentSection>
     </div>
@@ -196,21 +222,29 @@ export function RunInputWorkspace({ run }: { run: RunRead }) {
         testId="runs-detail-section-input-provenance"
         title="Input provenance"
       >
-        <EvidenceCluster
+        <DetailGrid
           items={[
             {
               label: "Workflow",
-              value: provenance?.workflowName ?? "Snapshot workflow",
-              description:
-                provenance?.workflowKey ?? run.targetKey ?? "Not recorded",
+              value: (
+                <CompactDetailValue
+                  description={
+                    provenance?.workflowKey ?? run.targetKey ?? "Not recorded"
+                  }
+                  value={provenance?.workflowName ?? "Snapshot workflow"}
+                />
+              ),
             },
             {
               label: "Target",
-              value: run.targetKey,
-              description: `Run #${run.id} launch snapshot`,
+              value: (
+                <CompactDetailValue
+                  description={`Run #${run.id} launch snapshot`}
+                  value={run.targetKey}
+                />
+              ),
             },
           ]}
-          layout="grid"
         />
       </RunDetailContentSection>
     </div>
@@ -308,25 +342,36 @@ export function RunEvidenceAvailabilitySection({ run }: { run: RunRead }) {
       testId="runs-detail-section-evidence-availability"
       title="Evidence availability"
     >
-      <EvidenceCluster
+      <DetailGrid
         items={[
           {
             label: "Runtime",
-            value: `${providerCount} provider/model row${providerCount === 1 ? "" : "s"}`,
-            description: "Open Runtime for provider and capability rows.",
+            value: (
+              <CompactDetailValue
+                description="Open Runtime for provider and capability rows."
+                value={`${providerCount} provider/model row${providerCount === 1 ? "" : "s"}`}
+              />
+            ),
           },
           {
             label: "Audit",
-            value: `${run.memoryEvents.length} memory event${run.memoryEvents.length === 1 ? "" : "s"}`,
-            description: `${run.memoryArtifacts.length} artifact${run.memoryArtifacts.length === 1 ? "" : "s"} available for audit drill-down.`,
+            value: (
+              <CompactDetailValue
+                description={`${run.memoryArtifacts.length} artifact${run.memoryArtifacts.length === 1 ? "" : "s"} available for audit drill-down.`}
+                value={`${run.memoryEvents.length} memory event${run.memoryEvents.length === 1 ? "" : "s"}`}
+              />
+            ),
           },
           {
             label: "Usage",
-            value: `${run.executedTokens.toLocaleString()} executed tokens`,
-            description: `${run.inheritedTokens.toLocaleString()} inherited tokens copied into this snapshot.`,
+            value: (
+              <CompactDetailValue
+                description={`${run.inheritedTokens.toLocaleString()} inherited tokens copied into this snapshot.`}
+                value={`${run.executedTokens.toLocaleString()} executed tokens`}
+              />
+            ),
           },
         ]}
-        layout="grid"
       />
     </RunDetailContentSection>
   );
