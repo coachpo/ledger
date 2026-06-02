@@ -158,6 +158,8 @@ type ScheduleInputDraft = {
 };
 
 const SAVED_INPUT_ENTRY_LIMIT = 20;
+const FIRE_HISTORY_ROW_DEFERRED_CLASS_NAME =
+  "[content-visibility:auto] [contain-intrinsic-size:auto_320px]";
 
 const SCHEDULE_PLACEHOLDER_GROUPS = [
   {
@@ -2252,7 +2254,10 @@ function FireHistoryRow({ fire }: { fire: ScheduleFireRead }) {
   const parameterSummary = summarizeRenderedParameters(fire.renderedParameters);
 
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3" data-testid={`scheduled-task-fire-${fire.id}`}>
+    <div
+      className={`flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3 ${FIRE_HISTORY_ROW_DEFERRED_CLASS_NAME}`}
+      data-testid={`scheduled-task-fire-${fire.id}`}
+    >
       <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">

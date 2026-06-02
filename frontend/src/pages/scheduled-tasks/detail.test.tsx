@@ -19,6 +19,10 @@ import type {
 
 import { ScheduledTaskDetailPage } from "./detail";
 
+const CONTENT_VISIBILITY_AUTO_CLASS = "[content-visibility:auto]";
+const FIRE_HISTORY_ROW_SIZE_CLASS =
+  "[contain-intrinsic-size:auto_320px]";
+
 const {
   deleteScheduleMock,
   createRuntimeInputPersonalEntryMock,
@@ -780,6 +784,60 @@ describe("ScheduledTaskDetailPage", () => {
     });
     expect(toastSuccessMock).toHaveBeenCalledWith("Scheduled task queued as run #3001. Opening run detail.");
     expect(screen.getByTestId("run-detail-route")).toHaveTextContent("Run detail 3001");
+  });
+
+  it("defers fire rows without deferring the fire history panel chrome", () => {
+    const queued = scheduleFireFixture({
+      id: 801,
+      reason: "manual",
+      renderedParameters: {
+        asOfDate: "2026-05-30",
+        portfolioSlug: "core_portfolio",
+      },
+      runId: 2104,
+      status: "queued",
+    });
+    const skipped = scheduleFireFixture({
+      fireKey: "44:scheduled:2026-05-29T12:00:00Z",
+      id: 800,
+      materializedAt: "2026-05-29T12:00:00Z",
+      renderedParameters: { asOfDate: "2026-05-29" },
+      runId: null,
+      scheduledFor: "2026-05-29T12:00:00Z",
+      skipReason: "schedule_overlap_active",
+      status: "skipped",
+    });
+    useScheduledTaskFiresMock.mockReturnValue({
+      data: scheduleFireList([queued, skipped]),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderDetailPage();
+
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Runs" }), {
+      button: 0,
+    });
+
+    expect(screen.getByTestId("scheduled-task-detail-tab-runs")).not.toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      FIRE_HISTORY_ROW_SIZE_CLASS,
+    );
+    expect(
+      screen.getByTestId("scheduled-task-fire-history-panel"),
+    ).not.toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      FIRE_HISTORY_ROW_SIZE_CLASS,
+    );
+    expect(screen.getByTestId("scheduled-task-fire-801")).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      FIRE_HISTORY_ROW_SIZE_CLASS,
+    );
+    expect(screen.getByTestId("scheduled-task-fire-800")).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      FIRE_HISTORY_ROW_SIZE_CLASS,
+    );
   });
 
   it("surfaces history-visible overlap warning when run-now queues overlapping runs", async () => {
