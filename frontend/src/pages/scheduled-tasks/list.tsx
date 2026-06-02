@@ -1,15 +1,19 @@
 import {
+  AlertTriangle,
   CalendarClock,
+  ChevronDown,
+  ChevronRight,
   ClipboardList,
   CopyPlus,
   ExternalLink,
+  MoreHorizontal,
   PauseCircle,
   PlayCircle,
   RotateCcw,
   SquarePen,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
@@ -20,6 +24,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -39,6 +51,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "@/components/ui/utils";
 import {
   useDeleteScheduledTask,
   useDeleteScheduledTasks,
@@ -52,7 +65,6 @@ import {
 } from "@/hooks/use-workflow-packages";
 import { formatDateTime } from "@/lib/format";
 import type {
-  ScheduleFireStatus,
   ScheduleListParams,
   ScheduleRead,
   ScheduleRecurrence,
@@ -65,17 +77,38 @@ import {
   type WorkflowOption,
 } from "@/lib/workflow-options";
 
-const ACTIVE_STATUS_FILTER = "__active__";
 const ALL_PACKAGES_FILTER = "__all_packages__";
+const ALL_STATUS_FILTER = "__all_status__";
 const ALL_WORKFLOWS_FILTER = "__all_workflows__";
+const MOBILE_BREAKPOINT = 768;
 
-type ScheduleStatusFilter = ScheduleStatus | typeof ACTIVE_STATUS_FILTER;
+const STATUS_FILTER_OPTIONS = [
+  { label: "All", value: ALL_STATUS_FILTER },
+  { label: "Running", value: "running" },
+  { label: "Failed", value: "failed" },
+  { label: "Succeeded", value: "succeeded" },
+  { label: "Paused", value: "paused" },
+] as const;
 
-function statusFilterToParams(
-  status: ScheduleStatusFilter,
-): ScheduleListParams["status"] {
-  return status === ACTIVE_STATUS_FILTER ? undefined : status;
-}
+type LocalStatusFilter = (typeof STATUS_FILTER_OPTIONS)[number]["value"];
+type StatusTone = "neutral" | "success" | "warning" | "danger" | "muted" | "active";
+type ScheduleSortField = "workflow" | "nextRun" | "latestActivity";
+type ScheduleSortDirection = "asc" | "desc";
+type ScheduleSortState = {
+  direction: ScheduleSortDirection;
+  field: ScheduleSortField;
+};
+
+type ScheduleSelectionHandlers = {
+  onSelect: (schedulesToUpdate: readonly ScheduleRead[], selected: boolean) => void;
+};
+
+type ScheduleActionHandlers = {
+  mutationPending: boolean;
+  onDelete: (schedule: ScheduleRead) => void;
+  onRunNow: (schedule: ScheduleRead) => void;
+  onToggleStatus: (schedule: ScheduleRead) => void;
+};
 
 function normalizeFilter(value: string): string | undefined {
   const normalized = value.trim();
@@ -93,37 +126,39 @@ function formatStatusLabel(value: string): string {
     .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
-function scheduleStatusTone(
-  status: ScheduleStatus,
-): "success" | "warning" | "muted" {
-  if (status === "enabled") {
-    return "success";
-  }
-  return status === "paused" ? "warning" : "muted";
-}
-
-function fireStatusTone(
-  status: ScheduleFireStatus | null,
-): "neutral" | "success" | "warning" | "danger" | "muted" {
-  if (status === "queued") {
-    return "success";
-  }
-  if (status === "pending") {
-    return "warning";
-  }
-  if (status === "failed") {
-    return "danger";
-  }
-  return status === "skipped" ? "muted" : "neutral";
-}
-
 function badgeVariantForTone(
-  tone: "neutral" | "success" | "warning" | "danger" | "muted",
+  tone: StatusTone,
 ): "secondary" | "outline" | "destructive" {
   if (tone === "danger") {
     return "destructive";
   }
   return tone === "success" || tone === "muted" ? "secondary" : "outline";
+}
+
+function scheduleStatusTone(status: ScheduleStatus): StatusTone {
+  return status === "enabled" ? "success" : "muted";
+}
+
+function getLatestStatus(
+  schedule: Pick<ScheduleRead, "latestStatus">,
+): string | null {
+  return schedule.latestStatus ?? null;
+}
+
+function latestStatusTone(status: string | null): StatusTone {
+  if (status === "succeeded") {
+    return "success";
+  }
+  if (status === "queued" || status === "pending" || status === "running") {
+    return "warning";
+  }
+  if (status === "failed") {
+    return "danger";
+  }
+  if (status === "skipped") {
+    return "muted";
+  }
+  return "neutral";
 }
 
 function formatDayOfWeek(value: string): string {
@@ -146,17 +181,92 @@ function formatRecurrence(recurrence: ScheduleRecurrence): string {
   }
   return `Monthly day ${recurrence.daysOfMonth.join(", ")} at ${recurrence.atLocalTime}`;
 }
+
+function formatDurationFromMs(milliseconds: number): string {
+  const absolute = Math.abs(milliseconds);
+  const units = [
+    { label: "month", milliseconds: 1000 * 60 * 60 * 24 * 30 },
+    { label: "week", milliseconds: 1000 * 60 * 60 * 24 * 7 },
+    { label: "day", milliseconds: 1000 * 60 * 60 * 24 },
+    { label: "hour", milliseconds: 1000 * 60 * 60 },
+    { label: "minute", milliseconds: 1000 * 60 },
+  ];
+
+  if (absolute < 1000 * 60) {
+    return "under a minute";
+  }
+
+  for (const unit of units) {
+    if (absolute >= unit.milliseconds) {
+      const value = Math.round(absolute / unit.milliseconds);
+      return `${value} ${value === 1 ? unit.label : `${unit.label}s`}`;
+    }
+  }
+
+  return "under a minute";
+}
+
+function formatRelativeNextRun(value: string | null): string {
+  if (!value) {
+    return "No upcoming run";
+  }
+
+  const difference = new Date(value).getTime() - Date.now();
+  const duration = formatDurationFromMs(difference);
+  return difference >= 0 ? `in ${duration}` : `overdue by ${duration}`;
+}
+
+function formatRelativeUpdatedAt(value: string): string {
+  const difference = new Date(value).getTime() - Date.now();
+  const duration = formatDurationFromMs(difference);
+  return difference >= 0 ? `updated in ${duration}` : `updated ${duration} ago`;
+}
+
+function matchesStatusFilter(
+  schedule: ScheduleRead,
+  statusFilter: LocalStatusFilter,
+): boolean {
+  const latestStatus = getLatestStatus(schedule);
+
+  if (statusFilter === ALL_STATUS_FILTER) {
+    return true;
+  }
+  if (statusFilter === "paused") {
+    return schedule.status === "paused";
+  }
+  if (statusFilter === "running") {
+    return (
+      latestStatus === "pending" ||
+      latestStatus === "queued" ||
+      latestStatus === "running"
+    );
+  }
+  if (statusFilter === "failed") {
+    return latestStatus === "failed";
+  }
+  if (statusFilter === "succeeded") {
+    return latestStatus === "succeeded";
+  }
+  return false;
+}
+
 function filterSchedules(
   schedules: readonly ScheduleRead[],
   search: string,
+  statusFilter: LocalStatusFilter,
 ): ScheduleRead[] {
   const query = search.trim().toLowerCase();
-  if (!query) {
-    return [...schedules];
-  }
 
-  return schedules.filter((schedule) =>
-    [
+  return schedules.filter((schedule) => {
+    if (!matchesStatusFilter(schedule, statusFilter)) {
+      return false;
+    }
+
+    if (!query) {
+      return true;
+    }
+
+    return [
       schedule.name,
       schedule.description ?? "",
       schedule.packageKey,
@@ -170,23 +280,95 @@ function filterSchedules(
     ]
       .join(" ")
       .toLowerCase()
-      .includes(query),
-  );
-}
-function sortSchedules(items: readonly ScheduleRead[]): ScheduleRead[] {
-  return [...items].sort((left, right) => {
-    if (left.nextFireAt && right.nextFireAt) {
-      const byNextFire = left.nextFireAt.localeCompare(right.nextFireAt);
-      return byNextFire !== 0 ? byNextFire : left.id - right.id;
-    }
-    if (left.nextFireAt) {
-      return -1;
-    }
-    if (right.nextFireAt) {
-      return 1;
-    }
-    return left.id - right.id;
+      .includes(query);
   });
+}
+
+function defaultSortDirectionForField(
+  field: ScheduleSortField,
+): ScheduleSortDirection {
+  if (field === "latestActivity") {
+    return "desc";
+  }
+  return "asc";
+}
+
+function compareNullableDate(
+  left: string | null,
+  right: string | null,
+  direction: ScheduleSortDirection,
+): number {
+  if (left && right) {
+    return direction === "asc"
+      ? left.localeCompare(right)
+      : right.localeCompare(left);
+  }
+  if (left) {
+    return direction === "asc" ? -1 : 1;
+  }
+  if (right) {
+    return direction === "asc" ? 1 : -1;
+  }
+  return 0;
+}
+
+function sortSchedules(
+  items: readonly ScheduleRead[],
+  sortState: ScheduleSortState,
+): ScheduleRead[] {
+  return [...items].sort((left, right) => {
+    let result = 0;
+
+    if (sortState.field === "workflow") {
+      result = left.name.localeCompare(right.name);
+      if (result === 0) {
+        result = left.packageKey.localeCompare(right.packageKey);
+      }
+      if (result === 0) {
+        result = left.workflowKey.localeCompare(right.workflowKey);
+      }
+      if (sortState.direction === "desc") {
+        result *= -1;
+      }
+    }
+
+    if (sortState.field === "nextRun") {
+      result = compareNullableDate(
+        left.nextFireAt,
+        right.nextFireAt,
+        sortState.direction,
+      );
+    }
+
+    if (sortState.field === "latestActivity") {
+      result = compareNullableDate(
+        left.updatedAt,
+        right.updatedAt,
+        sortState.direction,
+      );
+      if (result === 0) {
+        result = compareNullableDate(
+          left.nextFireAt,
+          right.nextFireAt,
+          sortState.direction,
+        );
+      }
+    }
+
+    return result !== 0 ? result : left.id - right.id;
+  });
+}
+
+function getNextRunTone(schedule: ScheduleRead): StatusTone {
+  const latestStatus = getLatestStatus(schedule);
+
+  if (latestStatus === "failed") {
+    return "danger";
+  }
+  if (!schedule.nextFireAt) {
+    return schedule.status === "paused" ? "muted" : "warning";
+  }
+  return new Date(schedule.nextFireAt).getTime() < Date.now() ? "warning" : "neutral";
 }
 
 function createUnknownWorkflowOption(workflowKey: string): WorkflowOption {
@@ -227,6 +409,28 @@ function buildWorkflowFilterOptions({
   return [...manifestOptions, ...staleOptions];
 }
 
+function useIsMobileLayout() {
+  const [isMobileLayout, setIsMobileLayout] = useState(
+    typeof window !== "undefined" ? window.innerWidth < MOBILE_BREAKPOINT : false,
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const updateLayout = () => {
+      setIsMobileLayout(window.innerWidth < MOBILE_BREAKPOINT);
+    };
+
+    updateLayout();
+    window.addEventListener("resize", updateLayout);
+    return () => window.removeEventListener("resize", updateLayout);
+  }, []);
+
+  return isMobileLayout;
+}
+
 function LoadingState() {
   return (
     <Card>
@@ -239,63 +443,57 @@ function LoadingState() {
   );
 }
 
-function StatusBadge({ status }: { status: ScheduleStatus }) {
-  const tone = scheduleStatusTone(status);
+function StatusBadge({
+  className,
+  label,
+  testId,
+  tone,
+}: {
+  className?: string;
+  label: string;
+  testId?: string;
+  tone: StatusTone;
+}) {
   return (
     <Badge
-      className="capitalize"
-      data-testid={`scheduled-task-status-${status}`}
+      className={cn("capitalize", className)}
+      data-testid={testId}
       data-tone={tone}
       variant={badgeVariantForTone(tone)}
     >
-      {status}
+      {label}
     </Badge>
   );
 }
 
-function LatestStatusBadge({ status }: { status: ScheduleFireStatus | null }) {
-  const tone = fireStatusTone(status);
-  return (
-    <Badge data-tone={tone} variant={badgeVariantForTone(tone)}>
-      {status ? formatStatusLabel(status) : "No latest status"}
-    </Badge>
-  );
-}
 function ScheduleStatusFilters({
   status,
   onStatusChange,
 }: {
-  status: ScheduleStatusFilter;
-  onStatusChange: (status: ScheduleStatusFilter) => void;
+  status: LocalStatusFilter;
+  onStatusChange: (status: LocalStatusFilter) => void;
 }) {
   return (
     <ToggleGroup
-      aria-label="Scheduled task status"
+      aria-label="Scheduled task status filter"
       type="single"
       value={status}
       onValueChange={(value) => {
         if (value) {
-          onStatusChange(value as ScheduleStatusFilter);
+          onStatusChange(value as LocalStatusFilter);
         }
       }}
     >
-      <ToggleGroupItem className="h-8 px-3 text-xs" value={ACTIVE_STATUS_FILTER}>
-        Active
-      </ToggleGroupItem>
-      <ToggleGroupItem
-        className="h-8 px-3 text-xs"
-        data-testid="scheduled-tasks-filter-enabled"
-        value="enabled"
-      >
-        Enabled
-      </ToggleGroupItem>
-      <ToggleGroupItem
-        className="h-8 px-3 text-xs"
-        data-testid="scheduled-tasks-filter-paused"
-        value="paused"
-      >
-        Paused
-      </ToggleGroupItem>
+      {STATUS_FILTER_OPTIONS.map((option) => (
+        <ToggleGroupItem
+          className="h-8 px-3 text-xs"
+          data-testid={`scheduled-tasks-filter-${option.label.toLowerCase()}`}
+          key={option.value}
+          value={option.value}
+        >
+          {option.label}
+        </ToggleGroupItem>
+      ))}
     </ToggleGroup>
   );
 }
@@ -359,12 +557,12 @@ function ScheduleFilters({
 }: {
   packageItems: ReadonlyArray<{ label: string; value: string }>;
   packageKey: string;
-  status: ScheduleStatusFilter;
+  status: LocalStatusFilter;
   workflowDisabled: boolean;
   workflowItems: ReadonlyArray<{ label: string; value: string }>;
   workflowKey: string;
   onPackageKeyChange: (value: string) => void;
-  onStatusChange: (status: ScheduleStatusFilter) => void;
+  onStatusChange: (status: LocalStatusFilter) => void;
   onWorkflowKeyChange: (value: string) => void;
 }) {
   return (
@@ -413,208 +611,397 @@ function ScheduledTasksPageActions() {
   );
 }
 
-function ScheduleIdentityCell({ schedule }: { schedule: ScheduleRead }) {
+function renderSortButton({
+  field,
+  label,
+  sortState,
+  onSort,
+}: {
+  field: ScheduleSortField;
+  label: string;
+  sortState: ScheduleSortState;
+  onSort: (field: ScheduleSortField) => void;
+}) {
+  const isActive = sortState.field === field;
+  const directionLabel = sortState.direction === "asc" ? "ascending" : "descending";
+
   return (
-    <div className="flex min-w-64 flex-col gap-1 whitespace-normal">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="font-medium text-foreground">{schedule.name}</span>
-        <StatusBadge status={schedule.status} />
-      </div>
-      {schedule.description ? (
-        <span className="break-words text-xs text-muted-foreground">
-          {schedule.description}
+    <Button
+      aria-label={
+        isActive
+          ? `Sort scheduled tasks by ${label} (${directionLabel})`
+          : `Sort scheduled tasks by ${label}`
+      }
+      className="-ml-2 h-8 px-2 text-xs font-medium"
+      size="sm"
+      title={isActive ? `${label}: ${directionLabel}` : `Sort by ${label}`}
+      type="button"
+      variant="ghost"
+      onClick={() => onSort(field)}
+    >
+      <span>{label}</span>
+      {isActive ? (
+        <span aria-hidden="true" className="ml-1">
+          {sortState.direction === "asc" ? "↑" : "↓"}
         </span>
       ) : null}
-      <span className="text-xs text-muted-foreground">
-        Timezone: {schedule.timezone}
-      </span>
+    </Button>
+  );
+}
+
+function getAriaSort(
+  field: ScheduleSortField,
+  sortState: ScheduleSortState,
+): "ascending" | "descending" | undefined {
+  if (sortState.field !== field) {
+    return undefined;
+  }
+  return sortState.direction === "asc" ? "ascending" : "descending";
+}
+
+function WorkflowCell({
+  expanded,
+  schedule,
+  onToggleExpand,
+}: {
+  expanded: boolean;
+  schedule: ScheduleRead;
+  onToggleExpand: (scheduleId: number) => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2 whitespace-normal">
+      <div className="flex min-w-0 flex-wrap items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="truncate font-semibold text-foreground">{schedule.name}</span>
+            <StatusBadge
+              label={formatStatusLabel(schedule.status)}
+              testId={`scheduled-task-status-${schedule.status}`}
+              tone={scheduleStatusTone(schedule.status)}
+            />
+          </div>
+          {schedule.description ? (
+            <p className="truncate text-xs text-muted-foreground">{schedule.description}</p>
+          ) : null}
+        </div>
+        <Button
+          aria-label={`${expanded ? "Hide" : "Show"} details for ${schedule.name}`}
+          className="h-7 px-2 text-xs"
+          size="sm"
+          type="button"
+          variant="ghost"
+          onClick={() => onToggleExpand(schedule.id)}
+        >
+          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          Details
+        </Button>
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <Badge className="font-normal" variant="outline">
+          {schedule.timezone}
+        </Badge>
+      </div>
     </div>
   );
 }
 
-function PackageWorkflowCell({ schedule }: { schedule: ScheduleRead }) {
+function ScheduleCell({ schedule }: { schedule: ScheduleRead }) {
   return (
-    <div
-      className="flex min-w-60 flex-col gap-1 whitespace-normal text-xs text-muted-foreground"
-      data-testid={`scheduled-task-row-identity-${schedule.id}`}
-    >
-      <span>
-        <span className="font-medium text-foreground">Package:</span>{" "}
-        <span className="break-all font-mono">{schedule.packageKey}</span>
-      </span>
-      <span>
-        <span className="font-medium text-foreground">Workflow:</span>{" "}
-        <span className="break-all font-mono">{schedule.workflowKey}</span>
-      </span>
+    <div className="flex min-w-0 flex-col gap-2 whitespace-normal">
+      <span className="font-medium text-foreground">{formatRecurrence(schedule.recurrence)}</span>
+      <div className="flex min-w-0 flex-wrap gap-1 text-[11px] text-muted-foreground">
+        <Badge className="font-normal text-muted-foreground" variant="outline">
+          Overlap: {formatStatusLabel(schedule.overlapPolicy)}
+        </Badge>
+        <Badge className="font-normal text-muted-foreground" variant="outline">
+          Misfire: {formatStatusLabel(schedule.misfirePolicy)}
+        </Badge>
+      </div>
     </div>
   );
 }
 
-function NextFireCell({ schedule }: { schedule: ScheduleRead }) {
+function NextRunCell({ schedule }: { schedule: ScheduleRead }) {
+  const tone = getNextRunTone(schedule);
+  const nextRunLabel = formatOptionalDateTime(schedule.nextFireAt, "No upcoming run");
+  const relativeLabel = formatRelativeNextRun(schedule.nextFireAt);
+  const showWarning = tone === "warning" || tone === "danger";
+
   return (
     <div
-      className="flex min-w-52 flex-col gap-1 whitespace-normal text-xs text-muted-foreground"
-      data-testid={`scheduled-task-row-next-fire-${schedule.id}`}
+      className="flex min-w-0 flex-col gap-1 whitespace-normal"
+      data-testid={`scheduled-task-row-next-run-${schedule.id}`}
     >
-      <span className="font-medium text-foreground">
-        {formatOptionalDateTime(schedule.nextFireAt, "No upcoming fire")}
-      </span>
-      <span>{formatRecurrence(schedule.recurrence)}</span>
-      <span>Overlap: {formatStatusLabel(schedule.overlapPolicy)}</span>
-      <span>Misfire: {formatStatusLabel(schedule.misfirePolicy)}</span>
+      <div className="flex min-w-0 items-start gap-1.5">
+        {showWarning ? <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" /> : null}
+        <span
+          className={cn(
+            "font-medium",
+            tone === "danger" && "text-destructive",
+            tone === "warning" && "text-amber-600",
+            tone === "muted" && "text-muted-foreground",
+            tone === "neutral" && "text-foreground",
+          )}
+        >
+          {nextRunLabel}
+        </span>
+      </div>
+      <span className="text-xs text-muted-foreground">{relativeLabel}</span>
     </div>
   );
 }
 
 function LatestActivityCell({ schedule }: { schedule: ScheduleRead }) {
+  const latestStatus = getLatestStatus(schedule);
+
   return (
     <div
-      className="flex min-w-52 flex-col gap-1 whitespace-normal text-xs text-muted-foreground"
+      className="flex min-w-0 flex-col gap-1 whitespace-normal"
       data-testid={`scheduled-task-row-latest-${schedule.id}`}
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <LatestStatusBadge status={schedule.latestStatus} />
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <StatusBadge
+          label={latestStatus ? formatStatusLabel(latestStatus) : "No latest status"}
+          tone={latestStatusTone(latestStatus)}
+        />
       </div>
-      <span>
-        Latest fire: {schedule.latestFireId ? `#${schedule.latestFireId}` : "None"}
+      <span className="text-xs text-foreground">
+        Fire {schedule.latestFireId ? `#${schedule.latestFireId}` : "—"} · Run {schedule.latestRunId ? `#${schedule.latestRunId}` : "—"}
       </span>
-      <span>
-        Latest run: {schedule.latestRunId ? `#${schedule.latestRunId}` : "None"}
-      </span>
-      <span>Updated: {formatDateTime(schedule.updatedAt)}</span>
+      <span className="text-xs text-muted-foreground">{formatRelativeUpdatedAt(schedule.updatedAt)}</span>
     </div>
   );
 }
 
-type ScheduleSelectionHandlers = {
-  onDelete: (schedule: ScheduleRead) => void;
-  onSelect: (schedulesToUpdate: readonly ScheduleRead[], selected: boolean) => void;
-};
+function ExpandedScheduleDetails({ schedule }: { schedule: ScheduleRead }) {
+  const rows: Array<[string, string]> = [
+    ["Package ID", String(schedule.packageId)],
+    ["Package key", schedule.packageKey],
+    ["Workflow key", schedule.workflowKey],
+    ["Timezone", schedule.timezone],
+    ["Starts", formatOptionalDateTime(schedule.startsAt, "Not set")],
+    ["Ends", formatOptionalDateTime(schedule.endsAt, "Not set")],
+    ["Next run", formatOptionalDateTime(schedule.nextFireAt, "No upcoming run")],
+    ["Overlap policy", formatStatusLabel(schedule.overlapPolicy)],
+    ["Misfire policy", formatStatusLabel(schedule.misfirePolicy)],
+    ["Misfire grace", `${schedule.misfireGraceSeconds} seconds`],
+    ["Latest fire", schedule.latestFireId ? `#${schedule.latestFireId}` : "None"],
+    ["Latest run", schedule.latestRunId ? `#${schedule.latestRunId}` : "None"],
+    ["Updated", formatDateTime(schedule.updatedAt)],
+    ["Created", formatDateTime(schedule.createdAt)],
+  ];
 
-type ScheduleActionHandlers = {
-  mutationPending: boolean;
-  onDelete: (schedule: ScheduleRead) => void;
-  onRunNow: (schedule: ScheduleRead) => void;
-  onToggleStatus: (schedule: ScheduleRead) => void;
-};
+  return (
+    <dl className="grid gap-3 text-xs sm:grid-cols-2 xl:grid-cols-4">
+      {rows.map(([label, value]) => (
+        <div className="min-w-0" key={label}>
+          <dt className="font-medium text-muted-foreground">{label}</dt>
+          <dd className="min-w-0 break-words text-foreground">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
-function ScheduleRowActions({
+function ActionMenu({
+  mutationPending,
+  schedule,
+  onDelete,
+  onToggleStatus,
+}: ScheduleActionHandlers & { schedule: ScheduleRead }) {
+  const duplicatePath = `/scheduled-tasks/new?duplicateFrom=${schedule.id}`;
+  const showPauseAction = schedule.status === "enabled";
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label={`Open actions for ${schedule.name}`}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuGroup>
+          <DropdownMenuItem asChild>
+            <Link aria-label={`Edit schedule ${schedule.name}`} to={`/scheduled-tasks/${schedule.id}`}>
+              <SquarePen className="size-3.5" />
+              Edit
+            </Link>
+          </DropdownMenuItem>
+          {showPauseAction ? (
+            <DropdownMenuItem
+              disabled={mutationPending}
+              onSelect={() => onToggleStatus(schedule)}
+            >
+              <PauseCircle className="size-3.5" />
+              Pause
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem asChild>
+            <Link aria-label={`Duplicate schedule ${schedule.name}`} to={duplicatePath}>
+              <CopyPlus className="size-3.5" />
+              Duplicate
+            </Link>
+          </DropdownMenuItem>
+          {schedule.latestRunId ? (
+            <DropdownMenuItem asChild>
+              <Link
+                aria-label={`Open latest run for ${schedule.name}`}
+                to={`/runs/${schedule.latestRunId}`}
+              >
+                <ExternalLink className="size-3.5" />
+                Latest run
+              </Link>
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem disabled>
+              <ExternalLink className="size-3.5" />
+              Latest run
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          disabled={mutationPending}
+          variant="destructive"
+          onSelect={() => onDelete(schedule)}
+        >
+          <Trash2 className="size-3.5" />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ScheduleRow({
+  expanded,
+  isSelected,
   mutationPending,
   schedule,
   onDelete,
   onRunNow,
+  onSelect,
+  onToggleExpand,
   onToggleStatus,
-}: ScheduleActionHandlers & { schedule: ScheduleRead }) {
-  const toggleLabel = schedule.status === "enabled" ? "Pause" : "Resume";
-  const duplicatePath = `/scheduled-tasks/new?duplicateFrom=${schedule.id}`;
-
+}: {
+  expanded: boolean;
+  isSelected: boolean;
+  schedule: ScheduleRead;
+  onToggleExpand: (scheduleId: number) => void;
+} & ScheduleActionHandlers &
+  ScheduleSelectionHandlers) {
   return (
-    <div className="flex min-w-72 flex-wrap justify-end gap-2">
-      <Button asChild size="sm" variant="outline">
-        <Link
-          aria-label={`Edit schedule ${schedule.name}`}
-          data-testid="scheduled-task-row-action-edit"
-          to={`/scheduled-tasks/${schedule.id}`}
-        >
-          <SquarePen data-icon="inline-start" />
-          Edit
-        </Link>
-      </Button>
-      <Button
-        aria-label={`Run schedule ${schedule.name} now`}
-        className="cursor-pointer"
-        data-testid="scheduled-task-row-action-run-now"
-        disabled={mutationPending}
-        size="sm"
-        type="button"
-        onClick={() => onRunNow(schedule)}
+    <>
+      <TableRow
+        className="group"
+        data-state={isSelected ? "selected" : undefined}
+        data-testid={`scheduled-task-row-${schedule.id}`}
       >
-        <PlayCircle data-icon="inline-start" />
-        Run now
-      </Button>
-      <Button
-        aria-label={`${toggleLabel} schedule ${schedule.name}`}
-        className="cursor-pointer"
-        data-testid="scheduled-task-row-action-pause-resume"
-        disabled={mutationPending}
-        size="sm"
-        type="button"
-        variant="outline"
-        onClick={() => onToggleStatus(schedule)}
-      >
-        {schedule.status === "enabled" ? (
-          <PauseCircle data-icon="inline-start" />
-        ) : (
-          <RotateCcw data-icon="inline-start" />
-        )}
-        {toggleLabel}
-      </Button>
-      <Button asChild size="sm" variant="outline">
-        <Link
-          aria-label={`Duplicate schedule ${schedule.name}`}
-          data-testid="scheduled-task-row-action-duplicate"
-          to={duplicatePath}
-        >
-          <CopyPlus data-icon="inline-start" />
-          Duplicate
-        </Link>
-      </Button>
-      <Button
-        aria-label={`Delete schedule ${schedule.name}`}
-        className="cursor-pointer"
-        data-testid="scheduled-task-row-action-delete"
-        disabled={mutationPending}
-        size="sm"
-        type="button"
-        variant="destructive"
-        onClick={() => onDelete(schedule)}
-      >
-        <Trash2 data-icon="inline-start" />
-        Delete
-      </Button>
-      {schedule.latestRunId ? (
-        <Button asChild size="sm" variant="outline">
-          <Link
-            aria-label={`Open latest run for ${schedule.name}`}
-            data-testid="scheduled-task-row-action-open-latest-run"
-            to={`/runs/${schedule.latestRunId}`}
-          >
-            <ExternalLink data-icon="inline-start" />
-            Latest run
-          </Link>
-        </Button>
-      ) : (
-        <Button disabled size="sm" type="button" variant="outline">
-          Latest run
-        </Button>
-      )}
-    </div>
+        <TableCell className="align-top">
+          <Checkbox
+            aria-label={`Select scheduled task ${schedule.name}`}
+            checked={isSelected}
+            onCheckedChange={(checked) => onSelect([schedule], checked === true)}
+          />
+        </TableCell>
+        <TableCell className="min-w-[20rem] align-top whitespace-normal">
+          <WorkflowCell
+            expanded={expanded}
+            schedule={schedule}
+            onToggleExpand={onToggleExpand}
+          />
+        </TableCell>
+        <TableCell className="min-w-[15rem] align-top whitespace-normal">
+          <ScheduleCell schedule={schedule} />
+        </TableCell>
+        <TableCell className="min-w-[14rem] align-top whitespace-normal">
+          <NextRunCell schedule={schedule} />
+        </TableCell>
+        <TableCell className="min-w-[14rem] align-top whitespace-normal">
+          <LatestActivityCell schedule={schedule} />
+        </TableCell>
+        <TableCell className="sticky right-0 min-w-[12rem] bg-background/95 align-top backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="flex justify-end gap-2">
+            <Button
+              aria-label={`Run schedule ${schedule.name} now`}
+              disabled={mutationPending}
+              size="sm"
+              type="button"
+              onClick={() => onRunNow(schedule)}
+            >
+              <PlayCircle data-icon="inline-start" />
+              Run now
+            </Button>
+            {schedule.status === "paused" ? (
+              <Button
+                aria-label={`Resume schedule ${schedule.name}`}
+                disabled={mutationPending}
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={() => onToggleStatus(schedule)}
+              >
+                <RotateCcw data-icon="inline-start" />
+                Resume
+              </Button>
+            ) : null}
+            <ActionMenu
+              mutationPending={mutationPending}
+              schedule={schedule}
+              onDelete={onDelete}
+              onRunNow={onRunNow}
+              onToggleStatus={onToggleStatus}
+            />
+          </div>
+        </TableCell>
+      </TableRow>
+      {expanded ? (
+        <TableRow data-testid={`scheduled-task-row-details-${schedule.id}`}>
+          <TableCell className="bg-muted/20 py-4" colSpan={6}>
+            <ExpandedScheduleDetails schedule={schedule} />
+          </TableCell>
+        </TableRow>
+      ) : null}
+    </>
   );
 }
 
-function ScheduledTasksTable({
+function ScheduleTable({
   allFilteredSelected,
+  expandedScheduleIds,
   mutationPending,
   schedules,
   selectedScheduleIds,
   someFilteredSelected,
+  sortState,
   onDelete,
   onRunNow,
   onSelect,
+  onSort,
+  onToggleExpand,
   onToggleStatus,
 }: {
   allFilteredSelected: boolean;
-  mutationPending: boolean;
+  expandedScheduleIds: ReadonlySet<ScheduleRead["id"]>;
   schedules: readonly ScheduleRead[];
   selectedScheduleIds: ReadonlySet<ScheduleRead["id"]>;
   someFilteredSelected: boolean;
-} & ScheduleActionHandlers & ScheduleSelectionHandlers) {
+  sortState: ScheduleSortState;
+  onSort: (field: ScheduleSortField) => void;
+  onToggleExpand: (scheduleId: number) => void;
+} & ScheduleActionHandlers &
+  ScheduleSelectionHandlers) {
   return (
-    <div className="min-w-0 overflow-x-auto">
+    <div className="overflow-hidden rounded-md border">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/30 hover:bg-muted/30">
-            <TableHead className="w-9">
+            <TableHead className="sticky top-0 z-20 w-9 bg-background">
               <Checkbox
                 aria-label="Select all shown scheduled tasks"
                 checked={
@@ -627,58 +1014,166 @@ function ScheduledTasksTable({
                 onCheckedChange={(checked) => onSelect(schedules, checked === true)}
               />
             </TableHead>
-            <TableHead>Schedule</TableHead>
-            <TableHead>Package / Workflow</TableHead>
-            <TableHead>Next fire</TableHead>
-            <TableHead>Latest activity</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead
+              aria-sort={getAriaSort("workflow", sortState)}
+              className="sticky top-0 z-10 bg-background"
+            >
+              {renderSortButton({ field: "workflow", label: "Workflow", sortState, onSort })}
+            </TableHead>
+            <TableHead className="sticky top-0 z-10 bg-background">Schedule</TableHead>
+            <TableHead
+              aria-sort={getAriaSort("nextRun", sortState)}
+              className="sticky top-0 z-10 bg-background"
+            >
+              {renderSortButton({ field: "nextRun", label: "Next run", sortState, onSort })}
+            </TableHead>
+            <TableHead
+              aria-sort={getAriaSort("latestActivity", sortState)}
+              className="sticky top-0 z-10 bg-background"
+            >
+              {renderSortButton({ field: "latestActivity", label: "Latest activity", sortState, onSort })}
+            </TableHead>
+            <TableHead className="sticky top-0 right-0 z-20 bg-background text-right">
+              Actions
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {schedules.map((schedule) => {
-            const isSelected = selectedScheduleIds.has(schedule.id);
-
-            return (
-              <TableRow
-                data-state={isSelected ? "selected" : undefined}
-                data-testid={`scheduled-task-row-${schedule.id}`}
-                key={schedule.id}
-              >
-                <TableCell>
-                  <Checkbox
-                    aria-label={`Select scheduled task ${schedule.name}`}
-                    checked={isSelected}
-                    onCheckedChange={(checked) =>
-                      onSelect([schedule], checked === true)
-                    }
-                  />
-                </TableCell>
-                <TableCell className="whitespace-normal">
-                  <ScheduleIdentityCell schedule={schedule} />
-                </TableCell>
-                <TableCell className="whitespace-normal">
-                  <PackageWorkflowCell schedule={schedule} />
-                </TableCell>
-                <TableCell className="whitespace-normal">
-                  <NextFireCell schedule={schedule} />
-                </TableCell>
-                <TableCell className="whitespace-normal">
-                  <LatestActivityCell schedule={schedule} />
-                </TableCell>
-                <TableCell>
-                  <ScheduleRowActions
-                    mutationPending={mutationPending}
-                    schedule={schedule}
-                    onDelete={onDelete}
-                    onRunNow={onRunNow}
-                    onToggleStatus={onToggleStatus}
-                  />
-                </TableCell>
-              </TableRow>
-            );
-          })}
+          {schedules.map((schedule) => (
+            <ScheduleRow
+              expanded={expandedScheduleIds.has(schedule.id)}
+              isSelected={selectedScheduleIds.has(schedule.id)}
+              key={schedule.id}
+              mutationPending={mutationPending}
+              schedule={schedule}
+              onDelete={onDelete}
+              onRunNow={onRunNow}
+              onSelect={onSelect}
+              onToggleExpand={onToggleExpand}
+              onToggleStatus={onToggleStatus}
+            />
+          ))}
         </TableBody>
       </Table>
+    </div>
+  );
+}
+
+function ScheduleCards({
+  allFilteredSelected,
+  expandedScheduleIds,
+  mutationPending,
+  schedules,
+  selectedScheduleIds,
+  someFilteredSelected,
+  onDelete,
+  onRunNow,
+  onSelect,
+  onToggleExpand,
+  onToggleStatus,
+}: {
+  allFilteredSelected: boolean;
+  expandedScheduleIds: ReadonlySet<ScheduleRead["id"]>;
+  schedules: readonly ScheduleRead[];
+  selectedScheduleIds: ReadonlySet<ScheduleRead["id"]>;
+  someFilteredSelected: boolean;
+  onToggleExpand: (scheduleId: number) => void;
+} & ScheduleActionHandlers &
+  ScheduleSelectionHandlers) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+        <Checkbox
+          aria-label="Select all shown scheduled tasks"
+          checked={
+            allFilteredSelected
+              ? true
+              : someFilteredSelected
+                ? "indeterminate"
+                : false
+          }
+          onCheckedChange={(checked) => onSelect(schedules, checked === true)}
+        />
+        <span className="text-xs text-muted-foreground">Select all shown scheduled tasks</span>
+      </div>
+      {schedules.map((schedule) => {
+        const expanded = expandedScheduleIds.has(schedule.id);
+        const isSelected = selectedScheduleIds.has(schedule.id);
+
+        return (
+          <Card data-testid={`scheduled-task-card-${schedule.id}`} key={schedule.id}>
+            <CardContent className="space-y-4 p-4">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  aria-label={`Select scheduled task ${schedule.name}`}
+                  checked={isSelected}
+                  onCheckedChange={(checked) => onSelect([schedule], checked === true)}
+                />
+                <div className="min-w-0 flex-1">
+                  <WorkflowCell
+                    expanded={expanded}
+                    schedule={schedule}
+                    onToggleExpand={onToggleExpand}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Schedule
+                  </p>
+                  <ScheduleCell schedule={schedule} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Next run
+                  </p>
+                  <NextRunCell schedule={schedule} />
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Latest activity
+                  </p>
+                  <LatestActivityCell schedule={schedule} />
+                </div>
+              </div>
+              {expanded ? <ExpandedScheduleDetails schedule={schedule} /> : null}
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  aria-label={`Run schedule ${schedule.name} now`}
+                  disabled={mutationPending}
+                  size="sm"
+                  type="button"
+                  onClick={() => onRunNow(schedule)}
+                >
+                  <PlayCircle data-icon="inline-start" />
+                  Run now
+                </Button>
+                {schedule.status === "paused" ? (
+                  <Button
+                    aria-label={`Resume schedule ${schedule.name}`}
+                    disabled={mutationPending}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                    onClick={() => onToggleStatus(schedule)}
+                  >
+                    <RotateCcw data-icon="inline-start" />
+                    Resume
+                  </Button>
+                ) : null}
+                <ActionMenu
+                  mutationPending={mutationPending}
+                  schedule={schedule}
+                  onDelete={onDelete}
+                  onRunNow={onRunNow}
+                  onToggleStatus={onToggleStatus}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }
@@ -745,16 +1240,23 @@ function ScheduledTasksEmptyState({ hasFilters }: { hasFilters: boolean }) {
 
 export function ScheduledTasksListPage() {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<ScheduleStatusFilter>(
-    ACTIVE_STATUS_FILTER,
-  );
+  const [statusFilter, setStatusFilter] = useState<LocalStatusFilter>(ALL_STATUS_FILTER);
   const [packageKey, setPackageKey] = useState("");
   const [workflowKey, setWorkflowKey] = useState("");
   const [deleting, setDeleting] = useState<ScheduleRead | null>(null);
+  const [expandedScheduleIds, setExpandedScheduleIds] = useState<Set<ScheduleRead["id"]>>(
+    new Set(),
+  );
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
-  const [selectedScheduleIds, setSelectedScheduleIds] = useState<
-    Set<ScheduleRead["id"]>
-  >(new Set());
+  const [selectedScheduleIds, setSelectedScheduleIds] = useState<Set<ScheduleRead["id"]>>(
+    new Set(),
+  );
+  const [sortState, setSortState] = useState<ScheduleSortState>({
+    direction: "asc",
+    field: "nextRun",
+  });
+
+  const isMobileLayout = useIsMobileLayout();
   const updateSchedule = useUpdateScheduledTask();
   const runNow = useRunScheduledTaskNow();
   const deleteSchedule = useDeleteScheduledTask();
@@ -784,22 +1286,24 @@ export function ScheduledTasksListPage() {
     () => ({
       limit: 50,
       packageKey: resolvedPackageKey || undefined,
-      status: statusFilterToParams(statusFilter),
       workflowKey:
-        resolvedPackageKey && resolvedWorkflowKey
-          ? resolvedWorkflowKey
-          : undefined,
+        resolvedPackageKey && resolvedWorkflowKey ? resolvedWorkflowKey : undefined,
     }),
-    [resolvedPackageKey, resolvedWorkflowKey, statusFilter],
+    [resolvedPackageKey, resolvedWorkflowKey],
   );
+
   const schedulesQuery = useScheduledTasks(listParams);
   const schedules = useMemo(
-    () => sortSchedules(schedulesQuery.data?.items ?? []),
+    () => schedulesQuery.data?.items ?? [],
     [schedulesQuery.data?.items],
   );
   const filteredSchedules = useMemo(
-    () => filterSchedules(schedules, search),
-    [schedules, search],
+    () => filterSchedules(schedules, search, statusFilter),
+    [schedules, search, statusFilter],
+  );
+  const visibleSchedules = useMemo(
+    () => sortSchedules(filteredSchedules, sortState),
+    [filteredSchedules, sortState],
   );
   const workflowOptions = useMemo(
     () =>
@@ -854,7 +1358,7 @@ export function ScheduledTasksListPage() {
     search.trim() ||
       packageKey.trim() ||
       workflowKey.trim() ||
-      statusFilter !== ACTIVE_STATUS_FILTER,
+      statusFilter !== ALL_STATUS_FILTER,
   );
 
   const updatePackageFilter = (nextValue: string) => {
@@ -889,6 +1393,30 @@ export function ScheduledTasksListPage() {
         }
       });
       return next;
+    });
+  };
+
+  const toggleScheduleExpanded = (scheduleId: number) => {
+    setExpandedScheduleIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(scheduleId)) {
+        next.delete(scheduleId);
+      } else {
+        next.add(scheduleId);
+      }
+      return next;
+    });
+  };
+
+  const handleSort = (field: ScheduleSortField) => {
+    setSortState((previous) => {
+      if (previous.field === field) {
+        return {
+          direction: previous.direction === "asc" ? "desc" : "asc",
+          field,
+        };
+      }
+      return { direction: defaultSortDirectionForField(field), field };
     });
   };
 
@@ -1006,7 +1534,7 @@ export function ScheduledTasksListPage() {
             onWorkflowKeyChange={updateWorkflowFilter}
           />
         ),
-        resultSummary: `${filteredSchedules.length} of ${
+        resultSummary: `${visibleSchedules.length} of ${
           schedulesQuery.data?.totalCount ?? schedules.length
         } scheduled tasks shown`,
         search: {
@@ -1036,28 +1564,48 @@ export function ScheduledTasksListPage() {
 
       {!schedulesQuery.isPending &&
       !schedulesQuery.isError &&
-      filteredSchedules.length === 0 ? (
+      visibleSchedules.length === 0 ? (
         <ScheduledTasksEmptyState hasFilters={hasFilters} />
       ) : null}
 
       {!schedulesQuery.isPending &&
       !schedulesQuery.isError &&
-      filteredSchedules.length > 0 ? (
-        <ScheduledTasksTable
-          allFilteredSelected={allFilteredSelected}
-          mutationPending={mutationPending}
-          schedules={filteredSchedules}
-          selectedScheduleIds={selectedScheduleIds}
-          someFilteredSelected={someFilteredSelected}
-          onDelete={setDeleting}
-          onRunNow={runScheduleNow}
-          onSelect={setSchedulesSelected}
-          onToggleStatus={toggleScheduleStatus}
-        />
+      visibleSchedules.length > 0 ? (
+        isMobileLayout ? (
+          <ScheduleCards
+            allFilteredSelected={allFilteredSelected}
+            expandedScheduleIds={expandedScheduleIds}
+            mutationPending={mutationPending}
+            schedules={visibleSchedules}
+            selectedScheduleIds={selectedScheduleIds}
+            someFilteredSelected={someFilteredSelected}
+            onDelete={setDeleting}
+            onRunNow={runScheduleNow}
+            onSelect={setSchedulesSelected}
+            onToggleExpand={toggleScheduleExpanded}
+            onToggleStatus={toggleScheduleStatus}
+          />
+        ) : (
+          <ScheduleTable
+            allFilteredSelected={allFilteredSelected}
+            expandedScheduleIds={expandedScheduleIds}
+            mutationPending={mutationPending}
+            schedules={visibleSchedules}
+            selectedScheduleIds={selectedScheduleIds}
+            someFilteredSelected={someFilteredSelected}
+            sortState={sortState}
+            onDelete={setDeleting}
+            onRunNow={runScheduleNow}
+            onSelect={setSchedulesSelected}
+            onSort={handleSort}
+            onToggleExpand={toggleScheduleExpanded}
+            onToggleStatus={toggleScheduleStatus}
+          />
+        )
       ) : null}
 
       <ScheduledTasksBulkActions
-        filteredCount={filteredSchedules.length}
+        filteredCount={visibleSchedules.length}
         isPending={deleteSchedules.isPending}
         selectedCount={selectedCount}
         onClear={() => setSelectedScheduleIds(new Set())}
