@@ -44,9 +44,9 @@ function formatTargetKindLabel(targetKind: RunTargetKind): string {
   return targetKind === "agent" ? "Agent" : "Workflow";
 }
 
-function describeRunTarget(targetKind: RunTargetKind): string {
+function describeRunTarget(targetKind: RunTargetKind): string | null {
   if (targetKind === "workflowPackage") {
-    return "Captured package snapshot execution";
+    return null;
   }
   return targetKind === "agent"
     ? "Standalone agent execution"
@@ -81,9 +81,9 @@ function statusTone(
   return status === "queued" ? "warning" : "neutral";
 }
 
-function targetIdentity(run: RunListItemRead): string {
+function targetIdentity(run: RunListItemRead): string | null {
   if (run.targetKind === "workflowPackage") {
-    return `Captured snapshot: ${run.targetKey} · Package id at launch: #${run.targetId}`;
+    return null;
   }
   return `${formatTargetKindLabel(run.targetKind)} id: ${run.targetId}`;
 }
@@ -309,8 +309,10 @@ function RunsTable({ runs }: { runs: readonly RunListItemRead[] }) {
                       </span>
                     </span>
                   ) : null}
-                  <span>{describeRunTarget(run.targetKind)}</span>
-                  <span>{targetIdentity(run)}</span>
+                  {describeRunTarget(run.targetKind) ? (
+                    <span>{describeRunTarget(run.targetKind)}</span>
+                  ) : null}
+                  {targetIdentity(run) ? <span>{targetIdentity(run)}</span> : null}
                 </div>
               </TableCell>
               <TableCell>

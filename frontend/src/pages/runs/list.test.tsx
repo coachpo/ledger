@@ -228,16 +228,15 @@ describe("RunsListPage", () => {
     );
     expect(screen.getAllByText(/^macro_agent$/i)[0]).toBeVisible();
     expect(screen.getByText(/workflow id: 40/i)).toBeVisible();
-    expect(
-      screen.getByText(/captured snapshot: market_review_package/i),
-    ).toBeVisible();
-    expect(screen.getByText(/package id at launch: #41/i)).toBeVisible();
     expect(screen.getByTestId("runs-row-15")).toHaveTextContent(
       /workflow key:\s*market_review/i,
     );
     expect(screen.getByTestId("runs-row-17")).toHaveTextContent(
       /workflow key:\s*queued_review/i,
     );
+    expect(screen.queryByText(/captured package snapshot execution/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/captured snapshot:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/package id at launch:/i)).not.toBeInTheDocument();
     expect(screen.getByText(/agent id: 12/i)).toBeVisible();
     expect(screen.getByText(/trace-15/i)).toBeVisible();
     expect(
