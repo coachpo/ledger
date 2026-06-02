@@ -591,7 +591,7 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByLabelText("Timezone")).not.toHaveValue(scheduleFixture().timezone);
   });
 
-  it("shows actionable health once and keeps info diagnostics in developer details", () => {
+  it("shows actionable health once without any developer details affordance", () => {
     useScheduledTaskMock.mockReturnValue({
       data: scheduleFixture({ latestStatus: "failed", status: "paused" }),
       error: null,
@@ -605,10 +605,8 @@ describe("ScheduledTaskDetailPage", () => {
     expect(health).toHaveTextContent("Latest fire failed");
     expect(health).toHaveTextContent("Schedule paused");
     expect(screen.getAllByText("Latest fire failed")).toHaveLength(1);
+    expect(within(health).queryByRole("button", { name: "Developer details" })).not.toBeInTheDocument();
     expect(screen.queryByText("Inputs use schema draft source")).not.toBeInTheDocument();
-
-    fireEvent.click(within(health).getByRole("button", { name: "Developer details" }));
-    expect(screen.getByText("Inputs use schema draft source")).toBeVisible();
   });
 
   it("deletes the scheduled task and redirects back to the scheduled-tasks list", async () => {
@@ -735,15 +733,9 @@ describe("ScheduledTaskDetailPage", () => {
       "href",
       "/runs/2104",
     );
-
-    fireEvent.click(within(history).getByRole("button", { name: "Developer details" }));
-    const fireDiagnostics = screen.getByTestId("scheduled-task-fire-diagnostics-panel");
-    expect(fireDiagnostics).toHaveTextContent("1 failed");
-    expect(fireDiagnostics).toHaveTextContent("1 skipped");
-    expect(fireDiagnostics).toHaveTextContent("1 queued");
-    expect(screen.getByTestId("scheduled-task-fire-diagnostic-799")).toHaveTextContent(
-      "Missing vars.portfolioSlug",
-    );
+    expect(within(history).queryByRole("button", { name: "Developer details" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("scheduled-task-fire-diagnostics-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("scheduled-task-fire-diagnostic-799")).not.toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("schedule-run-now"));

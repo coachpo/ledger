@@ -908,33 +908,6 @@ function actionableDiagnostics(diagnostics: readonly ScheduleDiagnostic[]): Sche
   return diagnostics.filter((diagnostic) => diagnostic.severity !== "info");
 }
 
-function DeveloperDetails({ diagnostics }: { diagnostics: readonly ScheduleDiagnostic[] }) {
-  if (diagnostics.length === 0) {
-    return null;
-  }
-
-  return (
-    <Collapsible className="min-w-0">
-      <CollapsibleTrigger asChild>
-        <Button className="h-7 px-2 text-xs" size="sm" type="button" variant="ghost">
-          Developer details
-          <ChevronDown className="size-3" />
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="pt-2">
-        <div className="flex min-w-0 flex-col gap-2 rounded-lg border bg-muted/20 p-3">
-          {diagnostics.map((diagnostic) => (
-            <div className="min-w-0 text-xs leading-5" key={`${diagnostic.severity}-${diagnostic.title}`}>
-              <p className="font-medium text-foreground">{diagnostic.title}</p>
-              <p className="text-muted-foreground">{diagnostic.message}</p>
-            </div>
-          ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
 function SummaryPanels({
   diagnostics,
   schedule,
@@ -1030,7 +1003,6 @@ function SummaryPanels({
               ))}
             </div>
           )}
-          <DeveloperDetails diagnostics={diagnostics.filter((diagnostic) => diagnostic.severity === "info")} />
         </div>
       </SummaryCard>
     </div>
@@ -2291,60 +2263,6 @@ function FireHistoryPanel({
   );
 }
 
-function FireHistoryDiagnosticsPanel({ history }: { history: FireHistoryState | undefined }) {
-  const safeHistory = normalizeFireHistoryState(history);
-
-  if (safeHistory.isPending) {
-    return <p className="text-xs text-muted-foreground">Run diagnostics will appear after loading finishes.</p>;
-  }
-  if (safeHistory.isError) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle />
-        <AlertTitle>Run diagnostics unavailable</AlertTitle>
-        <AlertDescription>{safeHistory.error?.message ?? "Failed to load runs for this task."}</AlertDescription>
-      </Alert>
-    );
-  }
-
-  const failedFires = safeHistory.fires.filter((fire) => fire.status === "failed");
-  const skippedFires = safeHistory.fires.filter((fire) => fire.status === "skipped");
-  const queuedFires = safeHistory.fires.filter((fire) => fire.status === "queued");
-  const issueFires = safeHistory.fires.filter((fire) => fireIssueMessage(fire));
-
-  return (
-    <div className="flex min-w-0 flex-col gap-3" data-testid="scheduled-task-fire-diagnostics-panel">
-      <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
-        <Badge variant={failedFires.length > 0 ? "destructive" : "secondary"}>{failedFires.length} failed</Badge>
-        <Badge variant={skippedFires.length > 0 ? "outline" : "secondary"}>{skippedFires.length} skipped</Badge>
-        <Badge variant="outline">{queuedFires.length} queued</Badge>
-      </div>
-      {issueFires.length === 0 ? (
-        <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-          No skipped or failed runs in the loaded window.
-        </p>
-      ) : null}
-      {issueFires.map((fire) => (
-        <div className="min-w-0 rounded-lg border bg-background/60 p-3" data-testid={`scheduled-task-fire-diagnostic-${fire.id}`} key={fire.id}>
-          <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
-            <Badge variant={fireStatusBadgeVariant(fire.status)}>{formatStatusLabel(fire.status)}</Badge>
-            <span className="text-xs font-medium">Fire #{fire.id}</span>
-            {fire.runId ? (
-              <Link className="text-xs font-medium underline underline-offset-4" to={`/runs/${fire.runId}`}>
-                Open run #{fire.runId}
-              </Link>
-            ) : null}
-          </div>
-          <p className="text-xs text-muted-foreground">{fireIssueMessage(fire)}</p>
-          <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-muted/40 p-3 text-xs">
-            {stringifyJson(fire.renderedParameters)}
-          </pre>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function ScheduleTabs({
   diagnostics,
   fireHistory,
@@ -2440,19 +2358,6 @@ function ScheduleTabs({
               runNowDisabled={runNowDisabled}
             />
           </SummaryCard>
-          <Collapsible className="min-w-0">
-            <CollapsibleTrigger asChild>
-              <Button className="h-7 self-start px-2 text-xs" size="sm" type="button" variant="ghost">
-                Developer details
-                <ChevronDown className="size-3" />
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pt-2">
-              <div className="rounded-lg border bg-muted/20 p-3">
-                <FireHistoryDiagnosticsPanel history={fireHistory} />
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
         </div>
       </TabsContent>
     </Tabs>
