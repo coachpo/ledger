@@ -186,12 +186,22 @@ async function chooseSelectOption(
   fireEvent.click(await screen.findByRole("option", { name: optionName }));
 }
 
-function openActionMenu(container: HTMLElement) {
+function openMoreActions(container: HTMLElement, scheduleName: string) {
   const trigger = within(container).getByRole("button", {
-    name: /open actions for/i,
+    name: `More actions for ${scheduleName}`,
   });
   trigger.focus();
   fireEvent.keyDown(trigger, { key: "ArrowDown" });
+}
+
+function closeOpenMenu() {
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+}
+
+function getActionsCell(row: HTMLElement) {
+  const cells = within(row).getAllByRole("cell");
+  expect(cells).toHaveLength(6);
+  return cells[cells.length - 1]!;
 }
 
 function expectRowBefore(first: HTMLElement, second: HTMLElement) {
@@ -356,7 +366,7 @@ describe("ScheduledTasksListPage", () => {
     expect(screen.getByText(/No scheduled tasks yet/i)).toBeVisible();
   });
 
-  it("renders redesigned schedule rows with sortable headers, expansion, and menu actions", async () => {
+  it("renders redesigned schedule rows with sortable headers, grouped expansion, and inline actions", async () => {
     useScheduledTasksMock.mockReturnValue({
       data: {
         items: [
@@ -419,6 +429,11 @@ describe("ScheduledTasksListPage", () => {
     ]) {
       expect(within(table).getByRole("columnheader", { name: column })).toBeVisible();
     }
+    const actionsHeader = within(table).getByRole("columnheader", {
+      name: /^Actions$/i,
+    });
+    expect(actionsHeader).not.toHaveClass("sticky");
+    expect(actionsHeader).not.toHaveClass("right-0");
     expect(
       screen.getByRole("button", { name: "Sort scheduled tasks by Workflow" }),
     ).toBeVisible();
@@ -433,49 +448,96 @@ describe("ScheduledTasksListPage", () => {
       "data-tone",
       "success",
     );
-    expect(dailyRow).toHaveTextContent("America/New_York");
     expect(dailyRow).toHaveTextContent("Weekly Mon, Tue, Wed, Thu, Fri at 09:00");
-    expect(dailyRow).toHaveTextContent("Overlap: Skip");
-    expect(dailyRow).toHaveTextContent("Misfire: Catch Up One");
-    expect(dailyRow).toHaveTextContent("Fire #801 · Run #2104");
+    expect(within(dailyRow).queryByText("Overlap: Skip")).not.toBeInTheDocument();
     expect(
-      within(dailyRow).getByRole("button", { name: "Run schedule Daily market brief now" }),
+      within(dailyRow).queryByText("Misfire: Catch Up One"),
+    ).not.toBeInTheDocument();
+    expect(dailyRow).toHaveTextContent("Fire #801 · Run #2104");
+    const dailyActionsCell = getActionsCell(dailyRow);
+    expect(dailyActionsCell).not.toHaveClass("sticky");
+    expect(dailyActionsCell).not.toHaveClass("right-0");
+    expect(
+      within(dailyActionsCell).getByRole("button", { name: "Show details" }),
     ).toBeVisible();
     expect(
-      within(dailyRow).queryByRole("button", {
+      within(dailyActionsCell).getByRole("button", {
+        name: "Run schedule Daily market brief now",
+      }),
+    ).toBeVisible();
+    expect(
+      within(dailyActionsCell).getByRole("button", {
+        name: "Pause schedule Daily market brief",
+      }),
+    ).toBeVisible();
+    expect(
+      within(dailyActionsCell).getByRole("button", {
+        name: "More actions for Daily market brief",
+      }),
+    ).toBeVisible();
+    expect(
+      within(dailyActionsCell).queryByRole("button", {
         name: "Resume schedule Daily market brief",
       }),
     ).not.toBeInTheDocument();
-
-    fireEvent.click(
-      within(dailyRow).getByRole("button", {
-        name: "Show details for Daily market brief",
+    expect(
+      within(dailyRow).queryByRole("link", { name: "Edit schedule Daily market brief" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dailyRow).queryByRole("link", {
+        name: "Duplicate schedule Daily market brief",
       }),
-    );
-    const details = screen.getByTestId("scheduled-task-row-details-44");
-    expect(details).toHaveTextContent("Package ID");
-    expect(details).toHaveTextContent("market_research_package");
-    expect(details).toHaveTextContent("daily_research");
-    expect(details).toHaveTextContent("Misfire grace");
-    expect(details).toHaveTextContent("86400 seconds");
+    ).not.toBeInTheDocument();
+    expect(
+      within(dailyRow).queryByRole("link", {
+        name: "Open latest run for Daily market brief",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dailyRow).queryByRole("button", { name: "Delete schedule Daily market brief" }),
+    ).not.toBeInTheDocument();
 
-    openActionMenu(dailyRow);
+    openMoreActions(dailyRow, "Daily market brief");
     expect(screen.getByText("Edit").closest("a")).toHaveAttribute(
       "href",
       "/scheduled-tasks/44",
     );
-    expect(screen.getByText("Pause")).toBeVisible();
     expect(screen.getByText("Duplicate").closest("a")).toHaveAttribute(
       "href",
       "/scheduled-tasks/new?duplicateFrom=44",
     );
+    expect(screen.getByText("Latest run").closest("a")).toHaveAttribute(
+      "href",
+      "/runs/2104",
+    );
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveAttribute(
+      "data-variant",
+      "destructive",
+    );
+    closeOpenMenu();
+
+    const detailsToggle = within(dailyRow).getByRole("button", {
+      name: "Show details",
+    });
+    expect(detailsToggle).toHaveAttribute("aria-controls", "scheduled-task-row-details-44");
+    expect(detailsToggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(detailsToggle);
+    expect(detailsToggle).toHaveAttribute("aria-expanded", "true");
     expect(
-      screen.getByRole("menuitem", {
-        name: "Open latest run for Daily market brief",
-      }),
-    ).toHaveAttribute("href", "/runs/2104");
-    expect(screen.getByText("Delete")).toBeVisible();
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+      within(dailyRow).getByRole("button", { name: "Hide details" }),
+    ).toBeVisible();
+    const details = screen.getByTestId("scheduled-task-row-details-44");
+    expect(details).toHaveTextContent("Workflow package");
+    expect(details).toHaveTextContent("Recurrence and policies");
+    expect(details).toHaveTextContent("Overlap policy");
+    expect(details).toHaveTextContent("Skip");
+    expect(details).toHaveTextContent("Misfire policy");
+    expect(details).toHaveTextContent("Catch Up One");
+    expect(details).toHaveTextContent("America/New_York");
+    expect(details).toHaveTextContent("market_research_package");
+    expect(details).toHaveTextContent("daily_research");
+    expect(details).toHaveTextContent("Misfire grace");
+    expect(details).toHaveTextContent("86400 seconds");
 
     const pausedRow = screen.getByTestId("scheduled-task-row-55");
     expect(pausedRow).toHaveTextContent("Paused allocation check");
@@ -486,16 +548,28 @@ describe("ScheduledTasksListPage", () => {
     expect(pausedRow).toHaveTextContent("No upcoming run");
     expect(pausedRow).toHaveTextContent("Every 4 hours");
     expect(pausedRow).toHaveTextContent("No latest status");
+    const pausedActionsCell = getActionsCell(pausedRow);
     expect(
-      within(pausedRow).getByRole("button", {
+      within(pausedActionsCell).getByRole("button", {
         name: "Resume schedule Paused allocation check",
       }),
     ).toBeVisible();
+    expect(
+      within(pausedActionsCell).getByRole("button", {
+        name: "More actions for Paused allocation check",
+      }),
+    ).toBeVisible();
+    expect(
+      within(pausedActionsCell).queryByRole("button", {
+        name: "Pause schedule Paused allocation check",
+      }),
+    ).not.toBeInTheDocument();
 
-    openActionMenu(pausedRow);
-    const latestRunItem = screen.getByRole("menuitem", { name: "Latest run" });
-    expect(latestRunItem.closest("[data-disabled]")).not.toBeNull();
-    expect(screen.queryByRole("menuitem", { name: "Pause" })).not.toBeInTheDocument();
+    openMoreActions(pausedRow, "Paused allocation check");
+    expect(screen.getByRole("menuitem", { name: "Latest run" })).toHaveAttribute(
+      "data-disabled",
+    );
+    closeOpenMenu();
   });
 
   it("keeps package and workflow hook params stable while status filters and search stay local", async () => {
@@ -819,8 +893,11 @@ describe("ScheduledTasksListPage", () => {
       "Scheduled task queued as run #3001",
     );
 
-    openActionMenu(dailyRow);
-    fireEvent.click(screen.getByText("Pause"));
+    fireEvent.click(
+      within(dailyRow).getByRole("button", {
+        name: "Pause schedule Daily market brief",
+      }),
+    );
     expect(updateScheduleMock).toHaveBeenCalledWith({
       scheduleId: 44,
       payload: { status: "paused" },
@@ -837,7 +914,7 @@ describe("ScheduledTasksListPage", () => {
       payload: { status: "enabled" },
     });
 
-    openActionMenu(dailyRow);
+    openMoreActions(dailyRow, "Daily market brief");
     fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     expect(screen.getByRole("alertdialog")).toHaveTextContent("Delete scheduled task");
     await act(async () => {
@@ -880,7 +957,18 @@ describe("ScheduledTasksListPage", () => {
       within(row).getByRole("button", { name: "Run schedule Market brief pending action now" }),
     ).toBeDisabled();
 
-    openActionMenu(row);
+    expect(
+      within(row).getByRole("button", {
+        name: "Pause schedule Market brief pending action",
+      }),
+    ).toBeDisabled();
+    expect(
+      within(row).getByRole("button", {
+        name: "More actions for Market brief pending action",
+      }),
+    ).toBeVisible();
+
+    openMoreActions(row, "Market brief pending action");
     expect(screen.getByText("Edit").closest("a")).toHaveAttribute(
       "href",
       "/scheduled-tasks/66",
@@ -889,8 +977,10 @@ describe("ScheduledTasksListPage", () => {
       "href",
       "/runs/2206",
     );
-    expect(screen.getByText("Pause").closest("[data-disabled]")).not.toBeNull();
-    expect(screen.getByText("Delete").closest("[data-disabled]")).not.toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveAttribute(
+      "data-disabled",
+    );
+    closeOpenMenu();
   });
 
   it("retains visible selection when bulk delete fails and surfaces row mutation failures", async () => {
@@ -940,14 +1030,17 @@ describe("ScheduledTasksListPage", () => {
       expect(toastErrorMock).toHaveBeenCalledWith("Manual fire rejected"),
     );
 
-    openActionMenu(row);
-    fireEvent.click(screen.getByText("Pause"));
+    fireEvent.click(
+      within(row).getByRole("button", {
+        name: "Pause schedule Daily market brief",
+      }),
+    );
     await waitFor(() =>
       expect(toastErrorMock).toHaveBeenCalledWith("Status update rejected"),
     );
 
-    openActionMenu(row);
-    fireEvent.click(screen.getByText("Delete"));
+    openMoreActions(row, "Daily market brief");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete scheduled task" }));
     await waitFor(() =>
       expect(toastErrorMock).toHaveBeenCalledWith("Delete rejected"),
@@ -985,7 +1078,7 @@ describe("ScheduledTasksListPage", () => {
 
     fireEvent.click(
       within(card).getByRole("button", {
-        name: "Show details for Daily market brief",
+        name: "Show details",
       }),
     );
     expect(card).toHaveTextContent("Package ID");

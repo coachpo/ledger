@@ -289,8 +289,11 @@ test.describe("scheduled tasks", () => {
     await page.getByLabel("Search scheduled tasks").fill(scheduleName);
     const row = page.getByRole("row").filter({ hasText: scheduleName });
     await expect(row).toBeVisible();
-    await expect(row).toContainText(`Latest run: #${runId}`);
-    const latestRunLink = row.getByTestId("scheduled-task-row-action-open-latest-run");
+    await expect(row).toContainText(`Run #${runId}`);
+    await row.getByRole("button", { name: `More actions for ${scheduleName}` }).click();
+    const latestRunLink = page.getByRole("menuitem", {
+      name: `Open latest run for ${scheduleName}`,
+    });
     await expect(latestRunLink).toHaveAttribute("href", `/runs/${runId}`);
     await latestRunLink.click();
     await expect(page).toHaveURL(new RegExp(`/runs/${runId}$`));

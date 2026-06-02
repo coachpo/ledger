@@ -13,7 +13,7 @@ import {
   SquarePen,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
@@ -659,64 +659,59 @@ function getAriaSort(
   return sortState.direction === "asc" ? "ascending" : "descending";
 }
 
-function WorkflowCell({
-  expanded,
-  schedule,
-  onToggleExpand,
-}: {
-  expanded: boolean;
-  schedule: ScheduleRead;
-  onToggleExpand: (scheduleId: number) => void;
-}) {
+function WorkflowCell({ schedule }: { schedule: ScheduleRead }) {
   return (
     <div className="flex min-w-0 flex-col gap-2 whitespace-normal">
-      <div className="flex min-w-0 flex-wrap items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="truncate font-semibold text-foreground">{schedule.name}</span>
-            <StatusBadge
-              label={formatStatusLabel(schedule.status)}
-              testId={`scheduled-task-status-${schedule.status}`}
-              tone={scheduleStatusTone(schedule.status)}
-            />
-          </div>
-          {schedule.description ? (
-            <p className="truncate text-xs text-muted-foreground">{schedule.description}</p>
-          ) : null}
-        </div>
-        <Button
-          aria-label={`${expanded ? "Hide" : "Show"} details for ${schedule.name}`}
-          className="h-7 px-2 text-xs"
-          size="sm"
-          type="button"
-          variant="ghost"
-          onClick={() => onToggleExpand(schedule.id)}
-        >
-          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-          Details
-        </Button>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <span className="truncate font-semibold text-foreground">{schedule.name}</span>
+        <StatusBadge
+          label={formatStatusLabel(schedule.status)}
+          testId={`scheduled-task-status-${schedule.status}`}
+          tone={scheduleStatusTone(schedule.status)}
+        />
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-        <Badge className="font-normal" variant="outline">
-          {schedule.timezone}
-        </Badge>
-      </div>
+      {schedule.description ? (
+        <p className="truncate text-xs text-muted-foreground">{schedule.description}</p>
+      ) : null}
     </div>
+  );
+}
+
+function ScheduleDetailsToggleButton({
+  className,
+  detailsId,
+  expanded,
+  onToggle,
+}: {
+  className?: string;
+  detailsId: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Button
+      aria-controls={detailsId}
+      aria-expanded={expanded}
+      className={cn("h-8 px-2", className)}
+      size="sm"
+      type="button"
+      variant="ghost"
+      onClick={onToggle}
+    >
+      {expanded ? (
+        <ChevronDown data-icon="inline-start" />
+      ) : (
+        <ChevronRight data-icon="inline-start" />
+      )}
+      {expanded ? "Hide details" : "Show details"}
+    </Button>
   );
 }
 
 function ScheduleCell({ schedule }: { schedule: ScheduleRead }) {
   return (
-    <div className="flex min-w-0 flex-col gap-2 whitespace-normal">
+    <div className="flex min-w-0 flex-col gap-1 whitespace-normal">
       <span className="font-medium text-foreground">{formatRecurrence(schedule.recurrence)}</span>
-      <div className="flex min-w-0 flex-wrap gap-1 text-[11px] text-muted-foreground">
-        <Badge className="font-normal text-muted-foreground" variant="outline">
-          Overlap: {formatStatusLabel(schedule.overlapPolicy)}
-        </Badge>
-        <Badge className="font-normal text-muted-foreground" variant="outline">
-          Misfire: {formatStatusLabel(schedule.misfirePolicy)}
-        </Badge>
-      </div>
     </div>
   );
 }
@@ -773,37 +768,137 @@ function LatestActivityCell({ schedule }: { schedule: ScheduleRead }) {
   );
 }
 
-function ExpandedScheduleDetails({ schedule }: { schedule: ScheduleRead }) {
-  const rows: Array<[string, string]> = [
-    ["Package ID", String(schedule.packageId)],
-    ["Package key", schedule.packageKey],
-    ["Workflow key", schedule.workflowKey],
-    ["Timezone", schedule.timezone],
-    ["Starts", formatOptionalDateTime(schedule.startsAt, "Not set")],
-    ["Ends", formatOptionalDateTime(schedule.endsAt, "Not set")],
-    ["Next run", formatOptionalDateTime(schedule.nextFireAt, "No upcoming run")],
-    ["Overlap policy", formatStatusLabel(schedule.overlapPolicy)],
-    ["Misfire policy", formatStatusLabel(schedule.misfirePolicy)],
-    ["Misfire grace", `${schedule.misfireGraceSeconds} seconds`],
-    ["Latest fire", schedule.latestFireId ? `#${schedule.latestFireId}` : "None"],
-    ["Latest run", schedule.latestRunId ? `#${schedule.latestRunId}` : "None"],
-    ["Updated", formatDateTime(schedule.updatedAt)],
-    ["Created", formatDateTime(schedule.createdAt)],
-  ];
-
+function ScheduleDetailField({
+  children,
+  label,
+  mono = false,
+}: {
+  children: ReactNode;
+  label: string;
+  mono?: boolean;
+}) {
   return (
-    <dl className="grid gap-3 text-xs sm:grid-cols-2 xl:grid-cols-4">
-      {rows.map(([label, value]) => (
-        <div className="min-w-0" key={label}>
-          <dt className="font-medium text-muted-foreground">{label}</dt>
-          <dd className="min-w-0 break-words text-foreground">{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-2">
+      <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:w-28">
+        {label}
+      </dt>
+      <dd
+        className={cn(
+          "min-w-0 break-words text-xs leading-5 text-foreground",
+          mono ? "break-all font-mono" : null,
+        )}
+      >
+        {children}
+      </dd>
+    </div>
   );
 }
 
-function ActionMenu({
+function ScheduleDetailGroup({
+  children,
+  title,
+}: {
+  children: ReactNode;
+  title: string;
+}) {
+  return (
+    <section className="min-w-0">
+      <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground">
+        {title}
+      </h4>
+      <dl className="flex min-w-0 flex-col gap-1.5">{children}</dl>
+    </section>
+  );
+}
+
+function ScheduleDetailSections({
+  ariaLabel,
+  className,
+  role,
+  schedule,
+}: {
+  ariaLabel?: string;
+  className?: string;
+  role?: "group";
+  schedule: ScheduleRead;
+}) {
+  return (
+    <div
+      aria-label={ariaLabel}
+      className={cn("grid min-w-0 gap-x-6 gap-y-2 md:grid-cols-2 xl:grid-cols-4", className)}
+      role={role}
+    >
+      <ScheduleDetailGroup title="Workflow package">
+        <ScheduleDetailField label="Package ID">{schedule.packageId}</ScheduleDetailField>
+        <ScheduleDetailField label="Package key" mono>
+          {schedule.packageKey}
+        </ScheduleDetailField>
+        <ScheduleDetailField label="Workflow key" mono>
+          {schedule.workflowKey}
+        </ScheduleDetailField>
+      </ScheduleDetailGroup>
+      <ScheduleDetailGroup title="Recurrence and policies">
+        <ScheduleDetailField label="Recurrence">
+          {formatRecurrence(schedule.recurrence)}
+        </ScheduleDetailField>
+        <ScheduleDetailField label="Overlap policy">
+          {formatStatusLabel(schedule.overlapPolicy)}
+        </ScheduleDetailField>
+        <ScheduleDetailField label="Misfire policy">
+          {formatStatusLabel(schedule.misfirePolicy)}
+        </ScheduleDetailField>
+        <ScheduleDetailField label="Misfire grace">
+          {schedule.misfireGraceSeconds} seconds
+        </ScheduleDetailField>
+      </ScheduleDetailGroup>
+      <ScheduleDetailGroup title="Timing">
+        <ScheduleDetailField label="Timezone">{schedule.timezone}</ScheduleDetailField>
+        <ScheduleDetailField label="Starts">
+          {formatOptionalDateTime(schedule.startsAt, "Not set")}
+        </ScheduleDetailField>
+        <ScheduleDetailField label="Ends">
+          {formatOptionalDateTime(schedule.endsAt, "Not set")}
+        </ScheduleDetailField>
+        <ScheduleDetailField label="Next run">
+          {formatOptionalDateTime(schedule.nextFireAt, "No upcoming run")}
+        </ScheduleDetailField>
+      </ScheduleDetailGroup>
+      <ScheduleDetailGroup title="Recent activity">
+        <ScheduleDetailField label="Latest fire">
+          {schedule.latestFireId ? `#${schedule.latestFireId}` : "None"}
+        </ScheduleDetailField>
+        <ScheduleDetailField label="Latest run">
+          {schedule.latestRunId ? `#${schedule.latestRunId}` : "None"}
+        </ScheduleDetailField>
+        <ScheduleDetailField label="Updated">
+          {formatDateTime(schedule.updatedAt)}
+        </ScheduleDetailField>
+        <ScheduleDetailField label="Created">
+          {formatDateTime(schedule.createdAt)}
+        </ScheduleDetailField>
+      </ScheduleDetailGroup>
+    </div>
+  );
+}
+
+function ExpandedScheduleDetails({
+  className,
+  schedule,
+}: {
+  className?: string;
+  schedule: ScheduleRead;
+}) {
+  return (
+    <ScheduleDetailSections
+      ariaLabel={`Expanded details for ${schedule.name}`}
+      className={cn("rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground", className)}
+      role="group"
+      schedule={schedule}
+    />
+  );
+}
+
+function MobileActionMenu({
   mutationPending,
   schedule,
   onDelete,
@@ -878,6 +973,116 @@ function ActionMenu({
   );
 }
 
+function ScheduleTableActions({
+  detailsId,
+  expanded,
+  mutationPending,
+  schedule,
+  onDelete,
+  onRunNow,
+  onToggleDetails,
+  onToggleStatus,
+}: {
+  detailsId: string;
+  expanded: boolean;
+  schedule: ScheduleRead;
+  onToggleDetails: () => void;
+} & ScheduleActionHandlers) {
+  const duplicatePath = `/scheduled-tasks/new?duplicateFrom=${schedule.id}`;
+  const isPaused = schedule.status === "paused";
+
+  return (
+    <div className="flex flex-wrap justify-end gap-1.5">
+      <ScheduleDetailsToggleButton
+        detailsId={detailsId}
+        expanded={expanded}
+        onToggle={onToggleDetails}
+      />
+      <Button
+        aria-label={`Run schedule ${schedule.name} now`}
+        className="h-8 px-2"
+        disabled={mutationPending}
+        size="sm"
+        type="button"
+        onClick={() => onRunNow(schedule)}
+      >
+        <PlayCircle data-icon="inline-start" />
+        Run now
+      </Button>
+      <Button
+        aria-label={`${isPaused ? "Resume" : "Pause"} schedule ${schedule.name}`}
+        className="h-8 px-2"
+        disabled={mutationPending}
+        size="sm"
+        type="button"
+        variant="outline"
+        onClick={() => onToggleStatus(schedule)}
+      >
+        {isPaused ? (
+          <RotateCcw data-icon="inline-start" />
+        ) : (
+          <PauseCircle data-icon="inline-start" />
+        )}
+        {isPaused ? "Resume" : "Pause"}
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            aria-label={`More actions for ${schedule.name}`}
+            className="h-8 w-8"
+            size="icon"
+            type="button"
+            variant="outline"
+          >
+            <MoreHorizontal aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuGroup>
+            <DropdownMenuItem asChild>
+              <Link aria-label={`Edit schedule ${schedule.name}`} to={`/scheduled-tasks/${schedule.id}`}>
+                <SquarePen data-icon="inline-start" />
+                Edit
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link aria-label={`Duplicate schedule ${schedule.name}`} to={duplicatePath}>
+                <CopyPlus data-icon="inline-start" />
+                Duplicate
+              </Link>
+            </DropdownMenuItem>
+            {schedule.latestRunId ? (
+              <DropdownMenuItem asChild>
+                <Link
+                  aria-label={`Open latest run for ${schedule.name}`}
+                  to={`/runs/${schedule.latestRunId}`}
+                >
+                  <ExternalLink data-icon="inline-start" />
+                  Latest run
+                </Link>
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem disabled>
+                <ExternalLink data-icon="inline-start" />
+                Latest run
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={mutationPending}
+            variant="destructive"
+            onSelect={() => onDelete(schedule)}
+          >
+            <Trash2 data-icon="inline-start" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 function ScheduleRow({
   expanded,
   isSelected,
@@ -895,74 +1100,53 @@ function ScheduleRow({
   onToggleExpand: (scheduleId: number) => void;
 } & ScheduleActionHandlers &
   ScheduleSelectionHandlers) {
+  const detailsId = `scheduled-task-row-details-${schedule.id}`;
+
   return (
     <>
       <TableRow
-        className="group"
         data-state={isSelected ? "selected" : undefined}
         data-testid={`scheduled-task-row-${schedule.id}`}
       >
-        <TableCell className="align-top">
+        <TableCell className="align-top px-2 py-1.5">
           <Checkbox
             aria-label={`Select scheduled task ${schedule.name}`}
             checked={isSelected}
             onCheckedChange={(checked) => onSelect([schedule], checked === true)}
           />
         </TableCell>
-        <TableCell className="min-w-[20rem] align-top whitespace-normal">
-          <WorkflowCell
-            expanded={expanded}
-            schedule={schedule}
-            onToggleExpand={onToggleExpand}
-          />
+        <TableCell className="min-w-[20rem] align-top px-2 py-1.5 whitespace-normal">
+          <WorkflowCell schedule={schedule} />
         </TableCell>
-        <TableCell className="min-w-[15rem] align-top whitespace-normal">
+        <TableCell className="min-w-[15rem] align-top px-2 py-1.5 whitespace-normal">
           <ScheduleCell schedule={schedule} />
         </TableCell>
-        <TableCell className="min-w-[14rem] align-top whitespace-normal">
+        <TableCell className="min-w-[14rem] align-top px-2 py-1.5 whitespace-normal">
           <NextRunCell schedule={schedule} />
         </TableCell>
-        <TableCell className="min-w-[14rem] align-top whitespace-normal">
+        <TableCell className="min-w-[14rem] align-top px-2 py-1.5 whitespace-normal">
           <LatestActivityCell schedule={schedule} />
         </TableCell>
-        <TableCell className="sticky right-0 min-w-[12rem] bg-background/95 align-top backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="flex justify-end gap-2">
-            <Button
-              aria-label={`Run schedule ${schedule.name} now`}
-              disabled={mutationPending}
-              size="sm"
-              type="button"
-              onClick={() => onRunNow(schedule)}
-            >
-              <PlayCircle data-icon="inline-start" />
-              Run now
-            </Button>
-            {schedule.status === "paused" ? (
-              <Button
-                aria-label={`Resume schedule ${schedule.name}`}
-                disabled={mutationPending}
-                size="sm"
-                type="button"
-                variant="outline"
-                onClick={() => onToggleStatus(schedule)}
-              >
-                <RotateCcw data-icon="inline-start" />
-                Resume
-              </Button>
-            ) : null}
-            <ActionMenu
-              mutationPending={mutationPending}
-              schedule={schedule}
-              onDelete={onDelete}
-              onRunNow={onRunNow}
-              onToggleStatus={onToggleStatus}
-            />
-          </div>
+        <TableCell className="min-w-[22rem] align-top px-2 py-1.5 text-right">
+          <ScheduleTableActions
+            detailsId={detailsId}
+            expanded={expanded}
+            mutationPending={mutationPending}
+            schedule={schedule}
+            onDelete={onDelete}
+            onRunNow={onRunNow}
+            onToggleDetails={() => onToggleExpand(schedule.id)}
+            onToggleStatus={onToggleStatus}
+          />
         </TableCell>
       </TableRow>
       {expanded ? (
-        <TableRow data-testid={`scheduled-task-row-details-${schedule.id}`}>
-          <TableCell className="bg-muted/20 py-4" colSpan={6}>
+        <TableRow
+          className="bg-muted/20 hover:bg-muted/20"
+          data-testid={detailsId}
+          id={detailsId}
+        >
+          <TableCell className="whitespace-normal px-3 py-2" colSpan={6}>
             <ExpandedScheduleDetails schedule={schedule} />
           </TableCell>
         </TableRow>
@@ -997,65 +1181,65 @@ function ScheduleTable({
 } & ScheduleActionHandlers &
   ScheduleSelectionHandlers) {
   return (
-    <div className="overflow-hidden rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/30 hover:bg-muted/30">
-            <TableHead className="sticky top-0 z-20 w-9 bg-background">
-              <Checkbox
-                aria-label="Select all shown scheduled tasks"
-                checked={
-                  allFilteredSelected
-                    ? true
-                    : someFilteredSelected
-                      ? "indeterminate"
-                      : false
-                }
-                onCheckedChange={(checked) => onSelect(schedules, checked === true)}
-              />
-            </TableHead>
-            <TableHead
-              aria-sort={getAriaSort("workflow", sortState)}
-              className="sticky top-0 z-10 bg-background"
-            >
-              {renderSortButton({ field: "workflow", label: "Workflow", sortState, onSort })}
-            </TableHead>
-            <TableHead className="sticky top-0 z-10 bg-background">Schedule</TableHead>
-            <TableHead
-              aria-sort={getAriaSort("nextRun", sortState)}
-              className="sticky top-0 z-10 bg-background"
-            >
-              {renderSortButton({ field: "nextRun", label: "Next run", sortState, onSort })}
-            </TableHead>
-            <TableHead
-              aria-sort={getAriaSort("latestActivity", sortState)}
-              className="sticky top-0 z-10 bg-background"
-            >
-              {renderSortButton({ field: "latestActivity", label: "Latest activity", sortState, onSort })}
-            </TableHead>
-            <TableHead className="sticky top-0 right-0 z-20 bg-background text-right">
-              Actions
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {schedules.map((schedule) => (
-            <ScheduleRow
-              expanded={expandedScheduleIds.has(schedule.id)}
-              isSelected={selectedScheduleIds.has(schedule.id)}
-              key={schedule.id}
-              mutationPending={mutationPending}
-              schedule={schedule}
-              onDelete={onDelete}
-              onRunNow={onRunNow}
-              onSelect={onSelect}
-              onToggleExpand={onToggleExpand}
-              onToggleStatus={onToggleStatus}
+    <Table className="table-fixed text-xs">
+      <TableHeader>
+        <TableRow className="bg-muted/30 hover:bg-muted/30">
+          <TableHead className="sticky top-0 z-20 w-9 bg-background px-2 py-1.5">
+            <Checkbox
+              aria-label="Select all shown scheduled tasks"
+              checked={
+                allFilteredSelected
+                  ? true
+                  : someFilteredSelected
+                    ? "indeterminate"
+                    : false
+              }
+              onCheckedChange={(checked) => onSelect(schedules, checked === true)}
             />
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+          </TableHead>
+          <TableHead
+            aria-sort={getAriaSort("workflow", sortState)}
+            className="sticky top-0 z-10 w-[24%] bg-background px-2 py-1.5"
+          >
+            {renderSortButton({ field: "workflow", label: "Workflow", sortState, onSort })}
+          </TableHead>
+          <TableHead className="sticky top-0 z-10 w-[18%] bg-background px-2 py-1.5">
+            Schedule
+          </TableHead>
+          <TableHead
+            aria-sort={getAriaSort("nextRun", sortState)}
+            className="sticky top-0 z-10 w-[16%] bg-background px-2 py-1.5"
+          >
+            {renderSortButton({ field: "nextRun", label: "Next run", sortState, onSort })}
+          </TableHead>
+          <TableHead
+            aria-sort={getAriaSort("latestActivity", sortState)}
+            className="sticky top-0 z-10 w-[16%] bg-background px-2 py-1.5"
+          >
+            {renderSortButton({ field: "latestActivity", label: "Latest activity", sortState, onSort })}
+          </TableHead>
+          <TableHead className="w-[22rem] bg-background px-2 py-1.5 text-right">
+            Actions
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {schedules.map((schedule) => (
+          <ScheduleRow
+            expanded={expandedScheduleIds.has(schedule.id)}
+            isSelected={selectedScheduleIds.has(schedule.id)}
+            key={schedule.id}
+            mutationPending={mutationPending}
+            schedule={schedule}
+            onDelete={onDelete}
+            onRunNow={onRunNow}
+            onSelect={onSelect}
+            onToggleExpand={onToggleExpand}
+            onToggleStatus={onToggleStatus}
+          />
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -1099,6 +1283,7 @@ function ScheduleCards({
       {schedules.map((schedule) => {
         const expanded = expandedScheduleIds.has(schedule.id);
         const isSelected = selectedScheduleIds.has(schedule.id);
+        const detailsId = `scheduled-task-card-details-${schedule.id}`;
 
         return (
           <Card data-testid={`scheduled-task-card-${schedule.id}`} key={schedule.id}>
@@ -1110,11 +1295,17 @@ function ScheduleCards({
                   onCheckedChange={(checked) => onSelect([schedule], checked === true)}
                 />
                 <div className="min-w-0 flex-1">
-                  <WorkflowCell
-                    expanded={expanded}
-                    schedule={schedule}
-                    onToggleExpand={onToggleExpand}
-                  />
+                  <div className="flex min-w-0 flex-wrap items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                      <WorkflowCell schedule={schedule} />
+                    </div>
+                    <ScheduleDetailsToggleButton
+                      className="h-7 px-2 text-xs"
+                      detailsId={detailsId}
+                      expanded={expanded}
+                      onToggle={() => onToggleExpand(schedule.id)}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -1137,7 +1328,11 @@ function ScheduleCards({
                   <LatestActivityCell schedule={schedule} />
                 </div>
               </div>
-              {expanded ? <ExpandedScheduleDetails schedule={schedule} /> : null}
+              {expanded ? (
+                <div id={detailsId}>
+                  <ExpandedScheduleDetails schedule={schedule} />
+                </div>
+              ) : null}
               <div className="flex flex-wrap justify-end gap-2">
                 <Button
                   aria-label={`Run schedule ${schedule.name} now`}
@@ -1162,7 +1357,7 @@ function ScheduleCards({
                     Resume
                   </Button>
                 ) : null}
-                <ActionMenu
+                <MobileActionMenu
                   mutationPending={mutationPending}
                   schedule={schedule}
                   onDelete={onDelete}
