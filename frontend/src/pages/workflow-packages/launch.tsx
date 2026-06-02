@@ -744,7 +744,7 @@ function StickyLaunchActionBar({
 
   return (
     <div
-      className="sticky top-0 z-10 flex min-w-0 flex-col gap-2 rounded-xl border bg-background/95 p-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:flex-row sm:items-center sm:justify-between"
+      className="sticky top-0 z-10 flex min-w-0 flex-col gap-2 rounded-xl border bg-background/95 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
       data-testid="workflow-package-run-actions"
     >
       <p className="min-w-0 text-sm text-muted-foreground">

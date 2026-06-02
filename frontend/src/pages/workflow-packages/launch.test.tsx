@@ -279,6 +279,10 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByLabelText("Runtime inputs JSON")).toHaveClass("max-w-full", "overflow-x-auto", "whitespace-pre");
     const actionBar = screen.getByTestId("workflow-package-run-actions");
     expect(actionBar).toHaveClass("sticky", "flex", "min-w-0", "flex-col", "sm:flex-row");
+    expect(actionBar).not.toHaveClass(
+      "backdrop-blur",
+      "supports-[backdrop-filter]:bg-background/85",
+    );
     const preflightButton = within(actionBar).getByRole("button", {
       name: /run preflight/i,
     });
