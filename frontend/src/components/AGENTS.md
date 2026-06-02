@@ -41,6 +41,7 @@ src/components/
 
 ## CHILD DOCS
 - `shared/AGENTS.md` — reusable inventory/workspace shells, resource chrome, evidence helpers, and schema rules
+- `shared/docs/README.md` — UI/UX standards, shared UI usage specs, page blueprints, and migration guidance
 - `platform-authoring/AGENTS.md` — schema composer, generated form, workflow builder, refs, and inspectors
 - `templates/AGENTS.md` — template-editor support components such as placeholder reference and runtime-input sections
 - `portfolios/AGENTS.md` — portfolio feature sections, dialogs, and trades UI

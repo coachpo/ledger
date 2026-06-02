@@ -58,6 +58,7 @@ src/pages/
 | Template list/editor         | `templates/AGENTS.md`, `../components/templates/AGENTS.md`, `../hooks/use-templates.ts` | stored-template CRUD, inline compile preview, placeholder browser, and saved-template report generation     |
 | Report routes                | `reports/AGENTS.md`, `../hooks/use-reports.ts`, `../lib/report-grouping.ts`             | list/detail, upload/generate, markdown view/edit/download                                                   |
 | Shared platform page helpers | `platform-resource-shared.tsx`                                                          | common badges, JSON helpers, and small route-level utilities                                                |
+| UI/UX standards and page blueprints | `../components/shared/docs/README.md`                                             | shared UI standards, reusable component specs, examples, and migration guidance                             |
 
 ## GLOBAL ROUTE GUARDRAILS
 

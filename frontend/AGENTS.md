@@ -36,6 +36,7 @@ Future frontend upgrade work must keep platform-core route, query, and authoring
 - `src/components/templates/AGENTS.md` — placeholder browser and runtime-input support components
 - `src/components/ui/AGENTS.md` — shadcn/ui wrappers, sidebar primitives, and shared variant tokens
 - `src/components/shared/AGENTS.md` — reusable inventory/workspace shells, resource chrome, evidence helpers, tables, and field schemas
+- `src/components/shared/docs/README.md` — frontend-owned UI/UX standards, shared UI specs, page blueprints, and migration guidance
 - `src/components/portfolios/AGENTS.md` — portfolio feature sections, dialogs, tables, and trading forms
 
 ## STRUCTURE
