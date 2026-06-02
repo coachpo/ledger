@@ -46,7 +46,9 @@ export function InventoryStatePanel({
           data-tone={tone}
           variant={alertVariantByTone[tone]}
         >
-          <AlertTitle>{title}</AlertTitle>
+          <AlertTitle className={description ? undefined : "line-clamp-none"}>
+            {title}
+          </AlertTitle>
           {description ? <AlertDescription>{description}</AlertDescription> : null}
         </Alert>
         {action ? (

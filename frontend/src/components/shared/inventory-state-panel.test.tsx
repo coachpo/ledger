@@ -50,4 +50,21 @@ describe("InventoryStatePanel", () => {
     expect(screen.getByText("Failed to load templates")).toBeVisible();
     expect(screen.getByText("Templates API unavailable")).toBeVisible();
   });
+
+  it("does not clamp long title-only error copy", async () => {
+    const InventoryStatePanel = await loadInventoryStatePanel();
+
+    render(
+      <InventoryStatePanel
+        title="A very long backend error message should remain fully visible when it is the only copy."
+        tone="danger"
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveAttribute("data-tone", "danger");
+    expect(screen.getByText(/A very long backend error message/)).toBeVisible();
+    expect(screen.getByText(/A very long backend error message/)).toHaveClass(
+      "line-clamp-none",
+    );
+  });
 });
