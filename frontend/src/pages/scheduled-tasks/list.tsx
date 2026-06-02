@@ -446,7 +446,6 @@ function PackageWorkflowCell({ schedule }: { schedule: ScheduleRead }) {
         <span className="font-medium text-foreground">Workflow:</span>{" "}
         <span className="break-all font-mono">{schedule.workflowKey}</span>
       </span>
-      <span>Package id: #{schedule.packageId}</span>
     </div>
   );
 }

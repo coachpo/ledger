@@ -385,7 +385,7 @@ describe("ScheduledTasksListPage", () => {
     );
     expect(dailyRow).toHaveTextContent("market_research_package");
     expect(dailyRow).toHaveTextContent("daily_research");
-    expect(dailyRow).toHaveTextContent("Package id: #12");
+    expect(dailyRow).not.toHaveTextContent("Package id:");
     expect(dailyRow).toHaveTextContent("America/New_York");
     expect(dailyRow).toHaveTextContent("Weekly Mon, Tue, Wed, Thu, Fri at 09:00");
     expect(dailyRow).toHaveTextContent("Overlap: Skip");
@@ -433,6 +433,7 @@ describe("ScheduledTasksListPage", () => {
 
     const pausedRow = screen.getByTestId("scheduled-task-row-55");
     expect(pausedRow).toHaveTextContent("Paused allocation check");
+    expect(pausedRow).not.toHaveTextContent("Package id:");
     expect(pausedRow).toHaveTextContent("No upcoming fire");
     expect(pausedRow).toHaveTextContent("Every 4 hours");
     expect(pausedRow).toHaveTextContent("Latest fire: None");
