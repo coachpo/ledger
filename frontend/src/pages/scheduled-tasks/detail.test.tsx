@@ -491,9 +491,30 @@ describe("ScheduledTaskDetailPage", () => {
     const header = screen.getByTestId("scheduled-task-detail-header");
     expect(header).toBeVisible();
     expect(screen.getByRole("heading", { name: "Daily market brief" })).toBeVisible();
-    expect(within(header).getByTestId("scheduled-task-detail-status-enabled")).toHaveTextContent("enabled");
-    expect(screen.getByRole("link", { name: "Scheduled Tasks" })).toHaveAttribute("href", "/scheduled-tasks");
-    expect(within(header).getByTestId("schedule-run-now")).toBeVisible();
+
+    const headerTopRow = screen.getByTestId("scheduled-task-detail-header-top-row");
+    expect(headerTopRow).toContainElement(
+      screen.getByRole("heading", { name: "Daily market brief" }),
+    );
+    expect(within(headerTopRow).getByText("schedule:44")).toBeVisible();
+    expect(within(headerTopRow).getByTestId("scheduled-task-detail-status-enabled")).toHaveTextContent("enabled");
+    expect(within(headerTopRow).getByTestId("schedule-run-now")).toBeVisible();
+    expect(
+      within(header).queryByRole("link", { name: "Scheduled Tasks" }),
+    ).not.toBeInTheDocument();
+
+    const headerDescription = screen.getByTestId("scheduled-task-detail-header-description");
+    expect(headerDescription).toHaveTextContent("Runs before the opening bell");
+    expect(headerTopRow).not.toHaveTextContent("Runs before the opening bell");
+
+    const headerMetaRow = screen.getByTestId("scheduled-task-detail-header-meta-row");
+    expect(headerMetaRow).toHaveTextContent("Pattern Weekly Mon, Tue, Wed, Thu, Fri at 09:00");
+    expect(headerMetaRow).toHaveTextContent("Timezone America/New_York");
+    expect(headerMetaRow).toHaveTextContent("Package market_research_package");
+    expect(headerMetaRow).toHaveTextContent("Workflow Daily research");
+    expect(headerMetaRow).toHaveTextContent("Updated");
+    expect(headerMetaRow).toHaveTextContent("Last run #2104");
+    expect(headerMetaRow).toHaveTextContent("Next run");
 
     fireEvent.click(within(header).getByRole("button", { name: "Disable" }));
     expect(updateScheduleMock).toHaveBeenCalledWith({
@@ -545,11 +566,12 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
-    expect(screen.getByTestId("scheduled-task-detail-tab-schedule")).toHaveTextContent("Schedule configuration");
+    const schedulePanel = screen.getByTestId("scheduled-task-detail-tab-schedule");
+    expect(schedulePanel).toHaveTextContent("Schedule configuration");
     expect(screen.getByLabelText("Schedule name")).toHaveValue("Daily market brief");
     expect(screen.getByLabelText("Description")).toHaveValue("Runs before the opening bell");
-    expect(screen.queryByText("Weekly Mon, Tue, Wed, Thu, Fri at 09:00")).not.toBeInTheDocument();
-    expect(screen.queryByText("Advanced options")).not.toBeInTheDocument();
+    expect(within(schedulePanel).queryByText("Weekly Mon, Tue, Wed, Thu, Fri at 09:00")).not.toBeInTheDocument();
+    expect(within(schedulePanel).queryByText("Advanced options")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Schedule name"), { target: { value: "Premarket notes" } });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "  Updated before the bell  " } });

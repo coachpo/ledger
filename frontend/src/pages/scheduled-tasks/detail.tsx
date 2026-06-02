@@ -364,6 +364,27 @@ function formatOptionalDateTime(value: string | null, fallback: string): string 
   return value ? formatDateTime(value) : fallback;
 }
 
+function formatDayOfWeek(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function pluralizeUnit(value: number, unit: string): string {
+  return value === 1 ? unit.slice(0, -1) : unit;
+}
+
+function formatRecurrence(recurrence: ScheduleRecurrence): string {
+  if (recurrence.type === "interval") {
+    return `Every ${recurrence.every} ${pluralizeUnit(recurrence.every, recurrence.unit)}`;
+  }
+  if (recurrence.type === "daily") {
+    return `Daily at ${recurrence.atLocalTime}`;
+  }
+  if (recurrence.type === "weekly") {
+    return `Weekly ${recurrence.daysOfWeek.map(formatDayOfWeek).join(", ")} at ${recurrence.atLocalTime}`;
+  }
+  return `Monthly day ${recurrence.daysOfMonth.join(", ")} at ${recurrence.atLocalTime}`;
+}
+
 function formatDateTimeLocalInput(value: string | null): string {
   if (!value) {
     return "";
@@ -713,85 +734,114 @@ function ScheduleHeader({
 }) {
   const toggleLabel = schedule.status === "enabled" ? "Disable" : "Enable";
   const actionDisabled = mutationPending;
+  const headerMetaItems: Array<{
+    label: string;
+    value: ReactNode;
+    valueClassName?: string;
+  }> = [
+    { label: "Pattern", value: formatRecurrence(schedule.recurrence) },
+    { label: "Timezone", value: schedule.timezone },
+    { label: "Package", value: schedule.packageKey, valueClassName: "font-mono" },
+    { label: "Workflow", value: workflowDisplayLabel },
+    { label: "Updated", value: formatDateTime(schedule.updatedAt) },
+  ];
+
+  if (schedule.latestRunId !== null) {
+    headerMetaItems.push({
+      label: "Last run",
+      value: `#${schedule.latestRunId}`,
+      valueClassName: "font-mono",
+    });
+  }
+
+  if (schedule.nextFireAt) {
+    headerMetaItems.push({
+      label: "Next run",
+      value: formatDateTime(schedule.nextFireAt),
+    });
+  }
 
   return (
-    <div
-      className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start"
-      data-testid="scheduled-task-detail-header"
-    >
-      <PageContextBar
-        className="min-w-0 border-0 bg-transparent shadow-none"
-        description={schedule.description ?? "Manage this saved Workflow Package schedule."}
-        meta={
-          <span className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-normal text-muted-foreground">
-            <Link className="font-medium text-primary underline-offset-4 hover:underline" to="/scheduled-tasks">
-              Scheduled Tasks
-            </Link>
-            <span aria-hidden="true">/</span>
-            <span className="min-w-0 break-all font-mono">{schedule.packageKey}</span>
-            <span aria-hidden="true">/</span>
-            <span className="min-w-0 break-all font-mono">{workflowDisplayLabel}</span>
+    <div className="flex min-w-0 flex-col gap-1.5" data-testid="scheduled-task-detail-header">
+      <div
+        className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
+        data-testid="scheduled-task-detail-header-top-row"
+      >
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h1 className="min-w-0 text-xl font-semibold tracking-tight">{schedule.name}</h1>
+          <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">schedule:{schedule.id}</span>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          <StatusBadge status={schedule.status} />
+          <Button
+            className="w-full sm:w-auto"
+            data-testid="schedule-run-now"
+            disabled={actionDisabled || runNowDisabled}
+            size="sm"
+            type="button"
+            onClick={onRunNow}
+          >
+            <PlayCircle data-icon="inline-start" />
+            Run now
+          </Button>
+          <Button
+            className="w-full sm:w-auto"
+            disabled={actionDisabled}
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={onToggleStatus}
+          >
+            {schedule.status === "enabled" ? (
+              <PauseCircle data-icon="inline-start" />
+            ) : (
+              <RotateCcw data-icon="inline-start" />
+            )}
+            {toggleLabel}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button aria-label="More actions" size="icon" type="button" variant="outline">
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuGroup>
+                <DropdownMenuItem asChild>
+                  <Link to={`/workflow-packages/${schedule.packageId}`}>Open package</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to={`/scheduled-tasks/new?duplicateFrom=${schedule.id}`}>
+                    <CopyPlus data-icon="inline-start" />
+                    Duplicate
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={mutationPending} variant="destructive" onSelect={onDelete}>
+                <Trash2 data-icon="inline-start" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+      <p
+        className="min-w-0 max-w-3xl text-sm leading-6 text-muted-foreground"
+        data-testid="scheduled-task-detail-header-description"
+      >
+        {schedule.description ?? "Manage this saved Workflow Package schedule."}
+      </p>
+      <div
+        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+        data-testid="scheduled-task-detail-header-meta-row"
+      >
+        {headerMetaItems.map((item) => (
+          <span key={item.label}>
+            <span className="font-medium text-foreground">{item.label}</span>{" "}
+            <span className={item.valueClassName}>{item.value}</span>
           </span>
-        }
-        status={<StatusBadge status={schedule.status} />}
-        title={schedule.name}
-      />
-      <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 lg:justify-end lg:pt-4">
-        <Button
-          className="w-full sm:w-auto"
-          data-testid="schedule-run-now"
-          disabled={actionDisabled || runNowDisabled}
-          size="sm"
-          type="button"
-          onClick={onRunNow}
-        >
-          <PlayCircle data-icon="inline-start" />
-          Run now
-        </Button>
-        <Button
-          className="w-full sm:w-auto"
-          disabled={actionDisabled}
-          size="sm"
-          type="button"
-          variant="outline"
-          onClick={onToggleStatus}
-        >
-          {schedule.status === "enabled" ? (
-            <PauseCircle data-icon="inline-start" />
-          ) : (
-            <RotateCcw data-icon="inline-start" />
-          )}
-          {toggleLabel}
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button aria-label="More actions" size="icon" type="button" variant="outline">
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuGroup>
-              <DropdownMenuItem asChild>
-                <Link to={`/workflow-packages/${schedule.packageId}`}>Open package</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to={`/scheduled-tasks/new?duplicateFrom=${schedule.id}`}>
-                  <CopyPlus data-icon="inline-start" />
-                  Duplicate
-                </Link>
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              disabled={mutationPending}
-              variant="destructive"
-              onSelect={onDelete}
-            >
-              <Trash2 data-icon="inline-start" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        ))}
       </div>
     </div>
   );
