@@ -279,12 +279,28 @@ function RunsTable({ runs }: { runs: readonly RunListItemRead[] }) {
               </TableCell>
               <TableCell className="min-w-64 whitespace-normal">
                 <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <Badge variant="outline">
-                      {formatTargetKindLabel(run.targetKind)}
-                    </Badge>
-                    <span className="break-all font-mono">{run.targetKey}</span>
-                  </div>
+                  {run.targetKind === "workflowPackage" ? (
+                    <span>
+                      Package key:{" "}
+                      <span className="break-all font-mono text-foreground">
+                        {run.targetKey}
+                      </span>
+                    </span>
+                  ) : run.targetKind === "workflow" ? (
+                    <span>
+                      Workflow key:{" "}
+                      <span className="break-all font-mono text-foreground">
+                        {run.targetKey}
+                      </span>
+                    </span>
+                  ) : (
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <Badge variant="outline">
+                        {formatTargetKindLabel(run.targetKind)}
+                      </Badge>
+                      <span className="break-all font-mono">{run.targetKey}</span>
+                    </div>
+                  )}
                   {run.targetKind === "workflowPackage" && run.workflowKey ? (
                     <span>
                       Workflow key:{" "}

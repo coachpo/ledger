@@ -216,11 +216,16 @@ describe("RunsListPage", () => {
     expect(screen.getByTestId("runs-row-17")).toBeVisible();
     expect(screen.getByTestId("runs-row-15")).toBeVisible();
     expect(screen.getByTestId("runs-row-16")).toBeVisible();
-    expect(screen.getAllByText("Workflow")[0]).toBeVisible();
     expect(screen.getAllByText("Agent")[0]).toBeVisible();
-    expect(screen.getAllByText(/^queued_review$/i)[0]).toBeVisible();
-    expect(screen.getAllByText(/^queued_review_package$/i)[0]).toBeVisible();
-    expect(screen.getAllByText(/^market_review_package$/i)[0]).toBeVisible();
+    expect(screen.getByTestId("runs-row-14")).toHaveTextContent(
+      /workflow key:\s*queued_review/i,
+    );
+    expect(screen.getByTestId("runs-row-17")).toHaveTextContent(
+      /package key:\s*queued_review_package/i,
+    );
+    expect(screen.getByTestId("runs-row-15")).toHaveTextContent(
+      /package key:\s*market_review_package/i,
+    );
     expect(screen.getAllByText(/^macro_agent$/i)[0]).toBeVisible();
     expect(screen.getByText(/workflow id: 40/i)).toBeVisible();
     expect(
