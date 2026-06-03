@@ -3666,7 +3666,7 @@ def test_model_connection_capability_probe_refresh_uses_literal_custom_root_requ
     assert probe_body["requestedCapabilityKeys"] == ["responsesApi"]
 
 
-def test_model_connection_capability_probe_refresh_passes_literal_trailing_slash_base_url_to_openai_client(
+def test_model_connection_probe_refresh_passes_literal_trailing_slash_base_url(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
