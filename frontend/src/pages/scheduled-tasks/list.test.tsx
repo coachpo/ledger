@@ -160,15 +160,6 @@ function renderPage() {
   );
 }
 
-function setViewportWidth(width: number) {
-  Object.defineProperty(window, "innerWidth", {
-    configurable: true,
-    value: width,
-    writable: true,
-  });
-  window.dispatchEvent(new Event("resize"));
-}
-
 function packageSelector() {
   return screen.getByRole("combobox", { name: /package/i });
 }
@@ -236,7 +227,6 @@ function expectedDateTimeInTimeZone(isoString: string, timeZone: string): string
 
 describe("ScheduledTasksListPage", () => {
   beforeEach(() => {
-    setViewportWidth(1280);
     deleteScheduleMock.mockReset();
     deleteSchedulesMock.mockReset();
     runNowMock.mockReset();
@@ -444,6 +434,14 @@ describe("ScheduledTasksListPage", () => {
       screen.getByRole("link", { name: "Create scheduled task" }),
     ).toHaveAttribute("href", "/scheduled-tasks/new");
     expect(screen.getByLabelText("Search scheduled tasks")).toBeVisible();
+    expect(screen.getByLabelText("Table view")).toHaveAttribute(
+      "data-state",
+      "on",
+    );
+    expect(screen.getByLabelText("Cards view")).toHaveAttribute(
+      "data-state",
+      "off",
+    );
     for (const filter of ["All", "Running", "Failed", "Succeeded", "Paused"]) {
       expect(screen.getByRole("radio", { name: filter })).toBeVisible();
     }
@@ -900,6 +898,77 @@ describe("ScheduledTasksListPage", () => {
     expect(toastSuccessMock).toHaveBeenCalledWith("1 scheduled task deleted");
   });
 
+  it("clears table selection when switching to cards and keeps cards browse-only", () => {
+    useScheduledTasksMock.mockReturnValue({
+      data: {
+        items: [
+          scheduleFixture(),
+          scheduleFixture({
+            id: 55,
+            name: "Paused allocation check",
+            status: "paused",
+            workflowKey: "allocation_check",
+          }),
+        ],
+        limit: 50,
+        offset: 0,
+        totalCount: 2,
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderPage();
+
+    fireEvent.click(
+      within(screen.getByTestId("scheduled-task-row-44")).getByRole("checkbox", {
+        name: "Select scheduled task Daily market brief",
+      }),
+    );
+    expect(screen.getByText("1 of 2 scheduled tasks selected")).toBeVisible();
+    expect(screen.getByTestId("scheduled-tasks-bulk-actions")).toBeVisible();
+
+    fireEvent.click(screen.getByLabelText("Cards view"));
+
+    expect(screen.getByLabelText("Cards view")).toHaveAttribute(
+      "data-state",
+      "on",
+    );
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("1 of 2 scheduled tasks selected"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("scheduled-tasks-bulk-actions"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", {
+        name: "Select all shown scheduled tasks",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("scheduled-task-card-44")).queryByRole("checkbox", {
+        name: "Select scheduled task Daily market brief",
+      }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Table view"));
+
+    expect(screen.getByLabelText("Table view")).toHaveAttribute(
+      "data-state",
+      "on",
+    );
+    expect(
+      within(screen.getByTestId("scheduled-task-row-44")).getByRole("checkbox", {
+        name: "Select scheduled task Daily market brief",
+      }),
+    ).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.queryByRole("button", { name: "Delete selected" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("runs, pauses, resumes, and deletes schedules from explicit controls", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
@@ -1100,8 +1169,7 @@ describe("ScheduledTasksListPage", () => {
     );
   });
 
-  it("renders the mobile card layout with explicit actions and expansion", () => {
-    setViewportWidth(480);
+  it("switches to cards view through the shared toolbar toggle", () => {
     useScheduledTasksMock.mockReturnValue({
       data: {
         items: [scheduleFixture()],
@@ -1116,12 +1184,26 @@ describe("ScheduledTasksListPage", () => {
 
     renderPage();
 
+    expect(screen.getByRole("table")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Cards view"));
+
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     const card = screen.getByTestId("scheduled-task-card-44");
     expect(card).toHaveTextContent("Daily market brief");
     expect(card).toHaveTextContent("Schedule");
     expect(card).toHaveTextContent("Next run");
     expect(card).toHaveTextContent("Latest activity");
+    expect(
+      screen.queryByRole("checkbox", {
+        name: "Select all shown scheduled tasks",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(card).queryByRole("checkbox", {
+        name: "Select scheduled task Daily market brief",
+      }),
+    ).not.toBeInTheDocument();
     expect(
       within(card).getByRole("button", { name: "Run schedule Daily market brief now" }),
     ).toBeVisible();

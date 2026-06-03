@@ -13,7 +13,7 @@ import {
   SquarePen,
   Trash2,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/components/ui/utils";
+import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import {
   useDeleteScheduledTask,
   useDeleteScheduledTasks,
@@ -85,7 +86,6 @@ import {
 const ALL_PACKAGES_FILTER = "__all_packages__";
 const ALL_STATUS_FILTER = "__all_status__";
 const ALL_WORKFLOWS_FILTER = "__all_workflows__";
-const MOBILE_BREAKPOINT = 768;
 
 const STATUS_FILTER_OPTIONS = [
   { label: "All", value: ALL_STATUS_FILTER },
@@ -407,28 +407,6 @@ function buildWorkflowFilterOptions({
   }
 
   return [...manifestOptions, ...staleOptions];
-}
-
-function useIsMobileLayout() {
-  const [isMobileLayout, setIsMobileLayout] = useState(
-    typeof window !== "undefined" ? window.innerWidth < MOBILE_BREAKPOINT : false,
-  );
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-
-    const updateLayout = () => {
-      setIsMobileLayout(window.innerWidth < MOBILE_BREAKPOINT);
-    };
-
-    updateLayout();
-    window.addEventListener("resize", updateLayout);
-    return () => window.removeEventListener("resize", updateLayout);
-  }, []);
-
-  return isMobileLayout;
 }
 
 function LoadingState() {
@@ -1168,7 +1146,7 @@ function ScheduleTable({
       <Table className="table-fixed text-xs">
         <TableHeader>
           <TableRow className="bg-muted/30 hover:bg-muted/30">
-            <TableHead className="sticky top-0 z-20 w-9 bg-background px-2 py-1.5">
+            <TableHead className="w-9 px-2 py-1.5">
               <Checkbox
                 aria-label="Select all shown scheduled tasks"
                 checked={
@@ -1183,26 +1161,24 @@ function ScheduleTable({
             </TableHead>
             <TableHead
               aria-sort={getAriaSort("workflow", sortState)}
-              className="sticky top-0 z-10 w-[24%] bg-background px-2 py-1.5"
+              className="w-[24%] px-2 py-1.5"
             >
               {renderSortButton({ field: "workflow", label: "Workflow", sortState, onSort })}
             </TableHead>
-            <TableHead className="sticky top-0 z-10 w-[18%] bg-background px-2 py-1.5">
-              Schedule
-            </TableHead>
+            <TableHead className="w-[18%] px-2 py-1.5">Schedule</TableHead>
             <TableHead
               aria-sort={getAriaSort("nextRun", sortState)}
-              className="sticky top-0 z-10 w-[16%] bg-background px-2 py-1.5"
+              className="w-[16%] px-2 py-1.5"
             >
               {renderSortButton({ field: "nextRun", label: "Next run", sortState, onSort })}
             </TableHead>
             <TableHead
               aria-sort={getAriaSort("latestActivity", sortState)}
-              className="sticky top-0 z-10 w-[16%] bg-background px-2 py-1.5"
+              className="w-[16%] px-2 py-1.5"
             >
               {renderSortButton({ field: "latestActivity", label: "Latest activity", sortState, onSort })}
             </TableHead>
-            <TableHead className="w-[22rem] bg-background px-2 py-1.5 text-right">
+            <TableHead className="w-[22rem] px-2 py-1.5 text-right">
               Actions
             </TableHead>
           </TableRow>
@@ -1229,69 +1205,37 @@ function ScheduleTable({
 }
 
 function ScheduleCards({
-  allFilteredSelected,
   expandedScheduleIds,
   mutationPending,
   schedules,
-  selectedScheduleIds,
-  someFilteredSelected,
   onDelete,
   onRunNow,
-  onSelect,
   onToggleExpand,
   onToggleStatus,
 }: {
-  allFilteredSelected: boolean;
   expandedScheduleIds: ReadonlySet<ScheduleRead["id"]>;
   schedules: readonly ScheduleRead[];
-  selectedScheduleIds: ReadonlySet<ScheduleRead["id"]>;
-  someFilteredSelected: boolean;
   onToggleExpand: (scheduleId: number) => void;
-} & ScheduleActionHandlers &
-  ScheduleSelectionHandlers) {
+} & ScheduleActionHandlers) {
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
-        <Checkbox
-          aria-label="Select all shown scheduled tasks"
-          checked={
-            allFilteredSelected
-              ? true
-              : someFilteredSelected
-                ? "indeterminate"
-                : false
-          }
-          onCheckedChange={(checked) => onSelect(schedules, checked === true)}
-        />
-        <span className="text-xs text-muted-foreground">Select all shown scheduled tasks</span>
-      </div>
+    <div className="flex flex-col gap-3">
       {schedules.map((schedule) => {
         const expanded = expandedScheduleIds.has(schedule.id);
-        const isSelected = selectedScheduleIds.has(schedule.id);
         const detailsId = `scheduled-task-card-details-${schedule.id}`;
 
         return (
           <Card data-testid={`scheduled-task-card-${schedule.id}`} key={schedule.id}>
-            <CardContent className="space-y-4 p-4">
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  aria-label={`Select scheduled task ${schedule.name}`}
-                  checked={isSelected}
-                  onCheckedChange={(checked) => onSelect([schedule], checked === true)}
-                />
+            <CardContent className="flex flex-col gap-4 p-4">
+              <div className="flex min-w-0 flex-wrap items-start gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 flex-wrap items-start gap-2">
-                    <div className="min-w-0 flex-1">
-                      <WorkflowCell schedule={schedule} />
-                    </div>
-                    <ScheduleDetailsToggleButton
-                      className="h-7 px-2 text-xs"
-                      detailsId={detailsId}
-                      expanded={expanded}
-                      onToggle={() => onToggleExpand(schedule.id)}
-                    />
-                  </div>
+                  <WorkflowCell schedule={schedule} />
                 </div>
+                <ScheduleDetailsToggleButton
+                  className="h-7 px-2 text-xs"
+                  detailsId={detailsId}
+                  expanded={expanded}
+                  onToggle={() => onToggleExpand(schedule.id)}
+                />
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
@@ -1433,8 +1377,11 @@ export function ScheduledTasksListPage() {
     direction: "asc",
     field: "nextRun",
   });
+  const { viewMode, onViewModeChange } = useInventoryViewState({
+    initialViewMode: "table",
+    onCardsMode: () => setSelectedScheduleIds(new Set()),
+  });
 
-  const isMobileLayout = useIsMobileLayout();
   const updateSchedule = useUpdateScheduledTask();
   const runNow = useRunScheduledTaskNow();
   const deleteSchedule = useDeleteScheduledTask();
@@ -1532,6 +1479,16 @@ export function ScheduledTasksListPage() {
     runNow.isPending ||
     deleteSchedule.isPending ||
     deleteSchedules.isPending;
+  const showCards =
+    !schedulesQuery.isPending &&
+    !schedulesQuery.isError &&
+    visibleSchedules.length > 0 &&
+    viewMode === "cards";
+  const showTable =
+    !schedulesQuery.isPending &&
+    !schedulesQuery.isError &&
+    visibleSchedules.length > 0 &&
+    viewMode === "table";
   const hasFilters = Boolean(
     search.trim() ||
       packageKey.trim() ||
@@ -1724,6 +1681,8 @@ export function ScheduledTasksListPage() {
           value: search,
           onChange: setSearch,
         },
+        viewMode,
+        onViewModeChange,
       }}
     >
       {schedulesQuery.isPending ? <LoadingState /> : null}
@@ -1746,49 +1705,45 @@ export function ScheduledTasksListPage() {
         <ScheduledTasksEmptyState hasFilters={hasFilters} />
       ) : null}
 
-      {!schedulesQuery.isPending &&
-      !schedulesQuery.isError &&
-      visibleSchedules.length > 0 ? (
-        isMobileLayout ? (
-          <ScheduleCards
-            allFilteredSelected={allFilteredSelected}
-            expandedScheduleIds={expandedScheduleIds}
-            mutationPending={mutationPending}
-            schedules={visibleSchedules}
-            selectedScheduleIds={selectedScheduleIds}
-            someFilteredSelected={someFilteredSelected}
-            onDelete={setDeleting}
-            onRunNow={runScheduleNow}
-            onSelect={setSchedulesSelected}
-            onToggleExpand={toggleScheduleExpanded}
-            onToggleStatus={toggleScheduleStatus}
-          />
-        ) : (
-          <ScheduleTable
-            allFilteredSelected={allFilteredSelected}
-            expandedScheduleIds={expandedScheduleIds}
-            mutationPending={mutationPending}
-            schedules={visibleSchedules}
-            selectedScheduleIds={selectedScheduleIds}
-            someFilteredSelected={someFilteredSelected}
-            sortState={sortState}
-            onDelete={setDeleting}
-            onRunNow={runScheduleNow}
-            onSelect={setSchedulesSelected}
-            onSort={handleSort}
-            onToggleExpand={toggleScheduleExpanded}
-            onToggleStatus={toggleScheduleStatus}
-          />
-        )
+      {showCards ? (
+        <ScheduleCards
+          expandedScheduleIds={expandedScheduleIds}
+          mutationPending={mutationPending}
+          schedules={visibleSchedules}
+          onDelete={setDeleting}
+          onRunNow={runScheduleNow}
+          onToggleExpand={toggleScheduleExpanded}
+          onToggleStatus={toggleScheduleStatus}
+        />
       ) : null}
 
-      <ScheduledTasksBulkActions
-        filteredCount={visibleSchedules.length}
-        isPending={deleteSchedules.isPending}
-        selectedCount={selectedCount}
-        onClear={() => setSelectedScheduleIds(new Set())}
-        onDeleteSelected={() => setIsBulkDeleting(true)}
-      />
+      {showTable ? (
+        <ScheduleTable
+          allFilteredSelected={allFilteredSelected}
+          expandedScheduleIds={expandedScheduleIds}
+          mutationPending={mutationPending}
+          schedules={visibleSchedules}
+          selectedScheduleIds={selectedScheduleIds}
+          someFilteredSelected={someFilteredSelected}
+          sortState={sortState}
+          onDelete={setDeleting}
+          onRunNow={runScheduleNow}
+          onSelect={setSchedulesSelected}
+          onSort={handleSort}
+          onToggleExpand={toggleScheduleExpanded}
+          onToggleStatus={toggleScheduleStatus}
+        />
+      ) : null}
+
+      {viewMode === "table" ? (
+        <ScheduledTasksBulkActions
+          filteredCount={visibleSchedules.length}
+          isPending={deleteSchedules.isPending}
+          selectedCount={selectedCount}
+          onClear={() => setSelectedScheduleIds(new Set())}
+          onDeleteSelected={() => setIsBulkDeleting(true)}
+        />
+      ) : null}
 
       <ConfirmDeleteDialog
         confirmLabel="Delete selected"
