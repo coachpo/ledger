@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from enum import Enum
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 
@@ -60,16 +60,7 @@ def _normalize_base_url(value: object) -> str:
 
 
 def build_model_connection_openai_base_url(value: object) -> str:
-    normalized = _normalize_required_text(value, field_name="Base URL")
-    parsed = urlsplit(normalized)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("Base URL must be a valid http or https URL")
-    if parsed.query or parsed.fragment:
-        raise ValueError("Base URL must not include query parameters or fragments")
-
-    path = parsed.path.rstrip("/")
-    runtime_path = path if path.lower().endswith("/v1") else (f"{path}/v1" if path else "/v1")
-    return urlunsplit((parsed.scheme, parsed.netloc, runtime_path, "", ""))
+    return _normalize_base_url(value)
 
 
 def normalize_model_connection_key(value: object) -> str:

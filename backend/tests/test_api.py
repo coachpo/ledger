@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import cast
@@ -69,6 +70,38 @@ class UnsupportedEngine:
     def __init__(self, dialect_name: str) -> None:
         self.dialect = DefaultDialect()
         self.dialect.name = dialect_name
+
+
+class _LiteralBaseUrlOpenAIResponse:
+    _request_id = "req-literal-base-url"
+    usage = {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}
+    output_text = '{"summary": "literal base url output"}'
+    output = [{"type": "message", "content": [{"type": "output_text", "text": "OK"}]}]
+    choices = [{"message": {"content": "OK"}}]
+
+
+class _LiteralBaseUrlRecordingOpenAIClient:
+    init_calls: list[dict[str, object]] = []
+
+    class _Responses:
+        @staticmethod
+        def create(**kwargs: object) -> _LiteralBaseUrlOpenAIResponse:
+            del kwargs
+            return _LiteralBaseUrlOpenAIResponse()
+
+    def __init__(self, **kwargs: object) -> None:
+        type(self).init_calls.append(dict(kwargs))
+        self.responses = self._Responses()
+
+    def __enter__(self) -> _LiteralBaseUrlRecordingOpenAIClient:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, exc_traceback: object) -> bool:
+        return False
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
 
 
 def portfolio_slug_for_name(name: str) -> str:
@@ -439,7 +472,7 @@ def _assert_deleted_model_connection_fields_rejected(
 
 def _assert_schema_extra_forbidden(
     schema_type: type[ModelConnectionCreate] | type[ModelConnectionUpdate],
-    payload: dict[str, object],
+    payload: Mapping[str, object],
     field_names: set[str],
 ) -> None:
     with pytest.raises(ValidationError) as excinfo:
@@ -3139,6 +3172,32 @@ def test_model_connection_base_url_preserves_exact_user_input(
             }
         )
 
+    fragment_invalid_response = client.post(
+        "/api/model-connections",
+        json={
+            **_model_connection_create_payload(
+                "https://provider.example.test/openai-compatible",
+            ),
+            "baseUrl": "https://provider.example.test/openai-compatible#fragment",
+        },
+    )
+    assert fragment_invalid_response.status_code == 422, fragment_invalid_response.json()
+    fragment_invalid_body = cast(dict[str, object], fragment_invalid_response.json())
+    assert fragment_invalid_body["code"] == "validation_error"
+    fragment_invalid_details = cast(list[dict[str, str]], fragment_invalid_body["details"])
+    assert fragment_invalid_details[0]["field"] == "baseUrl"
+    assert "fragment" in fragment_invalid_details[0]["issue"].lower()
+
+    with pytest.raises(ValidationError):
+        ModelConnectionCreate.model_validate(
+            {
+                **_model_connection_create_payload(
+                    "https://provider.example.test/openai-compatible",
+                ),
+                "baseUrl": "https://provider.example.test/openai-compatible#fragment",
+            }
+        )
+
     with pytest.raises(ValidationError):
         ModelConnectionUpdate.model_validate(
             {"baseUrl": "ftp://provider.example.test/openai-compatible"}
@@ -3153,7 +3212,8 @@ def test_model_connection_connection_test_uses_provider_openai_behavior(
     fixed_now = datetime(2026, 5, 12, 15, 0, tzinfo=UTC_TZ)
     monkeypatch.setattr("app.services.model_connection_service.utcnow", lambda: fixed_now)
 
-    with run_fake_openai_provider() as base_url:
+    request_log: list[dict[str, object]] = []
+    with run_fake_openai_provider(base_path="/codex/v1", request_log=request_log) as base_url:
         create_response = client.post(
             "/api/model-connections",
             json=_model_connection_create_payload(base_url),
@@ -3171,6 +3231,12 @@ def test_model_connection_connection_test_uses_provider_openai_behavior(
 
         test_response = client.post(f"/api/model-connections/{connection_id}/connection-test")
         assert test_response.status_code == 200, test_response.json()
+
+    request_paths = [cast(str, entry["path"]) for entry in request_log]
+    assert request_paths == ["/codex/v1/responses"]
+    assert "/codex/v1/v1/responses" not in request_paths
+    assert "/v1/responses" not in request_paths
+    assert not any(path.endswith("/chat/completions") for path in request_paths)
 
     test_body = cast(dict[str, object], test_response.json())
     assert test_body["modelConnectionId"] == connection_id
@@ -3194,6 +3260,58 @@ def test_model_connection_connection_test_uses_provider_openai_behavior(
     capabilities = cast(dict[str, dict[str, object]], get_body["capabilities"])
     assert capabilities["responsesApi"]["lastProbedAt"] is None
     assert capabilities["textGeneration"]["lastProbedAt"] is None
+
+
+def test_model_connection_connection_test_passes_literal_trailing_slash_base_url_to_openai_client(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _LiteralBaseUrlRecordingOpenAIClient.reset()
+    monkeypatch.setattr(
+        "app.services.model_connection_service.OpenAI",
+        _LiteralBaseUrlRecordingOpenAIClient,
+        raising=False,
+    )
+    literal_base_url = "https://new.sharedchat.cc/codex/v1/"
+
+    create_response = client.post(
+        "/api/model-connections",
+        json=_model_connection_create_payload(literal_base_url),
+    )
+    assert create_response.status_code == 201, create_response.json()
+    connection_id = int(create_response.json()["id"])
+
+    test_response = client.post(f"/api/model-connections/{connection_id}/connection-test")
+    assert test_response.status_code == 200, test_response.json()
+    assert test_response.json()["ok"] is True
+
+    assert _LiteralBaseUrlRecordingOpenAIClient.init_calls[-1]["base_url"] == literal_base_url
+
+
+def test_model_connection_connection_test_preserves_openai_style_control_root_base_url(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _LiteralBaseUrlRecordingOpenAIClient.reset()
+    monkeypatch.setattr(
+        "app.services.model_connection_service.OpenAI",
+        _LiteralBaseUrlRecordingOpenAIClient,
+        raising=False,
+    )
+    control_base_url = "https://api.openai.com/v1"
+
+    create_response = client.post(
+        "/api/model-connections",
+        json=_model_connection_create_payload(control_base_url),
+    )
+    assert create_response.status_code == 201, create_response.json()
+    connection_id = int(create_response.json()["id"])
+
+    test_response = client.post(f"/api/model-connections/{connection_id}/connection-test")
+    assert test_response.status_code == 200, test_response.json()
+    assert test_response.json()["ok"] is True
+
+    assert _LiteralBaseUrlRecordingOpenAIClient.init_calls[-1]["base_url"] == control_base_url
 
 
 def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
@@ -3517,6 +3635,64 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
         )
         == fixed_now
     )
+
+
+def test_model_connection_capability_probe_refresh_uses_literal_custom_root_request_path(
+    client: TestClient,
+) -> None:
+    request_log: list[dict[str, object]] = []
+    with run_fake_openai_provider(base_path="/codex/v1", request_log=request_log) as base_url:
+        create_response = client.post(
+            "/api/model-connections",
+            json=_model_connection_create_payload(base_url),
+        )
+        assert create_response.status_code == 201, create_response.json()
+        connection_id = int(create_response.json()["id"])
+
+        probe_response = client.post(
+            f"/api/model-connections/{connection_id}/capability-probe",
+            json={"capabilityKeys": ["responsesApi"], "refresh": True},
+        )
+        assert probe_response.status_code == 200, probe_response.json()
+
+    request_paths = [cast(str, entry["path"]) for entry in request_log]
+    assert request_paths == ["/codex/v1/responses"]
+    assert "/codex/v1/v1/responses" not in request_paths
+    assert "/v1/responses" not in request_paths
+    assert not any(path.endswith("/chat/completions") for path in request_paths)
+
+    probe_body = cast(dict[str, object], probe_response.json())
+    assert probe_body["cached"] is False
+    assert probe_body["requestedCapabilityKeys"] == ["responsesApi"]
+
+
+def test_model_connection_capability_probe_refresh_passes_literal_trailing_slash_base_url_to_openai_client(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _LiteralBaseUrlRecordingOpenAIClient.reset()
+    monkeypatch.setattr(
+        "app.services.model_connection_probe_service.OpenAI",
+        _LiteralBaseUrlRecordingOpenAIClient,
+        raising=False,
+    )
+    literal_base_url = "https://new.sharedchat.cc/codex/v1/"
+
+    create_response = client.post(
+        "/api/model-connections",
+        json=_model_connection_create_payload(literal_base_url),
+    )
+    assert create_response.status_code == 201, create_response.json()
+    connection_id = int(create_response.json()["id"])
+
+    probe_response = client.post(
+        f"/api/model-connections/{connection_id}/capability-probe",
+        json={"capabilityKeys": ["responsesApi"], "refresh": True},
+    )
+    assert probe_response.status_code == 200, probe_response.json()
+    assert probe_response.json()["cached"] is False
+
+    assert _LiteralBaseUrlRecordingOpenAIClient.init_calls[-1]["base_url"] == literal_base_url
 
 
 def test_model_connection_capability_probe_marks_transport_failures_inconclusive(

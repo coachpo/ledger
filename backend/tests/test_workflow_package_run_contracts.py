@@ -69,6 +69,7 @@ from app.services.workflow_package_schedule_service import (
     ScheduleFireMetadata,
     WorkflowPackageScheduleService,
 )
+from tests.fake_openai_provider import run_fake_openai_provider
 from tests.test_workflow_package_manifest_http_node import (
     assert_removed_contract_tokens_absent,
     http_node_package_source,
@@ -2086,6 +2087,163 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
             fork_snapshot.preflight_summary == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
         )
         assert session.query(Run).count() == runs_before + 2
+
+
+def test_rerun_and_fork_drift_keep_literal_custom_root_request_paths(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    request_log: list[dict[str, Any]] = []
+    with run_fake_openai_provider(base_path="/codex/v1", request_log=request_log) as base_url:
+        _seed_model_connection(session_factory, base_url=base_url)
+        package = _create_package(client, package_key="drifted_connection_path_package")
+        launched = _launch_package_run(client, package, ticker="NVDA")
+        run_id = int(launched["id"])
+
+        _drain_run_queue(session_factory)
+        source_detail = _wait_for_run(client, run_id)
+        assert source_detail["status"] == "succeeded"
+        source_invocation = cast(dict[str, Any], source_detail["steps"][0]["invocations"][0])
+        source_invocation_id = int(source_invocation["id"])
+
+        with session_factory() as session:
+            source_snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+            assert source_snapshot is not None
+            source_profile = cast(dict[str, Any], source_snapshot.resolved_model_connections[0])
+            assert source_profile["baseUrl"] == base_url
+            connection = session.query(ModelConnection).filter_by(key="package_runtime_model").one()
+            connection.base_url = "https://runtime-live-drift.example.com/v1"
+            connection.model_id = "gpt-package-live-drift"
+            connection.reasoning_effort = "low"
+            connection.timeout_seconds = 91
+            session.commit()
+
+        rerun_response = client.post(
+            f"/api/runs/{run_id}/reruns",
+            json={"parameters": {"ticker": "AAPL"}},
+        )
+        fork_response = client.post(
+            f"/api/runs/{run_id}/forks",
+            json={
+                "sourceInvocationId": source_invocation_id,
+                "invocationInput": {"ticker": "TSLA"},
+            },
+        )
+        assert rerun_response.status_code == 201, rerun_response.json()
+        assert fork_response.status_code == 201, fork_response.json()
+        rerun_id = int(rerun_response.json()["id"])
+        fork_id = int(fork_response.json()["id"])
+
+        with session_factory() as session:
+            RunService(session, session_factory).execute_run(rerun_id)
+        rerun_detail = _wait_for_run(client, rerun_id)
+        assert rerun_detail["status"] == "succeeded"
+
+        with session_factory() as session:
+            RunService(session, session_factory).execute_run(fork_id)
+        fork_detail = _wait_for_run(client, fork_id)
+        assert fork_detail["status"] == "succeeded"
+
+        with session_factory() as session:
+            rerun_snapshot = session.get(RunWorkflowPackageSnapshot, rerun_id)
+            fork_snapshot = session.get(RunWorkflowPackageSnapshot, fork_id)
+            assert rerun_snapshot is not None
+            assert fork_snapshot is not None
+            rerun_profile = cast(dict[str, Any], rerun_snapshot.resolved_model_connections[0])
+            fork_profile = cast(dict[str, Any], fork_snapshot.resolved_model_connections[0])
+            assert rerun_profile["baseUrl"] == base_url
+            assert fork_profile["baseUrl"] == base_url
+
+    request_paths = [cast(str, entry["path"]) for entry in request_log]
+    assert request_paths == [
+        "/codex/v1/responses",
+        "/codex/v1/responses",
+        "/codex/v1/responses",
+    ]
+    assert "/codex/v1/v1/responses" not in request_paths
+    assert "/v1/responses" not in request_paths
+    assert not any(path.endswith("/chat/completions") for path in request_paths)
+
+
+def test_rerun_and_fork_preserve_literal_trailing_slash_base_url_after_live_model_connection_drift(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "drift source output"}'
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    literal_base_url = "https://new.sharedchat.cc/codex/v1/"
+
+    _seed_model_connection(session_factory, base_url=literal_base_url)
+    package = _create_package(client, package_key="drifted_connection_trailing_slash_package")
+    launched = _launch_package_run(client, package, ticker="NVDA")
+    run_id = int(launched["id"])
+
+    _drain_run_queue(session_factory)
+    succeeded_detail = _wait_for_run(client, run_id)
+    assert succeeded_detail["status"] == "succeeded"
+    source_invocation = cast(dict[str, Any], succeeded_detail["steps"][0]["invocations"][0])
+    source_invocation_id = int(source_invocation["id"])
+
+    with session_factory() as session:
+        source_snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+        assert source_snapshot is not None
+        source_profile = cast(dict[str, Any], source_snapshot.resolved_model_connections[0])
+        assert source_profile["baseUrl"] == literal_base_url
+        connection = session.query(ModelConnection).filter_by(key="package_runtime_model").one()
+        connection.base_url = "https://runtime-live-drift.example.com/v1"
+        connection.model_id = "gpt-package-live-drift"
+        connection.reasoning_effort = "low"
+        connection.timeout_seconds = 91
+        connection.secret_payload = {"apiKey": "sk-package-runtime-live"}
+        session.commit()
+
+    rerun_response = client.post(
+        f"/api/runs/{run_id}/reruns",
+        json={"parameters": {"ticker": "AAPL"}},
+    )
+    fork_response = client.post(
+        f"/api/runs/{run_id}/forks",
+        json={
+            "sourceInvocationId": source_invocation_id,
+            "invocationInput": {"ticker": "TSLA"},
+        },
+    )
+    assert rerun_response.status_code == 201, rerun_response.json()
+    assert fork_response.status_code == 201, fork_response.json()
+    rerun_id = int(rerun_response.json()["id"])
+    fork_id = int(fork_response.json()["id"])
+
+    rerun_draft = client.get(f"/api/runs/{run_id}/rerun-draft")
+    fork_draft = client.get(
+        f"/api/runs/{run_id}/fork-draft",
+        params={"sourceInvocationId": source_invocation_id},
+    )
+    assert rerun_draft.status_code == 200, rerun_draft.json()
+    assert fork_draft.status_code == 200, fork_draft.json()
+    assert rerun_draft.json()["packageProvenance"]["resolvedModelConnections"][0]["baseUrl"] == (
+        literal_base_url
+    )
+    assert fork_draft.json()["packageProvenance"]["resolvedModelConnections"][0]["baseUrl"] == (
+        literal_base_url
+    )
+
+    _RuntimeRecordingOpenAIClient.reset()
+    with session_factory() as session:
+        RunService(session, session_factory).execute_run(rerun_id)
+    rerun_detail = _wait_for_run(client, rerun_id)
+    assert rerun_detail["status"] == "succeeded"
+    rerun_init_call = _RuntimeRecordingOpenAIClient.init_calls[-1]
+    assert rerun_init_call["base_url"] == literal_base_url
+
+    _RuntimeRecordingOpenAIClient.reset()
+    with session_factory() as session:
+        RunService(session, session_factory).execute_run(fork_id)
+    fork_detail = _wait_for_run(client, fork_id)
+    assert fork_detail["status"] == "succeeded"
+    fork_init_call = _RuntimeRecordingOpenAIClient.init_calls[-1]
+    assert fork_init_call["base_url"] == literal_base_url
 
 
 def test_compat_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(

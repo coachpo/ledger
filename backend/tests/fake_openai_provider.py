@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
-from typing import Any
+from typing import Any, cast
 
 
 def _string_value(key: str, summary: str) -> str:
@@ -147,13 +147,33 @@ def _response(
     return body
 
 
+def _normalize_base_path(base_path: str) -> str:
+    normalized = base_path.strip()
+    if not normalized:
+        return ""
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+    return normalized
+
+
+class FakeOpenAIProviderServer(ThreadingHTTPServer):
+    request_log: list[dict[str, Any]] = []
+
+
 @contextmanager
-def run_fake_openai_provider(host: str = "127.0.0.1") -> Iterator[str]:
-    server = ThreadingHTTPServer((host, 0), FakeOpenAIProviderHandler)
+def run_fake_openai_provider(
+    host: str = "127.0.0.1",
+    *,
+    base_path: str = "/v1",
+    request_log: list[dict[str, Any]] | None = None,
+) -> Iterator[str]:
+    normalized_base_path = _normalize_base_path(base_path)
+    server = FakeOpenAIProviderServer((host, 0), FakeOpenAIProviderHandler)
+    server.request_log = request_log if request_log is not None else []
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        yield f"http://{host}:{server.server_port}/v1"
+        yield f"http://{host}:{server.server_port}{normalized_base_path}"
     finally:
         server.shutdown()
         server.server_close()
@@ -170,6 +190,15 @@ class FakeOpenAIProviderHandler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             self._send_json(400, {"error": {"message": "invalid json"}})
             return
+
+        server = cast(FakeOpenAIProviderServer, self.server)
+        server.request_log.append(
+            {
+                "method": "POST",
+                "path": self.path,
+                "payload": payload,
+            }
+        )
 
         if self.path.endswith("/responses"):
             self._handle_responses(payload)

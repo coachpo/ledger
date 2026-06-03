@@ -3535,7 +3535,8 @@ def test_workflow_package_runtime_uses_fake_provider_endpoint(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
-    with run_fake_openai_provider() as base_url:
+    request_log: list[dict[str, Any]] = []
+    with run_fake_openai_provider(base_path="/codex/v1", request_log=request_log) as base_url:
         _seed_model_connection(session_factory, base_url=base_url)
         created = _create_package(client, package_key="runtime_fake_provider_package")
 
@@ -3549,9 +3550,75 @@ def test_workflow_package_runtime_uses_fake_provider_endpoint(
         _drain_run_queue(session_factory)
         detail = _wait_for_run(client, run_id)
 
+    request_paths = [cast(str, entry["path"]) for entry in request_log]
+    assert request_paths == ["/codex/v1/responses"]
+    assert "/codex/v1/v1/responses" not in request_paths
+    assert "/v1/responses" not in request_paths
+    assert not any(path.endswith("/chat/completions") for path in request_paths)
+
     assert detail["status"] == "succeeded"
     assert detail["finalOutput"] == {"summary": "fake strict schema"}
     assert detail["executedTokens"] == 5
+
+
+def test_workflow_package_runtime_passes_literal_trailing_slash_base_url_to_openai_client(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "runtime trailing slash output"}'
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    literal_base_url = "https://new.sharedchat.cc/codex/v1/"
+
+    _seed_model_connection(session_factory, base_url=literal_base_url)
+    created = _create_package(client, package_key="runtime_literal_base_url_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "NVDA"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    init_call = _RuntimeRecordingOpenAIClient.init_calls[-1]
+    assert init_call["base_url"] == literal_base_url
+
+    with session_factory() as session:
+        snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+        assert snapshot is not None
+        profile = cast(dict[str, Any], snapshot.resolved_model_connections[0])
+        assert profile["baseUrl"] == literal_base_url
+
+
+def test_workflow_package_runtime_openai_style_control_root_avoids_duplicate_v1_path(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    request_log: list[dict[str, Any]] = []
+    with run_fake_openai_provider(base_path="/v1", request_log=request_log) as base_url:
+        _seed_model_connection(session_factory, base_url=base_url)
+        created = _create_package(client, package_key="runtime_openai_style_control_root_package")
+
+        launch = client.post(
+            f"/api/workflow-packages/{created['id']}/launches",
+            json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "NVDA"}},
+        )
+        assert launch.status_code == 201, launch.json()
+        run_id = int(launch.json()["id"])
+
+        _drain_run_queue(session_factory)
+        detail = _wait_for_run(client, run_id)
+
+    request_paths = [cast(str, entry["path"]) for entry in request_log]
+    assert request_paths == ["/v1/responses"]
+    assert "/v1/v1/responses" not in request_paths
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "fake strict schema"}
 
 
 def test_workflow_package_save_allows_missing_model_connection_and_launch_rejects_readiness(

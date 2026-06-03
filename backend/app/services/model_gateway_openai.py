@@ -15,7 +15,6 @@ from app.agents.runtime_tools.failure_taxonomy import (
     provider_status_failure_classification,
 )
 from app.agents.runtime_tools.types import RuntimeToolError
-from app.schemas.model_connection import build_model_connection_openai_base_url
 from app.services.model_gateway_dto import (
     ModelCapabilityProbeOutcome,
     ModelCapabilityProbeRequest,
@@ -866,7 +865,7 @@ class OpenAIProtocolAdapter:
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "api_key": connection.api_key,
-            "base_url": build_model_connection_openai_base_url(connection.base_url),
+            "base_url": connection.base_url,
             "timeout": float(connection.timeout_seconds),
         }
         if max_retries is not None:
