@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import openai
@@ -50,6 +51,23 @@ from app.services.model_gateway_tool_retry import (
 from app.services.model_gateway_tool_strategy import build_model_tool_call, select_tool_strategy
 
 DEFAULT_OPENAI_CLIENT_FACTORY = OpenAI
+_BACKEND_VERSION_FALLBACK = "0.1.0"
+_BACKEND_VERSION_PATH = Path(__file__).resolve().parents[2] / "VERSION"
+
+
+def _build_openai_compatible_user_agent(
+    version_path: Path = _BACKEND_VERSION_PATH,
+) -> str:
+    try:
+        version = version_path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        version = _BACKEND_VERSION_FALLBACK
+    if not version:
+        version = _BACKEND_VERSION_FALLBACK
+    return f"SignalDeck/{version}"
+
+
+OPENAI_COMPATIBLE_USER_AGENT = _build_openai_compatible_user_agent()
 _MAX_SERVER_TOOL_CALL_ROUNDS = 5
 _CAPABILITY_PROBE_INSTRUCTIONS = "Reply with the single word OK."
 _CAPABILITY_PROBE_INPUT = "Capability probe."
@@ -866,6 +884,7 @@ class OpenAIProtocolAdapter:
         kwargs: dict[str, Any] = {
             "api_key": connection.api_key,
             "base_url": connection.base_url,
+            "default_headers": {"User-Agent": OPENAI_COMPATIBLE_USER_AGENT},
             "timeout": float(connection.timeout_seconds),
         }
         if max_retries is not None:

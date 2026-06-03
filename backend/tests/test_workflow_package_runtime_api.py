@@ -5,6 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from threading import Event, Lock
 from typing import Any, cast
 
@@ -49,6 +50,10 @@ from app.services.model_gateway_dto import (
     ModelExecutionResult,
     ModelGatewayConnectionConfig,
     ModelGatewayError,
+)
+from app.services.model_gateway_openai import (
+    OPENAI_COMPATIBLE_USER_AGENT,
+    _build_openai_compatible_user_agent,
 )
 from app.services.model_gateway_provider_retry import (
     ProviderRetryAttempt,
@@ -2585,6 +2590,40 @@ def test_workflow_package_runtime_chat_provider_retry_records_providerRetries_mo
     }
     assert jitter_bounds == [(0, 500)]
     assert "toolCallRetries" not in gateway_metadata
+
+
+def test_model_gateway_user_agent_reads_backend_version_file(tmp_path: Path) -> None:
+    version_file = tmp_path / "VERSION"
+    version_file.write_text("9.8.7\n", encoding="utf-8")
+
+    assert _build_openai_compatible_user_agent(version_file) == "SignalDeck/9.8.7"
+
+
+def test_model_gateway_user_agent_uses_fallback_when_version_file_is_missing(
+    tmp_path: Path,
+) -> None:
+    assert _build_openai_compatible_user_agent(tmp_path / "missing") == "SignalDeck/0.1.0"
+
+
+def test_model_gateway_connection_test_sets_signaldeck_user_agent_header() -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    gateway = ModelExecutionGateway(client_factory=_RuntimeRecordingChatCompletionsClient)
+
+    result = gateway.test_connection(
+        ModelConnectionTestRequest(
+            connection=_chat_model_gateway_connection_config(),
+            instructions="Reply with the single word OK.",
+            input_text="Connection test.",
+        )
+    )
+
+    assert result.ok is True
+    init_call = _RuntimeRecordingChatCompletionsClient.init_calls[-1]
+    assert init_call["default_headers"] == {"User-Agent": OPENAI_COMPATIBLE_USER_AGENT}
+    assert init_call["api_key"] == "test-api-key"
+    assert init_call["base_url"] == "https://provider-runtime.example.test/v1"
+    assert init_call["timeout"] == 31.0
+    assert init_call["max_retries"] == 0
 
 
 def test_model_gateway_connection_test_chat_provider_retry_free_with_max_retries_zero() -> None:
