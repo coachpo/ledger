@@ -80,6 +80,23 @@ Live package reads and writes do not include status. Package persistence stores 
 
 Model Connection payloads use `protocolProfile` as the live writable selector, with `openai_chat_completions` and `openai_responses` as shipped values. Backend `CompatibilityResolutionService` owns effective compatibility evidence for reads, preflight, runtime strategy selection, and run provenance. Public create/update requests accept writable connection identity, endpoint/model settings, `protocolProfile`, timeout, reasoning effort, and write-only `apiKey`; client-authored capabilities, policy fields, probe cache TTL, derived `apiStyle`, `compatibilityProfile`, and other compatibility truth are rejected rather than treated as authoritative. Reads include backend-derived capability states, policy fields, timeout, probe cache metadata, reachability-test metadata, and historical derived `apiStyle`; raw secrets are never returned.
 
+Model Connection `outputStrategyPolicy` is backend-owned compatibility truth. The live policy values are:
+
+| Policy | Runtime behavior |
+| --- | --- |
+| `require_strict_schema` | Selects `strictJsonSchema` and fails when strict JSON-schema output is explicitly unsupported. |
+| `prefer_strict_schema` | Selects `strictJsonSchema` unless strict output is explicitly unsupported; otherwise selects `jsonObjectWithValidation` when JSON-object output is available. This is the default policy. |
+| `allow_json_object_validation` | Selects `jsonObjectWithValidation` and fails when JSON-object output is explicitly unsupported. |
+| `allow_plain_text` | Selects `plainText` and bypasses structured output enforcement. |
+
+Runtime output strategies are recorded in run metadata under `graphMetadata.modelGateway.selectedStrategies.outputStrategy`:
+
+| Strategy | Enforcement |
+| --- | --- |
+| `strictJsonSchema` | Sends provider-native strict JSON schema format and expects the provider response to already be valid schema-shaped JSON. Invalid JSON fails the invocation. |
+| `jsonObjectWithValidation` | Requests a JSON object, parses and validates it against the package output schema, and can issue bounded model-feedback correction when the output is invalid. |
+| `plainText` | Requests or accepts normal text output without structured JSON validation. |
+
 ## Workflow Packages, HTTP Operations, And Package Secrets
 
 Workflow Packages use `signaldeck.workflowPackage/v1` YAML. Package-local refs stay local, model bindings use global Model Connection keys, tool grants use global server-declared tool keys, and workflow graph nodes currently ship as `kind: step`, `kind: sequence`, `kind: fanout`, `kind: loop`, and `kind: http`.
