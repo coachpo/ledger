@@ -120,12 +120,25 @@ function normalizeFilter(value: string): string | undefined {
   return normalized ? normalized : undefined;
 }
 
-function formatOptionalDateTimeInTimeZone(
-  value: string | null,
+function formatDateTimeWithExplicitTimeZone(
+  isoString: string,
   timeZone: string,
-  fallback: string,
 ): string {
-  return value ? formatDateTimeInTimeZone(value, timeZone) : fallback;
+  try {
+    const date = new Date(isoString);
+    const formattedDateTime = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone,
+    }).format(date);
+    return `${formattedDateTime} ${timeZone}`;
+  } catch {
+    return "";
+  }
 }
 
 function formatStatusLabel(value: string): string {
@@ -672,15 +685,56 @@ function ScheduleCell({ schedule }: { schedule: ScheduleRead }) {
   );
 }
 
+function ToggleableAbsoluteTimeText({
+  className,
+  fallback,
+  timeZone,
+  value,
+}: {
+  className?: string;
+  fallback: string;
+  timeZone: string;
+  value: string | null;
+}) {
+  const browserTimeZone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    [],
+  );
+  const [showBrowserTimeZone, setShowBrowserTimeZone] = useState(false);
+
+  if (!value) {
+    return <span className={className}>{fallback}</span>;
+  }
+
+  const label = showBrowserTimeZone
+    ? formatDateTimeWithExplicitTimeZone(value, browserTimeZone)
+    : formatDateTimeInTimeZone(value, timeZone);
+
+  return (
+    <button
+      className={cn(
+        className,
+        "block max-w-full break-words cursor-pointer text-left [font-size:inherit] whitespace-normal underline-offset-4 focus-visible:underline",
+      )}
+      type="button"
+      onClick={() => setShowBrowserTimeZone((current) => !current)}
+    >
+      {label}
+    </button>
+  );
+}
+
 function NextRunCell({ schedule }: { schedule: ScheduleRead }) {
   const tone = getNextRunTone(schedule);
-  const nextRunLabel = formatOptionalDateTimeInTimeZone(
-    schedule.nextFireAt,
-    schedule.timezone,
-    "No upcoming run",
-  );
   const relativeLabel = formatRelativeNextRun(schedule.nextFireAt);
   const showWarning = tone === "warning" || tone === "danger";
+  const nextRunClassName = cn(
+    "font-medium",
+    tone === "danger" && "text-destructive",
+    tone === "warning" && "text-amber-600",
+    tone === "muted" && "text-muted-foreground",
+    tone === "neutral" && "text-foreground",
+  );
 
   return (
     <div
@@ -689,17 +743,12 @@ function NextRunCell({ schedule }: { schedule: ScheduleRead }) {
     >
       <div className="flex min-w-0 items-start gap-1.5">
         {showWarning ? <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" /> : null}
-        <span
-          className={cn(
-            "font-medium",
-            tone === "danger" && "text-destructive",
-            tone === "warning" && "text-amber-600",
-            tone === "muted" && "text-muted-foreground",
-            tone === "neutral" && "text-foreground",
-          )}
-        >
-          {nextRunLabel}
-        </span>
+        <ToggleableAbsoluteTimeText
+          className={nextRunClassName}
+          fallback="No upcoming run"
+          timeZone={schedule.timezone}
+          value={schedule.nextFireAt}
+        />
       </div>
       <span className="text-xs text-muted-foreground">{relativeLabel}</span>
     </div>
@@ -815,13 +864,25 @@ function ScheduleDetailSections({
       <ScheduleDetailGroup title="Timing">
         <ScheduleDetailField label="Timezone">{schedule.timezone}</ScheduleDetailField>
         <ScheduleDetailField label="Starts">
-          {formatOptionalDateTimeInTimeZone(schedule.startsAt, schedule.timezone, "Not set")}
+          <ToggleableAbsoluteTimeText
+            fallback="Not set"
+            timeZone={schedule.timezone}
+            value={schedule.startsAt}
+          />
         </ScheduleDetailField>
         <ScheduleDetailField label="Ends">
-          {formatOptionalDateTimeInTimeZone(schedule.endsAt, schedule.timezone, "Not set")}
+          <ToggleableAbsoluteTimeText
+            fallback="Not set"
+            timeZone={schedule.timezone}
+            value={schedule.endsAt}
+          />
         </ScheduleDetailField>
         <ScheduleDetailField label="Next run">
-          {formatOptionalDateTimeInTimeZone(schedule.nextFireAt, schedule.timezone, "No upcoming run")}
+          <ToggleableAbsoluteTimeText
+            fallback="No upcoming run"
+            timeZone={schedule.timezone}
+            value={schedule.nextFireAt}
+          />
         </ScheduleDetailField>
       </ScheduleDetailGroup>
       <ScheduleDetailGroup title="Recent activity">

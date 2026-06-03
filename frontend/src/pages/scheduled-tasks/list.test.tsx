@@ -225,6 +225,21 @@ function expectedDateTimeInTimeZone(isoString: string, timeZone: string): string
   }).format(new Date(isoString));
 }
 
+function expectedDateTimeWithExplicitTimeZone(
+  isoString: string,
+  timeZone: string,
+): string {
+  return `${new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone,
+  }).format(new Date(isoString))} ${timeZone}`;
+}
+
 describe("ScheduledTasksListPage", () => {
   beforeEach(() => {
     deleteScheduleMock.mockReset();
@@ -618,6 +633,348 @@ describe("ScheduledTasksListPage", () => {
       "data-disabled",
     );
     closeOpenMenu();
+  });
+
+  it("toggles absolute scheduled-task times between schedule and browser timezones across list and detail views", () => {
+    const browserTimeZone = "Europe/Helsinki";
+    const resolvedOptions = new Intl.DateTimeFormat("en-US").resolvedOptions();
+    const resolvedOptionsSpy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockReturnValue({ ...resolvedOptions, timeZone: browserTimeZone });
+
+    try {
+      useScheduledTasksMock.mockReturnValue({
+        data: {
+          items: [
+            scheduleFixture({
+              endsAt: "2026-06-30T20:00:00Z",
+              startsAt: "2026-06-01T12:00:00Z",
+            }),
+            scheduleFixture({
+              id: 45,
+              latestFireId: 802,
+              latestRunId: 2105,
+              name: "Midday rebalance check",
+              nextFireAt: "2026-06-01T18:00:00Z",
+              workflowKey: "news_research",
+            }),
+            scheduleFixture({
+              id: 55,
+              latestFireId: null,
+              latestRunId: null,
+              latestStatus: null,
+              name: "Paused allocation check",
+              nextFireAt: null,
+              packageId: 21,
+              packageKey: "allocation_package",
+              recurrence: { every: 4, type: "interval", unit: "hours" },
+              status: "paused",
+              workflowKey: "allocation_check",
+            }),
+          ],
+          limit: 50,
+          offset: 0,
+          totalCount: 3,
+        },
+        error: null,
+        isError: false,
+        isPending: false,
+      });
+
+      renderPage();
+
+      const scheduleNextRunLabel = expectedDateTimeInTimeZone(
+        "2026-06-01T13:00:00Z",
+        "America/New_York",
+      );
+      const browserNextRunLabel = expectedDateTimeWithExplicitTimeZone(
+        "2026-06-01T13:00:00Z",
+        browserTimeZone,
+      );
+      const scheduleStartsAtLabel = expectedDateTimeInTimeZone(
+        "2026-06-01T12:00:00Z",
+        "America/New_York",
+      );
+      const browserStartsAtLabel = expectedDateTimeWithExplicitTimeZone(
+        "2026-06-01T12:00:00Z",
+        browserTimeZone,
+      );
+      const scheduleEndsAtLabel = expectedDateTimeInTimeZone(
+        "2026-06-30T20:00:00Z",
+        "America/New_York",
+      );
+      const browserEndsAtLabel = expectedDateTimeWithExplicitTimeZone(
+        "2026-06-30T20:00:00Z",
+        browserTimeZone,
+      );
+      const secondScheduleTimeZoneLabel = expectedDateTimeInTimeZone(
+        "2026-06-01T18:00:00Z",
+        "America/New_York",
+      );
+
+      const firstRow = screen.getByTestId("scheduled-task-row-44");
+      const pausedRow = screen.getByTestId("scheduled-task-row-55");
+      const firstRowNextRun = within(firstRow).getByTestId(
+        "scheduled-task-row-next-run-44",
+      );
+      const secondRowNextRun = within(
+        screen.getByTestId("scheduled-task-row-45"),
+      ).getByTestId("scheduled-task-row-next-run-45");
+      const noUpcomingRowNextRun = within(pausedRow).getByTestId(
+        "scheduled-task-row-next-run-55",
+      );
+
+      fireEvent.click(
+        within(firstRowNextRun).getByRole("button", {
+          name: scheduleNextRunLabel,
+        }),
+      );
+      const firstRowBrowserNextRunButton = within(firstRowNextRun).getByRole("button", {
+        name: browserNextRunLabel,
+      });
+      expect(firstRowBrowserNextRunButton).toBeVisible();
+      expect(firstRowBrowserNextRunButton).toHaveClass("max-w-full");
+      expect(firstRowBrowserNextRunButton).toHaveClass("break-words");
+      expect(firstRowBrowserNextRunButton.className).toContain("[font-size:inherit]");
+      fireEvent.click(firstRowBrowserNextRunButton);
+      expect(
+        within(firstRowNextRun).getByRole("button", {
+          name: scheduleNextRunLabel,
+        }),
+      ).toBeVisible();
+
+      expect(
+        within(secondRowNextRun).getByRole("button", {
+          name: secondScheduleTimeZoneLabel,
+        }),
+      ).toBeVisible();
+      expect(noUpcomingRowNextRun).toHaveTextContent("No upcoming run");
+      expect(within(noUpcomingRowNextRun).queryByRole("button")).not.toBeInTheDocument();
+
+      const rowDetailsToggle = within(firstRow).getByRole("button", {
+        name: "Show details",
+      });
+      fireEvent.click(rowDetailsToggle);
+      const rowDetails = screen.getByTestId("scheduled-task-row-details-44");
+      expect(rowDetails).toHaveTextContent("America/New_York");
+
+      fireEvent.click(
+        within(rowDetails).getByRole("button", {
+          name: scheduleStartsAtLabel,
+        }),
+      );
+      expect(
+        within(rowDetails).getByRole("button", {
+          name: browserStartsAtLabel,
+        }),
+      ).toBeVisible();
+      fireEvent.click(
+        within(rowDetails).getByRole("button", {
+          name: browserStartsAtLabel,
+        }),
+      );
+      expect(
+        within(rowDetails).getByRole("button", {
+          name: scheduleStartsAtLabel,
+        }),
+      ).toBeVisible();
+
+      fireEvent.click(
+        within(rowDetails).getByRole("button", {
+          name: scheduleEndsAtLabel,
+        }),
+      );
+      expect(
+        within(rowDetails).getByRole("button", {
+          name: browserEndsAtLabel,
+        }),
+      ).toBeVisible();
+      fireEvent.click(
+        within(rowDetails).getByRole("button", {
+          name: browserEndsAtLabel,
+        }),
+      );
+      expect(
+        within(rowDetails).getByRole("button", {
+          name: scheduleEndsAtLabel,
+        }),
+      ).toBeVisible();
+
+      fireEvent.click(
+        within(rowDetails).getByRole("button", {
+          name: scheduleNextRunLabel,
+        }),
+      );
+      expect(
+        within(rowDetails).getByRole("button", {
+          name: browserNextRunLabel,
+        }),
+      ).toBeVisible();
+      fireEvent.click(
+        within(rowDetails).getByRole("button", {
+          name: browserNextRunLabel,
+        }),
+      );
+      expect(
+        within(rowDetails).getByRole("button", {
+          name: scheduleNextRunLabel,
+        }),
+      ).toBeVisible();
+
+      fireEvent.click(
+        within(pausedRow).getByRole("button", {
+          name: "Show details",
+        }),
+      );
+      const pausedRowDetails = screen.getByTestId("scheduled-task-row-details-55");
+      expect(pausedRowDetails).toHaveTextContent("Not set");
+      expect(pausedRowDetails).toHaveTextContent("No upcoming run");
+      expect(within(pausedRowDetails).queryByRole("button", { name: "Not set" })).not.toBeInTheDocument();
+      expect(
+        within(pausedRowDetails).queryByRole("button", {
+          name: "No upcoming run",
+        }),
+      ).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByLabelText("Cards view"));
+
+      const firstCard = screen.getByTestId("scheduled-task-card-44");
+      const pausedCard = screen.getByTestId("scheduled-task-card-55");
+      const firstCardNextRun = within(firstCard).getByTestId(
+        "scheduled-task-row-next-run-44",
+      );
+      const secondCardNextRun = within(
+        screen.getByTestId("scheduled-task-card-45"),
+      ).getByTestId("scheduled-task-row-next-run-45");
+      const noUpcomingCardNextRun = within(pausedCard).getByTestId(
+        "scheduled-task-row-next-run-55",
+      );
+
+      fireEvent.click(
+        within(firstCardNextRun).getByRole("button", {
+          name: scheduleNextRunLabel,
+        }),
+      );
+      expect(
+        within(firstCardNextRun).getByRole("button", {
+          name: browserNextRunLabel,
+        }),
+      ).toBeVisible();
+      fireEvent.click(
+        within(firstCardNextRun).getByRole("button", {
+          name: browserNextRunLabel,
+        }),
+      );
+      expect(
+        within(firstCardNextRun).getByRole("button", {
+          name: scheduleNextRunLabel,
+        }),
+      ).toBeVisible();
+
+      expect(
+        within(secondCardNextRun).getByRole("button", {
+          name: secondScheduleTimeZoneLabel,
+        }),
+      ).toBeVisible();
+      expect(noUpcomingCardNextRun).toHaveTextContent("No upcoming run");
+      expect(within(noUpcomingCardNextRun).queryByRole("button")).not.toBeInTheDocument();
+
+      const firstCardShowDetailsButton = within(firstCard).queryByRole("button", {
+        name: "Show details",
+      });
+      if (firstCardShowDetailsButton) {
+        fireEvent.click(firstCardShowDetailsButton);
+      }
+      expect(within(firstCard).getByRole("button", { name: "Hide details" })).toBeVisible();
+      const firstCardDetails = within(firstCard).getByRole("group", {
+        name: "Expanded details for Daily market brief",
+      });
+      expect(within(firstCardDetails).getByText("America/New_York")).toBeVisible();
+
+      fireEvent.click(
+        within(firstCardDetails).getByRole("button", {
+          name: scheduleStartsAtLabel,
+        }),
+      );
+      expect(
+        within(firstCardDetails).getByRole("button", {
+          name: browserStartsAtLabel,
+        }),
+      ).toBeVisible();
+      fireEvent.click(
+        within(firstCardDetails).getByRole("button", {
+          name: browserStartsAtLabel,
+        }),
+      );
+      expect(
+        within(firstCardDetails).getByRole("button", {
+          name: scheduleStartsAtLabel,
+        }),
+      ).toBeVisible();
+
+      fireEvent.click(
+        within(firstCardDetails).getByRole("button", {
+          name: scheduleEndsAtLabel,
+        }),
+      );
+      expect(
+        within(firstCardDetails).getByRole("button", {
+          name: browserEndsAtLabel,
+        }),
+      ).toBeVisible();
+      fireEvent.click(
+        within(firstCardDetails).getByRole("button", {
+          name: browserEndsAtLabel,
+        }),
+      );
+      expect(
+        within(firstCardDetails).getByRole("button", {
+          name: scheduleEndsAtLabel,
+        }),
+      ).toBeVisible();
+
+      fireEvent.click(
+        within(firstCardDetails).getByRole("button", {
+          name: scheduleNextRunLabel,
+        }),
+      );
+      expect(
+        within(firstCardDetails).getByRole("button", {
+          name: browserNextRunLabel,
+        }),
+      ).toBeVisible();
+      fireEvent.click(
+        within(firstCardDetails).getByRole("button", {
+          name: browserNextRunLabel,
+        }),
+      );
+      expect(
+        within(firstCardDetails).getByRole("button", {
+          name: scheduleNextRunLabel,
+        }),
+      ).toBeVisible();
+
+      const pausedCardShowDetailsButton = within(pausedCard).queryByRole("button", {
+        name: "Show details",
+      });
+      if (pausedCardShowDetailsButton) {
+        fireEvent.click(pausedCardShowDetailsButton);
+      }
+      expect(within(pausedCard).getByRole("button", { name: "Hide details" })).toBeVisible();
+      const pausedCardDetails = within(pausedCard).getByRole("group", {
+        name: "Expanded details for Paused allocation check",
+      });
+      expect(pausedCardDetails).toHaveTextContent("Not set");
+      expect(pausedCardDetails).toHaveTextContent("No upcoming run");
+      expect(within(pausedCardDetails).queryByRole("button", { name: "Not set" })).not.toBeInTheDocument();
+      expect(
+        within(pausedCardDetails).queryByRole("button", {
+          name: "No upcoming run",
+        }),
+      ).not.toBeInTheDocument();
+    } finally {
+      resolvedOptionsSpy.mockRestore();
+    }
   });
 
   it("keeps package and workflow hook params stable while status filters and search stay local", async () => {
