@@ -3,16 +3,19 @@ from __future__ import annotations
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from threading import Event, Lock
 from typing import Any, cast
 
+import httpx
+import openai
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
-from app.core.errors import ApiError
+from app.core.errors import ApiError, validation_error
 from app.core.formatting import utcnow
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.agent import Agent
@@ -40,6 +43,19 @@ from app.schemas.schedule import (
 from app.schemas.workflow_package import WorkflowPackageLaunchCreateRequest
 from app.services.extension_service import ExtensionService
 from app.services.model_gateway import ModelExecutionGateway
+from app.services.model_gateway_dto import (
+    ModelCapabilityProbeRequest,
+    ModelConnectionTestRequest,
+    ModelExecutionResult,
+    ModelGatewayConnectionConfig,
+    ModelGatewayError,
+)
+from app.services.model_gateway_provider_retry import (
+    ProviderRetryAttempt,
+    ProviderRetryPolicy,
+    ProviderRetryRecorder,
+    call_with_provider_retry,
+)
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 from app.services.workflow_package_runtime_input_registry import (
@@ -142,6 +158,7 @@ class _RuntimeRecordingChatCompletionsClient:
     final_output_text = '{"summary": "package chat runtime output"}'
     return_empty_choices = False
     malformed_tool_arguments = False
+    failures: list[BaseException] | None = None
     tool_argument_sequence: list[str] | None = None
     tool_name_sequence: list[str] | None = None
     reasoning_content: str | None = None
@@ -160,12 +177,15 @@ class _RuntimeRecordingChatCompletionsClient:
 
     def create(self, **kwargs: Any) -> dict[str, Any]:
         type(self).create_calls.append(kwargs)
+        call_index = len(type(self).create_calls)
+        failures = type(self).failures or []
+        if call_index <= len(failures):
+            raise failures[call_index - 1]
         if type(self).return_empty_choices:
             return {
                 "choices": [],
                 "usage": self._usage(prompt_tokens=1, completion_tokens=0),
             }
-        call_index = len(type(self).create_calls)
         tool_argument_sequence = type(self).tool_argument_sequence
         should_emit_tool_call = (
             call_index <= len(tool_argument_sequence)
@@ -243,6 +263,7 @@ class _RuntimeRecordingChatCompletionsClient:
         cls.final_output_text = '{"summary": "package chat runtime output"}'
         cls.return_empty_choices = False
         cls.malformed_tool_arguments = False
+        cls.failures = None
         cls.tool_argument_sequence = None
         cls.tool_name_sequence = None
         cls.reasoning_content = None
@@ -323,6 +344,55 @@ class _RuntimeRetryingResponsesToolClient:
         cls.create_calls = []
 
 
+class _RuntimeProviderRetryingResponsesClient:
+    init_calls: list[dict[str, Any]] = []
+    create_calls: list[dict[str, Any]] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        type(self).init_calls.append(kwargs)
+        self.responses = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create(self, **kwargs: Any) -> dict[str, Any]:
+        type(self).create_calls.append(kwargs)
+        call_index = len(type(self).create_calls)
+        if call_index == 1:
+            return {
+                "id": "resp_tool_1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "name": "signaldeck_memory_lookup",
+                        "call_id": "call_memory_lookup",
+                        "arguments": (
+                            _RuntimeRecordingChatCompletionsClient._memory_lookup_arguments()
+                        ),
+                    }
+                ],
+                "usage": {"total_tokens": 3},
+            }
+        if call_index == 2:
+            raise _provider_status_error(503)
+        if call_index == 3:
+            return {
+                "id": "resp_final",
+                "output_text": '{"summary": "responses provider retry output"}',
+                "usage": {"total_tokens": 5},
+            }
+        raise AssertionError(f"Unexpected create call count: {call_index}")
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
+        cls.create_calls = []
+
+
 class _RuntimeUsageLessResponsesClient:
     init_calls: list[dict[str, Any]] = []
     create_calls: list[dict[str, Any]] = []
@@ -382,6 +452,34 @@ class _RuntimeReasoningRejectingChatClient:
     @classmethod
     def reset(cls) -> None:
         cls.create_calls = []
+
+
+def _provider_retry_request() -> httpx.Request:
+    return httpx.Request("POST", "https://provider-runtime.example.test/v1/responses")
+
+
+def _provider_status_error(
+    status_code: int,
+    *,
+    headers: dict[str, str] | None = None,
+    body: object | None = None,
+) -> openai.APIStatusError:
+    request = _provider_retry_request()
+    response = httpx.Response(status_code, request=request, headers=headers or {})
+    return openai.APIStatusError(
+        "Provider request failed.",
+        response=response,
+        body=(
+            body
+            if body is not None
+            else {
+                "error": {
+                    "message": "provider said no",
+                    "headers": {"Authorization": "Bearer secret"},
+                }
+            }
+        ),
+    )
 
 
 def _package_source(*, package_key: str = "runtime_package") -> str:
@@ -662,6 +760,22 @@ def _seed_model_connection(
         session.commit()
 
 
+def _chat_model_gateway_connection_config(
+    *,
+    api_key: str | None = "test-api-key",
+) -> ModelGatewayConnectionConfig:
+    return ModelGatewayConnectionConfig(
+        id=1,
+        name="Chat Runtime Model",
+        base_url="https://provider-runtime.example.test/v1",
+        model_id="chat-runtime-model",
+        reasoning_effort="high",
+        api_style="chat_completions",
+        timeout_seconds=31,
+        api_key=api_key,
+    )
+
+
 def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         _ = ExtensionService(session).set_extension_enabled(
@@ -768,7 +882,6 @@ def test_workflow_package_launch_enqueues_without_request_worker(
 
     assert launch.status_code == 201, launch.json()
     run_id = int(launch.json()["id"])
-    time.sleep(0.1)
     with session_factory() as session:
         run = session.get(Run, run_id)
         assert run is not None
@@ -1069,32 +1182,34 @@ def test_runtime_input_service_personal_cap_uses_scope_lock_for_concurrent_creat
                 payload={"ticker": f"EXISTING{index:02d}"},
             )
 
-    first_create_started = Event()
-    first_create_can_continue = Event()
-    delay_lock = Lock()
-    delayed_once = False
-    original_create = WorkflowPackageRepository.create_runtime_input_personal_entry
+    first_lock_acquired = Event()
+    first_lock_can_continue = Event()
+    second_lock_attempted = Event()
+    lock_observer = Lock()
+    lock_call_count = 0
+    original_acquire_scope_lock = WorkflowPackageRuntimeInputRegistryService._acquire_scope_lock
 
-    def delayed_create(
-        self: WorkflowPackageRepository,
-        *args: Any,
-        **kwargs: Any,
-    ) -> WorkflowPackageRuntimeInputEntry:
-        nonlocal delayed_once
-        should_delay = False
-        with delay_lock:
-            if not delayed_once:
-                delayed_once = True
-                should_delay = True
-        if should_delay:
-            first_create_started.set()
-            assert first_create_can_continue.wait(timeout=5)
-        return original_create(self, *args, **kwargs)
+    def observed_acquire_scope_lock(
+        self: WorkflowPackageRuntimeInputRegistryService,
+        scope,
+        *,
+        slot,
+    ) -> None:
+        nonlocal lock_call_count
+        with lock_observer:
+            lock_call_count += 1
+            call_number = lock_call_count
+        if call_number == 2:
+            second_lock_attempted.set()
+        original_acquire_scope_lock(self, scope, slot=slot)
+        if call_number == 1:
+            first_lock_acquired.set()
+            assert first_lock_can_continue.wait(timeout=5)
 
     monkeypatch.setattr(
-        WorkflowPackageRepository,
-        "create_runtime_input_personal_entry",
-        delayed_create,
+        WorkflowPackageRuntimeInputRegistryService,
+        "_acquire_scope_lock",
+        observed_acquire_scope_lock,
     )
 
     def create_concurrent_personal(ticker: str) -> tuple[str, int | str]:
@@ -1112,13 +1227,13 @@ def test_runtime_input_service_personal_cap_uses_scope_lock_for_concurrent_creat
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         first = executor.submit(create_concurrent_personal, "LOCK_A")
-        assert first_create_started.wait(timeout=5)
+        assert first_lock_acquired.wait(timeout=5)
         second = executor.submit(create_concurrent_personal, "LOCK_B")
+        assert second_lock_attempted.wait(timeout=5)
         try:
-            time.sleep(0.2)
             assert not second.done()
         finally:
-            first_create_can_continue.set()
+            first_lock_can_continue.set()
         results = [first.result(timeout=5), second.result(timeout=5)]
 
     assert sorted(result[0] for result in results) == ["created", "error"]
@@ -1821,13 +1936,13 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         "reasoningEffort": "low",
         "streamingStrategy": "disabled",
     }
-    assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
-        "api_key": "test-api-key-rotated",
-        "base_url": "https://runtime-v2.example.com/v1",
-        "timeout": 91.0,
-    }
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-v2"
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "low"}
+    init_call = _RuntimeRecordingOpenAIClient.init_calls[-1]
+    assert init_call["api_key"] == "test-api-key-rotated"
+    assert init_call["base_url"] == "https://runtime-v2.example.com/v1"
+    assert init_call["timeout"] == 91.0
+    create_call = _RuntimeRecordingOpenAIClient.create_calls[-1]
+    assert create_call["model"] == "gpt-package-v2"
+    assert create_call["reasoning"]["effort"] == "low"
 
     with session_factory() as session:
         run = session.get(Run, run_id)
@@ -2039,9 +2154,8 @@ def test_workflow_package_runtime_json_object_validation_retries_once_and_succee
     assert detail["status"] == "succeeded"
     assert detail["finalOutput"] == {"summary": "json fallback corrected output"}
     assert len(_RuntimeRecordingOpenAIClient.create_calls) == 2
-    assert _RuntimeRecordingOpenAIClient.create_calls[0]["text"] == {
-        "format": {"type": "json_object"}
-    }
+    first_create_call = _RuntimeRecordingOpenAIClient.create_calls[0]
+    assert first_create_call["text"]["format"]["type"] == "json_object"
     assert "server-side schema validation" in _RuntimeRecordingOpenAIClient.create_calls[1]["input"]
 
 
@@ -2126,11 +2240,11 @@ def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_a
     assert detail["status"] == "succeeded"
     assert detail["finalOutput"] == {"summary": "package chat runtime output"}
     assert detail["executedTokens"] == 28
-    assert _RuntimeRecordingChatCompletionsClient.init_calls[-1] == {
-        "api_key": "test-api-key",
-        "base_url": "https://provider-runtime.example.test/v1",
-        "timeout": 31.0,
-    }
+    init_call = _RuntimeRecordingChatCompletionsClient.init_calls[-1]
+    assert init_call["api_key"] == "test-api-key"
+    assert init_call["base_url"] == "https://provider-runtime.example.test/v1"
+    assert init_call["timeout"] == 31.0
+    assert init_call["max_retries"] == 0
     assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 2
 
     first_call = _RuntimeRecordingChatCompletionsClient.create_calls[0]
@@ -2175,6 +2289,459 @@ def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_a
             "reasoningEffort": "high",
             "streamingStrategy": "disabled",
         }
+        assert "providerRetries" not in gateway_metadata
+
+
+def test_workflow_package_runtime_chat_provider_retry_records_providerRetries_modelGateway(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    _RuntimeRecordingChatCompletionsClient.failures = [_provider_status_error(503)]
+    _RuntimeRecordingChatCompletionsClient.tool_argument_sequence = []
+    _RuntimeRecordingChatCompletionsClient.final_output_text = (
+        '{"summary": "chat provider retry output"}'
+    )
+    jitter_bounds: list[tuple[int, int]] = []
+
+    def jitter_random_int(lower: int, upper: int) -> int:
+        jitter_bounds.append((lower, upper))
+        assert (lower, upper) == (0, 500)
+        return 137
+
+    monkeypatch.setattr(
+        "app.services.model_gateway_provider_retry.time.sleep",
+        lambda _: None,
+    )
+    monkeypatch.setattr(
+        "app.services.model_gateway_provider_retry.random.randint",
+        jitter_random_int,
+    )
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeRecordingChatCompletionsClient,
+    )
+
+    _seed_model_connection(session_factory, api_style="chat_completions")
+    created = _create_package(client, package_key="runtime_chat_provider_retry_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "chat provider retry output"}
+    assert detail["executedTokens"] == 19
+    assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 2
+    init_call = _RuntimeRecordingChatCompletionsClient.init_calls[-1]
+    assert init_call["api_key"] == "test-api-key"
+    assert init_call["base_url"] == "https://provider-runtime.example.test/v1"
+    assert init_call["timeout"] == 31.0
+    assert init_call["max_retries"] == 0
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["usage"] == {
+        "inputTokens": 11,
+        "outputTokens": 8,
+        "totalTokens": 19,
+    }
+    assert gateway_metadata["selectedStrategies"] == {
+        "outputStrategy": "strictJsonSchema",
+        "toolCallStrategy": "none",
+        "parallelToolCalls": False,
+        "reasoningStrategy": "enabled",
+        "reasoningEffort": "high",
+        "streamingStrategy": "disabled",
+    }
+    assert gateway_metadata["providerRetries"] == {
+        "policy": "transientProviderRetry/v1",
+        "maxAttempts": 3,
+        "attempts": [
+            {
+                "attempt": 1,
+                "outcome": "retryScheduled",
+                "errorCode": "agent_provider_status_error",
+                "statusCode": 503,
+                "failureClass": "provider_transport",
+                "delayMs": 137,
+            }
+        ],
+        "terminalOutcome": "succeededAfterRetry",
+    }
+    assert jitter_bounds == [(0, 500)]
+    assert "toolCallRetries" not in gateway_metadata
+
+
+def test_model_gateway_connection_test_chat_provider_retry_free_with_max_retries_zero() -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    _RuntimeRecordingChatCompletionsClient.failures = [_provider_status_error(503)]
+    gateway = ModelExecutionGateway(client_factory=_RuntimeRecordingChatCompletionsClient)
+
+    result = gateway.test_connection(
+        ModelConnectionTestRequest(
+            connection=_chat_model_gateway_connection_config(),
+            instructions="Reply with the single word OK.",
+            input_text="Connection test.",
+        )
+    )
+
+    assert result.ok is False
+    assert result.message == "provider said no"
+    assert _RuntimeRecordingChatCompletionsClient.init_calls[-1]["max_retries"] == 0
+    assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 1
+
+
+def test_model_gateway_capability_probe_chat_provider_retry_free_with_max_retries_zero() -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    _RuntimeRecordingChatCompletionsClient.failures = [_provider_status_error(503)]
+    gateway = ModelExecutionGateway(client_factory=_RuntimeRecordingChatCompletionsClient)
+
+    result = gateway.probe_capabilities(
+        ModelCapabilityProbeRequest(
+            connection=_chat_model_gateway_connection_config(),
+            capability_keys=("text_generation", "usage_reporting"),
+        )
+    )
+
+    assert _RuntimeRecordingChatCompletionsClient.init_calls[-1]["max_retries"] == 0
+    assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 1
+    assert result.capabilities["text_generation"].status == "unknown"
+    assert result.capabilities["usage_reporting"].status == "unknown"
+    assert "provider said no" in cast(str, result.capabilities["text_generation"].detail)
+    assert "provider said no" in cast(str, result.capabilities["usage_reporting"].detail)
+
+
+def test_provider_retry_policy_classifies_retryable_provider_failures() -> None:
+    policy = ProviderRetryPolicy()
+
+    assert (
+        call_with_provider_retry(
+            lambda: "provider seam ready",
+            policy=policy,
+            recorder=ProviderRetryRecorder(policy=policy),
+        )
+        == "provider seam ready"
+    )
+
+    retryable_failures = (
+        openai.APITimeoutError(request=_provider_retry_request()),
+        openai.APIConnectionError(request=_provider_retry_request()),
+        _provider_status_error(408),
+        _provider_status_error(409),
+        _provider_status_error(429),
+        _provider_status_error(500),
+        _provider_status_error(503),
+    )
+
+    for failure in retryable_failures:
+        assert policy.is_retryable(failure) is True
+
+
+def test_provider_retry_policy_rejects_non_retryable_failures() -> None:
+    policy = ProviderRetryPolicy()
+
+    non_retryable_failures = (
+        _provider_status_error(400),
+        _provider_status_error(401),
+        _provider_status_error(403),
+        _provider_status_error(404),
+        _provider_status_error(422),
+        validation_error("Runtime input validation failed"),
+        ModelGatewayError(
+            code="agent_model_connection_api_key_missing",
+            message="Model connection API key is required.",
+        ),
+        ModelGatewayError(
+            code="agent_model_connection_api_style_unsupported",
+            message="Model connection uses unsupported API style.",
+        ),
+    )
+
+    for failure in non_retryable_failures:
+        assert policy.is_retryable(failure) is False
+
+
+def test_provider_retry_after_honors_only_allowed_statuses() -> None:
+    policy = ProviderRetryPolicy()
+
+    assert (
+        policy.retry_after_delay_ms(_provider_status_error(429, headers={"retry-after": "3"}))
+        == 3000
+    )
+    assert (
+        policy.retry_after_delay_ms(_provider_status_error(503, headers={"retry-after-ms": "2500"}))
+        == 2500
+    )
+    assert (
+        policy.retry_after_delay_ms(_provider_status_error(503, headers={"retry-after": "10"}))
+        == 10000
+    )
+    assert (
+        policy.retry_after_delay_ms(_provider_status_error(429, headers={"retry-after": "10.1"}))
+        is None
+    )
+    assert (
+        policy.retry_after_delay_ms(_provider_status_error(500, headers={"retry-after": "3"}))
+        is None
+    )
+    assert (
+        policy.retry_after_delay_ms(_provider_status_error(429, headers={"retry-after": "0"}))
+        is None
+    )
+
+
+def test_provider_retry_helper_retries_with_full_jitter_and_retry_after() -> None:
+    failures = iter(
+        [
+            _provider_status_error(503),
+            _provider_status_error(429, headers={"retry-after": "9"}),
+        ]
+    )
+    recorder = ProviderRetryRecorder(policy=ProviderRetryPolicy())
+    sleep_calls: list[float] = []
+    jitter_bounds: list[tuple[int, int]] = []
+    create_calls = 0
+
+    def operation() -> str:
+        nonlocal create_calls
+        create_calls += 1
+        failure = next(failures, None)
+        if failure is not None:
+            raise failure
+        return "provider recovered"
+
+    def jitter_random_int(lower: int, upper: int) -> int:
+        jitter_bounds.append((lower, upper))
+        assert (lower, upper) == (0, 500)
+        return 137
+
+    assert (
+        call_with_provider_retry(
+            operation,
+            recorder=recorder,
+            sleep=sleep_calls.append,
+            random_int=jitter_random_int,
+        )
+        == "provider recovered"
+    )
+    assert create_calls == 3
+    assert jitter_bounds == [(0, 500)]
+    assert sleep_calls == [0.137, 9.0]
+    assert recorder.success_metadata() == {
+        "policy": "transientProviderRetry/v1",
+        "maxAttempts": 3,
+        "attempts": [
+            {
+                "attempt": 1,
+                "outcome": "retryScheduled",
+                "errorCode": "agent_provider_status_error",
+                "statusCode": 503,
+                "failureClass": "provider_transport",
+                "delayMs": 137,
+            },
+            {
+                "attempt": 2,
+                "outcome": "retryAfterHonored",
+                "errorCode": "agent_provider_status_error",
+                "statusCode": 429,
+                "failureClass": "provider_transport",
+                "delayMs": 9000,
+            },
+        ],
+        "terminalOutcome": "succeededAfterRetry",
+    }
+
+
+def test_provider_retry_helper_exhausts_after_max_attempts() -> None:
+    recorder = ProviderRetryRecorder(policy=ProviderRetryPolicy())
+    sleep_calls: list[float] = []
+    jitter_bounds: list[tuple[int, int]] = []
+    create_calls = 0
+
+    def operation() -> str:
+        nonlocal create_calls
+        create_calls += 1
+        raise _provider_status_error(503)
+
+    def jitter_random_int(lower: int, upper: int) -> int:
+        jitter_bounds.append((lower, upper))
+        return {500: 137, 1000: 911}[upper]
+
+    with pytest.raises(openai.APIStatusError):
+        call_with_provider_retry(
+            operation,
+            recorder=recorder,
+            sleep=sleep_calls.append,
+            random_int=jitter_random_int,
+        )
+
+    assert create_calls == 3
+    assert jitter_bounds == [(0, 500), (0, 1000)]
+    assert sleep_calls == [0.137, 0.911]
+    assert recorder.exhausted_metadata() == {
+        "policy": "transientProviderRetry/v1",
+        "maxAttempts": 3,
+        "attempts": [
+            {
+                "attempt": 1,
+                "outcome": "retryScheduled",
+                "errorCode": "agent_provider_status_error",
+                "statusCode": 503,
+                "failureClass": "provider_transport",
+                "delayMs": 137,
+            },
+            {
+                "attempt": 2,
+                "outcome": "retryScheduled",
+                "errorCode": "agent_provider_status_error",
+                "statusCode": 503,
+                "failureClass": "provider_transport",
+                "delayMs": 911,
+            },
+            {
+                "attempt": 3,
+                "outcome": "exhausted",
+                "errorCode": "agent_provider_status_error",
+                "statusCode": 503,
+                "failureClass": "provider_transport",
+            },
+        ],
+        "terminalOutcome": "exhausted",
+    }
+
+
+def test_provider_retry_metadata_contract_success_after_retry_records_failed_attempts() -> None:
+    policy = ProviderRetryPolicy()
+    recorder = ProviderRetryRecorder(policy=policy)
+
+    assert recorder.success_metadata() is None
+    success_without_retries = ModelExecutionResult(
+        output={"summary": "ok"},
+        provider_retry_metadata=recorder.success_metadata(),
+    )
+    assert "providerRetries" not in success_without_retries.runtime_metadata()
+
+    assert ProviderRetryAttempt(
+        attempt=1,
+        outcome="retryScheduled",
+        error_code="agent_provider_status_error",
+        status_code=503,
+        failure_class="provider_transport",
+        delay_ms=417,
+    ).to_metadata() == {
+        "attempt": 1,
+        "outcome": "retryScheduled",
+        "errorCode": "agent_provider_status_error",
+        "statusCode": 503,
+        "failureClass": "provider_transport",
+        "delayMs": 417,
+    }
+
+    recorder.record_retry(_provider_status_error(503), delay_ms=417)
+    recorder.record_retry(
+        _provider_status_error(429, headers={"retry-after": "9"}),
+        delay_ms=9000,
+        retry_after_honored=True,
+    )
+
+    metadata = recorder.success_metadata()
+    assert metadata == {
+        "policy": "transientProviderRetry/v1",
+        "maxAttempts": 3,
+        "attempts": [
+            {
+                "attempt": 1,
+                "outcome": "retryScheduled",
+                "errorCode": "agent_provider_status_error",
+                "statusCode": 503,
+                "failureClass": "provider_transport",
+                "delayMs": 417,
+            },
+            {
+                "attempt": 2,
+                "outcome": "retryAfterHonored",
+                "errorCode": "agent_provider_status_error",
+                "statusCode": 429,
+                "failureClass": "provider_transport",
+                "delayMs": 9000,
+            },
+        ],
+        "terminalOutcome": "succeededAfterRetry",
+    }
+
+    result = ModelExecutionResult(
+        output={"summary": "ok"},
+        tool_retry_metadata={
+            "attemptsUsed": 1,
+            "maxAttempts": 1,
+            "failures": [{"code": "x"}],
+        },
+        provider_retry_metadata=metadata,
+    )
+    gateway_metadata = result.runtime_metadata()
+
+    assert gateway_metadata["providerRetries"] == metadata
+    assert gateway_metadata["toolCallRetries"]["attemptsUsed"] == 1
+    assert "exhausted" not in gateway_metadata["providerRetries"]
+    assert len(gateway_metadata["providerRetries"]["attempts"]) == 2
+
+
+def test_provider_retry_metadata_contract_exhaustion_and_non_retryable_omission() -> None:
+    policy = ProviderRetryPolicy()
+
+    first_non_retryable_failure = ModelGatewayError(
+        code="agent_model_connection_api_key_missing",
+        message="Model connection API key is required.",
+    )
+    assert policy.is_retryable(first_non_retryable_failure) is False
+    assert "providerRetries" not in first_non_retryable_failure.runtime_metadata()
+
+    recorder = ProviderRetryRecorder(policy=policy)
+    recorder.record_retry(
+        openai.APITimeoutError(request=_provider_retry_request()),
+        delay_ms=250,
+    )
+    recorder.record_exhausted(openai.APIConnectionError(request=_provider_retry_request()))
+    metadata = recorder.exhausted_metadata()
+    assert metadata == {
+        "policy": "transientProviderRetry/v1",
+        "maxAttempts": 3,
+        "attempts": [
+            {
+                "attempt": 1,
+                "outcome": "retryScheduled",
+                "errorCode": "agent_provider_timeout",
+                "failureClass": "provider_network",
+                "delayMs": 250,
+            },
+            {
+                "attempt": 2,
+                "outcome": "exhausted",
+                "errorCode": "agent_provider_connection_error",
+                "failureClass": "provider_network",
+            },
+        ],
+        "terminalOutcome": "exhausted",
+    }
+
+    exhausted_failure = ModelGatewayError(
+        code="agent_provider_connection_error",
+        message="OpenAI request could not reach the API.",
+        provider_retry_metadata=metadata,
+    )
+    gateway_metadata = exhausted_failure.runtime_metadata()
+
+    assert gateway_metadata["providerRetries"] == metadata
+    assert gateway_metadata["providerRetries"]["terminalOutcome"] == "exhausted"
+    assert gateway_metadata["providerRetries"]["attempts"][-1]["outcome"] == "exhausted"
+    assert "exhausted" not in gateway_metadata["providerRetries"]
 
 
 def test_workflow_package_runtime_chat_tool_parser_retry_success_records_accounting(
@@ -2324,6 +2891,85 @@ def test_workflow_package_runtime_chat_tool_parser_retry_exhaustion_fails_stably
     assert gateway_metadata["toolCallRetries"]["attemptsUsed"] == 1
     assert gateway_metadata["toolCallRetries"]["exhausted"] is True
     assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 2
+
+
+def test_workflow_package_runtime_responses_provider_retry_records_providerRetries_modelGateway(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeProviderRetryingResponsesClient.reset()
+    jitter_bounds: list[tuple[int, int]] = []
+
+    def jitter_random_int(lower: int, upper: int) -> int:
+        jitter_bounds.append((lower, upper))
+        assert (lower, upper) == (0, 500)
+        return 137
+
+    monkeypatch.setattr(
+        "app.services.model_gateway_provider_retry.time.sleep",
+        lambda _: None,
+    )
+    monkeypatch.setattr(
+        "app.services.model_gateway_provider_retry.random.randint",
+        jitter_random_int,
+    )
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeProviderRetryingResponsesClient,
+    )
+
+    _seed_model_connection(session_factory)
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_memory_lookup(
+            package_key="runtime_responses_provider_retry_package"
+        ),
+    )
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "responses provider retry output"}
+    assert len(_RuntimeProviderRetryingResponsesClient.create_calls) == 3
+    init_call = _RuntimeProviderRetryingResponsesClient.init_calls[-1]
+    assert init_call["api_key"] == "test-api-key"
+    assert init_call["base_url"] == "https://provider-runtime.example.test/v1"
+    assert init_call["timeout"] == 31.0
+    assert init_call["max_retries"] == 0
+    second_call = _RuntimeProviderRetryingResponsesClient.create_calls[1]
+    third_call = _RuntimeProviderRetryingResponsesClient.create_calls[2]
+    assert second_call["previous_response_id"] == "resp_tool_1"
+    assert third_call["previous_response_id"] == "resp_tool_1"
+    assert second_call["input"] == third_call["input"]
+    assert second_call["input"][0]["type"] == "function_call_output"
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["providerRetries"] == {
+        "policy": "transientProviderRetry/v1",
+        "maxAttempts": 3,
+        "attempts": [
+            {
+                "attempt": 1,
+                "outcome": "retryScheduled",
+                "errorCode": "agent_provider_status_error",
+                "statusCode": 503,
+                "failureClass": "provider_transport",
+                "delayMs": 137,
+            }
+        ],
+        "terminalOutcome": "succeededAfterRetry",
+    }
+    assert "toolCallRetries" not in gateway_metadata
+    assert jitter_bounds == [(0, 500)]
 
 
 def test_workflow_package_runtime_responses_tool_parser_retry_success_records_accounting(
@@ -3139,6 +3785,7 @@ def test_schedule_api_schedule_crud_contract_package_first_and_camelcase(
     run_detail_before_delete = client.get(f"/api/runs/{run_id}")
     assert run_detail_before_delete.status_code == 200, run_detail_before_delete.json()
     assert run_detail_before_delete.json()["scheduleId"] == schedule_id
+    assert run_detail_before_delete.json()["scheduleFireId"] == fire_id
 
     deleted = client.delete(f"/api/schedules/{schedule_id}")
     assert deleted.status_code == 204, deleted.text
@@ -3154,7 +3801,29 @@ def test_schedule_api_schedule_crud_contract_package_first_and_camelcase(
     assert deleted_fire_history.status_code == 404, deleted_fire_history.json()
 
     linked_run_detail = client.get(f"/api/runs/{run_id}")
-    assert linked_run_detail.status_code == 404, linked_run_detail.json()
+    assert linked_run_detail.status_code == 200, linked_run_detail.json()
+    linked_run_body = cast(dict[str, Any], linked_run_detail.json())
+    assert linked_run_body["id"] == run_id
+    assert linked_run_body["scheduleId"] is None
+    assert linked_run_body["scheduleFireId"] is None
+    assert linked_run_body["scheduledFor"] == "2026-06-01T13:00:00Z"
+    assert linked_run_body["scheduleReason"] == "manual"
+
+    with session_factory() as session:
+        retained_run = session.get(Run, run_id)
+        remaining_fire_count = (
+            session.query(WorkflowPackageScheduleFire)
+            .filter(WorkflowPackageScheduleFire.schedule_id == schedule_id)
+            .count()
+        )
+        assert retained_run is not None
+        assert retained_run.schedule_id is None
+        assert retained_run.schedule_fire_id is None
+        assert retained_run.schedule_provenance is not None
+        assert retained_run.schedule_provenance["scheduleId"] == schedule_id
+        assert retained_run.schedule_provenance["scheduleFireId"] == fire_id
+        assert retained_run.schedule_provenance["scheduleDeletedAt"] is not None
+        assert remaining_fire_count == 0
 
 
 def test_schedule_api_list_rejects_archived_status_filter(client: TestClient) -> None:
@@ -3328,10 +3997,13 @@ def test_tradingagents_materializer_queues_canonical_schedules_without_provider_
     assert _RuntimeRecordingOpenAIClient.create_calls == []
 
 
-def test_schedule_api_schedule_preview_run_now_fire_history_contract(
+def test_schedule_api_run_now_persists_schedule_provenance_and_lineage_only_descendants(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
     _seed_model_connection(session_factory)
     created_package = _create_package(client, package_key="schedule_api_run_now_package")
     package_id = cast(int, created_package["id"])
@@ -3419,6 +4091,12 @@ def test_schedule_api_schedule_preview_run_now_fire_history_contract(
     assert run_detail_body["scheduledFor"] == scheduled_for
     assert run_detail_body["scheduleReason"] == "manual"
 
+    _drain_run_queue(session_factory)
+    source_detail = _wait_for_run(client, int(run_body["id"]))
+    assert source_detail["status"] == "succeeded"
+    source_invocation = cast(dict[str, Any], source_detail["steps"][0]["invocations"][0])
+    source_invocation_id = int(source_invocation["id"])
+
     repeated = client.post(
         f"/api/schedules/{schedule_id}/run-now",
         json={"idempotencyKey": "manual-fire-2026-06-01", "scheduledFor": scheduled_for},
@@ -3434,6 +4112,22 @@ def test_schedule_api_schedule_preview_run_now_fire_history_contract(
     assert fire_history["items"][0]["id"] == fire_body["id"]
     assert fire_history["items"][0]["runId"] == run_body["id"]
 
+    rerun = client.post(
+        f"/api/runs/{run_body['id']}/reruns",
+        json={"parameters": {"ticker": "AAPL"}},
+    )
+    fork = client.post(
+        f"/api/runs/{run_body['id']}/forks",
+        json={
+            "sourceInvocationId": source_invocation_id,
+            "invocationInput": {"ticker": "TSLA"},
+        },
+    )
+    assert rerun.status_code == 201, rerun.json()
+    assert fork.status_code == 201, fork.json()
+    rerun_id = int(rerun.json()["id"])
+    fork_id = int(fork.json()["id"])
+
     with session_factory() as session:
         runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
         fires_count = (
@@ -3441,10 +4135,42 @@ def test_schedule_api_schedule_preview_run_now_fire_history_contract(
             .filter(WorkflowPackageScheduleFire.schedule_id == schedule_id)
             .count()
         )
+        source_run = session.get(Run, int(run_body["id"]))
+        rerun_run = session.get(Run, rerun_id)
+        fork_run = session.get(Run, fork_id)
+        schedule_row = session.get(WorkflowPackageSchedule, schedule_id)
         assert len(runs) == 1
         assert fires_count == 1
-        assert runs[0].schedule_reason == "manual"
-        assert runs[0].input == {"ticker": "MSFT"}
+        assert source_run is not None
+        assert rerun_run is not None
+        assert fork_run is not None
+        assert schedule_row is not None
+        assert source_run.schedule_reason == "manual"
+        assert source_run.input == {"ticker": "MSFT"}
+        assert source_run.schedule_provenance == {
+            "scheduleId": schedule_id,
+            "scheduleFireId": fire_body["id"],
+            "scheduleName": schedule_row.name,
+            "packageId": package_id,
+            "packageKey": "schedule_api_run_now_package",
+            "workflowKey": schedule_row.workflow_key,
+            "timezone": schedule_row.timezone,
+            "recurrence": deepcopy(schedule_row.recurrence),
+            "fireKey": fire_body["fireKey"],
+            "reason": "manual",
+            "scheduledFor": scheduled_for,
+            "scheduledLocalDate": fire_body["scheduledLocalDate"],
+            "scheduledLocalTime": fire_body["scheduledLocalTime"],
+            "scheduledLocalDateTime": fire_body["scheduledLocalDateTime"],
+            "materializedAt": fire_body["materializedAt"],
+            "scheduleDeletedAt": None,
+        }
+        for descendant in (rerun_run, fork_run):
+            assert descendant.schedule_id is None
+            assert descendant.schedule_fire_id is None
+            assert descendant.scheduled_for is None
+            assert descendant.schedule_reason is None
+            assert descendant.schedule_provenance is None
 
 
 @pytest.mark.parametrize(

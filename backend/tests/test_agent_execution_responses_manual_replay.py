@@ -5,6 +5,8 @@ import time
 from typing import Any
 
 import httpx
+import openai
+import pytest
 from openai import BadRequestError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
@@ -18,6 +20,20 @@ from app.services.model_gateway_dto import ModelGatewayConnectionConfig
 
 class _SummaryOutput(BaseModel):
     summary: str
+
+
+def _provider_status_error(status_code: int) -> openai.APIStatusError:
+    request = httpx.Request("POST", "https://provider.example/v1/responses")
+    response = httpx.Response(
+        status_code,
+        request=request,
+        json={"error": {"message": "provider said no"}},
+    )
+    return openai.APIStatusError(
+        "provider said no",
+        response=response,
+        body=response.json(),
+    )
 
 
 class _DispatchRecorder:
@@ -218,6 +234,62 @@ class _ManualReplayClient:
         raise AssertionError(f"Unexpected create call count: {len(self.create_calls)}")
 
 
+class _ContinuationProviderRetryClient:
+    def __init__(self) -> None:
+        self.responses = self
+        self.create_calls: list[dict[str, Any]] = []
+
+    def create(self, **kwargs: Any) -> dict[str, Any]:
+        self.create_calls.append(kwargs)
+        if len(self.create_calls) == 1:
+            return {
+                "id": "resp_initial",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "name": "signaldeck_market_data_quote_lookup",
+                        "arguments": json.dumps({"symbols": ["AAPL"], "baseCurrency": None}),
+                        "call_id": "call_quote",
+                    }
+                ],
+                "usage": {"total_tokens": 2},
+            }
+        if len(self.create_calls) == 2:
+            raise _provider_status_error(503)
+        if len(self.create_calls) == 3:
+            assert kwargs["previous_response_id"] == "resp_initial"
+            assert kwargs["input"] == [
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_quote",
+                    "output": json.dumps(
+                        {
+                            "arguments": {"baseCurrency": None, "symbols": ["AAPL"]},
+                            "tool": "signaldeck_market_data_quote_lookup",
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                }
+            ]
+            return {
+                "id": "resp_final",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": '{"summary":"provider retry ok"}',
+                            }
+                        ],
+                    }
+                ],
+                "usage": {"total_tokens": 1},
+            }
+        raise AssertionError(f"Unexpected create call count: {len(self.create_calls)}")
+
+
 def test_invoke_responses_agent_replays_manual_context_after_call_id_failure(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -270,3 +342,84 @@ def test_invoke_responses_agent_replays_manual_context_after_call_id_failure(
     assert client.create_calls[1]["input"][0]["type"] == "function_call_output"
     assert "previous_response_id" not in client.create_calls[2]
     assert "previous_response_id" not in client.create_calls[3]
+    assert result.runtime_metadata is not None
+    assert "providerRetries" not in result.runtime_metadata
+
+
+def test_invoke_responses_agent_provider_retry_keeps_completed_tool_dispatch_single(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    jitter_bounds: list[tuple[int, int]] = []
+
+    def jitter_random_int(lower: int, upper: int) -> int:
+        jitter_bounds.append((lower, upper))
+        assert (lower, upper) == (0, 500)
+        return 137
+
+    monkeypatch.setattr(
+        "app.services.model_gateway_provider_retry.time.sleep",
+        lambda _: None,
+    )
+    monkeypatch.setattr(
+        "app.services.model_gateway_provider_retry.random.randint",
+        jitter_random_int,
+    )
+
+    service = AgentExecutionService(session_factory)
+    client = _ContinuationProviderRetryClient()
+    recorder = _DispatchRecorder()
+    tool_registry = _build_runtime_tool_registry(recorder)
+    result = service._invoke_responses_agent(
+        client=client,
+        model_connection=ModelGatewayConnectionConfig(
+            id=1,
+            name="TradingAgents Primary Model",
+            base_url="http://provider.example/v1",
+            model_id="gpt-5.4-mini",
+            reasoning_effort="medium",
+            api_style="responses",
+            timeout_seconds=60,
+            api_key="sk-test",
+        ),
+        instructions="Return only valid JSON.",
+        response_input="Need tool usage first.",
+        text_format=service._build_responses_text_format(_SummaryOutput),
+        available_tools=tool_registry.get_openai_tools({"signaldeck.market_data.quote_lookup"}),
+        granted_tool_keys={"signaldeck.market_data.quote_lookup"},
+        runtime_tool_registry=tool_registry,
+        runtime_tool_context=RuntimeToolContext(
+            session_factory=session_factory,
+            capability_references=[],
+            agent_key="market_analyst",
+        ),
+        mcp_dispatcher=McpRuntimeDispatcher(tools=[]),
+        started_at=time.monotonic(),
+    )
+
+    assert result.output == {"summary": "provider retry ok"}
+    assert [call["name"] for call in recorder.dispatch_calls] == [
+        "signaldeck_market_data_quote_lookup"
+    ]
+    assert len(client.create_calls) == 3
+    assert client.create_calls[1]["previous_response_id"] == "resp_initial"
+    assert client.create_calls[2]["previous_response_id"] == "resp_initial"
+    assert client.create_calls[1]["input"] == client.create_calls[2]["input"]
+    assert result.runtime_metadata is not None
+    assert result.runtime_metadata["providerRetries"] == {
+        "policy": "transientProviderRetry/v1",
+        "maxAttempts": 3,
+        "attempts": [
+            {
+                "attempt": 1,
+                "outcome": "retryScheduled",
+                "errorCode": "agent_provider_status_error",
+                "statusCode": 503,
+                "failureClass": "provider_transport",
+                "delayMs": 137,
+            }
+        ],
+        "terminalOutcome": "succeededAfterRetry",
+    }
+    assert "toolCallRetries" not in result.runtime_metadata
+    assert jitter_bounds == [(0, 500)]

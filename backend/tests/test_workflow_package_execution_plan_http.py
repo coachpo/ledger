@@ -74,6 +74,18 @@ def test_http_node_package_execution_plan_builds_dedicated_operation() -> None:
     assert package_step.operations == (runtime_operation,)
 
 
+def test_package_execution_plan_supports_http_root_nodes() -> None:
+    plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
+        _compiled_plan(http_node_package_source()),
+        "notify",
+    )
+
+    assert [step.index for step in plan.steps] == [1]
+    assert [operation.operation_kind for operation in plan.steps[0].operations] == ["http"]
+    assert plan.final_output.step_index == 1
+    assert plan.final_output.slot == "webhook_result"
+
+
 def test_http_node_execution_plan_supports_mixed_agent_operation_steps() -> None:
     compiled_plan = _compiled_plan(_valid_package_manifest_source())
     workflow = _first_workflow(compiled_plan)

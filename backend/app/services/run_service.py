@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any, cast
 
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError, business_rule_error, not_found_error, validation_error
@@ -28,6 +29,10 @@ from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage
+from app.models.workflow_package_schedule import (
+    WorkflowPackageSchedule,
+    WorkflowPackageScheduleFire,
+)
 from app.repositories.agent import AgentRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.report import ReportRepository
@@ -49,6 +54,7 @@ from app.schemas.run import (
     RunRead,
     RunRerunCreateRequest,
     RunRerunDraftRead,
+    RunScheduleProvenanceRead,
     RunStatus,
     RunTargetKind,
 )
@@ -338,28 +344,53 @@ class RunService:
             self.session.rollback()
             raise
 
-    def delete_runs_for_schedule(
+    def detach_runs_for_deleted_schedule(
         self,
         *,
-        schedule_id: int,
+        schedule: WorkflowPackageSchedule,
         fire_ids: list[int],
         commit: bool = True,
     ) -> None:
         runs = self.run_repository.list_directly_owned_by_schedule(
-            schedule_id=schedule_id,
+            schedule_id=schedule.id,
             fire_ids=fire_ids,
         )
         if not runs:
             return
         if not commit:
-            self._delete_run_rows(runs)
+            self._detach_schedule_runs(runs=runs, schedule=schedule, fire_ids=fire_ids)
             return
         try:
-            self._delete_run_rows(runs)
+            self._detach_schedule_runs(runs=runs, schedule=schedule, fire_ids=fire_ids)
             self.session.commit()
         except Exception:
             self.session.rollback()
             raise
+
+    def _detach_schedule_runs(
+        self,
+        *,
+        runs: list[Run],
+        schedule: WorkflowPackageSchedule,
+        fire_ids: list[int],
+    ) -> None:
+        deleted_at = utcnow()
+        fires_by_id = self._schedule_fires_by_id(schedule.id, fire_ids=fire_ids)
+        package_key = self._schedule_package_key(schedule=schedule, runs=runs)
+        for run in runs:
+            if run.schedule_fire_id is None:
+                fire = None
+            else:
+                fire = fires_by_id.get(run.schedule_fire_id)
+            run.schedule_provenance = self._detached_schedule_provenance_payload(
+                run=run,
+                schedule=schedule,
+                fire=fire,
+                package_key=package_key,
+                deleted_at=deleted_at,
+            )
+            run.schedule_id = None
+            run.schedule_fire_id = None
 
     def _delete_run_rows(self, runs: list[Run]) -> None:
         run_ids = [run.id for run in runs]
@@ -739,6 +770,202 @@ class RunService:
             if str(dependency.get("extensionKey") or "")
         }
 
+    def _schedule_provenance_payload(
+        self,
+        *,
+        workflow_package: WorkflowPackage | None,
+        schedule_id: int | None,
+        schedule_fire_id: int | None,
+        scheduled_for: datetime | None,
+        schedule_reason: str | None,
+    ) -> dict[str, Any] | None:
+        if schedule_id is None and schedule_fire_id is None:
+            return None
+        if schedule_id is None or schedule_fire_id is None:
+            raise RuntimeError(
+                "Direct scheduled run creation requires both schedule and fire identifiers"
+            )
+
+        schedule = self.session.get(WorkflowPackageSchedule, schedule_id)
+        fire = self.session.get(WorkflowPackageScheduleFire, schedule_fire_id)
+        if schedule is None or fire is None:
+            raise RuntimeError(
+                "Direct scheduled run creation requires persisted schedule and fire context"
+            )
+        if fire.schedule_id != schedule.id:
+            raise RuntimeError(
+                "Direct scheduled run creation requires matching schedule and fire context"
+            )
+
+        package_key = None
+        if workflow_package is not None and workflow_package.id == schedule.package_id:
+            package_key = workflow_package.key
+        else:
+            schedule_package = self.workflow_package_repository.get(schedule.package_id)
+            package_key = schedule_package.key if schedule_package is not None else None
+
+        payload = RunScheduleProvenanceRead.model_validate(
+            {
+                "scheduleId": schedule.id,
+                "scheduleFireId": fire.id,
+                "scheduleName": schedule.name,
+                "packageId": schedule.package_id,
+                "packageKey": package_key,
+                "workflowKey": schedule.workflow_key,
+                "timezone": schedule.timezone,
+                "recurrence": deepcopy(schedule.recurrence),
+                "fireKey": fire.fire_key,
+                "reason": fire.reason or schedule_reason,
+                "scheduledFor": fire.scheduled_for or scheduled_for,
+                "scheduledLocalDate": fire.scheduled_local_date,
+                "scheduledLocalTime": fire.scheduled_local_time,
+                "scheduledLocalDateTime": fire.scheduled_local_datetime,
+                "materializedAt": fire.materialized_at,
+                "scheduleDeletedAt": None,
+            }
+        )
+        return payload.model_dump(mode="json", by_alias=True)
+
+    def _schedule_fires_by_id(
+        self,
+        schedule_id: int,
+        *,
+        fire_ids: list[int],
+    ) -> dict[int, WorkflowPackageScheduleFire]:
+        resolved_fire_ids = list(dict.fromkeys(fire_ids))
+        if not resolved_fire_ids:
+            return {}
+        statement = select(WorkflowPackageScheduleFire).where(
+            WorkflowPackageScheduleFire.schedule_id == schedule_id,
+            WorkflowPackageScheduleFire.id.in_(resolved_fire_ids),
+        )
+        return {fire.id: fire for fire in self.session.scalars(statement)}
+
+    def _schedule_package_key(
+        self,
+        *,
+        schedule: WorkflowPackageSchedule,
+        runs: list[Run],
+    ) -> str | None:
+        for run in runs:
+            if run.workflow_package_key is not None:
+                return run.workflow_package_key
+            existing_provenance = self._existing_schedule_provenance(run)
+            if existing_provenance is not None and existing_provenance.package_key is not None:
+                return existing_provenance.package_key
+        schedule_package = self.workflow_package_repository.get(schedule.package_id)
+        return schedule_package.key if schedule_package is not None else None
+
+    @staticmethod
+    def _existing_schedule_provenance(run: Run) -> RunScheduleProvenanceRead | None:
+        if run.schedule_provenance is None:
+            return None
+        return RunScheduleProvenanceRead.model_validate(run.schedule_provenance)
+
+    def _detached_schedule_provenance_payload(
+        self,
+        *,
+        run: Run,
+        schedule: WorkflowPackageSchedule,
+        fire: WorkflowPackageScheduleFire | None,
+        package_key: str | None,
+        deleted_at: datetime,
+    ) -> dict[str, Any]:
+        existing_provenance = self._existing_schedule_provenance(run)
+        deleted_at_value = deleted_at
+        if existing_provenance is not None and existing_provenance.schedule_deleted_at is not None:
+            deleted_at_value = existing_provenance.schedule_deleted_at
+        existing_package_key = (
+            existing_provenance.package_key if existing_provenance is not None else None
+        )
+        if existing_provenance is None:
+            existing_fire_key = None
+        else:
+            existing_fire_key = existing_provenance.fire_key
+        payload = RunScheduleProvenanceRead.model_validate(
+            {
+                "scheduleId": schedule.id,
+                "scheduleFireId": (
+                    fire.id
+                    if fire is not None
+                    else (
+                        existing_provenance.schedule_fire_id
+                        if existing_provenance is not None
+                        else None
+                    )
+                ),
+                "scheduleName": schedule.name,
+                "packageId": schedule.package_id,
+                "packageKey": (package_key if package_key is not None else existing_package_key),
+                "workflowKey": schedule.workflow_key,
+                "timezone": schedule.timezone,
+                "recurrence": deepcopy(schedule.recurrence),
+                "fireKey": (fire.fire_key if fire is not None else existing_fire_key),
+                "reason": (
+                    fire.reason
+                    if fire is not None and fire.reason is not None
+                    else (
+                        run.schedule_reason
+                        if run.schedule_reason is not None
+                        else (
+                            existing_provenance.reason if existing_provenance is not None else None
+                        )
+                    )
+                ),
+                "scheduledFor": (
+                    fire.scheduled_for
+                    if fire is not None and fire.scheduled_for is not None
+                    else (
+                        run.scheduled_for
+                        if run.scheduled_for is not None
+                        else (
+                            existing_provenance.scheduled_for
+                            if existing_provenance is not None
+                            else None
+                        )
+                    )
+                ),
+                "scheduledLocalDate": (
+                    fire.scheduled_local_date
+                    if fire is not None
+                    else (
+                        existing_provenance.scheduled_local_date
+                        if existing_provenance is not None
+                        else None
+                    )
+                ),
+                "scheduledLocalTime": (
+                    fire.scheduled_local_time
+                    if fire is not None
+                    else (
+                        existing_provenance.scheduled_local_time
+                        if existing_provenance is not None
+                        else None
+                    )
+                ),
+                "scheduledLocalDateTime": (
+                    fire.scheduled_local_datetime
+                    if fire is not None
+                    else (
+                        existing_provenance.scheduled_local_datetime
+                        if existing_provenance is not None
+                        else None
+                    )
+                ),
+                "materializedAt": (
+                    fire.materialized_at
+                    if fire is not None
+                    else (
+                        existing_provenance.materialized_at
+                        if existing_provenance is not None
+                        else None
+                    )
+                ),
+                "scheduleDeletedAt": deleted_at_value,
+            }
+        )
+        return payload.model_dump(mode="json", by_alias=True)
+
     def _create_run_from_plan(
         self,
         plan: ExecutionPlan,
@@ -770,6 +997,13 @@ class RunService:
             preflight=preflight,
             validated_input=validated_input,
         )
+        schedule_provenance = self._schedule_provenance_payload(
+            workflow_package=workflow_package,
+            schedule_id=schedule_id,
+            schedule_fire_id=schedule_fire_id,
+            scheduled_for=scheduled_for,
+            schedule_reason=schedule_reason,
+        )
         run = Run(
             **target_fk_identity,
             target_kind=self._run_target_kind(plan),
@@ -784,6 +1018,7 @@ class RunService:
             schedule_fire_id=schedule_fire_id,
             scheduled_for=scheduled_for,
             schedule_reason=schedule_reason,
+            schedule_provenance=schedule_provenance,
             extension_dependencies=extension_dependencies,
             input=validated_input,
             status=_RUN_STATUS_QUEUED,
@@ -894,6 +1129,11 @@ class RunService:
             workflow_package_id=source_run.workflow_package_id,
             workflow_package_key=source_run.workflow_package_key,
             workflow_package_workflow_key=source_run.workflow_package_workflow_key,
+            schedule_id=None,
+            schedule_fire_id=None,
+            scheduled_for=None,
+            schedule_reason=None,
+            schedule_provenance=None,
             extension_dependencies=ExtensionDependencyService.normalize_dependency_payloads(
                 source_run.extension_dependencies
             ),
@@ -958,6 +1198,11 @@ class RunService:
             workflow_package_id=source_run.workflow_package_id,
             workflow_package_key=source_run.workflow_package_key,
             workflow_package_workflow_key=source_run.workflow_package_workflow_key,
+            schedule_id=None,
+            schedule_fire_id=None,
+            scheduled_for=None,
+            schedule_reason=None,
+            schedule_provenance=None,
             extension_dependencies=ExtensionDependencyService.normalize_dependency_payloads(
                 source_run.extension_dependencies
             ),
@@ -2187,7 +2432,7 @@ class RunService:
         gateway_metadata = metadata.get("modelGateway")
         if isinstance(gateway_metadata, dict):
             merged_gateway_metadata = deepcopy(gateway_metadata)
-            merged_gateway_metadata.update(runtime_metadata)
+            merged_gateway_metadata.update(deepcopy(runtime_metadata))
         else:
             merged_gateway_metadata = deepcopy(runtime_metadata)
         metadata["modelGateway"] = merged_gateway_metadata
@@ -2832,8 +3077,8 @@ class RunService:
             }
         )
 
-    @staticmethod
     def _to_list_item(
+        self,
         run: Run,
         *,
         progress: RunProgressRead,
@@ -2852,6 +3097,7 @@ class RunService:
                 "scheduleFireId": run.schedule_fire_id,
                 "scheduledFor": run.scheduled_for,
                 "scheduleReason": run.schedule_reason,
+                "scheduleProvenance": self._run_read_projection.schedule_provenance_payload(run),
                 "workflowKey": run.workflow_package_workflow_key,
                 "totalTokens": run.total_tokens,
                 "traceId": run.trace_id,

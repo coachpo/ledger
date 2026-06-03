@@ -7,6 +7,11 @@ from typing import Any
 import openai
 
 from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
+from app.agents.runtime_tools.failure_taxonomy import (
+    PROVIDER_NETWORK_FAILURE,
+    PROVIDER_TRANSPORT_FAILURE,
+    provider_status_failure_classification,
+)
 from app.agents.runtime_tools.types import RuntimeToolError
 from app.services.model_gateway_dto import (
     ModelExecutionRequest,
@@ -24,6 +29,10 @@ from app.services.model_gateway_output_validation import (
     validation_retry_input,
 )
 from app.services.model_gateway_policy_strategy import select_model_execution_strategies
+from app.services.model_gateway_provider_retry import (
+    ProviderRetryRecorder,
+    call_with_provider_retry,
+)
 from app.services.model_gateway_tool_retry import (
     ModelToolCallRetryState,
     is_retryable_tool_call_failure,
@@ -59,110 +68,179 @@ class OpenAIResponsesAdapter:
         text_format = self._build_text_format(request, output_strategy.strategy)
         validation_attempt = 0
         tool_retry_state = ModelToolCallRetryState()
-        for _ in range(_MAX_SERVER_TOOL_CALL_ROUNDS + output_strategy.max_validation_attempts - 1):
-            request_kwargs: dict[str, Any] = {
-                "model": request.connection.model_id,
-                "instructions": request.instructions,
-                "input": response_input,
-            }
-            if text_format is not None:
-                request_kwargs["text"] = text_format
-            if selected_strategies.reasoning_effort is not None:
-                request_kwargs["reasoning"] = {"effort": selected_strategies.reasoning_effort}
-            if previous_response_id is not None:
-                request_kwargs["previous_response_id"] = previous_response_id
-            if tools:
-                request_kwargs["tools"] = tools
-                request_kwargs["parallel_tool_calls"] = tool_strategy.allow_parallel_tool_calls
-            response, manual_replay_mode = self._create_with_manual_replay_fallback(
-                client=client,
-                request_kwargs=request_kwargs,
-                previous_response_id=previous_response_id,
-                previous_tool_calls=previous_tool_calls,
-                function_call_outputs=response_input,
-                manual_replay_mode=manual_replay_mode,
-            )
-            usage = self._merge_usage(usage, self._extract_usage(response))
-            try:
-                pending_tool_calls = self._extract_pending_tool_calls(response)
-            except ModelGatewayError as exc:
-                if tool_retry_state.can_retry(exc):
-                    response_input = self._tool_retry_input(
-                        request.input_text,
-                        tool_retry_state.record_retry(exc),
-                    )
-                    previous_response_id = None
-                    previous_tool_calls = None
-                    manual_replay_mode = False
-                    continue
-                if is_retryable_tool_call_failure(exc):
-                    raise tool_retry_state.exhausted_error(exc) from exc
-                raise
-            if not pending_tool_calls:
-                duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
-                response_text = self._extract_text(response)
+        provider_retry_recorder = ProviderRetryRecorder()
+        try:
+            for _ in range(
+                _MAX_SERVER_TOOL_CALL_ROUNDS + output_strategy.max_validation_attempts - 1
+            ):
+                request_kwargs: dict[str, Any] = {
+                    "model": request.connection.model_id,
+                    "instructions": request.instructions,
+                    "input": response_input,
+                }
+                if text_format is not None:
+                    request_kwargs["text"] = text_format
+                if selected_strategies.reasoning_effort is not None:
+                    request_kwargs["reasoning"] = {"effort": selected_strategies.reasoning_effort}
+                if previous_response_id is not None:
+                    request_kwargs["previous_response_id"] = previous_response_id
+                if tools:
+                    request_kwargs["tools"] = tools
+                    request_kwargs["parallel_tool_calls"] = tool_strategy.allow_parallel_tool_calls
+                response, manual_replay_mode = self._create_with_manual_replay_fallback(
+                    client=client,
+                    request_kwargs=request_kwargs,
+                    previous_response_id=previous_response_id,
+                    previous_tool_calls=previous_tool_calls,
+                    function_call_outputs=response_input,
+                    manual_replay_mode=manual_replay_mode,
+                    provider_retry_recorder=provider_retry_recorder,
+                )
+                usage = self._merge_usage(usage, self._extract_usage(response))
                 try:
-                    output = (
-                        response_text
-                        if output_strategy.strategy == "plainText"
-                        else self._parse_output(response_text)
-                    )
+                    pending_tool_calls = self._extract_pending_tool_calls(response)
                 except ModelGatewayError as exc:
-                    if exc.code != "model_output_validation_failed":
-                        raise
+                    if tool_retry_state.can_retry(exc):
+                        response_input = self._tool_retry_input(
+                            request.input_text,
+                            tool_retry_state.record_retry(exc),
+                        )
+                        previous_response_id = None
+                        previous_tool_calls = None
+                        manual_replay_mode = False
+                        continue
+                    if is_retryable_tool_call_failure(exc):
+                        raise tool_retry_state.exhausted_error(exc) from exc
+                    raise
+                if not pending_tool_calls:
+                    duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+                    response_text = self._extract_text(response)
+                    try:
+                        output = (
+                            response_text
+                            if output_strategy.strategy == "plainText"
+                            else self._parse_output(response_text)
+                        )
+                    except ModelGatewayError as exc:
+                        if exc.code != "model_output_validation_failed":
+                            raise
+                        validation_attempt += 1
+                        if validation_attempt >= output_strategy.max_validation_attempts:
+                            if output_strategy.strategy == "jsonObjectWithValidation":
+                                raise exhausted_validation_error(exc.details) from exc
+                            raise
+                        response_input = validation_retry_input(
+                            original_input=request.input_text,
+                            validation_details=exc.details,
+                        )
+                        previous_response_id = None
+                        previous_tool_calls = None
+                        manual_replay_mode = False
+                        continue
+                    validation = validate_model_output(request, output)
+                    if validation.details is None:
+                        return ModelExecutionResult(
+                            output=validation.output,
+                            usage=usage,
+                            selected_strategies=selected_strategies,
+                            duration_ms=duration_ms,
+                            tool_retry_metadata=tool_retry_state.metadata(),
+                            provider_retry_metadata=self._provider_retry_metadata(
+                                provider_retry_recorder
+                            ),
+                        )
                     validation_attempt += 1
                     if validation_attempt >= output_strategy.max_validation_attempts:
                         if output_strategy.strategy == "jsonObjectWithValidation":
-                            raise exhausted_validation_error(exc.details) from exc
-                        raise
+                            raise exhausted_validation_error(validation.details)
+                        raise validation_failed_error(validation.details)
                     response_input = validation_retry_input(
                         original_input=request.input_text,
-                        validation_details=exc.details,
+                        validation_details=validation.details,
                     )
                     previous_response_id = None
                     previous_tool_calls = None
                     manual_replay_mode = False
                     continue
-                validation = validate_model_output(request, output)
-                if validation.details is None:
-                    return ModelExecutionResult(
-                        output=validation.output,
-                        usage=usage,
-                        selected_strategies=selected_strategies,
-                        duration_ms=duration_ms,
-                        tool_retry_metadata=tool_retry_state.metadata(),
-                    )
-                validation_attempt += 1
-                if validation_attempt >= output_strategy.max_validation_attempts:
-                    if output_strategy.strategy == "jsonObjectWithValidation":
-                        raise exhausted_validation_error(validation.details)
-                    raise validation_failed_error(validation.details)
-                response_input = validation_retry_input(
-                    original_input=request.input_text,
-                    validation_details=validation.details,
+                function_call_outputs, retry_feedback = self._build_function_call_outputs(
+                    pending_tool_calls=pending_tool_calls,
+                    tool_executor=tool_executor,
+                    tool_retry_state=tool_retry_state,
                 )
-                previous_response_id = None
-                previous_tool_calls = None
-                manual_replay_mode = False
-                continue
-            function_call_outputs, retry_feedback = self._build_function_call_outputs(
-                pending_tool_calls=pending_tool_calls,
-                tool_executor=tool_executor,
-                tool_retry_state=tool_retry_state,
+                if retry_feedback is not None:
+                    response_input = self._tool_retry_input(request.input_text, retry_feedback)
+                    previous_response_id = None
+                    previous_tool_calls = None
+                    manual_replay_mode = False
+                    continue
+                previous_response_id = self._extract_response_id(response)
+                previous_tool_calls = pending_tool_calls
+                response_input = function_call_outputs
+            raise ModelGatewayError(
+                code="agent_tool_round_limit_exceeded",
+                message="Agent exceeded the supported server tool call round limit.",
             )
-            if retry_feedback is not None:
-                response_input = self._tool_retry_input(request.input_text, retry_feedback)
-                previous_response_id = None
-                previous_tool_calls = None
-                manual_replay_mode = False
-                continue
-            previous_response_id = self._extract_response_id(response)
-            previous_tool_calls = pending_tool_calls
-            response_input = function_call_outputs
-        raise ModelGatewayError(
-            code="agent_tool_round_limit_exceeded",
-            message="Agent exceeded the supported server tool call round limit.",
-        )
+        except ModelGatewayError as exc:
+            duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+            raise exc.with_execution_context(
+                usage=self._usage_for_error(usage),
+                selected_strategies=selected_strategies,
+                duration_ms=duration_ms,
+                provider_retry_metadata=self._provider_retry_metadata(provider_retry_recorder),
+            ) from exc
+        except openai.APITimeoutError as exc:
+            duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+            raise ModelGatewayError(
+                code="agent_provider_timeout",
+                message="OpenAI request timed out.",
+                usage=self._usage_for_error(usage),
+                selected_strategies=selected_strategies,
+                duration_ms=duration_ms,
+                failure_classification=PROVIDER_NETWORK_FAILURE,
+                provider_retry_metadata=self._provider_retry_metadata(provider_retry_recorder),
+            ) from exc
+        except openai.APIConnectionError as exc:
+            duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+            raise ModelGatewayError(
+                code="agent_provider_connection_error",
+                message="OpenAI request could not reach the API.",
+                usage=self._usage_for_error(usage),
+                selected_strategies=selected_strategies,
+                duration_ms=duration_ms,
+                failure_classification=PROVIDER_NETWORK_FAILURE,
+                provider_retry_metadata=self._provider_retry_metadata(provider_retry_recorder),
+            ) from exc
+        except openai.APIStatusError as exc:
+            duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+            status_code = getattr(exc, "status_code", None)
+            raise ModelGatewayError(
+                code="agent_provider_status_error",
+                message=self._format_api_status_error(
+                    exc,
+                    api_key=request.connection.api_key,
+                ),
+                usage=self._usage_for_error(usage),
+                selected_strategies=selected_strategies,
+                duration_ms=duration_ms,
+                failure_classification=provider_status_failure_classification(
+                    status_code if isinstance(status_code, int) else None
+                ),
+                provider_retry_metadata=self._provider_retry_metadata(provider_retry_recorder),
+            ) from exc
+        except openai.APIError as exc:
+            duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+            raise ModelGatewayError(
+                code="agent_provider_error",
+                message=self._normalize_provider_message(
+                    str(exc),
+                    api_key=request.connection.api_key,
+                ),
+                usage=self._usage_for_error(usage),
+                selected_strategies=selected_strategies,
+                duration_ms=duration_ms,
+                failure_classification=PROVIDER_TRANSPORT_FAILURE,
+                provider_retry_metadata=self._provider_retry_metadata(provider_retry_recorder),
+            ) from exc
 
     @staticmethod
     def _tool_retry_input(original_input: str, retry_feedback: str) -> str:
@@ -267,6 +345,7 @@ class OpenAIResponsesAdapter:
         previous_tool_calls: list[ModelToolCall] | None,
         function_call_outputs: str | list[dict[str, str]],
         manual_replay_mode: bool,
+        provider_retry_recorder: ProviderRetryRecorder,
     ) -> tuple[Any, bool]:
         effective_request_kwargs = dict(request_kwargs)
         if manual_replay_mode:
@@ -281,7 +360,14 @@ class OpenAIResponsesAdapter:
                 function_call_outputs=function_call_outputs,
             )
         try:
-            return client.responses.create(**effective_request_kwargs), manual_replay_mode
+            return (
+                self._create_response(
+                    client=client,
+                    request_kwargs=effective_request_kwargs,
+                    provider_retry_recorder=provider_retry_recorder,
+                ),
+                manual_replay_mode,
+            )
         except openai.APIStatusError as exc:
             if (
                 manual_replay_mode
@@ -297,7 +383,33 @@ class OpenAIResponsesAdapter:
                 pending_tool_calls=previous_tool_calls,
                 function_call_outputs=function_call_outputs,
             )
-            return client.responses.create(**replay_request_kwargs), True
+            return (
+                self._create_response(
+                    client=client,
+                    request_kwargs=replay_request_kwargs,
+                    provider_retry_recorder=provider_retry_recorder,
+                ),
+                True,
+            )
+
+    @staticmethod
+    def _create_response(
+        *,
+        client: Any,
+        request_kwargs: dict[str, Any],
+        provider_retry_recorder: ProviderRetryRecorder,
+    ) -> Any:
+        request_payload = dict(request_kwargs)
+
+        def create_response(
+            request_payload: dict[str, Any] = request_payload,
+        ) -> Any:
+            return client.responses.create(**request_payload)
+
+        return call_with_provider_retry(
+            create_response,
+            recorder=provider_retry_recorder,
+        )
 
     @staticmethod
     def _is_missing_tool_call_for_function_output(exc: openai.APIStatusError) -> bool:
@@ -488,6 +600,65 @@ class OpenAIResponsesAdapter:
             total_tokens=cls._read_usage_int(usage, "total_tokens", "totalTokens"),
             raw=usage if isinstance(usage, dict) else None,
         )
+
+    @staticmethod
+    def _usage_for_error(usage: ModelExecutionUsage) -> ModelExecutionUsage | None:
+        if (
+            usage.input_tokens is None
+            and usage.output_tokens is None
+            and usage.total_tokens is None
+            and usage.raw is None
+        ):
+            return None
+        return usage
+
+    @staticmethod
+    def _provider_retry_metadata(
+        recorder: ProviderRetryRecorder | None,
+    ) -> dict[str, Any] | None:
+        if recorder is None or not recorder.attempts:
+            return None
+        if recorder.attempts[-1].outcome == "exhausted":
+            return recorder.exhausted_metadata()
+        return recorder.success_metadata()
+
+    def _format_api_status_error(
+        self,
+        exc: openai.APIStatusError,
+        *,
+        api_key: str | None,
+    ) -> str:
+        message = self._extract_api_status_message(exc)
+        request_id = getattr(exc, "request_id", None)
+        if isinstance(request_id, str) and request_id.strip():
+            message = f"{message} requestId={request_id.strip()}"
+        return self._normalize_provider_message(message, api_key=api_key)
+
+    @staticmethod
+    def _extract_api_status_message(exc: openai.APIStatusError) -> str:
+        body = getattr(exc, "body", None)
+        if isinstance(body, dict):
+            raw_error = body.get("error")
+            if isinstance(raw_error, dict):
+                raw_message = raw_error.get("message")
+                if isinstance(raw_message, str) and raw_message.strip():
+                    return raw_message.strip()
+            raw_message = body.get("message")
+            if isinstance(raw_message, str) and raw_message.strip():
+                return raw_message.strip()
+        status_code = getattr(exc, "status_code", None)
+        if isinstance(status_code, int):
+            return f"OpenAI request failed with status {status_code}."
+        return "OpenAI request failed."
+
+    @staticmethod
+    def _normalize_provider_message(message: str, *, api_key: str | None) -> str:
+        normalized = " ".join(str(message).split()).strip()
+        if api_key:
+            normalized = normalized.replace(api_key, "[REDACTED]")
+        if len(normalized) > 500:
+            return f"{normalized[:497]}..."
+        return normalized or "Agent execution failed."
 
     @classmethod
     def _read_usage_int(cls, usage: Any, *fields: str) -> int | None:

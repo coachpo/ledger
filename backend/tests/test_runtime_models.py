@@ -36,6 +36,7 @@ from app.schemas.run import (
     RunMemoryEventRead,
     RunPackageResolvedModelConnectionRead,
     RunRead,
+    RunScheduleProvenanceRead,
     RunStatus,
 )
 from app.services.output_schema_service import OutputSchemaService
@@ -2023,6 +2024,81 @@ def test_run_resolved_model_connection_schema_omits_runtime_secrets() -> None:
     assert model.capabilities == default_model_connection_capabilities("openai_responses")
 
 
+def test_run_model_schedule_provenance_contract() -> None:
+    run_table = Base.metadata.tables["runs"]
+    schedule_fk = next(iter(run_table.c.schedule_id.foreign_keys))
+    schedule_fire_fk = next(iter(run_table.c.schedule_fire_id.foreign_keys))
+
+    assert "schedule_provenance" in run_table.c
+    assert str(run_table.c.schedule_provenance.type) == "JSONB"
+    assert run_table.c.schedule_provenance.nullable is True
+    assert schedule_fk.column.table.name == "workflow_package_schedules"
+    assert schedule_fk.column.name == "id"
+    assert schedule_fk.ondelete == "SET NULL"
+    assert schedule_fire_fk.column.table.name == "workflow_package_schedule_fires"
+    assert schedule_fire_fk.column.name == "id"
+    assert schedule_fire_fk.ondelete == "SET NULL"
+
+    payload = {
+        "scheduleId": 11,
+        "scheduleFireId": 29,
+        "scheduleName": "Daily research",
+        "packageId": 7,
+        "packageKey": "daily_research_package",
+        "workflowKey": "daily_research",
+        "timezone": "UTC",
+        "recurrence": {"type": "daily", "time": "13:00"},
+        "fireKey": "daily-2026-06-01",
+        "reason": "scheduled",
+        "scheduledFor": datetime(2026, 6, 1, 13, 0, tzinfo=UTC_TZ),
+        "scheduledLocalDate": "2026-06-01",
+        "scheduledLocalTime": "13:00:00",
+        "scheduledLocalDateTime": "2026-06-01T13:00:00",
+        "materializedAt": datetime(2026, 6, 1, 12, 59, tzinfo=UTC_TZ),
+        "scheduleDeletedAt": None,
+    }
+
+    model = RunScheduleProvenanceRead.model_validate(payload)
+    serialized = cast(dict[str, object], model.model_dump(mode="json", by_alias=True))
+
+    assert set(RunScheduleProvenanceRead.model_fields) == {
+        "schedule_id",
+        "schedule_fire_id",
+        "schedule_name",
+        "package_id",
+        "package_key",
+        "workflow_key",
+        "timezone",
+        "recurrence",
+        "fire_key",
+        "reason",
+        "scheduled_for",
+        "scheduled_local_date",
+        "scheduled_local_time",
+        "scheduled_local_datetime",
+        "materialized_at",
+        "schedule_deleted_at",
+    }
+    assert serialized == {
+        "scheduleId": 11,
+        "scheduleFireId": 29,
+        "scheduleName": "Daily research",
+        "packageId": 7,
+        "packageKey": "daily_research_package",
+        "workflowKey": "daily_research",
+        "timezone": "UTC",
+        "recurrence": {"type": "daily", "time": "13:00"},
+        "fireKey": "daily-2026-06-01",
+        "reason": "scheduled",
+        "scheduledFor": "2026-06-01T13:00:00Z",
+        "scheduledLocalDate": "2026-06-01",
+        "scheduledLocalTime": "13:00:00",
+        "scheduledLocalDateTime": "2026-06-01T13:00:00",
+        "materializedAt": "2026-06-01T12:59:00Z",
+        "scheduleDeletedAt": None,
+    }
+
+
 def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> None:
     queued_at = datetime(2026, 4, 20, 11, 0, tzinfo=UTC_TZ)
     common_payload = {
@@ -2079,6 +2155,7 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
         "scheduleFireId": None,
         "scheduledFor": None,
         "scheduleReason": None,
+        "scheduleProvenance": None,
         "queuedAt": "2026-04-20T11:00:00Z",
     }
     assert detail_payload["startedAt"] is None
@@ -2100,6 +2177,7 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
         "scheduleFireId",
         "scheduledFor",
         "scheduleReason",
+        "scheduleProvenance",
         "totalTokens",
         "inheritedTokens",
         "executedTokens",

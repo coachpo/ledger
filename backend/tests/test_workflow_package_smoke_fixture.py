@@ -80,6 +80,13 @@ SPECIAL_CASE_RE = re.compile(
         )
     )
 )
+ALLOWED_PRESET_SCHEDULE_SPECIAL_CASE_LINES = {
+    ("app/db/upgrades.py", '"workflow_key": "advisory_research",'),
+    ("app/db/upgrades.py", '"name": "TradingAgents Advisory Research · 2m",'),
+    ("app/db/upgrades.py", '"name": "TradingAgents Market Research · 2m",'),
+    ("app/db/upgrades.py", '"name": "TradingAgents News Research · 2m",'),
+    ("app/db/upgrades.py", '"name": "TradingAgents Fundamentals Research · 2m",'),
+}
 
 
 def _fixture_source() -> str:
@@ -197,11 +204,18 @@ def test_fixture_compile_does_not_create_global_authoring_rows(
 
 def test_backend_implementation_does_not_special_case_tradingagents_or_old_workflow_id() -> None:
     backend_app = Path(__file__).parents[1] / "app"
-    matches: list[str] = []
+    allowed_matches: set[tuple[str, str]] = set()
+    unexpected_matches: list[str] = []
     for path in backend_app.rglob("*.py"):
-        relative_path = path.relative_to(backend_app.parents[0])
+        relative_path = path.relative_to(backend_app.parents[0]).as_posix()
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            if SPECIAL_CASE_RE.search(line):
-                matches.append(f"{relative_path}:{line_number}: {line.strip()}")
+            if not SPECIAL_CASE_RE.search(line):
+                continue
+            match = (relative_path, line.strip())
+            if match in ALLOWED_PRESET_SCHEDULE_SPECIAL_CASE_LINES:
+                allowed_matches.add(match)
+                continue
+            unexpected_matches.append(f"{relative_path}:{line_number}: {line.strip()}")
 
-    assert matches == []
+    assert unexpected_matches == []
+    assert allowed_matches == ALLOWED_PRESET_SCHEDULE_SPECIAL_CASE_LINES

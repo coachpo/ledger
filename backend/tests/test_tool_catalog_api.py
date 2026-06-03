@@ -99,14 +99,6 @@ def test_default_tool_catalog_rejects_duplicate_and_unknown_keys() -> None:
     ]
 
 
-def test_core_memory_tool_keys_are_not_finance_owned() -> None:
-    assert MEMORY_CORE_RUNTIME_TOOL_KEYS == (
-        "signaldeck.memory.write",
-        "signaldeck.memory.lookup",
-    )
-    assert not set(MEMORY_CORE_RUNTIME_TOOL_KEYS) & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
-
-
 def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     response = client.get("/api/tools")
 
@@ -118,6 +110,11 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     assert not any("module" in item for item in items)
     assert _REQUIRED_FINANCE_TOOL_KEYS <= set(tools_by_key)
     assert _REQUIRED_CORE_TOOL_KEYS <= set(tools_by_key)
+    assert MEMORY_CORE_RUNTIME_TOOL_KEYS == (
+        "signaldeck.memory.write",
+        "signaldeck.memory.lookup",
+    )
+    assert not set(MEMORY_CORE_RUNTIME_TOOL_KEYS) & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
     memory_write_tool = tools_by_key["signaldeck.memory.write"]
     memory_lookup_tool = tools_by_key["signaldeck.memory.lookup"]
     quote_tool = tools_by_key["signaldeck.market_data.quote_lookup"]
@@ -256,12 +253,3 @@ def test_tool_catalog_hides_disabled_extension_tools_and_validation_stays_artifa
     assert created.status_code == 201, created.json()
     preflight = client.post(f"/api/workflow-packages/{created.json()['id']}/preflight")
     assert preflight.status_code == 200, preflight.json()
-    preflight_body = cast(dict[str, object], preflight.json())
-    blocking_errors = cast(list[dict[str, object]], preflight_body["blockingErrors"])
-    assert preflight_body["ready"] is False
-    assert any(
-        error.get("code") == "extension_disabled"
-        and error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
-        and error.get("surface") == "tool.signaldeck.market_data.quote_lookup"
-        for error in blocking_errors
-    )

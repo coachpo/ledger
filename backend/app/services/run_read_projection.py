@@ -24,6 +24,7 @@ from app.schemas.run import (
     RunQueueReason,
     RunQueueState,
     RunRead,
+    RunScheduleProvenanceRead,
     RunStatus,
     RunStepStatus,
     RunTargetKind,
@@ -61,6 +62,12 @@ class RunReadProjection:
 
     def package_provenance_payload(self, run: Run) -> dict[str, Any] | None:
         return self._package_provenance_payload(run)
+
+    @staticmethod
+    def schedule_provenance_payload(run: Run) -> RunScheduleProvenanceRead | None:
+        if run.schedule_provenance is None:
+            return None
+        return RunScheduleProvenanceRead.model_validate(run.schedule_provenance)
 
     @staticmethod
     def queue_from_run(
@@ -148,6 +155,7 @@ class RunReadProjection:
                 "scheduleFireId": run.schedule_fire_id,
                 "scheduledFor": run.scheduled_for,
                 "scheduleReason": run.schedule_reason,
+                "scheduleProvenance": self.schedule_provenance_payload(run),
                 "totalTokens": run.total_tokens,
                 "inheritedTokens": run.inherited_tokens,
                 "executedTokens": run.executed_tokens,

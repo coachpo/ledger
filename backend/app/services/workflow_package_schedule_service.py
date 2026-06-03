@@ -414,8 +414,8 @@ class WorkflowPackageScheduleService:
                     parameters=rendered_parameters,
                     schedule_id=schedule.id,
                     schedule_fire_id=fire.id,
-                    scheduled_for=scheduled_for,
-                    schedule_reason=FireReason.MANUAL,
+                    scheduled_for=metadata.scheduled_for,
+                    schedule_reason=metadata.reason,
                     commit=False,
                 )
                 run = self.session.get(Run, created_run.id)
@@ -1149,8 +1149,8 @@ class WorkflowPackageScheduleService:
             self.session,
             self.session_factory,
             provider_bundle=self.provider_bundle,
-        ).delete_runs_for_schedule(
-            schedule_id=schedule.id,
+        ).detach_runs_for_deleted_schedule(
+            schedule=schedule,
             fire_ids=fire_ids,
             commit=False,
         )

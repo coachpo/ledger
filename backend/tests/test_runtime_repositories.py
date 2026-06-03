@@ -1518,6 +1518,24 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                     "extensionDependencies": [],
                     "steps": [],
                     "memoryArtifacts": [],
+                    "scheduleProvenance": {
+                        "scheduleId": 42,
+                        "scheduleFireId": 77,
+                        "scheduleName": "Archived cleanup schedule",
+                        "packageId": 9,
+                        "packageKey": "schedule_archive_cleanup_package",
+                        "workflowKey": "schedule_archive_cleanup_workflow",
+                        "timezone": "UTC",
+                        "recurrence": {"type": "daily"},
+                        "fireKey": "archived-cleanup-fire",
+                        "reason": "scheduled",
+                        "scheduledFor": datetime(2026, 4, 19, 10, 0, tzinfo=UTC_TZ),
+                        "scheduledLocalDate": "2026-04-19",
+                        "scheduledLocalTime": "10:00:00",
+                        "scheduledLocalDateTime": "2026-04-19T10:00:00",
+                        "materializedAt": datetime(2026, 4, 19, 9, 59, tzinfo=UTC_TZ),
+                        "scheduleDeletedAt": datetime(2026, 4, 20, 12, 0, tzinfo=UTC_TZ),
+                    },
                     "packageProvenance": None,
                 }
             ).model_dump(mode="json", by_alias=True),
@@ -1562,9 +1580,28 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "steps",
             "memoryArtifacts",
             "memoryEvents",
+            "scheduleProvenance",
             "packageProvenance",
         }
         assert serialized_detail["queuedAt"] == "2026-04-19T09:59:00Z"
+        assert serialized_detail["scheduleProvenance"] == {
+            "scheduleId": 42,
+            "scheduleFireId": 77,
+            "scheduleName": "Archived cleanup schedule",
+            "packageId": 9,
+            "packageKey": "schedule_archive_cleanup_package",
+            "workflowKey": "schedule_archive_cleanup_workflow",
+            "timezone": "UTC",
+            "recurrence": {"type": "daily"},
+            "fireKey": "archived-cleanup-fire",
+            "reason": "scheduled",
+            "scheduledFor": "2026-04-19T10:00:00Z",
+            "scheduledLocalDate": "2026-04-19",
+            "scheduledLocalTime": "10:00:00",
+            "scheduledLocalDateTime": "2026-04-19T10:00:00",
+            "materializedAt": "2026-04-19T09:59:00Z",
+            "scheduleDeletedAt": "2026-04-20T12:00:00Z",
+        }
         assert detail_steps[0].step_index == 1
         assert set(serialized_invocation) == {
             "id",

@@ -128,6 +128,28 @@ def test_package_execution_plan_threads_private_mcp_flat_maps_into_runtime_refs(
     ]
 
 
+def test_package_execution_plan_supports_step_and_fanout_roots() -> None:
+    step_root_plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
+        _compiled_plan(),
+        "daily_research",
+        model_bindings={"tradingagents_primary_model": _model_binding()},
+    )
+    fanout_root_plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
+        _compiled_plan(_fanout_root_package_manifest_source()),
+        "advisory_research",
+        model_bindings={"graph_model": _model_binding("graph_model")},
+    )
+
+    assert [agent.slot for agent in step_root_plan.steps[0].agents] == ["decision"]
+    assert [step.index for step in fanout_root_plan.steps] == [1, 2]
+    assert [[agent.slot for agent in step.agents] for step in fanout_root_plan.steps] == [
+        ["market"],
+        ["news"],
+    ]
+    assert fanout_root_plan.final_output.step_index == 1
+    assert fanout_root_plan.final_output.slot == "market"
+
+
 def _graph_package_manifest_source() -> str:
     return """apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
@@ -253,6 +275,92 @@ spec:
               riskReport: ${{ nodes.review_loop.outputs.risk }}
       output:
         from: ${{ nodes.root_sequence.outputs.final }}
+"""
+
+
+def _fanout_root_package_manifest_source() -> str:
+    return """apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: fanout_root_package
+  name: Fanout Root Package
+spec:
+  inputs:
+    type: object
+    properties:
+      ticker:
+        type: string
+    required: [ticker]
+  capabilityProfiles:
+    - key: graph_tools
+      name: Graph Tools
+      toolKeys:
+        - signaldeck.market_data.quote_lookup
+  outputSchemas:
+    - key: graph_note
+      name: Graph Note
+      jsonSchema:
+        type: object
+        properties:
+          summary:
+            type: string
+        required: [summary]
+  mcpServers:
+    - key: graph_context
+      name: Graph Context
+      transport: stdio
+      command: python
+      args: [server.py]
+  agents:
+    - key: market_agent
+      name: Market Agent
+      modelConnection: graph_model
+      systemPrompt: Return market output.
+      inputSchema:
+        type: object
+      outputSchema: graph_note
+      capabilityProfiles: [graph_tools]
+      mcpServers: [graph_context]
+    - key: news_agent
+      name: News Agent
+      modelConnection: graph_model
+      systemPrompt: Return news output.
+      inputSchema:
+        type: object
+      outputSchema: graph_note
+      capabilityProfiles: [graph_tools]
+      mcpServers: [graph_context]
+  workflows:
+    - key: advisory_research
+      name: Advisory Research
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+        required: [ticker]
+      flow:
+        kind: fanout
+        id: analyst_fanout
+        branches:
+          - id: market
+            node:
+              kind: step
+              id: market_analysis
+              slot: market
+              uses: market_agent
+              with:
+                ticker: ${{ inputs.ticker }}
+          - id: news
+            node:
+              kind: step
+              id: news_analysis
+              slot: news
+              uses: news_agent
+              with:
+                ticker: ${{ inputs.ticker }}
+      output:
+        from: ${{ nodes.analyst_fanout.outputs.market }}
 """
 
 

@@ -124,6 +124,7 @@ class ModelExecutionResult:
     selected_strategies: ModelExecutionStrategies = field(default_factory=ModelExecutionStrategies)
     duration_ms: int | None = None
     tool_retry_metadata: Mapping[str, Any] | None = None
+    provider_retry_metadata: Mapping[str, Any] | None = None
 
     def runtime_metadata(self) -> dict[str, Any]:
         metadata: dict[str, Any] = {}
@@ -135,6 +136,8 @@ class ModelExecutionResult:
             metadata["selectedStrategies"] = selected_strategies
         if self.tool_retry_metadata is not None:
             metadata["toolCallRetries"] = dict(self.tool_retry_metadata)
+        if self.provider_retry_metadata is not None:
+            metadata["providerRetries"] = dict(self.provider_retry_metadata)
         return metadata
 
 
@@ -180,6 +183,7 @@ class ModelGatewayError(Exception):
         duration_ms: int | None = None,
         failure_classification: ToolFailureClassification | None = None,
         tool_retry_metadata: Mapping[str, Any] | None = None,
+        provider_retry_metadata: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -189,6 +193,9 @@ class ModelGatewayError(Exception):
         self.selected_strategies = selected_strategies
         self.duration_ms = duration_ms
         self.tool_retry_metadata = dict(tool_retry_metadata) if tool_retry_metadata else None
+        self.provider_retry_metadata = (
+            dict(provider_retry_metadata) if provider_retry_metadata else None
+        )
         self.failure_classification: ToolFailureClassification = (
             failure_classification or classification_for_error_code(code)
         )
@@ -199,6 +206,7 @@ class ModelGatewayError(Exception):
         usage: ModelExecutionUsage | None,
         selected_strategies: ModelExecutionStrategies | None,
         duration_ms: int | None,
+        provider_retry_metadata: Mapping[str, Any] | None = None,
     ) -> ModelGatewayError:
         if self.usage is None:
             self.usage = usage
@@ -206,6 +214,8 @@ class ModelGatewayError(Exception):
             self.selected_strategies = selected_strategies
         if self.duration_ms is None:
             self.duration_ms = duration_ms
+        if self.provider_retry_metadata is None and provider_retry_metadata is not None:
+            self.provider_retry_metadata = dict(provider_retry_metadata)
         return self
 
     @property
@@ -228,6 +238,8 @@ class ModelGatewayError(Exception):
             metadata["selectedStrategies"] = selected_strategies
         if self.tool_retry_metadata is not None:
             metadata["toolCallRetries"] = dict(self.tool_retry_metadata)
+        if self.provider_retry_metadata is not None:
+            metadata["providerRetries"] = dict(self.provider_retry_metadata)
         return metadata
 
 

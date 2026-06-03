@@ -40,6 +40,10 @@ from app.services.model_gateway_output_validation import (
     validation_retry_input,
 )
 from app.services.model_gateway_policy_strategy import select_model_execution_strategies
+from app.services.model_gateway_provider_retry import (
+    ProviderRetryRecorder,
+    call_with_provider_retry,
+)
 from app.services.model_gateway_tool_retry import (
     ModelToolCallRetryState,
     is_retryable_tool_call_failure,
@@ -120,6 +124,7 @@ class OpenAIProtocolAdapter:
     ) -> ModelExecutionResult:
         started_at = time.monotonic()
         selected_strategies: ModelExecutionStrategies | None = None
+        provider_retry_recorder: ProviderRetryRecorder | None = None
         try:
             tool_strategy = select_tool_strategy(request)
             output_strategy = select_output_strategy(request)
@@ -129,7 +134,11 @@ class OpenAIProtocolAdapter:
                 has_tools=tool_strategy.has_tools,
                 allow_parallel_tool_calls=tool_strategy.allow_parallel_tool_calls,
             )
-            with self._client_factory(**self._client_kwargs(request.connection)) as client:
+            client_kwargs = self._client_kwargs(
+                request.connection,
+                max_retries=0,
+            )
+            with self._client_factory(**client_kwargs) as client:
                 if request.connection.api_style == "responses":
                     return OpenAIResponsesAdapter().invoke_with_client(
                         client=client,
@@ -138,11 +147,13 @@ class OpenAIProtocolAdapter:
                         started_at=started_at,
                     )
                 if request.connection.api_style == "chat_completions":
+                    provider_retry_recorder = ProviderRetryRecorder()
                     return self._invoke_chat_completions_agent(
                         client=client,
                         request=request,
                         tool_executor=tool_executor,
                         started_at=started_at,
+                        provider_retry_recorder=provider_retry_recorder,
                     )
                 raise ModelGatewayError(
                     code="agent_model_connection_api_style_unsupported",
@@ -159,6 +170,7 @@ class OpenAIProtocolAdapter:
                 selected_strategies=getattr(exc, "selected_strategies", None)
                 or selected_strategies,
                 duration_ms=duration_ms,
+                provider_retry_metadata=self._provider_retry_metadata(provider_retry_recorder),
             ) from exc
         except openai.APITimeoutError as exc:
             raise ModelGatewayError(
@@ -166,6 +178,7 @@ class OpenAIProtocolAdapter:
                 message="OpenAI request timed out.",
                 selected_strategies=selected_strategies,
                 failure_classification=PROVIDER_NETWORK_FAILURE,
+                provider_retry_metadata=self._provider_retry_metadata(provider_retry_recorder),
             ) from exc
         except openai.APIConnectionError as exc:
             raise ModelGatewayError(
@@ -173,6 +186,7 @@ class OpenAIProtocolAdapter:
                 message="OpenAI request could not reach the API.",
                 selected_strategies=selected_strategies,
                 failure_classification=PROVIDER_NETWORK_FAILURE,
+                provider_retry_metadata=self._provider_retry_metadata(provider_retry_recorder),
             ) from exc
         except openai.APIStatusError as exc:
             status_code = getattr(exc, "status_code", None)
@@ -186,6 +200,7 @@ class OpenAIProtocolAdapter:
                 failure_classification=provider_status_failure_classification(
                     status_code if isinstance(status_code, int) else None
                 ),
+                provider_retry_metadata=self._provider_retry_metadata(provider_retry_recorder),
             ) from exc
         except openai.APIError as exc:
             raise ModelGatewayError(
@@ -196,6 +211,7 @@ class OpenAIProtocolAdapter:
                 ),
                 selected_strategies=selected_strategies,
                 failure_classification=PROVIDER_TRANSPORT_FAILURE,
+                provider_retry_metadata=self._provider_retry_metadata(provider_retry_recorder),
             ) from exc
 
     def test_connection(
@@ -705,6 +721,7 @@ class OpenAIProtocolAdapter:
         request: ModelExecutionRequest,
         tool_executor: ModelToolExecutor,
         started_at: float,
+        provider_retry_recorder: ProviderRetryRecorder,
     ) -> ModelExecutionResult:
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": request.instructions},
@@ -735,7 +752,17 @@ class OpenAIProtocolAdapter:
             if chat_tools:
                 request_kwargs["tools"] = chat_tools
                 request_kwargs["parallel_tool_calls"] = tool_strategy.allow_parallel_tool_calls
-            response = client.chat.completions.create(**request_kwargs)
+            request_payload = dict(request_kwargs)
+
+            def create_chat_completion(
+                request_payload: dict[str, Any] = request_payload,
+            ) -> Any:
+                return client.chat.completions.create(**request_payload)
+
+            response = call_with_provider_retry(
+                create_chat_completion,
+                recorder=provider_retry_recorder,
+            )
             usage = self._merge_usage(usage, self._extract_usage(response))
             message = self._extract_first_chat_choice_message(response)
             try:
@@ -783,6 +810,7 @@ class OpenAIProtocolAdapter:
                         selected_strategies=selected_strategies,
                         duration_ms=duration_ms,
                         tool_retry_metadata=tool_retry_state.metadata(),
+                        provider_retry_metadata=provider_retry_recorder.success_metadata(),
                     )
                 validation_attempt += 1
                 if validation_attempt >= output_strategy.max_validation_attempts:
@@ -819,6 +847,16 @@ class OpenAIProtocolAdapter:
             code="agent_tool_round_limit_exceeded",
             message="Agent exceeded the supported server tool call round limit.",
         )
+
+    @staticmethod
+    def _provider_retry_metadata(
+        recorder: ProviderRetryRecorder | None,
+    ) -> dict[str, Any] | None:
+        if recorder is None or not recorder.attempts:
+            return None
+        if recorder.attempts[-1].outcome == "exhausted":
+            return recorder.exhausted_metadata()
+        return recorder.success_metadata()
 
     @staticmethod
     def _client_kwargs(

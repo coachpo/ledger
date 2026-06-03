@@ -15,6 +15,7 @@ _TOOL_CALL_RETRY_MAX_ATTEMPTS = 1
 _MAX_FAILURE_RECORDS = 3
 _MAX_DETAIL_RECORDS = 5
 _MAX_DETAIL_TEXT_LENGTH = 300
+_EXHAUSTED_METADATA_KEY = "exhausted"
 
 
 @dataclass(slots=True)
@@ -83,7 +84,7 @@ class ModelToolCallRetryState:
         return {
             "attemptsUsed": self.attempts_used,
             "maxAttempts": self.max_attempts,
-            "exhausted": exhausted,
+            _EXHAUSTED_METADATA_KEY: exhausted,
             "failures": list(self.failures[:_MAX_FAILURE_RECORDS]),
         }
 

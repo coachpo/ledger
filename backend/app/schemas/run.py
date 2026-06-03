@@ -480,6 +480,32 @@ class RunQueueRead(CamelModel):
     blocking_run_id: int | None = None
 
 
+class RunScheduleProvenanceRead(CamelModel):
+    schedule_id: int | None = None
+    schedule_fire_id: int | None = None
+    schedule_name: str | None = None
+    package_id: int | None = None
+    package_key: str | None = None
+    workflow_key: str | None = None
+    timezone: str | None = None
+    recurrence: dict[str, Any] | None = None
+    fire_key: str | None = None
+    reason: Literal["scheduled", "manual"] | None = None
+    scheduled_for: datetime | None = None
+    scheduled_local_date: str | None = None
+    scheduled_local_time: str | None = None
+    scheduled_local_datetime: str | None = Field(alias="scheduledLocalDateTime", default=None)
+    materialized_at: datetime | None = None
+    schedule_deleted_at: datetime | None = None
+
+    @field_validator("scheduled_for", "materialized_at", "schedule_deleted_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_timezone(value)
+
+
 class RunListItemRead(CamelModel):
     id: int
     target_kind: RunTargetKind
@@ -492,6 +518,7 @@ class RunListItemRead(CamelModel):
     schedule_fire_id: int | None = None
     scheduled_for: datetime | None = None
     schedule_reason: Literal["scheduled", "manual"] | None = None
+    schedule_provenance: RunScheduleProvenanceRead | None = None
     workflow_key: str | None = None
     total_tokens: int = Field(ge=0)
     trace_id: str | None = None
@@ -639,6 +666,7 @@ class RunRead(CamelModel):
     schedule_fire_id: int | None = None
     scheduled_for: datetime | None = None
     schedule_reason: Literal["scheduled", "manual"] | None = None
+    schedule_provenance: RunScheduleProvenanceRead | None = None
     total_tokens: int = Field(ge=0)
     inherited_tokens: int = Field(ge=0)
     executed_tokens: int = Field(ge=0)
@@ -739,6 +767,7 @@ __all__ = [
     "RunQueueReason",
     "RunQueueState",
     "RunRead",
+    "RunScheduleProvenanceRead",
     "RunRerunCreateRequest",
     "RunRerunDraftRead",
     "RunForkCreateRequest",

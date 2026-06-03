@@ -94,7 +94,7 @@ class Run(IdMixin, TimestampMixin, Base):
     schedule_id: Mapped[int | None] = mapped_column(
         ForeignKey(
             "workflow_package_schedules.id",
-            ondelete="CASCADE",
+            ondelete="SET NULL",
             name="fk_runs_schedule_id",
         ),
         nullable=True,
@@ -102,13 +102,16 @@ class Run(IdMixin, TimestampMixin, Base):
     schedule_fire_id: Mapped[int | None] = mapped_column(
         ForeignKey(
             "workflow_package_schedule_fires.id",
-            ondelete="CASCADE",
+            ondelete="SET NULL",
             name="fk_runs_schedule_fire_id",
         ),
         nullable=True,
     )
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     schedule_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Canonical run-owned immutable schedule-history payload. Later delete-path work may
+    # null live schedule refs while preserving this snapshot unchanged on the run.
+    schedule_provenance: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     extension_dependencies: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,

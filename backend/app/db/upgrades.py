@@ -12,7 +12,6 @@ from pydantic import ValidationError
 from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_REGISTRY
 from app.core.formatting import to_utc, utcnow
@@ -1030,6 +1029,7 @@ _RUN_SCHEDULE_PROVENANCE_COLUMNS: dict[str, str] = {
     "schedule_fire_id": "INTEGER",
     "scheduled_for": "TIMESTAMPTZ",
     "schedule_reason": "VARCHAR(20)",
+    "schedule_provenance": "JSONB",
 }
 _WORKFLOW_PACKAGE_SCHEDULE_TABLE_STATEMENTS: tuple[str, ...] = (
     """
@@ -1739,6 +1739,7 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
             "schedule_fire_id",
             "scheduled_for",
             "schedule_reason",
+            "schedule_provenance",
             "extension_dependencies",
             "input",
             "status",
@@ -2382,39 +2383,326 @@ def _ensure_runtime_input_registry_table(engine: Engine, table_names: set[str]) 
     table_names.add(_RUNTIME_INPUT_REGISTRY_TABLE_NAME)
 
 
-def _purge_archived_workflow_package_schedules(
-    engine: Engine,
-    schedule_columns: set[str],
-) -> None:
-    archived_predicates = ["status = 'archived'"]
-    if "archived_at" in schedule_columns:
-        archived_predicates.append("archived_at IS NOT NULL")
+def _schedule_provenance_timestamp(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return to_utc(value).isoformat().replace("+00:00", "Z")
 
-    archived_schedule_query = f"SELECT id FROM workflow_package_schedules WHERE {' OR '.join(archived_predicates)} ORDER BY id"
-    with engine.connect() as connection:
-        archived_schedule_ids = cast(
-            list[int],
-            connection.execute(text(archived_schedule_query)).scalars().all(),
+
+def _load_rows_by_id(
+    connection: Connection,
+    *,
+    table_name: str,
+    columns: tuple[str, ...],
+    ids: set[int],
+) -> dict[int, Mapping[str, object]]:
+    if not ids:
+        return {}
+
+    rows = cast(
+        list[Mapping[str, object]],
+        connection.execute(
+            text(
+                f"SELECT {', '.join(columns)} FROM {table_name} WHERE id IN :ids ORDER BY id"
+            ).bindparams(bindparam("ids", expanding=True)),
+            {"ids": sorted(ids)},
+        )
+        .mappings()
+        .all(),
+    )
+    return {cast(int, row["id"]): row for row in rows}
+
+
+def _load_run_schedule_contexts(connection: Connection) -> list[dict[str, object]]:
+    run_rows = cast(
+        list[Mapping[str, object]],
+        connection.execute(
+            text(
+                """
+                SELECT id, schedule_id, schedule_fire_id, schedule_reason,
+                       scheduled_for, schedule_provenance
+                FROM runs
+                WHERE schedule_id IS NOT NULL OR schedule_fire_id IS NOT NULL
+                ORDER BY id
+                """
+            )
+        )
+        .mappings()
+        .all(),
+    )
+    fire_rows = _load_rows_by_id(
+        connection,
+        table_name="workflow_package_schedule_fires",
+        columns=(
+            "id",
+            "schedule_id",
+            "fire_key",
+            "reason",
+            "scheduled_for",
+            "scheduled_local_date",
+            "scheduled_local_time",
+            "scheduled_local_datetime",
+            "materialized_at",
+        ),
+        ids={
+            cast(int, row["schedule_fire_id"])
+            for row in run_rows
+            if row["schedule_fire_id"] is not None
+        },
+    )
+    schedule_ids = {
+        cast(int, row["schedule_id"]) for row in run_rows if row["schedule_id"] is not None
+    }
+    schedule_ids.update(
+        cast(int, row["schedule_id"])
+        for row in fire_rows.values()
+        if row["schedule_id"] is not None
+    )
+    schedule_rows = _load_rows_by_id(
+        connection,
+        table_name="workflow_package_schedules",
+        columns=("id", "package_id", "workflow_key", "name", "timezone", "recurrence"),
+        ids=schedule_ids,
+    )
+    package_rows = _load_rows_by_id(
+        connection,
+        table_name="workflow_packages",
+        columns=("id", "key"),
+        ids={
+            cast(int, row["package_id"])
+            for row in schedule_rows.values()
+            if row["package_id"] is not None
+        },
+    )
+
+    contexts: list[dict[str, object]] = []
+    for run_row in run_rows:
+        fire_row = None
+        if run_row["schedule_fire_id"] is not None:
+            fire_row = fire_rows.get(cast(int, run_row["schedule_fire_id"]))
+
+        schedule_row = None
+        if run_row["schedule_id"] is not None:
+            schedule_row = schedule_rows.get(cast(int, run_row["schedule_id"]))
+        if schedule_row is None and fire_row is not None and fire_row["schedule_id"] is not None:
+            schedule_row = schedule_rows.get(cast(int, fire_row["schedule_id"]))
+
+        package_row = None
+        if schedule_row is not None and schedule_row["package_id"] is not None:
+            package_row = package_rows.get(cast(int, schedule_row["package_id"]))
+
+        contexts.append(
+            {
+                "run": run_row,
+                "fire": fire_row,
+                "schedule": schedule_row,
+                "package": package_row,
+            }
+        )
+    return contexts
+
+
+def _build_run_schedule_provenance(
+    *,
+    run_row: Mapping[str, object],
+    fire_row: Mapping[str, object] | None,
+    schedule_row: Mapping[str, object] | None,
+    package_row: Mapping[str, object] | None,
+    schedule_deleted_at: str | None = None,
+) -> dict[str, object] | None:
+    existing_provenance = (
+        cast(Mapping[str, object], _jsonb_payload(run_row["schedule_provenance"]))
+        if run_row["schedule_provenance"] is not None
+        else None
+    )
+    if schedule_row is None and fire_row is None:
+        return None
+
+    deleted_at_value = (
+        cast(str | None, existing_provenance.get("scheduleDeletedAt"))
+        if existing_provenance is not None
+        else None
+    )
+    if deleted_at_value is None:
+        deleted_at_value = schedule_deleted_at
+
+    scheduled_for = run_row["scheduled_for"]
+    reason = run_row["schedule_reason"]
+    if fire_row is not None:
+        if fire_row["scheduled_for"] is not None:
+            scheduled_for = fire_row["scheduled_for"]
+        if fire_row["reason"] is not None:
+            reason = fire_row["reason"]
+
+    schedule_id = None
+    if schedule_row is not None:
+        schedule_id = schedule_row["id"]
+    elif fire_row is not None:
+        schedule_id = fire_row["schedule_id"]
+
+    recurrence = None
+    if schedule_row is not None and schedule_row["recurrence"] is not None:
+        recurrence = _jsonb_payload(schedule_row["recurrence"])
+
+    return {
+        "scheduleId": schedule_id,
+        "scheduleFireId": fire_row["id"] if fire_row is not None else None,
+        "scheduleName": schedule_row["name"] if schedule_row is not None else None,
+        "packageId": schedule_row["package_id"] if schedule_row is not None else None,
+        "packageKey": package_row["key"] if package_row is not None else None,
+        "workflowKey": schedule_row["workflow_key"] if schedule_row is not None else None,
+        "timezone": schedule_row["timezone"] if schedule_row is not None else None,
+        "recurrence": recurrence,
+        "fireKey": fire_row["fire_key"] if fire_row is not None else None,
+        "reason": reason,
+        "scheduledFor": _schedule_provenance_timestamp(cast(datetime | None, scheduled_for)),
+        "scheduledLocalDate": (fire_row["scheduled_local_date"] if fire_row is not None else None),
+        "scheduledLocalTime": (fire_row["scheduled_local_time"] if fire_row is not None else None),
+        "scheduledLocalDateTime": (
+            fire_row["scheduled_local_datetime"] if fire_row is not None else None
+        ),
+        "materializedAt": _schedule_provenance_timestamp(
+            cast(datetime | None, fire_row["materialized_at"]) if fire_row is not None else None
+        ),
+        "scheduleDeletedAt": deleted_at_value,
+    }
+
+
+def _backfill_run_schedule_provenance(connection: Connection) -> None:
+    for context in _load_run_schedule_contexts(connection):
+        run_row = cast(Mapping[str, object], context["run"])
+        fire_row = cast(Mapping[str, object] | None, context["fire"])
+        schedule_row = cast(Mapping[str, object] | None, context["schedule"])
+        package_row = cast(Mapping[str, object] | None, context["package"])
+
+        schedule_provenance = _build_run_schedule_provenance(
+            run_row=run_row,
+            fire_row=fire_row,
+            schedule_row=schedule_row,
+            package_row=package_row,
+        )
+        if schedule_provenance is None:
+            continue
+        if _jsonb_payload(run_row["schedule_provenance"]) == schedule_provenance:
+            continue
+
+        connection.execute(
+            text(
+                """
+                UPDATE runs
+                SET schedule_provenance = CAST(:schedule_provenance AS jsonb)
+                WHERE id = :run_id
+                """
+            ),
+            {
+                "run_id": run_row["id"],
+                "schedule_provenance": json.dumps(schedule_provenance, sort_keys=True),
+            },
         )
 
-    if not archived_schedule_ids:
+
+def _null_unresolved_run_schedule_refs(connection: Connection) -> None:
+    connection.exec_driver_sql(
+        "UPDATE runs SET schedule_id = NULL "
+        "WHERE schedule_id IS NOT NULL "
+        "AND NOT EXISTS ("
+        "SELECT 1 FROM workflow_package_schedules AS schedule "
+        "WHERE schedule.id = runs.schedule_id"
+        ")"
+    )
+    connection.exec_driver_sql(
+        "UPDATE runs SET schedule_fire_id = NULL "
+        "WHERE schedule_fire_id IS NOT NULL "
+        "AND NOT EXISTS ("
+        "SELECT 1 FROM workflow_package_schedule_fires AS fire "
+        "WHERE fire.id = runs.schedule_fire_id"
+        ")"
+    )
+
+
+def _delete_legacy_workflow_package_schedules_with_run_retention(
+    connection: Connection,
+    schedule_columns: set[str],
+) -> None:
+    delete_predicates = [
+        "NOT EXISTS ("
+        "SELECT 1 FROM workflow_packages AS package "
+        "WHERE package.id = schedule.package_id"
+        ")"
+    ]
+    archived_predicates = ["schedule.status = 'archived'"]
+    if "archived_at" in schedule_columns:
+        archived_predicates.append("schedule.archived_at IS NOT NULL")
+    delete_predicates.append(f"({' OR '.join(archived_predicates)})")
+    schedule_ids = cast(
+        list[int],
+        connection.execute(
+            text(
+                f"""
+                SELECT schedule.id
+                FROM workflow_package_schedules AS schedule
+                WHERE {' OR '.join(delete_predicates)}
+                ORDER BY schedule.id
+                """
+            )
+        )
+        .scalars()
+        .all(),
+    )
+    if not schedule_ids:
         return
 
-    from app.services.workflow_package_schedule_service import WorkflowPackageScheduleService
+    deleted_at = _schedule_provenance_timestamp(utcnow())
+    delete_schedule_id_set = set(schedule_ids)
+    for context in _load_run_schedule_contexts(connection):
+        run_row = cast(Mapping[str, object], context["run"])
+        fire_row = cast(Mapping[str, object] | None, context["fire"])
+        schedule_row = cast(Mapping[str, object] | None, context["schedule"])
+        package_row = cast(Mapping[str, object] | None, context["package"])
 
-    repair_session_factory = sessionmaker(
-        bind=engine,
-        autoflush=False,
-        autocommit=False,
-        expire_on_commit=False,
-        class_=Session,
+        effective_schedule_id = None
+        if schedule_row is not None:
+            effective_schedule_id = cast(int, schedule_row["id"])
+        elif fire_row is not None and fire_row["schedule_id"] is not None:
+            effective_schedule_id = cast(int, fire_row["schedule_id"])
+        if effective_schedule_id not in delete_schedule_id_set:
+            continue
+
+        schedule_provenance = _build_run_schedule_provenance(
+            run_row=run_row,
+            fire_row=fire_row,
+            schedule_row=schedule_row,
+            package_row=package_row,
+            schedule_deleted_at=deleted_at,
+        )
+        if schedule_provenance is None:
+            continue
+
+        connection.execute(
+            text(
+                """
+                UPDATE runs
+                SET schedule_id = NULL,
+                    schedule_fire_id = NULL,
+                    schedule_provenance = CAST(:schedule_provenance AS jsonb)
+                WHERE id = :run_id
+                """
+            ),
+            {
+                "run_id": run_row["id"],
+                "schedule_provenance": json.dumps(schedule_provenance, sort_keys=True),
+            },
+        )
+
+    connection.execute(
+        text(
+            """
+            DELETE FROM workflow_package_schedules
+            WHERE id IN :schedule_ids
+            """
+        ).bindparams(bindparam("schedule_ids", expanding=True)),
+        {"schedule_ids": schedule_ids},
     )
-    for schedule_id in archived_schedule_ids:
-        with repair_session_factory() as repair_session:
-            WorkflowPackageScheduleService(
-                repair_session,
-                repair_session_factory,
-            ).delete_schedule(schedule_id)
 
 
 def _ensure_workflow_package_schedule_tables(engine: Engine, table_names: set[str]) -> None:
@@ -2463,9 +2751,39 @@ def _ensure_workflow_package_schedule_tables(engine: Engine, table_names: set[st
                 )
                 run_columns.add(column_name)
 
-    _purge_archived_workflow_package_schedules(engine, schedule_columns)
-
     with engine.begin() as connection:
+        _backfill_run_schedule_provenance(connection)
+        _null_unresolved_run_schedule_refs(connection)
+        connection.exec_driver_sql(
+            "UPDATE runs SET schedule_reason = NULL "
+            "WHERE schedule_reason IS NOT NULL "
+            "AND schedule_reason NOT IN ('scheduled', 'manual')"
+        )
+
+        _drop_constraint_if_exists(connection, "runs", "ck_runs_schedule_reason")
+        connection.exec_driver_sql(
+            "ALTER TABLE runs ADD CONSTRAINT ck_runs_schedule_reason "
+            "CHECK (schedule_reason IS NULL OR schedule_reason IN ('scheduled', 'manual'))"
+        )
+        for constraint_name in ("fk_runs_schedule_id", "runs_schedule_id_fkey"):
+            _drop_constraint_if_exists(connection, "runs", constraint_name)
+        connection.exec_driver_sql(
+            "ALTER TABLE runs ADD CONSTRAINT fk_runs_schedule_id "
+            "FOREIGN KEY (schedule_id) "
+            "REFERENCES workflow_package_schedules(id) ON DELETE SET NULL"
+        )
+        for constraint_name in ("fk_runs_schedule_fire_id", "runs_schedule_fire_id_fkey"):
+            _drop_constraint_if_exists(connection, "runs", constraint_name)
+        connection.exec_driver_sql(
+            "ALTER TABLE runs ADD CONSTRAINT fk_runs_schedule_fire_id "
+            "FOREIGN KEY (schedule_fire_id) "
+            "REFERENCES workflow_package_schedule_fires(id) ON DELETE SET NULL"
+        )
+
+        _delete_legacy_workflow_package_schedules_with_run_retention(
+            connection,
+            schedule_columns,
+        )
         if "archived_at" in schedule_columns:
             connection.exec_driver_sql(
                 "ALTER TABLE workflow_package_schedules DROP COLUMN IF EXISTS archived_at"
@@ -2473,40 +2791,13 @@ def _ensure_workflow_package_schedule_tables(engine: Engine, table_names: set[st
             schedule_columns.discard("archived_at")
 
         connection.exec_driver_sql(
-            "DELETE FROM workflow_package_schedules AS schedule "
-            "WHERE NOT EXISTS ("
-            "SELECT 1 FROM workflow_packages AS package "
-            "WHERE package.id = schedule.package_id"
-            ")"
-        )
-        connection.exec_driver_sql(
             "DELETE FROM workflow_package_schedule_fires AS fire "
             "WHERE NOT EXISTS ("
             "SELECT 1 FROM workflow_package_schedules AS schedule "
             "WHERE schedule.id = fire.schedule_id"
             ")"
         )
-        connection.exec_driver_sql(
-            "UPDATE runs SET schedule_id = NULL "
-            "WHERE schedule_id IS NOT NULL "
-            "AND NOT EXISTS ("
-            "SELECT 1 FROM workflow_package_schedules AS schedule "
-            "WHERE schedule.id = runs.schedule_id"
-            ")"
-        )
-        connection.exec_driver_sql(
-            "UPDATE runs SET schedule_fire_id = NULL "
-            "WHERE schedule_fire_id IS NOT NULL "
-            "AND NOT EXISTS ("
-            "SELECT 1 FROM workflow_package_schedule_fires AS fire "
-            "WHERE fire.id = runs.schedule_fire_id"
-            ")"
-        )
-        connection.exec_driver_sql(
-            "UPDATE runs SET schedule_reason = NULL "
-            "WHERE schedule_reason IS NOT NULL "
-            "AND schedule_reason NOT IN ('scheduled', 'manual')"
-        )
+        _null_unresolved_run_schedule_refs(connection)
 
         for table_name, constraint_name, constraint_sql in _WORKFLOW_PACKAGE_SCHEDULE_CHECKS:
             _drop_constraint_if_exists(connection, table_name, constraint_name)
@@ -2543,25 +2834,6 @@ def _ensure_workflow_package_schedule_tables(engine: Engine, table_names: set[st
             "ADD CONSTRAINT fk_workflow_package_schedule_fires_schedule_id "
             "FOREIGN KEY (schedule_id) "
             "REFERENCES workflow_package_schedules(id) ON DELETE CASCADE"
-        )
-        _drop_constraint_if_exists(connection, "runs", "ck_runs_schedule_reason")
-        connection.exec_driver_sql(
-            "ALTER TABLE runs ADD CONSTRAINT ck_runs_schedule_reason "
-            "CHECK (schedule_reason IS NULL OR schedule_reason IN ('scheduled', 'manual'))"
-        )
-        for constraint_name in ("fk_runs_schedule_id", "runs_schedule_id_fkey"):
-            _drop_constraint_if_exists(connection, "runs", constraint_name)
-        connection.exec_driver_sql(
-            "ALTER TABLE runs ADD CONSTRAINT fk_runs_schedule_id "
-            "FOREIGN KEY (schedule_id) "
-            "REFERENCES workflow_package_schedules(id) ON DELETE CASCADE"
-        )
-        for constraint_name in ("fk_runs_schedule_fire_id", "runs_schedule_fire_id_fkey"):
-            _drop_constraint_if_exists(connection, "runs", constraint_name)
-        connection.exec_driver_sql(
-            "ALTER TABLE runs ADD CONSTRAINT fk_runs_schedule_fire_id "
-            "FOREIGN KEY (schedule_fire_id) "
-            "REFERENCES workflow_package_schedule_fires(id) ON DELETE CASCADE"
         )
         for statement in (*index_statements, *_RUN_SCHEDULE_PROVENANCE_INDEXES):
             connection.exec_driver_sql(statement)

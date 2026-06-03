@@ -27,7 +27,10 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.models.workflow_package import WorkflowPackage
-from app.models.workflow_package_schedule import WorkflowPackageSchedule
+from app.models.workflow_package_schedule import (
+    WorkflowPackageSchedule,
+    WorkflowPackageScheduleFire,
+)
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.memory import (
     MemoryLifecycleStatus,
@@ -393,7 +396,7 @@ def _seed_model_connection(
         session.commit()
 
 
-def test_schedule_contract_service_read_models_include_latest_fire_and_run(
+def test_schedule_delete_service_detaches_direct_run_and_removes_schedule_reads(
     session_factory: sessionmaker[Session],
 ) -> None:
     scheduled_for = datetime.fromisoformat("2026-06-01T13:00:00+00:00")
@@ -481,11 +484,18 @@ def test_schedule_contract_service_read_models_include_latest_fire_and_run(
         )
         session.add(run)
         session.commit()
+        run_id = run.id
 
         detail = service.get_schedule(schedule.id)
         history = service.list_fire_history(schedule.id)
         service.delete_schedule(schedule.id)
-        deleted_run = session.get(Run, run.id)
+        session.expunge_all()
+        detached_run = session.get(Run, run_id)
+        remaining_fire_count = (
+            session.query(WorkflowPackageScheduleFire)
+            .filter(WorkflowPackageScheduleFire.schedule_id == schedule.id)
+            .count()
+        )
 
         with pytest.raises(ApiError, match="Schedule not found"):
             service.get_schedule(schedule.id)
@@ -498,18 +508,28 @@ def test_schedule_contract_service_read_models_include_latest_fire_and_run(
     assert schedule.next_fire_at == scheduled_for
     assert fire.run_id is None
     assert detail.latest_fire_id == fire.id
-    assert detail.latest_run_id == run.id
+    assert detail.latest_run_id == run_id
     assert detail.latest_status == "queued"
     assert history.items[0].id == fire.id
-    assert history.items[0].run_id == run.id
-    assert deleted_run is None
+    assert history.items[0].run_id == run_id
+    assert detached_run is not None
+    assert detached_run.schedule_id is None
+    assert detached_run.schedule_fire_id is None
+    assert detached_run.scheduled_for == scheduled_for
+    assert detached_run.schedule_reason == FireReason.SCHEDULED.value
+    assert detached_run.schedule_provenance is not None
+    assert detached_run.schedule_provenance["scheduleId"] == schedule.id
+    assert detached_run.schedule_provenance["scheduleFireId"] == fire.id
+    assert detached_run.schedule_provenance["scheduleDeletedAt"] is not None
+    assert remaining_fire_count == 0
 
 
-def test_delete_runs_for_schedule_removes_direct_schedule_runs_only(
+def test_schedule_delete_preserves_direct_runs_descendants_and_run_linked_artifacts(
     session_factory: sessionmaker[Session],
 ) -> None:
     scheduled_for = datetime.fromisoformat("2026-06-01T13:00:00+00:00")
     materialized_at = datetime.fromisoformat("2026-06-01T13:00:04+00:00")
+    preserved_deleted_at = "2026-05-31T12:00:00Z"
     with session_factory() as session:
         package = WorkflowPackage(
             key="schedule_cleanup_package",
@@ -604,6 +624,24 @@ def test_delete_runs_for_schedule_removes_direct_schedule_runs_only(
             schedule_fire_id=fire.id,
             scheduled_for=scheduled_for,
             schedule_reason=FireReason.MANUAL.value,
+            schedule_provenance={
+                "scheduleId": schedule.id,
+                "scheduleFireId": fire.id,
+                "scheduleName": schedule.name,
+                "packageId": package.id,
+                "packageKey": package.key,
+                "workflowKey": schedule.workflow_key,
+                "timezone": schedule.timezone,
+                "recurrence": {"type": "daily", "atLocalTime": "09:00"},
+                "fireKey": fire.fire_key,
+                "reason": FireReason.MANUAL.value,
+                "scheduledFor": scheduled_for.isoformat().replace("+00:00", "Z"),
+                "scheduledLocalDate": fire.scheduled_local_date,
+                "scheduledLocalTime": fire.scheduled_local_time,
+                "scheduledLocalDateTime": fire.scheduled_local_datetime,
+                "materializedAt": materialized_at.isoformat().replace("+00:00", "Z"),
+                "scheduleDeletedAt": preserved_deleted_at,
+            },
             input={"ticker": "MSFT"},
             status="running",
             queued_at=materialized_at,
@@ -698,15 +736,44 @@ def test_delete_runs_for_schedule_removes_direct_schedule_runs_only(
         rerun_descendant_id = rerun_descendant.id
         fork_descendant_id = fork_descendant.id
 
-        RunService(session).delete_runs_for_schedule(schedule_id=schedule.id, fire_ids=[fire.id])
+        schedule_service.delete_schedule(schedule.id)
         session.expunge_all()
 
-        assert session.get(Run, direct_queued_id) is None
-        assert session.get(Run, direct_running_id) is None
-        assert session.get(Run, rerun_descendant_id) is not None
-        assert session.get(Run, fork_descendant_id) is not None
+        detached_direct_queued = session.get(Run, direct_queued_id)
+        detached_direct_running = session.get(Run, direct_running_id)
+        detached_rerun_descendant = session.get(Run, rerun_descendant_id)
+        detached_fork_descendant = session.get(Run, fork_descendant_id)
         remaining_slugs = {report.slug for report in session.query(Report).all()}
-        assert remaining_slugs == {"descendant_memory"}
+        remaining_fire_count = (
+            session.query(WorkflowPackageScheduleFire)
+            .filter(WorkflowPackageScheduleFire.schedule_id == schedule.id)
+            .count()
+        )
+
+        assert detached_direct_queued is not None
+        assert detached_direct_running is not None
+        assert detached_rerun_descendant is not None
+        assert detached_fork_descendant is not None
+        assert detached_direct_queued.schedule_id is None
+        assert detached_direct_queued.schedule_fire_id is None
+        assert detached_direct_running.schedule_id is None
+        assert detached_direct_running.schedule_fire_id is None
+        assert detached_direct_queued.schedule_provenance is not None
+        assert detached_direct_queued.schedule_provenance["scheduleId"] == schedule.id
+        assert detached_direct_queued.schedule_provenance["scheduleDeletedAt"] is not None
+        assert detached_direct_running.schedule_provenance is not None
+        assert detached_direct_running.schedule_provenance["scheduleId"] == schedule.id
+        assert detached_direct_running.schedule_provenance["scheduleFireId"] == fire.id
+        direct_running_deleted_at = detached_direct_running.schedule_provenance["scheduleDeletedAt"]
+        assert direct_running_deleted_at == preserved_deleted_at
+        assert detached_rerun_descendant.schedule_provenance is None
+        assert detached_fork_descendant.schedule_provenance is None
+        assert remaining_slugs == {
+            "descendant_memory",
+            "direct_queued_memory",
+            "direct_running_memory",
+        }
+        assert remaining_fire_count == 0
 
 
 def test_digital_oracle_package_local_system_prompt_receives_runtime_tool_guidance(
@@ -1979,13 +2046,13 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
         RunService(session, session_factory).execute_run(rerun_id)
     rerun_detail = _wait_for_run(client, rerun_id)
     assert rerun_detail["status"] == "succeeded"
-    assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
-        "api_key": "sk-package-runtime-live",
-        "base_url": "https://provider-runtime.example.test/v1",
-        "timeout": 31.0,
-    }
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-v1"
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "high"}
+    rerun_init_call = _RuntimeRecordingOpenAIClient.init_calls[-1]
+    assert rerun_init_call["api_key"] == "sk-package-runtime-live"
+    assert rerun_init_call["base_url"] == "https://provider-runtime.example.test/v1"
+    assert rerun_init_call["timeout"] == 31.0
+    rerun_create_call = _RuntimeRecordingOpenAIClient.create_calls[-1]
+    assert rerun_create_call["model"] == "gpt-package-v1"
+    assert rerun_create_call["reasoning"]["effort"] == "high"
 
     _RuntimeRecordingOpenAIClient.reset()
     _RuntimeRecordingOpenAIClient.output_text = '{"summary": "drift fork output"}'
@@ -1993,13 +2060,13 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
         RunService(session, session_factory).execute_run(fork_id)
     fork_detail = _wait_for_run(client, fork_id)
     assert fork_detail["status"] == "succeeded"
-    assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
-        "api_key": "sk-package-runtime-live",
-        "base_url": "https://provider-runtime.example.test/v1",
-        "timeout": 31.0,
-    }
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-v1"
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "high"}
+    fork_init_call = _RuntimeRecordingOpenAIClient.init_calls[-1]
+    assert fork_init_call["api_key"] == "sk-package-runtime-live"
+    assert fork_init_call["base_url"] == "https://provider-runtime.example.test/v1"
+    assert fork_init_call["timeout"] == 31.0
+    fork_create_call = _RuntimeRecordingOpenAIClient.create_calls[-1]
+    assert fork_create_call["model"] == "gpt-package-v1"
+    assert fork_create_call["reasoning"]["effort"] == "high"
 
     with session_factory() as session:
         rerun_snapshot = session.get(RunWorkflowPackageSnapshot, rerun_id)
@@ -2480,7 +2547,7 @@ def test_tradingagents_materializer_persists_workflow_key_snapshots_for_canonica
             assert schedule.next_fire_at == materialized_at + timedelta(minutes=2)
 
 
-def test_scheduled_run_snapshot_materializer_creates_normal_package_run(
+def test_scheduled_run_snapshot_materializer_persists_schedule_provenance(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -2513,11 +2580,13 @@ def test_scheduled_run_snapshot_materializer_creates_normal_package_run(
             .filter(RunWorkflowPackageSnapshot.run_id == run.id)
             .one()
         )
+        schedule_row = session.get(WorkflowPackageSchedule, schedule_id)
         fire = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items[0]
         detail = RunService(session, session_factory).get_run(run.id)
         run_id = run.id
         fire_id = fire.id
 
+        assert schedule_row is not None
         assert run.target_kind == "workflowPackage"
         assert run.status == "queued"
         assert run.schedule_fire_id == fire.id
@@ -2529,6 +2598,24 @@ def test_scheduled_run_snapshot_materializer_creates_normal_package_run(
         assert snapshot.workflow_package_key == "scheduled_run_snapshot_package"
         assert snapshot.workflow_key == "runtime_workflow"
         assert snapshot.launch_parameters == {"ticker": "MSFT"}
+        assert run.schedule_provenance == {
+            "scheduleId": schedule_id,
+            "scheduleFireId": fire.id,
+            "scheduleName": schedule_row.name,
+            "packageId": package_id,
+            "packageKey": "scheduled_run_snapshot_package",
+            "workflowKey": schedule_row.workflow_key,
+            "timezone": schedule_row.timezone,
+            "recurrence": deepcopy(schedule_row.recurrence),
+            "fireKey": fire.fire_key,
+            "reason": FireReason.SCHEDULED.value,
+            "scheduledFor": "2026-06-01T13:00:00Z",
+            "scheduledLocalDate": fire.scheduled_local_date,
+            "scheduledLocalTime": fire.scheduled_local_time,
+            "scheduledLocalDateTime": fire.scheduled_local_datetime,
+            "materializedAt": "2026-06-01T13:00:00Z",
+            "scheduleDeletedAt": None,
+        }
         assert detail.schedule_id == schedule_id
         assert detail.schedule_fire_id == fire.id
         assert detail.scheduled_for == scheduled_for

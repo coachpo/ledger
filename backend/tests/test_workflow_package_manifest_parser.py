@@ -147,6 +147,73 @@ def _with_duplicate_workflow() -> str:
     )
 
 
+def _single_diagnostic(source: str):
+    result = parse_workflow_package_manifest(source)
+
+    assert result.manifest is None
+    assert len(result.diagnostics) == 1
+    diagnostic = result.diagnostics[0]
+    assert diagnostic.severity == "error"
+    return diagnostic
+
+
+def _graph_package_manifest_source(*, flow: str, output_reference: str) -> str:
+    return f"""apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: graph_package
+  name: Graph Package
+spec:
+  inputs:
+    type: object
+    properties:
+      ticker:
+        type: string
+  outputSchemas:
+    - key: graph_note
+      name: Graph Note
+      jsonSchema:
+        type: object
+        properties:
+          summary:
+            type: string
+  agents:
+    - key: market_agent
+      name: Market Agent
+      modelConnection: graph_model
+      systemPrompt: Return market output.
+      inputSchema:
+        type: object
+      outputSchema: graph_note
+    - key: news_agent
+      name: News Agent
+      modelConnection: graph_model
+      systemPrompt: Return news output.
+      inputSchema:
+        type: object
+      outputSchema: graph_note
+    - key: decision_agent
+      name: Decision Agent
+      modelConnection: graph_model
+      systemPrompt: Return final output.
+      inputSchema:
+        type: object
+      outputSchema: graph_note
+  workflows:
+    - key: advisory_research
+      name: Advisory Research
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+      flow:
+{flow}
+      output:
+        from: {output_reference}
+"""
+
+
 def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     result = parse_workflow_package_manifest(_valid_package_manifest_source())
 
@@ -266,6 +333,229 @@ def test_parse_rejects_transport_specific_mcp_inline_map_mismatch(
     assert expected_message in result.diagnostics[0].message
     assert result.diagnostics[0].line is not None
     assert result.diagnostics[0].column is not None
+
+
+def test_parse_workflow_package_manifest_rejects_malformed_yaml_with_location() -> None:
+    diagnostic = _single_diagnostic(
+        """apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: [broken
+"""
+    )
+
+    assert diagnostic.path == "$"
+    assert "Malformed YAML" in diagnostic.message
+    assert diagnostic.line is not None
+    assert diagnostic.column is not None
+
+
+def test_parse_package_agent_input_schema_must_be_object() -> None:
+    diagnostic = _single_diagnostic(
+        _valid_package_manifest_source().replace(
+            """      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+""",
+            """      inputSchema:
+        type: string
+""",
+            1,
+        )
+    )
+
+    assert diagnostic.path == "spec.agents[0].inputSchema"
+    assert diagnostic.message == "inputSchema must be an object schema"
+
+
+def test_parse_package_workflow_input_schema_must_be_object() -> None:
+    diagnostic = _single_diagnostic(
+        _valid_package_manifest_source().replace(
+            """      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+      flow:
+""",
+            """      inputSchema:
+        type: string
+      flow:
+""",
+            1,
+        )
+    )
+
+    assert diagnostic.path == "spec.workflows[0].inputSchema"
+    assert diagnostic.message == "inputSchema must be an object schema"
+
+
+def test_parse_workflow_package_manifest_rejects_compiled_only_fields() -> None:
+    diagnostic = _single_diagnostic(
+        _valid_package_manifest_source().replace(
+            """      output:
+        from: ${{ nodes.market_analysis.outputs.decision }}
+""",
+            """      compiledGraph:
+        apiVersion: signaldeck.workflowPackage/v1
+        rootNodeId: market_analysis
+        nodes: []
+      output:
+        from: ${{ nodes.market_analysis.outputs.decision }}
+""",
+            1,
+        )
+    )
+
+    assert diagnostic.path == "spec.workflows[0].compiledGraph"
+    assert diagnostic.message == "Extra inputs are not permitted"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_path"),
+    [
+        (
+            _graph_package_manifest_source(
+                flow="""        kind: step
+        id: research
+        slot: analysis
+        uses: market_agent
+        with:
+          prior: ${{ nodes.research.outputs.analysis }}""",
+                output_reference="${{ nodes.research.outputs.analysis }}",
+            ),
+            "spec.workflows[0].flow.with.prior",
+        ),
+        (
+            _graph_package_manifest_source(
+                flow="""        kind: sequence
+        id: root_sequence
+        nodes:
+          - kind: step
+            id: research
+            slot: analysis
+            uses: market_agent
+            with:
+              prior: ${{ nodes.decision.outputs.final }}
+          - kind: step
+            id: decision
+            slot: final
+            uses: decision_agent""",
+                output_reference="${{ nodes.root_sequence.outputs.final }}",
+            ),
+            "spec.workflows[0].flow.nodes[0].with.prior",
+        ),
+        (
+            _graph_package_manifest_source(
+                flow="""        kind: fanout
+        id: analyst_fanout
+        branches:
+          - id: market
+            node:
+              kind: step
+              id: market_analysis
+              slot: market_report
+              uses: market_agent
+              with:
+                ticker: ${{ inputs.ticker }}
+          - id: news
+            node:
+              kind: step
+              id: news_analysis
+              slot: news_report
+              uses: news_agent
+              with:
+                marketReport: ${{ nodes.market_analysis.outputs.market_report }}""",
+                output_reference="${{ nodes.analyst_fanout.outputs.news }}",
+            ),
+            "spec.workflows[0].flow.branches[1].node.with.marketReport",
+        ),
+    ],
+)
+def test_parse_package_workflow_graph_rejects_non_earlier_node_refs(
+    source: str,
+    expected_path: str,
+) -> None:
+    diagnostic = _single_diagnostic(source)
+
+    assert diagnostic.path == expected_path
+    assert diagnostic.message == "Node references must point to an earlier node"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_path", "expected_message"),
+    [
+        (
+            _graph_package_manifest_source(
+                flow="""        kind: fanout
+        id: analyst_fanout
+        branches:
+          - id: market
+            node:
+              kind: step
+              id: market_analysis
+              slot: analysis
+              uses: market_agent
+          - id: market
+            node:
+              kind: step
+              id: news_analysis
+              slot: news
+              uses: news_agent""",
+                output_reference="${{ nodes.analyst_fanout.outputs.analysis }}",
+            ),
+            "spec.workflows[0].flow.branches[1].id",
+            "Duplicate fanout branch id: market",
+        ),
+        (
+            _graph_package_manifest_source(
+                flow="""        kind: sequence
+        id: root_sequence
+        nodes:
+          - kind: step
+            id: research
+            slot: analysis
+            uses: market_agent
+          - kind: step
+            id: research
+            slot: final
+            uses: decision_agent""",
+                output_reference="${{ nodes.root_sequence.outputs.analysis }}",
+            ),
+            "spec.workflows[0].flow.nodes[1].id",
+            "Duplicate node id: research",
+        ),
+        (
+            _graph_package_manifest_source(
+                flow="""        kind: sequence
+        id: root_sequence
+        nodes:
+          - kind: step
+            id: research
+            slot: analysis
+            uses: market_agent
+          - kind: step
+            id: decision
+            slot: analysis
+            uses: decision_agent""",
+                output_reference="${{ nodes.root_sequence.outputs.analysis }}",
+            ),
+            "spec.workflows[0].flow.nodes[1].slot",
+            "Duplicate output slot name within the same sequence",
+        ),
+    ],
+)
+def test_parse_package_workflow_graph_preserves_duplicate_diagnostics(
+    source: str,
+    expected_path: str,
+    expected_message: str,
+) -> None:
+    diagnostic = _single_diagnostic(source)
+
+    assert diagnostic.path == expected_path
+    assert diagnostic.message == expected_message
 
 
 @pytest.mark.parametrize(

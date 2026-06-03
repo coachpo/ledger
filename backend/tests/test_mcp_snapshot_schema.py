@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.mcp_server import McpToolSnapshot, McpToolSnapshotList
+from app.schemas.mcp_server import McpToolSnapshot
 
 _SCHEMA_HASH = "sha256:" + "a" * 64
 
@@ -41,14 +41,6 @@ def test_mcp_tool_snapshot_serializes_publish_time_contract_fields() -> None:
     assert payload == _snapshot_payload()
     assert "headers" not in payload
     assert "env" not in payload
-
-
-def test_mcp_tool_snapshot_list_serializes_items_with_camel_case_aliases() -> None:
-    snapshot = McpToolSnapshot.model_validate(_snapshot_payload())
-
-    payload = McpToolSnapshotList(items=[snapshot]).model_dump(by_alias=True, mode="json")
-
-    assert payload["items"] == [_snapshot_payload()]
 
 
 @pytest.mark.parametrize(
