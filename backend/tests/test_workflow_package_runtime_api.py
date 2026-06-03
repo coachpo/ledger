@@ -156,6 +156,7 @@ class _RuntimeRecordingChatCompletionsClient:
     init_calls: list[dict[str, Any]] = []
     create_calls: list[dict[str, Any]] = []
     final_output_text = '{"summary": "package chat runtime output"}'
+    final_output_texts: list[str] | None = None
     return_empty_choices = False
     malformed_tool_arguments = False
     failures: list[BaseException] | None = None
@@ -227,8 +228,14 @@ class _RuntimeRecordingChatCompletionsClient:
                 "choices": [{"message": message}],
                 "usage": self._usage(prompt_tokens=7, completion_tokens=2),
             }
+        final_output_texts = type(self).final_output_texts
+        final_output_text = (
+            final_output_texts[min(call_index - 1, len(final_output_texts) - 1)]
+            if final_output_texts
+            else type(self).final_output_text
+        )
         return {
-            "choices": [{"message": {"content": type(self).final_output_text}}],
+            "choices": [{"message": {"content": final_output_text}}],
             "usage": self._usage(prompt_tokens=11, completion_tokens=8),
         }
 
@@ -261,6 +268,7 @@ class _RuntimeRecordingChatCompletionsClient:
         cls.init_calls = []
         cls.create_calls = []
         cls.final_output_text = '{"summary": "package chat runtime output"}'
+        cls.final_output_texts = None
         cls.return_empty_choices = False
         cls.malformed_tool_arguments = False
         cls.failures = None
@@ -2004,6 +2012,101 @@ def test_workflow_package_runtime_strict_json_schema_strategy_sends_native_schem
     assert text_format["schema"]["properties"]["summary"]["type"] == "string"
 
 
+def test_workflow_package_runtime_strict_json_schema_invalid_json_retries_twice_and_succeeds(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_texts = [
+        "not json",
+        '{"notSummary": "invalid"}',
+        '{"summary": "strict corrected output"}',
+    ]
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+
+    _seed_model_connection(
+        session_factory,
+        capabilities={
+            "strictJsonSchemaOutput": {"status": "supported"},
+            "jsonObjectOutput": {"status": "unsupported"},
+        },
+        output_strategy_policy="require_strict_schema",
+    )
+    created = _create_package(client, package_key="runtime_strict_schema_retry_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "strict corrected output"}
+    assert len(_RuntimeRecordingOpenAIClient.create_calls) == 3
+    for create_call in _RuntimeRecordingOpenAIClient.create_calls:
+        text_format = create_call["text"]["format"]
+        assert text_format["type"] == "json_schema"
+        assert text_format["strict"] is True
+    first_retry_input = _RuntimeRecordingOpenAIClient.create_calls[1]["input"]
+    second_retry_input = _RuntimeRecordingOpenAIClient.create_calls[2]["input"]
+    assert "JSON/schema validation" in first_retry_input
+    assert "Response body is not valid JSON" in first_retry_input
+    assert "summary" in second_retry_input
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["selectedStrategies"]["outputStrategy"] == "strictJsonSchema"
+    assert "providerRetries" not in gateway_metadata
+
+
+def test_workflow_package_runtime_strict_json_schema_retry_exhaustion_fails_stably(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_texts = [
+        "not json",
+        '{"notSummary": "invalid"}',
+        '{"stillWrong": "invalid"}',
+    ]
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+
+    _seed_model_connection(
+        session_factory,
+        capabilities={
+            "strictJsonSchemaOutput": {"status": "supported"},
+            "jsonObjectOutput": {"status": "unsupported"},
+        },
+        output_strategy_policy="require_strict_schema",
+    )
+    created = _create_package(client, package_key="runtime_strict_schema_exhausted_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "failed"
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    assert invocation["status"] == "failed"
+    assert invocation["errorCode"] == "model_output_retry_exhausted"
+    assert invocation["errorDetails"][0]["field"] == "summary"
+    assert len(_RuntimeRecordingOpenAIClient.create_calls) == 3
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["selectedStrategies"]["outputStrategy"] == "strictJsonSchema"
+    assert "providerRetries" not in gateway_metadata
+
+
 def test_workflow_package_runtime_forbidden_reasoning_and_streaming_policies_record_metadata(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -2119,7 +2222,7 @@ def test_workflow_package_runtime_missing_usage_metadata_stays_secret_safe_and_s
     }
 
 
-def test_workflow_package_runtime_json_object_validation_retries_once_and_succeeds(
+def test_workflow_package_runtime_json_object_validation_retries_and_succeeds(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -2156,7 +2259,7 @@ def test_workflow_package_runtime_json_object_validation_retries_once_and_succee
     assert len(_RuntimeRecordingOpenAIClient.create_calls) == 2
     first_create_call = _RuntimeRecordingOpenAIClient.create_calls[0]
     assert first_create_call["text"]["format"]["type"] == "json_object"
-    assert "server-side schema validation" in _RuntimeRecordingOpenAIClient.create_calls[1]["input"]
+    assert "JSON/schema validation" in _RuntimeRecordingOpenAIClient.create_calls[1]["input"]
 
 
 def test_workflow_package_runtime_json_object_validation_retry_exhaustion_fails_stably(
@@ -2168,6 +2271,7 @@ def test_workflow_package_runtime_json_object_validation_retry_exhaustion_fails_
     _RuntimeRecordingOpenAIClient.output_texts = [
         '{"notSummary": "invalid"}',
         '{"stillWrong": "invalid"}',
+        '{"wrongAgain": "invalid"}',
     ]
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
 
@@ -2202,7 +2306,7 @@ def test_workflow_package_runtime_json_object_validation_retry_exhaustion_fails_
         ]
         == "jsonObjectWithValidation"
     )
-    assert len(_RuntimeRecordingOpenAIClient.create_calls) == 2
+    assert len(_RuntimeRecordingOpenAIClient.create_calls) == 3
 
 
 def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_and_usage(
@@ -2290,6 +2394,110 @@ def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_a
             "streamingStrategy": "disabled",
         }
         assert "providerRetries" not in gateway_metadata
+
+
+def test_workflow_package_runtime_chat_strict_json_schema_invalid_json_retries_twice_and_succeeds(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    _RuntimeRecordingChatCompletionsClient.tool_argument_sequence = []
+    _RuntimeRecordingChatCompletionsClient.final_output_texts = [
+        "not json",
+        '{"notSummary": "invalid"}',
+        '{"summary": "chat strict corrected output"}',
+    ]
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeRecordingChatCompletionsClient,
+    )
+
+    _seed_model_connection(
+        session_factory,
+        api_style="chat_completions",
+        capabilities={
+            "strictJsonSchemaOutput": {"status": "supported"},
+            "jsonObjectOutput": {"status": "unsupported"},
+        },
+        output_strategy_policy="require_strict_schema",
+    )
+    created = _create_package(client, package_key="runtime_chat_strict_schema_retry_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "chat strict corrected output"}
+    assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 3
+    for create_call in _RuntimeRecordingChatCompletionsClient.create_calls:
+        assert create_call["response_format"]["type"] == "json_schema"
+    first_retry_messages = _RuntimeRecordingChatCompletionsClient.create_calls[1]["messages"]
+    assert first_retry_messages[-2] == {"role": "assistant", "content": "not json"}
+    assert "JSON/schema validation" in first_retry_messages[-1]["content"]
+    assert "Response body is not valid JSON" in first_retry_messages[-1]["content"]
+    second_retry_messages = _RuntimeRecordingChatCompletionsClient.create_calls[2]["messages"]
+    assert "summary" in second_retry_messages[-1]["content"]
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["selectedStrategies"]["outputStrategy"] == "strictJsonSchema"
+    assert "providerRetries" not in gateway_metadata
+
+
+def test_workflow_package_runtime_chat_strict_json_schema_retry_exhaustion_fails_stably(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    _RuntimeRecordingChatCompletionsClient.tool_argument_sequence = []
+    _RuntimeRecordingChatCompletionsClient.final_output_texts = [
+        "not json",
+        '{"notSummary": "invalid"}',
+        '{"stillWrong": "invalid"}',
+    ]
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeRecordingChatCompletionsClient,
+    )
+
+    _seed_model_connection(
+        session_factory,
+        api_style="chat_completions",
+        capabilities={
+            "strictJsonSchemaOutput": {"status": "supported"},
+            "jsonObjectOutput": {"status": "unsupported"},
+        },
+        output_strategy_policy="require_strict_schema",
+    )
+    created = _create_package(client, package_key="runtime_chat_strict_schema_exhausted_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "failed"
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    assert invocation["status"] == "failed"
+    assert invocation["errorCode"] == "model_output_retry_exhausted"
+    assert invocation["errorDetails"][0]["field"] == "summary"
+    assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 3
+    gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
+    assert gateway_metadata["selectedStrategies"]["outputStrategy"] == "strictJsonSchema"
+    assert "providerRetries" not in gateway_metadata
 
 
 def test_workflow_package_runtime_chat_provider_retry_records_providerRetries_modelGateway(

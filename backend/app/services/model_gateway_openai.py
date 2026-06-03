@@ -788,7 +788,7 @@ class OpenAIProtocolAdapter:
                         raise
                     validation_attempt += 1
                     if validation_attempt >= output_strategy.max_validation_attempts:
-                        if output_strategy.strategy == "jsonObjectWithValidation":
+                        if output_strategy.max_validation_attempts > 1:
                             raise exhausted_validation_error(exc.details) from exc
                         raise
                     messages.append({"role": "assistant", "content": response_text})
@@ -814,7 +814,7 @@ class OpenAIProtocolAdapter:
                     )
                 validation_attempt += 1
                 if validation_attempt >= output_strategy.max_validation_attempts:
-                    if output_strategy.strategy == "jsonObjectWithValidation":
+                    if output_strategy.max_validation_attempts > 1:
                         raise exhausted_validation_error(validation.details)
                     raise validation_failed_error(validation.details)
                 messages.append({"role": "assistant", "content": response_text})

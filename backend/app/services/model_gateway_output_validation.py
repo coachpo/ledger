@@ -36,7 +36,8 @@ class ModelOutputStrategySelection:
 
     @property
     def max_validation_attempts(self) -> int:
-        return 2 if self.strategy == "jsonObjectWithValidation" else 1
+        structured_strategies = {"strictJsonSchema", "jsonObjectWithValidation"}
+        return 3 if self.strategy in structured_strategies else 1
 
     @property
     def uses_server_validation(self) -> bool:
@@ -111,8 +112,12 @@ def validation_retry_input(
     return "\n\n".join(
         (
             original_input,
-            "The previous JSON response failed server-side schema validation. "
-            "Return one corrected JSON object only, with no markdown or explanatory text.",
+            " ".join(
+                (
+                    "The previous JSON response failed server-side JSON/schema validation.",
+                    "Return one corrected JSON object only, with no markdown or explanatory text.",
+                )
+            ),
             "Validation errors: "
             + json.dumps(validation_details, ensure_ascii=False, sort_keys=True),
         )
@@ -122,7 +127,7 @@ def validation_retry_input(
 def exhausted_validation_error(details: list[dict[str, str]]) -> ModelGatewayError:
     return ModelGatewayError(
         code="model_output_retry_exhausted",
-        message="Model output failed server-side schema validation after one retry.",
+        message="Model output failed server-side JSON/schema validation after correction retries.",
         details=details,
         failure_classification=RETRY_BOUND_EXHAUSTED_FAILURE,
     )
