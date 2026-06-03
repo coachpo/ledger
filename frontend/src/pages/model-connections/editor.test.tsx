@@ -195,13 +195,16 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByText("Output strategy policy")).toBeVisible();
   });
 
-  it("submits a create body without apiKey until one is entered", async () => {
+  it("preserves exact custom roots in create payloads", async () => {
     createModelConnectionMock.mockResolvedValue({ id: 9 });
 
     render(<ModelConnectionsEditorPage />);
 
     expect(screen.queryByText("Connection mode:")).not.toBeInTheDocument();
     fillRequiredCreateFields();
+    fireEvent.change(screen.getByLabelText(/^Base URL$/i), {
+      target: { value: "https://new.sharedchat.cc/codex/v1" },
+    });
 
     fireEvent.click(
       screen.getByRole("button", { name: /save model connection/i }),
@@ -212,7 +215,7 @@ describe("ModelConnectionsEditorPage", () => {
     );
     expect(createModelConnectionMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        baseUrl: "https://model-endpoint.example/v1",
+        baseUrl: "https://new.sharedchat.cc/codex/v1",
         key: "primary_compatible",
         modelId: "fake-tools-disabled",
         name: "Primary Compatible",
@@ -423,6 +426,9 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByLabelText(/^Base URL$/i)).toHaveValue(
       "https://provider.example.test/v1/",
     );
+    fireEvent.change(screen.getByLabelText(/^Base URL$/i), {
+      target: { value: "https://provider.example.com/custom-root" },
+    });
 
     expect(screen.getByText(/last reachability test passed/i)).toBeVisible();
     expect(screen.getAllByText(/tool calls rejected by fixture/i)[0]).toBeVisible();
@@ -445,7 +451,7 @@ describe("ModelConnectionsEditorPage", () => {
     const updateCall = updateModelConnectionMock.mock.calls[0][0];
     expect(updateCall.modelConnectionId).toBe("4");
     expect(updateCall.payload).toMatchObject({
-      baseUrl: "https://provider.example.test/v1/",
+      baseUrl: "https://provider.example.com/custom-root",
       description: "Production compatible endpoint.",
       modelId: "fake-tools-disabled",
       name: "Primary Compatible Updated",

@@ -98,7 +98,7 @@ describe("ModelConnectionsListPage", () => {
             timeoutSeconds: 90,
           },
           {
-            baseUrl: "https://backup.openai.com/v1",
+            baseUrl: "https://provider.example.com/custom-root",
             capabilities: {
               ...createDefaultCapabilities("openai_chat_completions"),
               nativeToolCalls: {
@@ -409,6 +409,11 @@ describe("ModelConnectionsListPage", () => {
     expect(primaryCardElement).toHaveTextContent("Model ID");
     expect(primaryCardElement).toHaveTextContent("Endpoint");
     expect(primaryCardElement).toHaveTextContent("Timeout");
+
+    const customRootCardElement = screen.getByTestId("model-connections-row-4");
+    expect(customRootCardElement).toHaveTextContent(
+      "https://provider.example.com/custom-root",
+    );
   });
 
   it("filters the sorted model connection inventory locally", () => {
@@ -427,16 +432,16 @@ describe("ModelConnectionsListPage", () => {
 
     fireEvent.change(
       screen.getByRole("textbox", { name: "Search model connections" }),
-      { target: { value: "literal" } },
+      { target: { value: "provider.example.com/custom-root" } },
     );
 
+    expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
     expect(
       screen.queryByTestId("model-connections-row-9"),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByTestId("model-connections-row-4"),
+      screen.queryByTestId("model-connections-row-12"),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
 
     fireEvent.change(
       screen.getByRole("textbox", { name: "Search model connections" }),

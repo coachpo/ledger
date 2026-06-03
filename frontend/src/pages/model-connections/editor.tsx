@@ -117,7 +117,7 @@ const DEFAULT_PROTOCOL_PROFILE: ModelConnectionProtocolProfile =
 
 const initialValues: ModelConnectionEditorValues = {
   apiKey: "",
-  baseUrl: "https://model-endpoint.example/v1",
+  baseUrl: "https://provider.example.com/custom-root",
   capabilities: createDefaultCapabilities(DEFAULT_PROTOCOL_PROFILE),
   customReasoningEffort: "",
   description: "",
@@ -799,7 +799,7 @@ export function ModelConnectionsEditorPage() {
 
           <ConsoleSection
             title="Protocol and runtime defaults"
-            description="Base URL stays at the provider /v1 root; protocol profile carries Responses versus Chat Completions semantics."
+            description="Base URL stays at the provider's exact API root; protocol profile carries Responses versus Chat Completions semantics."
           >
             <div className="grid gap-4 md:grid-cols-2">
               <div className="flex min-w-0 flex-col gap-2">
