@@ -26,7 +26,7 @@ import {
   useWorkflowPackageManifest,
   useWorkflowPackages,
 } from "@/hooks/use-workflow-packages";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTimeInTimeZone } from "@/lib/format";
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import { buildRuntimeInputs, createRuntimeInputRow, type RuntimeInputRow } from "@/lib/runtime-inputs";
 import type { UnknownRecord } from "@/lib/types/common";
@@ -98,7 +98,13 @@ type WorkflowPackageOption = {
   value: string;
 };
 
-function ScheduleInputPreview({ preview }: { preview: SchedulePreviewRead | null }) {
+function ScheduleInputPreview({
+  preview,
+  timeZone,
+}: {
+  preview: SchedulePreviewRead | null;
+  timeZone: string;
+}) {
   if (!preview) {
     return (
       <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-xs text-muted-foreground" data-testid="schedule-input-preview-empty">
@@ -111,7 +117,9 @@ function ScheduleInputPreview({ preview }: { preview: SchedulePreviewRead | null
     <div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3" data-testid="schedule-input-preview">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Badge variant={preview.ready ? "secondary" : "destructive"}>{preview.ready ? "Ready" : "Not ready"}</Badge>
-        <span className="text-xs text-muted-foreground">Scheduled for {preview.scheduledFor ? formatDateTime(preview.scheduledFor) : "not available"}</span>
+        <span className="text-xs text-muted-foreground">
+          Scheduled for {preview.scheduledFor ? formatDateTimeInTimeZone(preview.scheduledFor, timeZone) : "not available"}
+        </span>
       </div>
       <div className="grid min-w-0 gap-3 lg:grid-cols-2">
         <div className="min-w-0">
@@ -363,7 +371,7 @@ export function ScheduledTaskEditorPage() {
             <Button data-testid="schedule-input-preview-trigger" disabled={isPending || Boolean(inputTemplateError) || !canSubmitTarget} type="button" variant="outline" onClick={() => void previewCurrentDraft()}>{previewSchedule.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null} Preview next fire</Button>
             <Button data-testid="schedule-save" disabled={isPending || Boolean(inputTemplateError) || !canSubmitTarget} type="button" onClick={() => void saveSchedule()}>{createSchedule.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null} Save schedule</Button>
           </div>
-          <ScheduleInputPreview preview={preview} />
+          <ScheduleInputPreview preview={preview} timeZone={draft.timezone} />
         </CardContent>
       </Card>
     </section>

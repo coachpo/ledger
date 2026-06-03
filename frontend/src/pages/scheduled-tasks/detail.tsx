@@ -78,7 +78,7 @@ import {
   useWorkflowPackageRuntimeInputRegistry,
 } from "@/hooks/use-workflow-packages";
 import { ApiRequestError } from "@/lib/api-client";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatDateTimeInTimeZone } from "@/lib/format";
 import { getWorkflowOptions } from "@/lib/workflow-options";
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import {
@@ -432,6 +432,14 @@ function summarizeRenderedParameters(value: unknown): string[] {
 
 function formatOptionalDateTime(value: string | null, fallback: string): string {
   return value ? formatDateTime(value) : fallback;
+}
+
+function formatOptionalDateTimeInTimeZone(
+  value: string | null,
+  timeZone: string,
+  fallback: string,
+): string {
+  return value ? formatDateTimeInTimeZone(value, timeZone) : fallback;
 }
 
 function formatDayOfWeek(value: string): string {
@@ -829,7 +837,7 @@ function ScheduleHeader({
   if (schedule.nextFireAt) {
     headerMetaItems.push({
       label: "Next run",
-      value: formatDateTime(schedule.nextFireAt),
+      value: formatDateTimeInTimeZone(schedule.nextFireAt, schedule.timezone),
     });
   }
 
@@ -1005,7 +1013,7 @@ function SummaryPanels({
       >
         <div className="flex min-w-0 flex-col gap-3">
           <p className="break-words text-base font-semibold tracking-tight">
-            {formatOptionalDateTime(schedule.nextFireAt, "No upcoming run")}
+            {formatOptionalDateTimeInTimeZone(schedule.nextFireAt, schedule.timezone, "No upcoming run")}
           </p>
           <DetailRows
             rows={[
@@ -1662,7 +1670,13 @@ function workflowInputsUnavailableReason(params: {
   return null;
 }
 
-function ScheduleInputPreview({ preview }: { preview: SchedulePreviewRead | null }) {
+function ScheduleInputPreview({
+  preview,
+  timeZone,
+}: {
+  preview: SchedulePreviewRead | null;
+  timeZone: string;
+}) {
   if (!preview) {
     return (
       <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-xs leading-5 text-muted-foreground" data-testid="schedule-input-preview-empty">
@@ -1675,7 +1689,9 @@ function ScheduleInputPreview({ preview }: { preview: SchedulePreviewRead | null
     <div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3" data-testid="schedule-input-preview">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Badge variant={preview.ready ? "secondary" : "destructive"}>{preview.ready ? "Ready" : "Not ready"}</Badge>
-        <span className="text-xs text-muted-foreground">Scheduled for {preview.scheduledFor ? formatDateTime(preview.scheduledFor) : "not available"}</span>
+        <span className="text-xs text-muted-foreground">
+          Scheduled for {preview.scheduledFor ? formatDateTimeInTimeZone(preview.scheduledFor, timeZone) : "not available"}
+        </span>
       </div>
       <ScheduleInputValidationAlert
         errors={preview.validationErrors}
@@ -1993,7 +2009,7 @@ function ScheduledInputsEditor({
           value={inputTemplateText}
           onChange={(event) => updateInputTemplateText(event.target.value)}
         />
-        <ScheduleInputPreview preview={previewRead} />
+        <ScheduleInputPreview preview={previewRead} timeZone={schedule.timezone} />
       </div>
       <div className="flex min-w-0 flex-col gap-3">
         {!inputTemplate.schemaSupported ? (
@@ -2080,7 +2096,13 @@ function ScheduledInputsEditor({
   );
 }
 
-function FireHistoryRow({ fire }: { fire: ScheduleFireRead }) {
+function FireHistoryRow({
+  fire,
+  timeZone,
+}: {
+  fire: ScheduleFireRead;
+  timeZone: string;
+}) {
   const issue = fireIssueMessage(fire);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const parameterSummary = summarizeRenderedParameters(fire.renderedParameters);
@@ -2100,7 +2122,7 @@ function FireHistoryRow({ fire }: { fire: ScheduleFireRead }) {
             <Badge variant="outline">{formatFireReason(fire.reason)}</Badge>
           </div>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Occurrence {formatDateTime(fire.scheduledFor)} · Local {fireLocalSummary(fire)}
+            Occurrence {formatDateTimeInTimeZone(fire.scheduledFor, timeZone)} · Schedule local {fireLocalSummary(fire)}
           </p>
         </div>
         {fire.runId ? (
@@ -2189,11 +2211,13 @@ function FireHistoryPanel({
   latestRunId,
   onRunNow,
   runNowDisabled,
+  timeZone,
 }: {
   history: FireHistoryState | undefined;
   latestRunId: number | null;
   onRunNow: () => void;
   runNowDisabled: boolean;
+  timeZone: string;
 }) {
   const safeHistory = normalizeFireHistoryState(history);
 
@@ -2241,7 +2265,7 @@ function FireHistoryPanel({
       ) : null}
       <div className="flex min-w-0 flex-col gap-3">
         {safeHistory.fires.map((fire) => (
-          <FireHistoryRow fire={fire} key={fire.id} />
+          <FireHistoryRow fire={fire} key={fire.id} timeZone={timeZone} />
         ))}
       </div>
     </div>
@@ -2342,6 +2366,7 @@ function ScheduleTabs({
               latestRunId={schedule.latestRunId}
               onRunNow={onRunNow}
               runNowDisabled={runNowDisabled}
+              timeZone={schedule.timezone}
             />
           </SummaryCard>
         </div>

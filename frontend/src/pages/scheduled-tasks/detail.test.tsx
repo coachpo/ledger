@@ -345,6 +345,30 @@ async function chooseSelectOption(label: string, optionName: RegExp | string) {
   fireEvent.click(await screen.findByRole("option", { name: optionName }));
 }
 
+function expectedViewerLocalDateTime(isoString: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(isoString));
+}
+
+function expectedDateTimeInTimeZone(isoString: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone,
+    timeZoneName: "short",
+  }).format(new Date(isoString));
+}
+
 describe("ScheduledTaskDetailPage", () => {
   beforeEach(() => {
     deleteScheduleMock.mockReset();
@@ -500,6 +524,12 @@ describe("ScheduledTaskDetailPage", () => {
   it("renders a cleaner management header, compact summaries, and isolated top-level tabs", async () => {
     renderDetailPage();
 
+    const expectedUpdatedAt = expectedViewerLocalDateTime("2026-05-30T10:00:00Z");
+    const expectedNextRun = expectedDateTimeInTimeZone(
+      "2026-06-01T13:00:00Z",
+      "America/New_York",
+    );
+
     const shell = screen.getByTestId("scheduled-task-detail-page");
     expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0", "overflow-hidden");
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
@@ -529,9 +559,9 @@ describe("ScheduledTaskDetailPage", () => {
     expect(headerMetaRow).toHaveTextContent("Package Market Research Package");
     expect(headerMetaRow).not.toHaveTextContent("Package market_research_package");
     expect(headerMetaRow).toHaveTextContent("Workflow Daily research");
-    expect(headerMetaRow).toHaveTextContent("Updated");
+    expect(headerMetaRow).toHaveTextContent(`Updated ${expectedUpdatedAt}`);
     expect(headerMetaRow).toHaveTextContent("Last run #2104");
-    expect(headerMetaRow).toHaveTextContent("Next run");
+    expect(headerMetaRow).toHaveTextContent(`Next run ${expectedNextRun}`);
 
     fireEvent.click(within(header).getByRole("button", { name: "Disable" }));
     expect(updateScheduleMock).toHaveBeenCalledWith({
@@ -543,6 +573,9 @@ describe("ScheduledTaskDetailPage", () => {
     expect(summaryGrid).toHaveClass("grid", "min-w-0");
     expect(summaryGrid).toHaveClass("lg:grid-cols-2", "2xl:grid-cols-4");
     expect(screen.getByTestId("scheduled-task-detail-next-run-summary")).toHaveTextContent("Next run");
+    expect(screen.getByTestId("scheduled-task-detail-next-run-summary")).toHaveTextContent(
+      expectedNextRun,
+    );
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Target workflow");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Market Research Package");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("market_research_package");
@@ -701,6 +734,12 @@ describe("ScheduledTaskDetailPage", () => {
   it("renders fire history with reasons, rendered parameters, linked runs, and run-now history navigation", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+    const expectedScheduledOccurrence = expectedDateTimeInTimeZone(
+      "2026-05-30T12:00:00Z",
+      "America/New_York",
+    );
+    const expectedPreparedAt = expectedViewerLocalDateTime("2026-05-30T12:00:00Z");
+    const expectedCreatedAt = expectedViewerLocalDateTime("2026-05-30T11:59:55Z");
     const queued = scheduleFireFixture({
       id: 801,
       reason: "manual",
@@ -746,6 +785,9 @@ describe("ScheduledTaskDetailPage", () => {
     expect(history).toHaveTextContent("Manual fire");
     expect(history).toHaveTextContent("core_portfolio");
     const fire801 = screen.getByTestId("scheduled-task-fire-801");
+    expect(fire801).toHaveTextContent(expectedScheduledOccurrence);
+    expect(fire801).toHaveTextContent(expectedPreparedAt);
+    expect(fire801).toHaveTextContent(expectedCreatedAt);
     expect(within(fire801).queryByTestId("scheduled-task-fire-parameters-801")).not.toBeInTheDocument();
     expect(within(fire801).getByRole("button", { name: "Show details for fire #801" })).toBeVisible();
     expect(history).toHaveTextContent("Fire #800");
@@ -1186,6 +1228,11 @@ describe("ScheduledTaskDetailPage", () => {
   it("scheduled inputs show the workflow-seeded editor and placeholder examples immediately", async () => {
     renderDetailPage();
 
+    const expectedPreviewScheduledFor = expectedDateTimeInTimeZone(
+      "2026-06-01T13:00:00Z",
+      "America/New_York",
+    );
+
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
     const editor = screen.getByTestId("scheduled-inputs-editor");
     expect(screen.getByTestId("scheduled-inputs-toolbar")).toHaveTextContent("Reset to schema template");
@@ -1233,7 +1280,9 @@ describe("ScheduledTaskDetailPage", () => {
       workflowKey: "daily_research",
     }));
     expect(screen.getByTestId("schedule-input-preview")).toHaveTextContent("Ready");
-    expect(screen.getByTestId("schedule-input-preview")).toHaveTextContent("2026-06-01");
+    expect(screen.getByTestId("schedule-input-preview")).toHaveTextContent(
+      expectedPreviewScheduledFor,
+    );
 
     fireEvent.change(inputJson, { target: { value: '{"asOfDate":"changed"}' } });
     fireEvent.click(screen.getByRole("button", { name: "Reset to schema template" }));
@@ -1359,6 +1408,10 @@ describe("ScheduledTaskDetailPage", () => {
   });
 
   it("scheduled inputs reuse workflow runtime-input presets and history with schedule-specific copy", async () => {
+    const expectedPersonalUpdatedAt = expectedViewerLocalDateTime("2026-05-08T10:00:00Z");
+    const expectedNewestHistoryCreatedAt = expectedViewerLocalDateTime(
+      "2026-05-08T11:00:00Z",
+    );
     const personal = runtimeInputEntry({
       id: 7,
       name: "Morning schedule",
@@ -1380,6 +1433,7 @@ describe("ScheduledTaskDetailPage", () => {
     expect(helper).toHaveTextContent("1/20");
     expect(helper).toHaveTextContent("2/20");
     const personalRow = screen.getByTestId("scheduled-input-personal-7");
+    expect(personalRow).toHaveTextContent(expectedPersonalUpdatedAt);
     expect(within(personalRow).getByText("Stale")).toBeVisible();
     expect(within(personalRow).getByText("Saved against older workflow metadata.")).toBeVisible();
     expect(within(personalRow).getByText(/manifestHash: Manifest changed/i)).toBeVisible();
@@ -1413,6 +1467,7 @@ describe("ScheduledTaskDetailPage", () => {
     fireEvent.mouseDown(within(helper).getByRole("tab", { name: /history/i }), { button: 0 });
     expect(screen.getByTestId("scheduled-input-history-11").compareDocumentPosition(screen.getByTestId("scheduled-input-history-10")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const newestHistoryRow = screen.getByTestId("scheduled-input-history-11");
+    expect(newestHistoryRow).toHaveTextContent(expectedNewestHistoryCreatedAt);
     expect(within(newestHistoryRow).queryByRole("button", { name: /overwrite/i })).not.toBeInTheDocument();
     expect(within(newestHistoryRow).queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Load history scheduled input Run #99" }));

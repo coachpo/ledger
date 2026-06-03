@@ -38,16 +38,31 @@ export function formatDate(isoString: string): string {
   }
 }
 
+const DATE_TIME_FORMAT_OPTIONS = {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+} satisfies Intl.DateTimeFormatOptions;
+
 export function formatDateTime(isoString: string): string {
   try {
     const date = new Date(isoString);
+    return new Intl.DateTimeFormat("en-US", DATE_TIME_FORMAT_OPTIONS).format(date);
+  } catch {
+    return "";
+  }
+}
+
+export function formatDateTimeInTimeZone(isoString: string, timeZone: string): string {
+  try {
+    const date = new Date(isoString);
     return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
+      ...DATE_TIME_FORMAT_OPTIONS,
+      timeZone,
+      timeZoneName: "short",
     }).format(date);
   } catch {
     return "";

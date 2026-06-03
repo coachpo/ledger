@@ -5,6 +5,7 @@ import {
   formatCurrency,
   formatDate,
   formatDateTime,
+  formatDateTimeInTimeZone,
   formatDecimal,
   formatPercent,
 } from "./format";
@@ -37,6 +38,19 @@ function expectedDateTime(isoString: string): string {
   }).format(new Date(isoString));
 }
 
+function expectedDateTimeInTimeZone(isoString: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone,
+    timeZoneName: "short",
+  }).format(new Date(isoString));
+}
+
 describe("format", () => {
   it("formats currency, decimals, and percentages across common inputs", () => {
     expect(formatCurrency(1234.5)).toBe(expectedCurrency(1234.5, "USD"));
@@ -57,6 +71,15 @@ describe("format", () => {
 
     expect(formatDate(isoString)).toBe(expectedDate(isoString));
     expect(formatDateTime(isoString)).toBe(expectedDateTime(isoString));
+  });
+
+  it("formats ISO instants in an explicit IANA timezone with a short zone suffix", () => {
+    const isoString = "2024-03-15T12:34:56Z";
+    const timeZone = "America/New_York";
+
+    expect(formatDateTimeInTimeZone(isoString, timeZone)).toBe(
+      expectedDateTimeInTimeZone(isoString, timeZone),
+    );
   });
 
   it("formats compact numbers and preserves sign", () => {

@@ -68,7 +68,7 @@ import {
   useWorkflowPackageManifest,
   useWorkflowPackages,
 } from "@/hooks/use-workflow-packages";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatDateTimeInTimeZone } from "@/lib/format";
 import type {
   ScheduleListParams,
   ScheduleRead,
@@ -120,8 +120,12 @@ function normalizeFilter(value: string): string | undefined {
   return normalized ? normalized : undefined;
 }
 
-function formatOptionalDateTime(value: string | null, fallback: string): string {
-  return value ? formatDateTime(value) : fallback;
+function formatOptionalDateTimeInTimeZone(
+  value: string | null,
+  timeZone: string,
+  fallback: string,
+): string {
+  return value ? formatDateTimeInTimeZone(value, timeZone) : fallback;
 }
 
 function formatStatusLabel(value: string): string {
@@ -692,7 +696,11 @@ function ScheduleCell({ schedule }: { schedule: ScheduleRead }) {
 
 function NextRunCell({ schedule }: { schedule: ScheduleRead }) {
   const tone = getNextRunTone(schedule);
-  const nextRunLabel = formatOptionalDateTime(schedule.nextFireAt, "No upcoming run");
+  const nextRunLabel = formatOptionalDateTimeInTimeZone(
+    schedule.nextFireAt,
+    schedule.timezone,
+    "No upcoming run",
+  );
   const relativeLabel = formatRelativeNextRun(schedule.nextFireAt);
   const showWarning = tone === "warning" || tone === "danger";
 
@@ -829,13 +837,13 @@ function ScheduleDetailSections({
       <ScheduleDetailGroup title="Timing">
         <ScheduleDetailField label="Timezone">{schedule.timezone}</ScheduleDetailField>
         <ScheduleDetailField label="Starts">
-          {formatOptionalDateTime(schedule.startsAt, "Not set")}
+          {formatOptionalDateTimeInTimeZone(schedule.startsAt, schedule.timezone, "Not set")}
         </ScheduleDetailField>
         <ScheduleDetailField label="Ends">
-          {formatOptionalDateTime(schedule.endsAt, "Not set")}
+          {formatOptionalDateTimeInTimeZone(schedule.endsAt, schedule.timezone, "Not set")}
         </ScheduleDetailField>
         <ScheduleDetailField label="Next run">
-          {formatOptionalDateTime(schedule.nextFireAt, "No upcoming run")}
+          {formatOptionalDateTimeInTimeZone(schedule.nextFireAt, schedule.timezone, "No upcoming run")}
         </ScheduleDetailField>
       </ScheduleDetailGroup>
       <ScheduleDetailGroup title="Recent activity">

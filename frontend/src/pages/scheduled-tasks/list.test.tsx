@@ -210,6 +210,30 @@ function expectRowBefore(first: HTMLElement, second: HTMLElement) {
   ).toBeTruthy();
 }
 
+function expectedViewerLocalDateTime(isoString: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(isoString));
+}
+
+function expectedDateTimeInTimeZone(isoString: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone,
+    timeZoneName: "short",
+  }).format(new Date(isoString));
+}
+
 describe("ScheduledTasksListPage", () => {
   beforeEach(() => {
     setViewportWidth(1280);
@@ -370,7 +394,10 @@ describe("ScheduledTasksListPage", () => {
     useScheduledTasksMock.mockReturnValue({
       data: {
         items: [
-          scheduleFixture(),
+          scheduleFixture({
+            endsAt: "2026-06-30T20:00:00Z",
+            startsAt: "2026-06-01T12:00:00Z",
+          }),
           scheduleFixture({
             description: null,
             id: 55,
@@ -396,6 +423,21 @@ describe("ScheduledTasksListPage", () => {
     });
 
     renderPage();
+
+    const expectedNextRun = expectedDateTimeInTimeZone(
+      "2026-06-01T13:00:00Z",
+      "America/New_York",
+    );
+    const expectedStartsAt = expectedDateTimeInTimeZone(
+      "2026-06-01T12:00:00Z",
+      "America/New_York",
+    );
+    const expectedEndsAt = expectedDateTimeInTimeZone(
+      "2026-06-30T20:00:00Z",
+      "America/New_York",
+    );
+    const expectedUpdatedAt = expectedViewerLocalDateTime("2026-05-30T10:00:00Z");
+    const expectedCreatedAt = expectedViewerLocalDateTime("2026-05-01T10:00:00Z");
 
     expect(screen.getByRole("heading", { name: "Scheduled Tasks" })).toBeVisible();
     expect(
@@ -443,6 +485,9 @@ describe("ScheduledTasksListPage", () => {
 
     const dailyRow = screen.getByTestId("scheduled-task-row-44");
     expect(dailyRow).toHaveTextContent("Daily market brief");
+    expect(within(dailyRow).getByTestId("scheduled-task-row-next-run-44")).toHaveTextContent(
+      expectedNextRun,
+    );
     expect(dailyRow).toHaveTextContent("Enabled");
     expect(within(dailyRow).getByTestId("scheduled-task-status-enabled")).toHaveAttribute(
       "data-tone",
@@ -536,6 +581,11 @@ describe("ScheduledTasksListPage", () => {
     expect(details).toHaveTextContent("America/New_York");
     expect(details).toHaveTextContent("market_research_package");
     expect(details).toHaveTextContent("daily_research");
+    expect(details).toHaveTextContent(expectedStartsAt);
+    expect(details).toHaveTextContent(expectedEndsAt);
+    expect(details).toHaveTextContent(expectedNextRun);
+    expect(details).toHaveTextContent(expectedUpdatedAt);
+    expect(details).toHaveTextContent(expectedCreatedAt);
     expect(details).toHaveTextContent("Misfire grace");
     expect(details).toHaveTextContent("86400 seconds");
 

@@ -115,6 +115,19 @@ function previewResult(overrides: Partial<SchedulePreviewRead> = {}): SchedulePr
   };
 }
 
+function expectedDateTimeInTimeZone(isoString: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone,
+    timeZoneName: "short",
+  }).format(new Date(isoString));
+}
+
 function renderPage() {
   return render(
     <MemoryRouter>
@@ -220,6 +233,35 @@ describe("ScheduledTaskEditorPage", () => {
           workflowKey: "market_review",
         }),
       ),
+    );
+  });
+
+  it("renders preview scheduledFor in the draft timezone with an explicit zone suffix", async () => {
+    renderPage();
+
+    await choosePackage(/Market Review Package · market_review_package · #42/i);
+    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Market Review"));
+
+    fireEvent.change(screen.getByTestId("schedule-name"), {
+      target: { value: "Morning market review" },
+    });
+    fireEvent.change(screen.getByLabelText("Timezone"), {
+      target: { value: "Europe/London" },
+    });
+    fireEvent.change(screen.getByTestId("schedule-preview-scheduled-for"), {
+      target: { value: "2026-06-01T09:00" },
+    });
+
+    fireEvent.click(screen.getByTestId("schedule-input-preview-trigger"));
+
+    const preview = await screen.findByTestId("schedule-input-preview");
+    const scheduledFor = previewResult().scheduledFor;
+    expect(scheduledFor).not.toBeNull();
+    expect(previewScheduleMock).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: "Europe/London" }),
+    );
+    expect(preview).toHaveTextContent(
+      expectedDateTimeInTimeZone(scheduledFor ?? "", "Europe/London"),
     );
   });
 
