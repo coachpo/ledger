@@ -146,20 +146,34 @@ _EXTENSION_STATE_CREATE_CANONICAL_TABLE_SQL = f"""
     )
     """
 _PRESET_PACKAGE_SQL_FILE = "".join(("trading", "agents", "_", "advisory", "_", "research", ".sql"))
+_DIGITAL_ORACLE_PRESET_PACKAGE_SQL_FILE = "digital_oracle_researcher.sql"
 _PRESET_PACKAGE_KEY = _PRESET_PACKAGE_SQL_FILE.removesuffix(".sql")
+_DIGITAL_ORACLE_PRESET_PACKAGE_KEY = _DIGITAL_ORACLE_PRESET_PACKAGE_SQL_FILE.removesuffix(".sql")
 _PRESET_PACKAGE_MANIFEST_HASH = "3d05ed8a6533618b6a955dc0ac368c3dd229d8ecb002667f5b887ece4f4081f1"
 _PRESET_PACKAGE_COMPILED_HASH = "a62916f90c24b61c419d05dbfe8b22274cafdfd0ebff52493509140b25468936"
-_PRESET_PACKAGE_SCHEDULE_RECURRENCE = {"type": "interval", "every": 2, "unit": "minutes"}
+_DIGITAL_ORACLE_PRESET_PACKAGE_MANIFEST_HASH = (
+    "40993cbbeeeeb204e76897356c12f74ad32768328adab8eb0735ef0e6f4a3c0f"
+)
+_DIGITAL_ORACLE_PRESET_PACKAGE_COMPILED_HASH = (
+    "5d7fa92af23bf1991fa73c8ea0c27051dda9f34ae272cac70bffb00df40dec81"
+)
+_PRESET_PACKAGE_SCHEDULE_RECURRENCE = {"type": "interval", "every": 1, "unit": "hours"}
 _PRESET_PACKAGE_SCHEDULE_DEFAULTS = {
     "timezone": "UTC",
     "overlap_policy": "skip",
     "misfire_policy": "catchUpOne",
     "misfire_grace_seconds": 86400,
 }
+_LEGACY_PRESET_PACKAGE_SCHEDULE_NAMES_BY_WORKFLOW_KEY = {
+    "advisory_research": "TradingAgents Advisory Research · 2m",
+    "market_research": "TradingAgents Market Research · 2m",
+    "news_research": "TradingAgents News Research · 2m",
+    "fundamentals_research": "TradingAgents Fundamentals Research · 2m",
+}
 _PRESET_PACKAGE_SCHEDULE_SPECS = (
     {
         "workflow_key": "advisory_research",
-        "name": "TradingAgents Advisory Research · 2m",
+        "name": "TradingAgents Advisory Research · 1h",
         "input_template": {
             "ticker": "SPY",
             "asOfDate": "{{fire.scheduledLocalDate}}",
@@ -173,7 +187,7 @@ _PRESET_PACKAGE_SCHEDULE_SPECS = (
     },
     {
         "workflow_key": "market_research",
-        "name": "TradingAgents Market Research · 2m",
+        "name": "TradingAgents Market Research · 1h",
         "input_template": {
             "ticker": "SPY",
             "asOfDate": "{{fire.scheduledLocalDate}}",
@@ -184,7 +198,7 @@ _PRESET_PACKAGE_SCHEDULE_SPECS = (
     },
     {
         "workflow_key": "news_research",
-        "name": "TradingAgents News Research · 2m",
+        "name": "TradingAgents News Research · 1h",
         "input_template": {
             "ticker": "SPY",
             "asOfDate": "{{fire.scheduledLocalDate}}",
@@ -194,7 +208,7 @@ _PRESET_PACKAGE_SCHEDULE_SPECS = (
     },
     {
         "workflow_key": "fundamentals_research",
-        "name": "TradingAgents Fundamentals Research · 2m",
+        "name": "TradingAgents Fundamentals Research · 1h",
         "input_template": {
             "ticker": "SPY",
             "asOfDate": "{{fire.scheduledLocalDate}}",
@@ -2951,8 +2965,8 @@ def _ensure_workflow_package_current_artifact_columns(
         )
 
 
-def _preset_package_sql_path() -> Path:
-    return Path(__file__).with_name(_PRESET_PACKAGE_SQL_FILE)
+def _preset_package_sql_path(sql_file: str) -> Path:
+    return Path(__file__).with_name(sql_file)
 
 
 def _ensure_db_upgrade_marker_table(engine: Engine, table_names: set[str]) -> None:
@@ -3102,7 +3116,13 @@ def _jsonb_payload(value: object) -> object:
     return value
 
 
-def _browser_proven_package_preset_needs_reseed(connection: Connection) -> bool:
+def _browser_proven_package_preset_needs_reseed(
+    connection: Connection,
+    *,
+    package_key: str,
+    manifest_hash: str,
+    compiled_hash: str,
+) -> bool:
     row = (
         connection.execute(
             text(
@@ -3113,7 +3133,7 @@ def _browser_proven_package_preset_needs_reseed(connection: Connection) -> bool:
                 WHERE key = :package_key
                 """
             ),
-            {"package_key": _PRESET_PACKAGE_KEY},
+            {"package_key": package_key},
         )
         .mappings()
         .one_or_none()
@@ -3121,10 +3141,7 @@ def _browser_proven_package_preset_needs_reseed(connection: Connection) -> bool:
     if row is None:
         return True
 
-    if (
-        row["manifest_hash"] != _PRESET_PACKAGE_MANIFEST_HASH
-        or row["compiled_hash"] != _PRESET_PACKAGE_COMPILED_HASH
-    ):
+    if row["manifest_hash"] != manifest_hash or row["compiled_hash"] != compiled_hash:
         return True
 
     try:
@@ -3145,6 +3162,32 @@ def _browser_proven_package_preset_needs_reseed(connection: Connection) -> bool:
 
 def _insert_browser_proven_package_preset(connection: Connection, preset_sql_path: Path) -> None:
     connection.exec_driver_sql(preset_sql_path.read_text(encoding="utf-8"))
+
+
+def _ensure_browser_proven_package_preset_row(
+    connection: Connection,
+    *,
+    sql_file: str,
+    package_key: str,
+    manifest_hash: str,
+    compiled_hash: str,
+    marker_applied: bool,
+) -> None:
+    preset_sql_path = _preset_package_sql_path(sql_file)
+    if not preset_sql_path.exists():
+        return
+
+    if not marker_applied or _browser_proven_package_preset_needs_reseed(
+        connection,
+        package_key=package_key,
+        manifest_hash=manifest_hash,
+        compiled_hash=compiled_hash,
+    ):
+        _ = connection.execute(
+            text("DELETE FROM workflow_packages WHERE key = :package_key"),
+            {"package_key": package_key},
+        )
+        _insert_browser_proven_package_preset(connection, preset_sql_path)
 
 
 def _browser_proven_package_preset_schedule_definitions(
@@ -3204,7 +3247,7 @@ def _browser_proven_package_preset_schedule_next_fire_at(
     ends_at: datetime | None,
     reference_now: datetime,
 ) -> datetime | None:
-    delta = timedelta(minutes=2)
+    delta = timedelta(hours=1)
     now = to_utc(reference_now)
     compare_at = to_utc(starts_at) if starts_at is not None and to_utc(starts_at) > now else now
     first = to_utc(starts_at or created_at) + delta
@@ -3239,6 +3282,7 @@ def _ensure_browser_proven_package_preset_schedules(connection: Connection) -> N
         _jsonb_payload(preset_row["compiled_plan"]),
     )
     schedule_names = [str(spec["name"]) for spec in schedule_specs]
+    schedule_names.extend(_LEGACY_PRESET_PACKAGE_SCHEDULE_NAMES_BY_WORKFLOW_KEY.values())
     existing_rows = (
         connection.execute(
             text(
@@ -3302,7 +3346,12 @@ def _ensure_browser_proven_package_preset_schedules(connection: Connection) -> N
     )
 
     for spec in schedule_specs:
+        workflow_key = str(spec["workflow_key"])
         matching_rows = rows_by_name.get(str(spec["name"]), [])
+        if not matching_rows:
+            legacy_name = _LEGACY_PRESET_PACKAGE_SCHEDULE_NAMES_BY_WORKFLOW_KEY.get(workflow_key)
+            if legacy_name is not None:
+                matching_rows = rows_by_name.get(legacy_name, [])
         if matching_rows:
             matching_row = matching_rows[0]
             next_fire_at = cast(datetime | None, matching_row["next_fire_at"])
@@ -3365,16 +3414,19 @@ def _ensure_browser_proven_package_preset(engine: Engine, table_names: set[str])
     if "workflow_packages" not in table_names:
         return
 
-    preset_sql_path = _preset_package_sql_path()
-    if not preset_sql_path.exists():
+    preset_sql_paths = (
+        _preset_package_sql_path(_PRESET_PACKAGE_SQL_FILE),
+        _preset_package_sql_path(_DIGITAL_ORACLE_PRESET_PACKAGE_SQL_FILE),
+    )
+    if not any(path.exists() for path in preset_sql_paths):
         return
 
     _ensure_db_upgrade_marker_table(engine, table_names)
     _ensure_report_agent_memory_cleanup_columns(engine, table_names)
     _repair_legacy_agent_memory_report_sources(engine, table_names)
-    run_columns = set()
+    run_columns: set[str] = set()
     if "runs" in table_names:
-        run_columns = {column["name"] for column in inspect(engine).get_columns("runs")}
+        run_columns = {str(column["name"]) for column in inspect(engine).get_columns("runs")}
 
     with engine.begin() as connection:
         marker_applied = _upgrade_marker_applied(
@@ -3388,14 +3440,23 @@ def _ensure_browser_proven_package_preset(engine: Engine, table_names: set[str])
                 run_columns=run_columns,
             )
 
-        if not marker_applied or _browser_proven_package_preset_needs_reseed(connection):
-            connection.execute(
-                text("DELETE FROM workflow_packages WHERE key = :package_key"),
-                {"package_key": _PRESET_PACKAGE_KEY},
-            )
-            _insert_browser_proven_package_preset(connection, preset_sql_path)
-
+        _ensure_browser_proven_package_preset_row(
+            connection,
+            sql_file=_PRESET_PACKAGE_SQL_FILE,
+            package_key=_PRESET_PACKAGE_KEY,
+            manifest_hash=_PRESET_PACKAGE_MANIFEST_HASH,
+            compiled_hash=_PRESET_PACKAGE_COMPILED_HASH,
+            marker_applied=marker_applied,
+        )
         _ensure_browser_proven_package_preset_schedules(connection)
+        _ensure_browser_proven_package_preset_row(
+            connection,
+            sql_file=_DIGITAL_ORACLE_PRESET_PACKAGE_SQL_FILE,
+            package_key=_DIGITAL_ORACLE_PRESET_PACKAGE_KEY,
+            manifest_hash=_DIGITAL_ORACLE_PRESET_PACKAGE_MANIFEST_HASH,
+            compiled_hash=_DIGITAL_ORACLE_PRESET_PACKAGE_COMPILED_HASH,
+            marker_applied=marker_applied,
+        )
 
         if not marker_applied:
             _mark_upgrade_applied(

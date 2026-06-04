@@ -98,11 +98,12 @@ _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
     "signaldeck.market_sentiment.lookup",
 )
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
+_DIGITAL_ORACLE_PRESET_KEY = "digital_oracle_researcher"
 _TRADINGAGENTS_CANONICAL_SCHEDULES = (
-    ("TradingAgents Advisory Research · 2m", "advisory_research"),
-    ("TradingAgents Market Research · 2m", "market_research"),
-    ("TradingAgents News Research · 2m", "news_research"),
-    ("TradingAgents Fundamentals Research · 2m", "fundamentals_research"),
+    ("TradingAgents Advisory Research · 1h", "advisory_research"),
+    ("TradingAgents Market Research · 1h", "market_research"),
+    ("TradingAgents News Research · 1h", "news_research"),
+    ("TradingAgents Fundamentals Research · 1h", "fundamentals_research"),
 )
 
 
@@ -723,14 +724,22 @@ def _create_package_from_source(
     return body
 
 
-def _seeded_tradingagents_package(client: TestClient) -> dict[str, Any]:
+def _seeded_package(client: TestClient, package_key: str) -> dict[str, Any]:
     packages_response = client.get("/api/workflow-packages")
     assert packages_response.status_code == 200, packages_response.json()
     package_items = cast(list[dict[str, Any]], packages_response.json()["items"])
     for package in package_items:
-        if package["key"] == _TRADINGAGENTS_PRESET_KEY:
+        if package["key"] == package_key:
             return package
-    raise AssertionError("TradingAgents advisory preset was not seeded")
+    raise AssertionError(f"Workflow package preset {package_key!r} was not seeded")
+
+
+def _seeded_tradingagents_package(client: TestClient) -> dict[str, Any]:
+    return _seeded_package(client, _TRADINGAGENTS_PRESET_KEY)
+
+
+def _seeded_digital_oracle_package(client: TestClient) -> dict[str, Any]:
+    return _seeded_package(client, _DIGITAL_ORACLE_PRESET_KEY)
 
 
 def _seed_model_connection(
@@ -905,6 +914,52 @@ def test_workflow_package_launch_enqueues_without_request_worker(
         assert run.lease_expires_at is None
         assert run.heartbeat_at is None
     assert _RuntimeRecordingOpenAIClient.create_calls == []
+
+
+def test_seeded_digital_oracle_launch_persists_question_input(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(
+        session_factory,
+        key="digital_oracle_primary_model",
+        name="Digital Oracle Primary Model",
+        description="Preflight model binding.",
+        api_style="chat_completions",
+        capabilities={
+            "nativeToolCalls": {"status": "supported"},
+            "strictJsonSchemaOutput": {"status": "supported"},
+            "jsonObjectOutput": {"status": "supported"},
+            "parallelToolCalls": {"status": "supported"},
+        },
+    )
+    package = _seeded_digital_oracle_package(client)
+    parameters = {"researchQuestion": "what is the sun?", "outputLanguage": "English"}
+    persisted_parameters = {
+        **parameters,
+        "ticker": None,
+        "asOfDate": None,
+        "horizonDays": None,
+    }
+
+    launch = client.post(
+        f"/api/workflow-packages/{package['id']}/launches",
+        json={"workflowKey": "research", "parameters": parameters},
+    )
+
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+    with session_factory() as session:
+        run = session.get(Run, run_id)
+        snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+        assert run is not None
+        assert snapshot is not None
+        assert run.workflow_package_key == _DIGITAL_ORACLE_PRESET_KEY
+        assert run.workflow_package_workflow_key == "research"
+        assert run.input == persisted_parameters
+        assert snapshot.workflow_package_key == _DIGITAL_ORACLE_PRESET_KEY
+        assert snapshot.workflow_key == "research"
+        assert snapshot.launch_parameters == persisted_parameters
 
 
 def test_run_queue_stale_lease_recovery_frees_serial_worker_lane(
@@ -4222,7 +4277,7 @@ def test_schedule_api_lists_seeded_tradingagents_preset_schedules(
         assert item["workflowKey"] == workflow_key
         assert item["status"] == "enabled"
         assert item["timezone"] == "UTC"
-        assert item["recurrence"] == {"type": "interval", "every": 2, "unit": "minutes"}
+        assert item["recurrence"] == {"type": "interval", "every": 1, "unit": "hours"}
         assert item["overlapPolicy"] == "skip"
         assert item["misfirePolicy"] == "catchUpOne"
         assert item["misfireGraceSeconds"] == 86400
@@ -4305,7 +4360,7 @@ def test_tradingagents_materializer_queues_canonical_schedules_without_provider_
             assert run.scheduled_for == materialized_at
             assert run.workflow_package_id == package_id
             assert run.workflow_package_workflow_key == schedule.workflow_key
-            assert schedule.next_fire_at == materialized_at + timedelta(minutes=2)
+            assert schedule.next_fire_at == materialized_at + timedelta(hours=1)
 
     assert _RuntimeRecordingOpenAIClient.init_calls == []
     assert _RuntimeRecordingOpenAIClient.create_calls == []

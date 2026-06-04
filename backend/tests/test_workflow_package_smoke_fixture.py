@@ -81,11 +81,15 @@ SPECIAL_CASE_RE = re.compile(
     )
 )
 ALLOWED_PRESET_SCHEDULE_SPECIAL_CASE_LINES = {
+    ("app/db/upgrades.py", '"advisory_research": "TradingAgents Advisory Research · 2m",'),
+    ("app/db/upgrades.py", '"fundamentals_research": "TradingAgents Fundamentals Research · 2m",'),
+    ("app/db/upgrades.py", '"market_research": "TradingAgents Market Research · 2m",'),
+    ("app/db/upgrades.py", '"news_research": "TradingAgents News Research · 2m",'),
     ("app/db/upgrades.py", '"workflow_key": "advisory_research",'),
-    ("app/db/upgrades.py", '"name": "TradingAgents Advisory Research · 2m",'),
-    ("app/db/upgrades.py", '"name": "TradingAgents Market Research · 2m",'),
-    ("app/db/upgrades.py", '"name": "TradingAgents News Research · 2m",'),
-    ("app/db/upgrades.py", '"name": "TradingAgents Fundamentals Research · 2m",'),
+    ("app/db/upgrades.py", '"name": "TradingAgents Advisory Research · 1h",'),
+    ("app/db/upgrades.py", '"name": "TradingAgents Market Research · 1h",'),
+    ("app/db/upgrades.py", '"name": "TradingAgents News Research · 1h",'),
+    ("app/db/upgrades.py", '"name": "TradingAgents Fundamentals Research · 1h",'),
 }
 
 

@@ -337,6 +337,7 @@ _RUN_COST_CHECKS = tuple(
 _INVOCATION_COST_COLUMN = f"{_RUNTIME_COST_WORD}_{_RUNTIME_COST_CURRENCY}"
 _INVOCATION_COST_CHECK = f"ck_run_agent_invocations_{_RUNTIME_COST_WORD}_non_negative"
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
+_DIGITAL_ORACLE_PRESET_KEY = "digital_oracle_researcher"
 _TRADINGAGENTS_MODEL_CONNECTION_KEY = "tradingagents_primary_model"
 _TRADINGAGENTS_FIXTURE_PATH = (
     Path(__file__).parent
@@ -344,8 +345,12 @@ _TRADINGAGENTS_FIXTURE_PATH = (
     / "workflow_packages"
     / "tradingagents_advisory_research.yaml"
 )
+_DIGITAL_ORACLE_FIXTURE_PATH = Path(__file__).parents[2] / "demo" / "digital_oracle_researcher.yaml"
 _TRADINGAGENTS_PRESET_SQL_PATH = (
     Path(__file__).parents[1] / "app" / "db" / "tradingagents_advisory_research.sql"
+)
+_DIGITAL_ORACLE_PRESET_SQL_PATH = (
+    Path(__file__).parents[1] / "app" / "db" / "digital_oracle_researcher.sql"
 )
 _TRADINGAGENTS_LAUNCH_METADATA_BY_WORKFLOW_KEY = {
     "advisory_research": (
@@ -365,16 +370,22 @@ _TRADINGAGENTS_LAUNCH_METADATA_BY_WORKFLOW_KEY = {
         "TradingAgents fundamentals research inputs",
     ),
 }
-_TRADINGAGENTS_CANONICAL_SCHEDULE_NAMES_BY_WORKFLOW_KEY = {
+_TRADINGAGENTS_LEGACY_SCHEDULE_NAMES_BY_WORKFLOW_KEY = {
     "advisory_research": "TradingAgents Advisory Research · 2m",
     "market_research": "TradingAgents Market Research · 2m",
     "news_research": "TradingAgents News Research · 2m",
     "fundamentals_research": "TradingAgents Fundamentals Research · 2m",
 }
+_TRADINGAGENTS_CANONICAL_SCHEDULE_NAMES_BY_WORKFLOW_KEY = {
+    "advisory_research": "TradingAgents Advisory Research · 1h",
+    "market_research": "TradingAgents Market Research · 1h",
+    "news_research": "TradingAgents News Research · 1h",
+    "fundamentals_research": "TradingAgents Fundamentals Research · 1h",
+}
 _TRADINGAGENTS_CANONICAL_SCHEDULE_RECURRENCE = {
     "type": "interval",
-    "every": 2,
-    "unit": "minutes",
+    "every": 1,
+    "unit": "hours",
 }
 _TRADINGAGENTS_CANONICAL_SCHEDULE_INPUT_TEMPLATES = {
     "advisory_research": {
@@ -666,6 +677,41 @@ def _tradingagents_preset_schedule_rows(connection: Connection) -> list[Mapping[
                 "package_key": _TRADINGAGENTS_PRESET_KEY,
                 "schedule_names": schedule_names,
             },
+        )
+        .mappings()
+        .all(),
+    )
+
+
+def _all_tradingagents_schedule_rows(connection: Connection) -> list[Mapping[str, object]]:
+    return cast(
+        list[Mapping[str, object]],
+        connection.execute(
+            text(
+                """
+                SELECT
+                    schedule.id,
+                    schedule.package_id,
+                    schedule.workflow_key,
+                    schedule.name,
+                    schedule.description,
+                    schedule.status,
+                    schedule.timezone,
+                    schedule.recurrence,
+                    schedule.next_fire_at,
+                    schedule.overlap_policy,
+                    schedule.misfire_policy,
+                    schedule.misfire_grace_seconds,
+                    schedule.input_template,
+                    schedule.template_vars
+                FROM workflow_package_schedules AS schedule
+                JOIN workflow_packages AS package
+                  ON package.id = schedule.package_id
+                WHERE package.key = :package_key
+                ORDER BY schedule.workflow_key ASC, schedule.id ASC
+                """
+            ),
+            {"package_key": _TRADINGAGENTS_PRESET_KEY},
         )
         .mappings()
         .all(),
@@ -3912,7 +3958,7 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
             ).scalar_one()
             run_count = connection.execute(text("SELECT COUNT(*) FROM runs")).scalar_one()
 
-        assert package_count == 1
+        assert package_count == 2
         assert row["key"] == _TRADINGAGENTS_PRESET_KEY
         assert row["name"] == "TradingAgents Advisory Research"
         assert (
@@ -3992,6 +4038,116 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
         engine.dispose()
 
 
+def test_init_db_seeds_digital_oracle_preset_without_secret_state(database_url: str) -> None:
+    fixture_source = _DIGITAL_ORACLE_FIXTURE_PATH.read_text(encoding="utf-8")
+    preset_sql = _DIGITAL_ORACLE_PRESET_SQL_PATH.read_text(encoding="utf-8")
+    fixture_compiled = compile_workflow_package_manifest(fixture_source)
+    assert "INSERT INTO workflow_packages" in preset_sql
+    assert "ON CONFLICT (key) DO UPDATE" in preset_sql
+    assert "INSERT INTO model_connections" not in preset_sql
+    assert "workflow_package_secret_bindings (" not in preset_sql
+    assert "INSERT INTO runs" not in preset_sql
+    expected_package_definition = cast(dict[str, object], fixture_compiled["packageDefinition"])
+    expected_compiled_plan = cast(dict[str, object], fixture_compiled["compiledPlan"])
+
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.connect() as connection:
+            row = (
+                connection.execute(
+                    text(
+                        """
+                    SELECT
+                        package.id AS package_id,
+                        package.key,
+                        package.name,
+                        package.description,
+                        package.manifest_source,
+                        package.manifest_hash,
+                        package.package_definition,
+                        package.compiled_plan,
+                        package.compiled_hash,
+                        package.extension_dependencies
+                    FROM workflow_packages AS package
+                    WHERE package.key = :package_key
+                    """
+                    ),
+                    {"package_key": _DIGITAL_ORACLE_PRESET_KEY},
+                )
+                .mappings()
+                .one()
+            )
+            model_connection_count = connection.execute(
+                text("SELECT COUNT(*) FROM model_connections")
+            ).scalar_one()
+            non_empty_model_secret_count = connection.execute(
+                text("SELECT COUNT(*) FROM model_connections WHERE secret_payload <> '{}'::jsonb")
+            ).scalar_one()
+            secret_binding_count = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_package_secret_bindings
+                    WHERE package_id = :package_id
+                    """
+                ),
+                {"package_id": row["package_id"]},
+            ).scalar_one()
+            schedule_count = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_package_schedules
+                    WHERE package_id = :package_id
+                    """
+                ),
+                {"package_id": row["package_id"]},
+            ).scalar_one()
+            run_count = connection.execute(text("SELECT COUNT(*) FROM runs")).scalar_one()
+
+        assert row["key"] == _DIGITAL_ORACLE_PRESET_KEY
+        assert row["name"] == "Digital Oracle Researcher"
+        assert (
+            row["description"]
+            == cast(dict[str, object], expected_package_definition["metadata"])["description"]
+        )
+        assert row["manifest_source"] == fixture_source
+        assert row["manifest_hash"] == fixture_compiled["manifestHash"]
+        assert row["compiled_hash"] == fixture_compiled["compiledHash"]
+        assert row["package_definition"] == expected_package_definition
+        assert row["compiled_plan"] == expected_compiled_plan
+        extension_dependencies = cast(list[dict[str, object]], row["extension_dependencies"])
+        assert extension_dependencies
+        assert extension_dependencies[0]["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
+        assert "runtime.tool.signaldeck.prediction_markets.lookup" in cast(
+            list[str],
+            extension_dependencies[0]["surfaces"],
+        )
+
+        serialized_preset = (
+            fixture_source
+            + json.dumps(row["package_definition"], sort_keys=True)
+            + json.dumps(row["compiled_plan"], sort_keys=True)
+        )
+        for forbidden_value in (
+            "encrypted",
+            "requiredBindings",
+            "secretPayload",
+            "secretRefs",
+        ):
+            assert forbidden_value not in serialized_preset
+        assert re.search(r"\bsk-[A-Za-z0-9_-]{16,}", serialized_preset) is None
+        assert model_connection_count == 0
+        assert non_empty_model_secret_count == 0
+        assert secret_binding_count == 0
+        assert schedule_count == 0
+        assert run_count == 0
+    finally:
+        engine.dispose()
+
+
 def test_init_db_seeds_tradingagents_preset_schedules_idempotently(
     database_url: str,
 ) -> None:
@@ -4031,12 +4187,63 @@ def test_init_db_seeds_tradingagents_preset_schedules_idempotently(
         engine.dispose()
 
 
+def test_init_db_migrates_legacy_tradingagents_two_minute_schedules_without_duplicates(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    specs = _tradingagents_schedule_specs()
+
+    try:
+        with engine.begin() as connection:
+            current_rows = _tradingagents_preset_schedule_rows(connection)
+            assert len(current_rows) == len(specs)
+            current_rows_by_workflow = {str(row["workflow_key"]): row for row in current_rows}
+            for (
+                workflow_key,
+                legacy_name,
+            ) in _TRADINGAGENTS_LEGACY_SCHEDULE_NAMES_BY_WORKFLOW_KEY.items():
+                connection.execute(
+                    text(
+                        """
+                        UPDATE workflow_package_schedules
+                        SET name = :legacy_name,
+                            recurrence = CAST(:legacy_recurrence AS jsonb)
+                        WHERE id = :schedule_id
+                        """
+                    ),
+                    {
+                        "legacy_name": legacy_name,
+                        "legacy_recurrence": json.dumps(
+                            {"type": "interval", "every": 2, "unit": "minutes"}
+                        ),
+                        "schedule_id": current_rows_by_workflow[workflow_key]["id"],
+                    },
+                )
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            rows = _all_tradingagents_schedule_rows(connection)
+        assert len(rows) == len(specs)
+        rows_by_workflow = {str(row["workflow_key"]): row for row in rows}
+        assert rows_by_workflow.keys() == {str(spec["workflow_key"]) for spec in specs}
+        for spec in specs:
+            _assert_tradingagents_preset_schedule_row(
+                rows_by_workflow[str(spec["workflow_key"])],
+                spec,
+                expected_status="enabled",
+            )
+    finally:
+        engine.dispose()
+
+
 def test_init_db_preserves_due_tradingagents_preset_schedule_next_fire_at(
     database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seeded_at = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
-    restart_at = seeded_at + timedelta(minutes=5)
+    restart_at = seeded_at + timedelta(hours=2)
     monkeypatch.setattr(upgrades, "utcnow", lambda: seeded_at)
     init_db(database_url)
     engine = create_engine(database_url, future=True)
@@ -4052,7 +4259,7 @@ def test_init_db_preserves_due_tradingagents_preset_schedule_next_fire_at(
                 if row["name"] == advisory_schedule_name
             )
         initial_next_fire_at = cast(datetime, seeded_row["next_fire_at"])
-        assert initial_next_fire_at == seeded_at + timedelta(minutes=2)
+        assert initial_next_fire_at == seeded_at + timedelta(hours=1)
         assert initial_next_fire_at < restart_at
 
         monkeypatch.setattr(upgrades, "utcnow", lambda: restart_at)

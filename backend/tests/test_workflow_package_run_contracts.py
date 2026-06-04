@@ -141,10 +141,10 @@ class _RuntimeRecordingOpenAIClient:
 
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
 _TRADINGAGENTS_CANONICAL_SCHEDULES = (
-    ("TradingAgents Advisory Research · 2m", "advisory_research"),
-    ("TradingAgents Market Research · 2m", "market_research"),
-    ("TradingAgents News Research · 2m", "news_research"),
-    ("TradingAgents Fundamentals Research · 2m", "fundamentals_research"),
+    ("TradingAgents Advisory Research · 1h", "advisory_research"),
+    ("TradingAgents Market Research · 1h", "market_research"),
+    ("TradingAgents News Research · 1h", "news_research"),
+    ("TradingAgents Fundamentals Research · 1h", "fundamentals_research"),
 )
 _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
     Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
@@ -2702,7 +2702,7 @@ def test_tradingagents_materializer_persists_workflow_key_snapshots_for_canonica
             assert snapshot.workflow_package_id == package_id
             assert snapshot.workflow_key == schedule.workflow_key
             assert snapshot.launch_parameters == run.input
-            assert schedule.next_fire_at == materialized_at + timedelta(minutes=2)
+            assert schedule.next_fire_at == materialized_at + timedelta(hours=1)
 
 
 def test_scheduled_run_snapshot_materializer_persists_schedule_provenance(
