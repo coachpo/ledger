@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SchedulePreviewRead } from "@/lib/types/schedule";
 import type {
@@ -54,6 +54,19 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
   useWorkflowPackages: () => useWorkflowPackagesMock(),
 }));
+
+const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+const resolvedOptionsMock = vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions");
+
+function mockBrowserTimeZone(timeZone: string | null) {
+  resolvedOptionsMock.mockImplementation(function resolvedOptions(this: Intl.DateTimeFormat) {
+    return { ...originalResolvedOptions.call(this), timeZone: timeZone ?? "" };
+  });
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function packageRead(overrides: Partial<WorkflowPackageRead>): WorkflowPackageRead {
   return {
@@ -144,6 +157,10 @@ function workflowSelector() {
   return screen.getByRole("combobox", { name: /^Workflow$/i });
 }
 
+function timeZoneSelector() {
+  return screen.getByRole("combobox", { name: /^Timezone$/i });
+}
+
 async function choosePackage(optionName: string | RegExp) {
   const selector = packageSelector();
   selector.focus();
@@ -158,8 +175,47 @@ async function chooseWorkflow(optionName: string | RegExp) {
   fireEvent.click(await screen.findByRole("option", { name: optionName }));
 }
 
+async function chooseTimeZone(optionName: string | RegExp) {
+  const selector = timeZoneSelector();
+  selector.focus();
+  fireEvent.keyDown(selector, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: optionName }));
+}
+
+async function chooseSelectByTestId(testId: string, optionName: string | RegExp) {
+  const selector = screen.getByTestId(testId);
+  selector.focus();
+  fireEvent.keyDown(selector, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: optionName }));
+}
+
+function currentCalendarDayButton() {
+  const currentMonthName = new Intl.DateTimeFormat("en-US", { month: "long" }).format(new Date());
+  const currentYear = String(new Date().getFullYear());
+  const button = screen
+    .getAllByRole("button")
+    .find((candidate) => {
+      const label = candidate.getAttribute("aria-label") ?? "";
+      return label.includes(currentMonthName) && label.includes(currentYear);
+    });
+
+  if (!button) {
+    throw new Error("Unable to find a day button in the current calendar month.");
+  }
+
+  return button;
+}
+
+async function choosePreviewScheduledFor(hour: string, minute: string) {
+  fireEvent.click(screen.getByTestId("schedule-preview-scheduled-for"));
+  fireEvent.click(currentCalendarDayButton());
+  await chooseSelectByTestId("schedule-preview-scheduled-for-hour", hour);
+  await chooseSelectByTestId("schedule-preview-scheduled-for-minute", minute);
+}
+
 describe("ScheduledTaskEditorPage", () => {
   beforeEach(() => {
+    mockBrowserTimeZone("UTC");
     createScheduleMock.mockReset();
     navigateMock.mockReset();
     previewScheduleMock.mockReset();
@@ -213,9 +269,7 @@ describe("ScheduledTaskEditorPage", () => {
     fireEvent.change(screen.getByTestId("schedule-name"), {
       target: { value: "Morning market review" },
     });
-    fireEvent.change(screen.getByTestId("schedule-preview-scheduled-for"), {
-      target: { value: "2026-06-01T09:00" },
-    });
+    await choosePreviewScheduledFor("09", "00");
 
     fireEvent.click(screen.getByTestId("schedule-input-preview-trigger"));
     await waitFor(() =>
@@ -245,12 +299,8 @@ describe("ScheduledTaskEditorPage", () => {
     fireEvent.change(screen.getByTestId("schedule-name"), {
       target: { value: "Morning market review" },
     });
-    fireEvent.change(screen.getByLabelText("Timezone"), {
-      target: { value: "Europe/London" },
-    });
-    fireEvent.change(screen.getByTestId("schedule-preview-scheduled-for"), {
-      target: { value: "2026-06-01T09:00" },
-    });
+    await chooseTimeZone(/London \(Europe\/London\)/i);
+    await choosePreviewScheduledFor("09", "00");
 
     fireEvent.click(screen.getByTestId("schedule-input-preview-trigger"));
 
@@ -265,6 +315,53 @@ describe("ScheduledTaskEditorPage", () => {
     );
   });
 
+  it("defaults to the current browser timezone and shows it as the first timezone option", async () => {
+    mockBrowserTimeZone("Europe/Helsinki");
+
+    renderPage();
+
+    expect(timeZoneSelector()).toHaveTextContent(
+      /^Helsinki \(Europe\/Helsinki\) · Current browser timezone$/i,
+    );
+
+    timeZoneSelector().focus();
+    fireEvent.keyDown(timeZoneSelector(), { key: "ArrowDown" });
+
+    const options = await screen.findAllByRole("option");
+    expect(options[0]).toHaveTextContent(
+      /^Helsinki \(Europe\/Helsinki\) · Current browser timezone$/i,
+    );
+    expect(options[1]).toHaveTextContent(/^UTC$/);
+  });
+
+  it("prepends the current browser timezone without duplicating it when it is already in the curated list", async () => {
+    renderPage();
+
+    expect(timeZoneSelector()).toHaveTextContent(/^UTC · Current browser timezone$/i);
+
+    timeZoneSelector().focus();
+    fireEvent.keyDown(timeZoneSelector(), { key: "ArrowDown" });
+
+    const options = await screen.findAllByRole("option");
+    expect(options[0]).toHaveTextContent(/^UTC · Current browser timezone$/i);
+    expect(screen.queryByRole("option", { name: /^UTC$/i })).not.toBeInTheDocument();
+  });
+
+  it("falls back to UTC only when the browser timezone is unavailable", async () => {
+    mockBrowserTimeZone(null);
+
+    renderPage();
+
+    expect(timeZoneSelector()).toHaveTextContent(/^UTC$/i);
+
+    timeZoneSelector().focus();
+    fireEvent.keyDown(timeZoneSelector(), { key: "ArrowDown" });
+
+    const options = await screen.findAllByRole("option");
+    expect(options[0]).toHaveTextContent(/^UTC$/i);
+    expect(screen.queryByRole("option", { name: /Current browser timezone/i })).not.toBeInTheDocument();
+  });
+
   it("clears preview state and blocks preview/save when the selected package has no workflows", async () => {
     renderPage();
 
@@ -274,9 +371,7 @@ describe("ScheduledTaskEditorPage", () => {
     fireEvent.change(screen.getByTestId("schedule-name"), {
       target: { value: "Daily trading news" },
     });
-    fireEvent.change(screen.getByTestId("schedule-preview-scheduled-for"), {
-      target: { value: "2026-06-01T09:00" },
-    });
+    await choosePreviewScheduledFor("09", "00");
 
     fireEvent.click(screen.getByTestId("schedule-input-preview-trigger"));
     await screen.findByTestId("schedule-input-preview");

@@ -33,6 +33,16 @@ import type { UnknownRecord } from "@/lib/types/common";
 import type { ScheduleCreateRequest, SchedulePreviewRead } from "@/lib/types/schedule";
 import { getWorkflowOptions } from "@/lib/workflow-options";
 
+import {
+  ScheduleDateTimePicker,
+  ScheduleTimePicker,
+} from "./pickers";
+import {
+  buildTimeZoneOptions,
+  getDefaultTimeZone,
+  resolveBrowserTimeZone,
+} from "./time-zones";
+
 function parseJsonObject(value: string): UnknownRecord {
   const parsed = JSON.parse(value) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -166,6 +176,7 @@ export function ScheduledTaskEditorPage() {
   const createSchedule = useCreateScheduledTask();
   const previewSchedule = usePreviewUnsavedScheduledTask();
   const workflowPackagesQuery = useWorkflowPackages();
+  const browserTimeZone = useMemo(() => resolveBrowserTimeZone(), []);
   const [preview, setPreview] = useState<SchedulePreviewRead | null>(null);
   const [draft, setDraft] = useState<NewScheduleDraft>(() => ({
     atLocalTime: "09:00",
@@ -176,7 +187,7 @@ export function ScheduledTaskEditorPage() {
     packageId: "",
     previewScheduledFor: "",
     templateVarRows: [],
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    timezone: getDefaultTimeZone(browserTimeZone),
     workflowKey: "",
   }));
   const isPending = createSchedule.isPending || previewSchedule.isPending;
@@ -204,6 +215,10 @@ export function ScheduledTaskEditorPage() {
         value: String(workflowPackage.id),
       })),
     [workflowPackagesQuery.data?.items],
+  );
+  const timeZoneOptions = useMemo(
+    () => buildTimeZoneOptions({ browserTimeZone }),
+    [browserTimeZone],
   );
   const workflowOptions = useMemo(
     () => (manifestQuery.data ? getWorkflowOptions(manifestQuery.data, selectedWorkflowKey || null) : []),
@@ -352,9 +367,48 @@ export function ScheduledTaskEditorPage() {
           </div>
           {hasZeroWorkflowPackage ? <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground lg:col-span-2" data-testid="schedule-workflow-empty-state">This Workflow Package does not define any workflows. Choose a different package before previewing or saving this schedule.</div> : null}
           <div className="flex flex-col gap-2"><Label htmlFor="schedule-name">Schedule name</Label><Input id="schedule-name" data-testid="schedule-name" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} /></div>
-          <div className="flex flex-col gap-2"><Label htmlFor="schedule-timezone">Timezone</Label><Input id="schedule-timezone" value={draft.timezone} onChange={(event) => updateDraft({ timezone: event.target.value })} /></div>
-          <div className="flex flex-col gap-2"><Label htmlFor="schedule-at-local-time">Daily local time</Label><Input id="schedule-at-local-time" type="time" value={draft.atLocalTime} onChange={(event) => updateDraft({ atLocalTime: event.target.value })} /></div>
-          <div className="flex flex-col gap-2"><Label htmlFor="schedule-preview-scheduled-for">Preview scheduled for</Label><Input id="schedule-preview-scheduled-for" data-testid="schedule-preview-scheduled-for" type="datetime-local" value={draft.previewScheduledFor} onChange={(event) => updateDraft({ previewScheduledFor: event.target.value })} /></div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="schedule-timezone">Timezone</Label>
+            <Select value={draft.timezone} onValueChange={(timezone) => updateDraft({ timezone })}>
+              <SelectTrigger aria-label="Timezone" data-testid="schedule-timezone-select" id="schedule-timezone">
+                <SelectValue placeholder="Select timezone..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {timeZoneOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label id="schedule-at-local-time-label">Daily local time</Label>
+            <ScheduleTimePicker
+              hourTestId="schedule-at-local-time-hour"
+              label="Daily local time"
+              minuteTestId="schedule-at-local-time-minute"
+              value={draft.atLocalTime}
+              onChange={(atLocalTime) => updateDraft({ atLocalTime })}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label id="schedule-preview-scheduled-for-label">Preview scheduled for</Label>
+            <ScheduleDateTimePicker
+              clearLabel="Clear preview scheduled for"
+              hourTestId="schedule-preview-scheduled-for-hour"
+              label="Preview scheduled for"
+              labelId="schedule-preview-scheduled-for-label"
+              minuteTestId="schedule-preview-scheduled-for-minute"
+              placeholder="Pick a date and time"
+              triggerId="schedule-preview-scheduled-for-trigger"
+              triggerTestId="schedule-preview-scheduled-for"
+              value={draft.previewScheduledFor}
+              onChange={(previewScheduledFor) => updateDraft({ previewScheduledFor })}
+            />
+          </div>
           <div className="flex flex-col gap-2 lg:col-span-2"><Label htmlFor="schedule-description">Description</Label><Input id="schedule-description" value={draft.description} onChange={(event) => updateDraft({ description: event.target.value })} /></div>
         </CardContent>
       </Card>

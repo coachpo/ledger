@@ -107,6 +107,15 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenuTrigger: ({ children }: PropsWithChildren) => <div>{children}</div>,
 }));
 
+const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+const resolvedOptionsMock = vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions");
+
+function mockBrowserTimeZone(timeZone: string | null) {
+  resolvedOptionsMock.mockImplementation(function resolvedOptions(this: Intl.DateTimeFormat) {
+    return { ...originalResolvedOptions.call(this), timeZone: timeZone ?? "" };
+  });
+}
+
 function scheduleFixture(overrides: Partial<ScheduleRead> = {}): ScheduleRead {
   return {
     createdAt: "2026-05-01T10:00:00Z",
@@ -345,6 +354,76 @@ async function chooseSelectOption(label: string, optionName: RegExp | string) {
   fireEvent.click(await screen.findByRole("option", { name: optionName }));
 }
 
+async function chooseSelectByTestId(testId: string, optionName: RegExp | string) {
+  const select = screen.getByTestId(testId);
+  select.focus();
+  fireEvent.keyDown(select, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: optionName }));
+}
+
+function parseCalendarLabel(label: string): string {
+  const match = label.match(/([A-Za-z]+) (\d{1,2})(?:st|nd|rd|th), (\d{4})/);
+  if (!match) {
+    throw new Error(`Unable to parse calendar label: ${label}`);
+  }
+
+  const monthName = match[1] ?? "";
+  const day = (match[2] ?? "").padStart(2, "0");
+  const year = match[3] ?? "";
+  const monthIndex = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ].indexOf(monthName);
+
+  if (monthIndex < 0) {
+    throw new Error(`Unknown calendar month: ${monthName}`);
+  }
+
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${day}`;
+}
+
+async function chooseDateTimeValue({
+  hour,
+  minute,
+  triggerTestId,
+}: {
+  hour: string;
+  minute: string;
+  triggerTestId: string;
+}) {
+  const currentMonthName = new Intl.DateTimeFormat("en-US", { month: "long" }).format(new Date());
+  const currentYear = String(new Date().getFullYear());
+
+  fireEvent.click(screen.getByTestId(triggerTestId));
+
+  const dayButton = screen
+    .getAllByRole("button")
+    .find((candidate) => {
+      const label = candidate.getAttribute("aria-label") ?? "";
+      return label.includes(currentMonthName) && label.includes(currentYear);
+    });
+
+  if (!dayButton) {
+    throw new Error("Unable to find a day button in the current calendar month.");
+  }
+
+  const label = dayButton.getAttribute("aria-label") ?? "";
+  fireEvent.click(dayButton);
+  await chooseSelectByTestId(`${triggerTestId.replace(/-trigger$/, "")}-hour`, hour);
+  await chooseSelectByTestId(`${triggerTestId.replace(/-trigger$/, "")}-minute`, minute);
+  return parseCalendarLabel(label);
+}
+
 function expectedViewerLocalDateTime(isoString: string): string {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
@@ -371,6 +450,7 @@ function expectedDateTimeInTimeZone(isoString: string, timeZone: string): string
 
 describe("ScheduledTaskDetailPage", () => {
   beforeEach(() => {
+    mockBrowserTimeZone("UTC");
     deleteScheduleMock.mockReset();
     createRuntimeInputPersonalEntryMock.mockReset();
     deleteRuntimeInputPersonalEntryMock.mockReset();
@@ -634,7 +714,7 @@ describe("ScheduledTaskDetailPage", () => {
 
     fireEvent.change(screen.getByLabelText("Schedule name"), { target: { value: "Premarket notes" } });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "  Updated before the bell  " } });
-    fireEvent.change(screen.getByLabelText("Timezone"), { target: { value: "UTC" } });
+    await chooseSelectOption("Timezone", /^UTC · Current browser timezone$/i);
     fireEvent.click(screen.getByRole("button", { name: "Advanced options" }));
     fireEvent.change(screen.getByLabelText("Misfire grace seconds"), { target: { value: "42" } });
     fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
@@ -642,12 +722,12 @@ describe("ScheduledTaskDetailPage", () => {
 
     expect(screen.getByLabelText("Schedule name")).toHaveValue("Premarket notes");
     expect(screen.getByLabelText("Description")).toHaveValue("  Updated before the bell  ");
-    expect(screen.getByLabelText("Timezone")).toHaveValue("UTC");
+    expect(screen.getByLabelText("Timezone")).toHaveTextContent(/^UTC · Current browser timezone$/i);
     expect(screen.getByLabelText("Misfire grace seconds")).toHaveValue(42);
     expect(screen.getByRole("button", { name: "Advanced options" })).toBeVisible();
     expect(screen.getByLabelText("Schedule name")).not.toHaveValue(scheduleFixture().name);
     expect(screen.getByLabelText("Description")).not.toHaveValue(scheduleFixture().description);
-    expect(screen.getByLabelText("Timezone")).not.toHaveValue(scheduleFixture().timezone);
+    expect(screen.getByLabelText("Timezone")).not.toHaveTextContent(scheduleFixture().timezone);
   });
 
   it("shows actionable health once without any developer details affordance", () => {
@@ -932,15 +1012,17 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.queryByTestId("scheduled-task-run-now-feedback")).not.toBeInTheDocument();
   });
 
-  it("keeps basic schedule controls visible and advanced scheduler options collapsed by default", () => {
+  it("keeps basic schedule controls visible and advanced scheduler options collapsed by default", async () => {
+    mockBrowserTimeZone("Europe/Helsinki");
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
     const scheduleTab = screen.getByTestId("scheduled-task-detail-tab-schedule");
     expect(scheduleTab).toHaveTextContent("Schedule configuration");
     expect(screen.getByLabelText("Schedule enabled")).toBeChecked();
-    expect(screen.getByLabelText("Timezone")).toHaveValue("America/New_York");
-    expect(screen.getByLabelText("At local time")).toHaveValue("09:00");
+    expect(screen.getByLabelText("Timezone")).toHaveTextContent(/America\/New_York/i);
+    expect(screen.getByTestId("schedule-at-local-time-hour")).toHaveTextContent(/^09$/);
+    expect(screen.getByTestId("schedule-at-local-time-minute")).toHaveTextContent(/^00$/);
     expect(screen.getByRole("combobox", { name: "Recurrence" })).toHaveAttribute(
       "aria-labelledby",
       "schedule-recurrence-type-label",
@@ -948,6 +1030,11 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.queryByLabelText("Overlap policy")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Misfire policy")).not.toBeInTheDocument();
     expect(screen.queryByText(/PATCH endpoint/i)).not.toBeInTheDocument();
+
+    await chooseSelectOption("Timezone", /^Helsinki \(Europe\/Helsinki\) · Current browser timezone$/i);
+    expect(screen.getByLabelText("Timezone")).toHaveTextContent(
+      /^Helsinki \(Europe\/Helsinki\) · Current browser timezone$/i,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Advanced options" }));
     expect(screen.getByLabelText("Overlap policy")).toBeVisible();
@@ -963,6 +1050,29 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByLabelText("Misfire grace seconds")).toBeVisible();
   });
 
+  it("includes a saved detail timezone even when it falls outside the curated list", async () => {
+    mockBrowserTimeZone("Europe/Helsinki");
+    useScheduledTaskMock.mockReturnValue({
+      data: scheduleFixture({ timezone: "Atlantic/Reykjavik" }),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderDetailPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
+    expect(screen.getByLabelText("Timezone")).toHaveTextContent(/Atlantic\/Reykjavik/i);
+
+    const timeZoneSelect = screen.getByLabelText("Timezone");
+    timeZoneSelect.focus();
+    fireEvent.keyDown(timeZoneSelect, { key: "ArrowDown" });
+
+    const options = await screen.findAllByRole("option");
+    expect(options[0]).toHaveTextContent(/^Helsinki \(Europe\/Helsinki\) · Current browser timezone$/i);
+    expect(screen.getByRole("option", { name: /^Reykjavik \(Atlantic\/Reykjavik\) · Saved on schedule$/i })).toBeVisible();
+  });
+
   it("serializes schedule metadata, recurrence, and policy edits to the canonical backend update payload", async () => {
     updateScheduleMock.mockResolvedValue(
       scheduleFixture({
@@ -976,6 +1086,12 @@ describe("ScheduledTaskDetailPage", () => {
         timezone: "Europe/London",
       }),
     );
+    useScheduledTaskMock.mockReturnValue({
+      data: scheduleFixture({ endsAt: "2026-06-04T14:15:00Z" }),
+      error: null,
+      isError: false,
+      isPending: false,
+    });
 
     renderDetailPage();
 
@@ -984,12 +1100,17 @@ describe("ScheduledTaskDetailPage", () => {
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "   " } });
     fireEvent.click(screen.getByRole("button", { name: "Advanced options" }));
     fireEvent.click(screen.getByLabelText("Schedule enabled"));
-    fireEvent.change(screen.getByLabelText("Timezone"), { target: { value: "Europe/London" } });
+    await chooseSelectOption("Timezone", /London \(Europe\/London\)/i);
     await chooseSelectOption("Recurrence", "Interval");
     fireEvent.change(screen.getByLabelText("Every"), { target: { value: "2" } });
     await chooseSelectOption("Interval unit", "Hours");
-    fireEvent.change(screen.getByLabelText("Starts at"), { target: { value: "2026-06-02T09:30" } });
-    fireEvent.change(screen.getByLabelText("Ends at"), { target: { value: "" } });
+    const startsAtDate = await chooseDateTimeValue({
+      hour: "09",
+      minute: "30",
+      triggerTestId: "schedule-starts-at-trigger",
+    });
+    fireEvent.click(screen.getByTestId("schedule-ends-at-trigger"));
+    fireEvent.click(screen.getByRole("button", { name: "Clear ends at date and time" }));
     await chooseSelectOption("Overlap policy", /queue overlapping run/i);
     await chooseSelectOption("Misfire policy", /skip missed occurrence/i);
     fireEvent.change(screen.getByLabelText("Misfire grace seconds"), { target: { value: "7200" } });
@@ -1010,7 +1131,7 @@ describe("ScheduledTaskDetailPage", () => {
           type: "interval",
           unit: "hours",
         },
-        startsAt: new Date("2026-06-02T09:30").toISOString(),
+        startsAt: new Date(`${startsAtDate}T09:30`).toISOString(),
         status: "paused",
         timezone: "Europe/London",
       },
@@ -1098,7 +1219,7 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Save inputs" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
-    fireEvent.change(screen.getByLabelText("Timezone"), { target: { value: "Europe/London" } });
+    await chooseSelectOption("Timezone", /London \(Europe\/London\)/i);
     fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
 
     await waitFor(() => expect(updateScheduleMock).toHaveBeenCalledWith({

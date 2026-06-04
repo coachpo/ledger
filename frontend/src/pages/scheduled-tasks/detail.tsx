@@ -111,6 +111,15 @@ import type {
 } from "@/lib/types/schedule";
 import type { WorkflowPackageRuntimeInputEntryRead } from "@/lib/types/workflow-package";
 
+import {
+  ScheduleDateTimePicker,
+  ScheduleTimePicker,
+} from "./pickers";
+import {
+  buildTimeZoneOptions,
+  resolveBrowserTimeZone,
+} from "./time-zones";
+
 type DiagnosticSeverity = "error" | "warning" | "info";
 
 type ScheduleDiagnostic = {
@@ -1154,6 +1163,11 @@ function ScheduleConfigurationEditor({
     setDraft(scheduleDraftFromRead(schedule));
   }, [schedule]);
 
+  const browserTimeZone = useMemo(() => resolveBrowserTimeZone(), []);
+  const timeZoneOptions = useMemo(
+    () => buildTimeZoneOptions({ browserTimeZone, selectedTimeZone: draft.timezone }),
+    [browserTimeZone, draft.timezone],
+  );
   const controlDisabled = disabled || isSaving;
   const updateDraft = (updates: Partial<ScheduleEditorDraft>) => {
     setDraft((current) => ({ ...current, ...updates }));
@@ -1235,15 +1249,27 @@ function ScheduleConfigurationEditor({
           </ScheduleField>
           <ScheduleField
             description="Use an IANA timezone such as America/New_York. Daily, weekly, and monthly times are interpreted as local wall-clock times in this zone."
-            htmlFor="schedule-timezone"
             label="Timezone"
+            labelId="schedule-timezone-label"
           >
-            <Input
-              id="schedule-timezone"
+            <Select
               value={draft.timezone}
+              onValueChange={(timezone) => updateDraft({ timezone })}
               disabled={controlDisabled}
-              onChange={(event) => updateDraft({ timezone: event.target.value })}
-            />
+            >
+              <SelectTrigger id="schedule-timezone" aria-labelledby="schedule-timezone-label">
+                <SelectValue placeholder="Select timezone..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {timeZoneOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </ScheduleField>
           <div
             className={`scheduled-task-recurrence-interval-row min-w-0 lg:col-span-2 xl:col-span-2 ${draft.recurrenceType === "interval" ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,9rem)_minmax(0,12rem)]" : "hidden"}`}
@@ -1286,15 +1312,16 @@ function ScheduleConfigurationEditor({
             <div className="lg:col-span-2 xl:col-span-2">
               <ScheduleField
                 description="Local time is resolved in the timezone above, including deterministic DST gap/repeat handling."
-                htmlFor="schedule-at-local-time"
                 label="At local time"
+                labelId="schedule-at-local-time-label"
               >
-                <Input
-                  id="schedule-at-local-time"
-                  type="time"
-                  value={draft.atLocalTime}
+                <ScheduleTimePicker
                   disabled={controlDisabled}
-                  onChange={(event) => updateDraft({ atLocalTime: event.target.value })}
+                  hourTestId="schedule-at-local-time-hour"
+                  label="At local time"
+                  minuteTestId="schedule-at-local-time-minute"
+                  value={draft.atLocalTime}
+                  onChange={(atLocalTime) => updateDraft({ atLocalTime })}
                 />
               </ScheduleField>
             </div>
@@ -1366,28 +1393,40 @@ function ScheduleConfigurationEditor({
       >
         <ScheduleField
           description="Leave blank for no lower bound. Interval schedules anchor to startsAt when supplied."
-          htmlFor="schedule-starts-at"
           label="Starts at"
+          labelId="schedule-starts-at-label"
         >
-          <Input
-            id="schedule-starts-at"
-            type="datetime-local"
-            value={draft.startsAt}
+          <ScheduleDateTimePicker
+            clearLabel="Clear starts at date and time"
             disabled={controlDisabled}
-            onChange={(event) => updateDraft({ startsAt: event.target.value })}
+            hourTestId="schedule-starts-at-hour"
+            label="Starts at"
+            labelId="schedule-starts-at-label"
+            minuteTestId="schedule-starts-at-minute"
+            placeholder="Pick a date and time"
+            triggerId="schedule-starts-at"
+            triggerTestId="schedule-starts-at-trigger"
+            value={draft.startsAt}
+            onChange={(startsAt) => updateDraft({ startsAt })}
           />
         </ScheduleField>
         <ScheduleField
           description="Leave blank to keep this task running without an end date."
-          htmlFor="schedule-ends-at"
           label="Ends at"
+          labelId="schedule-ends-at-label"
         >
-          <Input
-            id="schedule-ends-at"
-            type="datetime-local"
-            value={draft.endsAt}
+          <ScheduleDateTimePicker
+            clearLabel="Clear ends at date and time"
             disabled={controlDisabled}
-            onChange={(event) => updateDraft({ endsAt: event.target.value })}
+            hourTestId="schedule-ends-at-hour"
+            label="Ends at"
+            labelId="schedule-ends-at-label"
+            minuteTestId="schedule-ends-at-minute"
+            placeholder="Pick a date and time"
+            triggerId="schedule-ends-at"
+            triggerTestId="schedule-ends-at-trigger"
+            value={draft.endsAt}
+            onChange={(endsAt) => updateDraft({ endsAt })}
           />
         </ScheduleField>
       </div>
