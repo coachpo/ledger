@@ -132,7 +132,12 @@ class WorkflowPackagePreflightService:
                 )
             except WorkflowPackageExecutionPlanError as exc:
                 blocking_errors.extend(dict(detail) for detail in exc.details)
-        warnings = self.save_warnings(package_definition)
+        blocking_diagnostic_keys = {self._diagnostic_identity(error) for error in blocking_errors}
+        warnings = [
+            warning
+            for warning in self.save_warnings(package_definition)
+            if self._diagnostic_identity(warning) not in blocking_diagnostic_keys
+        ]
         warnings.extend(model_warnings)
         return WorkflowPackagePreflightResult(
             ready=not blocking_errors,
@@ -141,6 +146,13 @@ class WorkflowPackagePreflightService:
             model_bindings=model_bindings,
             package_requirements=package_requirements,
             agent_requirement_scopes=agent_requirement_scopes,
+        )
+
+    @staticmethod
+    def _diagnostic_identity(diagnostic: Mapping[str, Any]) -> tuple[str, str]:
+        return (
+            str(diagnostic.get("field") or diagnostic.get("path") or ""),
+            str(diagnostic.get("issue") or diagnostic.get("message") or ""),
         )
 
     @staticmethod

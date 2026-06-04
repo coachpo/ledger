@@ -846,6 +846,30 @@ def test_preflight_parallel_streaming_reasoning_requirements_are_per_agent_scope
     assert main_requirements["tool_analyst"].requirements.requires_reasoning_hints is False
 
 
+def test_validate_manifest_warns_about_missing_model_connection_without_persisting(
+    client: TestClient,
+) -> None:
+    validation = client.post(
+        "/api/workflow-packages/validate-manifest",
+        json={"manifestSource": _package_source()},
+    )
+
+    assert validation.status_code == 200, validation.json()
+    body = cast(dict[str, object], validation.json())
+    assert body["diagnostics"] == []
+    warnings = cast(list[dict[str, object]], body["warnings"])
+    expected_count = _package_source().count("modelConnection: tradingagents_primary_model")
+    missing_model_warnings = [
+        warning
+        for warning in warnings
+        if warning["issue"] == "Model connection 'tradingagents_primary_model' was not found"
+    ]
+    assert [warning["field"] for warning in missing_model_warnings] == [
+        f"spec.agents[{index}].modelConnection" for index in range(expected_count)
+    ]
+    assert all(warning["severity"] == "warning" for warning in missing_model_warnings)
+
+
 def test_save_allows_missing_model_connection_and_preflight_blocks(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -854,25 +878,46 @@ def test_save_allows_missing_model_connection_and_preflight_blocks(
     response = client.post("/api/workflow-packages", json={"manifestSource": _package_source()})
 
     assert response.status_code == 201, response.json()
-    package_id = int(response.json()["id"])
+    response_body = cast(dict[str, object], response.json())
+    package_id = cast(int, response_body["id"])
     with session_factory() as session:
-        assert session.query(WorkflowPackage).count() == 1
+        assert session.get(WorkflowPackage, package_id) is not None
 
-    preflight = client.post(f"/api/workflow-packages/{package_id}/preflight")
+    expected_count = _package_source().count("modelConnection: tradingagents_primary_model")
+    expected_fields = [f"spec.agents[{index}].modelConnection" for index in range(expected_count)]
+    preflight = client.post(
+        f"/api/workflow-packages/{package_id}/preflight",
+        params={"workflowKey": "advisory_research"},
+    )
 
     assert preflight.status_code == 200, preflight.json()
-    body = preflight.json()
+    body = cast(dict[str, object], preflight.json())
     assert body["ready"] is False
     errors = cast(list[dict[str, object]], body["blockingErrors"])
-    expected_count = _package_source().count("modelConnection: tradingagents_primary_model")
     missing_model_errors = [
         error
         for error in errors
         if error["issue"] == "Model connection 'tradingagents_primary_model' was not found"
     ]
-    assert [error["field"] for error in missing_model_errors] == [
-        f"spec.agents[{index}].modelConnection" for index in range(expected_count)
+    assert [error["field"] for error in missing_model_errors] == expected_fields
+    assert body["warnings"] == []
+
+    launch = client.get(
+        f"/api/workflow-packages/{package_id}/launch",
+        params={"workflowKey": "advisory_research"},
+    )
+
+    assert launch.status_code == 200, launch.json()
+    launch_body = cast(dict[str, object], launch.json())
+    assert launch_body["ready"] is False
+    launch_errors = cast(list[dict[str, object]], launch_body["blockingErrors"])
+    launch_missing_model_errors = [
+        error
+        for error in launch_errors
+        if error["issue"] == "Model connection 'tradingagents_primary_model' was not found"
     ]
+    assert [error["field"] for error in launch_missing_model_errors] == expected_fields
+    assert launch_body["warnings"] == []
 
 
 def test_update_allows_unresolved_model_connection_and_preflight_blocks(
