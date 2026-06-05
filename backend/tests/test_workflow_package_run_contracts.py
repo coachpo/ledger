@@ -1584,6 +1584,7 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
         }
     ]
     assert provenance["preflightSummary"] == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
+    assert set(provenance["preflightSummary"]) == {"ready", "blockingErrors", "warnings"}
     assert provenance["currentPackage"]["available"] is True
     assert "status" not in provenance["currentPackage"]
     assert provenance["currentPackage"]["manifestHashMatchesSnapshot"] is True
@@ -2007,6 +2008,7 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
         draft = cast(dict[str, Any], draft_response.json())
         assert draft["ready"] is True
         assert draft["blockingErrors"] == []
+        assert "facts" not in draft
         draft_provenance = cast(dict[str, Any], draft["packageProvenance"])
         assert draft_provenance["preflightSummary"]["ready"] is False
         draft_profile = cast(dict[str, Any], draft_provenance["resolvedModelConnections"][0])

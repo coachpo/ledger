@@ -1805,6 +1805,7 @@ def test_workflow_package_read_contract_is_artifact_inventory_and_launch_keeps_l
     assert launch.status_code == 200, launch.json()
     launch_body = cast(dict[str, object], launch.json())
     assert {"ready", "blockingErrors", "warnings"} <= set(launch_body)
+    assert "facts" not in launch_body
     assert_removed_contract_tokens_absent(launch_body, context="launch readiness")
 
     preflight = client.post(
@@ -1814,6 +1815,7 @@ def test_workflow_package_read_contract_is_artifact_inventory_and_launch_keeps_l
     assert preflight.status_code == 200, preflight.json()
     preflight_body = cast(dict[str, object], preflight.json())
     assert {"ready", "blockingErrors", "warnings"} <= set(preflight_body)
+    assert "facts" not in preflight_body
     assert_removed_contract_tokens_absent(preflight_body, context="preflight readiness")
 
 
@@ -4540,6 +4542,36 @@ def test_schedule_api_run_now_persists_schedule_provenance_and_lineage_only_desc
             assert descendant.scheduled_for is None
             assert descendant.schedule_reason is None
             assert descendant.schedule_provenance is None
+
+
+def test_schedule_api_run_now_blocks_secretless_model_connection(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory, api_key=None)
+    created_package = _create_package(client, package_key="schedule_api_run_now_blocked_package")
+    package_id = cast(int, created_package["id"])
+    created_schedule = client.post(
+        "/api/schedules",
+        json=_schedule_api_payload(package_id, name="Blocked run now schedule"),
+    )
+    assert created_schedule.status_code == 201, created_schedule.json()
+    schedule_id = int(created_schedule.json()["id"])
+
+    run_now = client.post(
+        f"/api/schedules/{schedule_id}/run-now",
+        json={
+            "idempotencyKey": "blocked-run-now-2026-06-01",
+            "scheduledFor": "2026-06-01T13:00:00Z",
+        },
+    )
+
+    assert run_now.status_code == 422, run_now.json()
+    body = cast(dict[str, Any], run_now.json())
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Workflow package launch validation failed"
+    assert body["details"][0]["field"] == "spec.agents[0].modelConnection"
+    assert body["details"][0]["issue"] == "API key is not configured"
 
 
 @pytest.mark.parametrize(

@@ -239,10 +239,9 @@ class RunRerunForkPreparation:
 
     def _current_readiness_for_run(self, run: Run) -> WorkflowPackagePreflightResult:
         snapshot = self._workflow_package_snapshot_for_run(run)
-        return WorkflowPackagePreflightService(self.session).evaluate_readiness(
+        return WorkflowPackagePreflightService(self.session).strict_readiness(
             self._workflow_package_from_snapshot(snapshot),
             workflow_key=snapshot.workflow_key,
-            require_api_key=True,
         )
 
     @staticmethod

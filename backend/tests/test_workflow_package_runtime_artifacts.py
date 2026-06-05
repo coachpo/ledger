@@ -303,6 +303,7 @@ def test_workflow_package_run_persists_run_owned_executable_snapshot(
             "blockingErrors": [],
             "warnings": [],
         }
+        assert set(stored_snapshot.preflight_summary) == {"ready", "blockingErrors", "warnings"}
 
         provenance = _provenance_from_snapshot(stored_snapshot)
         payload = cast(dict[str, object], provenance.model_dump(mode="json", by_alias=True))

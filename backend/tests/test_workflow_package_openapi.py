@@ -52,6 +52,7 @@ def test_workflow_package_openapi_is_current_package_only(client: TestClient) ->
 
     launch_properties = cast(dict[str, object], schemas["WorkflowPackageLaunchRead"]["properties"])
     assert "packageVersion" not in launch_properties
+    assert "facts" not in launch_properties
     assert {"ready", "blockingErrors", "warnings"} <= set(launch_properties)
     launch_request_properties = cast(
         dict[str, object],

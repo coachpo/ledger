@@ -1,8 +1,10 @@
 # pyright: reportExplicitAny=false, reportAny=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnannotatedClassAttribute=false, reportUnnecessaryCast=false, reportUnknownMemberType=false
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
+from enum import StrEnum
 from typing import Any, cast
 
 from sqlalchemy.orm import Session
@@ -39,16 +41,68 @@ _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE = "model_capability_probe_inconclusive
 _MODEL_REASONING_UNSUPPORTED_CODE = "model_reasoning_unsupported"
 
 
+class WorkflowPackageDiagnosticProjectionContext(StrEnum):
+    VALIDATION = "validation"
+    LAUNCH_METADATA = "launch_metadata"
+    STRICT_READINESS = "strict_readiness"
+
+
+class WorkflowPackageDiagnosticLevel(StrEnum):
+    HIDDEN = "hidden"
+    WARNING = "warning"
+    BLOCKING = "blocking"
+
+
+@dataclass(frozen=True)
+class WorkflowPackageDiagnosticFact:
+    kind: str
+    code: str
+    issue: str
+    field: str | None = None
+    path: str | None = None
+    subject: str | None = None
+    metadata: Mapping[str, Any] = dataclass_field(default_factory=dict)
+    levels: Mapping[WorkflowPackageDiagnosticProjectionContext, WorkflowPackageDiagnosticLevel] = (
+        dataclass_field(default_factory=dict)
+    )
+
+    @property
+    def identity(self) -> tuple[str, str, str, str | None]:
+        return (
+            self.kind,
+            self.code,
+            self.field or self.path or "",
+            self.subject,
+        )
+
+    def level_for(
+        self,
+        context: WorkflowPackageDiagnosticProjectionContext,
+    ) -> WorkflowPackageDiagnosticLevel:
+        return self.levels.get(context, WorkflowPackageDiagnosticLevel.HIDDEN)
+
+    def to_public_diagnostic(self) -> dict[str, Any]:
+        diagnostic: dict[str, Any] = {}
+        if self.field is not None:
+            diagnostic["field"] = self.field
+        if self.path is not None:
+            diagnostic["path"] = self.path
+        diagnostic["issue"] = self.issue
+        for key, value in self.metadata.items():
+            diagnostic.setdefault(key, value)
+        return diagnostic
+
+
 @dataclass(frozen=True)
 class WorkflowPackagePreflightResult:
     ready: bool
-    blocking_errors: list[dict[str, Any]] = field(default_factory=list)
-    warnings: list[dict[str, Any]] = field(default_factory=list)
-    model_bindings: dict[str, PackageResolvedModelBinding] = field(default_factory=dict)
-    package_requirements: PackageExecutionRequirements = field(
+    blocking_errors: list[dict[str, Any]] = dataclass_field(default_factory=list)
+    warnings: list[dict[str, Any]] = dataclass_field(default_factory=list)
+    model_bindings: dict[str, PackageResolvedModelBinding] = dataclass_field(default_factory=dict)
+    package_requirements: PackageExecutionRequirements = dataclass_field(
         default_factory=PackageExecutionRequirements
     )
-    agent_requirement_scopes: dict[str, PackageAgentExecutionRequirements] = field(
+    agent_requirement_scopes: dict[str, PackageAgentExecutionRequirements] = dataclass_field(
         default_factory=dict
     )
 
@@ -61,22 +115,40 @@ class WorkflowPackagePreflightService:
         self.secret_binding_repository = WorkflowPackageSecretBindingRepository(session)
         self.schema_compiler = OutputSchemaCompiler(OutputSchemaRepository(session))
 
-    def save_warnings(self, package_definition: dict[str, Any]) -> list[dict[str, Any]]:
-        warnings: list[dict[str, Any]] = []
-        for index, agent in enumerate(self._agents(package_definition)):
-            key = str(agent.get("modelConnection") or "")
-            if not key:
-                continue
-            connection = self.model_connection_repository.get_by_key(key)
-            if connection is None:
-                warnings.append(
-                    {
-                        "field": f"spec.agents[{index}].modelConnection",
-                        "issue": f"Model connection {key!r} was not found",
-                        "severity": "warning",
-                    }
-                )
+    def validation_warnings(self, package_definition: dict[str, Any]) -> list[dict[str, Any]]:
+        warnings = self._project_validation_warning_facts(
+            self._validation_warning_facts(package_definition)
+        )
+        for warning in warnings:
+            warning.setdefault("severity", "warning")
         return warnings
+
+    def launch_metadata(
+        self,
+        package: WorkflowPackage,
+        *,
+        workflow_key: str,
+    ) -> WorkflowPackagePreflightResult:
+        return self.evaluate_readiness(
+            package,
+            workflow_key=workflow_key,
+            require_api_key=False,
+        )
+
+    def strict_readiness(
+        self,
+        package: WorkflowPackage,
+        *,
+        workflow_key: str,
+    ) -> WorkflowPackagePreflightResult:
+        return self.evaluate_readiness(
+            package,
+            workflow_key=workflow_key,
+            require_api_key=True,
+        )
+
+    def save_warnings(self, package_definition: dict[str, Any]) -> list[dict[str, Any]]:
+        return self.validation_warnings(package_definition)
 
     def run(
         self,
@@ -85,11 +157,9 @@ class WorkflowPackagePreflightService:
         workflow_key: str,
         require_api_key: bool,
     ) -> WorkflowPackagePreflightResult:
-        return self.evaluate_readiness(
-            package,
-            workflow_key=workflow_key,
-            require_api_key=require_api_key,
-        )
+        if require_api_key:
+            return self.strict_readiness(package, workflow_key=workflow_key)
+        return self.launch_metadata(package, workflow_key=workflow_key)
 
     def evaluate_readiness(
         self,
@@ -98,19 +168,16 @@ class WorkflowPackagePreflightService:
         workflow_key: str,
         require_api_key: bool,
     ) -> WorkflowPackagePreflightResult:
-        blocking_errors: list[dict[str, Any]] = []
-        package_definition = package.package_definition or {}
         compiled_plan = package.compiled_plan or {}
-        blocking_errors.extend(self._schema_errors(compiled_plan))
-        blocking_errors.extend(self._tool_errors(compiled_plan))
-        blocking_errors.extend(self._mcp_errors(compiled_plan))
-        blocking_errors.extend(
-            self._extension_dependency_errors(
-                package,
-                existing_errors=blocking_errors,
-            )
+        schema_facts = self._schema_errors(compiled_plan)
+        tool_facts = self._tool_errors(compiled_plan)
+        mcp_facts = self._mcp_errors(compiled_plan)
+        existing_facts = [*schema_facts, *tool_facts, *mcp_facts]
+        extension_facts = self._extension_dependency_errors(
+            package,
+            existing_facts=existing_facts,
         )
-        blocking_errors.extend(self._http_errors(package, compiled_plan))
+        http_facts = self._http_errors(package, compiled_plan)
         package_requirements = PackageExecutionPlanBuilder.derive_package_requirements(
             compiled_plan
         )
@@ -118,11 +185,11 @@ class WorkflowPackagePreflightService:
             compiled_plan,
             workflow_key,
         )
-        model_bindings, model_warnings, model_errors = self._model_bindings(
+        model_bindings, model_facts = self._model_bindings(
             agent_requirement_scopes,
             require_api_key=require_api_key,
         )
-        blocking_errors.extend(model_errors)
+        execution_plan_facts: list[WorkflowPackageDiagnosticFact] = []
         if not self._has_http_operations(compiled_plan):
             try:
                 _ = PackageExecutionPlanBuilder.build_from_compiled_plan(
@@ -131,14 +198,23 @@ class WorkflowPackagePreflightService:
                     model_bindings=model_bindings,
                 )
             except WorkflowPackageExecutionPlanError as exc:
-                blocking_errors.extend(dict(detail) for detail in exc.details)
-        blocking_diagnostic_keys = {self._diagnostic_identity(error) for error in blocking_errors}
-        warnings = [
-            warning
-            for warning in self.save_warnings(package_definition)
-            if self._diagnostic_identity(warning) not in blocking_diagnostic_keys
+                execution_plan_facts.extend(self._execution_plan_error_facts(exc.details))
+        readiness_context = self._readiness_projection_context(
+            require_api_key=require_api_key,
+        )
+        readiness_facts = [
+            *schema_facts,
+            *tool_facts,
+            *mcp_facts,
+            *extension_facts,
+            *http_facts,
+            *model_facts,
+            *execution_plan_facts,
         ]
-        warnings.extend(model_warnings)
+        blocking_errors, warnings = self._project_diagnostic_facts(
+            readiness_facts,
+            context=readiness_context,
+        )
         return WorkflowPackagePreflightResult(
             ready=not blocking_errors,
             blocking_errors=blocking_errors,
@@ -149,10 +225,360 @@ class WorkflowPackagePreflightService:
         )
 
     @staticmethod
-    def _diagnostic_identity(diagnostic: Mapping[str, Any]) -> tuple[str, str]:
-        return (
-            str(diagnostic.get("field") or diagnostic.get("path") or ""),
-            str(diagnostic.get("issue") or diagnostic.get("message") or ""),
+    def _readiness_projection_context(
+        *,
+        require_api_key: bool,
+    ) -> WorkflowPackageDiagnosticProjectionContext:
+        if require_api_key:
+            return WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS
+        return WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA
+
+    @classmethod
+    def _readiness_diagnostic_facts(
+        cls,
+        diagnostics: Iterable[Mapping[str, Any]],
+        *,
+        level: WorkflowPackageDiagnosticLevel,
+    ) -> list[WorkflowPackageDiagnosticFact]:
+        return [
+            cls._readiness_diagnostic_fact(diagnostic, level=level) for diagnostic in diagnostics
+        ]
+
+    @classmethod
+    def _readiness_diagnostic_fact(
+        cls,
+        diagnostic: Mapping[str, Any],
+        *,
+        level: WorkflowPackageDiagnosticLevel,
+    ) -> WorkflowPackageDiagnosticFact:
+        issue = str(diagnostic.get("issue") or diagnostic.get("message") or "")
+        kind, code, subject = cls._readiness_diagnostic_identity_components(
+            diagnostic,
+            issue=issue,
+        )
+        metadata = {
+            key: value
+            for key, value in diagnostic.items()
+            if key not in {"field", "path", "issue", "message"}
+        }
+        return WorkflowPackageDiagnosticFact(
+            kind=kind,
+            code=code,
+            issue=issue,
+            field=cls._string_or_none(diagnostic.get("field")),
+            path=cls._string_or_none(diagnostic.get("path")),
+            subject=subject,
+            metadata=metadata,
+            levels={
+                WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA: level,
+                WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: level,
+            },
+        )
+
+    @classmethod
+    def _readiness_diagnostic_identity_components(
+        cls,
+        diagnostic: Mapping[str, Any],
+        *,
+        issue: str,
+    ) -> tuple[str, str, str | None]:
+        subject = cls._readiness_diagnostic_subject(diagnostic)
+        if issue.startswith("Model connection ") and issue.endswith(" was not found"):
+            return ("model_connection_not_found", "model_connection_not_found", subject)
+        if issue == "API key is not configured":
+            return ("model_connection_api_key_missing", "model_connection_api_key_missing", subject)
+        code = str(diagnostic.get("code") or issue or "readiness_diagnostic")
+        return (code, code, subject)
+
+    @staticmethod
+    def _readiness_diagnostic_subject(diagnostic: Mapping[str, Any]) -> str | None:
+        subject_parts = [
+            f"{key}={value}"
+            for key in (
+                "subject",
+                "modelConnectionKey",
+                "extensionKey",
+                "toolKey",
+                "workflowKey",
+                "schemaKey",
+                "agentKey",
+                "requirement",
+                "surface",
+            )
+            if (value := diagnostic.get(key)) is not None and value != ""
+        ]
+        if not subject_parts:
+            return None
+        return "|".join(subject_parts)
+
+    @staticmethod
+    def _string_or_none(value: object) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+    @staticmethod
+    def _project_validation_warning_facts(
+        facts: Iterable[WorkflowPackageDiagnosticFact],
+    ) -> list[dict[str, Any]]:
+        _, warnings = WorkflowPackagePreflightService._project_diagnostic_facts(
+            facts,
+            context=WorkflowPackageDiagnosticProjectionContext.VALIDATION,
+        )
+        return warnings
+
+    @staticmethod
+    def _project_diagnostic_facts(
+        facts: Iterable[WorkflowPackageDiagnosticFact],
+        *,
+        context: WorkflowPackageDiagnosticProjectionContext,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        blocking_errors: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+        seen_identities: set[tuple[str, str, str, str | None]] = set()
+        for fact in facts:
+            if fact.identity in seen_identities:
+                continue
+            seen_identities.add(fact.identity)
+            diagnostic = fact.to_public_diagnostic()
+            level = fact.level_for(context)
+            if level == WorkflowPackageDiagnosticLevel.BLOCKING:
+                blocking_errors.append(diagnostic)
+            elif level == WorkflowPackageDiagnosticLevel.WARNING:
+                warnings.append(diagnostic)
+        return blocking_errors, warnings
+
+    def _validation_warning_facts(
+        self,
+        package_definition: dict[str, Any],
+    ) -> list[WorkflowPackageDiagnosticFact]:
+        facts: list[WorkflowPackageDiagnosticFact] = []
+        for index, agent in enumerate(self._agents(package_definition)):
+            key = str(agent.get("modelConnection") or "")
+            if not key:
+                continue
+            if self.model_connection_repository.get_by_key(key) is None:
+                facts.append(
+                    self._model_connection_not_found_fact(
+                        field=f"spec.agents[{index}].modelConnection",
+                        key=key,
+                    )
+                )
+        return facts
+
+    @staticmethod
+    def _readiness_levels(
+        level: WorkflowPackageDiagnosticLevel,
+    ) -> dict[
+        WorkflowPackageDiagnosticProjectionContext,
+        WorkflowPackageDiagnosticLevel,
+    ]:
+        return {
+            WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA: level,
+            WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: level,
+        }
+
+    @classmethod
+    def _blocking_diagnostic_fact(
+        cls,
+        diagnostic: Mapping[str, Any],
+        *,
+        kind: str,
+        code: str | None = None,
+        subject: str | None = None,
+    ) -> WorkflowPackageDiagnosticFact:
+        metadata = {
+            key: value
+            for key, value in diagnostic.items()
+            if key not in {"field", "path", "issue", "message"}
+        }
+        return WorkflowPackageDiagnosticFact(
+            kind=kind,
+            code=cls._string_or_none(diagnostic.get("code")) or code or kind,
+            issue=str(diagnostic.get("issue") or diagnostic.get("message") or ""),
+            field=cls._string_or_none(diagnostic.get("field")),
+            path=cls._string_or_none(diagnostic.get("path")),
+            subject=subject or cls._readiness_diagnostic_subject(diagnostic),
+            metadata=metadata,
+            levels=cls._readiness_levels(WorkflowPackageDiagnosticLevel.BLOCKING),
+        )
+
+    @classmethod
+    def _schema_error_fact(
+        cls,
+        diagnostic: Mapping[str, Any],
+    ) -> WorkflowPackageDiagnosticFact:
+        return cls._blocking_diagnostic_fact(diagnostic, kind="schema_invalid")
+
+    @classmethod
+    def _tool_error_fact(
+        cls,
+        diagnostic: Mapping[str, Any],
+    ) -> WorkflowPackageDiagnosticFact:
+        return cls._blocking_diagnostic_fact(diagnostic, kind="tool_invalid")
+
+    @classmethod
+    def _extension_dependency_error_fact(
+        cls,
+        diagnostic: Mapping[str, Any],
+    ) -> WorkflowPackageDiagnosticFact:
+        kind = cls._string_or_none(diagnostic.get("code")) or "extension_dependency_invalid"
+        return cls._blocking_diagnostic_fact(diagnostic, kind=kind, code=kind)
+
+    @classmethod
+    def _mcp_error_fact(
+        cls,
+        diagnostic: Mapping[str, Any],
+    ) -> WorkflowPackageDiagnosticFact:
+        return cls._blocking_diagnostic_fact(diagnostic, kind="mcp_invalid")
+
+    @classmethod
+    def _http_error_fact(
+        cls,
+        diagnostic: Mapping[str, Any],
+        *,
+        subject: str | None = None,
+    ) -> WorkflowPackageDiagnosticFact:
+        issue = str(diagnostic.get("issue") or diagnostic.get("message") or "")
+        kind = (
+            "http_secret_missing"
+            if issue.startswith("HTTP secret binding ") and issue.endswith(" is not configured")
+            else "http_operation_invalid"
+        )
+        return cls._blocking_diagnostic_fact(diagnostic, kind=kind, subject=subject)
+
+    @classmethod
+    def _execution_plan_error_fact(
+        cls,
+        diagnostic: Mapping[str, Any],
+    ) -> WorkflowPackageDiagnosticFact:
+        return cls._blocking_diagnostic_fact(
+            diagnostic,
+            kind="execution_plan_invalid",
+            code="execution_plan_invalid",
+        )
+
+    @classmethod
+    def _execution_plan_error_facts(
+        cls,
+        diagnostics: Iterable[Mapping[str, Any]],
+    ) -> list[WorkflowPackageDiagnosticFact]:
+        return [cls._execution_plan_error_fact(diagnostic) for diagnostic in diagnostics]
+
+    @classmethod
+    def _model_connection_not_found_fact(
+        cls,
+        *,
+        field: str,
+        key: str,
+        issue: str | None = None,
+    ) -> WorkflowPackageDiagnosticFact:
+        return WorkflowPackageDiagnosticFact(
+            kind="model_connection_not_found",
+            code="model_connection_not_found",
+            field=field,
+            issue=issue or f"Model connection {key!r} was not found",
+            subject=key,
+            levels={
+                WorkflowPackageDiagnosticProjectionContext.VALIDATION: (
+                    WorkflowPackageDiagnosticLevel.WARNING
+                ),
+                WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA: (
+                    WorkflowPackageDiagnosticLevel.BLOCKING
+                ),
+                WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: (
+                    WorkflowPackageDiagnosticLevel.BLOCKING
+                ),
+            },
+        )
+
+    @classmethod
+    def _model_connection_api_key_missing_fact(
+        cls,
+        *,
+        field: str,
+        key: str,
+    ) -> WorkflowPackageDiagnosticFact:
+        return WorkflowPackageDiagnosticFact(
+            kind="model_connection_api_key_missing",
+            code="model_connection_api_key_missing",
+            field=field,
+            issue="API key is not configured",
+            subject=key,
+            levels={
+                WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: (
+                    WorkflowPackageDiagnosticLevel.BLOCKING
+                )
+            },
+        )
+
+    @classmethod
+    def _model_connection_test_failed_fact(
+        cls,
+        *,
+        field: str,
+        key: str,
+        issue: str,
+    ) -> WorkflowPackageDiagnosticFact:
+        return WorkflowPackageDiagnosticFact(
+            kind="model_connection_test_failed",
+            code="model_connection_test_failed",
+            field=field,
+            issue=issue,
+            subject=key,
+            levels=cls._readiness_levels(WorkflowPackageDiagnosticLevel.BLOCKING),
+        )
+
+    @classmethod
+    def _requirement_fact(
+        cls,
+        *,
+        kind: str,
+        code: str,
+        field: str,
+        issue: str,
+        level: WorkflowPackageDiagnosticLevel,
+    ) -> WorkflowPackageDiagnosticFact:
+        metadata: dict[str, Any] = {"code": code}
+        if level == WorkflowPackageDiagnosticLevel.WARNING:
+            metadata["severity"] = "warning"
+        return WorkflowPackageDiagnosticFact(
+            kind=kind,
+            code=code,
+            field=field,
+            issue=issue,
+            metadata=metadata,
+            levels=cls._readiness_levels(level),
+        )
+
+    @classmethod
+    def _with_diagnostic_metadata(
+        cls,
+        fact: WorkflowPackageDiagnosticFact,
+        metadata: Mapping[str, Any],
+    ) -> WorkflowPackageDiagnosticFact:
+        merged_metadata = dict(metadata)
+        merged_metadata.update(fact.metadata)
+        subject = fact.subject or cls._readiness_diagnostic_subject(merged_metadata)
+        return WorkflowPackageDiagnosticFact(
+            kind=fact.kind,
+            code=fact.code,
+            issue=fact.issue,
+            field=fact.field,
+            path=fact.path,
+            subject=subject,
+            metadata=merged_metadata,
+            levels=fact.levels,
+        )
+
+    @staticmethod
+    def _facts_block_readiness(
+        facts: Iterable[WorkflowPackageDiagnosticFact],
+        *,
+        context: WorkflowPackageDiagnosticProjectionContext,
+    ) -> bool:
+        return any(
+            fact.level_for(context) == WorkflowPackageDiagnosticLevel.BLOCKING for fact in facts
         )
 
     @staticmethod
@@ -176,10 +602,10 @@ class WorkflowPackagePreflightService:
             else []
         )
 
-    def _schema_errors(self, compiled_plan: dict[str, Any]) -> list[dict[str, Any]]:
-        errors: list[dict[str, Any]] = []
+    def _schema_errors(self, compiled_plan: dict[str, Any]) -> list[WorkflowPackageDiagnosticFact]:
+        diagnostics: list[dict[str, Any]] = []
         for index, schema in enumerate(self._compiled_section(compiled_plan, "outputSchemas")):
-            errors.extend(
+            diagnostics.extend(
                 self._validate_schema(
                     schema.get("jsonSchema"),
                     field=f"spec.outputSchemas[{index}].jsonSchema",
@@ -188,7 +614,7 @@ class WorkflowPackagePreflightService:
             )
         for workflow in self._compiled_section(compiled_plan, "workflows"):
             workflow_key = str(workflow.get("key") or "workflow")
-            errors.extend(
+            diagnostics.extend(
                 self._validate_schema(
                     workflow.get("inputSchema"),
                     field=f"spec.workflows.{workflow_key}.inputSchema",
@@ -197,14 +623,14 @@ class WorkflowPackagePreflightService:
             )
         for agent in self._compiled_section(compiled_plan, "agents"):
             agent_key = str(agent.get("key") or "agent")
-            errors.extend(
+            diagnostics.extend(
                 self._validate_schema(
                     agent.get("inputSchema"),
                     field=f"spec.agents.{agent_key}.inputSchema",
                     candidate_key=f"{agent_key}_input",
                 )
             )
-        return errors
+        return [self._schema_error_fact(diagnostic) for diagnostic in diagnostics]
 
     def _validate_schema(
         self,
@@ -251,10 +677,10 @@ class WorkflowPackagePreflightService:
             return issue_field.replace("jsonSchema", base_field, 1)
         return f"{base_field}.{issue_field}"
 
-    def _tool_errors(self, compiled_plan: dict[str, Any]) -> list[dict[str, Any]]:
+    def _tool_errors(self, compiled_plan: dict[str, Any]) -> list[WorkflowPackageDiagnosticFact]:
         catalog = ExtensionService(self.session).get_tool_catalog()
         known_keys = {tool.key for tool in catalog.list_known_tools()}
-        errors: list[dict[str, Any]] = []
+        diagnostics: list[dict[str, Any]] = []
         for profile in self._compiled_section(compiled_plan, "capabilityProfiles"):
             profile_key = str(profile.get("key") or "")
             tool_keys = [str(key) for key in profile.get("toolKeys") or []]
@@ -262,19 +688,22 @@ class WorkflowPackagePreflightService:
                 _ = catalog.resolve_tool_keys(tool_keys)
             except ToolCatalogValidationError as exc:
                 for detail in exc.details:
-                    errors.append(self._profile_tool_error(profile_key=profile_key, detail=detail))
+                    diagnostics.append(
+                        self._profile_tool_error(profile_key=profile_key, detail=detail)
+                    )
             for index, tool_key in enumerate(tool_keys):
                 if tool_key not in known_keys and not any(
-                    error["field"] == f"spec.capabilityProfiles.{profile_key}.toolKeys[{index}]"
-                    for error in errors
+                    diagnostic["field"]
+                    == f"spec.capabilityProfiles.{profile_key}.toolKeys[{index}]"
+                    for diagnostic in diagnostics
                 ):
-                    errors.append(
+                    diagnostics.append(
                         {
                             "field": f"spec.capabilityProfiles.{profile_key}.toolKeys[{index}]",
                             "issue": f"Unknown server-declared tool {tool_key!r}",
                         }
                     )
-        return errors
+        return [self._tool_error_fact(diagnostic) for diagnostic in diagnostics]
 
     @classmethod
     def _profile_tool_error(
@@ -306,20 +735,20 @@ class WorkflowPackagePreflightService:
         self,
         package: WorkflowPackage,
         *,
-        existing_errors: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
+        existing_facts: list[WorkflowPackageDiagnosticFact],
+    ) -> list[WorkflowPackageDiagnosticFact]:
         dependencies = ExtensionDependencyService.normalize_dependency_payloads(
             package.extension_dependencies
         )
         if not dependencies:
             return []
         existing_disabled_keys = {
-            str(error.get("extensionKey") or "")
-            for error in existing_errors
-            if error.get("code") == "extension_disabled"
+            str(fact.metadata.get("extensionKey") or "")
+            for fact in existing_facts
+            if fact.code == "extension_disabled"
         }
         extension_service = ExtensionService(self.session)
-        errors: list[dict[str, Any]] = []
+        diagnostics: list[dict[str, Any]] = []
         for dependency in dependencies:
             extension_key = str(dependency.get("extensionKey") or "")
             if not extension_key or extension_key in existing_disabled_keys:
@@ -328,8 +757,8 @@ class WorkflowPackagePreflightService:
             try:
                 _ = extension_service.require_enabled(extension_key, surface=surface)
             except ApiError as exc:
-                errors.extend(dict(detail) for detail in exc.details)
-        return errors
+                diagnostics.extend(dict(detail) for detail in exc.details)
+        return [self._extension_dependency_error_fact(diagnostic) for diagnostic in diagnostics]
 
     @staticmethod
     def _preferred_dependency_surface(dependency: dict[str, Any]) -> str:
@@ -342,18 +771,18 @@ class WorkflowPackagePreflightService:
                     return surface
         return str(surfaces[0]) if surfaces else "workflowPackage.extensionDependency"
 
-    def _mcp_errors(self, compiled_plan: dict[str, Any]) -> list[dict[str, Any]]:
-        errors: list[dict[str, Any]] = []
+    def _mcp_errors(self, compiled_plan: dict[str, Any]) -> list[WorkflowPackageDiagnosticFact]:
+        diagnostics: list[dict[str, Any]] = []
         for server in self._compiled_section(compiled_plan, "mcpServers"):
             key = str(server.get("key") or "")
             transport = str(server.get("transport") or "")
             if transport == "stdio":
                 if not server.get("command"):
-                    errors.append(
+                    diagnostics.append(
                         {"field": f"spec.mcpServers.{key}.command", "issue": "command is required"}
                     )
                 if not isinstance(server.get("args"), list) or not server.get("args"):
-                    errors.append(
+                    diagnostics.append(
                         {
                             "field": f"spec.mcpServers.{key}.args",
                             "issue": "args must contain at least one item",
@@ -361,11 +790,11 @@ class WorkflowPackagePreflightService:
                     )
             elif transport == "http-sse":
                 if not server.get("url"):
-                    errors.append(
+                    diagnostics.append(
                         {"field": f"spec.mcpServers.{key}.url", "issue": "url is required"}
                     )
             else:
-                errors.append(
+                diagnostics.append(
                     {
                         "field": f"spec.mcpServers.{key}.transport",
                         "issue": "transport must be stdio or http-sse",
@@ -373,7 +802,7 @@ class WorkflowPackagePreflightService:
                 )
             tool_keys = server.get("toolKeys") or []
             if not isinstance(tool_keys, list) or not tool_keys:
-                errors.append(
+                diagnostics.append(
                     {
                         "field": f"spec.mcpServers.{key}.toolKeys",
                         "issue": "toolKeys must contain at least one runtime-supported tool",
@@ -383,7 +812,7 @@ class WorkflowPackagePreflightService:
                 for index, tool_key in enumerate(tool_keys):
                     normalized_tool_key = str(tool_key)
                     if normalized_tool_key not in SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS:
-                        errors.append(
+                        diagnostics.append(
                             {
                                 "field": f"spec.mcpServers.{key}.toolKeys[{index}]",
                                 "issue": (
@@ -391,14 +820,14 @@ class WorkflowPackagePreflightService:
                                 ),
                             }
                         )
-        return errors
+        return [self._mcp_error_fact(diagnostic) for diagnostic in diagnostics]
 
     def _http_errors(
         self,
         package: WorkflowPackage,
         compiled_plan: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        errors: list[dict[str, Any]] = []
+    ) -> list[WorkflowPackageDiagnosticFact]:
+        errors: list[WorkflowPackageDiagnosticFact] = []
         output_schema_keys = {
             str(schema.get("key"))
             for schema in self._compiled_section(compiled_plan, "outputSchemas")
@@ -428,14 +857,14 @@ class WorkflowPackagePreflightService:
                     cast(list[Any], step.get("operations") or [])
                 ):
                     if not isinstance(operation, dict):
+                        step_field = f"spec.workflows.{workflow_key}.graph.steps[{step_index - 1}]"
                         errors.append(
-                            {
-                                "field": (
-                                    f"spec.workflows.{workflow_key}.graph.steps[{step_index - 1}]"
-                                    f".operations[{operation_index}]"
-                                ),
-                                "issue": "HTTP operation must be an object",
-                            }
+                            self._http_error_fact(
+                                {
+                                    "field": f"{step_field}.operations[{operation_index}]",
+                                    "issue": "HTTP operation must be an object",
+                                }
+                            )
                         )
                         continue
                     errors.extend(
@@ -463,18 +892,20 @@ class WorkflowPackagePreflightService:
         configured_secret_keys: set[str],
         seen_operation_keys: set[str],
         seen_slots: set[str],
-    ) -> list[dict[str, Any]]:
+    ) -> list[WorkflowPackageDiagnosticFact]:
         field_base = (
             f"spec.workflows.{workflow_key}.graph.steps[{step_index - 1}]"
             f".operations[{operation_index}]"
         )
-        errors: list[dict[str, Any]] = []
+        errors: list[WorkflowPackageDiagnosticFact] = []
         if str(operation.get("operationKind") or "") != "http":
             return errors
         operation_key = str(operation.get("operationKey") or "")
         if operation_key in seen_operation_keys:
             errors.append(
-                {"field": f"{field_base}.operationKey", "issue": "Duplicate HTTP node id"}
+                self._http_error_fact(
+                    {"field": f"{field_base}.operationKey", "issue": "Duplicate HTTP node id"}
+                )
             )
         if operation_key:
             seen_operation_keys.add(operation_key)
@@ -488,26 +919,38 @@ class WorkflowPackagePreflightService:
         if method not in WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS:
             allowed = ", ".join(WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS)
             errors.append(
-                {
-                    "field": f"{field_base}.method",
-                    "issue": f"Unsupported HTTP method {method!r}; allowed methods: {allowed}",
-                }
+                self._http_error_fact(
+                    {
+                        "field": f"{field_base}.method",
+                        "issue": f"Unsupported HTTP method {method!r}; allowed methods: {allowed}",
+                    }
+                )
             )
         response = operation.get("response")
         if not isinstance(response, dict):
-            errors.append({"field": f"{field_base}.response", "issue": "response is required"})
+            errors.append(
+                self._http_error_fact(
+                    {"field": f"{field_base}.response", "issue": "response is required"}
+                )
+            )
         else:
             schema_key = str(response.get("outputSchema") or "")
             if schema_key not in output_schema_keys:
                 errors.append(
-                    {
-                        "field": f"{field_base}.response.outputSchema",
-                        "issue": f"Package output schema {schema_key!r} was not found",
-                    }
+                    self._http_error_fact(
+                        {
+                            "field": f"{field_base}.response.outputSchema",
+                            "issue": f"Package output schema {schema_key!r} was not found",
+                        }
+                    )
                 )
         request = operation.get("request")
         if not isinstance(request, dict):
-            errors.append({"field": f"{field_base}.request", "issue": "request is required"})
+            errors.append(
+                self._http_error_fact(
+                    {"field": f"{field_base}.request", "issue": "request is required"}
+                )
+            )
             return errors
         secret_keys, request_errors = self._collect_http_request_secret_refs(
             request,
@@ -516,30 +959,36 @@ class WorkflowPackagePreflightService:
         errors.extend(request_errors)
         for secret_key in sorted(secret_keys - configured_secret_keys):
             errors.append(
-                {
-                    "field": f"{field_base}.request",
-                    "issue": f"HTTP secret binding {secret_key!r} is not configured",
-                }
+                self._http_error_fact(
+                    {
+                        "field": f"{field_base}.request",
+                        "issue": f"HTTP secret binding {secret_key!r} is not configured",
+                    },
+                    subject=secret_key,
+                )
             )
         return errors
 
-    @staticmethod
+    @classmethod
     def _record_step_slot_error(
-        errors: list[dict[str, Any]],
+        cls,
+        errors: list[WorkflowPackageDiagnosticFact],
         seen_slots: set[str],
         *,
         slot: str,
         field: str,
     ) -> None:
         if not slot:
-            errors.append({"field": field, "issue": "slot is required"})
+            errors.append(cls._http_error_fact({"field": field, "issue": "slot is required"}))
             return
         if slot in seen_slots:
             errors.append(
-                {
-                    "field": field,
-                    "issue": "Duplicate output slot name within the same step",
-                }
+                cls._http_error_fact(
+                    {
+                        "field": field,
+                        "issue": "Duplicate output slot name within the same step",
+                    }
+                )
             )
         seen_slots.add(slot)
 
@@ -548,22 +997,28 @@ class WorkflowPackagePreflightService:
         value: object,
         *,
         field: str,
-    ) -> tuple[set[str], list[dict[str, Any]]]:
+    ) -> tuple[set[str], list[WorkflowPackageDiagnosticFact]]:
         if isinstance(value, dict):
             source = cast(dict[str, Any], value)
             if source.get("from") == "secret":
                 key = str(source.get("key") or "")
                 if not key:
                     return set(), [
-                        {"field": field, "issue": "HTTP secret reference key is required"}
+                        self._http_error_fact(
+                            {"field": field, "issue": "HTTP secret reference key is required"}
+                        )
                     ]
                 return {key}, []
             if source.get("from") == "step" and (
                 source.get("stepIndex") is None or source.get("slot") is None
             ):
-                return set(), [{"field": field, "issue": "HTTP node step reference is malformed"}]
+                return set(), [
+                    self._http_error_fact(
+                        {"field": field, "issue": "HTTP node step reference is malformed"}
+                    )
+                ]
             secret_keys: set[str] = set()
-            errors: list[dict[str, Any]] = []
+            errors: list[WorkflowPackageDiagnosticFact] = []
             for key, item in source.items():
                 child_keys, child_errors = self._collect_http_request_secret_refs(
                     item,
@@ -574,7 +1029,7 @@ class WorkflowPackagePreflightService:
             return secret_keys, errors
         if isinstance(value, list):
             listed_secret_keys: set[str] = set()
-            listed_errors: list[dict[str, Any]] = []
+            listed_errors: list[WorkflowPackageDiagnosticFact] = []
             for index, item in enumerate(value):
                 child_keys, child_errors = self._collect_http_request_secret_refs(
                     item,
@@ -604,15 +1059,17 @@ class WorkflowPackagePreflightService:
         require_api_key: bool,
     ) -> tuple[
         dict[str, PackageResolvedModelBinding],
-        list[dict[str, Any]],
-        list[dict[str, Any]],
+        list[WorkflowPackageDiagnosticFact],
     ]:
         bindings: dict[str, PackageResolvedModelBinding] = {}
-        warnings: list[dict[str, Any]] = []
-        errors: list[dict[str, Any]] = []
+        facts: list[WorkflowPackageDiagnosticFact] = []
+        readiness_context = self._readiness_projection_context(
+            require_api_key=require_api_key,
+        )
         for scope in agent_requirement_scopes.values():
             key = scope.model_connection_key
             path = scope.model_connection_field
+            scope_facts: list[WorkflowPackageDiagnosticFact] = []
             try:
                 binding = self.model_connection_service.resolve_package_model_connection_binding(
                     key,
@@ -620,120 +1077,169 @@ class WorkflowPackagePreflightService:
                     require_api_key=False,
                 )
             except ApiError as exc:
-                errors.extend(dict(detail) for detail in exc.details)
+                scope_facts.extend(
+                    self._model_binding_error_facts(
+                        exc.details,
+                        key=key,
+                        field=path,
+                    )
+                )
+                facts.extend(scope_facts)
                 continue
             connection = self.model_connection_repository.get_by_key(binding.key)
             if connection is None:
-                errors.append({"field": path, "issue": f"Model connection {key!r} was not found"})
-                continue
-            if require_api_key and not binding.has_api_key:
-                errors.append({"field": path, "issue": "API key is not configured"})
-                continue
-            if connection.last_test_ok is False:
-                errors.append(
-                    {
-                        "field": path,
-                        "issue": connection.last_test_message or "Connection test failed",
-                    }
+                scope_facts.append(
+                    self._model_connection_not_found_fact(
+                        field=path,
+                        key=binding.key,
+                    )
                 )
+                facts.extend(scope_facts)
                 continue
-            requirement_errors, requirement_warnings = self._package_requirement_issues(
-                binding=binding,
-                scope=scope,
-            )
-            errors.extend(requirement_errors)
-            warnings.extend(requirement_warnings)
-            if requirement_errors:
+            if not binding.has_api_key:
+                scope_facts.append(
+                    self._model_connection_api_key_missing_fact(
+                        field=path,
+                        key=binding.key,
+                    )
+                )
+            if connection.last_test_ok is False:
+                scope_facts.append(
+                    self._model_connection_test_failed_fact(
+                        field=path,
+                        key=binding.key,
+                        issue=connection.last_test_message or "Connection test failed",
+                    )
+                )
+            if not self._facts_block_readiness(scope_facts, context=readiness_context):
+                scope_facts.extend(
+                    self._package_requirement_issues(
+                        binding=binding,
+                        scope=scope,
+                    )
+                )
+            facts.extend(scope_facts)
+            if self._facts_block_readiness(scope_facts, context=readiness_context):
                 continue
             bindings[binding.key] = binding
-        return bindings, warnings, errors
+        return bindings, facts
+
+    @classmethod
+    def _model_binding_error_facts(
+        cls,
+        diagnostics: Iterable[Mapping[str, Any]],
+        *,
+        key: str,
+        field: str,
+    ) -> list[WorkflowPackageDiagnosticFact]:
+        facts: list[WorkflowPackageDiagnosticFact] = []
+        for diagnostic in diagnostics:
+            issue = str(diagnostic.get("issue") or diagnostic.get("message") or "")
+            diagnostic_field = cls._string_or_none(diagnostic.get("field")) or field
+            if issue == f"Model connection {key!r} was not found":
+                facts.append(
+                    cls._model_connection_not_found_fact(
+                        field=diagnostic_field,
+                        key=key,
+                        issue=issue,
+                    )
+                )
+                continue
+            if issue == "API key is not configured":
+                facts.append(
+                    cls._model_connection_api_key_missing_fact(
+                        field=diagnostic_field,
+                        key=key,
+                    )
+                )
+                continue
+            facts.append(
+                cls._blocking_diagnostic_fact(
+                    {**dict(diagnostic), "field": diagnostic_field},
+                    kind=cls._string_or_none(diagnostic.get("code"))
+                    or "model_connection_test_failed",
+                    code=cls._string_or_none(diagnostic.get("code"))
+                    or "model_connection_test_failed",
+                    subject=key,
+                )
+            )
+        return facts
 
     def _package_requirement_issues(
         self,
         *,
         binding: PackageResolvedModelBinding,
         scope: PackageAgentExecutionRequirements,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    ) -> list[WorkflowPackageDiagnosticFact]:
         requirements = scope.requirements
         path = scope.model_connection_field
-        errors: list[dict[str, Any]] = []
-        warnings: list[dict[str, Any]] = []
+        facts: list[WorkflowPackageDiagnosticFact] = []
         if requirements.requires_native_tool_calls:
-            self._record_requirement_diagnostics(
-                binding=binding,
-                scope=scope,
-                requirement="nativeToolCalls",
-                errors=errors,
-                warnings=warnings,
-                collect=lambda: self._native_tool_requirement_issues(
+            facts.extend(
+                self._record_requirement_diagnostics(
                     binding=binding,
                     scope=scope,
-                    requirements=requirements,
-                    path=path,
-                    errors=errors,
-                    warnings=warnings,
-                ),
+                    requirement="nativeToolCalls",
+                    collect=lambda: self._native_tool_requirement_issues(
+                        binding=binding,
+                        requirements=requirements,
+                        path=path,
+                    ),
+                )
             )
         if requirements.requires_structured_output:
-            self._record_requirement_diagnostics(
-                binding=binding,
-                scope=scope,
-                requirement="structuredOutput",
-                errors=errors,
-                warnings=warnings,
-                collect=lambda: self._structured_output_requirement_issues(
+            facts.extend(
+                self._record_requirement_diagnostics(
                     binding=binding,
-                    requirements=requirements,
-                    path=path,
-                    errors=errors,
-                    warnings=warnings,
-                ),
+                    scope=scope,
+                    requirement="structuredOutput",
+                    collect=lambda: self._structured_output_requirement_issues(
+                        binding=binding,
+                        requirements=requirements,
+                        path=path,
+                    ),
+                )
             )
         if requirements.requires_parallel_tool_calls:
-            self._record_requirement_diagnostics(
-                binding=binding,
-                scope=scope,
-                requirement="parallelToolCalls",
-                errors=errors,
-                warnings=warnings,
-                collect=lambda: self._parallel_tool_requirement_warnings(
+            facts.extend(
+                self._record_requirement_diagnostics(
                     binding=binding,
-                    requirements=requirements,
-                    path=path,
-                    warnings=warnings,
-                ),
+                    scope=scope,
+                    requirement="parallelToolCalls",
+                    collect=lambda: self._parallel_tool_requirement_warnings(
+                        binding=binding,
+                        requirements=requirements,
+                        path=path,
+                    ),
+                )
             )
         if requirements.requires_streaming:
-            self._record_requirement_diagnostics(
-                binding=binding,
-                scope=scope,
-                requirement="streaming",
-                errors=errors,
-                warnings=warnings,
-                collect=lambda: self._streaming_requirement_issues(
+            facts.extend(
+                self._record_requirement_diagnostics(
                     binding=binding,
-                    requirements=requirements,
-                    path=path,
-                    errors=errors,
-                    warnings=warnings,
-                ),
+                    scope=scope,
+                    requirement="streaming",
+                    collect=lambda: self._streaming_requirement_issues(
+                        binding=binding,
+                        requirements=requirements,
+                        path=path,
+                    ),
+                )
             )
         if requirements.requires_reasoning_hints:
-            self._record_requirement_diagnostics(
-                binding=binding,
-                scope=scope,
-                requirement="reasoningHints",
-                errors=errors,
-                warnings=warnings,
-                collect=lambda: self._reasoning_requirement_issues(
+            facts.extend(
+                self._record_requirement_diagnostics(
                     binding=binding,
-                    requirements=requirements,
-                    path=path,
-                    errors=errors,
-                    warnings=warnings,
-                ),
+                    scope=scope,
+                    requirement="reasoningHints",
+                    collect=lambda: self._reasoning_requirement_issues(
+                        binding=binding,
+                        requirements=requirements,
+                        path=path,
+                    ),
+                )
             )
-        return errors, warnings
+        return facts
 
     @staticmethod
     def _requirement_diagnostic_context(
@@ -754,85 +1260,64 @@ class WorkflowPackagePreflightService:
         binding: PackageResolvedModelBinding,
         scope: PackageAgentExecutionRequirements,
         requirement: str,
-        errors: list[dict[str, Any]],
-        warnings: list[dict[str, Any]],
-        collect: Callable[[], None],
-    ) -> None:
-        error_start = len(errors)
-        warning_start = len(warnings)
-        collect()
+        collect: Callable[[], Iterable[WorkflowPackageDiagnosticFact]],
+    ) -> list[WorkflowPackageDiagnosticFact]:
         context = self._requirement_diagnostic_context(
             binding=binding,
             scope=scope,
             requirement=requirement,
         )
-        for diagnostic in [*errors[error_start:], *warnings[warning_start:]]:
-            for key, value in context.items():
-                diagnostic.setdefault(key, value)
+        return [self._with_diagnostic_metadata(fact, context) for fact in collect()]
 
     def _native_tool_requirement_issues(
         self,
         *,
         binding: PackageResolvedModelBinding,
-        scope: PackageAgentExecutionRequirements,
         requirements: PackageExecutionRequirements,
         path: str,
-        errors: list[dict[str, Any]],
-        warnings: list[dict[str, Any]],
-    ) -> None:
+    ) -> list[WorkflowPackageDiagnosticFact]:
         field = requirements.native_tool_sources[0] if requirements.native_tool_sources else path
         status = self._capability_status(binding, "nativeToolCalls")
         if binding.parallel_tool_calls_policy == "forbid":
-            errors.append(
-                {
-                    "field": field,
-                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
-                    **self._requirement_diagnostic_context(
-                        binding=binding,
-                        scope=scope,
-                        requirement="nativeToolCalls",
-                    ),
-                    "issue": (
+            return [
+                self._requirement_fact(
+                    kind=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    code=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    field=field,
+                    issue=(
                         "This workflow requires native tool calls, but the selected model "
                         "connection forbids tool calls."
                     ),
-                }
-            )
-            return
+                    level=WorkflowPackageDiagnosticLevel.BLOCKING,
+                )
+            ]
         if status in {"unsupported", "notApplicable"}:
-            errors.append(
-                {
-                    "field": field,
-                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
-                    **self._requirement_diagnostic_context(
-                        binding=binding,
-                        scope=scope,
-                        requirement="nativeToolCalls",
-                    ),
-                    "issue": (
+            return [
+                self._requirement_fact(
+                    kind=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    code=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    field=field,
+                    issue=(
                         "This workflow requires native tool calls, but the selected model "
                         "connection does not support them."
                     ),
-                }
-            )
-            return
+                    level=WorkflowPackageDiagnosticLevel.BLOCKING,
+                )
+            ]
         if status == "unknown":
-            warnings.append(
-                {
-                    "field": field,
-                    "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
-                    **self._requirement_diagnostic_context(
-                        binding=binding,
-                        scope=scope,
-                        requirement="nativeToolCalls",
-                    ),
-                    "issue": (
+            return [
+                self._requirement_fact(
+                    kind=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    code=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    field=field,
+                    issue=(
                         "This workflow requires native tool calls, but support has not been "
                         "proven yet."
                     ),
-                    "severity": "warning",
-                }
-            )
+                    level=WorkflowPackageDiagnosticLevel.WARNING,
+                )
+            ]
+        return []
 
     def _structured_output_requirement_issues(
         self,
@@ -840,9 +1325,7 @@ class WorkflowPackagePreflightService:
         binding: PackageResolvedModelBinding,
         requirements: PackageExecutionRequirements,
         path: str,
-        errors: list[dict[str, Any]],
-        warnings: list[dict[str, Any]],
-    ) -> None:
+    ) -> list[WorkflowPackageDiagnosticFact]:
         field = (
             requirements.structured_output_sources[0]
             if requirements.structured_output_sources
@@ -852,120 +1335,128 @@ class WorkflowPackagePreflightService:
         json_status = self._capability_status(binding, "jsonObjectOutput")
         policy = binding.output_strategy_policy
         if policy == "allow_plain_text":
-            errors.append(
-                {
-                    "field": field,
-                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
-                    "issue": (
+            return [
+                self._requirement_fact(
+                    kind=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    code=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    field=field,
+                    issue=(
                         "This workflow requires structured JSON output, but the selected "
                         "model connection is configured for plain text."
                     ),
-                }
-            )
-            return
+                    level=WorkflowPackageDiagnosticLevel.BLOCKING,
+                )
+            ]
         if policy == "require_strict_schema":
             if strict_status in {"unsupported", "notApplicable"}:
-                errors.append(
-                    {
-                        "field": field,
-                        "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
-                        "issue": (
+                return [
+                    self._requirement_fact(
+                        kind=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                        code=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                        field=field,
+                        issue=(
                             "This workflow requires structured JSON output, but strict "
                             "JSON-schema output is not supported."
                         ),
-                    }
-                )
-                return
+                        level=WorkflowPackageDiagnosticLevel.BLOCKING,
+                    )
+                ]
             if strict_status == "unknown":
-                warnings.append(
-                    {
-                        "field": field,
-                        "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
-                        "issue": (
+                return [
+                    self._requirement_fact(
+                        kind=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                        code=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                        field=field,
+                        issue=(
                             "This workflow requires structured JSON output, but strict "
                             "JSON-schema output has not been proven yet."
                         ),
-                        "severity": "warning",
-                    }
-                )
-            return
+                        level=WorkflowPackageDiagnosticLevel.WARNING,
+                    )
+                ]
+            return []
         if policy == "allow_json_object_validation":
             if json_status in {"unsupported", "notApplicable"}:
-                errors.append(
-                    {
-                        "field": field,
-                        "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
-                        "issue": (
+                return [
+                    self._requirement_fact(
+                        kind=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                        code=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                        field=field,
+                        issue=(
                             "This workflow requires structured JSON output, but JSON object "
                             "output is not supported."
                         ),
-                    }
-                )
-                return
+                        level=WorkflowPackageDiagnosticLevel.BLOCKING,
+                    )
+                ]
             if json_status == "unknown":
-                warnings.append(
-                    {
-                        "field": field,
-                        "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
-                        "issue": (
+                return [
+                    self._requirement_fact(
+                        kind=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                        code=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                        field=field,
+                        issue=(
                             "This workflow requires structured JSON output, but JSON object "
                             "output has not been proven yet."
                         ),
-                        "severity": "warning",
-                    }
-                )
-            return
+                        level=WorkflowPackageDiagnosticLevel.WARNING,
+                    )
+                ]
+            return []
         if strict_status in {"unsupported", "notApplicable"}:
             if json_status in {"unsupported", "notApplicable"}:
-                errors.append(
-                    {
-                        "field": field,
-                        "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
-                        "issue": (
+                return [
+                    self._requirement_fact(
+                        kind=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                        code=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                        field=field,
+                        issue=(
                             "This workflow requires structured JSON output, but neither strict "
                             "JSON-schema output nor JSON object output is supported."
                         ),
-                    }
-                )
-                return
+                        level=WorkflowPackageDiagnosticLevel.BLOCKING,
+                    )
+                ]
             if json_status == "unknown":
-                warnings.append(
-                    {
-                        "field": field,
-                        "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
-                        "issue": (
+                return [
+                    self._requirement_fact(
+                        kind=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                        code=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                        field=field,
+                        issue=(
                             "This workflow requires structured JSON output, but strict "
                             "JSON-schema output is unavailable and JSON object output has not "
                             "been proven yet."
                         ),
-                        "severity": "warning",
-                    }
-                )
-                return
-            warnings.append(
-                {
-                    "field": field,
-                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
-                    "issue": (
+                        level=WorkflowPackageDiagnosticLevel.WARNING,
+                    )
+                ]
+            return [
+                self._requirement_fact(
+                    kind="structured_output_json_object_fallback",
+                    code=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    field=field,
+                    issue=(
                         "This workflow requires structured JSON output, but strict JSON-schema "
                         "output is unavailable so JSON object validation will be used."
                     ),
-                    "severity": "warning",
-                }
-            )
-            return
+                    level=WorkflowPackageDiagnosticLevel.WARNING,
+                )
+            ]
         if strict_status == "unknown":
-            warnings.append(
-                {
-                    "field": field,
-                    "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
-                    "issue": (
+            return [
+                self._requirement_fact(
+                    kind=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    code=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    field=field,
+                    issue=(
                         "This workflow requires structured JSON output, but strict "
                         "JSON-schema output has not been proven yet."
                     ),
-                    "severity": "warning",
-                }
-            )
+                    level=WorkflowPackageDiagnosticLevel.WARNING,
+                )
+            ]
+        return []
 
     def _parallel_tool_requirement_warnings(
         self,
@@ -973,36 +1464,38 @@ class WorkflowPackagePreflightService:
         binding: PackageResolvedModelBinding,
         requirements: PackageExecutionRequirements,
         path: str,
-        warnings: list[dict[str, Any]],
-    ) -> None:
+    ) -> list[WorkflowPackageDiagnosticFact]:
         field = (
             requirements.parallel_tool_sources[0] if requirements.parallel_tool_sources else path
         )
         status = self._capability_status(binding, "parallelToolCalls")
         if status in {"unsupported", "notApplicable"}:
-            warnings.append(
-                {
-                    "field": field,
-                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
-                    "issue": (
+            return [
+                self._requirement_fact(
+                    kind=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    code=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    field=field,
+                    issue=(
                         "This workflow uses parallel tool behavior, but the selected model "
                         "connection will serialize tool calls instead."
                     ),
-                    "severity": "warning",
-                }
-            )
-        elif status == "unknown":
-            warnings.append(
-                {
-                    "field": field,
-                    "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
-                    "issue": (
+                    level=WorkflowPackageDiagnosticLevel.WARNING,
+                )
+            ]
+        if status == "unknown":
+            return [
+                self._requirement_fact(
+                    kind=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    code=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    field=field,
+                    issue=(
                         "This workflow uses parallel tool behavior, but parallel tool-call "
                         "support has not been proven yet."
                     ),
-                    "severity": "warning",
-                }
-            )
+                    level=WorkflowPackageDiagnosticLevel.WARNING,
+                )
+            ]
+        return []
 
     def _streaming_requirement_issues(
         self,
@@ -1010,34 +1503,36 @@ class WorkflowPackagePreflightService:
         binding: PackageResolvedModelBinding,
         requirements: PackageExecutionRequirements,
         path: str,
-        errors: list[dict[str, Any]],
-        warnings: list[dict[str, Any]],
-    ) -> None:
+    ) -> list[WorkflowPackageDiagnosticFact]:
         field = requirements.streaming_sources[0] if requirements.streaming_sources else path
         status = self._capability_status(binding, "streaming")
         if status in {"unsupported", "notApplicable"}:
-            errors.append(
-                {
-                    "field": field,
-                    "code": _MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
-                    "issue": (
+            return [
+                self._requirement_fact(
+                    kind=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    code=_MODEL_CAPABILITY_REQUIRED_MISSING_CODE,
+                    field=field,
+                    issue=(
                         "This workflow requires streamed UI updates, but the selected model "
                         "connection does not support streaming."
                     ),
-                }
-            )
-        elif status == "unknown":
-            warnings.append(
-                {
-                    "field": field,
-                    "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
-                    "issue": (
+                    level=WorkflowPackageDiagnosticLevel.BLOCKING,
+                )
+            ]
+        if status == "unknown":
+            return [
+                self._requirement_fact(
+                    kind=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    code=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    field=field,
+                    issue=(
                         "This workflow requires streamed UI updates, but streaming support "
                         "has not been proven yet."
                     ),
-                    "severity": "warning",
-                }
-            )
+                    level=WorkflowPackageDiagnosticLevel.WARNING,
+                )
+            ]
+        return []
 
     def _reasoning_requirement_issues(
         self,
@@ -1045,34 +1540,36 @@ class WorkflowPackagePreflightService:
         binding: PackageResolvedModelBinding,
         requirements: PackageExecutionRequirements,
         path: str,
-        errors: list[dict[str, Any]],
-        warnings: list[dict[str, Any]],
-    ) -> None:
+    ) -> list[WorkflowPackageDiagnosticFact]:
         field = requirements.reasoning_sources[0] if requirements.reasoning_sources else path
         status = self._capability_status(binding, "reasoningHints")
         if status in {"unsupported", "notApplicable"}:
-            errors.append(
-                {
-                    "field": field,
-                    "code": _MODEL_REASONING_UNSUPPORTED_CODE,
-                    "issue": (
+            return [
+                self._requirement_fact(
+                    kind=_MODEL_REASONING_UNSUPPORTED_CODE,
+                    code=_MODEL_REASONING_UNSUPPORTED_CODE,
+                    field=field,
+                    issue=(
                         "This workflow requires reasoning hints, but the selected model "
                         "connection does not support them."
                     ),
-                }
-            )
-        elif status == "unknown":
-            warnings.append(
-                {
-                    "field": field,
-                    "code": _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
-                    "issue": (
+                    level=WorkflowPackageDiagnosticLevel.BLOCKING,
+                )
+            ]
+        if status == "unknown":
+            return [
+                self._requirement_fact(
+                    kind=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    code=_MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE,
+                    field=field,
+                    issue=(
                         "This workflow requires reasoning hints, but reasoning support has "
                         "not been proven yet."
                     ),
-                    "severity": "warning",
-                }
-            )
+                    level=WorkflowPackageDiagnosticLevel.WARNING,
+                )
+            ]
+        return []
 
     @staticmethod
     def _capability_status(binding: PackageResolvedModelBinding, capability_key: str) -> str:

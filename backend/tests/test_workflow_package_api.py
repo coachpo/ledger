@@ -409,6 +409,8 @@ def test_validate_manifest_reports_diagnostics_without_persisting(
     assert response.status_code == 200, response.json()
     body = cast(dict[str, object], response.json())
     assert body["metadata"] is None
+    assert "facts" not in body
+    assert "warnings" in body
     diagnostics = cast(list[dict[str, object]], body["diagnostics"])
     assert diagnostics[0]["path"] == "spec.capabilityProfiles.market_research_tools.toolKeys[3]"
     with session_factory() as session:
@@ -430,6 +432,7 @@ def test_launch_metadata_and_create_contract_reject_removed_version(
     assert launch_body["workflowKey"] == "advisory_research"
     assert launch_body["ready"] is True
     assert launch_body["blockingErrors"] == []
+    assert "facts" not in launch_body
 
     versioned_launch = client.get(
         f"/api/workflow-packages/{created['id']}/launch",
@@ -443,6 +446,8 @@ def test_launch_metadata_and_create_contract_reject_removed_version(
     assert "packageVersion" not in preflight_body
     assert preflight_body["workflowKey"] == "advisory_research"
     assert preflight_body["ready"] is True
+    assert preflight_body["blockingErrors"] == []
+    assert "facts" not in preflight_body
 
     versioned_preflight = client.post(
         f"/api/workflow-packages/{created['id']}/preflight",
@@ -543,6 +548,7 @@ def test_launch_blocks_failed_model_connection(
     assert launch.status_code == 200, launch.json()
     launch_body = cast(dict[str, object], launch.json())
     assert launch_body["ready"] is False
+    assert "facts" not in launch_body
     launch_errors = cast(list[dict[str, object]], launch_body["blockingErrors"])
     assert len(launch_errors) == 12
     assert launch_errors[0] == {
@@ -555,6 +561,7 @@ def test_launch_blocks_failed_model_connection(
     assert preflight.status_code == 200, preflight.json()
     preflight_body = cast(dict[str, object], preflight.json())
     assert preflight_body["ready"] is False
+    assert "facts" not in preflight_body
     preflight_errors = cast(list[dict[str, object]], preflight_body["blockingErrors"])
     assert len(preflight_errors) == 12
     assert preflight_errors[0] == {

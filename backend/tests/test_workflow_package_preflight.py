@@ -27,7 +27,12 @@ from app.services.extension_service import ExtensionService
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_manifest_parser import parse_workflow_package_manifest
-from app.services.workflow_package_preflight import WorkflowPackagePreflightService
+from app.services.workflow_package_preflight import (
+    WorkflowPackageDiagnosticFact,
+    WorkflowPackageDiagnosticLevel,
+    WorkflowPackageDiagnosticProjectionContext,
+    WorkflowPackagePreflightService,
+)
 from app.services.workflow_package_schedule_inputs import SCHEDULE_TEMPLATE_MISSING_VALUE
 from app.services.workflow_package_schedule_service import (
     DueWorkflowPackageSchedule,
@@ -149,6 +154,17 @@ spec:
       output:
         from: ${{ nodes.research_step.outputs.report }}
 """
+
+
+def _project_blocking_diagnostics(
+    facts: list[WorkflowPackageDiagnosticFact],
+) -> list[dict[str, Any]]:
+    blocking_errors, warnings = WorkflowPackagePreflightService._project_diagnostic_facts(
+        facts,
+        context=WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS,
+    )
+    assert warnings == []
+    return blocking_errors
 
 
 def _mixed_capability_package_source() -> str:
@@ -280,16 +296,20 @@ spec:
 """
 
 
-def _delete_existing_tradingagents_package(client: TestClient) -> None:
+def _delete_existing_package(client: TestClient, key: str) -> None:
     packages_response = client.get("/api/workflow-packages")
     assert packages_response.status_code == 200, packages_response.json()
     package_items = cast(list[dict[str, object]], packages_response.json()["items"])
     for package in package_items:
-        if package["key"] != "tradingagents_advisory_research":
+        if package["key"] != key:
             continue
         deleted = client.delete(f"/api/workflow-packages/{package['id']}")
         assert deleted.status_code == 204, deleted.text
         break
+
+
+def _delete_existing_tradingagents_package(client: TestClient) -> None:
+    _delete_existing_package(client, "tradingagents_advisory_research")
 
 
 def _create_package(client: TestClient) -> dict[str, Any]:
@@ -444,6 +464,313 @@ def _seed_compatibility_fixture_connection(
         session.commit()
 
 
+def _diagnostic_wire_identity(diagnostic: dict[str, object]) -> tuple[str, str]:
+    return (
+        str(diagnostic.get("field") or diagnostic.get("path") or ""),
+        str(diagnostic.get("issue") or diagnostic.get("message") or ""),
+    )
+
+
+def test_diagnostic_fact_identity_ignores_issue_text_and_preserves_first_occurrence() -> None:
+    blocking_levels = {
+        WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: (
+            WorkflowPackageDiagnosticLevel.BLOCKING
+        )
+    }
+    first_fact = WorkflowPackageDiagnosticFact(
+        kind="model_connection_not_found",
+        code="model_connection_not_found",
+        field="spec.agents[0].modelConnection",
+        issue="Model connection 'missing_model' was not found",
+        subject="missing_model",
+        levels=blocking_levels,
+    )
+    duplicate_fact = WorkflowPackageDiagnosticFact(
+        kind="model_connection_not_found",
+        code="model_connection_not_found",
+        field="spec.agents[0].modelConnection",
+        issue="Copy changed but identity should stay stable",
+        subject="missing_model",
+        levels=blocking_levels,
+    )
+    path_fact = WorkflowPackageDiagnosticFact(
+        kind="execution_plan_invalid",
+        code="execution_plan_invalid",
+        path="spec.workflows.advisory_research.graph.steps[0]",
+        issue="cycle",
+        subject="advisory_research",
+        levels=blocking_levels,
+    )
+
+    assert first_fact.identity == duplicate_fact.identity
+
+    blocking_errors, warnings = WorkflowPackagePreflightService._project_diagnostic_facts(
+        [first_fact, duplicate_fact, path_fact],
+        context=WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS,
+    )
+
+    assert blocking_errors == [
+        {
+            "field": "spec.agents[0].modelConnection",
+            "issue": "Model connection 'missing_model' was not found",
+        },
+        {
+            "path": "spec.workflows.advisory_research.graph.steps[0]",
+            "issue": "cycle",
+        },
+    ]
+    assert warnings == []
+
+
+def test_diagnostic_fact_projection_contexts_preserve_public_diagnostics() -> None:
+    missing_model_fact = WorkflowPackageDiagnosticFact(
+        kind="model_connection_not_found",
+        code="model_connection_not_found",
+        field="spec.agents[0].modelConnection",
+        issue="Model connection 'missing_model' was not found",
+        subject="missing_model",
+        metadata={"agentKey": "analyst"},
+        levels={
+            WorkflowPackageDiagnosticProjectionContext.VALIDATION: (
+                WorkflowPackageDiagnosticLevel.WARNING
+            ),
+            WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA: (
+                WorkflowPackageDiagnosticLevel.BLOCKING
+            ),
+            WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: (
+                WorkflowPackageDiagnosticLevel.BLOCKING
+            ),
+        },
+    )
+    api_key_fact = WorkflowPackageDiagnosticFact(
+        kind="model_connection_api_key_missing",
+        code="model_connection_api_key_missing",
+        field="spec.agents[0].modelConnection",
+        issue="API key is not configured",
+        subject="missing_model",
+        levels={
+            WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: (
+                WorkflowPackageDiagnosticLevel.BLOCKING
+            )
+        },
+    )
+    schema_fact = WorkflowPackageDiagnosticFact(
+        kind="schema_invalid",
+        code="schema_invalid",
+        field="spec.outputSchemas[0].jsonSchema",
+        issue="Schema must be an object",
+        levels={
+            WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA: (
+                WorkflowPackageDiagnosticLevel.BLOCKING
+            ),
+            WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: (
+                WorkflowPackageDiagnosticLevel.BLOCKING
+            ),
+        },
+    )
+
+    assert WorkflowPackagePreflightService._project_validation_warning_facts(
+        [missing_model_fact, api_key_fact, schema_fact]
+    ) == [
+        {
+            "field": "spec.agents[0].modelConnection",
+            "issue": "Model connection 'missing_model' was not found",
+            "agentKey": "analyst",
+        }
+    ]
+
+    launch_blocking_errors, launch_warnings = (
+        WorkflowPackagePreflightService._project_diagnostic_facts(
+            [missing_model_fact, api_key_fact, schema_fact],
+            context=WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA,
+        )
+    )
+    assert launch_blocking_errors == [
+        {
+            "field": "spec.agents[0].modelConnection",
+            "issue": "Model connection 'missing_model' was not found",
+            "agentKey": "analyst",
+        },
+        {
+            "field": "spec.outputSchemas[0].jsonSchema",
+            "issue": "Schema must be an object",
+        },
+    ]
+    assert launch_warnings == []
+
+    strict_blocking_errors, strict_warnings = (
+        WorkflowPackagePreflightService._project_diagnostic_facts(
+            [missing_model_fact, api_key_fact, schema_fact],
+            context=WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS,
+        )
+    )
+    assert strict_blocking_errors == [
+        {
+            "field": "spec.agents[0].modelConnection",
+            "issue": "Model connection 'missing_model' was not found",
+            "agentKey": "analyst",
+        },
+        {
+            "field": "spec.agents[0].modelConnection",
+            "issue": "API key is not configured",
+        },
+        {
+            "field": "spec.outputSchemas[0].jsonSchema",
+            "issue": "Schema must be an object",
+        },
+    ]
+    assert strict_warnings == []
+
+
+def test_readiness_diagnostic_fact_adapter_deduplicates_missing_model_warning() -> None:
+    readiness_facts = [
+        *WorkflowPackagePreflightService._readiness_diagnostic_facts(
+            [
+                {
+                    "field": "spec.agents[0].modelConnection",
+                    "issue": "Model connection 'missing_model' was not found",
+                }
+            ],
+            level=WorkflowPackageDiagnosticLevel.BLOCKING,
+        ),
+        *WorkflowPackagePreflightService._readiness_diagnostic_facts(
+            [
+                {
+                    "field": "spec.agents[0].modelConnection",
+                    "issue": "Model connection 'missing_model' was not found",
+                    "severity": "warning",
+                }
+            ],
+            level=WorkflowPackageDiagnosticLevel.WARNING,
+        ),
+    ]
+
+    launch_blocking_errors, launch_warnings = (
+        WorkflowPackagePreflightService._project_diagnostic_facts(
+            readiness_facts,
+            context=WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA,
+        )
+    )
+
+    assert launch_blocking_errors == [
+        {
+            "field": "spec.agents[0].modelConnection",
+            "issue": "Model connection 'missing_model' was not found",
+        }
+    ]
+    assert launch_warnings == []
+
+
+def test_validation_projection_hides_blocker_only_facts_but_strict_readiness_preserves_payloads() -> (  # noqa: E501
+    None
+):
+    blocker_only_facts = [
+        WorkflowPackageDiagnosticFact(
+            kind="schema_invalid",
+            code="schema_invalid",
+            field="spec.outputSchemas[0].jsonSchema",
+            issue="Schema must be an object",
+            levels={
+                WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA: (
+                    WorkflowPackageDiagnosticLevel.BLOCKING
+                ),
+                WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: (
+                    WorkflowPackageDiagnosticLevel.BLOCKING
+                ),
+            },
+        ),
+        WorkflowPackageDiagnosticFact(
+            kind="tool_invalid",
+            code="extension_disabled",
+            field="spec.capabilityProfiles.quote_tools.toolKeys[0]",
+            issue=(
+                "Server-declared tool 'signaldeck.market_data.quote_lookup' is disabled because "
+                "extension 'signaldeck.finance' is disabled"
+            ),
+            subject="tool.signaldeck.market_data.quote_lookup",
+            metadata={
+                "code": "extension_disabled",
+                "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+                "surface": "tool.signaldeck.market_data.quote_lookup",
+            },
+            levels={
+                WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA: (
+                    WorkflowPackageDiagnosticLevel.BLOCKING
+                ),
+                WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: (
+                    WorkflowPackageDiagnosticLevel.BLOCKING
+                ),
+            },
+        ),
+        WorkflowPackageDiagnosticFact(
+            kind="http_secret_missing",
+            code="http_secret_missing",
+            field="spec.workflows.notify.graph.steps[0].operations[0].request",
+            issue="HTTP secret binding 'body_token' is not configured",
+            subject="body_token",
+            levels={
+                WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA: (
+                    WorkflowPackageDiagnosticLevel.BLOCKING
+                ),
+                WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: (
+                    WorkflowPackageDiagnosticLevel.BLOCKING
+                ),
+            },
+        ),
+        WorkflowPackageDiagnosticFact(
+            kind="execution_plan_invalid",
+            code="execution_plan_invalid",
+            field="spec.workflows.advisory_research.graph.steps[0].agents[0].with.ticker",
+            issue="cycle",
+            levels={
+                WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA: (
+                    WorkflowPackageDiagnosticLevel.BLOCKING
+                ),
+                WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: (
+                    WorkflowPackageDiagnosticLevel.BLOCKING
+                ),
+            },
+        ),
+    ]
+
+    assert (
+        WorkflowPackagePreflightService._project_validation_warning_facts(blocker_only_facts) == []
+    )
+
+    strict_blocking_errors, strict_warnings = (
+        WorkflowPackagePreflightService._project_diagnostic_facts(
+            blocker_only_facts,
+            context=WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS,
+        )
+    )
+
+    assert strict_blocking_errors == [
+        {
+            "field": "spec.outputSchemas[0].jsonSchema",
+            "issue": "Schema must be an object",
+        },
+        {
+            "field": "spec.capabilityProfiles.quote_tools.toolKeys[0]",
+            "issue": (
+                "Server-declared tool 'signaldeck.market_data.quote_lookup' is disabled because "
+                "extension 'signaldeck.finance' is disabled"
+            ),
+            "code": "extension_disabled",
+            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "surface": "tool.signaldeck.market_data.quote_lookup",
+        },
+        {
+            "field": "spec.workflows.notify.graph.steps[0].operations[0].request",
+            "issue": "HTTP secret binding 'body_token' is not configured",
+        },
+        {
+            "field": "spec.workflows.advisory_research.graph.steps[0].agents[0].with.ticker",
+            "issue": "cycle",
+        },
+    ]
+    assert strict_warnings == []
+
+
 def test_preflight_accepts_fixture_report_lookup_and_core_memory_tool_keys(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -453,7 +780,9 @@ def test_preflight_accepts_fixture_report_lookup_and_core_memory_tool_keys(
     profiles_by_key = {str(profile["key"]): profile for profile in profiles}
 
     with session_factory() as session:
-        errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        errors = _project_blocking_diagnostics(
+            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        )
 
     assert errors == []
     assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
@@ -475,7 +804,9 @@ def test_preflight_accepts_finance_server_declared_digital_oracle_toolKeys(
     extension_dependencies = cast(list[dict[str, Any]], compiled["extensionDependencies"])
 
     with session_factory() as session:
-        errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        errors = _project_blocking_diagnostics(
+            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        )
 
     requirements = PackageExecutionPlanBuilder.derive_package_requirements(compiled_plan)
     plan = PackageExecutionPlanBuilder.build_from_compiled_plan(compiled_plan, "research")
@@ -536,7 +867,9 @@ def test_digital_oracle_researcher_demo_validates_compiles_and_preflights(
     profiles_by_key = {str(profile["key"]): profile for profile in profiles}
 
     with session_factory() as session:
-        tool_errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        tool_errors = _project_blocking_diagnostics(
+            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        )
 
     requirements = PackageExecutionPlanBuilder.derive_package_requirements(compiled_plan)
     plan = PackageExecutionPlanBuilder.build_from_compiled_plan(compiled_plan, "research")
@@ -551,6 +884,7 @@ def test_digital_oracle_researcher_demo_validates_compiles_and_preflights(
         capabilities=_capabilities_with_statuses(),
         last_test_ok=True,
     )
+    _delete_existing_package(client, "digital_oracle_researcher")
     created = client.post("/api/workflow-packages", json={"manifestSource": manifest_source})
     assert created.status_code == 201, created.json()
     preflight = client.post(
@@ -599,7 +933,9 @@ def test_preflight_rejects_duplicate_tool_keys_and_accepts_core_memory_tool_keys
             ]
 
     with session_factory() as session:
-        errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        errors = _project_blocking_diagnostics(
+            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        )
 
     assert errors == [
         {
@@ -622,7 +958,9 @@ def test_preflight_missing_digital_oracle_toolKeys_diagnostic_preserves_field_on
     ]
 
     with session_factory() as session:
-        errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        errors = _project_blocking_diagnostics(
+            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        )
 
     assert errors == [
         {
@@ -885,6 +1223,8 @@ def test_save_allows_missing_model_connection_and_preflight_blocks(
 
     expected_count = _package_source().count("modelConnection: tradingagents_primary_model")
     expected_fields = [f"spec.agents[{index}].modelConnection" for index in range(expected_count)]
+    expected_issue = "Model connection 'tradingagents_primary_model' was not found"
+    expected_identities = {(field, expected_issue) for field in expected_fields}
     preflight = client.post(
         f"/api/workflow-packages/{package_id}/preflight",
         params={"workflowKey": "advisory_research"},
@@ -894,13 +1234,19 @@ def test_save_allows_missing_model_connection_and_preflight_blocks(
     body = cast(dict[str, object], preflight.json())
     assert body["ready"] is False
     errors = cast(list[dict[str, object]], body["blockingErrors"])
-    missing_model_errors = [
-        error
-        for error in errors
-        if error["issue"] == "Model connection 'tradingagents_primary_model' was not found"
-    ]
+    preflight_warnings = cast(list[dict[str, object]], body["warnings"])
+    missing_model_errors = [error for error in errors if error["issue"] == expected_issue]
     assert [error["field"] for error in missing_model_errors] == expected_fields
-    assert body["warnings"] == []
+    assert {
+        _diagnostic_wire_identity(error) for error in missing_model_errors
+    } == expected_identities
+    preflight_error_identities = {_diagnostic_wire_identity(error) for error in errors}
+    preflight_warning_identities = {
+        _diagnostic_wire_identity(warning) for warning in preflight_warnings
+    }
+    assert preflight_warning_identities.isdisjoint(expected_identities)
+    assert preflight_warning_identities.isdisjoint(preflight_error_identities)
+    assert preflight_warnings == []
 
     launch = client.get(
         f"/api/workflow-packages/{package_id}/launch",
@@ -911,13 +1257,19 @@ def test_save_allows_missing_model_connection_and_preflight_blocks(
     launch_body = cast(dict[str, object], launch.json())
     assert launch_body["ready"] is False
     launch_errors = cast(list[dict[str, object]], launch_body["blockingErrors"])
+    launch_warnings = cast(list[dict[str, object]], launch_body["warnings"])
     launch_missing_model_errors = [
-        error
-        for error in launch_errors
-        if error["issue"] == "Model connection 'tradingagents_primary_model' was not found"
+        error for error in launch_errors if error["issue"] == expected_issue
     ]
     assert [error["field"] for error in launch_missing_model_errors] == expected_fields
-    assert launch_body["warnings"] == []
+    assert {
+        _diagnostic_wire_identity(error) for error in launch_missing_model_errors
+    } == expected_identities
+    launch_error_identities = {_diagnostic_wire_identity(error) for error in launch_errors}
+    launch_warning_identities = {_diagnostic_wire_identity(warning) for warning in launch_warnings}
+    assert launch_warning_identities.isdisjoint(expected_identities)
+    assert launch_warning_identities.isdisjoint(launch_error_identities)
+    assert launch_warnings == []
 
 
 def test_update_allows_unresolved_model_connection_and_preflight_blocks(
@@ -1017,23 +1369,60 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
     } in errors
 
 
-def test_preflight_blocks_secretless_model_connection(
+def test_missing_api_key_is_relaxed_for_launch_metadata_but_blocks_strict_readiness(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_model_connection(session_factory, api_key=None)
     created = _create_package(client)
 
-    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    launch = client.get(
+        f"/api/workflow-packages/{created['id']}/launch",
+        params={"workflowKey": "advisory_research"},
+    )
+
+    assert launch.status_code == 200, launch.json()
+    launch_body = cast(dict[str, object], launch.json())
+    assert launch_body["ready"] is True
+    assert launch_body["blockingErrors"] == []
+    launch_warnings = cast(list[dict[str, object]], launch_body["warnings"])
+    assert not any(warning["issue"] == "API key is not configured" for warning in launch_warnings)
+
+    preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        params={"workflowKey": "advisory_research"},
+    )
 
     assert preflight.status_code == 200, preflight.json()
-    assert preflight.json()["ready"] is False
-    errors = preflight.json()["blockingErrors"]
-    assert errors
-    assert errors[0] == {
+    preflight_body = cast(dict[str, object], preflight.json())
+    assert preflight_body["ready"] is False
+    assert preflight_body["warnings"] == []
+    errors = cast(list[dict[str, object]], preflight_body["blockingErrors"])
+    api_key_errors = [error for error in errors if error["issue"] == "API key is not configured"]
+    assert api_key_errors == errors
+    assert api_key_errors
+    assert api_key_errors[0] == {
         "field": "spec.agents[0].modelConnection",
         "issue": "API key is not configured",
     }
+
+    launch_create = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={
+            "workflowKey": "advisory_research",
+            "parameters": {
+                "ticker": "AAPL",
+                "asOfDate": "2026-01-02",
+                "horizonDays": 30,
+                "benchmarkSymbol": "SPY",
+            },
+        },
+    )
+
+    assert launch_create.status_code == 422, launch_create.json()
+    launch_create_body = cast(dict[str, object], launch_create.json())
+    assert launch_create_body["code"] == "validation_error"
+    assert launch_create_body["details"] == errors
 
 
 def test_preflight_blocks_failed_model_connection(
@@ -1137,9 +1526,11 @@ def test_preflight_reports_unsupported_http_method_and_malformed_step_ref(
     )
 
     with session_factory() as session:
-        errors = WorkflowPackagePreflightService(session)._http_errors(
-            package,
-            compiled_plan,
+        errors = _project_blocking_diagnostics(
+            WorkflowPackagePreflightService(session)._http_errors(
+                package,
+                compiled_plan,
+            )
         )
 
     assert {

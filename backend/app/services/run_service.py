@@ -533,10 +533,11 @@ class RunService:
             package,
             workflow_key,
         )
-        preflight = WorkflowPackagePreflightService(self.session).run(
-            package,
-            workflow_key=selected_workflow_key,
-            require_api_key=require_api_key,
+        preflight_service = WorkflowPackagePreflightService(self.session)
+        preflight = (
+            preflight_service.strict_readiness(package, workflow_key=selected_workflow_key)
+            if require_api_key
+            else preflight_service.launch_metadata(package, workflow_key=selected_workflow_key)
         )
         if require_api_key and preflight.blocking_errors:
             raise validation_error(

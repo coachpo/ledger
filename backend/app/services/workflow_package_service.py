@@ -330,10 +330,11 @@ class WorkflowPackageService:
     ) -> WorkflowPackageLaunchRead:
         workflow = self._select_compiled_workflow(package, workflow_key)
         selected_workflow_key = str(workflow["key"])
-        preflight = WorkflowPackagePreflightService(self.session).run(
-            package,
-            workflow_key=selected_workflow_key,
-            require_api_key=require_api_key,
+        preflight_service = WorkflowPackagePreflightService(self.session)
+        preflight = (
+            preflight_service.strict_readiness(package, workflow_key=selected_workflow_key)
+            if require_api_key
+            else preflight_service.launch_metadata(package, workflow_key=selected_workflow_key)
         )
         return WorkflowPackageLaunchRead.model_validate(
             {
@@ -465,12 +466,11 @@ class WorkflowPackageService:
             prepared["compiledPlan"],
             mode=MCP_SECRET_PROJECTION_REDACTED,
         )
+        preflight_service = WorkflowPackagePreflightService(self.session)
         return WorkflowPackageValidationRead.model_validate(
             {
                 "diagnostics": [],
-                "warnings": WorkflowPackagePreflightService(self.session).save_warnings(
-                    package_definition
-                ),
+                "warnings": preflight_service.validation_warnings(package_definition),
                 "metadata": {
                     "apiVersion": package_definition["apiVersion"],
                     "key": metadata["key"],
