@@ -38,6 +38,82 @@ Legacy global authoring routes are unsupported. `/api/agents`, `/api/capabilitie
 - Docker with `docker compose`
 - An LLM provider key if you want live model-backed agent-platform execution
 
+## Production Docker Image and Root Compose
+
+The root Docker setup is additive. It does not replace `backend/Dockerfile`, `frontend/Dockerfile`, or the DB-only `backend/docker-compose.yml`.
+
+### Build and Run the App Image
+
+```bash
+docker build -t signaldeck .
+```
+
+The root `Dockerfile` builds one production image with Nginx, the FastAPI backend, the scheduler worker, and static frontend files. PostgreSQL/pgvector is external to the app image.
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e DATABASE_URL='postgresql+psycopg://...' \
+  -e AGENT_PLATFORM_ENCRYPTION_KEY='change-me' \
+  signaldeck
+```
+
+For development against a database running on the Docker host, add `--add-host=host.docker.internal:host-gateway` and use `host.docker.internal` in `DATABASE_URL`. Do not publish database ports in production just to reach the app container.
+
+### Frontend-disabled mode
+
+```bash
+docker build --build-arg BUILD_FRONTEND=false -t signaldeck-backend-only .
+docker run --rm -p 8080:8080 \
+  -e DATABASE_URL='postgresql+psycopg://...' \
+  -e AGENT_PLATFORM_ENCRYPTION_KEY='change-me' \
+  signaldeck-backend-only
+```
+
+`BUILD_FRONTEND=false` skips `pnpm install` and `pnpm run build`, then bakes a minimal fallback `index.html` into `/usr/share/nginx/html`.
+
+### Compose mode
+
+```bash
+docker compose up --build
+docker compose down
+docker compose down -v
+```
+
+The root `docker-compose.yml` runs:
+
+- `app`, built from the root `Dockerfile`
+- `db`, using `pgvector/pgvector:pg16`
+- `signaldeck-postgres-data`, a persistent named PostgreSQL volume
+
+Compose provides PostgreSQL/pgvector for local runs only. The app connects to it through `db:5432`; the database port is internal by default. If you need host access for development, add a local-only compose override that publishes `5432`, then remove it before production use.
+
+Only the app/Nginx port is published on the host:
+
+- public app: `http://localhost:${APP_PORT:-8080}` mapped as `${APP_PORT:-8080}:8080`
+- backend: internal only at `127.0.0.1:${BACKEND_PORT:-8000}` inside the app container
+- database: internal only on the compose network
+
+Nginx listens on `${PORT:-8080}`, serves `/usr/share/nginx/html`, falls back to `index.html` for frontend routes, and proxies `/health`, `/api/`, and `/api/v1/` to FastAPI. The final image does not run Vite, the React dev server, or `frontend/server.mjs`.
+
+Build args:
+
+- `BUILD_FRONTEND=true` builds `frontend/` with Node 24 and pnpm 10.30.1.
+- `BUILD_FRONTEND=false` skips the frontend build and uses the fallback page.
+- `VITE_API_BASE_URL=/api/v1` is the default same-origin frontend API base.
+
+Runtime env vars:
+
+- `DATABASE_URL` is required unless the backend default points at a reachable PostgreSQL instance.
+- `AGENT_PLATFORM_ENCRYPTION_KEY` protects stored model-connection secrets; change it for every real deployment.
+- `PUBLIC_BASE_URL` should be the externally reachable app origin.
+- `CORS_ALLOWED_ORIGINS` should list the allowed browser origins.
+- `PORT` controls the internal Nginx listen port, default `8080`.
+- `BACKEND_PORT` controls the loopback-only FastAPI port, default `8000`.
+- `BACKEND_CMD` overrides the default `uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_PORT:-8000}` command.
+- `RUN_SCHEDULER=true|false` controls the scheduler worker, default `true`.
+
+Compose sets safe local defaults for `DATABASE_URL`, `PUBLIC_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `RUN_SCHEDULER`, `BACKEND_PORT`, and `PORT`. The defaults `POSTGRES_PASSWORD=signaldeck` and `AGENT_PLATFORM_ENCRYPTION_KEY=signaldeck-agent-platform-dev-key` are for local development only; do not use them as production secrets.
+
 ## Run the Full Stack Locally
 
 ### 1. Install backend dependencies
