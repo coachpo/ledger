@@ -105,6 +105,37 @@ _TRADINGAGENTS_CANONICAL_SCHEDULES = (
     ("TradingAgents News Research · 1h", "news_research"),
     ("TradingAgents Fundamentals Research · 1h", "fundamentals_research"),
 )
+_TRADINGAGENTS_CANONICAL_SCHEDULE_INPUT_TEMPLATES: dict[str, dict[str, object]] = {
+    "advisory_research": {
+        "ticker": "SPY",
+        "asOfDate": "{{fire.scheduledLocalDate}}",
+        "horizonDays": 30,
+        "portfolioId": "",
+        "outputLanguage": "English",
+        "benchmarkSymbol": "SPY",
+        "maxRiskDebateRounds": 2,
+        "maxInvestmentDebateRounds": 2,
+    },
+    "market_research": {
+        "ticker": "SPY",
+        "asOfDate": "{{fire.scheduledLocalDate}}",
+        "horizonDays": 30,
+        "outputLanguage": "English",
+        "benchmarkSymbol": "SPY",
+    },
+    "news_research": {
+        "ticker": "SPY",
+        "asOfDate": "{{fire.scheduledLocalDate}}",
+        "horizonDays": 30,
+        "outputLanguage": "English",
+    },
+    "fundamentals_research": {
+        "ticker": "SPY",
+        "asOfDate": "{{fire.scheduledLocalDate}}",
+        "horizonDays": 30,
+        "outputLanguage": "English",
+    },
+}
 
 
 class _RuntimeOpenAIUsage:
@@ -740,6 +771,30 @@ def _seeded_tradingagents_package(client: TestClient) -> dict[str, Any]:
 
 def _seeded_digital_oracle_package(client: TestClient) -> dict[str, Any]:
     return _seeded_package(client, _DIGITAL_ORACLE_PRESET_KEY)
+
+
+def _create_tradingagents_canonical_schedules(
+    session_factory: sessionmaker[Session],
+    *,
+    package_id: int,
+    next_fire_at: datetime,
+) -> None:
+    with session_factory() as session:
+        service = WorkflowPackageScheduleService(session)
+        for name, workflow_key in _TRADINGAGENTS_CANONICAL_SCHEDULES:
+            _ = service.create_schedule(
+                ScheduleCreate(
+                    package_id=package_id,
+                    workflow_key=workflow_key,
+                    name=name,
+                    timezone="UTC",
+                    recurrence=IntervalRecurrence(every=1, unit=IntervalUnit.HOURS),
+                    input_template=deepcopy(
+                        _TRADINGAGENTS_CANONICAL_SCHEDULE_INPUT_TEMPLATES[workflow_key]
+                    ),
+                ),
+                next_fire_at=next_fire_at,
+            )
 
 
 def _seed_model_connection(
@@ -4527,7 +4582,7 @@ def test_schedule_api_patch_rejects_null_for_non_nullable_fields(
     assert detail_body["misfireGraceSeconds"] == 86400
 
 
-def test_schedule_api_lists_seeded_tradingagents_preset_schedules(
+def test_schedule_api_does_not_list_startup_seeded_tradingagents_preset_schedules(
     client: TestClient,
 ) -> None:
     listed = client.get(
@@ -4537,23 +4592,8 @@ def test_schedule_api_lists_seeded_tradingagents_preset_schedules(
 
     assert listed.status_code == 200, listed.json()
     listed_body = cast(dict[str, Any], listed.json())
-    items = cast(list[dict[str, Any]], listed_body["items"])
-    assert listed_body["totalCount"] == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
-    assert len(items) == len(_TRADINGAGENTS_CANONICAL_SCHEDULES)
-    schedules_by_name = {item["name"]: item for item in items}
-    assert set(schedules_by_name) == {
-        name for name, _workflow_key in _TRADINGAGENTS_CANONICAL_SCHEDULES
-    }
-    for name, workflow_key in _TRADINGAGENTS_CANONICAL_SCHEDULES:
-        item = schedules_by_name[name]
-        assert item["packageKey"] == "tradingagents_advisory_research"
-        assert item["workflowKey"] == workflow_key
-        assert item["status"] == "enabled"
-        assert item["timezone"] == "UTC"
-        assert item["recurrence"] == {"type": "interval", "every": 1, "unit": "hours"}
-        assert item["overlapPolicy"] == "skip"
-        assert item["misfirePolicy"] == "catchUpOne"
-        assert item["misfireGraceSeconds"] == 86400
+    assert listed_body["totalCount"] == 0
+    assert listed_body["items"] == []
 
 
 def test_tradingagents_materializer_queues_canonical_schedules_without_provider_execution(
@@ -4574,20 +4614,11 @@ def test_tradingagents_materializer_queues_canonical_schedules_without_provider_
     package = _seeded_tradingagents_package(client)
     package_id = cast(int, package["id"])
     materialized_at = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
-
-    with session_factory() as session:
-        schedules = (
-            session.query(WorkflowPackageSchedule)
-            .filter(WorkflowPackageSchedule.package_id == package_id)
-            .order_by(WorkflowPackageSchedule.id)
-            .all()
-        )
-        assert {(schedule.name, schedule.workflow_key) for schedule in schedules} == set(
-            _TRADINGAGENTS_CANONICAL_SCHEDULES
-        )
-        for schedule in schedules:
-            schedule.next_fire_at = materialized_at
-        session.commit()
+    _create_tradingagents_canonical_schedules(
+        session_factory,
+        package_id=package_id,
+        next_fire_at=materialized_at,
+    )
 
     result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(
         now=materialized_at
