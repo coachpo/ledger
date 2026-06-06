@@ -2354,11 +2354,30 @@ class RunService:
                     )
                 continue
 
-            value, optional_null = self._resolve_source_value(
-                self._plan_source_payload(source),
-                initial_input=initial_input,
-                slot_outputs=slot_outputs,
-            )
+            source_payload = self._plan_source_payload(source)
+            try:
+                value, optional_null = self._resolve_source_value(
+                    source_payload,
+                    initial_input=initial_input,
+                    slot_outputs=slot_outputs,
+                )
+            except RunExecutionError as exc:
+                if exc.code == "run_source_path_invalid" and source_payload.get("from") == "input":
+                    if target_field.required:
+                        raise RunExecutionError(
+                            code="agent_input_required_source_missing",
+                            message="Required input field source is missing from the run input",
+                            details=[
+                                {
+                                    "field": f"{agent_field_prefix}.{target_name}",
+                                    "issue": (
+                                        "Required input field source is missing from the run input"
+                                    ),
+                                }
+                            ],
+                        ) from exc
+                    continue
+                raise
             if optional_null:
                 if target_field.required:
                     raise RunExecutionError(

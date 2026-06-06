@@ -935,12 +935,6 @@ def test_seeded_digital_oracle_launch_persists_question_input(
     )
     package = _seeded_digital_oracle_package(client)
     parameters = {"researchQuestion": "what is the sun?", "outputLanguage": "English"}
-    persisted_parameters = {
-        **parameters,
-        "ticker": None,
-        "asOfDate": None,
-        "horizonDays": None,
-    }
 
     launch = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
@@ -956,10 +950,64 @@ def test_seeded_digital_oracle_launch_persists_question_input(
         assert snapshot is not None
         assert run.workflow_package_key == _DIGITAL_ORACLE_PRESET_KEY
         assert run.workflow_package_workflow_key == "research"
-        assert run.input == persisted_parameters
+        assert run.input == parameters
         assert snapshot.workflow_package_key == _DIGITAL_ORACLE_PRESET_KEY
         assert snapshot.workflow_key == "research"
-        assert snapshot.launch_parameters == persisted_parameters
+        assert snapshot.launch_parameters == parameters
+
+
+def test_seeded_digital_oracle_run_omits_null_optional_inputs_before_agent_validation(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingChatCompletionsClient.reset()
+    _RuntimeRecordingChatCompletionsClient.tool_argument_sequence = []
+    _RuntimeRecordingChatCompletionsClient.final_output_text = json.dumps(
+        {
+            "summary": "digital oracle runtime output",
+            "signals": [],
+            "contradictions": [],
+            "limitations": [],
+            "nextQuestions": [],
+        }
+    )
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingChatCompletionsClient)
+    _seed_model_connection(
+        session_factory,
+        key="digital_oracle_primary_model",
+        name="Digital Oracle Primary Model",
+        description="Preflight model binding.",
+        api_style="chat_completions",
+        capabilities={
+            "nativeToolCalls": {"status": "supported"},
+            "strictJsonSchemaOutput": {"status": "supported"},
+            "jsonObjectOutput": {"status": "supported"},
+            "parallelToolCalls": {"status": "supported"},
+        },
+    )
+    package = _seeded_digital_oracle_package(client)
+    parameters = {"researchQuestion": "Will the Nasdaq go up?", "outputLanguage": "English"}
+
+    launch = client.post(
+        f"/api/workflow-packages/{package['id']}/launches",
+        json={"workflowKey": "research", "parameters": parameters},
+    )
+    assert launch.status_code == 201, launch.json()
+    launch_body = cast(dict[str, object], launch.json())
+    raw_run_id = launch_body["id"]
+    assert isinstance(raw_run_id, int)
+    run_id = raw_run_id
+
+    _drain_run_queue(session_factory)
+    detail = cast(dict[str, object], _wait_for_run(client, run_id))
+    steps = cast(list[dict[str, object]], detail["steps"])
+    invocations = cast(list[dict[str, object]], steps[0]["invocations"])
+    invocation = invocations[0]
+
+    assert detail["status"] == "succeeded"
+    assert detail["input"] == parameters
+    assert invocation["resolvedInput"] == parameters
 
 
 def test_run_queue_stale_lease_recovery_frees_serial_worker_lane(
@@ -3779,6 +3827,81 @@ def _package_source_with_runtime_input_default(*, package_key: str) -> str:
     )
 
 
+def _package_source_with_optional_wired_inputs(
+    *, package_key: str, require_sector: bool = False
+) -> str:
+    agent_required = "[ticker, sector]" if require_sector else "[ticker]"
+    return f"""apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: {package_key}
+  name: Optional Input Runtime Package
+  description: Runtime package fixture with optional wired inputs.
+spec:
+  inputs:
+    type: object
+    properties:
+      ticker:
+        type: string
+      sector:
+        type: string
+      horizonDays:
+        type: integer
+    required: [ticker]
+  capabilityProfiles: []
+  outputSchemas:
+    - key: summary_output
+      name: Summary Output
+      jsonSchema:
+        type: object
+        properties:
+          summary:
+            type: string
+        required: [summary]
+  agents:
+    - key: package_analyst
+      name: Package Analyst
+      modelConnection: package_runtime_model
+      systemPrompt: Return a short JSON summary.
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+          sector:
+            type: string
+          horizonDays:
+            type: integer
+        required: {agent_required}
+      outputSchema: summary_output
+      capabilityProfiles: []
+  workflows:
+    - key: runtime_workflow
+      name: Runtime Workflow
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+          sector:
+            type: string
+          horizonDays:
+            type: integer
+        required: [ticker]
+      flow:
+        kind: step
+        id: package_analysis
+        slot: analysis
+        uses: package_analyst
+        with:
+          ticker: ${{{{ inputs.ticker }}}}
+          sector: ${{{{ inputs.sector }}}}
+          horizonDays: ${{{{ inputs.horizonDays }}}}
+      output:
+        from: ${{{{ nodes.package_analysis.outputs.analysis }}}}
+"""
+
+
 def _runtime_input_history_entries(
     client: TestClient,
     package_id: int,
@@ -3789,6 +3912,151 @@ def _runtime_input_history_entries(
     )
     assert response.status_code == 200, response.json()
     return cast(list[dict[str, Any]], response.json()["history"])
+
+
+def test_workflow_package_launch_omits_absent_optional_inputs_without_defaults(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_optional_wired_inputs(
+                package_key="optional_input_omission_package"
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package_id = int(created.json()["id"])
+    expected_parameters = {"ticker": "MSFT"}
+
+    launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": expected_parameters},
+    )
+
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+    history = _runtime_input_history_entries(client, package_id)
+    assert history[0]["payload"] == expected_parameters
+    with session_factory() as session:
+        run = session.get(Run, run_id)
+        snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+        assert run is not None
+        assert snapshot is not None
+        assert run.input == expected_parameters
+        assert snapshot.launch_parameters == expected_parameters
+
+
+def test_workflow_package_launch_rejects_explicit_null_for_non_nullable_optional_input(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_optional_wired_inputs(
+                package_key="explicit_null_optional_input_package"
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package_id = int(created.json()["id"])
+
+    launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={
+            "workflowKey": "runtime_workflow",
+            "parameters": {"ticker": "MSFT", "horizonDays": None},
+        },
+    )
+
+    assert launch.status_code == 400, launch.json()
+    assert launch.json()["code"] == "run_invalid_input"
+    assert {
+        "field": "horizonDays",
+        "issue": "Input should be a valid integer",
+    } in launch.json()["details"]
+
+
+def test_workflow_package_wired_missing_optional_input_path_is_skipped(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "optional input output"}'
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_optional_wired_inputs(
+                package_key="optional_wired_missing_path_package"
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package_id = int(created.json()["id"])
+
+    launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+
+    assert detail["status"] == "succeeded"
+    assert detail["input"] == {"ticker": "MSFT"}
+    assert invocation["resolvedInput"] == {"ticker": "MSFT"}
+
+
+def test_workflow_package_wired_missing_required_input_path_fails(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_optional_wired_inputs(
+                package_key="required_wired_missing_path_package",
+                require_sector=True,
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package_id = int(created.json()["id"])
+
+    launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+
+    assert detail["status"] == "failed"
+    assert invocation["status"] == "failed"
+    assert invocation["errorCode"] == "agent_input_required_source_missing"
+    assert invocation["errorDetails"] == [
+        {
+            "field": "steps[0].agents.analysis.wiring.sector",
+            "issue": "Required input field source is missing from the run input",
+        }
+    ]
 
 
 def test_runtime_input_history_on_launch_persists_validated_payload_source_run_and_trims(
@@ -3830,8 +4098,11 @@ def test_runtime_input_history_on_launch_persists_validated_payload_source_run_a
 
     with session_factory() as session:
         run = session.get(Run, source_run_id)
+        snapshot = session.get(RunWorkflowPackageSnapshot, source_run_id)
         assert run is not None
+        assert snapshot is not None
         assert run.input == expected_validated_payload
+        assert snapshot.launch_parameters == expected_validated_payload
         entry = (
             session.query(WorkflowPackageRuntimeInputEntry)
             .filter_by(

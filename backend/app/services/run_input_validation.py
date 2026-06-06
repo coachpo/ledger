@@ -65,7 +65,7 @@ def validate_run_input_payload(
             f"Run input failed {resource_name} input schema validation",
             details=validation_details_from_pydantic_error(exc),
         ) from exc
-    return validated.model_dump(mode="json")
+    return validated.model_dump(mode="json", exclude_none=True)
 
 
 __all__ = [
