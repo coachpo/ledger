@@ -100,8 +100,6 @@ _LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS = (
 )
 _RUN_HEADER_COLUMNS = {
     "id",
-    "agent_id",
-    "workflow_id",
     "target_kind",
     "target_id",
     "target_key",
@@ -1964,9 +1962,9 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert set(_RUN_COST_CHECKS).isdisjoint(run_checks)
     assert (("source_run_id",), "runs", "SET NULL") in run_foreign_keys
     assert (("lineage_root_run_id",), "runs", "SET NULL") in run_foreign_keys
-    assert (("agent_id",), "agents", "CASCADE") in run_foreign_keys
-    assert (("workflow_id",), "workflows", "CASCADE") in run_foreign_keys
     assert (("workflow_package_id",), "workflow_packages", "CASCADE") in run_foreign_keys
+    assert "agent_id" not in run_columns
+    assert "workflow_id" not in run_columns
     assert (("schedule_id",), "workflow_package_schedules", "SET NULL") in run_foreign_keys
     assert (
         ("schedule_fire_id",),
@@ -4093,7 +4091,14 @@ def test_init_db_removes_cost_columns_and_deletes_non_package_runtime_rows(
                 run_id=int(run_id),
                 package=package,
             )
-            connection.execute(
+            connection.exec_driver_sql(
+                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE runs ADD CONSTRAINT ck_runs_target_kind "
+                "CHECK (target_kind IN ('agent', 'workflow', 'workflowPackage'))"
+            )
+            legacy_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, input, status, "
@@ -4103,12 +4108,24 @@ def test_init_db_removes_cost_columns_and_deletes_non_package_runtime_rows(
                     "'workflow', 42, 'legacy_cost_workflow', 1, '{}'::jsonb, 'succeeded', "
                     "31, 11, 20, "
                     f"{run_cost_placeholders_sql}"
-                    ")"
+                    ") RETURNING id"
                 ),
                 {
                     f"run_legacy_amount_{index}": index + 1
                     for index, _ in enumerate(_RUN_COST_COLUMNS)
                 },
+            ).scalar_one()
+            _insert_report_upgrade_row(
+                connection,
+                slug="legacy_cost_agent_memory_report",
+                source="agent",
+                metadata=_agent_memory_report_metadata(runId=int(legacy_run_id)),
+            )
+            _insert_report_upgrade_row(
+                connection,
+                slug="legacy_cost_external_agent_memory_report",
+                source="external",
+                metadata=_agent_memory_report_metadata(runId=int(legacy_run_id)),
             )
             step_id = connection.execute(
                 text(
@@ -4171,16 +4188,66 @@ def test_init_db_removes_cost_columns_and_deletes_non_package_runtime_rows(
                 ),
                 {"invocation_id": invocation_id},
             ).one()
+            legacy_report_counts = connection.execute(
+                text(
+                    "SELECT "
+                    "(SELECT COUNT(*) FROM reports WHERE slug = 'legacy_cost_agent_memory_report'), "
+                    "(SELECT COUNT(*) FROM reports WHERE slug = 'legacy_cost_external_agent_memory_report')"
+                )
+            ).one()
 
         assert runtime_counts == (1, 1, 1, 1)
         assert preserved_run == ("cost_package", "succeeded", 17)
         assert preserved_invocation == ("legacy_cost_agent", "succeeded", 19)
+        assert legacy_report_counts == (0, 0)
         assert set(_RUN_COST_COLUMNS).isdisjoint(run_columns)
         assert _INVOCATION_COST_COLUMN not in invocation_columns
         assert set(_RUN_COST_CHECKS).isdisjoint(run_constraints)
         assert _INVOCATION_COST_CHECK not in invocation_constraints
     finally:
         engine.dispose()
+
+
+def test_init_db_repairs_reports_columns_before_non_package_run_report_cleanup(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE runs ADD CONSTRAINT ck_runs_target_kind "
+                "CHECK (target_kind IN ('agent', 'workflow', 'workflowPackage'))"
+            )
+            legacy_run_id = connection.execute(
+                text(
+                    "INSERT INTO runs ("
+                    "target_kind, target_id, target_key, target_version, status, input"
+                    ") VALUES ('workflow', 99, 'legacy_report_cleanup_workflow', 1, "
+                    "'succeeded', '{}'::jsonb) RETURNING id"
+                )
+            ).scalar_one()
+            _insert_report_upgrade_row(
+                connection,
+                slug="legacy_report_cleanup_agent_memory_report",
+                source="external",
+                metadata=_agent_memory_report_metadata(runId=int(legacy_run_id)),
+            )
+            connection.exec_driver_sql("ALTER TABLE reports DROP COLUMN metadata CASCADE")
+            connection.exec_driver_sql("ALTER TABLE reports DROP COLUMN source CASCADE")
+
+        init_db(database_url)
+
+        inspector = inspect(engine)
+        report_columns = {column["name"] for column in inspector.get_columns("reports")}
+        assert {"source", "metadata"} <= report_columns
+    finally:
+        engine.dispose()
+
 
 
 def test_init_db_deletes_legacy_skill_storage_and_global_agents_idempotently(
@@ -4781,6 +4848,13 @@ def test_init_db_hard_cutover_deletes_runtime_rows_and_preserves_config_product_
                 "ALTER TABLE runs ADD COLUMN per_step_outputs JSONB NOT NULL DEFAULT '{}'::jsonb"
             )
             connection.exec_driver_sql(
+                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE runs ADD CONSTRAINT ck_runs_target_kind "
+                "CHECK (target_kind IN ('agent', 'workflow', 'workflowPackage'))"
+            )
+            connection.exec_driver_sql(
                 "INSERT INTO runs ("
                 "target_kind, target_id, target_key, target_version, status, input, "
                 "per_step_outputs"
@@ -4858,6 +4932,13 @@ def test_init_db_hard_cutover_deletes_runtime_rows_and_preserves_config_product_
                     ") RETURNING id"
                 )
             ).scalar_one()
+            connection.exec_driver_sql(
+                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE runs ADD CONSTRAINT ck_runs_target_kind "
+                "CHECK (target_kind IN ('agent', 'workflow', 'workflowPackage'))"
+            )
             next_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("

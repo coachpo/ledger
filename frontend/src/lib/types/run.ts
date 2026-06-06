@@ -19,7 +19,7 @@ export type RunInvocationInputMode = "passthrough" | "wired";
 export type RunInvocationResolvedInputOrigin = "derived" | "edited" | "copied" | "passthrough";
 export type RunInvocationOutputOrigin = "executed" | "edited" | "copied";
 export type RunOperationKind = "http";
-export type RunTargetKind = "agent" | "workflow" | "workflowPackage";
+export type RunTargetKind = "workflowPackage";
 export type RunInvocationResourceScope = "global" | "packageLocal";
 export type RunScheduleReason = "scheduled" | "manual";
 
@@ -452,9 +452,6 @@ export interface RunForkCreateRequest {
 }
 
 export interface RunListParams {
-  targetKind?: RunTargetKind;
-  targetId?: number;
-  targetKey?: string;
   workflowPackageId?: number;
   workflowPackageKey?: string;
   workflowKey?: string;

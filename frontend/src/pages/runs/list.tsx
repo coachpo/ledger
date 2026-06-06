@@ -28,31 +28,9 @@ import {
 } from "@/components/ui/table";
 import { useRuns } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
-import type {
-  RunListItemRead,
-  RunQueueReason,
-  RunStatus,
-  RunTargetKind,
-} from "@/lib/types/run";
+import type { RunListItemRead, RunQueueReason, RunStatus } from "@/lib/types/run";
 
 const ALL_STATUSES = "__all__";
-const ALL_TARGET_KINDS = "__all_target_kinds__";
-
-function formatTargetKindLabel(targetKind: RunTargetKind): string {
-  if (targetKind === "workflowPackage") {
-    return "Workflow Package";
-  }
-  return targetKind === "agent" ? "Agent" : "Workflow";
-}
-
-function describeRunTarget(targetKind: RunTargetKind): string | null {
-  if (targetKind === "workflowPackage") {
-    return null;
-  }
-  return targetKind === "agent"
-    ? "Standalone agent execution"
-    : "Multi-step workflow execution";
-}
 
 function formatQueueReasonTitle(reason: RunQueueReason): string {
   return reason === "blocked-by-package-serial-policy"
@@ -82,21 +60,12 @@ function statusTone(
   return status === "queued" ? "warning" : "neutral";
 }
 
-function targetIdentity(run: RunListItemRead): string | null {
-  if (run.targetKind === "workflowPackage") {
-    return null;
-  }
-  return `${formatTargetKindLabel(run.targetKind)} id: ${run.targetId}`;
+function targetSearchLabel(): string {
+  return "Package key";
 }
 
-function targetSearchLabel(targetKind: RunTargetKind | undefined): string {
-  return targetKind === "workflowPackage" ? "Package key" : "Target key";
-}
-
-function targetSearchPlaceholder(targetKind: RunTargetKind | undefined): string {
-  return targetKind === "workflowPackage"
-    ? "Filter by workflow package key..."
-    : "Filter by workflow or agent key...";
+function targetSearchPlaceholder(): string {
+  return "Filter by workflow package key...";
 }
 
 function queueStateLabel(run: RunListItemRead): string {
@@ -110,45 +79,17 @@ function queueStateLabel(run: RunListItemRead): string {
 
 function RunMonitorFilters({
   status,
-  targetKind,
   workflowKey,
   onStatusChange,
-  onTargetKindChange,
   onWorkflowKeyChange,
 }: {
   status: RunStatus | undefined;
-  targetKind: RunTargetKind | undefined;
   workflowKey: string;
   onStatusChange: (status: RunStatus | undefined) => void;
-  onTargetKindChange: (targetKind: RunTargetKind | undefined) => void;
   onWorkflowKeyChange: (workflowKey: string) => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Select
-        value={targetKind ?? ALL_TARGET_KINDS}
-        onValueChange={(value) =>
-          onTargetKindChange(
-            value === ALL_TARGET_KINDS ? undefined : (value as RunTargetKind),
-          )
-        }
-      >
-        <SelectTrigger
-          aria-label="Target kind"
-          className="h-8 w-[160px] text-xs"
-          id="runs-target-kind"
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            <SelectItem value={ALL_TARGET_KINDS}>All targets</SelectItem>
-            <SelectItem value="agent">agent</SelectItem>
-            <SelectItem value="workflow">workflow</SelectItem>
-            <SelectItem value="workflowPackage">workflow package</SelectItem>
-          </SelectGroup>
-        </SelectContent>
-      </Select>
       <Select
         value={status ?? ALL_STATUSES}
         onValueChange={(value) =>
@@ -174,15 +115,13 @@ function RunMonitorFilters({
           </SelectGroup>
         </SelectContent>
       </Select>
-      {targetKind === "workflowPackage" ? (
-        <Input
-          aria-label="Workflow key"
-          className="h-8 w-[220px] text-xs"
-          placeholder="Filter by workflow key..."
-          value={workflowKey}
-          onChange={(event) => onWorkflowKeyChange(event.target.value)}
-        />
-      ) : null}
+      <Input
+        aria-label="Workflow key"
+        className="h-8 w-[220px] text-xs"
+        placeholder="Filter by workflow key..."
+        value={workflowKey}
+        onChange={(event) => onWorkflowKeyChange(event.target.value)}
+      />
     </div>
   );
 }
@@ -272,27 +211,13 @@ function RunsTable({ runs }: { runs: readonly RunListItemRead[] }) {
                 </TableCell>
                 <TableCell className="min-w-64 whitespace-normal">
                   <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                    {run.targetKind === "workflowPackage" ? (
-                      <span>
-                        Package key:{" "}
-                        <span className="break-all font-mono text-foreground">
-                          {run.targetKey}
-                        </span>
+                    <span>
+                      Package key:{" "}
+                      <span className="break-all font-mono text-foreground">
+                        {run.targetKey}
                       </span>
-                    ) : run.targetKind === "workflow" ? (
-                      <span>
-                        Workflow key:{" "}
-                        <span className="break-all font-mono text-foreground">
-                          {run.targetKey}
-                        </span>
-                      </span>
-                    ) : (
-                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                        <ResourceStatusBadge label={formatTargetKindLabel(run.targetKind)} />
-                        <span className="break-all font-mono">{run.targetKey}</span>
-                      </div>
-                    )}
-                    {run.targetKind === "workflowPackage" && run.workflowKey ? (
+                    </span>
+                    {run.workflowKey ? (
                       <span>
                         Workflow key:{" "}
                         <span className="break-all font-mono text-foreground">
@@ -300,10 +225,6 @@ function RunsTable({ runs }: { runs: readonly RunListItemRead[] }) {
                         </span>
                       </span>
                     ) : null}
-                    {describeRunTarget(run.targetKind) ? (
-                      <span>{describeRunTarget(run.targetKind)}</span>
-                    ) : null}
-                    {targetIdentity(run) ? <span>{targetIdentity(run)}</span> : null}
                   </div>
                 </TableCell>
                 <TableCell>
@@ -349,35 +270,16 @@ function RunsTable({ runs }: { runs: readonly RunListItemRead[] }) {
 }
 
 export function RunsListPage() {
-  const [targetKind, setTargetKind] = useState<RunTargetKind | undefined>(
-    undefined,
-  );
-  const [targetKey, setTargetKey] = useState("");
+  const [workflowPackageKey, setWorkflowPackageKey] = useState("");
   const [workflowKey, setWorkflowKey] = useState("");
   const [status, setStatus] = useState<RunStatus | undefined>(undefined);
-  const normalizedTargetKey = targetKey.trim();
+  const normalizedWorkflowPackageKey = workflowPackageKey.trim();
   const normalizedWorkflowKey = workflowKey.trim();
-  const appliedTargetKey =
-    targetKind && normalizedTargetKey ? normalizedTargetKey : undefined;
-  const appliedWorkflowPackageKey =
-    targetKind === "workflowPackage" && normalizedTargetKey
-      ? normalizedTargetKey
-      : undefined;
-  const appliedWorkflowKey =
-    targetKind === "workflowPackage" && normalizedWorkflowKey
-      ? normalizedWorkflowKey
-      : undefined;
-  const handleTargetKindChange = (nextTargetKind: RunTargetKind | undefined) => {
-    setTargetKind(nextTargetKind);
-    if (nextTargetKind !== "workflowPackage") {
-      setWorkflowKey("");
-    }
-  };
+  const appliedWorkflowPackageKey = normalizedWorkflowPackageKey || undefined;
+  const appliedWorkflowKey = normalizedWorkflowKey || undefined;
   const runsQuery = useRuns(
     {
       limit: 50,
-      targetKind,
-      targetKey: targetKind === "workflowPackage" ? undefined : appliedTargetKey,
       workflowPackageKey: appliedWorkflowPackageKey,
       workflowKey: appliedWorkflowKey,
       status,
@@ -411,21 +313,19 @@ export function RunsListPage() {
         filters: (
           <RunMonitorFilters
             status={status}
-            targetKind={targetKind}
             workflowKey={workflowKey}
             onStatusChange={setStatus}
-            onTargetKindChange={handleTargetKindChange}
             onWorkflowKeyChange={setWorkflowKey}
           />
         ),
         resultSummary: `${runs.length} recent ${runs.length === 1 ? "run" : "runs"} returned`,
         search: {
           id: "runs-target-key",
-          label: targetSearchLabel(targetKind),
-          placeholder: targetSearchPlaceholder(targetKind),
+          label: targetSearchLabel(),
+          placeholder: targetSearchPlaceholder(),
           testId: "runs-target-key-filter",
-          value: targetKey,
-          onChange: setTargetKey,
+          value: workflowPackageKey,
+          onChange: setWorkflowPackageKey,
         },
       }}
     >
@@ -451,7 +351,7 @@ export function RunsListPage() {
       {!runsQuery.isPending && !runsQuery.isError && runs.length === 0 ? (
         <EmptyStatePanel
           title="No runs match the current monitor filters"
-          description="Adjust target kind, target key, or status to widen the polling window."
+          description="Adjust package key, workflow key, or status to widen the polling window."
         />
       ) : null}
 

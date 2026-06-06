@@ -5441,7 +5441,7 @@ def test_schedule_materializer_overlap_skip_and_misfire_skip(
     session_factory: sessionmaker[Session],
 ) -> None:
     now = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
-    _, overlap_schedule_id = _create_schedule_materializer_schedule(
+    overlap_package_id, overlap_schedule_id = _create_schedule_materializer_schedule(
         client,
         session_factory,
         package_key="schedule_materializer_overlap_package",
@@ -5449,18 +5449,44 @@ def test_schedule_materializer_overlap_skip_and_misfire_skip(
         overlap_policy=OverlapPolicy.SKIP,
     )
     with session_factory() as session:
-        session.add(
-            Run(
-                target_kind="agent",
-                target_id=1,
-                target_key="active-overlap",
-                target_version=1,
-                schedule_id=overlap_schedule_id,
-                input={},
-                status="queued",
-                queued_at=now - timedelta(minutes=5),
-            )
+        active_run = Run(
+            target_kind="workflowPackage",
+            target_id=overlap_package_id,
+            target_key="schedule_materializer_overlap_package",
+            target_version=1,
+            workflow_package_id=overlap_package_id,
+            workflow_package_key="schedule_materializer_overlap_package",
+            workflow_package_workflow_key="runtime_workflow",
+            schedule_id=overlap_schedule_id,
+            input={},
+            status="queued",
+            queued_at=now - timedelta(minutes=5),
         )
+        active_run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+            workflow_package_id=overlap_package_id,
+            workflow_package_key="schedule_materializer_overlap_package",
+            workflow_package_name="schedule_materializer_overlap_package",
+            workflow_package_description="",
+            workflow_package_status="active",
+            workflow_key="runtime_workflow",
+            workflow_name="Runtime Workflow",
+            workflow_description="",
+            manifest_hash="a" * 64,
+            compiled_hash="b" * 64,
+            manifest_source=(
+                "apiVersion: signaldeck.workflowPackage/v1\n"
+                "key: schedule_materializer_overlap_package\n"
+            ),
+            package_definition={"metadata": {"key": "schedule_materializer_overlap_package"}},
+            compiled_plan={"workflows": [{"key": "runtime_workflow"}]},
+            extension_dependencies=[],
+            local_resource_refs={"workflows": ["runtime_workflow"]},
+            input_schema={},
+            launch_parameters={},
+            resolved_model_connections=[],
+            preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
+        )
+        session.add(active_run)
         session.commit()
 
     overlap_result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)
@@ -5535,7 +5561,7 @@ def test_schedule_materializer_overlap_queue_creates_run_when_prior_run_active(
     session_factory: sessionmaker[Session],
 ) -> None:
     now = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
-    _, schedule_id = _create_schedule_materializer_schedule(
+    package_id, schedule_id = _create_schedule_materializer_schedule(
         client,
         session_factory,
         package_key="schedule_materializer_overlap_queue_package",
@@ -5543,18 +5569,44 @@ def test_schedule_materializer_overlap_queue_creates_run_when_prior_run_active(
         overlap_policy=OverlapPolicy.QUEUE,
     )
     with session_factory() as session:
-        session.add(
-            Run(
-                target_kind="agent",
-                target_id=1,
-                target_key="active-overlap-queue",
-                target_version=1,
-                schedule_id=schedule_id,
-                input={},
-                status="running",
-                started_at=now - timedelta(minutes=5),
-            )
+        active_run = Run(
+            target_kind="workflowPackage",
+            target_id=package_id,
+            target_key="schedule_materializer_overlap_queue_package",
+            target_version=1,
+            workflow_package_id=package_id,
+            workflow_package_key="schedule_materializer_overlap_queue_package",
+            workflow_package_workflow_key="runtime_workflow",
+            schedule_id=schedule_id,
+            input={},
+            status="running",
+            started_at=now - timedelta(minutes=5),
         )
+        active_run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+            workflow_package_id=package_id,
+            workflow_package_key="schedule_materializer_overlap_queue_package",
+            workflow_package_name="schedule_materializer_overlap_queue_package",
+            workflow_package_description="",
+            workflow_package_status="active",
+            workflow_key="runtime_workflow",
+            workflow_name="Runtime Workflow",
+            workflow_description="",
+            manifest_hash="a" * 64,
+            compiled_hash="b" * 64,
+            manifest_source=(
+                "apiVersion: signaldeck.workflowPackage/v1\n"
+                "key: schedule_materializer_overlap_queue_package\n"
+            ),
+            package_definition={"metadata": {"key": "schedule_materializer_overlap_queue_package"}},
+            compiled_plan={"workflows": [{"key": "runtime_workflow"}]},
+            extension_dependencies=[],
+            local_resource_refs={"workflows": ["runtime_workflow"]},
+            input_schema={},
+            launch_parameters={},
+            resolved_model_connections=[],
+            preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
+        )
+        session.add(active_run)
         session.commit()
 
     result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(now=now)

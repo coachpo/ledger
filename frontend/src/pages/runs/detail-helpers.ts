@@ -129,22 +129,12 @@ export function runStatusTone(
   return status === "queued" ? "warning" : "neutral";
 }
 
-export function formatTargetKindLabel(targetKind: RunTargetKind): string {
-  if (targetKind === "workflowPackage") {
-    return "Workflow Package";
-  }
-
-  return targetKind === "agent" ? "Agent" : "Workflow";
+export function formatTargetKindLabel(_targetKind: RunTargetKind): string {
+  return "Workflow Package";
 }
 
-export function describeRunTarget(targetKind: RunTargetKind): string {
-  if (targetKind === "workflowPackage") {
-    return "Workflow package run captured an immutable executable snapshot at launch.";
-  }
-
-  return targetKind === "agent"
-    ? "Standalone agent execution with a single runnable target."
-    : "Workflow execution with step-by-step agent orchestration.";
+export function describeRunTarget(_targetKind: RunTargetKind): string {
+  return "Workflow package run captured an immutable executable snapshot at launch.";
 }
 
 export function sortedInvocations(

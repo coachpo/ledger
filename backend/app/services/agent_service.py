@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from app.agents import ToolCatalog
 from app.agents.mcp import McpClientBoundary, McpConnectionTester
 from app.core.errors import ApiError, business_rule_error, not_found_error, validation_error
-from app.db.session import get_session_factory
 from app.models.agent import AGENT_MANIFEST_COMPILER_VERSION, Agent
 from app.models.capability import Capability
 from app.models.mcp_server import McpServer
@@ -42,7 +41,6 @@ from app.schemas.agent import (
 from app.schemas.agent_manifest import AgentManifestDiagnostic, AgentManifestDiagnosticSeverity
 from app.schemas.mcp_server import McpClientBoundaryRead
 from app.schemas.model_connection import ModelConnectionListItemRead
-from app.schemas.run import RunCreatedRead
 from app.services.agent_manifest_compiler import AgentManifestCompiler, AgentManifestCompilerError
 from app.services.agent_manifest_parser import locate_agent_manifest_path, parse_agent_manifest
 from app.services.capability_service import CapabilityService
@@ -58,7 +56,6 @@ from app.services.output_schema_compiler import (
     OutputSchemaValidationFailure,
 )
 from app.services.output_schema_service import OutputSchemaService
-from app.services.run_service import RunService
 
 type JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 type JsonObject = dict[str, JsonValue]
@@ -213,10 +210,6 @@ class AgentService:
                 details=workflow_refs,
             )
 
-        RunService(self.session).delete_runs_for_target(
-            target_kind="agent",
-            target_id=agent.id,
-        )
         try:
             self.repository.delete(agent)
             self.session.commit()
@@ -241,20 +234,6 @@ class AgentService:
             }
             for workflow in self.session.scalars(statement)
         ]
-
-    def create_run(
-        self,
-        agent_id: int,
-        payload: JsonObject,
-        *,
-        version: int | None = None,
-    ) -> RunCreatedRead:
-        return RunService(self.session, get_session_factory()).create_target_run(
-            "agent",
-            agent_id,
-            payload,
-            version=version,
-        )
 
     def _build_state(
         self,

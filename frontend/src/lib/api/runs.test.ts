@@ -51,7 +51,7 @@ afterEach(() => {
 });
 
 describe("runs api", () => {
-  it("sends target-aware list filters to the platform runs endpoint", async () => {
+  it("sends package-only list filters to the platform runs endpoint", async () => {
     const { listRuns } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
 
@@ -60,9 +60,9 @@ describe("runs api", () => {
         limit: 25,
         offset: 0,
         status: "running",
-        targetId: 17,
-        targetKey: " market_review_package ",
-        targetKind: "workflowPackage",
+        workflowPackageId: 17,
+        workflowPackageKey: " market_review_package ",
+        workflowKey: " market_review ",
       }),
     ).resolves.toEqual({ items: [] });
 
@@ -74,20 +74,18 @@ describe("runs api", () => {
       limit: "25",
       offset: "0",
       status: "running",
-      targetId: "17",
-      targetKey: "market_review_package",
-      targetKind: "workflowPackage",
+      workflowPackageId: "17",
+      workflowPackageKey: "market_review_package",
+      workflowKey: "market_review",
     });
   });
 
-  it("uses the camelCase workflowPackage run target kind for package run filters", async () => {
+  it("uses package-only run filters", async () => {
     const { listRuns } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
-    const targetKind: RunTargetKind = "workflowPackage";
 
     await expect(
       listRuns({
-        targetKind,
         workflowKey: " summarize ",
         workflowPackageKey: " research_package ",
       }),
@@ -97,7 +95,6 @@ describe("runs api", () => {
 
     expect(Object.fromEntries(url.searchParams.entries())).toEqual({
       offset: "0",
-      targetKind: "workflowPackage",
       workflowKey: "summarize",
       workflowPackageKey: "research_package",
     });

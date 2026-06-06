@@ -51,7 +51,6 @@ from app.services.output_schema_compiler import (
     SchemaPrimitive,
     SchemaRef,
 )
-from app.services.run_service import RunService
 from app.services.workflow_manifest_compiler import (
     WorkflowManifestCompilerError,
     compile_workflow_manifest,
@@ -235,10 +234,6 @@ class WorkflowService:
 
     def delete_workflow(self, workflow_id: int) -> None:
         workflow = self._get_model(workflow_id)
-        RunService(self.session).delete_runs_for_target(
-            target_kind="workflow",
-            target_id=workflow.id,
-        )
         try:
             self.repository.delete(workflow)
             self.session.commit()

@@ -8,7 +8,6 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.errors import ApiError
 from app.services.run_service import RunService
 
 REMOVED_GLOBAL_AUTHORING_ROUTE_PATHS = (
@@ -75,18 +74,10 @@ def test_live_platform_routes_match_openapi(app: FastAPI) -> None:
         assert removed_path not in openapi_paths
 
 
-def test_legacy_global_authoring_runtime_is_blocked(
+def test_legacy_global_authoring_runtime_entrypoint_is_removed(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
         service = RunService(session, session_factory)
-        with pytest.raises(ApiError) as exc_info:
-            _ = service.create_target_run("agent", 1, {})
 
-    assert exc_info.value.code == "legacy_global_authoring_runtime_blocked"
-    assert exc_info.value.details == [
-        {
-            "field": "targetKind",
-            "issue": "agent is runtime-blocked after the Workflow Package cutover.",
-        }
-    ]
+    assert not hasattr(service, "create_target_run")

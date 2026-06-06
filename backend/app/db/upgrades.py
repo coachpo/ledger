@@ -1160,10 +1160,7 @@ _RUN_SCHEDULER_SERIAL_INDEX_SQL = (
     "WHERE status = 'running' AND concurrency_policy = 'serial' "
     "AND execution_scope_key IS NOT NULL"
 )
-_RUN_TARGET_REFERENCE_COLUMNS: dict[str, str] = {
-    "agent_id": "INTEGER",
-    "workflow_id": "INTEGER",
-}
+_RUN_TARGET_REFERENCE_COLUMNS: dict[str, str] = {}
 _PLATFORM_REFERENCE_TABLE_NAMES = {
     "workflow_agent_refs",
     "agent_capability_refs",
@@ -1680,8 +1677,6 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
     "runs": frozenset(
         {
             "id",
-            "agent_id",
-            "workflow_id",
             "target_kind",
             "target_id",
             "target_key",
@@ -3323,26 +3318,52 @@ def _ensure_run_workflow_package_provenance_support(
     if "runs" not in table_names:
         return
 
+    if "reports" in table_names:
+        _ensure_report_agent_memory_cleanup_columns(engine, table_names)
+
     run_columns = {column["name"] for column in inspect(engine).get_columns("runs")}
     with engine.begin() as connection:
-        target_kind_check = connection.execute(
-            text(
-                """
-                SELECT pg_get_constraintdef(oid) AS definition
-                FROM pg_constraint
-                WHERE conname = 'ck_runs_target_kind'
-                  AND conrelid = 'runs'::regclass
-                """
-            )
-        ).scalar_one_or_none()
-        if "workflowPackage" not in str(target_kind_check or ""):
+        connection.exec_driver_sql("DROP TABLE IF EXISTS legacy_non_package_run_ids")
+        connection.exec_driver_sql(
+            """
+            CREATE TEMPORARY TABLE legacy_non_package_run_ids ON COMMIT DROP AS
+            SELECT id FROM runs WHERE target_kind <> 'workflowPackage'
+            """
+        )
+        legacy_run_count = connection.exec_driver_sql(
+            "SELECT COUNT(*) FROM legacy_non_package_run_ids"
+        ).scalar_one()
+        if legacy_run_count and "reports" in table_names:
             connection.exec_driver_sql(
-                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind"
+                """
+                DELETE FROM reports AS report
+                USING legacy_non_package_run_ids AS legacy_run
+                WHERE jsonb_typeof(report.metadata) = 'object'
+                  AND jsonb_typeof(report.metadata -> 'analysis') = 'object'
+                  AND report.metadata -> 'analysis' ->> 'reviewType' = 'agent_memory'
+                  AND (report.metadata -> 'analysis' ->> 'runId') ~ '^[0-9]+$'
+                  AND (report.metadata -> 'analysis' ->> 'runId')::integer = legacy_run.id
+                """
             )
+        if legacy_run_count:
             connection.exec_driver_sql(
-                "ALTER TABLE runs ADD CONSTRAINT ck_runs_target_kind "
-                "CHECK (target_kind IN ('agent', 'workflow', 'workflowPackage'))"
+                "DELETE FROM runs WHERE id IN (SELECT id FROM legacy_non_package_run_ids)"
             )
+        connection.exec_driver_sql(
+            "ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE runs ADD CONSTRAINT ck_runs_target_kind "
+            "CHECK (target_kind = 'workflowPackage')"
+        )
+        for constraint_name in ("fk_runs_agent_id", "runs_agent_id_fkey"):
+            _drop_constraint_if_exists(connection, "runs", constraint_name)
+        for constraint_name in ("fk_runs_workflow_id", "runs_workflow_id_fkey"):
+            _drop_constraint_if_exists(connection, "runs", constraint_name)
+        for column_name in ("agent_id", "workflow_id"):
+            if column_name in run_columns:
+                connection.exec_driver_sql(f"ALTER TABLE runs DROP COLUMN IF EXISTS {column_name}")
+                run_columns.discard(column_name)
         if "extension_dependencies" not in run_columns and "extension_snapshots" in run_columns:
             connection.exec_driver_sql(
                 "ALTER TABLE runs RENAME COLUMN extension_snapshots TO extension_dependencies"
@@ -3388,37 +3409,9 @@ def _ensure_run_workflow_package_provenance_support(
 
 
 def _ensure_platform_foreign_keys(engine: Engine, table_names: set[str]) -> None:
-    if not {"agents", "runs", "workflows", "workflow_packages"} <= table_names:
+    if not {"agents", "runs", "workflow_packages"} <= table_names:
         return
     with engine.begin() as connection:
-        connection.exec_driver_sql(
-            """
-            UPDATE runs
-            SET agent_id = target_id
-            WHERE target_kind = 'agent'
-              AND agent_id IS NULL
-              AND EXISTS (SELECT 1 FROM agents WHERE agents.id = runs.target_id)
-            """
-        )
-        connection.exec_driver_sql(
-            """
-            UPDATE runs
-            SET workflow_id = target_id
-            WHERE target_kind = 'workflow'
-              AND workflow_id IS NULL
-              AND EXISTS (SELECT 1 FROM workflows WHERE workflows.id = runs.target_id)
-            """
-        )
-        connection.exec_driver_sql(
-            "UPDATE runs SET agent_id = NULL "
-            "WHERE agent_id IS NOT NULL "
-            "AND NOT EXISTS (SELECT 1 FROM agents WHERE agents.id = runs.agent_id)"
-        )
-        connection.exec_driver_sql(
-            "UPDATE runs SET workflow_id = NULL "
-            "WHERE workflow_id IS NOT NULL "
-            "AND NOT EXISTS (SELECT 1 FROM workflows WHERE workflows.id = runs.workflow_id)"
-        )
         connection.exec_driver_sql(
             "UPDATE runs SET workflow_package_id = NULL "
             "WHERE workflow_package_id IS NOT NULL "
@@ -3444,27 +3437,12 @@ def _ensure_platform_foreign_keys(engine: Engine, table_names: set[str]) -> None
             "FOREIGN KEY (output_schema_id) "
             "REFERENCES output_schemas(id) ON DELETE RESTRICT"
         )
-        run_constraints = {
-            "fk_runs_agent_id": (
-                "runs_agent_id_fkey",
-                "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE",
-            ),
-            "fk_runs_workflow_id": (
-                "runs_workflow_id_fkey",
-                "FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE",
-            ),
-            "fk_runs_workflow_package_id": (
-                "runs_workflow_package_id_fkey",
-                "FOREIGN KEY (workflow_package_id) "
-                "REFERENCES workflow_packages(id) ON DELETE CASCADE",
-            ),
-        }
-        for constraint_name, (default_name, constraint_sql) in run_constraints.items():
+        for constraint_name in ("fk_runs_workflow_package_id", "runs_workflow_package_id_fkey"):
             _drop_constraint_if_exists(connection, "runs", constraint_name)
-            _drop_constraint_if_exists(connection, "runs", default_name)
-            connection.exec_driver_sql(
-                f"ALTER TABLE runs ADD CONSTRAINT {constraint_name} {constraint_sql}"
-            )
+        connection.exec_driver_sql(
+            "ALTER TABLE runs ADD CONSTRAINT fk_runs_workflow_package_id "
+            "FOREIGN KEY (workflow_package_id) REFERENCES workflow_packages(id) ON DELETE CASCADE"
+        )
 
 
 def _backfill_platform_reference_tables(engine: Engine, table_names: set[str]) -> None:

@@ -87,7 +87,6 @@ from app.services.http_operation_execution_service import (
     HttpOperationExecutionResult,
     HttpOperationExecutionService,
 )
-from app.services.legacy_authoring import raise_legacy_global_authoring_runtime_blocked
 from app.services.memory_follow_up_service import MemoryFollowUpEvaluator, MemoryFollowUpService
 from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.model_gateway import ModelExecutionGateway
@@ -216,13 +215,7 @@ class RunService:
     def list_runs(
         self,
         *,
-        target_kind: RunTargetKind | None = None,
-        target_id: int | None = None,
-        target_key: str | None = None,
-        target_version: int | None = None,
-        workflow_id: int | None = None,
         workflow_key: str | None = None,
-        workflow_version: int | None = None,
         workflow_package_key: str | None = None,
         workflow_package_id: int | None = None,
         model_connection_key: str | None = None,
@@ -231,13 +224,6 @@ class RunService:
         offset: int = 0,
     ) -> RunListRead:
         runs = self.run_repository.list_all(
-            target_kind=target_kind.value if target_kind is not None else None,
-            target_id=target_id,
-            target_key=target_key,
-            target_version=target_version,
-            workflow_id=workflow_id,
-            workflow_key=None,
-            workflow_version=workflow_version,
             workflow_package_id=workflow_package_id,
             workflow_package_key=workflow_package_key,
             package_workflow_key=workflow_key,
@@ -282,19 +268,13 @@ class RunService:
             self.session.rollback()
             raise
 
-    def delete_runs_for_target(
+    def delete_runs_for_workflow_package(
         self,
         *,
-        target_kind: str,
-        target_id: int,
-        workflow_package_id: int | None = None,
+        package_id: int,
         commit: bool = True,
     ) -> None:
-        runs = self.run_repository.list_for_target_owner(
-            target_kind=target_kind,
-            target_id=target_id,
-            workflow_package_id=workflow_package_id,
-        )
+        runs = self.run_repository.list_for_workflow_package(package_id=package_id)
         if not runs:
             return
         if not commit:
@@ -436,17 +416,6 @@ class RunService:
             commit=commit,
         )
 
-    def create_target_run(
-        self,
-        target_kind: str,
-        target_id: int,
-        input_payload: dict[str, Any],
-        *,
-        version: int | None = None,
-    ) -> RunCreatedRead:
-        del target_id, input_payload, version
-        raise_legacy_global_authoring_runtime_blocked(target_kind)
-
     def _prepare_workflow_package_launch(
         self,
         package_id: int,
@@ -579,11 +548,7 @@ class RunService:
 
     @staticmethod
     def _run_target_fk_identity(plan: ExecutionPlan) -> dict[str, int | None]:
-        return {
-            "agent_id": None,
-            "target_workflow_id": None,
-            "workflow_package_id": plan.target.id,
-        }
+        return {"workflow_package_id": plan.target.id}
 
     @staticmethod
     def _extension_dependencies_for_package(
@@ -1029,8 +994,6 @@ class RunService:
         preflight: WorkflowPackagePreflightResult,
     ) -> RunCreatedRead:
         run = Run(
-            agent_id=source_run.agent_id,
-            target_workflow_id=source_run.target_workflow_id,
             target_kind=source_run.target_kind,
             target_id=source_run.target_id,
             target_key=source_run.target_key,
@@ -1098,8 +1061,6 @@ class RunService:
         )
         lineage_root_run_id = source_run.lineage_root_run_id or source_run.id
         run = Run(
-            agent_id=source_run.agent_id,
-            target_workflow_id=source_run.target_workflow_id,
             target_kind=source_run.target_kind,
             target_id=source_run.target_id,
             target_key=source_run.target_key,

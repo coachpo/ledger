@@ -175,10 +175,8 @@ class WorkflowPackageService:
                 self.session,
                 self.session_factory,
                 provider_bundle=self.provider_bundle,
-            ).delete_runs_for_target(
-                target_kind="workflowPackage",
-                target_id=package.id,
-                workflow_package_id=package.id,
+            ).delete_runs_for_workflow_package(
+                package_id=package.id,
                 commit=False,
             )
             self.session.flush()

@@ -414,20 +414,31 @@ def test_disabled_finance_workspace_preserves_template_and_report_rows(
     assert restored_response.json()["content"] == report["content"]
 
 
-def test_agent_platform_runs_target_filters_require_target_kind(client: TestClient) -> None:
-    response = client.get("/api/runs", params={"targetId": 1})
+def test_agent_platform_runs_reject_deprecated_target_filters(client: TestClient) -> None:
+    for params in (
+        {"targetKind": "agent"},
+        {"targetKind": "workflow"},
+        {"targetId": 1},
+        {"targetKey": "legacy_target"},
+        {"targetKind": "workflowPackage", "targetKey": "package_key"},
+    ):
+        response = client.get("/api/runs", params=params)
 
-    assert response.status_code == 422, response.json()
-    assert response.json() == {
-        "code": "validation_error",
-        "message": "Request validation failed",
-        "details": [
-            {
-                "field": "targetKind",
-                "issue": "targetKind is required when targetId or targetKey is provided",
-            }
-        ],
-    }
+        assert response.status_code == 422, response.json()
+        assert response.json() == {
+            "code": "validation_error",
+            "message": "Request validation failed",
+            "details": [
+                {
+                    "field": "targetKind",
+                    "issue": (
+                        "targetKind, targetId, and targetKey are no longer supported "
+                        "for runs filtering; use workflowPackageId, "
+                        "workflowPackageKey, or workflowKey."
+                    ),
+                }
+            ],
+        }
 
 
 _DELETED_MODEL_CONNECTION_FIELDS: dict[str, object] = {

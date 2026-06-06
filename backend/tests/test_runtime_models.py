@@ -258,12 +258,15 @@ def _build_run(
     started_at: datetime | None,
     finished_at: datetime | None,
     error: str | None = None,
+    workflow_key: str = "runtime_workflow",
 ) -> Run:
-    return Run(
+    run = Run(
         target_kind=target_kind,
         target_id=target_id,
         target_key=target_key,
         target_version=target_version,
+        workflow_package_key=target_key if target_kind == "workflowPackage" else None,
+        workflow_package_workflow_key=workflow_key if target_kind == "workflowPackage" else None,
         input={"ticker": "NVDA", "horizonDays": 30},
         final_output=final_output,
         status=status,
@@ -273,6 +276,31 @@ def _build_run(
         started_at=started_at,
         finished_at=finished_at,
     )
+    if target_kind == "workflowPackage":
+        run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+            workflow_package_id=target_id,
+            workflow_package_key=target_key,
+            workflow_package_name=target_key,
+            workflow_package_description="",
+            workflow_package_status="active",
+            workflow_key=workflow_key,
+            workflow_name=workflow_key,
+            workflow_description="",
+            manifest_hash="a" * 64,
+            compiled_hash="b" * 64,
+            manifest_source=(
+                f"apiVersion: signaldeck.workflowPackage/v1\\nkey: {target_key}\\n"
+            ),
+            package_definition={"metadata": {"key": target_key}},
+            compiled_plan={"workflows": [{"key": workflow_key}]},
+            extension_dependencies=[],
+            local_resource_refs={"workflows": [workflow_key]},
+            input_schema={},
+            launch_parameters=run.input,
+            resolved_model_connections=[],
+            preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
+        )
+    return run
 
 
 def test_legacy_backend_tables_are_not_registered_on_metadata() -> None:
@@ -282,6 +310,22 @@ def test_legacy_backend_tables_are_not_registered_on_metadata() -> None:
 def test_agent_platform_package_tables_are_current_only() -> None:
     assert AGENT_PLATFORM_PACKAGE_TABLE_NAMES <= set(Base.metadata.tables)
     assert REMOVED_WORKFLOW_PACKAGE_VERSION_TABLE_NAMES.isdisjoint(Base.metadata.tables)
+
+
+def test_run_model_contract_is_package_only() -> None:
+    run_table = Base.metadata.tables["runs"]
+    target_kind_constraint = cast(
+        CheckConstraint,
+        next(
+            constraint
+            for constraint in run_table.constraints
+            if constraint.name == "ck_runs_target_kind"
+        ),
+    )
+
+    assert str(target_kind_constraint.sqltext) == "target_kind = 'workflowPackage'"
+    assert "agent_id" not in run_table.c
+    assert "workflow_id" not in run_table.c
 
 
 def test_core_memory_tables_are_registered_on_metadata() -> None:
@@ -383,9 +427,9 @@ def test_core_memory_models_persist_revisions_and_run_events(session_factory) ->
     second_content_hash = "b" * 64
     with session_factory() as session:
         run = _build_run(
-            target_kind="workflow",
+            target_kind="workflowPackage",
             target_id=1,
-            target_key="memory_workflow",
+            target_key="memory_workflow_package",
             target_version=1,
             status="succeeded",
             final_output={"ok": True},
@@ -393,6 +437,7 @@ def test_core_memory_models_persist_revisions_and_run_events(session_factory) ->
             trace_id="trace-memory",
             started_at=None,
             finished_at=None,
+            workflow_key="memory_workflow",
         )
         session.add(run)
         session.flush()
@@ -1634,7 +1679,7 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
     assert str(run_table.c.status.default) == "ScalarElementColumnDefault('queued')"
     assert run_table.c.started_at.nullable is True
     assert run_table.c.queued_at.nullable is False
-    assert "workflow_id" in run_table.c
+    assert {"agent_id", "workflow_id"}.isdisjoint(run_table.c.keys())
     assert {"workflow_key", "workflow_version", "per_step_outputs"}.isdisjoint(run_table.c.keys())
     assert {
         "workflow_package_version_id",
@@ -1724,16 +1769,17 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
         started_at = datetime(2026, 4, 19, 10, 0, tzinfo=UTC_TZ)
         finished_at = datetime(2026, 4, 19, 10, 2, tzinfo=UTC_TZ)
         run = _build_run(
-            target_kind="workflow",
+            target_kind="workflowPackage",
             target_id=workflow.id,
-            target_key=workflow.key,
-            target_version=workflow.version,
+            target_key="market_review_package",
+            target_version=1,
             status="succeeded",
             final_output={"headline": "Buy"},
             total_tokens=321,
             trace_id="trace-market-review",
             started_at=started_at,
             finished_at=finished_at,
+            workflow_key=workflow.key,
         )
         run.queued_at = queued_at
         session.add(run)
@@ -1781,10 +1827,10 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
         )
         session.add(
             _build_run(
-                target_kind="agent",
+                target_kind="workflowPackage",
                 target_id=published_agent.id,
-                target_key=published_agent.key,
-                target_version=published_agent.version,
+                target_key="trace_agent_run_package",
+                target_version=1,
                 status="failed",
                 final_output=None,
                 total_tokens=0,
@@ -1792,6 +1838,7 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
                 started_at=started_at,
                 finished_at=finished_at,
                 error="Missing API key",
+                workflow_key="agent_failure_workflow",
             )
         )
         session.commit()
@@ -1799,10 +1846,12 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
 
         stored_run = session.get(Run, run.id)
         assert stored_run is not None
-        assert stored_run.target_kind == "workflow"
+        assert stored_run.target_kind == "workflowPackage"
         assert stored_run.target_id == workflow.id
-        assert stored_run.target_key == workflow.key
+        assert stored_run.target_key == "market_review_package"
         assert stored_run.target_version == 1
+        assert stored_run.workflow_package_key == "market_review_package"
+        assert stored_run.workflow_package_workflow_key == workflow.key
         assert len(stored_run.steps) == 1
         assert stored_run.steps[0].step_index == 1
         assert stored_run.steps[0].status == "succeeded"
@@ -1823,10 +1872,12 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
         assert stored_run.updated_at is not None
 
         stored_agent_run = session.query(Run).filter_by(trace_id="trace-agent-run").one()
-        assert stored_agent_run.target_kind == "agent"
+        assert stored_agent_run.target_kind == "workflowPackage"
         assert stored_agent_run.target_id == published_agent.id
-        assert stored_agent_run.target_key == published_agent.key
-        assert stored_agent_run.target_version == published_agent.version
+        assert stored_agent_run.target_key == "trace_agent_run_package"
+        assert stored_agent_run.target_version == 1
+        assert stored_agent_run.workflow_package_key == "trace_agent_run_package"
+        assert stored_agent_run.workflow_package_workflow_key == "agent_failure_workflow"
         assert stored_agent_run.error == "Missing API key"
 
 
@@ -1837,9 +1888,9 @@ def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_statu
 
     with session_factory() as session:
         queued_run = _build_run(
-            target_kind="workflow",
+            target_kind="workflowPackage",
             target_id=1,
-            target_key="queued_workflow",
+            target_key="queued_workflow_package",
             target_version=1,
             status=RunStatus.QUEUED.value,
             final_output=None,
@@ -1847,6 +1898,7 @@ def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_statu
             trace_id=None,
             started_at=None,
             finished_at=None,
+            workflow_key="queued_workflow",
         )
         queued_run.queued_at = queued_at
         session.add(queued_run)
@@ -1860,9 +1912,9 @@ def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_statu
 
         session.add(
             _build_run(
-                target_kind="workflow",
+                target_kind="workflowPackage",
                 target_id=1,
-                target_key="queued_workflow",
+                target_key="queued_workflow_package",
                 target_version=1,
                 status="cancelled",
                 final_output=None,
@@ -1870,6 +1922,7 @@ def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_statu
                 trace_id=None,
                 started_at=None,
                 finished_at=None,
+                workflow_key="queued_workflow",
             )
         )
         with pytest.raises(IntegrityError):
@@ -2103,9 +2156,9 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
     queued_at = datetime(2026, 4, 20, 11, 0, tzinfo=UTC_TZ)
     common_payload = {
         "id": 42,
-        "targetKind": "workflow",
+        "targetKind": "workflowPackage",
         "targetId": 7,
-        "targetKey": "queued_workflow",
+        "targetKey": "queued_workflow_package",
         "status": "queued",
         "progress": {
             "unit": "invocation",
@@ -2114,7 +2167,7 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
             "percent": 0,
         },
         "queue": None,
-        "workflowKey": None,
+        "workflowKey": "queued_workflow",
         "totalTokens": 0,
         "traceId": None,
         "queuedAt": queued_at,
@@ -2137,6 +2190,40 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
             "extensionDependencies": [],
             "steps": [],
             "memoryArtifacts": [],
+            "packageProvenance": {
+                "workflowPackageId": 7,
+                "workflowPackageKey": "queued_workflow_package",
+                "workflowPackageName": "Queued Workflow Package",
+                "workflowPackageDescription": "",
+                "workflowPackageStatus": "active",
+                "workflowPackageManifestHash": "a" * 64,
+                "workflowPackageCompiledHash": "b" * 64,
+                "workflowKey": "queued_workflow",
+                "workflowName": "Queued Workflow",
+                "workflowDescription": "",
+                "manifestSource": (
+                    "apiVersion: signaldeck.workflowPackage/v1\n"
+                    "key: queued_workflow_package\n"
+                ),
+                "packageDefinition": {
+                    "metadata": {"key": "queued_workflow_package"}
+                },
+                "compiledPlan": {
+                    "workflows": [{"key": "queued_workflow"}]
+                },
+                "launchSnapshot": None,
+                "extensionDependencies": [],
+                "localResourceRefs": {
+                    "agents": [],
+                    "outputSchemas": [],
+                    "capabilityProfiles": [],
+                    "mcpServers": [],
+                    "workflows": ["queued_workflow"],
+                },
+                "resolvedModelConnections": [],
+                "preflightSummary": None,
+                "currentPackage": None,
+            },
         }
     )
 

@@ -88,8 +88,6 @@ class RunOperationKind(str, Enum):  # noqa: UP042
 
 
 class RunTargetKind(str, Enum):  # noqa: UP042
-    AGENT = "agent"
-    WORKFLOW = "workflow"
     WORKFLOW_PACKAGE = "workflowPackage"
 
 

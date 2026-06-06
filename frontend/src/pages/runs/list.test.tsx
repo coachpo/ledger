@@ -48,11 +48,11 @@ describe("RunsListPage", () => {
               state: "waiting",
             },
             targetId: 40,
-            targetKey: "queued_review",
-            targetKind: "workflow",
+            targetKey: "queued_review_package",
+            targetKind: "workflowPackage",
             totalTokens: 0,
             traceId: null,
-            workflowKey: null,
+            workflowKey: "queued_review",
           },
           {
             finishedAt: null,
@@ -114,11 +114,11 @@ describe("RunsListPage", () => {
             },
             queue: null,
             targetId: 12,
-            targetKey: "macro_agent",
-            targetKind: "agent",
+            targetKey: "macro_agent_package",
+            targetKind: "workflowPackage",
             totalTokens: 13,
             traceId: "trace-16",
-            workflowKey: null,
+            workflowKey: "macro_agent",
           },
         ],
       },
@@ -203,10 +203,10 @@ describe("RunsListPage", () => {
     expect(within(contextRegion as HTMLElement).queryByText("Returned")).not.toBeInTheDocument();
     expect(within(contextRegion as HTMLElement).queryByText("Active")).not.toBeInTheDocument();
     expect(within(contextRegion as HTMLElement).queryByText("Queued")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Target key")).toBeVisible();
-    expect(screen.getByLabelText("Target kind")).toBeVisible();
+    expect(screen.getByLabelText("Package key")).toBeVisible();
+    expect(screen.getByLabelText("Workflow key")).toBeVisible();
     expect(screen.getByLabelText("Run status")).toBeVisible();
-    expect(screen.queryByLabelText("Workflow key")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Target kind")).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-monitor-filter-card")).not.toBeInTheDocument();
 
     const table = screen.getByRole("table");
@@ -229,7 +229,9 @@ describe("RunsListPage", () => {
     expect(screen.getByTestId("runs-row-17")).toBeVisible();
     expect(screen.getByTestId("runs-row-15")).toBeVisible();
     expect(screen.getByTestId("runs-row-16")).toBeVisible();
-    expect(screen.getAllByText("Agent")[0]).toBeVisible();
+    expect(screen.getByTestId("runs-row-14")).toHaveTextContent(
+      /package key:\s*queued_review_package/i,
+    );
     expect(screen.getByTestId("runs-row-14")).toHaveTextContent(
       /workflow key:\s*queued_review/i,
     );
@@ -239,18 +241,22 @@ describe("RunsListPage", () => {
     expect(screen.getByTestId("runs-row-15")).toHaveTextContent(
       /package key:\s*market_review_package/i,
     );
-    expect(screen.getAllByText(/^macro_agent$/i)[0]).toBeVisible();
-    expect(screen.getByText(/workflow id: 40/i)).toBeVisible();
+    expect(screen.getByTestId("runs-row-16")).toHaveTextContent(
+      /package key:\s*macro_agent_package/i,
+    );
     expect(screen.getByTestId("runs-row-15")).toHaveTextContent(
       /workflow key:\s*market_review/i,
     );
     expect(screen.getByTestId("runs-row-17")).toHaveTextContent(
       /workflow key:\s*queued_review/i,
     );
-    expect(screen.queryByText(/captured package snapshot execution/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/captured snapshot:/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/package id at launch:/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/agent id: 12/i)).toBeVisible();
+    expect(screen.getByTestId("runs-row-16")).toHaveTextContent(
+      /workflow key:\s*macro_agent/i,
+    );
+    expect(screen.queryByText(/standalone agent execution/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/multi-step workflow execution/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/workflow id:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/agent id:/i)).not.toBeInTheDocument();
     expect(screen.getByText(/trace-15/i)).toBeVisible();
     expect(
       screen.queryByRole("link", { name: /package:/i }),
@@ -312,15 +318,13 @@ describe("RunsListPage", () => {
       {
         limit: 50,
         status: undefined,
-        targetKey: undefined,
-        targetKind: undefined,
         workflowKey: undefined,
         workflowPackageKey: undefined,
       },
       { refetchInterval: 2000 },
     );
 
-    fireEvent.change(screen.getByLabelText("Target key"), {
+    fireEvent.change(screen.getByLabelText("Package key"), {
       target: { value: " market_review_package " },
     });
 
@@ -328,28 +332,16 @@ describe("RunsListPage", () => {
       {
         limit: 50,
         status: undefined,
-        targetKey: undefined,
-        targetKind: undefined,
         workflowKey: undefined,
-        workflowPackageKey: undefined,
+        workflowPackageKey: "market_review_package",
       },
       { refetchInterval: 2000 },
     );
     expect(screen.queryByTestId("runs-monitor-filter-card")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Target key")).toHaveValue(
-      " market_review_package ",
-    );
-
-    const targetKind = screen.getByRole("combobox", { name: /target kind/i });
-    targetKind.focus();
-    fireEvent.keyDown(targetKind, { key: "ArrowDown" });
-    fireEvent.click(
-      await screen.findByRole("option", { name: "workflow package" }),
-    );
-
     expect(screen.getByLabelText("Package key")).toHaveValue(
       " market_review_package ",
     );
+    expect(screen.queryByRole("combobox", { name: /target kind/i })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Workflow key")).toBeVisible();
 
     fireEvent.change(screen.getByLabelText("Workflow key"), {
@@ -360,8 +352,6 @@ describe("RunsListPage", () => {
       {
         limit: 50,
         status: undefined,
-        targetKey: undefined,
-        targetKind: "workflowPackage",
         workflowKey: "market_review",
         workflowPackageKey: "market_review_package",
       },

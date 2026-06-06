@@ -122,14 +122,14 @@ function lastQueryOptions<TData>() {
 }
 
 describe("useRuns hooks", () => {
-  it("uses the API helper's target-aware list query key", () => {
+  it("uses the API helper's package-only list query key", () => {
     reactQueryState.useQueryMock.mockClear();
     runsApiState.buildRunsListQueryKeyMock.mockClear();
 
     const params = {
       status: "running" as const,
-      targetKey: "market_review",
-      targetKind: "workflow" as const,
+      workflowKey: "market_review",
+      workflowPackageKey: "market_review_package",
     };
 
     useRuns(params, { refetchInterval: 2_000 });

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import ApiError
 from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
 from app.models.report import Report
-from app.models.run import Run
+from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.schemas.memory import (
     MemoryDecision,
     MemoryOutcome,
@@ -90,15 +90,43 @@ def _insert_legacy_agent_memory_report(
 
 
 def _seed_run(session: Session, *, run_id: int | None = None) -> Run:
+    package_id = run_id if run_id is not None else session.query(Run).count() + 1
+    package_key = f"platform_graph_daily_review_package_{package_id}"
     run = Run(
         id=run_id,
-        target_kind="workflow",
-        target_id=1,
-        target_key="platform_graph_daily_review",
-        target_version=5,
+        target_kind="workflowPackage",
+        target_id=package_id,
+        target_key=package_key,
+        target_version=1,
+        workflow_package_key=package_key,
+        workflow_package_workflow_key="platform_graph_daily_review",
         input={"ticker": "NVDA"},
         status="running",
         trace_id="trace-memory-report-retirement",
+    )
+    run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+        workflow_package_id=package_id,
+        workflow_package_key=package_key,
+        workflow_package_name="Platform Graph Daily Review Package",
+        workflow_package_description="",
+        workflow_package_status="active",
+        workflow_key="platform_graph_daily_review",
+        workflow_name="Platform Graph Daily Review",
+        workflow_description="",
+        manifest_hash="a" * 64,
+        compiled_hash="b" * 64,
+        manifest_source=(
+            "apiVersion: signaldeck.workflowPackage/v1\n"
+            f"key: {package_key}\n"
+        ),
+        package_definition={"metadata": {"key": package_key}},
+        compiled_plan={"workflows": [{"key": "platform_graph_daily_review"}]},
+        extension_dependencies=[],
+        local_resource_refs={"workflows": ["platform_graph_daily_review"]},
+        input_schema={},
+        launch_parameters=run.input,
+        resolved_model_connections=[],
+        preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
     )
     session.add(run)
     session.flush()

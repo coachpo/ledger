@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import ApiError
 from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
 from app.models.report import Report
-from app.models.run import Run
+from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.repositories.agent_memory import (
     AgentMemoryEntryRepository,
     AgentMemoryRevisionRepository,
@@ -44,14 +44,42 @@ _FORBIDDEN_MODEL_FRAGMENTS = (
 
 
 def _seed_run(session: Session) -> Run:
+    package_id = session.query(Run).count() + 1
+    package_key = f"memory_workflow_package_{package_id}"
     run = Run(
-        target_kind="workflow",
-        target_id=1,
-        target_key="memory_workflow",
+        target_kind="workflowPackage",
+        target_id=package_id,
+        target_key=package_key,
         target_version=1,
+        workflow_package_key=package_key,
+        workflow_package_workflow_key="memory_workflow",
         input={"topic": "drawdown"},
         status="running",
         trace_id="trace-run-1",
+    )
+    run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+        workflow_package_id=package_id,
+        workflow_package_key=package_key,
+        workflow_package_name="Memory Workflow Package",
+        workflow_package_description="",
+        workflow_package_status="active",
+        workflow_key="memory_workflow",
+        workflow_name="Memory Workflow",
+        workflow_description="",
+        manifest_hash="a" * 64,
+        compiled_hash="b" * 64,
+        manifest_source=(
+            "apiVersion: signaldeck.workflowPackage/v1\n"
+            f"key: {package_key}\n"
+        ),
+        package_definition={"metadata": {"key": package_key}},
+        compiled_plan={"workflows": [{"key": "memory_workflow"}]},
+        extension_dependencies=[],
+        local_resource_refs={"workflows": ["memory_workflow"]},
+        input_schema={},
+        launch_parameters=run.input,
+        resolved_model_connections=[],
+        preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
     )
     session.add(run)
     session.flush()

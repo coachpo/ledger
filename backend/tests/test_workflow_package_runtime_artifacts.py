@@ -113,20 +113,6 @@ def _workflow_package_run() -> Run:
     )
 
 
-def _generic_workflow_run() -> Run:
-    return Run(
-        target_kind="workflow",
-        target_id=7,
-        target_key="generic_workflow",
-        target_version=1,
-        input={"ticker": "AAPL"},
-        status="queued",
-        total_tokens=0,
-        inherited_tokens=0,
-        executed_tokens=0,
-    )
-
-
 def _snapshot() -> RunWorkflowPackageSnapshot:
     return RunWorkflowPackageSnapshot(
         workflow_package_id=101,
@@ -447,24 +433,6 @@ def test_workflow_package_run_requires_run_owned_snapshot(
         with pytest.raises(ValueError, match="run-owned executable snapshot"):
             session.commit()
         session.rollback()
-
-
-def test_generic_run_persists_without_workflow_package_snapshot(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        run = _generic_workflow_run()
-        session.add(run)
-        session.commit()
-        session.refresh(run)
-        stored_run = session.get(Run, run.id)
-        assert stored_run is not None
-        assert stored_run.workflow_package_snapshot is None
-
-    detail = RunRead.model_validate(_run_read_payload(target_kind="workflow"))
-    assert detail.package_provenance is None
-
-
 def test_workflow_package_run_read_requires_snapshot_provenance() -> None:
     payload = _run_read_payload(target_kind="workflowPackage")
     with pytest.raises(ValidationError):

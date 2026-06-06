@@ -16,7 +16,7 @@ class Run(IdMixin, TimestampMixin, Base):
     __tablename__ = "runs"
     __table_args__ = (
         CheckConstraint(
-            "target_kind IN ('agent', 'workflow', 'workflowPackage')",
+            "target_kind = 'workflowPackage'",
             name="ck_runs_target_kind",
         ),
         CheckConstraint(
@@ -72,15 +72,6 @@ class Run(IdMixin, TimestampMixin, Base):
         ),
     )
 
-    agent_id: Mapped[int | None] = mapped_column(
-        ForeignKey("agents.id", ondelete="CASCADE"),
-        nullable=True,
-    )
-    target_workflow_id: Mapped[int | None] = mapped_column(
-        "workflow_id",
-        ForeignKey("workflows.id", ondelete="CASCADE"),
-        nullable=True,
-    )
     target_kind: Mapped[str] = mapped_column(String(20), nullable=False)
     target_id: Mapped[int] = mapped_column(nullable=False)
     target_key: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -241,38 +232,6 @@ class Run(IdMixin, TimestampMixin, Base):
         uselist=False,
     )
 
-    def _set_workflow_target_kind(self) -> None:
-        if getattr(self, "target_kind", None) is None:
-            self.target_kind = "workflow"
-
-    @property
-    def workflow_id(self) -> int:
-        return self.target_id
-
-    @workflow_id.setter
-    def workflow_id(self, value: int) -> None:
-        self._set_workflow_target_kind()
-        self.target_id = value
-
-    @property
-    def workflow_key(self) -> str:
-        return self.target_key
-
-    @workflow_key.setter
-    def workflow_key(self, value: str) -> None:
-        self._set_workflow_target_kind()
-        self.target_key = value
-
-    @property
-    def workflow_version(self) -> int:
-        return self.target_version
-
-    @workflow_version.setter
-    def workflow_version(self, value: int) -> None:
-        self._set_workflow_target_kind()
-        self.target_version = value
-
-
 def _non_empty_string(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -281,21 +240,13 @@ def _non_empty_string(value: object) -> str | None:
 
 
 def _default_run_execution_scope_key(run: Run) -> str | None:
-    if run.target_kind == "workflowPackage":
-        package_key = _non_empty_string(run.workflow_package_key) or _non_empty_string(
-            run.target_key
-        )
-        return f"package:{package_key}" if package_key is not None else None
-
-    target_kind = _non_empty_string(run.target_kind)
-    target_key = _non_empty_string(run.target_key)
-    if target_kind is None or target_key is None:
-        return None
-    return f"target:{target_kind}:{target_key}"
+    package_key = _non_empty_string(run.workflow_package_key) or _non_empty_string(run.target_key)
+    return f"package:{package_key}" if package_key is not None else None
 
 
 def _default_run_concurrency_policy(run: Run) -> str:
-    return "serial" if run.target_kind == "workflowPackage" else "parallel"
+    del run
+    return "serial"
 
 
 def _normalize_run_scheduler_metadata(run: Run) -> None:

@@ -185,7 +185,6 @@ describe("query keys", () => {
       queryKeys.platform.runs.list({
         offset: 0,
         status: "succeeded",
-        targetKind: "workflowPackage",
         workflowKey: " summarize ",
         workflowPackageKey: " research_package ",
       }),
@@ -197,7 +196,6 @@ describe("query keys", () => {
       {
         offset: 0,
         status: "succeeded",
-        targetKind: "workflowPackage",
         workflowKey: "summarize",
         workflowPackageKey: "research_package",
       },

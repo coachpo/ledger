@@ -22,34 +22,15 @@ class RunRepository(BaseRepository[Run]):
     def list_all(
         self,
         *,
-        target_kind: str | None = None,
-        target_id: int | None = None,
-        target_key: str | None = None,
-        target_version: int | None = None,
         status: str | None = None,
         limit: int | None = None,
         offset: int = 0,
-        workflow_id: int | None = None,
-        workflow_key: str | None = None,
-        workflow_version: int | None = None,
         workflow_package_id: int | None = None,
         workflow_package_key: str | None = None,
         package_workflow_key: str | None = None,
         model_connection_key: str | None = None,
     ) -> list[Run]:
-        resolved_target_id = target_id if target_id is not None else workflow_id
-        resolved_target_key = target_key if target_key is not None else workflow_key
-        resolved_target_version = target_version if target_version is not None else workflow_version
-
         statement = select(self.model)
-        if target_kind is not None:
-            statement = statement.where(self.model.target_kind == target_kind)
-        if resolved_target_id is not None:
-            statement = statement.where(self.model.target_id == resolved_target_id)
-        if resolved_target_key is not None:
-            statement = statement.where(self.model.target_key == resolved_target_key)
-        if resolved_target_version is not None:
-            statement = statement.where(self.model.target_version == resolved_target_version)
         if status is not None:
             statement = statement.where(self.model.status == status)
         if workflow_package_id is not None:
@@ -182,36 +163,12 @@ class RunRepository(BaseRepository[Run]):
                 blockers_by_run_id[resolved_run_id] = int(blocker_run_id)
         return blockers_by_run_id
 
-    def list_ids_for_target_owner(
-        self,
-        *,
-        target_kind: str,
-        target_id: int,
-        workflow_package_id: int | None = None,
-    ) -> list[int]:
-        statement = select(self.model.id).where(
-            self._target_owner_filter(
-                target_kind=target_kind,
-                target_id=target_id,
-                workflow_package_id=workflow_package_id,
-            )
-        )
+    def list_ids_for_workflow_package(self, *, package_id: int) -> list[int]:
+        statement = select(self.model.id).where(self._workflow_package_owner_filter(package_id))
         return list(self.session.scalars(statement))
 
-    def list_for_target_owner(
-        self,
-        *,
-        target_kind: str,
-        target_id: int,
-        workflow_package_id: int | None = None,
-    ) -> list[Run]:
-        statement = select(self.model).where(
-            self._target_owner_filter(
-                target_kind=target_kind,
-                target_id=target_id,
-                workflow_package_id=workflow_package_id,
-            )
-        )
+    def list_for_workflow_package(self, *, package_id: int) -> list[Run]:
+        statement = select(self.model).where(self._workflow_package_owner_filter(package_id))
         return self._list(statement)
 
     def list_directly_owned_by_schedule(
@@ -227,30 +184,11 @@ class RunRepository(BaseRepository[Run]):
         statement = select(self.model).where(or_(*ownership_filters)).order_by(self.model.id.asc())
         return self._list(statement)
 
-    def _target_owner_filter(
-        self,
-        *,
-        target_kind: str,
-        target_id: int,
-        workflow_package_id: int | None,
-    ) -> ColumnElement[bool]:
-        owner_filters: list[ColumnElement[bool]] = [
-            (self.model.target_kind == target_kind) & (self.model.target_id == target_id)
-        ]
-        for column_name in self._target_owner_fk_column_names(target_kind):
-            target_fk_column = self.model.__table__.c.get(column_name)
-            if target_fk_column is not None:
-                owner_filters.append(target_fk_column == target_id)
-        if target_kind == "workflowPackage":
-            package_id = workflow_package_id if workflow_package_id is not None else target_id
-            owner_filters.append(self.model.workflow_package_id == package_id)
-        return or_(*owner_filters)
-
-    @staticmethod
-    def _target_owner_fk_column_names(target_kind: str) -> tuple[str, ...]:
-        if target_kind == "workflowPackage":
-            return ("target_workflow_package_id", "workflow_package_id")
-        return (f"target_{target_kind}_id", f"{target_kind}_id")
+    def _workflow_package_owner_filter(self, package_id: int) -> ColumnElement[bool]:
+        return or_(
+            (self.model.target_kind == "workflowPackage") & (self.model.target_id == package_id),
+            self.model.workflow_package_id == package_id,
+        )
 
     def claim_next_queued(self, run_id: int | None = None) -> Run | None:
         for _ in range(2):
@@ -328,37 +266,36 @@ class RunRepository(BaseRepository[Run]):
         run.attempt_count = int(run.attempt_count or 0) + 1
         return self.add(run)
 
-    def list_for_target(
+    def list_for_workflow_package_key(
         self,
         *,
-        target_kind: str,
-        target_key: str,
-        target_version: int | None = None,
+        workflow_package_key: str,
+        workflow_key: str | None = None,
         status: str | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[Run]:
         return self.list_all(
-            target_kind=target_kind,
-            target_key=target_key,
-            target_version=target_version,
+            workflow_package_key=workflow_package_key,
+            package_workflow_key=workflow_key,
             status=status,
             limit=limit,
             offset=offset,
         )
 
-    def get_latest_for_target(
+    def get_latest_for_workflow_package_key(
         self,
         *,
-        target_kind: str,
-        target_key: str,
-        target_version: int | None = None,
+        workflow_package_key: str,
+        workflow_key: str | None = None,
         status: str | None = None,
     ) -> Run | None:
-        statement = select(self.model).where(self.model.target_kind == target_kind)
-        statement = statement.where(self.model.target_key == target_key)
-        if target_version is not None:
-            statement = statement.where(self.model.target_version == target_version)
+        statement = select(self.model).where(
+            self.model.workflow_package_key == workflow_package_key,
+            self.model.target_kind == "workflowPackage",
+        )
+        if workflow_key is not None:
+            statement = statement.where(self.model.workflow_package_workflow_key == workflow_key)
         if status is not None:
             statement = statement.where(self.model.status == status)
         statement = statement.order_by(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import cast
 
 import pytest
 from pydantic import ValidationError
@@ -55,6 +54,10 @@ def test_workflow_launch_create_request_rejects_invalid_envelopes(
 
 def test_run_status_contract_is_frozen() -> None:
     assert {status.value for status in RunStatus} == {"queued", "running", "succeeded", "failed"}
+
+
+def test_run_target_kind_contract_is_package_only() -> None:
+    assert {target_kind.value for target_kind in RunTargetKind} == {"workflowPackage"}
 
 
 def test_workflow_launch_read_contract_uses_camel_case_aliases() -> None:
@@ -192,11 +195,11 @@ def test_fork_contracts_use_source_invocation_input_and_reject_extra_fields() ->
         )
 
 
-def test_run_read_preserves_historical_lineage_as_read_only_fields() -> None:
+def test_run_read_rejects_non_package_target_kinds() -> None:
     timestamp = "2026-05-03T12:00:00Z"
     historical_lineage_payload: dict[str, object] = {
         "id": 99,
-        "targetKind": RunTargetKind.WORKFLOW.value,
+        "targetKind": "workflow",
         "targetId": 42,
         "targetKey": "portfolio_review",
         "input": {"ticker": "TSLA"},
@@ -294,22 +297,5 @@ def test_run_read_preserves_historical_lineage_as_read_only_fields() -> None:
         "packageProvenance": None,
     }
 
-    read = RunRead.model_validate(historical_lineage_payload)
-    dumped = read.model_dump(by_alias=True, mode="json")
-
-    assert dumped["sourceRunId"] == 11
-    assert dumped["lineageRootRunId"] == 11
-    assert dumped["replayStepIndex"] == 2
-    assert dumped["resumeStepIndex"] == 2
-    steps = cast(list[dict[str, object]], dumped["steps"])
-    historical_step = steps[0]
-    assert historical_step["origin"] == "copied"
-    assert historical_step["sourceRunStepId"] == 101
-    assert historical_step["sourceRunId"] == 11
-    assert historical_step["sourceStepIndex"] == 1
-    invocations = cast(list[dict[str, object]], historical_step["invocations"])
-    historical_invocation = invocations[0]
-    assert "agentId" not in historical_invocation
-    assert "outputSchemaId" not in historical_invocation
-    assert historical_invocation["sourceInvocationId"] == 77
-    assert historical_invocation["resolvedInputOrigin"] == "copied"
+    with pytest.raises(ValidationError):
+        _ = RunRead.model_validate(historical_lineage_payload)

@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models.run import Run
+from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.repositories.run_operation_invocation import RunOperationInvocationRepository
@@ -24,10 +24,12 @@ def _create_run_with_step(
 ) -> tuple[Run, RunStep]:
     timestamp = datetime(2026, 5, 15, 8, 30, tzinfo=UTC_TZ)
     run = Run(
-        target_kind="workflow",
+        target_kind="workflowPackage",
         target_id=1,
-        target_key="operation_workflow",
+        target_key="operation_package",
         target_version=1,
+        workflow_package_key="operation_package",
+        workflow_package_workflow_key="notify_workflow",
         input={"ticker": "NVDA", "webhookUrl": "https://example.test/hook"},
         status=run_status,
         total_tokens=0,
@@ -37,6 +39,27 @@ def _create_run_with_step(
         finished_at=timestamp if run_status in {"succeeded", "failed"} else None,
     )
     run.queued_at = timestamp
+    run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+        workflow_package_id=1,
+        workflow_package_key="operation_package",
+        workflow_package_name="Operation Package",
+        workflow_package_description="",
+        workflow_package_status="active",
+        workflow_key="notify_workflow",
+        workflow_name="Notify Workflow",
+        workflow_description="",
+        manifest_hash="a" * 64,
+        compiled_hash="b" * 64,
+        manifest_source="apiVersion: signaldeck.workflowPackage/v1\nkey: operation_package\n",
+        package_definition={"metadata": {"key": "operation_package"}},
+        compiled_plan={"workflows": [{"key": "notify_workflow"}]},
+        extension_dependencies=[],
+        local_resource_refs={"workflows": ["notify_workflow"]},
+        input_schema={},
+        launch_parameters=run.input,
+        resolved_model_connections=[],
+        preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
+    )
     session.add(run)
     session.flush()
     step = RunStep(
@@ -167,8 +190,8 @@ def test_operation_invocation_read_schema_redacts_request_metadata(
     assert detail_step["invocations"] == []
     assert len(detail_operations) == 1
     assert detail_operations[0]["outputSchemaRef"] == {
-        "scope": "global",
-        "id": 1,
+        "scope": "packageLocal",
+        "localId": 1,
         "version": 1,
     }
     assert detail_operations[0]["requestMetadata"] == request_metadata
@@ -188,6 +211,8 @@ def test_lineage_copy_preserves_operation_provenance_and_redacted_metadata(
             target_id=source_run.target_id,
             target_key=source_run.target_key,
             target_version=source_run.target_version,
+            workflow_package_key=source_run.workflow_package_key,
+            workflow_package_workflow_key=source_run.workflow_package_workflow_key,
             input=dict(source_run.input),
             status="queued",
             source_run_id=source_run.id,
@@ -197,6 +222,27 @@ def test_lineage_copy_preserves_operation_provenance_and_redacted_metadata(
             total_tokens=0,
             inherited_tokens=0,
             executed_tokens=0,
+        )
+        target_run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+            workflow_package_id=1,
+            workflow_package_key="operation_package",
+            workflow_package_name="Operation Package",
+            workflow_package_description="",
+            workflow_package_status="active",
+            workflow_key="notify_workflow",
+            workflow_name="Notify Workflow",
+            workflow_description="",
+            manifest_hash="a" * 64,
+            compiled_hash="b" * 64,
+            manifest_source="apiVersion: signaldeck.workflowPackage/v1\nkey: operation_package\n",
+            package_definition={"metadata": {"key": "operation_package"}},
+            compiled_plan={"workflows": [{"key": "notify_workflow"}]},
+            extension_dependencies=[],
+            local_resource_refs={"workflows": ["notify_workflow"]},
+            input_schema={},
+            launch_parameters=target_run.input,
+            resolved_model_connections=[],
+            preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
         )
         session.add(target_run)
         session.flush()

@@ -46,13 +46,7 @@ from app.schemas.capability import CapabilityDraftCreate, CapabilityDraftUpdate
 from app.schemas.mcp_server import McpServerCreate, McpServerTransport, McpServerUpdate
 from app.schemas.model_connection import default_model_connection_capabilities
 from app.schemas.output_schema import OutputSchemaDraftCreate, OutputSchemaDraftUpdate
-from app.schemas.run import (
-    RunAgentInvocationRead,
-    RunForkCreateRequest,
-    RunRead,
-    RunRerunCreateRequest,
-    RunStatus,
-)
+from app.schemas.run import RunAgentInvocationRead, RunRead, RunStatus
 from app.services.agent_service import AgentService
 from app.services.capability_service import CapabilityService
 from app.services.mcp_server_service import McpServerService
@@ -250,11 +244,13 @@ def _build_agent_platform_run(
     trace_id: str | None,
     final_output: object | None,
 ) -> Run:
-    return Run(
-        target_kind="workflow",
+    run = Run(
+        target_kind="workflowPackage",
         target_id=workflow.id,
-        target_key=workflow.key,
-        target_version=workflow.version,
+        target_key=f"{workflow.key}_package",
+        target_version=1,
+        workflow_package_key=f"{workflow.key}_package",
+        workflow_package_workflow_key=workflow.key,
         input={"ticker": "NVDA", "horizonDays": 30},
         final_output=final_output,
         status=status,
@@ -263,6 +259,30 @@ def _build_agent_platform_run(
         started_at=started_at,
         finished_at=finished_at,
     )
+    run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+        workflow_package_id=workflow.id,
+        workflow_package_key=f"{workflow.key}_package",
+        workflow_package_name=f"{workflow.key} package",
+        workflow_package_description="",
+        workflow_package_status="active",
+        workflow_key=workflow.key,
+        workflow_name=workflow.name,
+        workflow_description=workflow.description,
+        manifest_hash="a" * 64,
+        compiled_hash="b" * 64,
+        manifest_source=(
+            f"apiVersion: signaldeck.workflowPackage/v1\\nkey: {workflow.key}_package\\n"
+        ),
+        package_definition={"metadata": {"key": f"{workflow.key}_package"}},
+        compiled_plan={"workflows": [{"key": workflow.key, "name": workflow.name}]},
+        extension_dependencies=[],
+        local_resource_refs={"workflows": [workflow.key]},
+        input_schema={},
+        launch_parameters=run.input,
+        resolved_model_connections=[],
+        preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
+    )
+    return run
 
 
 def _seed_run_target_fk_targets(
@@ -627,18 +647,6 @@ def test_runtime_input_cross_scope_lookup_update_delete_blocked(
         session.flush()
         assert session.get(WorkflowPackageRuntimeInputEntry, entry.id) is None
         assert session.get(WorkflowPackageRuntimeInputEntry, history_entry.id) is not None
-
-
-def _assert_executable_target_fk_identity(
-    run: Run,
-    *,
-    agent_id: int | None = None,
-    workflow_id: int | None = None,
-    workflow_package_id: int | None = None,
-) -> None:
-    assert run.agent_id == agent_id
-    assert run.target_workflow_id == workflow_id
-    assert run.workflow_package_id == workflow_package_id
 
 
 def _seed_agent_platform_versioned_rows(session: Session) -> None:
@@ -1190,98 +1198,31 @@ def test_agent_repository_model_filter_uses_saved_agent_model_value(
         ]
 
 
-def test_legacy_agent_workflow_run_creation_rerun_and_replay_remain_blocked(
-    monkeypatch: pytest.MonkeyPatch,
+def test_legacy_agent_workflow_runtime_entrypoint_is_removed(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
-        agent, workflow = _seed_run_target_fk_targets(session, key_prefix="target_fk")
-        agent_id = agent.id
-        workflow_id = workflow.id
         service = RunService(session, session_factory)
 
-        with pytest.raises(ApiError) as agent_create_error:
-            service.create_target_run("agent", agent_id, {"ticker": "NVDA"})
-        with pytest.raises(ApiError) as workflow_create_error:
-            service.create_target_run("workflow", workflow_id, {"ticker": "MSFT"})
-
-        agent_run = _build_deletable_run(
-            target_kind="agent",
-            target_id=agent_id,
-            target_key=agent.key,
-        )
-        agent_run.agent_id = agent_id
-        workflow_run = _build_deletable_run(
-            target_kind="workflow",
-            target_id=workflow_id,
-            target_key=workflow.key,
-        )
-        workflow_run.target_workflow_id = workflow_id
-        workflow_run.status = "succeeded"
-        session.add_all([agent_run, workflow_run])
-        session.commit()
-
-        with pytest.raises(ApiError) as agent_rerun_error:
-            service.create_rerun(
-                agent_run.id,
-                RunRerunCreateRequest(parameters={"ticker": "AAPL"}),
-            )
-        with pytest.raises(ApiError) as workflow_rerun_error:
-            service.create_rerun(
-                workflow_run.id,
-                RunRerunCreateRequest(parameters={"ticker": "IBM"}),
-            )
-        with pytest.raises(ApiError) as workflow_fork_error:
-            service.create_fork(
-                workflow_run.id,
-                RunForkCreateRequest(
-                    source_invocation_id=1,
-                    invocation_input={"ticker": "AMD"},
-                ),
-            )
-
-        errors = [
-            agent_create_error.value,
-            workflow_create_error.value,
-            agent_rerun_error.value,
-            workflow_rerun_error.value,
-            workflow_fork_error.value,
-        ]
-        assert {error.code for error in errors} == {"legacy_global_authoring_runtime_blocked"}
-        _assert_executable_target_fk_identity(agent_run, agent_id=agent_id)
-        _assert_executable_target_fk_identity(workflow_run, workflow_id=workflow_id)
+    assert not hasattr(service, "create_target_run")
 
 
-def test_delete_target_with_queued_running_runs_deletes_package_runs(
+def test_delete_package_with_queued_running_runs_deletes_package_runs(
     session_factory: sessionmaker[Session],
 ) -> None:
     statuses = ("queued", "running", "succeeded", "failed")
     with session_factory() as session:
-        agent, workflow = _seed_run_target_fk_targets(session, key_prefix="cascade_fk")
         package = _seed_workflow_package_target(
             session,
             key_prefix="cascade_fk",
         )
-        target_runs: list[Run] = []
+        package_runs: list[Run] = []
         for status_value in statuses:
-            agent_run = _build_deletable_run(
-                target_kind="agent",
-                target_id=agent.id,
-                target_key=agent.key,
-            )
-            agent_run.status = status_value
-            agent_run.agent_id = agent.id
-            workflow_run = _build_deletable_run(
-                target_kind="workflow",
-                target_id=workflow.id,
-                target_key=workflow.key,
-            )
-            workflow_run.status = status_value
-            workflow_run.target_workflow_id = workflow.id
             package_run = _build_deletable_run(
                 target_kind="workflowPackage",
                 target_id=package.id,
                 target_key=package.key,
+                workflow_key="runtime_workflow",
             )
             package_run.status = status_value
             package_run.workflow_package_id = package.id
@@ -1308,30 +1249,19 @@ def test_delete_target_with_queued_running_runs_deletes_package_runs(
                 resolved_model_connections=[],
                 preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
             )
-            target_runs.extend([agent_run, workflow_run, package_run])
-        session.add_all(target_runs)
+            package_runs.append(package_run)
+        session.add_all(package_runs)
         session.commit()
-        agent_run_ids = [target_runs[index].id for index in range(0, len(target_runs), 3)]
-        workflow_run_ids = [target_runs[index].id for index in range(1, len(target_runs), 3)]
-        package_run_ids = [target_runs[index].id for index in range(2, len(target_runs), 3)]
-        agent_id = agent.id
-        workflow_id = workflow.id
+        package_run_ids = [run.id for run in package_runs]
         package_id = package.id
 
         session.expunge_all()
-        for target_model, target_id in (
-            (Agent, agent_id),
-            (Workflow, workflow_id),
-            (WorkflowPackage, package_id),
-        ):
-            target = session.get(target_model, target_id)
-            assert target is not None
-            session.delete(target)
+        target = session.get(WorkflowPackage, package_id)
+        assert target is not None
+        session.delete(target)
         session.commit()
         session.expunge_all()
 
-        assert all(session.get(Run, run_id) is None for run_id in agent_run_ids)
-        assert all(session.get(Run, run_id) is None for run_id in workflow_run_ids)
         assert all(session.get(Run, run_id) is None for run_id in package_run_ids)
         assert all(
             session.get(RunWorkflowPackageSnapshot, run_id) is None for run_id in package_run_ids
@@ -1459,20 +1389,23 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         run_repo = RunRepository(session)
 
         run_detail = run_repo.get_detail(latest_run.id)
-        listed_runs = run_repo.list_for_target(target_kind="workflow", target_key="market_review")
+        listed_runs = run_repo.list_for_workflow_package_key(
+            workflow_package_key="market_review_package",
+            workflow_key="market_review",
+        )
         filtered_runs = run_repo.list_all(
-            target_kind="workflow",
-            target_key="market_review",
+            workflow_package_key="market_review_package",
+            package_workflow_key="market_review",
             status="succeeded",
         )
         queued_runs = run_repo.list_all(
-            target_kind="workflow",
-            target_key="market_review",
+            workflow_package_key="market_review_package",
+            package_workflow_key="market_review",
             status="queued",
         )
-        latest_for_workflow = run_repo.get_latest_for_target(
-            target_kind="workflow",
-            target_key="market_review",
+        latest_for_workflow = run_repo.get_latest_for_workflow_package_key(
+            workflow_package_key="market_review_package",
+            workflow_key="market_review",
         )
 
         assert run_detail is not None
@@ -1536,7 +1469,40 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                         "materializedAt": datetime(2026, 4, 19, 9, 59, tzinfo=UTC_TZ),
                         "scheduleDeletedAt": datetime(2026, 4, 20, 12, 0, tzinfo=UTC_TZ),
                     },
-                    "packageProvenance": None,
+                    "packageProvenance": {
+                        "workflowPackageId": workflow.id,
+                        "workflowPackageKey": "market_review_package",
+                        "workflowPackageName": "market_review package",
+                        "workflowPackageDescription": workflow.description,
+                        "workflowPackageStatus": "active",
+                        "workflowPackageManifestHash": "a" * 64,
+                        "workflowPackageCompiledHash": "b" * 64,
+                        "workflowKey": workflow.key,
+                        "workflowName": workflow.name,
+                        "workflowDescription": workflow.description,
+                        "manifestSource": (
+                            "apiVersion: signaldeck.workflowPackage/v1\n"
+                            "key: market_review_package\n"
+                        ),
+                        "packageDefinition": {
+                            "metadata": {"key": "market_review_package"}
+                        },
+                        "compiledPlan": {
+                            "workflows": [{"key": workflow.key, "name": workflow.name}]
+                        },
+                        "launchSnapshot": None,
+                        "extensionDependencies": [],
+                        "localResourceRefs": {
+                            "agents": [],
+                            "outputSchemas": [],
+                            "capabilityProfiles": [],
+                            "mcpServers": [],
+                            "workflows": [workflow.key],
+                        },
+                        "resolvedModelConnections": [],
+                        "preflightSummary": None,
+                        "currentPackage": None,
+                    },
                 }
             ).model_dump(mode="json", by_alias=True),
         )
@@ -2126,15 +2092,18 @@ def test_run_serial_partial_index_allows_one_concurrent_running_claim_per_scope(
 
 def _build_deletable_run(
     *,
-    target_kind: str = "workflow",
+    target_kind: str = "workflowPackage",
     target_id: int = 9001,
-    target_key: str = "delete_target",
+    target_key: str = "delete_target_package",
+    workflow_key: str = "delete_target",
 ) -> Run:
-    return Run(
+    run = Run(
         target_kind=target_kind,
         target_id=target_id,
         target_key=target_key,
         target_version=1,
+        workflow_package_key=target_key if target_kind == "workflowPackage" else None,
+        workflow_package_workflow_key=workflow_key if target_kind == "workflowPackage" else None,
         input={"ticker": "NVDA"},
         status="succeeded",
         final_output={"summary": "done"},
@@ -2142,6 +2111,29 @@ def _build_deletable_run(
         inherited_tokens=0,
         executed_tokens=11,
     )
+    if target_kind == "workflowPackage":
+        run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+            workflow_package_id=target_id,
+            workflow_package_key=target_key,
+            workflow_package_name=target_key,
+            workflow_package_description="",
+            workflow_package_status="active",
+            workflow_key=workflow_key,
+            workflow_name=workflow_key,
+            workflow_description="",
+            manifest_hash="a" * 64,
+            compiled_hash="b" * 64,
+            manifest_source=f"apiVersion: signaldeck.workflowPackage/v1\\nkey: {target_key}\\n",
+            package_definition={"metadata": {"key": target_key}},
+            compiled_plan={"workflows": [{"key": workflow_key}]},
+            extension_dependencies=[],
+            local_resource_refs={"workflows": [workflow_key]},
+            input_schema={},
+            launch_parameters=run.input,
+            resolved_model_connections=[],
+            preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
+        )
+    return run
 
 
 def _build_run_memory_report(run_id: int, *, slug: str, source: str = "agent") -> Report:
@@ -2328,31 +2320,17 @@ def _seed_delete_graph(session: Session) -> dict[str, int]:
     }
 
 
-def test_workflow_delete_cascades_owned_runs_but_not_referenced_agent(
+def test_workflow_delete_removes_workflow_refs_but_keeps_agent(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
         ids = _seed_delete_graph(session)
-        run = _build_deletable_run(
-            target_kind="workflow",
-            target_id=ids["workflow_id"],
-            target_key="delete_graph_workflow",
-        )
-        run.target_workflow_id = ids["workflow_id"]
-        session.add(run)
-        session.flush()
-        session.add(_build_run_memory_report(run.id, slug="workflow_delete_memory"))
-        session.commit()
-        run_id = run.id
 
         WorkflowService(session).delete_workflow(ids["workflow_id"])
         session.expunge_all()
 
         assert session.get(Workflow, ids["workflow_id"]) is None
-        assert session.get(Run, run_id) is None
         assert session.get(Agent, ids["agent_id"]) is not None
-        assert session.query(WorkflowAgentRef).count() == 0
-        assert session.query(Report).filter_by(slug="workflow_delete_memory").one_or_none() is None
 
 
 def test_agent_delete_blocked_by_workflow_refs_then_deletes_when_allowed(
@@ -2360,17 +2338,6 @@ def test_agent_delete_blocked_by_workflow_refs_then_deletes_when_allowed(
 ) -> None:
     with session_factory() as session:
         ids = _seed_delete_graph(session)
-        run = _build_deletable_run(
-            target_kind="agent",
-            target_id=ids["agent_id"],
-            target_key="delete_graph_agent",
-        )
-        run.agent_id = ids["agent_id"]
-        session.add(run)
-        session.flush()
-        session.add(_build_run_memory_report(run.id, slug="agent_delete_memory"))
-        session.commit()
-        run_id = run.id
 
         repository = AgentRepository(session)
         service = AgentService(session, get_default_tool_catalog(), DefaultMcpConnectionTester())
@@ -2386,10 +2353,6 @@ def test_agent_delete_blocked_by_workflow_refs_then_deletes_when_allowed(
         session.expunge_all()
 
         assert session.get(Agent, ids["agent_id"]) is None
-        assert session.get(Run, run_id) is None
-        assert session.query(AgentCapabilityRef).count() == 0
-        assert session.query(AgentMcpServerRef).count() == 0
-        assert session.query(Report).filter_by(slug="agent_delete_memory").one_or_none() is None
 
 
 def test_shared_dependency_delete_blocked_by_agent_refs(
