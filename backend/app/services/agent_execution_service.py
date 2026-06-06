@@ -9,7 +9,6 @@ from typing import Any
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.agents import get_default_tool_catalog
 from app.agents.mcp import McpRuntimeDispatcher, McpRuntimeResolver, McpToolClient
 from app.agents.runtime_tools import (
     RuntimeToolContext,
@@ -23,10 +22,8 @@ from app.agents.runtime_tools.failure_taxonomy import (
     runtime_failure_metadata,
 )
 from app.core.config import get_settings
-from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
-from app.services.capability_service import CapabilityService, RuntimeToolGrantError
 from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import PackageResolvedModelBinding, PackageRuntimeAgentSpec
 from app.services.execution_providers import ExecutionProviderBundle
@@ -98,9 +95,6 @@ class RunAgentInvocationResult:
     runtime_metadata: dict[str, Any] | None = None
 
 
-RuntimeAgentSpec = Agent | PackageRuntimeAgentSpec
-
-
 def normalize_agent_invocation_result(raw_result: Any) -> RunAgentInvocationResult:
     if isinstance(raw_result, RunAgentInvocationResult):
         return raw_result
@@ -167,7 +161,7 @@ class AgentExecutionService:
     async def invoke(
         self,
         *,
-        agent: RuntimeAgentSpec,
+        agent: PackageRuntimeAgentSpec,
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
         trace_id: str | None,
@@ -200,7 +194,7 @@ class AgentExecutionService:
 
     def _invoke_sync(
         self,
-        agent: RuntimeAgentSpec,
+        agent: PackageRuntimeAgentSpec,
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
         trace_id: str | None,
@@ -217,90 +211,66 @@ class AgentExecutionService:
         step_id = f"step_{step_index}"
         with self.session_factory() as session:
             model_connection = self._resolve_runtime_model_connection(session, agent)
-            capability_references = self._runtime_capability_references(session, agent)
-            granted_tool_keys = self._runtime_granted_tool_keys(session, agent)
+            capability_references = self._runtime_capability_references(agent)
+            granted_tool_keys = self._runtime_granted_tool_keys(agent)
             mcp_server_refs = self._runtime_mcp_server_refs(agent)
-        try:
-            return self._invoke_saved_model_connection_agent(
-                agent=agent,
-                model_connection=model_connection,
-                resolved_input=resolved_input,
-                output_model=output_model,
-                capability_references=capability_references,
-                granted_tool_keys=granted_tool_keys,
-                mcp_server_refs=mcp_server_refs,
-                run_id=run_id,
-                run_step_id=run_step_id,
-                run_agent_invocation_id=run_agent_invocation_id,
-                workflow_key=workflow_key,
-                workflow_version=workflow_version,
-                package_ownership=package_ownership,
-                step_id=step_id,
-                slot=slot,
-                trace_id=trace_id,
-                trace_span_id=trace_span_id,
-            )
-        except RuntimeToolGrantError as exc:
-            raise RunExecutionError(
-                code=exc.code,
-                message=exc.message,
-                details=list(exc.details or []),
-            ) from exc
+        return self._invoke_saved_model_connection_agent(
+            agent=agent,
+            model_connection=model_connection,
+            resolved_input=resolved_input,
+            output_model=output_model,
+            capability_references=capability_references,
+            granted_tool_keys=granted_tool_keys,
+            mcp_server_refs=mcp_server_refs,
+            run_id=run_id,
+            run_step_id=run_step_id,
+            run_agent_invocation_id=run_agent_invocation_id,
+            workflow_key=workflow_key,
+            workflow_version=workflow_version,
+            package_ownership=package_ownership,
+            step_id=step_id,
+            slot=slot,
+            trace_id=trace_id,
+            trace_span_id=trace_span_id,
+        )
 
     def _resolve_runtime_model_connection(
         self,
         session: Session,
-        agent: RuntimeAgentSpec,
+        agent: PackageRuntimeAgentSpec,
     ) -> ModelGatewayConnectionConfig:
         repository = ModelConnectionRepository(session)
-        if isinstance(agent, PackageRuntimeAgentSpec):
-            binding = agent.model_binding
-            if binding is None:
-                raise RunExecutionError(
-                    code="run_agent_model_connection_missing",
-                    message=f"Package agent {agent.key!r} is missing its model connection",
-                )
-            connection = repository.get_by_key(binding.key)
-            if connection is None:
-                raise RunExecutionError(
-                    code="run_agent_model_connection_missing",
-                    message=(
-                        f"Package agent {agent.key!r} references missing model connection "
-                        f"{binding.key!r}"
-                    ),
-                    details=[
-                        {
-                            "field": "modelConnection",
-                            "issue": "Referenced live model connection was not found",
-                        }
-                    ],
-                )
-            self._assert_package_model_connection_available(
-                agent=agent,
-                binding=binding,
-                connection=connection,
-            )
-            resolver = self.compatibility_resolution_service
-            return resolver.to_gateway_connection_config_from_package_binding(
-                binding,
-                live_connection=connection,
-            )
-
-        if agent.model_connection_id is None:
+        binding = agent.model_binding
+        if binding is None:
             raise RunExecutionError(
                 code="run_agent_model_connection_missing",
-                message=f"Agent {agent.key!r} is missing its saved model connection",
+                message=f"Package agent {agent.key!r} is missing its model connection",
             )
-        connection = repository.get(agent.model_connection_id)
+        connection = repository.get_by_key(binding.key)
         if connection is None:
             raise RunExecutionError(
                 code="run_agent_model_connection_missing",
                 message=(
-                    f"Agent {agent.key!r} references missing model connection "
-                    f"{agent.model_connection_id}"
+                    f"Package agent {agent.key!r} references missing model connection "
+                    f"{binding.key!r}"
                 ),
+                details=[
+                    {
+                        "field": "modelConnection",
+                        "issue": "Referenced live model connection was not found",
+                    }
+                ],
             )
-        return self.compatibility_resolution_service.to_gateway_connection_config(connection)
+        self._assert_package_model_connection_available(
+            agent=agent,
+            binding=binding,
+            connection=connection,
+        )
+        resolver = self.compatibility_resolution_service
+        return resolver.to_gateway_connection_config_from_package_binding(
+            binding,
+            live_connection=connection,
+        )
 
     @staticmethod
     def _assert_package_model_connection_available(
@@ -325,64 +295,40 @@ class AgentExecutionService:
                 ],
             )
 
-    def _runtime_granted_tool_keys(
-        self,
-        session: Session,
-        agent: RuntimeAgentSpec,
-    ) -> set[str]:
-        if isinstance(agent, PackageRuntimeAgentSpec):
-            return {
-                tool_key for profile in agent.capability_profiles for tool_key in profile.tool_keys
+    @staticmethod
+    def _runtime_granted_tool_keys(agent: PackageRuntimeAgentSpec) -> set[str]:
+        return {tool_key for profile in agent.capability_profiles for tool_key in profile.tool_keys}
+
+    @staticmethod
+    def _runtime_capability_references(agent: PackageRuntimeAgentSpec) -> list[dict[str, object]]:
+        return [
+            {
+                "packageCapabilityKey": profile.key,
+                "toolKeys": list(profile.tool_keys),
             }
-        return CapabilityService(
-            session,
-            get_default_tool_catalog(),
-        ).resolve_granted_tool_keys(agent.capabilities)
+            for profile in agent.capability_profiles
+        ]
 
     @staticmethod
-    def _runtime_capability_references(
-        session: Session,
-        agent: RuntimeAgentSpec,
-    ) -> list[dict[str, object]]:
-        del session
-        if isinstance(agent, PackageRuntimeAgentSpec):
-            return [
-                {
-                    "packageCapabilityKey": profile.key,
-                    "toolKeys": list(profile.tool_keys),
-                }
-                for profile in agent.capability_profiles
-            ]
-        return list(agent.capabilities)
-
-    @staticmethod
-    def _runtime_mcp_server_refs(agent: RuntimeAgentSpec) -> Sequence[Mapping[str, object]]:
-        if isinstance(agent, PackageRuntimeAgentSpec):
-            return [
-                {
-                    "packagePrivate": True,
-                    "key": server.key,
-                    "name": server.name,
-                    "description": server.description,
-                    "transport": server.transport,
-                    "command": server.command,
-                    "args": list(server.args),
-                    "url": server.url,
-                    "env": dict(server.env),
-                    "headers": dict(server.headers),
-                    "query": dict(server.query),
-                    "toolKeys": list(server.tool_keys),
-                    "toolDescriptors": [dict(descriptor) for descriptor in server.tool_descriptors],
-                }
-                for server in agent.mcp_servers
-            ]
-        return agent.mcp_servers
-
-    @staticmethod
-    def _runtime_agent_version(agent: RuntimeAgentSpec) -> int:
-        if isinstance(agent, PackageRuntimeAgentSpec):
-            return 1
-        return agent.version
+    def _runtime_mcp_server_refs(agent: PackageRuntimeAgentSpec) -> Sequence[Mapping[str, object]]:
+        return [
+            {
+                "packagePrivate": True,
+                "key": server.key,
+                "name": server.name,
+                "description": server.description,
+                "transport": server.transport,
+                "command": server.command,
+                "args": list(server.args),
+                "url": server.url,
+                "env": dict(server.env),
+                "headers": dict(server.headers),
+                "query": dict(server.query),
+                "toolKeys": list(server.tool_keys),
+                "toolDescriptors": [dict(descriptor) for descriptor in server.tool_descriptors],
+            }
+            for server in agent.mcp_servers
+        ]
 
     def _runtime_tool_registry(self) -> RuntimeToolRegistry:
         with self.session_factory() as session:
@@ -391,7 +337,7 @@ class AgentExecutionService:
     def _invoke_saved_model_connection_agent(
         self,
         *,
-        agent: RuntimeAgentSpec,
+        agent: PackageRuntimeAgentSpec,
         model_connection: ModelGatewayConnectionConfig,
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
@@ -438,7 +384,7 @@ class AgentExecutionService:
             run_step_id=run_step_id,
             run_agent_invocation_id=run_agent_invocation_id,
             agent_key=agent.key,
-            agent_version=self._runtime_agent_version(agent),
+            agent_version=1,
             agent_name=agent.name,
             package_ownership=package_ownership,
             workflow_key=runtime_workflow_key,
@@ -477,8 +423,6 @@ class AgentExecutionService:
             )
         except RuntimeToolError as exc:
             raise self._runtime_tool_error_to_run_execution_error(exc) from exc
-        except RuntimeToolGrantError:
-            raise
         except ModelGatewayError as exc:
             raise self._model_gateway_error_to_run_execution_error(exc) from exc
         return RunAgentInvocationResult(
@@ -641,7 +585,7 @@ class AgentExecutionService:
 
     @staticmethod
     def _build_model_instructions(
-        agent: RuntimeAgentSpec,
+        agent: PackageRuntimeAgentSpec,
         output_model: type[BaseModel],
         *,
         runtime_tool_guidance: str,

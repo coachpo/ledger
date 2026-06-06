@@ -245,11 +245,7 @@ class PackageExecutionPlanBuilder:
                 graph_metadata_by_step_slot=graph_metadata_by_step_slot,
             )
             steps.append(step)
-            package_agents = tuple(
-                agent.package_runtime_agent
-                for agent in step.agents
-                if agent.package_runtime_agent is not None
-            )
+            package_agents = tuple(agent.package_runtime_agent for agent in step.agents)
             package_operations = tuple(
                 operation.package_runtime_operation
                 for operation in step.operations

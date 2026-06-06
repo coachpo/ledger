@@ -9,7 +9,7 @@ import pytest
 
 from app.schemas.model_connection import default_model_connection_capabilities
 from app.services.agent_execution_service import AgentExecutionService
-from app.services.execution_plan import PackageResolvedModelBinding
+from app.services.execution_plan import ExecutionPlanAgent, PackageResolvedModelBinding
 from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
     WorkflowPackageExecutionPlanError,
@@ -48,6 +48,20 @@ def _model_binding(key: str = "tradingagents_primary_model") -> PackageResolvedM
         timeout_seconds=60,
         has_api_key=True,
     )
+
+
+def test_execution_plan_agent_requires_package_runtime_spec() -> None:
+    constructor = cast(Callable[..., ExecutionPlanAgent], ExecutionPlanAgent)
+    with pytest.raises(TypeError):
+        _ = constructor(
+            slot="analysis",
+            agent_id=1,
+            agent_key="market_analyst",
+            agent_version=1,
+            output_schema_id=1,
+            output_schema_version=1,
+            wiring={},
+        )
 
 
 def test_package_execution_plan_builds_from_local_compiled_plan_without_global_rows() -> None:

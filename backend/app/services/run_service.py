@@ -6,7 +6,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
@@ -21,19 +21,16 @@ from app.core.telemetry import (
     format_current_trace_id,
 )
 from app.db.engine import get_session_factory
-from app.models.agent import Agent
 from app.models.output_schema import OutputSchema
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
-from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage
 from app.models.workflow_package_schedule import (
     WorkflowPackageSchedule,
     WorkflowPackageScheduleFire,
 )
-from app.repositories.agent import AgentRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.report import ReportRepository
 from app.repositories.run import RunRepository
@@ -42,7 +39,6 @@ from app.repositories.run_fork import RunForkRepository
 from app.repositories.run_operation_invocation import RunOperationInvocationRepository
 from app.repositories.run_step import RunStepRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
-from app.schemas.memory import MemoryDecision, MemoryProvenance, MemoryWriteRequest
 from app.schemas.run import (
     RunCreatedRead,
     RunForkCreateRequest,
@@ -57,12 +53,6 @@ from app.schemas.run import (
     RunScheduleProvenanceRead,
     RunStatus,
     RunTargetKind,
-)
-from app.schemas.workflow import (
-    WorkflowLaunchCreateRequest,
-    WorkflowLaunchCreateResponse,
-    WorkflowLaunchRead,
-    WorkflowVersionListRead,
 )
 from app.schemas.workflow_package import (
     WorkflowPackageLaunchCreateRequest,
@@ -89,7 +79,6 @@ from app.services.execution_plan import (
     PackageResolvedModelBinding,
     PackageRuntimeAgentSpec,
 )
-from app.services.execution_plan_builder import ExecutionPlanBuilder, ExecutionPlanBuilderError
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.extension_dependency_service import ExtensionDependencyService
 from app.services.extension_service import ExtensionService
@@ -100,7 +89,6 @@ from app.services.http_operation_execution_service import (
 )
 from app.services.legacy_authoring import raise_legacy_global_authoring_runtime_blocked
 from app.services.memory_follow_up_service import MemoryFollowUpEvaluator, MemoryFollowUpService
-from app.services.memory_service import MemoryLookupContext, MemoryService
 from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_openai import DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI
@@ -147,12 +135,6 @@ class _RuntimeInvocationContext:
 
 
 @dataclass(frozen=True)
-class _PreparedWorkflowLaunch:
-    workflow: Workflow
-    plan: ExecutionPlan
-
-
-@dataclass(frozen=True)
 class _PreparedWorkflowPackageLaunch:
     package: WorkflowPackage
     plan: ExecutionPlan
@@ -161,7 +143,7 @@ class _PreparedWorkflowPackageLaunch:
 
 @dataclass
 class _PreparedAgentInvocation:
-    agent: Agent | PackageRuntimeAgentSpec
+    agent: PackageRuntimeAgentSpec
     output_model: type[BaseModel]
     resolved_input: dict[str, Any]
     invocation: RunAgentInvocation
@@ -203,7 +185,6 @@ class RunService:
             quote_provider=quote_provider,
         )
         self.quote_provider: QuoteProvider | None = self.provider_bundle.quote_provider
-        self.agent_repository = AgentRepository(session)
         self.output_schema_repository = OutputSchemaRepository(session)
         self.report_repository = ReportRepository(session)
         self.run_repository = RunRepository(session)
@@ -218,7 +199,6 @@ class RunService:
         self.run_agent_invocation_repository = RunAgentInvocationRepository(session)
         self.run_fork_repository = RunForkRepository(session)
         self.run_operation_invocation_repository = RunOperationInvocationRepository(session)
-        self.execution_plan_builder = ExecutionPlanBuilder(session)
         self.agent_execution_service = AgentExecutionService(
             self.session_factory,
             provider_bundle=self.provider_bundle,
@@ -398,27 +378,6 @@ class RunService:
         for run in runs:
             self.run_repository.delete(run)
 
-    def get_workflow_launch(
-        self,
-        workflow_id: int,
-        *,
-        version: int | None = None,
-    ) -> WorkflowLaunchRead:
-        del workflow_id, version
-        raise_legacy_global_authoring_runtime_blocked("workflow")
-
-    def list_workflow_versions(self, workflow_id: int) -> WorkflowVersionListRead:
-        del workflow_id
-        raise_legacy_global_authoring_runtime_blocked("workflow")
-
-    def create_workflow_launch(
-        self,
-        workflow_id: int,
-        payload: WorkflowLaunchCreateRequest,
-    ) -> WorkflowLaunchCreateResponse:
-        del workflow_id, payload
-        raise_legacy_global_authoring_runtime_blocked("workflow")
-
     def get_workflow_package_launch(
         self,
         package_id: int,
@@ -504,22 +463,6 @@ class RunService:
     ) -> RunCreatedRead:
         del target_id, input_payload, version
         raise_legacy_global_authoring_runtime_blocked(target_kind)
-
-    def _prepare_workflow_launch(
-        self,
-        workflow_id: int,
-        *,
-        version: int | None,
-    ) -> _PreparedWorkflowLaunch:
-        plan = self.execution_plan_builder.build_target_plan(
-            "workflow",
-            workflow_id,
-            version=version,
-        )
-        workflow = self.execution_plan_builder.workflow_repository.get(plan.target.id)
-        if workflow is None:
-            raise not_found_error("Workflow")
-        return _PreparedWorkflowLaunch(workflow=workflow, plan=plan)
 
     def _prepare_workflow_package_launch(
         self,
@@ -644,33 +587,15 @@ class RunService:
         raise not_found_error("Workflow package workflow")
 
     @staticmethod
-    def _run_target_kind(plan: ExecutionPlan) -> str:
-        if plan.target.kind == "workflow_package":
-            return RunTargetKind.WORKFLOW_PACKAGE.value
-        return plan.target.kind
+    def _run_target_kind(_plan: ExecutionPlan) -> str:
+        return RunTargetKind.WORKFLOW_PACKAGE.value
 
     @staticmethod
-    def _run_storage_target_version(plan: ExecutionPlan) -> int:
-        if plan.target.version is not None:
-            return plan.target.version
-        if plan.target.kind == "workflow_package":
-            return 1
-        raise ValueError(f"Execution plan target {plan.target.kind!r} is missing a version")
+    def _run_storage_target_version(_plan: ExecutionPlan) -> int:
+        return 1
 
     @staticmethod
     def _run_target_fk_identity(plan: ExecutionPlan) -> dict[str, int | None]:
-        if plan.target.kind == "agent":
-            return {
-                "agent_id": plan.target.id,
-                "target_workflow_id": None,
-                "workflow_package_id": None,
-            }
-        if plan.target.kind == "workflow":
-            return {
-                "agent_id": None,
-                "target_workflow_id": plan.target.id,
-                "workflow_package_id": None,
-            }
         return {
             "agent_id": None,
             "target_workflow_id": None,
@@ -1532,7 +1457,6 @@ class RunService:
         run.trace_id = trace_id
         run.error = None
         run.finished_at = utcnow()
-        self._create_post_run_memory_artifact(run.id)
         self.session.commit()
 
     def _run_workflow_package_start_lifecycle(self, run: Run, *, now: datetime) -> None:
@@ -1556,250 +1480,6 @@ class RunService:
         for hook in hooks:
             if hook.on_workflow_package_start is not None:
                 hook.on_workflow_package_start(context)
-
-    def _create_post_run_memory_artifact(self, run_id: int) -> None:
-        run = self._get_run_or_raise(run_id)
-        if run.status != _RUN_STATUS_SUCCEEDED or run.target_kind != "workflow":
-            return
-        policy = self._post_run_memory_policy(run)
-        if policy is None:
-            return
-        source_refs = policy.get("sourceRefs")
-        if not isinstance(source_refs, dict):
-            return
-        slot_outputs = self._hydrate_slot_outputs(run.id)
-        context_ref = self._post_run_memory_context_ref(source_refs, policy)
-        context_invocation = self._post_run_memory_context_invocation(context_ref, run_id=run.id)
-        if context_invocation is None:
-            return
-        agent = self.agent_repository.get_by_key_version(
-            context_invocation.agent_key,
-            context_invocation.agent_version,
-        )
-        if agent is None:
-            return
-        provenance = MemoryProvenance(
-            run_id=run.id,
-            agent_key=context_invocation.agent_key,
-            agent_version=context_invocation.agent_version,
-            agent_name=agent.name,
-            workflow_key=run.target_key,
-            workflow_version=run.target_version,
-            step_id=self._post_run_memory_context_node_id(context_ref, context_invocation),
-            slot=self._post_run_memory_context_slot(context_ref, context_invocation),
-            trace_id=run.trace_id,
-        )
-        write_request = self._post_run_memory_write_request(
-            source_refs,
-            benchmark_symbol_ref=policy.get("benchmarkSymbol"),
-            initial_input=run.input,
-            slot_outputs=slot_outputs,
-            provenance=provenance,
-        )
-        memory_service = MemoryService(
-            self.session,
-            current_context=MemoryLookupContext(
-                run_id=run.id,
-                workflow_key=run.target_key,
-                agent_key=context_invocation.agent_key,
-                run_step_id=context_invocation.run_step_id,
-                run_agent_invocation_id=context_invocation.id,
-                step_id=provenance.step_id,
-                trace_span_id=context_invocation.trace_span_id,
-            ),
-        )
-        _ = memory_service.write_memory(
-            capability_references=agent.capabilities,
-            payload=write_request,
-            commit=False,
-        )
-
-    def _post_run_memory_policy(self, run: Run) -> dict[str, Any] | None:
-        workflow = self.execution_plan_builder.workflow_repository.get_by_key_version(
-            run.target_key,
-            run.target_version,
-        )
-        if workflow is None:
-            return None
-        compiled_graph = workflow.output_spec.get("compiledGraph")
-        if not isinstance(compiled_graph, dict):
-            return None
-        policy = compiled_graph.get("postRunMemory")
-        if not isinstance(policy, dict) or policy.get("enabled") is not True:
-            return None
-        return cast(dict[str, Any], policy)
-
-    def _post_run_memory_write_request(
-        self,
-        source_refs: dict[Any, Any],
-        *,
-        benchmark_symbol_ref: Any | None = None,
-        initial_input: dict[str, Any],
-        slot_outputs: dict[tuple[int, str], Any],
-        provenance: MemoryProvenance,
-    ) -> MemoryWriteRequest:
-        payload: dict[str, Any] = {
-            "ticker": self._resolve_post_run_memory_ref(
-                source_refs["ticker"],
-                initial_input=initial_input,
-                slot_outputs=slot_outputs,
-            ),
-            "decision": MemoryDecision.model_validate(
-                {
-                    "action": self._resolve_post_run_memory_ref(
-                        source_refs["action"],
-                        initial_input=initial_input,
-                        slot_outputs=slot_outputs,
-                    ),
-                    "rationale": self._resolve_post_run_memory_ref(
-                        source_refs["rationale"],
-                        initial_input=initial_input,
-                        slot_outputs=slot_outputs,
-                    ),
-                    "riskSummary": self._resolve_post_run_memory_ref(
-                        source_refs["riskSummary"],
-                        initial_input=initial_input,
-                        slot_outputs=slot_outputs,
-                    ),
-                    "executionPlan": self._resolve_post_run_memory_ref(
-                        source_refs["executionPlan"],
-                        initial_input=initial_input,
-                        slot_outputs=slot_outputs,
-                    ),
-                }
-            ),
-            "provenance": provenance,
-        }
-        if benchmark_symbol_ref is not None:
-            payload["benchmark_symbol"] = self._resolve_post_run_memory_ref(
-                benchmark_symbol_ref,
-                initial_input=initial_input,
-                slot_outputs=slot_outputs,
-            )
-        for source_field, payload_field in (
-            ("portfolioSlug", "portfolio_slug"),
-            ("horizonDays", "horizon_days"),
-            ("confidence", "confidence"),
-            ("decisionSummary", "decision_summary"),
-        ):
-            reference = source_refs.get(source_field)
-            if reference is not None:
-                payload[payload_field] = self._resolve_post_run_memory_ref(
-                    reference,
-                    initial_input=initial_input,
-                    slot_outputs=slot_outputs,
-                )
-        return MemoryWriteRequest.model_validate(payload)
-
-    def _resolve_post_run_memory_ref(
-        self,
-        reference: Any,
-        *,
-        initial_input: dict[str, Any],
-        slot_outputs: dict[tuple[int, str], Any],
-    ) -> Any:
-        if not isinstance(reference, dict):
-            raise RunExecutionError(
-                code="post_run_memory_ref_invalid",
-                message="postRunMemory compiled source reference is invalid",
-            )
-        source_kind = reference.get("source")
-        if source_kind == "inputs":
-            payload: dict[str, Any] = {"from": "input"}
-            if reference.get("path") is not None:
-                payload["path"] = reference["path"]
-            value, _optional_null = self._resolve_source_value(
-                payload,
-                initial_input=initial_input,
-                slot_outputs=slot_outputs,
-            )
-            return value
-        if source_kind == "nodes":
-            payload = {
-                "from": "step",
-                "stepIndex": reference["stepIndex"],
-                "slot": reference["compiledSlot"],
-            }
-            if reference.get("path") is not None:
-                payload["path"] = reference["path"]
-            value, optional_null = self._resolve_source_value(
-                payload,
-                initial_input=initial_input,
-                slot_outputs=slot_outputs,
-            )
-            if optional_null:
-                raise RunExecutionError(
-                    code="post_run_memory_source_null",
-                    message="postRunMemory source resolved to a null optional slot",
-                )
-            return value
-        raise RunExecutionError(
-            code="post_run_memory_ref_invalid",
-            message="postRunMemory compiled source reference is invalid",
-        )
-
-    @staticmethod
-    def _post_run_memory_context_ref(
-        source_refs: dict[Any, Any],
-        policy: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        for field_name in (
-            "action",
-            "rationale",
-            "riskSummary",
-            "executionPlan",
-            "decisionSummary",
-            "ticker",
-        ):
-            reference = source_refs.get(field_name)
-            if isinstance(reference, dict) and reference.get("source") == "nodes":
-                return cast(dict[str, Any], reference)
-        benchmark_ref = policy.get("benchmarkSymbol")
-        if isinstance(benchmark_ref, dict) and benchmark_ref.get("source") == "nodes":
-            return cast(dict[str, Any], benchmark_ref)
-        return None
-
-    def _post_run_memory_context_invocation(
-        self,
-        context_ref: dict[str, Any] | None,
-        *,
-        run_id: int,
-    ) -> RunAgentInvocation | None:
-        if context_ref is None:
-            return None
-        step_index = context_ref.get("stepIndex")
-        slot = context_ref.get("compiledSlot")
-        if step_index is None or slot is None:
-            return None
-        return self.run_agent_invocation_repository.get_by_run_step_slot(
-            run_id,
-            int(step_index),
-            str(slot),
-        )
-
-    @staticmethod
-    def _post_run_memory_context_node_id(
-        context_ref: dict[str, Any] | None,
-        invocation: RunAgentInvocation,
-    ) -> str | None:
-        if context_ref is not None:
-            node_id = context_ref.get("sourceNodeId") or context_ref.get("nodeId")
-            if node_id is not None:
-                return str(node_id)
-        metadata = invocation.graph_metadata or {}
-        node_id = metadata.get("nodeId")
-        return None if node_id is None else str(node_id)
-
-    @staticmethod
-    def _post_run_memory_context_slot(
-        context_ref: dict[str, Any] | None,
-        invocation: RunAgentInvocation,
-    ) -> str:
-        if context_ref is not None:
-            slot = context_ref.get("sourceSlot") or context_ref.get("compiledSlot")
-            if slot is not None:
-                return str(slot)
-        return invocation.slot
 
     def _hydrate_slot_outputs(
         self,
@@ -2675,7 +2355,7 @@ class RunService:
     async def _invoke_agent(
         self,
         *,
-        agent: Agent | PackageRuntimeAgentSpec,
+        agent: PackageRuntimeAgentSpec,
         invocation: RunAgentInvocation,
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
@@ -2733,39 +2413,15 @@ class RunService:
         entry["durationMs"] = duration_ms
         entry["traceSpanId"] = trace_span_id
 
-    def _resolve_runtime_agent(
-        self,
-        plan_agent: ExecutionPlanAgent,
-    ) -> Agent | PackageRuntimeAgentSpec:
-        if plan_agent.package_runtime_agent is not None:
-            return plan_agent.package_runtime_agent
-        agent = self.agent_repository.get_by_key_version(
-            plan_agent.agent_key,
-            plan_agent.agent_version,
-        )
-        if agent is None:
-            raise RunExecutionError(
-                code="run_agent_missing",
-                message=(
-                    f"Agent {plan_agent.agent_key!r} version "
-                    f"{plan_agent.agent_version} was not found"
-                ),
-            )
-        return agent
+    @staticmethod
+    def _resolve_runtime_agent(plan_agent: ExecutionPlanAgent) -> PackageRuntimeAgentSpec:
+        return plan_agent.package_runtime_agent
 
     def _resolve_runtime_agent_output_schema(
         self,
-        agent: Agent | PackageRuntimeAgentSpec,
+        agent: PackageRuntimeAgentSpec,
     ) -> OutputSchema:
-        if isinstance(agent, PackageRuntimeAgentSpec):
-            return self._package_output_schema_candidate(agent.output_schema)
-        output_schema = self.output_schema_repository.get(agent.output_schema_id)
-        if output_schema is None or output_schema.version != agent.output_schema_version:
-            raise RunExecutionError(
-                code="run_output_schema_missing",
-                message=f"Agent {agent.key!r} references a missing output schema version",
-            )
-        return output_schema
+        return self._package_output_schema_candidate(agent.output_schema)
 
     def _resolve_runtime_operation_output_model(
         self,
@@ -2794,9 +2450,7 @@ class RunService:
         return output_schema
 
     @staticmethod
-    def _runtime_agent_input_schema(agent: Agent | PackageRuntimeAgentSpec) -> dict[str, Any]:
-        if isinstance(agent, PackageRuntimeAgentSpec):
-            return agent.input_schema
+    def _runtime_agent_input_schema(agent: PackageRuntimeAgentSpec) -> dict[str, Any]:
         return agent.input_schema
 
     @staticmethod
@@ -2926,36 +2580,14 @@ class RunService:
     @staticmethod
     def _start_trace_session(*, run: Run, plan: ExecutionPlan) -> Any:
         configure_logfire()
-        if plan.target.kind == "workflow":
-            return create_logfire_span(
-                "Workflow run {workflow_key} v{workflow_version} #{run_id}",
-                workflow_id=plan.target.id,
-                workflow_key=plan.target.key,
-                workflow_version=plan.target.version,
-                run_id=run.id,
-                run_status=run.status,
-            )
-        if plan.target.kind == "workflow_package":
-            return create_logfire_span(
-                "Workflow package run {workflow_package_key} snapshot {compiled_hash} #{run_id}",
-                workflow_package_id=plan.target.id,
-                workflow_package_key=plan.target.key,
-                compiled_hash=(
-                    plan.package_ownership.compiled_hash
-                    if plan.package_ownership is not None
-                    else None
-                ),
-                workflow_key=(
-                    plan.package_workflow.key if plan.package_workflow is not None else None
-                ),
-                run_id=run.id,
-                run_status=run.status,
-            )
         return create_logfire_span(
-            "Agent run {agent_key} v{agent_version} #{run_id}",
-            agent_id=plan.target.id,
-            agent_key=plan.target.key,
-            agent_version=plan.target.version,
+            "Workflow package run {workflow_package_key} snapshot {compiled_hash} #{run_id}",
+            workflow_package_id=plan.target.id,
+            workflow_package_key=plan.target.key,
+            compiled_hash=(
+                plan.package_ownership.compiled_hash if plan.package_ownership is not None else None
+            ),
+            workflow_key=plan.package_workflow.key if plan.package_workflow is not None else None,
             run_id=run.id,
             run_status=run.status,
         )
@@ -2965,12 +2597,6 @@ class RunService:
         if isinstance(exc, RunExecutionError):
             return exc
         if isinstance(exc, ApiError):
-            return RunExecutionError(
-                code=exc.code,
-                message=exc.message,
-                details=list(exc.details),
-            )
-        if isinstance(exc, ExecutionPlanBuilderError):
             return RunExecutionError(
                 code=exc.code,
                 message=exc.message,
@@ -3043,19 +2669,6 @@ class RunService:
             "durationMs": None,
             "traceSpanId": None,
         }
-
-    @staticmethod
-    def _to_workflow_launch_read(prepared: _PreparedWorkflowLaunch) -> WorkflowLaunchRead:
-        return WorkflowLaunchRead.model_validate(
-            {
-                "workflowId": prepared.workflow.id,
-                "key": prepared.workflow.key,
-                "version": prepared.workflow.version,
-                "name": prepared.workflow.name,
-                "description": prepared.workflow.description,
-                "inputSchema": prepared.plan.input_schema,
-            }
-        )
 
     def _to_workflow_package_launch_read(
         self,

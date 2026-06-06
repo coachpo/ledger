@@ -8,7 +8,7 @@ from app.services.execution_ownership import PackageExecutionOwnership
 
 ExecutionPlanInputMode = Literal["passthrough", "wired"]
 ExecutionPlanOperationKind = Literal["http"]
-ExecutionPlanTargetKind = Literal["agent", "workflow", "workflow_package"]
+ExecutionPlanTargetKind = Literal["workflow_package"]
 ExecutionPlanSourceKind = Literal["input", "step"]
 
 
@@ -169,10 +169,10 @@ class ExecutionPlanAgent:
     output_schema_id: int
     output_schema_version: int
     wiring: dict[str, ExecutionPlanSource]
+    package_runtime_agent: PackageRuntimeAgentSpec
     optional: bool = False
     input_mode: ExecutionPlanInputMode = "wired"
     graph_metadata: ExecutionPlanGraphMetadata | None = None
-    package_runtime_agent: PackageRuntimeAgentSpec | None = None
 
 
 @dataclass(frozen=True)

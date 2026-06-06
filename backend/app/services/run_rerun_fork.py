@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError, business_rule_error, not_found_error, validation_error
 from app.core.formatting import utcnow
-from app.models.agent import Agent
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
@@ -59,7 +58,7 @@ _RUN_STATUS_SUCCEEDED = "succeeded"
 _RUN_STATUS_FAILED = "failed"
 
 _WorkflowPackageSnapshotResolver = Callable[[Run], RunWorkflowPackageSnapshot]
-_RuntimeAgentResolver = Callable[[ExecutionPlanAgent], Agent | PackageRuntimeAgentSpec]
+_RuntimeAgentResolver = Callable[[ExecutionPlanAgent], PackageRuntimeAgentSpec]
 
 
 @dataclass(frozen=True)
@@ -661,9 +660,7 @@ class RunRerunForkPreparation:
         return operation.optional and operation.status in {_RUN_STATUS_FAILED, "skipped"}
 
     @staticmethod
-    def _runtime_agent_input_schema(agent: Agent | PackageRuntimeAgentSpec) -> dict[str, Any]:
-        if isinstance(agent, PackageRuntimeAgentSpec):
-            return agent.input_schema
+    def _runtime_agent_input_schema(agent: PackageRuntimeAgentSpec) -> dict[str, Any]:
         return agent.input_schema
 
     def _build_input_model(
