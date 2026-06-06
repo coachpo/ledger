@@ -232,6 +232,7 @@ class Run(IdMixin, TimestampMixin, Base):
         uselist=False,
     )
 
+
 def _non_empty_string(value: object) -> str | None:
     if not isinstance(value, str):
         return None

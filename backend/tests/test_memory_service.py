@@ -103,10 +103,7 @@ def _seed_run(session: Session, *, run_id: int | None = None) -> Run:
         workflow_description="",
         manifest_hash="a" * 64,
         compiled_hash="b" * 64,
-        manifest_source=(
-            "apiVersion: signaldeck.workflowPackage/v1\n"
-            f"key: {package_key}\n"
-        ),
+        manifest_source=("apiVersion: signaldeck.workflowPackage/v1\n" f"key: {package_key}\n"),
         package_definition={"metadata": {"key": package_key}},
         compiled_plan={"workflows": [{"key": "platform_graph_daily_review"}]},
         extension_dependencies=[],

@@ -17,7 +17,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Task              | Location                                                                                            | Notes                                                                                               |
 | ----------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | Extensions route  | `list.tsx`                                                                                          | slim extension inventory, status badges, toggle actions, and route-level loading/error/empty states |
-| State hooks       | `../../hooks/use-extensions.ts`                                                                     | `/api/extensions` reads, toggles, and finance cache invalidation                                    |
+| State hooks       | `../../hooks/use-extensions.ts`                                                                     | `/api/extensions` reads, toggles, tool-cache invalidation, and finance-only cache invalidation      |
 | Runtime ownership | `../../extensions/AGENTS.md`, `../../extensions/runtime.tsx`, `../../extensions/runtime-helpers.ts` | runtime route gates, nav assembly, and tool filtering remain outside the page layer                 |
 | Route coverage    | `list.test.tsx`                                                                                     | route rendering, toggle behavior, and bundled-state expectations                                    |
 
@@ -28,7 +28,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Use `PlatformResourceList` and `PlatformResourceCard` for the inventory shell so this page stays visually aligned with other platform/system routes.
 - Treat this page as a system state surface only. Route/nav/tool visibility still belongs to the extension runtime layer.
 - Keep `/extensions` aligned with `systemState` route metadata: scroll shell, `route-extensions` main, loading/ready/error/empty states, and no extension-owned disabled route shell.
-- Regression coverage must include enabled, disabled, and re-enabled Finance Workspace states for sidebar nav, direct finance routes, and tool authoring discovery.
+- Regression coverage must include enabled, disabled, and re-enabled Finance Workspace states for sidebar nav and direct finance routes, plus mixed Finance Workspace and Digital Oracle states for tool authoring discovery. Digital Oracle must remain route-less and nav-less.
 
 ## ANTI-PATTERNS
 

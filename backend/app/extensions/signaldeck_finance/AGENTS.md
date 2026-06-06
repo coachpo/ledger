@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/backend/AGENTS.md`, and `/backend/app/extensions/AGENTS.md`. This file covers the statically resident `signaldeck.finance` extension only.
 
 ## OVERVIEW
-`signaldeck_finance/` owns the current first-party Finance Workspace behavior: preserved `/api/v1` portfolio/template/report routes, finance provider factories, finance runtime tools, report lookup, and historical agent-memory report readers.
+`signaldeck_finance/` owns the current first-party Finance Workspace behavior: preserved `/api/v1` portfolio/template/report routes, finance provider factories, finance runtime tools, report lookup, and historical agent-memory report readers. It does not own Digital Oracle prediction markets, SEC filings, or market sentiment runtime tools.
 
 Treat this folder as extension-owned product logic, not as a staging area for generic platform behavior. If a finance-specific feature becomes a shared platform contract, move that ownership intentionally and update registries, gates, docs, and tests together.
 
@@ -25,7 +25,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 ## CONVENTIONS
 - `FINANCE_WORKSPACE_EXTENSION_KEY` stays `signaldeck.finance` and is the owner key for finance routes, tools, providers, and hooks.
 - Finance route registrations must remain guarded by `require_extension_enabled()`.
-- Runtime tool keys and OpenAI function names stay stable even though their specs and executors are registered through this extension.
+- Finance runtime tool keys and OpenAI function names stay stable while their specs and executors are registered through this extension. Digital Oracle tool keys and OpenAI function names also stay stable, but their specs and executors belong to `signaldeck.digital_oracle`.
 
 ## ANTI-PATTERNS
 - Do not move finance service factories back into generic API dependencies without preserving extension ownership and gating.

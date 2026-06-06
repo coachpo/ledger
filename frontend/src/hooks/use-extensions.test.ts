@@ -28,7 +28,10 @@ vi.mock("@/lib/api/extensions", () => ({
   toggleExtension: vi.fn(),
 }));
 
-import { FINANCE_WORKSPACE_EXTENSION_KEY } from "@/extensions";
+import {
+  DIGITAL_ORACLE_EXTENSION_KEY,
+  FINANCE_WORKSPACE_EXTENSION_KEY,
+} from "@/extensions";
 import { listExtensions, toggleExtension } from "@/lib/api/extensions";
 import { queryKeys } from "@/lib/query-keys";
 import type { ExtensionRead } from "@/lib/types/extension";
@@ -42,6 +45,12 @@ type CapturedMutationOptions = {
 const financeExtension: ExtensionRead = {
   key: FINANCE_WORKSPACE_EXTENSION_KEY,
   label: "Finance Workspace",
+  enabled: false,
+};
+
+const digitalOracleExtension: ExtensionRead = {
+  key: DIGITAL_ORACLE_EXTENSION_KEY,
+  label: "Digital Oracle Runtime",
   enabled: false,
 };
 
@@ -64,23 +73,31 @@ describe("useExtensions", () => {
     );
   });
 
-  it("invalidates extension, finance, and tool caches after finance state changes", async () => {
+  it("invalidates extension, tool, and finance caches after finance state changes", async () => {
     vi.mocked(toggleExtension).mockResolvedValue(financeExtension);
     useToggleExtension();
 
-    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    const mutationOptions =
+      reactQueryState.capturedMutationOptions as CapturedMutationOptions;
     await mutationOptions.mutationFn?.({
       extensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
       payload: { enabled: false },
     });
-    expect(toggleExtension).toHaveBeenCalledWith(FINANCE_WORKSPACE_EXTENSION_KEY, {
-      enabled: false,
-    });
+    expect(toggleExtension).toHaveBeenCalledWith(
+      FINANCE_WORKSPACE_EXTENSION_KEY,
+      {
+        enabled: false,
+      },
+    );
 
     await mutationOptions.onSuccess?.(financeExtension, {});
 
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledTimes(5);
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.extensions.all,
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.tools.all,
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.portfolios.all,
@@ -91,8 +108,39 @@ describe("useExtensions", () => {
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.reports.all,
     });
+  });
+
+  it("invalidates only extension and tool caches after Digital Oracle state changes", async () => {
+    vi.mocked(toggleExtension).mockResolvedValue(digitalOracleExtension);
+    useToggleExtension();
+
+    const mutationOptions =
+      reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await mutationOptions.mutationFn?.({
+      extensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
+      payload: { enabled: false },
+    });
+    expect(toggleExtension).toHaveBeenCalledWith(DIGITAL_ORACLE_EXTENSION_KEY, {
+      enabled: false,
+    });
+
+    await mutationOptions.onSuccess?.(digitalOracleExtension, {});
+
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledTimes(2);
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.extensions.all,
+    });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.tools.all,
+    });
+    expect(reactQueryState.invalidateQueriesMock).not.toHaveBeenCalledWith({
+      queryKey: queryKeys.portfolios.all,
+    });
+    expect(reactQueryState.invalidateQueriesMock).not.toHaveBeenCalledWith({
+      queryKey: queryKeys.templates.all,
+    });
+    expect(reactQueryState.invalidateQueriesMock).not.toHaveBeenCalledWith({
+      queryKey: queryKeys.reports.all,
     });
   });
 });

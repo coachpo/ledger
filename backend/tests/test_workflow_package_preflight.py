@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
 from app.core.formatting import utcnow
+from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.model_connection import ModelConnection
 from app.models.workflow_package import WorkflowPackage
@@ -81,10 +82,10 @@ def _expected_digital_oracle_disabled_tool_errors() -> list[dict[str, object]]:
             "field": f"spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[{index}]",
             "issue": (
                 f"Server-declared tool {tool_key!r} is disabled because extension "
-                f"{FINANCE_WORKSPACE_EXTENSION_KEY!r} is disabled"
+                f"{DIGITAL_ORACLE_EXTENSION_KEY!r} is disabled"
             ),
             "code": "extension_disabled",
-            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
             "surface": f"tool.{tool_key}",
         }
         for index, tool_key in enumerate(sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS))
@@ -97,7 +98,7 @@ kind: WorkflowPackage
 metadata:
   key: digital_oracle_phase1_fixture
   name: Digital Oracle Phase 1 Fixture
-  description: Deterministic package fixture for finance-owned phase-1 tools.
+  description: Deterministic package fixture for Digital Oracle phase-1 tools.
 spec:
   inputs:
     type: object
@@ -108,7 +109,7 @@ spec:
   capabilityProfiles:
     - key: digital_oracle_phase1_tools
       name: Digital Oracle Phase 1 Tools
-      description: Grants finance-owned phase-1 research tools.
+      description: Grants Digital Oracle-owned phase-1 research tools.
       toolKeys:
         - signaldeck.prediction_markets.lookup
         - signaldeck.sec_filings.lookup
@@ -794,7 +795,7 @@ def test_preflight_accepts_fixture_report_lookup_and_core_memory_tool_keys(
     assert "kind: sequence" in _package_source()
 
 
-def test_preflight_accepts_finance_server_declared_digital_oracle_toolKeys(
+def test_preflight_accepts_digital_oracle_server_declared_toolKeys(
     session_factory: sessionmaker[Session],
 ) -> None:
     compiled = compile_workflow_package_manifest(_digital_oracle_phase1_package_source())
@@ -825,13 +826,9 @@ def test_preflight_accepts_finance_server_declared_digital_oracle_toolKeys(
     )
     assert extension_dependencies == [
         {
-            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
             "surfaces": sorted(
                 [
-                    "hook.workflowPackageStart",
-                    "provider.fallbackQuote",
-                    "provider.quote",
-                    "provider.socialSentiment",
                     *[f"runtime.tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
                     *[f"tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
                 ]
@@ -1551,7 +1548,43 @@ def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
         )
 
 
-def test_preflight_blocks_digital_oracle_toolKeys_when_finance_extension_disabled(
+def _disable_digital_oracle_extension(session_factory: sessionmaker[Session]) -> None:
+    with session_factory() as session:
+        _ = ExtensionService(session).set_extension_enabled(
+            DIGITAL_ORACLE_EXTENSION_KEY,
+            ExtensionToggleRequest(enabled=False),
+        )
+
+
+def test_preflight_allows_digital_oracle_toolKeys_when_finance_extension_disabled(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(
+        session_factory,
+        protocol_profile="openai_chat_completions",
+        capabilities=_capabilities_with_statuses(),
+        last_test_ok=True,
+    )
+    response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _digital_oracle_phase1_package_source()},
+    )
+    assert response.status_code == 201, response.json()
+    _disable_finance_extension(session_factory)
+
+    preflight = client.post(
+        f"/api/workflow-packages/{response.json()['id']}/preflight?workflowKey=research"
+    )
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is True
+    assert body["blockingErrors"] == []
+    assert body["warnings"] == []
+
+
+def test_preflight_blocks_digital_oracle_toolKeys_when_digital_oracle_extension_disabled(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -1561,7 +1594,7 @@ def test_preflight_blocks_digital_oracle_toolKeys_when_finance_extension_disable
         json={"manifestSource": _digital_oracle_phase1_package_source()},
     )
     assert response.status_code == 201, response.json()
-    _disable_finance_extension(session_factory)
+    _disable_digital_oracle_extension(session_factory)
 
     preflight = client.post(
         f"/api/workflow-packages/{response.json()['id']}/preflight?workflowKey=research"
@@ -1619,7 +1652,7 @@ def test_preflight_blocks_tradingagents_advisory_research_when_extension_disable
     )
 
 
-def test_schedule_run_now_surfaces_extension_disabled_preflight_failure(
+def test_schedule_run_now_surfaces_digital_oracle_extension_disabled_preflight_failure(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -1648,7 +1681,7 @@ def test_schedule_run_now_surfaces_extension_disabled_preflight_failure(
     )
     assert schedule.status_code == 201, schedule.json()
     schedule_id = int(schedule.json()["id"])
-    _disable_finance_extension(session_factory)
+    _disable_digital_oracle_extension(session_factory)
 
     run_now = client.post(
         f"/api/schedules/{schedule_id}/run-now",
@@ -1664,7 +1697,7 @@ def test_schedule_run_now_surfaces_extension_disabled_preflight_failure(
     details = cast(list[dict[str, object]], body["details"])
     assert any(
         error.get("code") == "extension_disabled"
-        and error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
+        and error.get("extensionKey") == DIGITAL_ORACLE_EXTENSION_KEY
         and str(error.get("surface", "")).startswith("tool.signaldeck.")
         for error in details
     )

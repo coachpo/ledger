@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.db import upgrades
 from app.db.session import init_db
 from app.db.upgrades import _ensure_agent_model_connection_snapshot_support, upgrade_legacy_schema
+from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.mcp_server import McpServer
 from app.reset_seed import (
@@ -344,12 +345,42 @@ _TRADINGAGENTS_FIXTURE_PATH = (
     / "tradingagents_advisory_research.yaml"
 )
 _DIGITAL_ORACLE_FIXTURE_PATH = Path(__file__).parents[2] / "demo" / "digital_oracle_researcher.yaml"
+_DIGITAL_ORACLE_DRAFT_FIXTURE_PATH = (
+    Path(__file__).parent
+    / "fixtures"
+    / "workflow_packages"
+    / "digital_oracle_researcher.draft.yaml"
+)
 _TRADINGAGENTS_PRESET_SQL_PATH = (
     Path(__file__).parents[1] / "app" / "db" / "tradingagents_advisory_research.sql"
 )
 _DIGITAL_ORACLE_PRESET_SQL_PATH = (
     Path(__file__).parents[1] / "app" / "db" / "digital_oracle_researcher.sql"
 )
+_DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES = [
+    {
+        "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
+        "fields": [
+            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
+            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
+            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
+        ],
+        "surfaces": [
+            "runtime.tool.signaldeck.market_sentiment.lookup",
+            "runtime.tool.signaldeck.prediction_markets.lookup",
+            "runtime.tool.signaldeck.sec_filings.lookup",
+            "tool.signaldeck.market_sentiment.lookup",
+            "tool.signaldeck.prediction_markets.lookup",
+            "tool.signaldeck.sec_filings.lookup",
+        ],
+    }
+]
+_DIGITAL_ORACLE_FORBIDDEN_DEPENDENCY_SURFACES = {
+    "hook.workflowPackageStart",
+    "provider.fallbackQuote",
+    "provider.quote",
+    "provider.socialSentiment",
+}
 _TRADINGAGENTS_LAUNCH_METADATA_BY_WORKFLOW_KEY = {
     "advisory_research": (
         "Advisory Research",
@@ -3895,8 +3926,11 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
 
 def test_init_db_seeds_digital_oracle_preset_without_secret_state(database_url: str) -> None:
     fixture_source = _DIGITAL_ORACLE_FIXTURE_PATH.read_text(encoding="utf-8")
+    draft_fixture_source = _DIGITAL_ORACLE_DRAFT_FIXTURE_PATH.read_text(encoding="utf-8")
     preset_sql = _DIGITAL_ORACLE_PRESET_SQL_PATH.read_text(encoding="utf-8")
     fixture_compiled = compile_workflow_package_manifest(fixture_source)
+    assert "finance-owned" not in fixture_source
+    assert "finance-owned" not in draft_fixture_source
     assert "INSERT INTO workflow_packages" in preset_sql
     assert "ON CONFLICT (key) DO UPDATE" in preset_sql
     assert "INSERT INTO model_connections" not in preset_sql
@@ -3974,12 +4008,13 @@ def test_init_db_seeds_digital_oracle_preset_without_secret_state(database_url: 
         assert row["package_definition"] == expected_package_definition
         assert row["compiled_plan"] == expected_compiled_plan
         extension_dependencies = cast(list[dict[str, object]], row["extension_dependencies"])
-        assert extension_dependencies
-        assert extension_dependencies[0]["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-        assert "runtime.tool.signaldeck.prediction_markets.lookup" in cast(
-            list[str],
-            extension_dependencies[0]["surfaces"],
+        assert extension_dependencies == _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES
+        assert FINANCE_WORKSPACE_EXTENSION_KEY not in json.dumps(
+            extension_dependencies,
+            sort_keys=True,
         )
+        surfaces = set(cast(list[str], extension_dependencies[0]["surfaces"]))
+        assert surfaces.isdisjoint(_DIGITAL_ORACLE_FORBIDDEN_DEPENDENCY_SURFACES)
 
         serialized_preset = (
             fixture_source
@@ -3987,6 +4022,7 @@ def test_init_db_seeds_digital_oracle_preset_without_secret_state(database_url: 
             + json.dumps(row["compiled_plan"], sort_keys=True)
         )
         for forbidden_value in (
+            "finance-owned",
             "encrypted",
             "requiredBindings",
             "secretPayload",
@@ -4247,7 +4283,6 @@ def test_init_db_repairs_reports_columns_before_non_package_run_report_cleanup(
         assert {"source", "metadata"} <= report_columns
     finally:
         engine.dispose()
-
 
 
 def test_init_db_deletes_legacy_skill_storage_and_global_agents_idempotently(
@@ -6128,23 +6163,24 @@ def test_init_db_creates_extension_state_table_and_default_row(database_url: str
         assert "ck_extension_states_version_positive" not in check_constraints
 
         with engine.connect() as connection:
-            row = (
+            rows = (
                 connection.execute(
                     text(
                         """
                     SELECT extension_key, enabled
                     FROM extension_states
-                    WHERE extension_key = :extension_key
+                    ORDER BY extension_key ASC
                     """
-                    ),
-                    {"extension_key": FINANCE_WORKSPACE_EXTENSION_KEY},
+                    )
                 )
                 .mappings()
-                .one()
+                .all()
             )
 
-        assert row["extension_key"] == FINANCE_WORKSPACE_EXTENSION_KEY
-        assert row["enabled"] is True
+        assert rows == [
+            {"extension_key": DIGITAL_ORACLE_EXTENSION_KEY, "enabled": True},
+            {"extension_key": FINANCE_WORKSPACE_EXTENSION_KEY, "enabled": True},
+        ]
     finally:
         engine.dispose()
 
@@ -6227,10 +6263,8 @@ def test_upgrade_legacy_schema_extension_state_is_idempotent_and_preserves_toggl
     assert "uq_extension_states_extension_key" not in unique_constraints
     assert "ck_extension_states_version_positive" not in check_constraints
     assert rows == [
-        {
-            "extension_key": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "enabled": False,
-        }
+        {"extension_key": DIGITAL_ORACLE_EXTENSION_KEY, "enabled": True},
+        {"extension_key": FINANCE_WORKSPACE_EXTENSION_KEY, "enabled": False},
     ]
 
 
@@ -6285,10 +6319,8 @@ def test_upgrade_legacy_schema_extension_state_deduplicates_legacy_rows(
         )
 
     assert rows == [
-        {
-            "extension_key": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "enabled": True,
-        }
+        {"extension_key": DIGITAL_ORACLE_EXTENSION_KEY, "enabled": True},
+        {"extension_key": FINANCE_WORKSPACE_EXTENSION_KEY, "enabled": True},
     ]
 
 

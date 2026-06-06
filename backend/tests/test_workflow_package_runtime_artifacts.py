@@ -433,6 +433,8 @@ def test_workflow_package_run_requires_run_owned_snapshot(
         with pytest.raises(ValueError, match="run-owned executable snapshot"):
             session.commit()
         session.rollback()
+
+
 def test_workflow_package_run_read_requires_snapshot_provenance() -> None:
     payload = _run_read_payload(target_kind="workflowPackage")
     with pytest.raises(ValidationError):

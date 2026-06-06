@@ -31,13 +31,18 @@ export function useExtension(extensionKey: string) {
   };
 }
 
-export function invalidateFinanceWorkspaceExtensionCaches(queryClient: QueryClient) {
+export function invalidateExtensionToolStateCaches(queryClient: QueryClient) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.extensions.all }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.platform.tools.all }),
+  ]);
+}
+
+export function invalidateFinanceWorkspaceExtensionCaches(queryClient: QueryClient) {
+  return Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.portfolios.all }),
     queryClient.invalidateQueries({ queryKey: queryKeys.templates.all }),
     queryClient.invalidateQueries({ queryKey: queryKeys.reports.all }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.platform.tools.all }),
   ]);
 }
 
@@ -53,11 +58,12 @@ export function useToggleExtension() {
       payload: ExtensionToggleRequest;
     }) => toggleExtension(extensionKey, { enabled: payload.enabled }),
     onSuccess: async (extension) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.platform.extensions.all });
-
-      if (extension.key === FINANCE_WORKSPACE_EXTENSION_KEY) {
-        await invalidateFinanceWorkspaceExtensionCaches(queryClient);
-      }
+      await Promise.all([
+        invalidateExtensionToolStateCaches(queryClient),
+        extension.key === FINANCE_WORKSPACE_EXTENSION_KEY
+          ? invalidateFinanceWorkspaceExtensionCaches(queryClient)
+          : Promise.resolve(),
+      ]);
     },
   });
 }

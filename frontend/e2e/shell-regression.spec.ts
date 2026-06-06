@@ -257,31 +257,20 @@ async function expectInspectorContract(
   if (route.routeTestId === "route-run-detail") {
     if (width < 768) {
       await expect(page.getByTestId("runs-inspection-workspace")).toHaveAttribute(
-        "data-console-layout",
-        "sheet",
+        "data-run-mode",
+        "outputs",
       );
-      await expect(page.getByTestId("runs-inspection-sheet-layout")).toHaveAttribute(
-        "data-inspector-mode",
-        "sheet",
-      );
-      await expect(page.getByTestId("runs-inspection-split-layout")).toHaveCount(0);
-      await expect(page.getByTestId("runs-mobile-inspector-trigger")).toBeVisible();
-      await expect(page.getByTestId("runs-evidence-viewer")).toHaveCount(0);
-      await page.getByTestId("runs-mobile-inspector-trigger").click();
-      await expect(page.getByTestId("runs-evidence-viewer")).toBeVisible();
-      await expect(page.getByTestId("split-inspector-right-pane")).toHaveCount(0);
+      await expect(page.getByTestId("runs-inspection-workspace")).toBeVisible();
+      await expect(page.getByTestId("runs-detail-tabs")).toBeVisible();
       return;
     }
 
     await expect(page.getByTestId("runs-inspection-workspace")).toHaveAttribute(
-      "data-console-layout",
-      "split",
+      "data-run-mode",
+      "outputs",
     );
-    await expect(
-      page.getByTestId("runs-inspection-split-layout"),
-    ).toHaveAttribute("data-panel-group-direction", "horizontal");
-    await expect(page.getByTestId("runs-tab-console")).toBeVisible();
-    await expect(page.getByTestId("runs-evidence-viewer")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-tabs")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-tab-panel-output")).toBeVisible();
     return;
   }
 
@@ -338,7 +327,7 @@ test.describe("Unified shell responsive regression matrix", () => {
         routeTestId: "route-extensions",
         shellMode: "scroll",
         url: "/extensions",
-        widthMode: "compact",
+        widthMode: "wide",
       },
       {
         archetype: "inventory",

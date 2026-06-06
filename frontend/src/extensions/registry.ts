@@ -1,11 +1,16 @@
 import type { FrontendExtensionDefinition } from "./types";
 import {
+  digitalOracleFrontendExtension,
+  DIGITAL_ORACLE_EXTENSION_KEY,
+} from "./signaldeck-digital-oracle";
+import {
   financeWorkspaceFrontendExtension,
   FINANCE_WORKSPACE_EXTENSION_KEY,
 } from "./signaldeck-finance";
 
 export const bundledFrontendExtensions = {
   [FINANCE_WORKSPACE_EXTENSION_KEY]: financeWorkspaceFrontendExtension,
+  [DIGITAL_ORACLE_EXTENSION_KEY]: digitalOracleFrontendExtension,
 } as const satisfies Record<string, FrontendExtensionDefinition>;
 
 export type BundledFrontendExtensionKey = keyof typeof bundledFrontendExtensions;

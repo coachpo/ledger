@@ -15,30 +15,30 @@ from app.agents.runtime_tools.types import (
     RuntimeToolWarning,
 )
 from app.core.config import Settings
-from app.extensions.signaldeck_finance.digital_oracle.config import MarketSentimentIndicator
-from app.extensions.signaldeck_finance.digital_oracle.factory import (
+from app.extensions.signaldeck_digital_oracle.config import MarketSentimentIndicator
+from app.extensions.signaldeck_digital_oracle.factory import (
     create_digital_oracle_phase1_provider_bundle,
     create_market_sentiment_provider,
 )
-from app.extensions.signaldeck_finance.digital_oracle.mappers import map_market_sentiment_result
-from app.extensions.signaldeck_finance.digital_oracle.service import DigitalOraclePhase1Service
-from app.extensions.signaldeck_finance.digital_oracle.types import (
+from app.extensions.signaldeck_digital_oracle.mappers import map_market_sentiment_result
+from app.extensions.signaldeck_digital_oracle.ownership import (
+    DIGITAL_ORACLE_DENIED_CODE,
+    DIGITAL_ORACLE_DENIED_MESSAGES,
+    DIGITAL_ORACLE_EXTENSION_KEY,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_types import MARKET_SENTIMENT_LOOKUP_TOOL_KEY
+from app.extensions.signaldeck_digital_oracle.service import DigitalOraclePhase1Service
+from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleMarketSentimentProvider,
     DigitalOracleMarketSentimentProviderQuery,
     DigitalOracleMarketSentimentProviderResult,
     DigitalOracleMarketSentimentQuery,
     DigitalOracleProviderError,
 )
-from app.extensions.signaldeck_finance.ownership import (
-    FINANCE_WORKSPACE_DENIED_CODE,
-    FINANCE_WORKSPACE_DENIED_MESSAGES,
-    FINANCE_WORKSPACE_EXTENSION_KEY,
-)
-from app.extensions.signaldeck_finance.runtime_types import MARKET_SENTIMENT_LOOKUP_TOOL_KEY
 
 MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_market_sentiment_lookup"
-MARKET_SENTIMENT_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
-MARKET_SENTIMENT_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
+MARKET_SENTIMENT_LOOKUP_ACCESS_DENIED_CODE = DIGITAL_ORACLE_DENIED_CODE
+MARKET_SENTIMENT_LOOKUP_ACCESS_DENIED_MESSAGE = DIGITAL_ORACLE_DENIED_MESSAGES[
     MARKET_SENTIMENT_LOOKUP_TOOL_KEY
 ]
 
@@ -478,7 +478,7 @@ MARKET_SENTIMENT_LOOKUP_TOOL_SPEC = RuntimeToolSpec(
     denied_message=MARKET_SENTIMENT_LOOKUP_ACCESS_DENIED_MESSAGE,
     parser=parse_market_sentiment_lookup_arguments,
     executor=execute_market_sentiment_lookup,
-    owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
+    owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
 )
 
 

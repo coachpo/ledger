@@ -16,13 +16,19 @@ from app.agents.runtime_tools.types import (
 )
 from app.core.config import Settings
 from app.core.formatting import normalize_symbol, to_utc
-from app.extensions.signaldeck_finance.digital_oracle.factory import (
+from app.extensions.signaldeck_digital_oracle.factory import (
     create_digital_oracle_phase1_provider_bundle,
     create_sec_filings_provider,
 )
-from app.extensions.signaldeck_finance.digital_oracle.mappers import map_sec_filings_result
-from app.extensions.signaldeck_finance.digital_oracle.service import DigitalOraclePhase1Service
-from app.extensions.signaldeck_finance.digital_oracle.types import (
+from app.extensions.signaldeck_digital_oracle.mappers import map_sec_filings_result
+from app.extensions.signaldeck_digital_oracle.ownership import (
+    DIGITAL_ORACLE_DENIED_CODE,
+    DIGITAL_ORACLE_DENIED_MESSAGES,
+    DIGITAL_ORACLE_EXTENSION_KEY,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_types import SEC_FILINGS_LOOKUP_TOOL_KEY
+from app.extensions.signaldeck_digital_oracle.service import DigitalOraclePhase1Service
+from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleProviderError,
     DigitalOracleSecFiling,
     DigitalOracleSecFilingsProvider,
@@ -30,16 +36,10 @@ from app.extensions.signaldeck_finance.digital_oracle.types import (
     DigitalOracleSecFilingsProviderResult,
     DigitalOracleSecFilingsQuery,
 )
-from app.extensions.signaldeck_finance.ownership import (
-    FINANCE_WORKSPACE_DENIED_CODE,
-    FINANCE_WORKSPACE_DENIED_MESSAGES,
-    FINANCE_WORKSPACE_EXTENSION_KEY,
-)
-from app.extensions.signaldeck_finance.runtime_types import SEC_FILINGS_LOOKUP_TOOL_KEY
 
 SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_sec_filings_lookup"
-SEC_FILINGS_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
-SEC_FILINGS_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
+SEC_FILINGS_LOOKUP_ACCESS_DENIED_CODE = DIGITAL_ORACLE_DENIED_CODE
+SEC_FILINGS_LOOKUP_ACCESS_DENIED_MESSAGE = DIGITAL_ORACLE_DENIED_MESSAGES[
     SEC_FILINGS_LOOKUP_TOOL_KEY
 ]
 
@@ -624,7 +624,7 @@ SEC_FILINGS_LOOKUP_TOOL_SPEC = RuntimeToolSpec(
     denied_message=SEC_FILINGS_LOOKUP_ACCESS_DENIED_MESSAGE,
     parser=parse_sec_filings_lookup_arguments,
     executor=execute_sec_filings_lookup,
-    owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
+    owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
 )
 
 

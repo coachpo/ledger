@@ -16,7 +16,7 @@
 
 ## OVERVIEW
 
-`src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, statically resident extension state page, extension-gated portfolio/template/report pages, and the package-first platform pages for Workflow Packages, Scheduled Tasks, Model Connections, Memory, and Runs.
+`src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, statically resident extension state page, extension-gated portfolio/template/report pages, and the package-first platform pages for Workflow Packages, Scheduled Tasks, Model Connections, Memory, and Runs. Digital Oracle is visible only as extension state and package-authoring tools, not as a route or nav surface.
 
 Extension model: statically resident extension-gated route families.
 
@@ -69,7 +69,7 @@ src/pages/
 - Link versus button semantics are required. Use links for navigation to real URLs, including row/card open actions. Use buttons for mutations, dialogs, menus, sorting, toggles, and transient UI state.
 - Static tables stay static. Row, cell, sort, selection, and trailing actions must be explicit links, checkboxes, or buttons inside the table, never pointer-only row or cell widgets.
 - Search, filter, and form controls need programmatic labels. Placeholder-only labeling is not enough for route-critical controls.
-- Extension-owned routes render through runtime gates. Direct links to disabled Finance Workspace routes should show the deterministic disabled state, while platform/system routes and tools remain available according to extension-runtime filtering.
+- Extension-owned routes render through runtime gates. Direct links to disabled Finance Workspace routes should show the deterministic disabled state, while platform/system routes and tools remain available according to extension-runtime filtering. Digital Oracle contributes no route gates because it has no routes or nav entries in this upgrade.
 - Route shells must be mobile contained. Long keys, hashes, URLs, JSON, markdown, tables, and badges need `min-w-0`, wrapping, clipping, or internal scroll so the document does not gain horizontal overflow.
 - Light and dark themes share the same route semantics. Theme checks should verify representative route chrome and content remain visible without adding route-local color-mode state.
 
@@ -92,7 +92,7 @@ src/pages/
 - `src/routes.test.tsx` guards metadata coverage for every registered route, route archetypes, state variants, shell mode ownership, product-owned 404/error routing, removed-route fallbacks, and extension contribution filtering.
 - `src/components/layout.test.tsx` guards sidebar grouping, breadcrumb labels, extension nav hide/show/restore behavior, the single page `<main>`, and metadata-owned full-height wrapping.
 - `e2e/navigation.spec.ts` covers primary nav, route shell metadata in the browser, removed nav absence, unknown-route 404 shell, link/button semantics, mobile overflow, and representative dark-mode chrome.
-- `e2e/extensions.spec.ts` covers enabled, disabled, and re-enabled Finance Workspace states for nav, direct routes, and tool authoring discovery.
+- `e2e/extensions.spec.ts` covers enabled, disabled, and re-enabled Finance Workspace states for nav and direct routes, plus mixed Finance Workspace and Digital Oracle states for tool authoring discovery.
 - `e2e/reports.spec.ts` covers seeded report flows plus representative empty and API-error list states for the finance inventory archetype.
 - `e2e/workflow-packages.spec.ts` covers package-first authoring, import/export, launch, run provenance, and wide payload overflow in the run-detail console.
 - `e2e/scheduled-tasks.spec.ts` covers scheduled package-run automation, fire history, delete confirmation and post-delete absence states, and run-now links into run detail.

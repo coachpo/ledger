@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, TypeVar
+from importlib import import_module
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 from app.extensions import BundledApiRouterContribution, BundledServerDeclaredToolContribution
 from app.extensions.signaldeck_finance.ownership import (
@@ -17,27 +18,23 @@ from app.services.execution_providers import (
 )
 from app.services.run_lifecycle import ExtensionRunLifecycleHooks
 
-# isort: off
-from .signaldeck_finance.registrars import (  # pyright: ignore[reportMissingImports]
-    load_api_router_contributions as _raw_load_finance_api_router_contributions,  # pyright: ignore[reportUnknownVariableType]
-)
-from .signaldeck_finance.registrars import (  # pyright: ignore[reportMissingImports]
-    load_execution_provider_bundle as _raw_load_finance_execution_provider_bundle,  # pyright: ignore[reportUnknownVariableType]
-)
-from .signaldeck_finance.registrars import (  # pyright: ignore[reportMissingImports]
-    load_run_lifecycle_hooks as _raw_load_finance_run_lifecycle_hooks,  # pyright: ignore[reportUnknownVariableType]
-)
-from .signaldeck_finance.registrars import (  # pyright: ignore[reportMissingImports]
-    load_runtime_tool_contributions as _raw_load_finance_runtime_tool_contributions,  # pyright: ignore[reportUnknownVariableType]
-)
-from .signaldeck_finance.registrars import (  # pyright: ignore[reportMissingImports]
-    load_server_declared_tool_contributions as _raw_load_finance_server_declared_tool_contributions,  # pyright: ignore[reportUnknownVariableType]
-)
-
-# isort: on
-
 if TYPE_CHECKING:
     from app.agents.runtime_tools.types import RuntimeToolSpec
+
+
+class _DigitalOracleOwnershipModule(Protocol):
+    DIGITAL_ORACLE_DEFAULT_ENABLED: bool
+    DIGITAL_ORACLE_EXTENSION_KEY: str
+    DIGITAL_ORACLE_LABEL: str
+
+
+_digital_oracle_ownership = cast(
+    _DigitalOracleOwnershipModule,
+    cast(object, import_module("app.extensions.signaldeck_digital_oracle.ownership")),
+)
+DIGITAL_ORACLE_DEFAULT_ENABLED = _digital_oracle_ownership.DIGITAL_ORACLE_DEFAULT_ENABLED
+DIGITAL_ORACLE_EXTENSION_KEY = _digital_oracle_ownership.DIGITAL_ORACLE_EXTENSION_KEY
+DIGITAL_ORACLE_LABEL = _digital_oracle_ownership.DIGITAL_ORACLE_LABEL
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,21 +52,73 @@ type RuntimeToolContributionLoader = Callable[[], tuple[RuntimeToolSpec, ...]]
 type ExecutionProviderBundleLoader = Callable[[], ExecutionProviderBundle]
 type RunLifecycleContributionLoader = Callable[[], tuple[ExtensionRunLifecycleHooks, ...]]
 
-_load_finance_api_router_contributions: ApiRouterContributionLoader = (
-    _raw_load_finance_api_router_contributions
-)
-_load_finance_server_declared_tool_contributions: ServerDeclaredToolContributionLoader = (
-    _raw_load_finance_server_declared_tool_contributions
-)
-_load_finance_runtime_tool_contributions: RuntimeToolContributionLoader = (
-    _raw_load_finance_runtime_tool_contributions
-)
-_load_finance_execution_provider_bundle: ExecutionProviderBundleLoader = (
-    _raw_load_finance_execution_provider_bundle
-)
-_load_finance_run_lifecycle_hooks: RunLifecycleContributionLoader = (
-    _raw_load_finance_run_lifecycle_hooks
-)
+
+class _FinanceRegistrarsModule(Protocol):
+    def load_api_router_contributions(self) -> tuple[BundledApiRouterContribution, ...]: ...
+
+    def load_server_declared_tool_contributions(
+        self,
+    ) -> tuple[BundledServerDeclaredToolContribution, ...]: ...
+
+    def load_runtime_tool_contributions(self) -> tuple[RuntimeToolSpec, ...]: ...
+
+    def load_execution_provider_bundle(self) -> ExecutionProviderBundle: ...
+
+    def load_run_lifecycle_hooks(self) -> tuple[ExtensionRunLifecycleHooks, ...]: ...
+
+
+class _DigitalOracleRegistrarsModule(Protocol):
+    def load_server_declared_tool_contributions(
+        self,
+    ) -> tuple[BundledServerDeclaredToolContribution, ...]: ...
+
+    def load_runtime_tool_contributions(self) -> tuple[RuntimeToolSpec, ...]: ...
+
+
+def _finance_registrars() -> _FinanceRegistrarsModule:
+    return cast(
+        _FinanceRegistrarsModule,
+        cast(object, import_module("app.extensions.signaldeck_finance.registrars")),
+    )
+
+
+def _digital_oracle_registrars() -> _DigitalOracleRegistrarsModule:
+    return cast(
+        _DigitalOracleRegistrarsModule,
+        cast(object, import_module("app.extensions.signaldeck_digital_oracle.registrars")),
+    )
+
+
+def _load_finance_api_router_contributions() -> tuple[BundledApiRouterContribution, ...]:
+    return _finance_registrars().load_api_router_contributions()
+
+
+def _load_finance_server_declared_tool_contributions() -> (
+    tuple[BundledServerDeclaredToolContribution, ...]
+):
+    return _finance_registrars().load_server_declared_tool_contributions()
+
+
+def _load_finance_runtime_tool_contributions() -> tuple[RuntimeToolSpec, ...]:
+    return _finance_registrars().load_runtime_tool_contributions()
+
+
+def _load_digital_oracle_server_declared_tool_contributions() -> (
+    tuple[BundledServerDeclaredToolContribution, ...]
+):
+    return _digital_oracle_registrars().load_server_declared_tool_contributions()
+
+
+def _load_digital_oracle_runtime_tool_contributions() -> tuple[RuntimeToolSpec, ...]:
+    return _digital_oracle_registrars().load_runtime_tool_contributions()
+
+
+def _load_finance_execution_provider_bundle() -> ExecutionProviderBundle:
+    return _finance_registrars().load_execution_provider_bundle()
+
+
+def _load_finance_run_lifecycle_hooks() -> tuple[ExtensionRunLifecycleHooks, ...]:
+    return _finance_registrars().load_run_lifecycle_hooks()
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,6 +284,11 @@ def get_bundled_extension_registry() -> BundledExtensionRegistry:
                 label=FINANCE_WORKSPACE_LABEL,
                 default_enabled=FINANCE_WORKSPACE_DEFAULT_ENABLED,
             ),
+            BundledExtensionDefinition(
+                key=DIGITAL_ORACLE_EXTENSION_KEY,
+                label=DIGITAL_ORACLE_LABEL,
+                default_enabled=DIGITAL_ORACLE_DEFAULT_ENABLED,
+            ),
         ),
         contribution_loaders={
             FINANCE_WORKSPACE_EXTENSION_KEY: BundledExtensionContributionLoaders(
@@ -250,7 +304,11 @@ def get_bundled_extension_registry() -> BundledExtensionRegistry:
                     "provider.socialSentiment",
                 ),
                 package_private_mcp_tool_keys=("web_search_exa",),
-            )
+            ),
+            DIGITAL_ORACLE_EXTENSION_KEY: BundledExtensionContributionLoaders(
+                server_declared_tools=_load_digital_oracle_server_declared_tool_contributions,
+                runtime_tools=_load_digital_oracle_runtime_tool_contributions,
+            ),
         },
     )
 

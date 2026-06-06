@@ -44,6 +44,26 @@ const launchRead = {
   workflowKey: "market_review",
 };
 
+const manifestRead = {
+  compiledHash: "compiled-hash-123",
+  manifestHash: "manifest-hash-123",
+  manifestSource: "apiVersion: signaldeck.workflowPackage/v1",
+  packageDefinition: {
+    spec: {
+      workflows: [
+        {
+          description: "Run market review",
+          inputSchema: launchRead.inputSchema,
+          key: "market_review",
+          name: "Market Review",
+        },
+      ],
+    },
+  },
+  packageId: 42,
+  packageKey: "market_review_package",
+};
+
 const runtimeInputRegistry = {
   currentMetadata: null,
   history: [],
@@ -277,6 +297,10 @@ async function mockApi(page: import("@playwright/test").Page) {
       return route.fulfill({ json: launchRead });
     }
 
+    if (pathname === "/api/workflow-packages/42/manifest" && method === "GET") {
+      return route.fulfill({ json: manifestRead });
+    }
+
     if (pathname === "/api/workflow-packages/42/runtime-input-registry" && method === "GET") {
       if (searchParams.get("workflowKey") === "market_review") {
         return route.fulfill({ json: runtimeInputRegistry });
@@ -311,17 +335,21 @@ test.describe("provider compatibility browser mocks", () => {
       "omits usage metadata",
     );
     await expect(page.getByTestId("workflow-package-preflight-status")).toContainText(
-      "Needs attention",
+      "Blocking1",
     );
     await expect(page.getByRole("button", { name: "Launch Run" })).toBeDisabled();
 
     await page.goto("/runs/42");
     await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+    await page.getByTestId("runs-detail-tab-trigger-runtime").click();
     await expect(page.getByTestId("runs-runtime-profile")).toContainText("Usage reporting");
     await expect(page.getByTestId("runs-runtime-profile")).toContainText("Unsupported");
     await expect(page.getByTestId("runs-runtime-strategy-1-1001")).toContainText(
       "strictJsonSchema",
     );
-    await expect(page.getByTestId("runs-summary-usage-row")).toContainText("0");
+    await page.getByTestId("runs-detail-tab-trigger-usage").click();
+    await expect(page.getByTestId("runs-tokens-empty")).toContainText(
+      "No token accounting was reported",
+    );
   });
 });

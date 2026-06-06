@@ -11,6 +11,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.agents import ToolCatalogValidationError, get_default_tool_catalog
 from app.agents.runtime_tools import get_default_runtime_tool_registry
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
+from app.extensions.signaldeck_digital_oracle.ownership import (
+    DIGITAL_ORACLE_EXTENSION_KEY,
+    DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES,
+    DIGITAL_ORACLE_RUNTIME_TOOL_KEYS,
+)
 from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_EXTENSION_KEY,
     FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES,
@@ -19,15 +24,11 @@ from app.extensions.signaldeck_finance.ownership import (
 from app.schemas.memory import MEMORY_CORE_RUNTIME_TOOL_KEYS
 from app.services.extension_service import ExtensionService
 
-_DIGITAL_ORACLE_FINANCE_TOOL_KEYS = {
-    "signaldeck.prediction_markets.lookup",
-    "signaldeck.sec_filings.lookup",
-    "signaldeck.market_sentiment.lookup",
-}
+_DIGITAL_ORACLE_TOOL_KEYS = set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS)
 _REQUIRED_FINANCE_TOOL_KEYS = {
     "signaldeck.market_data.quote_lookup",
     "signaldeck.reports.lookup",
-} | _DIGITAL_ORACLE_FINANCE_TOOL_KEYS
+}
 _REQUIRED_CORE_TOOL_KEYS = set(MEMORY_CORE_RUNTIME_TOOL_KEYS)
 
 
@@ -45,11 +46,16 @@ def _api_tool_keys(client: TestClient) -> set[str]:
     return {str(item["key"]) for item in items}
 
 
-def test_signaldeck_finance_tool_inventory_matches_catalog_and_runtime() -> None:
+def test_extension_tool_inventories_match_catalog_and_runtime() -> None:
     finance_server_declared_keys = {
         tool.key
         for tool in SERVER_DECLARED_TOOL_SPECS
         if tool.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
+    }
+    digital_oracle_server_declared_keys = {
+        tool.key
+        for tool in SERVER_DECLARED_TOOL_SPECS
+        if tool.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
     }
     core_server_declared_keys = {
         tool.key for tool in SERVER_DECLARED_TOOL_SPECS if tool.owner_extension_key is None
@@ -60,19 +66,34 @@ def test_signaldeck_finance_tool_inventory_matches_catalog_and_runtime() -> None
         for tool in runtime_specs
         if tool.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
     }
+    digital_oracle_runtime_keys = {
+        tool.key
+        for tool in runtime_specs
+        if tool.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
+    }
     core_runtime_keys = {tool.key for tool in runtime_specs if tool.owner_extension_key is None}
     finance_runtime_function_names = {
         tool.openai_function_name
         for tool in runtime_specs
         if tool.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
     }
+    digital_oracle_runtime_function_names = {
+        tool.openai_function_name
+        for tool in runtime_specs
+        if tool.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
+    }
 
     assert set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS) == finance_server_declared_keys
     assert set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS) == finance_runtime_keys
     assert set(FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES) == finance_runtime_function_names
+    assert set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS) == digital_oracle_server_declared_keys
+    assert set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS) == digital_oracle_runtime_keys
+    assert set(DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES) == digital_oracle_runtime_function_names
     assert _REQUIRED_CORE_TOOL_KEYS <= core_server_declared_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= core_runtime_keys
     assert _REQUIRED_CORE_TOOL_KEYS.isdisjoint(finance_server_declared_keys)
+    assert _REQUIRED_CORE_TOOL_KEYS.isdisjoint(digital_oracle_server_declared_keys)
+    assert finance_server_declared_keys.isdisjoint(digital_oracle_server_declared_keys)
 
 
 def test_default_tool_catalog_rejects_duplicate_and_unknown_keys() -> None:
@@ -109,6 +130,7 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
 
     assert not any("module" in item for item in items)
     assert _REQUIRED_FINANCE_TOOL_KEYS <= set(tools_by_key)
+    assert _DIGITAL_ORACLE_TOOL_KEYS <= set(tools_by_key)
     assert _REQUIRED_CORE_TOOL_KEYS <= set(tools_by_key)
     assert MEMORY_CORE_RUNTIME_TOOL_KEYS == (
         "signaldeck.memory.write",
@@ -119,6 +141,9 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     memory_lookup_tool = tools_by_key["signaldeck.memory.lookup"]
     quote_tool = tools_by_key["signaldeck.market_data.quote_lookup"]
     report_lookup_tool = tools_by_key["signaldeck.reports.lookup"]
+    prediction_markets_tool = tools_by_key["signaldeck.prediction_markets.lookup"]
+    sec_filings_tool = tools_by_key["signaldeck.sec_filings.lookup"]
+    market_sentiment_tool = tools_by_key["signaldeck.market_sentiment.lookup"]
     assert memory_write_tool == {
         "key": "signaldeck.memory.write",
         "displayName": "Memory Write",
@@ -139,7 +164,39 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         "displayName": "Report Lookup",
         "description": "Read persisted SignalDeck reports through server-owned report lookups.",
     }
-    for tool in (memory_write_tool, memory_lookup_tool, quote_tool, report_lookup_tool):
+    assert prediction_markets_tool == {
+        "key": "signaldeck.prediction_markets.lookup",
+        "displayName": "Prediction Markets Lookup",
+        "description": (
+            "Read normalized prediction-market signals from Digital Oracle market "
+            "lookups with structured warnings for partial coverage."
+        ),
+    }
+    assert sec_filings_tool == {
+        "key": "signaldeck.sec_filings.lookup",
+        "displayName": "SEC Filings Lookup",
+        "description": (
+            "Read normalized SEC filing signals from Digital Oracle filing lookups "
+            "with structured warnings for partial coverage."
+        ),
+    }
+    assert market_sentiment_tool == {
+        "key": "signaldeck.market_sentiment.lookup",
+        "displayName": "Market Sentiment Lookup",
+        "description": (
+            "Read normalized market sentiment signals from Digital Oracle sentiment "
+            "lookups with structured warnings for partial coverage."
+        ),
+    }
+    for tool in (
+        memory_write_tool,
+        memory_lookup_tool,
+        quote_tool,
+        report_lookup_tool,
+        prediction_markets_tool,
+        sec_filings_tool,
+        market_sentiment_tool,
+    ):
         assert "module" not in tool
         assert "ownerExtensionKey" not in tool
         assert "contributionCategories" not in tool
@@ -152,7 +209,8 @@ def test_digital_oracle_api_tools_follow_extension_state_in_catalog_and_runtime(
     session_factory: sessionmaker[Session],
 ) -> None:
     enabled_api_tool_keys = _api_tool_keys(client)
-    assert _DIGITAL_ORACLE_FINANCE_TOOL_KEYS <= enabled_api_tool_keys
+    assert _DIGITAL_ORACLE_TOOL_KEYS <= enabled_api_tool_keys
+    assert _REQUIRED_FINANCE_TOOL_KEYS <= enabled_api_tool_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= enabled_api_tool_keys
 
     with session_factory() as session:
@@ -165,24 +223,27 @@ def test_digital_oracle_api_tools_follow_extension_state_in_catalog_and_runtime(
         enabled_descriptor_keys = {
             descriptor.tool_key
             for descriptor in enabled_runtime_registry.get_execution_descriptors(
-                _DIGITAL_ORACLE_FINANCE_TOOL_KEYS
+                _DIGITAL_ORACLE_TOOL_KEYS
             )
         }
 
-    assert _DIGITAL_ORACLE_FINANCE_TOOL_KEYS <= enabled_catalog_keys
+    assert _DIGITAL_ORACLE_TOOL_KEYS <= enabled_catalog_keys
+    assert _REQUIRED_FINANCE_TOOL_KEYS <= enabled_catalog_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= enabled_catalog_keys
-    assert _DIGITAL_ORACLE_FINANCE_TOOL_KEYS <= enabled_runtime_keys
+    assert _DIGITAL_ORACLE_TOOL_KEYS <= enabled_runtime_keys
+    assert _REQUIRED_FINANCE_TOOL_KEYS <= enabled_runtime_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= enabled_runtime_keys
-    assert enabled_descriptor_keys == _DIGITAL_ORACLE_FINANCE_TOOL_KEYS
+    assert enabled_descriptor_keys == _DIGITAL_ORACLE_TOOL_KEYS
 
     response = client.patch(
-        f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
+        f"/api/extensions/{DIGITAL_ORACLE_EXTENSION_KEY}",
         json={"enabled": False},
     )
     assert response.status_code == 200, response.json()
 
     disabled_api_tool_keys = _api_tool_keys(client)
-    assert not _DIGITAL_ORACLE_FINANCE_TOOL_KEYS & disabled_api_tool_keys
+    assert not _DIGITAL_ORACLE_TOOL_KEYS & disabled_api_tool_keys
+    assert _REQUIRED_FINANCE_TOOL_KEYS <= disabled_api_tool_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= disabled_api_tool_keys
 
     with session_factory() as session:
@@ -194,18 +255,23 @@ def test_digital_oracle_api_tools_follow_extension_state_in_catalog_and_runtime(
         disabled_runtime_keys = {
             spec.key for spec in disabled_runtime_registry.list_enabled_specs()
         }
+        requested_descriptor_keys = (
+            _DIGITAL_ORACLE_TOOL_KEYS | _REQUIRED_FINANCE_TOOL_KEYS | _REQUIRED_CORE_TOOL_KEYS
+        )
         disabled_descriptor_keys = {
             descriptor.tool_key
             for descriptor in disabled_runtime_registry.get_execution_descriptors(
-                _DIGITAL_ORACLE_FINANCE_TOOL_KEYS | _REQUIRED_CORE_TOOL_KEYS
+                requested_descriptor_keys
             )
         }
 
-    assert not _DIGITAL_ORACLE_FINANCE_TOOL_KEYS & disabled_catalog_keys
+    assert not _DIGITAL_ORACLE_TOOL_KEYS & disabled_catalog_keys
+    assert _REQUIRED_FINANCE_TOOL_KEYS <= disabled_catalog_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= disabled_catalog_keys
-    assert not _DIGITAL_ORACLE_FINANCE_TOOL_KEYS & disabled_runtime_keys
+    assert not _DIGITAL_ORACLE_TOOL_KEYS & disabled_runtime_keys
+    assert _REQUIRED_FINANCE_TOOL_KEYS <= disabled_runtime_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= disabled_runtime_keys
-    assert disabled_descriptor_keys == _REQUIRED_CORE_TOOL_KEYS
+    assert disabled_descriptor_keys == _REQUIRED_FINANCE_TOOL_KEYS | _REQUIRED_CORE_TOOL_KEYS
 
 
 def test_tools_catalog_route_is_get_only(client: TestClient) -> None:
@@ -233,6 +299,7 @@ def test_tool_catalog_hides_disabled_extension_tools_and_validation_stays_artifa
     visible_items = cast(list[dict[str, object]], tools_body["items"])
     visible_keys = {str(item["key"]) for item in visible_items}
     assert not visible_keys & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
+    assert _DIGITAL_ORACLE_TOOL_KEYS <= visible_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= visible_keys
 
     manifest_source = _valid_manifest_source()

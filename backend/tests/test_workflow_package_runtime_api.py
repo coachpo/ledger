@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import Settings
 from app.core.errors import ApiError, validation_error
 from app.core.formatting import utcnow
+from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
@@ -610,10 +611,10 @@ def _expected_digital_oracle_disabled_tool_errors() -> list[dict[str, object]]:
             "field": f"spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[{index}]",
             "issue": (
                 f"Server-declared tool {tool_key!r} is disabled because extension "
-                f"{FINANCE_WORKSPACE_EXTENSION_KEY!r} is disabled"
+                f"{DIGITAL_ORACLE_EXTENSION_KEY!r} is disabled"
             ),
             "code": "extension_disabled",
-            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
             "surface": f"tool.{tool_key}",
         }
         for index, tool_key in enumerate(sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS))
@@ -626,7 +627,7 @@ kind: WorkflowPackage
 metadata:
   key: {package_key}
   name: Digital Oracle Runtime Fixture
-  description: Runtime fixture for finance-owned phase-1 tool grants.
+  description: Runtime fixture for Digital Oracle phase-1 tool grants.
 spec:
   inputs:
     type: object
@@ -857,6 +858,14 @@ def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         _ = ExtensionService(session).set_extension_enabled(
             FINANCE_WORKSPACE_EXTENSION_KEY,
+            ExtensionToggleRequest(enabled=False),
+        )
+
+
+def _disable_digital_oracle_extension(session_factory: sessionmaker[Session]) -> None:
+    with session_factory() as session:
+        _ = ExtensionService(session).set_extension_enabled(
+            DIGITAL_ORACLE_EXTENSION_KEY,
             ExtensionToggleRequest(enabled=False),
         )
 
@@ -3511,7 +3520,7 @@ def test_workflow_package_runtime_tool_policy_forbid_blocks_tool_dependent_packa
     assert _RuntimeRecordingChatCompletionsClient.create_calls == []
 
 
-def test_workflow_package_runtime_digital_oracle_toolKeys_capture_dependency_snapshot(
+def test_runtime_digital_oracle_toolKeys_dependency_snapshot_when_finance_disabled(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -3522,6 +3531,7 @@ def test_workflow_package_runtime_digital_oracle_toolKeys_capture_dependency_sna
             package_key="runtime_digital_oracle_dependency_package"
         ),
     )
+    _disable_finance_extension(session_factory)
 
     launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
@@ -3539,14 +3549,17 @@ def test_workflow_package_runtime_digital_oracle_toolKeys_capture_dependency_sna
     assert len(dependencies) == 1
     dependency = dependencies[0]
     surfaces = set(cast(list[str], dependency["surfaces"]))
-    assert dependency["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert dependency["extensionKey"] == DIGITAL_ORACLE_EXTENSION_KEY
+    assert FINANCE_WORKSPACE_EXTENSION_KEY not in json.dumps(dependencies, sort_keys=True)
     assert set(cast(list[str], dependency["fields"])) == {
         "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
         "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
         "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
     }
-    assert {f"tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS} <= surfaces
-    assert {f"runtime.tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS} <= surfaces
+    assert surfaces == {
+        *[f"tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
+        *[f"runtime.tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
+    }
 
 
 def test_workflow_package_runtime_digital_oracle_toolKeys_disabled_extension_shape(
@@ -3560,7 +3573,7 @@ def test_workflow_package_runtime_digital_oracle_toolKeys_disabled_extension_sha
             package_key="runtime_digital_oracle_disabled_extension_package"
         ),
     )
-    _disable_finance_extension(session_factory)
+    _disable_digital_oracle_extension(session_factory)
 
     launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",

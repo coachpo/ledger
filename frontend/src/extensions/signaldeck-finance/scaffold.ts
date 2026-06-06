@@ -115,18 +115,6 @@ export const financeWorkspaceFrontendExtension = {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
       toolKeyPrefix: "signaldeck.reports.",
     },
-    {
-      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.prediction_markets.",
-    },
-    {
-      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.sec_filings.",
-    },
-    {
-      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.market_sentiment.",
-    },
   ],
 } as const satisfies FrontendExtensionDefinition;
 

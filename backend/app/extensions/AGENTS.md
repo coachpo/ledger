@@ -3,11 +3,15 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file covers bundled backend extension infrastructure.
 
 ## OVERVIEW
-`app/extensions/` owns first-party extension registration, private registrar wiring, and extension-owned composition roots. The current statically resident extension is `signaldeck.finance`, which owns preserved finance `/api/v1` routers, finance provider factories, runtime tool specs/executors, report lookup, and historical agent-memory report readers.
+`app/extensions/` owns first-party extension registration, private registrar wiring, and extension-owned composition roots. The current statically resident bundled extensions are Finance Workspace and Digital Oracle Runtime.
+
+`signaldeck.finance` owns preserved finance `/api/v1` routers, finance provider factories, finance runtime tool specs/executors, report lookup, and historical agent-memory report readers.
+
+`signaldeck.digital_oracle` owns only Digital Oracle runtime tools in this upgrade.
 
 Extension model: this folder owns statically resident extension registration, private registrar wiring, and extension-owned composition roots for code shipped with SignalDeck Core.
 
-Future upgrade work must preserve the boundary between generic extension infrastructure in this folder and finance-owned behavior in `signaldeck_finance/`. Move behavior across that seam only when the shared platform contract is explicit and the registries, docs, and tests move with it.
+Future upgrade work must preserve the boundary between generic extension infrastructure in this folder and extension-owned behavior in `signaldeck_finance/` and `signaldeck_digital_oracle/`. Move behavior across those seams only when the shared platform contract is explicit and the registries, docs, and tests move with it.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 

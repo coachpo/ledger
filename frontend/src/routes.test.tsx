@@ -7,6 +7,8 @@ import { describe, expect, it, vi } from "vitest";
 import { Layout } from "./components/layout";
 import { ThemeProvider } from "./components/theme-provider";
 import {
+  DIGITAL_ORACLE_EXTENSION_KEY,
+  DIGITAL_ORACLE_LABEL,
   FINANCE_WORKSPACE_EXTENSION_KEY,
   getBundledFrontendExtension,
   listBundledFrontendExtensions,
@@ -77,13 +79,21 @@ function sampleExtensionRoutePath(path: string) {
     .replace(":slug", "sample-report");
 }
 
-function extensionList(enabled: boolean): ExtensionListRead {
+function extensionList(
+  financeEnabled: boolean,
+  digitalOracleEnabled = true,
+): ExtensionListRead {
   return {
     items: [
       {
         key: FINANCE_WORKSPACE_EXTENSION_KEY,
         label: FINANCE_WORKSPACE_NAV_GROUP,
-        enabled,
+        enabled: financeEnabled,
+      },
+      {
+        key: DIGITAL_ORACLE_EXTENSION_KEY,
+        label: DIGITAL_ORACLE_LABEL,
+        enabled: digitalOracleEnabled,
       },
     ],
   };
@@ -645,25 +655,38 @@ describe("router", () => {
     consoleError.mockRestore();
   });
 
-  it("assembles bundled finance routes from extension contributions", () => {
-    const extension = getBundledFrontendExtension(
+  it("assembles bundled extension contributions by owning scaffold", () => {
+    const financeExtension = getBundledFrontendExtension(
       FINANCE_WORKSPACE_EXTENSION_KEY,
     );
-    if (!extension) {
-      throw new Error(
-        "Finance workspace frontend extension was not registered.",
-      );
+    const digitalOracleExtension = getBundledFrontendExtension(
+      DIGITAL_ORACLE_EXTENSION_KEY,
+    );
+    if (!financeExtension || !digitalOracleExtension) {
+      throw new Error("Bundled frontend extensions were not registered.");
     }
 
-    expect(listBundledFrontendExtensions()).toEqual([extension]);
-    expect(Object.keys(extension).sort()).toEqual([
-      "key",
-      "label",
-      "navContributions",
-      "routeContributions",
-      "toolAuthoringDiscovery",
+    expect(listBundledFrontendExtensions()).toEqual([
+      financeExtension,
+      digitalOracleExtension,
     ]);
-    expect(extension.key).toBe("signaldeck.finance");
+    for (const extension of [financeExtension, digitalOracleExtension]) {
+      expect(Object.keys(extension).sort()).toEqual([
+        "key",
+        "label",
+        "navContributions",
+        "routeContributions",
+        "toolAuthoringDiscovery",
+      ]);
+    }
+    expect(financeExtension.key).toBe("signaldeck.finance");
+    expect(digitalOracleExtension.key).toBe("signaldeck.digital_oracle");
+    expect(digitalOracleExtension.label).toBe(DIGITAL_ORACLE_LABEL);
+    expect(digitalOracleExtension.routeContributions).toEqual([]);
+    expect(digitalOracleExtension.navContributions).toEqual([]);
+    expect(matchedRouteComponent("/digital-oracle")).toBe(NotFoundPage);
+    expect(matchedRouteComponent("/prediction-markets")).toBe(NotFoundPage);
+
     const expectedFinanceRoutes = [
       { path: "/", requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY },
       {
@@ -697,7 +720,7 @@ describe("router", () => {
     ];
 
     expect(
-      extension.routeContributions.map((contribution) => ({
+      financeExtension.routeContributions.map((contribution) => ({
         path: contribution.path,
         requiredExtensionKey: contribution.requiredExtensionKey,
       })),
@@ -718,7 +741,7 @@ describe("router", () => {
         }),
     ).toEqual(expectedFinanceRoutes);
 
-    for (const contribution of extension.navContributions) {
+    for (const contribution of financeExtension.navContributions) {
       const metadata = getRouteMetadataByPattern(
         contribution.to as RoutePattern,
       );
@@ -736,22 +759,24 @@ describe("router", () => {
     }
 
     expect(enabledFinanceRoutePaths(extensionList(true))).toEqual(
-      extension.routeContributions.map((contribution) => contribution.path),
+      financeExtension.routeContributions.map(
+        (contribution) => contribution.path,
+      ),
     );
     expect(enabledFinanceRoutePaths(extensionList(false))).toEqual([]);
 
-    for (const contribution of extension.routeContributions) {
+    for (const contribution of financeExtension.routeContributions) {
       expect(
         matchRoutes(router.routes, sampleExtensionRoutePath(contribution.path)),
       ).not.toBeNull();
     }
 
     expect(
-      extension.routeContributions.some((contribution) =>
+      financeExtension.routeContributions.some((contribution) =>
         contribution.path.startsWith("/workflow-packages"),
       ),
     ).toBe(false);
-    expect(extension.toolAuthoringDiscovery).toEqual([
+    expect(financeExtension.toolAuthoringDiscovery).toEqual([
       {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
         toolKeyPrefix: "signaldeck.market_data.",
@@ -784,22 +809,24 @@ describe("router", () => {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
         toolKeyPrefix: "signaldeck.reports.",
       },
+    ]);
+    expect(digitalOracleExtension.toolAuthoringDiscovery).toEqual([
       {
-        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
         toolKeyPrefix: "signaldeck.prediction_markets.",
       },
       {
-        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
         toolKeyPrefix: "signaldeck.sec_filings.",
       },
       {
-        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
         toolKeyPrefix: "signaldeck.market_sentiment.",
       },
     ]);
   });
 
-  it("restores finance route and tool discovery contributions after re-enable", () => {
+  it("filters bundled extension tool discovery without changing finance route gates", () => {
     const extension = getBundledFrontendExtension(
       FINANCE_WORKSPACE_EXTENSION_KEY,
     );
@@ -840,16 +867,22 @@ describe("router", () => {
         description: "Core smoke tool",
       },
     ];
-    const enabledPaths = enabledFinanceRoutePaths(extensionList(true));
-    const enabledToolKeys = filterToolsForExtensionState(
-      tools,
-      extensionList(true),
-    ).map((tool) => tool.key);
-
-    expect(enabledPaths).toEqual(
-      extension.routeContributions.map((contribution) => contribution.path),
+    const financeRoutePaths = extension.routeContributions.map(
+      (contribution) => contribution.path,
     );
-    expect(enabledToolKeys).toEqual([
+    const toolKeysForState = (
+      financeEnabled: boolean,
+      digitalOracleEnabled = true,
+    ) =>
+      filterToolsForExtensionState(
+        tools,
+        extensionList(financeEnabled, digitalOracleEnabled),
+      ).map((tool) => tool.key);
+
+    expect(enabledFinanceRoutePaths(extensionList(true, true))).toEqual(
+      financeRoutePaths,
+    );
+    expect(toolKeysForState(true, true)).toEqual([
       "signaldeck.reports.lookup",
       "signaldeck.prediction_markets.lookup",
       "signaldeck.sec_filings.lookup",
@@ -857,18 +890,27 @@ describe("router", () => {
       "signaldeck.memory.lookup",
       "core.echo",
     ]);
-    expect(enabledFinanceRoutePaths(extensionList(false))).toEqual([]);
-    expect(
-      filterToolsForExtensionState(tools, extensionList(false)).map(
-        (tool) => tool.key,
-      ),
-    ).toEqual(["signaldeck.memory.lookup", "core.echo"]);
-    expect(enabledFinanceRoutePaths(extensionList(true))).toEqual(enabledPaths);
-    expect(
-      filterToolsForExtensionState(tools, extensionList(true)).map(
-        (tool) => tool.key,
-      ),
-    ).toEqual(enabledToolKeys);
+    expect(enabledFinanceRoutePaths(extensionList(true, false))).toEqual(
+      financeRoutePaths,
+    );
+    expect(toolKeysForState(true, false)).toEqual([
+      "signaldeck.reports.lookup",
+      "signaldeck.memory.lookup",
+      "core.echo",
+    ]);
+    expect(enabledFinanceRoutePaths(extensionList(false, true))).toEqual([]);
+    expect(toolKeysForState(false, true)).toEqual([
+      "signaldeck.prediction_markets.lookup",
+      "signaldeck.sec_filings.lookup",
+      "signaldeck.market_sentiment.lookup",
+      "signaldeck.memory.lookup",
+      "core.echo",
+    ]);
+    expect(enabledFinanceRoutePaths(extensionList(false, false))).toEqual([]);
+    expect(toolKeysForState(false, false)).toEqual([
+      "signaldeck.memory.lookup",
+      "core.echo",
+    ]);
   });
 
   it("renders a deterministic disabled state for direct finance route links", async () => {

@@ -15,7 +15,7 @@ MARKET_SENTIMENT_SOURCE_URL = "https://www.cnn.com/markets/fear-and-greed"
 DIGITAL_ORACLE_PHASE1_REQUIRES_VENDORED_PACKAGE = False
 DIGITAL_ORACLE_PHASE1_REQUIRES_YFINANCE = False
 DIGITAL_ORACLE_PHASE1_PROVIDER_BOUNDARY = (
-    "Phase 1 uses finance-owned provider wrappers; do not vendor "
+    "Phase 1 uses Digital Oracle provider wrappers; do not vendor "
     "digital-oracle or require yfinance."
 )
 

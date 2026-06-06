@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers `backend/tests/`.
 
 ## OVERVIEW
-`backend/tests/` is the behavioral spec for the shipped backend surface: preserved portfolio, template, report, trading, and market-data APIs behind `signaldeck.finance`; extension registry/state behavior; social sentiment/runtime tools; current agent-platform APIs; startup schema upgrades; run rerun/fork semantics; and removed-route/module absence assertions. Tests run against isolated PostgreSQL databases and a real FastAPI app instance.
+`backend/tests/` is the behavioral spec for the shipped backend surface: preserved portfolio, template, report, trading, and market-data APIs behind Finance Workspace gates; Digital Oracle runtime tools behind `signaldeck.digital_oracle`; extension registry/state behavior; current agent-platform APIs; startup schema upgrades; run rerun/fork semantics; and removed-route/module absence assertions. Tests run against isolated PostgreSQL databases and a real FastAPI app instance.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
@@ -46,6 +46,6 @@ uv run pytest
 ## NOTES
 - Pytest config is implicit through `backend/pyproject.toml`; there is no separate `pytest.ini`.
 - `test_api.py` covers preserved `/api/v1` behavior, finance extension gating, and current agent-platform validation paths.
-- Extension, tool-catalog, social-sentiment, and lifecycle tests lock statically resident `signaldeck.finance` state, enabled-tool filtering, and provider/runtime-tool contracts.
+- Extension, tool-catalog, runtime-tool, and lifecycle tests lock statically resident `signaldeck.finance` and `signaldeck.digital_oracle` state, enabled-tool filtering, and provider/runtime-tool contracts.
 - `test_workflow_package_runtime_api.py`, `test_workflow_package_runtime_artifacts.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_memory_domain_schemas.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_runtime_db_upgrades.py` lock the current agent-platform persistence, Scheduled Task APIs/materialization, saved model-connection, trace metadata, memory DTOs, run-fork behavior, upgrade, and execution contracts.
 - `test_legacy_backend_cutover.py` proves removed backend routes return `404` and removed modules stay absent.

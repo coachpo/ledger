@@ -15,13 +15,21 @@ from app.agents.runtime_tools.types import (
     RuntimeToolSpec,
     RuntimeToolWarning,
 )
-from app.extensions.signaldeck_finance.digital_oracle.config import (
+from app.extensions.signaldeck_digital_oracle.config import (
     PREDICTION_MARKET_VENUES,
     PredictionMarketVenue,
 )
-from app.extensions.signaldeck_finance.digital_oracle.mappers import map_prediction_markets_result
-from app.extensions.signaldeck_finance.digital_oracle.service import DigitalOraclePhase1Service
-from app.extensions.signaldeck_finance.digital_oracle.types import (
+from app.extensions.signaldeck_digital_oracle.mappers import map_prediction_markets_result
+from app.extensions.signaldeck_digital_oracle.ownership import (
+    DIGITAL_ORACLE_DENIED_CODE,
+    DIGITAL_ORACLE_DENIED_MESSAGES,
+    DIGITAL_ORACLE_EXTENSION_KEY,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_types import (
+    PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
+)
+from app.extensions.signaldeck_digital_oracle.service import DigitalOraclePhase1Service
+from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOraclePredictionMarketContract,
     DigitalOraclePredictionMarketEvent,
     DigitalOraclePredictionMarketProvider,
@@ -30,16 +38,10 @@ from app.extensions.signaldeck_finance.digital_oracle.types import (
     DigitalOraclePredictionMarketsQuery,
     DigitalOracleProviderError,
 )
-from app.extensions.signaldeck_finance.ownership import (
-    FINANCE_WORKSPACE_DENIED_CODE,
-    FINANCE_WORKSPACE_DENIED_MESSAGES,
-    FINANCE_WORKSPACE_EXTENSION_KEY,
-)
-from app.extensions.signaldeck_finance.runtime_types import PREDICTION_MARKETS_LOOKUP_TOOL_KEY
 
 PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_prediction_markets_lookup"
-PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
-PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
+PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_CODE = DIGITAL_ORACLE_DENIED_CODE
+PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_MESSAGE = DIGITAL_ORACLE_DENIED_MESSAGES[
     PREDICTION_MARKETS_LOOKUP_TOOL_KEY
 ]
 
@@ -714,7 +716,7 @@ PREDICTION_MARKETS_LOOKUP_TOOL_SPEC = RuntimeToolSpec(
     denied_message=PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_MESSAGE,
     parser=parse_prediction_markets_lookup_arguments,
     executor=execute_prediction_markets_lookup,
-    owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
+    owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
 )
 
 

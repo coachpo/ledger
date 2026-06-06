@@ -54,7 +54,7 @@ from app.agents.runtime_tools.memory import (
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
 from app.core.config import Settings, get_settings, reset_settings_cache
-from app.extensions.signaldeck_finance.digital_oracle.config import (
+from app.extensions.signaldeck_digital_oracle.config import (
     DIGITAL_ORACLE_PHASE1_PROVIDER_BOUNDARY,
     DIGITAL_ORACLE_PHASE1_REQUIRES_VENDORED_PACKAGE,
     DIGITAL_ORACLE_PHASE1_REQUIRES_YFINANCE,
@@ -65,18 +65,58 @@ from app.extensions.signaldeck_finance.digital_oracle.config import (
     PredictionMarketVenue,
     get_digital_oracle_provider_config,
 )
-from app.extensions.signaldeck_finance.digital_oracle.factory import (
+from app.extensions.signaldeck_digital_oracle.factory import (
     create_digital_oracle_phase1_provider_bundle,
     create_prediction_markets_provider_bundle,
     create_sec_filings_provider,
 )
-from app.extensions.signaldeck_finance.digital_oracle.mappers import (
+from app.extensions.signaldeck_digital_oracle.mappers import (
     map_market_sentiment_result,
     map_prediction_markets_result,
     map_sec_filings_result,
 )
-from app.extensions.signaldeck_finance.digital_oracle.service import DigitalOraclePhase1Service
-from app.extensions.signaldeck_finance.digital_oracle.types import (
+from app.extensions.signaldeck_digital_oracle.ownership import (
+    DIGITAL_ORACLE_DENIED_MESSAGES,
+    DIGITAL_ORACLE_EXTENSION_KEY,
+    DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES,
+    DIGITAL_ORACLE_RUNTIME_TOOL_KEYS,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_market_sentiment import (
+    MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+    MARKET_SENTIMENT_LOOKUP_TOOL_SPEC,
+    FearGreedMarketSentimentProvider,
+    execute_market_sentiment_lookup,
+    parse_market_sentiment_lookup_arguments,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_prediction_markets import (
+    PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
+    PREDICTION_MARKETS_LOOKUP_TOOL_SPEC,
+    KalshiPredictionMarketsProvider,
+    PolymarketPredictionMarketsProvider,
+    execute_prediction_markets_lookup,
+    parse_prediction_markets_lookup_arguments,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_sec_filings import (
+    SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME,
+    SEC_FILINGS_LOOKUP_TOOL_SPEC,
+    EdgarSecFilingsProvider,
+    execute_sec_filings_lookup,
+    parse_sec_filings_lookup_arguments,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_types import (
+    MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+    NATIVE_RUNTIME_DIGITAL_ORACLE_TOOL_KEYS,
+    PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
+    SEC_FILINGS_LOOKUP_TOOL_KEY,
+    RuntimeMarketSentimentLookupResult,
+    RuntimePredictionMarketContract,
+    RuntimePredictionMarketEvent,
+    RuntimePredictionMarketsLookupResult,
+    RuntimeSecFiling,
+    RuntimeSecFilingsLookupResult,
+)
+from app.extensions.signaldeck_digital_oracle.service import DigitalOraclePhase1Service
+from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleMarketSentimentProviderQuery,
     DigitalOracleMarketSentimentProviderResult,
     DigitalOracleMarketSentimentQuery,
@@ -105,7 +145,6 @@ from app.extensions.signaldeck_finance.grant_policy import (
     REPORT_LOOKUP_GRANT_POLICY,
 )
 from app.extensions.signaldeck_finance.ownership import (
-    FINANCE_WORKSPACE_DENIED_MESSAGES,
     FINANCE_WORKSPACE_EXTENSION_KEY,
     FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES,
     FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
@@ -136,25 +175,10 @@ from app.extensions.signaldeck_finance.runtime_market_data import (
     parse_quote_lookup_arguments,
     parse_social_sentiment_lookup_arguments,
 )
-from app.extensions.signaldeck_finance.runtime_market_sentiment import (
-    MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
-    MARKET_SENTIMENT_LOOKUP_TOOL_SPEC,
-    FearGreedMarketSentimentProvider,
-    execute_market_sentiment_lookup,
-    parse_market_sentiment_lookup_arguments,
-)
 from app.extensions.signaldeck_finance.runtime_positions import (
     POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
     POSITION_LOOKUP_TOOL_SPEC,
     parse_position_lookup_arguments,
-)
-from app.extensions.signaldeck_finance.runtime_prediction_markets import (
-    PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
-    PREDICTION_MARKETS_LOOKUP_TOOL_SPEC,
-    KalshiPredictionMarketsProvider,
-    PolymarketPredictionMarketsProvider,
-    execute_prediction_markets_lookup,
-    parse_prediction_markets_lookup_arguments,
 )
 from app.extensions.signaldeck_finance.runtime_reports import (
     REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -163,13 +187,6 @@ from app.extensions.signaldeck_finance.runtime_reports import (
     REPORT_MEMORY_WRITE_TOOL_SPEC,
     parse_report_lookup_arguments,
 )
-from app.extensions.signaldeck_finance.runtime_sec_filings import (
-    SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME,
-    SEC_FILINGS_LOOKUP_TOOL_SPEC,
-    EdgarSecFilingsProvider,
-    execute_sec_filings_lookup,
-    parse_sec_filings_lookup_arguments,
-)
 from app.extensions.signaldeck_finance.runtime_types import (
     FUNDAMENTALS_LOOKUP_TOOL_KEY,
     INDICATORS_LOOKUP_TOOL_KEY,
@@ -177,14 +194,11 @@ from app.extensions.signaldeck_finance.runtime_types import (
     MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
     MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY,
     MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
-    MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
     NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS,
     NEWS_LOOKUP_TOOL_KEY,
     POSITION_LOOKUP_TOOL_KEY,
-    PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
     REPORT_LOOKUP_TOOL_KEY,
     REPORT_MEMORY_WRITE_TOOL_KEY,
-    SEC_FILINGS_LOOKUP_TOOL_KEY,
     SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
     RuntimeFinancialStatement,
     RuntimeFinancialStatementLine,
@@ -196,19 +210,13 @@ from app.extensions.signaldeck_finance.runtime_types import (
     RuntimeIndicatorValue,
     RuntimeInsiderDataLookupResult,
     RuntimeInsiderTransaction,
-    RuntimeMarketSentimentLookupResult,
     RuntimeNativeToolResult,
     RuntimeNewsItem,
     RuntimeNewsLookupResult,
     RuntimeOhlcvLookupResult,
     RuntimeOhlcvRow,
     RuntimeOhlcvSeries,
-    RuntimePredictionMarketContract,
-    RuntimePredictionMarketEvent,
-    RuntimePredictionMarketsLookupResult,
     RuntimeQuoteLookupResult,
-    RuntimeSecFiling,
-    RuntimeSecFilingsLookupResult,
     RuntimeSocialSentimentLookupResult,
     RuntimeSocialSentimentMetric,
     RuntimeSocialSentimentSourceBlock,
@@ -216,7 +224,7 @@ from app.extensions.signaldeck_finance.runtime_types import (
 from app.models.agent_memory import AgentMemoryEntry, RunMemoryEvent
 from app.models.capability import Capability
 from app.models.report import Report
-from app.models.run import Run
+from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
@@ -625,12 +633,25 @@ def _seed_runtime_run(
         session.add(
             Run(
                 id=run_id,
-                target_kind="workflow",
+                target_kind="workflowPackage",
                 target_id=1,
                 target_key="runtime_tool_test_workflow",
                 target_version=1,
                 input={},
                 status="running",
+                workflow_package_snapshot=RunWorkflowPackageSnapshot(
+                    workflow_package_id=1,
+                    workflow_package_key="runtime_tool_test_package",
+                    workflow_package_name="Runtime Tool Test Package",
+                    workflow_package_status="published",
+                    workflow_key="runtime_tool_test_workflow",
+                    workflow_name="Runtime Tool Test Workflow",
+                    manifest_hash="runtime-tool-test-manifest",
+                    compiled_hash="runtime-tool-test-compiled",
+                    manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
+                    package_definition={},
+                    compiled_plan={},
+                ),
             )
         )
         session.add(
@@ -1294,12 +1315,17 @@ def test_native_runtime_financial_tool_result_keys_are_signaldeck_prefixed_and_c
         NEWS_LOOKUP_TOOL_KEY,
         SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
         INSIDER_DATA_LOOKUP_TOOL_KEY,
+    )
+    assert NATIVE_RUNTIME_DIGITAL_ORACLE_TOOL_KEYS == (
         PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
         SEC_FILINGS_LOOKUP_TOOL_KEY,
         MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
     )
     assert all(
         tool_key.startswith("signaldeck.") for tool_key in NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS
+    )
+    assert all(
+        tool_key.startswith("signaldeck.") for tool_key in NATIVE_RUNTIME_DIGITAL_ORACLE_TOOL_KEYS
     )
     assert set(_GENERIC_PLATFORM_RUNTIME_TOOL_KEYS) <= set(NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS)
 
@@ -1312,25 +1338,27 @@ def test_native_runtime_financial_tool_result_keys_are_signaldeck_prefixed_and_c
 
 
 def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
-    runtime_spec_keys = {spec.key for spec in RUNTIME_TOOL_SPECS}
+    runtime_specs = get_default_runtime_tool_registry().list_specs()
+    runtime_spec_keys = {spec.key for spec in runtime_specs}
     server_declared_keys = {spec.key for spec in SERVER_DECLARED_TOOL_SPECS}
-    runtime_function_names = {spec.openai_function_name for spec in RUNTIME_TOOL_SPECS}
-    finance_server_declared_keys = {
-        "signaldeck.prediction_markets.lookup",
-        "signaldeck.sec_filings.lookup",
-        "signaldeck.market_sentiment.lookup",
-    }
+    runtime_function_names = {spec.openai_function_name for spec in runtime_specs}
+    digital_oracle_tool_keys = set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS)
 
     assert runtime_spec_keys == _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
     assert runtime_spec_keys <= server_declared_keys
     assert {MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY} <= runtime_spec_keys
     assert {MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY} <= server_declared_keys
-    assert finance_server_declared_keys <= server_declared_keys
-    assert finance_server_declared_keys <= runtime_spec_keys
+    assert digital_oracle_tool_keys <= server_declared_keys
+    assert digital_oracle_tool_keys <= runtime_spec_keys
     assert all(
-        spec.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
+        spec.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
         for spec in SERVER_DECLARED_TOOL_SPECS
-        if spec.key in finance_server_declared_keys
+        if spec.key in digital_oracle_tool_keys
+    )
+    assert all(
+        spec.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
+        for spec in runtime_specs
+        if spec.key in digital_oracle_tool_keys
     )
     assert MEMORY_WRITE_OPENAI_FUNCTION_NAME in runtime_function_names
     assert MEMORY_LOOKUP_OPENAI_FUNCTION_NAME in runtime_function_names
@@ -1347,9 +1375,6 @@ def test_prediction_markets_sec_filings_market_sentiment_tool_ownership_constant
         "signaldeck.news.lookup",
         "signaldeck.social_sentiment.lookup",
         "signaldeck.insider_data.lookup",
-        "signaldeck.prediction_markets.lookup",
-        "signaldeck.sec_filings.lookup",
-        "signaldeck.market_sentiment.lookup",
         "signaldeck.positions.lookup",
         "signaldeck.reports.lookup",
     )
@@ -1362,19 +1387,26 @@ def test_prediction_markets_sec_filings_market_sentiment_tool_ownership_constant
         "signaldeck_news_lookup",
         "signaldeck_social_sentiment_lookup",
         "signaldeck_insider_data_lookup",
-        "signaldeck_prediction_markets_lookup",
-        "signaldeck_sec_filings_lookup",
-        "signaldeck_market_sentiment_lookup",
         "signaldeck_positions_lookup",
         "signaldeck_reports_lookup",
     )
-    assert FINANCE_WORKSPACE_DENIED_MESSAGES["signaldeck.prediction_markets.lookup"] == (
+    assert DIGITAL_ORACLE_RUNTIME_TOOL_KEYS == (
+        "signaldeck.prediction_markets.lookup",
+        "signaldeck.sec_filings.lookup",
+        "signaldeck.market_sentiment.lookup",
+    )
+    assert DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES == (
+        "signaldeck_prediction_markets_lookup",
+        "signaldeck_sec_filings_lookup",
+        "signaldeck_market_sentiment_lookup",
+    )
+    assert DIGITAL_ORACLE_DENIED_MESSAGES["signaldeck.prediction_markets.lookup"] == (
         "Agent is not authorized to use signaldeck.prediction_markets.lookup."
     )
-    assert FINANCE_WORKSPACE_DENIED_MESSAGES["signaldeck.sec_filings.lookup"] == (
+    assert DIGITAL_ORACLE_DENIED_MESSAGES["signaldeck.sec_filings.lookup"] == (
         "Agent is not authorized to use signaldeck.sec_filings.lookup."
     )
-    assert FINANCE_WORKSPACE_DENIED_MESSAGES["signaldeck.market_sentiment.lookup"] == (
+    assert DIGITAL_ORACLE_DENIED_MESSAGES["signaldeck.market_sentiment.lookup"] == (
         "Agent is not authorized to use signaldeck.market_sentiment.lookup."
     )
 
@@ -1460,15 +1492,15 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
         )
     )
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_prediction_markets.create_prediction_market_providers",
+        "app.extensions.signaldeck_digital_oracle.runtime_prediction_markets.create_prediction_market_providers",
         lambda: (polymarket_provider, kalshi_provider),
     )
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_sec_filings.create_sec_filings_provider_adapter",
+        "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: sec_provider,
     )
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_market_sentiment.create_market_sentiment_provider_adapter",
+        "app.extensions.signaldeck_digital_oracle.runtime_market_sentiment.create_market_sentiment_provider_adapter",
         lambda: sentiment_provider,
     )
     monkeypatch.setenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", "sec-contact@example.test")
@@ -1973,13 +2005,11 @@ def test_digital_oracle_service_partial_failures_return_structured_warnings() ->
 
 
 def test_runtime_types_digital_oracle_results_serialize_normalized_contracts() -> None:
-    for tool_key in (
+    assert NATIVE_RUNTIME_DIGITAL_ORACLE_TOOL_KEYS == (
         PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
         SEC_FILINGS_LOOKUP_TOOL_KEY,
         MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
-    ):
-        result = RuntimeNativeToolResult.model_validate({"toolKey": tool_key})
-        assert result.tool_key == tool_key
+    )
 
     prediction_warning = RuntimeToolWarning(
         code="venue_partial",
@@ -2238,12 +2268,12 @@ def test_generic_platform_runtime_tool_specs_have_expected_openai_function_names
     )
 
 
-def test_finance_runtime_bundle_includes_digital_oracle_runtime_specs() -> None:
-    from app.extensions.signaldeck_finance.runtime_executors import (
-        FINANCE_WORKSPACE_RUNTIME_TOOL_SPECS,
+def test_digital_oracle_runtime_bundle_includes_digital_oracle_runtime_specs() -> None:
+    from app.extensions.signaldeck_digital_oracle.runtime_executors import (
+        DIGITAL_ORACLE_RUNTIME_TOOL_SPECS,
     )
 
-    runtime_specs_by_key = {spec.key: spec for spec in FINANCE_WORKSPACE_RUNTIME_TOOL_SPECS}
+    runtime_specs_by_key = {spec.key: spec for spec in DIGITAL_ORACLE_RUNTIME_TOOL_SPECS}
     assert (
         runtime_specs_by_key[PREDICTION_MARKETS_LOOKUP_TOOL_KEY]
         is PREDICTION_MARKETS_LOOKUP_TOOL_SPEC
@@ -2266,12 +2296,12 @@ def test_finance_runtime_bundle_keeps_unique_tool_keys_and_function_names() -> N
 
     assert len(runtime_tool_keys) == len(set(runtime_tool_keys))
     assert len(runtime_function_names) == len(set(runtime_function_names))
-    assert PREDICTION_MARKETS_LOOKUP_TOOL_KEY in runtime_tool_keys
-    assert SEC_FILINGS_LOOKUP_TOOL_KEY in runtime_tool_keys
-    assert MARKET_SENTIMENT_LOOKUP_TOOL_KEY in runtime_tool_keys
-    assert PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME in runtime_function_names
-    assert SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME in runtime_function_names
-    assert MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME in runtime_function_names
+    assert PREDICTION_MARKETS_LOOKUP_TOOL_KEY not in runtime_tool_keys
+    assert SEC_FILINGS_LOOKUP_TOOL_KEY not in runtime_tool_keys
+    assert MARKET_SENTIMENT_LOOKUP_TOOL_KEY not in runtime_tool_keys
+    assert PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME not in runtime_function_names
+    assert SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME not in runtime_function_names
+    assert MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME not in runtime_function_names
 
 
 def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> None:
@@ -3347,7 +3377,7 @@ def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typ
     ]
     assert "signaldeck_memory_lookup" in registry.get_guidance({MEMORY_LOOKUP_TOOL_KEY})
 
-    with pytest.raises(RuntimeToolError) as exc_info:
+    with pytest.raises(RuntimeToolError) as finance_exc_info:
         _ = registry.dispatch(
             name=REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
             arguments_json='{"limit":50}',
@@ -3355,12 +3385,38 @@ def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typ
             context=context,
         )
 
-    assert exc_info.value.code == "extension_disabled"
-    assert exc_info.value.message == "Extension is disabled"
-    assert exc_info.value.details == [
+    assert finance_exc_info.value.code == "extension_disabled"
+    assert finance_exc_info.value.message == "Extension is disabled"
+    assert finance_exc_info.value.details == [
         {
             "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
             "surface": f"runtime.tool.{REPORT_LOOKUP_TOOL_KEY}",
+        }
+    ]
+
+    digital_oracle_disabled_registry = RuntimeToolRegistry(
+        RUNTIME_TOOL_SPECS,
+        enabled_extension_keys={FINANCE_WORKSPACE_EXTENSION_KEY},
+    )
+    assert (
+        digital_oracle_disabled_registry.get_openai_tools({PREDICTION_MARKETS_LOOKUP_TOOL_KEY})
+        == []
+    )
+    assert len(digital_oracle_disabled_registry.get_openai_tools({REPORT_LOOKUP_TOOL_KEY})) == 1
+    with pytest.raises(RuntimeToolError) as digital_oracle_exc_info:
+        _ = digital_oracle_disabled_registry.dispatch(
+            name=PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json='{"query":"NVDA earnings"}',
+            granted_tool_keys={PREDICTION_MARKETS_LOOKUP_TOOL_KEY},
+            context=context,
+        )
+
+    assert digital_oracle_exc_info.value.code == "extension_disabled"
+    assert digital_oracle_exc_info.value.message == "Extension is disabled"
+    assert digital_oracle_exc_info.value.details == [
+        {
+            "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
+            "surface": f"runtime.tool.{PREDICTION_MARKETS_LOOKUP_TOOL_KEY}",
         }
     ]
 
@@ -5602,9 +5658,7 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
         PREDICTION_MARKETS_LOOKUP_TOOL_SPEC.openai_function_name
         == PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME
     )
-    assert (
-        PREDICTION_MARKETS_LOOKUP_TOOL_SPEC.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
-    )
+    assert PREDICTION_MARKETS_LOOKUP_TOOL_SPEC.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
     assert schema["required"] == ["query"]
     properties = cast(dict[str, object], schema["properties"])
     venues_schema = cast(dict[str, object], properties["venues"])
@@ -5777,7 +5831,7 @@ def test_prediction_markets_runtime_executor_filters_venues_and_limits(
     )
 
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_prediction_markets.create_prediction_market_providers",
+        "app.extensions.signaldeck_digital_oracle.runtime_prediction_markets.create_prediction_market_providers",
         lambda: (polymarket_provider, kalshi_provider),
     )
     payload = execute_prediction_markets_lookup(
@@ -5846,7 +5900,7 @@ def test_prediction_markets_runtime_executor_preserves_partial_provider_warnings
         ),
     )
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_prediction_markets.create_prediction_market_providers",
+        "app.extensions.signaldeck_digital_oracle.runtime_prediction_markets.create_prediction_market_providers",
         lambda: (polymarket_provider, kalshi_provider),
     )
     payload = execute_prediction_markets_lookup(
@@ -5878,7 +5932,7 @@ def test_prediction_markets_runtime_executor_returns_unavailable_when_all_provid
     polymarket_provider = _FakeDigitalOraclePredictionProvider("polymarket")
     kalshi_provider = _FakeDigitalOraclePredictionProvider("kalshi")
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_prediction_markets.create_prediction_market_providers",
+        "app.extensions.signaldeck_digital_oracle.runtime_prediction_markets.create_prediction_market_providers",
         lambda: (polymarket_provider, kalshi_provider),
     )
 
@@ -6003,7 +6057,7 @@ def test_sec_filings_runtime_tool_spec_uses_approved_parameters_schema() -> None
     assert (
         SEC_FILINGS_LOOKUP_TOOL_SPEC.openai_function_name == SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME
     )
-    assert SEC_FILINGS_LOOKUP_TOOL_SPEC.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert SEC_FILINGS_LOOKUP_TOOL_SPEC.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
     assert SEC_FILINGS_LOOKUP_TOOL_SPEC.parser is parse_sec_filings_lookup_arguments
     assert SEC_FILINGS_LOOKUP_TOOL_SPEC.executor is execute_sec_filings_lookup
 
@@ -6237,7 +6291,7 @@ def test_sec_filings_runtime_executor_filters_forms_dates_and_returns_normalized
         )
     )
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_sec_filings.create_sec_filings_provider_adapter",
+        "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
     monkeypatch.setenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", "sec-contact@example.test")
@@ -6299,7 +6353,7 @@ def test_sec_filings_runtime_executor_preserves_missing_edgar_email_warning(
         )
     )
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_sec_filings.create_sec_filings_provider_adapter",
+        "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
     monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
@@ -6339,7 +6393,7 @@ def test_sec_filings_runtime_executor_degrades_provider_failure_and_redacts_deta
         ),
     )
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_sec_filings.create_sec_filings_provider_adapter",
+        "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
     monkeypatch.setenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", "sec-contact@example.test")
@@ -6379,7 +6433,7 @@ def test_sec_filings_runtime_executor_returns_empty_warning_for_configured_edgar
 ) -> None:
     provider = _FakeDigitalOracleSecFilingsProvider(filings=())
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_sec_filings.create_sec_filings_provider_adapter",
+        "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
     monkeypatch.setenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", "sec-contact@example.test")
@@ -6410,7 +6464,7 @@ def test_market_sentiment_runtime_tool_spec_uses_approved_parameters_schema() ->
         MARKET_SENTIMENT_LOOKUP_TOOL_SPEC.openai_function_name
         == MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME
     )
-    assert MARKET_SENTIMENT_LOOKUP_TOOL_SPEC.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert MARKET_SENTIMENT_LOOKUP_TOOL_SPEC.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
     assert MARKET_SENTIMENT_LOOKUP_TOOL_SPEC.parser is parse_market_sentiment_lookup_arguments
     assert MARKET_SENTIMENT_LOOKUP_TOOL_SPEC.executor is execute_market_sentiment_lookup
 
@@ -6536,7 +6590,7 @@ def test_market_sentiment_runtime_executor_returns_normalized_fear_greed_payload
         )
     )
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_market_sentiment.create_market_sentiment_provider_adapter",
+        "app.extensions.signaldeck_digital_oracle.runtime_market_sentiment.create_market_sentiment_provider_adapter",
         lambda: provider,
     )
 
@@ -6577,7 +6631,7 @@ def test_market_sentiment_runtime_executor_returns_empty_warning_for_empty_provi
         DigitalOracleMarketSentimentProviderResult(provider="fear_greed")
     )
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_market_sentiment.create_market_sentiment_provider_adapter",
+        "app.extensions.signaldeck_digital_oracle.runtime_market_sentiment.create_market_sentiment_provider_adapter",
         lambda: provider,
     )
 
@@ -6635,7 +6689,7 @@ def test_market_sentiment_runtime_executor_preserves_upstream_failure_warning(
         )
     )
     monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.runtime_market_sentiment.create_market_sentiment_provider_adapter",
+        "app.extensions.signaldeck_digital_oracle.runtime_market_sentiment.create_market_sentiment_provider_adapter",
         lambda: provider,
     )
 

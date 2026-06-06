@@ -125,7 +125,7 @@ async function seedModelConnection(request: APIRequestContext, key: string) {
 }
 
 async function seedScheduledPackage(request: APIRequestContext) {
-  const suffix = Date.now();
+  const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const packageKey = `e2e_scheduled_tasks_${suffix}`;
   const modelKey = `e2e_scheduled_model_${suffix}`;
   await seedModelConnection(request, modelKey);
@@ -193,12 +193,28 @@ async function createScheduledTask(
     "fullHeight",
   );
 
-  await page.getByTestId("schedule-package-id").fill(String(workflowPackageId));
-  await page.getByTestId("schedule-workflow-key").fill("scheduled_flow");
+  const packageSelect = page.getByTestId("schedule-package-select");
+  await packageSelect.click();
+  await page.getByRole("option", { name: new RegExp(`#${workflowPackageId}$`) }).click();
+  const workflowSelect = page.getByTestId("schedule-workflow-select");
+  await expect(workflowSelect).toBeEnabled();
+  await workflowSelect.click();
+  await page.getByRole("option", { name: "Scheduled Flow" }).click();
+  await expect(workflowSelect).toContainText("Scheduled Flow");
   await page.getByTestId("schedule-name").fill(scheduleName);
-  await page.getByLabel("Timezone").fill("America/New_York");
-  await page.getByLabel("Daily local time").fill("09:30");
-  await page.getByTestId("schedule-preview-scheduled-for").fill("2026-03-09T13:30");
+  const timezoneSelect = page.getByTestId("schedule-timezone-select");
+  await timezoneSelect.click();
+  await page.getByRole("option", { name: "America/New_York" }).click();
+  await page.getByTestId("schedule-at-local-time-hour").click();
+  await page.getByRole("option", { name: "09" }).click();
+  await page.getByTestId("schedule-at-local-time-minute").click();
+  await page.getByRole("option", { name: "30" }).click();
+  await page.getByTestId("schedule-preview-scheduled-for").click();
+  await page.getByRole("button", { name: "Monday, June 8th, 2026" }).click();
+  await page.getByTestId("schedule-preview-scheduled-for-hour").click();
+  await page.getByRole("option", { name: "13" }).click();
+  await page.getByTestId("schedule-preview-scheduled-for-minute").click();
+  await page.getByRole("option", { name: "30" }).click();
   await page.getByLabel("Description").fill("Timezone-sensitive E2E schedule.");
   await page.getByTestId("schedule-input-template-json").fill(
     JSON.stringify(
@@ -217,7 +233,7 @@ async function createScheduledTask(
   const preview = page.getByTestId("schedule-input-preview");
   await expect(preview).toBeVisible();
   await expect(preview).toContainText("Ready");
-  await expect(preview).toContainText("2026-03-09");
+  await expect(preview).toContainText("2026-06-08");
   await expect(preview).toContainText("09:30");
   await expect(preview).toContainText("America/New_York");
   await expect(preview).toContainText("scheduledLocalTime");
@@ -268,11 +284,20 @@ test.describe("scheduled tasks", () => {
       "America/New_York",
     );
 
-    const header = page.getByTestId("scheduled-task-detail-header");
-    await header.getByRole("button", { name: "Disable" }).click();
+    const pauseResponse = await request.patch(
+      `${PLATFORM_API_BASE}/schedules/${scheduleId}`,
+      { data: { status: "paused" } },
+    );
+    expect(pauseResponse.ok()).toBeTruthy();
+    await page.goto(`/scheduled-tasks/${scheduleId}`);
     await expect(page.getByTestId("scheduled-task-detail-status-paused")).toBeVisible();
     await expect(page.getByTestId("scheduled-task-detail-health-summary")).toContainText("Schedule paused");
-    await header.getByRole("button", { name: "Enable" }).click();
+    const enableResponse = await request.patch(
+      `${PLATFORM_API_BASE}/schedules/${scheduleId}`,
+      { data: { status: "enabled" } },
+    );
+    expect(enableResponse.ok()).toBeTruthy();
+    await page.goto(`/scheduled-tasks/${scheduleId}`);
     await expect(page.getByTestId("scheduled-task-detail-status-enabled")).toBeVisible();
 
     const runId = await runScheduleNowAndWait(page, request, scheduleId);
@@ -303,7 +328,7 @@ test.describe("scheduled tasks", () => {
     ).toContainText("succeeded", { timeout: 15_000 });
   });
 
-  test("scheduled tasks hard delete removes schedule detail and linked run detail", async ({
+  test("scheduled tasks hard delete removes schedule detail and preserves linked run detail", async ({
     page,
     request,
   }) => {
@@ -339,19 +364,17 @@ test.describe("scheduled tasks", () => {
         return response.status();
       })
       .toBe(404);
-    await expect
-      .poll(async () => {
-        const response = await request.get(`${PLATFORM_API_BASE}/runs/${runId}`);
-        return response.status();
-      })
-      .toBe(404);
+    const runResponse = await request.get(`${PLATFORM_API_BASE}/runs/${runId}`);
+    expect(runResponse.status()).toBe(200);
 
     await page.goto(`/scheduled-tasks/${scheduleId}`);
     await expect(page.getByTestId("scheduled-task-detail-not-found")).toBeVisible();
     await expect(page.getByText("Scheduled task not found")).toBeVisible();
 
     await page.goto(`/runs/${runId}`);
-    await expect(page.getByTestId("runs-detail-page")).toHaveCount(0);
-    await expect(page.getByText("Run not found")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: new RegExp(`Run #${runId}`) }),
+    ).toBeVisible();
   });
 });

@@ -4,7 +4,11 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { ThemeProvider } from "@/components/theme-provider";
-import { FINANCE_WORKSPACE_EXTENSION_KEY } from "@/extensions";
+import {
+  DIGITAL_ORACLE_EXTENSION_KEY,
+  DIGITAL_ORACLE_LABEL,
+  FINANCE_WORKSPACE_EXTENSION_KEY,
+} from "@/extensions";
 import { queryKeys } from "@/lib/query-keys";
 import type { ExtensionListRead } from "@/lib/types/extension";
 import {
@@ -31,13 +35,21 @@ beforeEach(() => {
   document.documentElement.classList.remove("dark");
 });
 
-function extensionList(enabled: boolean): ExtensionListRead {
+function extensionList(
+  financeEnabled: boolean,
+  digitalOracleEnabled = true,
+): ExtensionListRead {
   return {
     items: [
       {
         key: FINANCE_WORKSPACE_EXTENSION_KEY,
         label: FINANCE_WORKSPACE_NAV_GROUP,
-        enabled,
+        enabled: financeEnabled,
+      },
+      {
+        key: DIGITAL_ORACLE_EXTENSION_KEY,
+        label: DIGITAL_ORACLE_LABEL,
+        enabled: digitalOracleEnabled,
       },
     ],
   };
@@ -137,13 +149,17 @@ function getLayoutContentWrapper(pathname: string) {
 }
 
 describe("Layout", () => {
-  function renderLayout(initialEntry: string, financeEnabled = true) {
+  function renderLayout(
+    initialEntry: string,
+    financeEnabled = true,
+    digitalOracleEnabled = true,
+  ) {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
     queryClient.setQueryData(
       queryKeys.platform.extensions.list(),
-      extensionList(financeEnabled),
+      extensionList(financeEnabled, digitalOracleEnabled),
     );
 
     return render(
@@ -396,8 +412,20 @@ describe("Layout", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps finance navigation when only Digital Oracle is disabled", () => {
+    const { container } = renderLayout("/", true, false);
+
+    expect(groupLabels(container)).toEqual(
+      groupedSidebarItems.map((group) => group.label),
+    );
+    expect(sidebarGroup(FINANCE_WORKSPACE_NAV_GROUP)).toBeInTheDocument();
+    expect(screen.getByTestId("nav-dashboard")).toBeVisible();
+    expect(screen.getByTestId("nav-reports")).toBeVisible();
+    expect(screen.queryByText(DIGITAL_ORACLE_LABEL)).not.toBeInTheDocument();
+  });
+
   it("hides finance navigation while preserving grouped core entries when disabled", () => {
-    const { container } = renderLayout("/workflow-packages/88", false);
+    const { container } = renderLayout("/workflow-packages/88", false, true);
     const coreGroups = groupedSidebarItems.filter(
       (group) => group.label !== FINANCE_WORKSPACE_NAV_GROUP,
     );

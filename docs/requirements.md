@@ -17,7 +17,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Package secret bindings for package-local encrypted HTTP operation secrets.
 - Package import/export with no database ids, no run history, no package secret binding rows, and no raw secret values.
 - Model Connection CRUD, encrypted stored secrets, OpenAI-family `protocolProfile` selection, backend-owned compatibility evidence, reachability tests, capability probes, and secret-safe read payloads.
-- Global read-only Tools metadata from the server-declared catalog, filtered by extension state where tools are extension-owned, including the finance-owned phase-1 Digital Oracle-backed tool keys `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`.
+- Global read-only Tools metadata from the server-declared catalog, filtered by extension state where tools are extension-owned, including Digital Oracle-owned `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`.
 - Dedicated Workflow Package launch console at `/workflow-packages/:packageId/run`, with preflight gating and run creation outside the editor.
 - Scheduled Tasks for recurring Workflow Package runs, including structured recurrence, scheduled input previews, run-now, fire history while the schedule exists, and deletion that preserves existing run history while stopping future automation.
 - Run list/detail, backend-owned progress/queue read models, package provenance, rerun drafts, reruns, fork drafts, invocation-input forks, operation invocation evidence, memory evidence, typed failure taxonomy, and bounded retry evidence.
@@ -68,10 +68,13 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Model Connections must keep `protocolProfile` as the writable runtime selector and expose capability states, policy defaults, reachability-test metadata, capability-probe metadata, and derived API-style evidence as backend-owned read data.
 - Public Model Connection create/update payloads must reject client-authored capabilities, runtime policy fields, probe cache TTL, derived API style, `compatibilityProfile`, and other compatibility truth that is not part of the write DTO.
 - Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles.
-- Finance-owned tool entries must be hidden while `signaldeck.finance` is disabled, while platform-core memory tools must remain visible.
-- The shipped Digital Oracle-backed finance tools must be limited to `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`; speculative phase-2 tools and raw provider payloads must not be documented or exposed as shipped contracts.
+- Finance-owned tool entries must be hidden while `signaldeck.finance` is disabled; platform-core memory tools must remain visible.
+- Digital Oracle-owned tool entries must be hidden while `signaldeck.digital_oracle` is disabled; platform-core memory tools must remain visible.
+- The shipped Digital Oracle tools must be limited to `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`; their tool keys and OpenAI function names must stay unchanged. Speculative phase-2 tools and raw provider payloads must not be documented or exposed as shipped contracts.
 - Retired report-write tool names, including `signaldeck_reports_write`, must fail closed at native dispatch and must not reappear through live tool discovery or MCP fallback.
 - `/api/extensions` must expose only `key`, `label`, and `enabled`; toggle requests must accept only `enabled`.
+- `signaldeck.finance` is a statically resident, default-enabled bundled extension.
+- `signaldeck.digital_oracle` is a statically resident, default-enabled bundled extension. Digital Oracle has no route or nav surface in this upgrade.
 
 ### FR-5 Launches, Runs, Reruns, Forks, And Memory
 
@@ -110,7 +113,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 
 - A user can manage portfolio records, templates, and reports without provider availability.
 - A user can author Workflow Packages, configure Model Connections, select server-declared Tools metadata during package authoring, launch saved package runs from `/workflow-packages/:packageId/run`, schedule recurring package runs, hard-delete Scheduled Tasks, inspect Runs, and review explicit-private-scope canonical Memory from the browser.
-- The Digital Oracle researcher demo path is `demo/digital_oracle_researcher.yaml`; it must grant the three phase-1 finance tools through package-local capability profiles and keep methodology in `systemPrompt`, not a global skill.
+- The Digital Oracle researcher demo path is `demo/digital_oracle_researcher.yaml`; it must grant the three phase-1 `signaldeck.digital_oracle` tools through package-local capability profiles and keep methodology in `systemPrompt`, not a global skill.
 - Package HTTP operations can be authored, bound to package-local secrets, launched, and inspected without exposing raw secret values.
 - Run detail exposes backend-owned progress, queue state, agent invocations, operation invocations, package provenance, extension dependencies, memory artifacts, memory events, typed failure taxonomy, and bounded retry evidence.
 - `/api/memory` and `/memory` require package access context and explicit private scope selection, do not act as global memory search, and do not surface finance report history as platform memory.

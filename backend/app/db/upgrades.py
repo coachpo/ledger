@@ -152,10 +152,10 @@ _DIGITAL_ORACLE_PRESET_PACKAGE_KEY = _DIGITAL_ORACLE_PRESET_PACKAGE_SQL_FILE.rem
 _PRESET_PACKAGE_MANIFEST_HASH = "3d05ed8a6533618b6a955dc0ac368c3dd229d8ecb002667f5b887ece4f4081f1"
 _PRESET_PACKAGE_COMPILED_HASH = "a62916f90c24b61c419d05dbfe8b22274cafdfd0ebff52493509140b25468936"
 _DIGITAL_ORACLE_PRESET_PACKAGE_MANIFEST_HASH = (
-    "40993cbbeeeeb204e76897356c12f74ad32768328adab8eb0735ef0e6f4a3c0f"
+    "01c192ca6ffff84ebff1c55d74580bdf117e0c7eab82259e32e64117e408c277"
 )
 _DIGITAL_ORACLE_PRESET_PACKAGE_COMPILED_HASH = (
-    "5d7fa92af23bf1991fa73c8ea0c27051dda9f34ae272cac70bffb00df40dec81"
+    "bfcb710b1633f999f985e6b10dac82d2ba64397d2b973824d18e5e1684d8d0b0"
 )
 _DB_UPGRADE_MARKER_TABLE = "db_upgrade_markers"
 _WORKFLOW_PACKAGE_STARTUP_CUTOVER_MARKER_KEY = "workflow_package_artifact_cutover_v1"
@@ -3349,9 +3349,7 @@ def _ensure_run_workflow_package_provenance_support(
             connection.exec_driver_sql(
                 "DELETE FROM runs WHERE id IN (SELECT id FROM legacy_non_package_run_ids)"
             )
-        connection.exec_driver_sql(
-            "ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind"
-        )
+        connection.exec_driver_sql("ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind")
         connection.exec_driver_sql(
             "ALTER TABLE runs ADD CONSTRAINT ck_runs_target_kind "
             "CHECK (target_kind = 'workflowPackage')"

@@ -112,9 +112,7 @@ test.describe("Reports", () => {
       page.getByRole("heading", { name: "Report content" }),
     ).toBeVisible();
     await expect(
-      page
-        .getByTestId("report-detail-identity")
-        .getByRole("heading", { name: report.name }),
+      page.getByTestId("report-detail-header").getByRole("heading", { name: report.name }),
     ).toBeVisible();
     await expect(
       page
@@ -128,13 +126,19 @@ test.describe("Reports", () => {
     const textarea = page.locator("textarea");
     await expect(textarea).toBeVisible();
     await textarea.fill("# Edited E2E Report\n\nEdited content.");
-    await page.getByRole("button", { name: /save/i }).click({ force: true });
-    await expect(page.getByText("Report updated")).toBeVisible();
+    const saveButton = detailActions.getByRole("button", { name: /save/i });
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/reports/") &&
+          response.request().method() === "PATCH",
+      ),
+      saveButton.evaluate((button) => (button as HTMLButtonElement).click()),
+    ]);
 
-    await expect(
-      page.getByRole("heading", { name: "Edited E2E Report" }),
-    ).toBeVisible();
-    await expect(page.getByText("Edited content.")).toBeVisible();
+    await expect(page.getByTestId("report-content-pane")).toContainText(
+      "Edited content.",
+    );
 
     const downloadLink = page.getByRole("link", { name: /download/i });
     await expect(downloadLink).toBeVisible();

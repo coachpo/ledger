@@ -3,7 +3,7 @@
 > Inherits root rules from `/AGENTS.md`. Local layer docs live under `app/*/AGENTS.md` and `tests/AGENTS.md`.
 
 ## OVERVIEW
-FastAPI + SQLAlchemy + Pydantic backend for SignalDeck. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error/telemetry helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and executable agent workflows are accepted only through Workflow Package APIs. The live request path includes the statically resident `signaldeck.finance` Finance Workspace extension plus platform routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs.
+FastAPI + SQLAlchemy + Pydantic backend for SignalDeck. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error/telemetry helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and executable agent workflows are accepted only through Workflow Package APIs. The live request path includes the statically resident `signaldeck.finance` Finance Workspace extension, the tool-only `signaldeck.digital_oracle` extension, and platform routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs.
 
 Extension model: SignalDeck Core ships statically resident extensions in code, while backend state and gates decide which routes, tools, providers, and hooks are exposed.
 
@@ -11,7 +11,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
 
-Future backend upgrade work must keep generic platform behavior separate from extension-owned behavior. Promote finance-owned routes, providers, runtime tools, or hooks into core layers only when a shared contract is intentional and the registries, docs, and tests move with it.
+Future backend upgrade work must keep generic platform behavior separate from extension-owned behavior. Promote extension-owned routes, providers, runtime tools, or hooks into core layers only when a shared contract is intentional and the registries, docs, and tests move with it.
 
 ## CHILD DOCS
 - `app/core/AGENTS.md` — settings, error envelope, telemetry, normalization helpers
@@ -72,6 +72,7 @@ backend/
 - Scheduled Tasks use `/api/schedules`, structured recurrence, IANA timezones, JSON input templates, idempotent manual fires, and ordinary queued runs. The scheduler worker materializes due fires; routes do not execute runs inline.
 - Removed orchestration, Studio, Tryout, runtime-v2 routes, and global authoring routes are not mounted live. Keep docs aligned with Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs.
 - `signaldeck.finance` owns preserved `/api/v1` finance routers, finance service dependencies, provider factories, finance runtime tools, report lookup, and historical agent-memory report readers while enabled.
+- `signaldeck.digital_oracle` is default enabled and tool-only in this upgrade. It owns `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup` with unchanged tool keys and OpenAI function names, and it adds no API router, provider bundle, lifecycle hook, route, or nav surface.
 - Tools are global read-only metadata at `/api/tools`; packages reference tool keys through package-local capability profiles. Current finance-owned native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, and report lookup. Core memory tools are platform-owned and use `signaldeck.memory.write` / `signaldeck.memory.lookup`.
 - LLM-provider calls must stay inside official SDK clients (`OpenAI`) rather than ad-hoc raw HTTP request code.
 

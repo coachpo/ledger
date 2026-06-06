@@ -13,7 +13,6 @@ test.describe("Portfolio CRUD", () => {
 
     await page.getByLabel("Name").fill(portfolioName);
     await page.getByLabel("Slug").fill(portfolioSlug);
-    await page.getByLabel("Base Currency").fill("USD");
     await page.getByRole("button", { name: /create|save|submit/i }).click();
 
     await expect(page).toHaveURL(/\/portfolios$/);

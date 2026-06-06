@@ -15,7 +15,7 @@ Future frontend upgrade work must keep platform-core route, query, and authoring
 
 ## CHILD DOCS
 - `e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions
-- `src/extensions/AGENTS.md` — frontend extension registry, route/nav/tool filtering, and Finance Workspace scaffold
+- `src/extensions/AGENTS.md` — frontend extension registry, route/nav/tool filtering, Finance Workspace scaffold, and Digital Oracle tool-only scaffold
 - `src/lib/AGENTS.md` — API client, query keys, formatting, runtime-input helpers, platform-authoring helpers, and shared types
 - `src/lib/api/AGENTS.md` — resource API modules for uploads, downloads, and route helpers
 - `src/lib/types/AGENTS.md` — shared frontend wire contracts mirroring backend schemas
@@ -57,7 +57,7 @@ frontend/
 | Task | Location | Notes |
 |---|---|---|
 | App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/routes.metadata.ts`, `src/extensions/runtime-helpers.ts`, `src/components/layout.tsx` | query client, router provider, metadata-driven shell/nav rendering, extension route assembly, theme toggle, and sidebar navigation |
-| Extension runtime and state | `src/extensions/AGENTS.md`, `src/pages/extensions/AGENTS.md`, `src/extensions/runtime.tsx`, `src/extensions/runtime-helpers.ts`, `src/hooks/use-extensions.ts` | bundled frontend extensions, finance route/nav/tool filtering, and `/extensions` state UI |
+| Extension runtime and state | `src/extensions/AGENTS.md`, `src/pages/extensions/AGENTS.md`, `src/extensions/runtime.tsx`, `src/extensions/runtime-helpers.ts`, `src/hooks/use-extensions.ts` | bundled frontend extensions, finance route/nav filtering, extension-owned tool filtering, and `/extensions` state UI |
 | Shared API/state logic | `src/lib/AGENTS.md`, `src/lib/api/AGENTS.md`, `src/lib/types/AGENTS.md`, `src/lib/platform-authoring/AGENTS.md`, `src/hooks/AGENTS.md` | typed fetch, query keys, wire contracts, platform-authoring helpers, and TanStack Query wrappers |
 | Shared route shells and UI state | `src/components/shared/AGENTS.md`, `src/hooks/AGENTS.md` | inventory/workspace/split-inspector shells, resource chrome, and reusable cards/table/filter/selection/inspector state helpers |
 | Portfolio routes | `src/pages/portfolios/AGENTS.md`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
@@ -86,7 +86,7 @@ frontend/
 - Workflow package editors are authoring-only YAML-manifest editors with local package-resource editing, backend validation, package secret bindings, import, and export. Launch, preflight gating, runtime parameters, saved inputs, and create-run state belong to the dedicated `/workflow-packages/:packageId/run` page labeled `Launch Workflow Package`.
 - Agent-platform pages use dedicated hooks and route params to keep package CRUD, Scheduled Task automation, extension-filtered global Tools reads for package authoring, global Model Connections, explicit-scope Memory reads, backend-provided run progress/queue/readiness payloads, and Run inspection inside the routed page layer.
 - Scheduled Task screens are platform-owned. Keep structured recurrence, scheduled input preview, fire history, delete confirmation and redirect behavior, and run-now links aligned with `use-scheduled-tasks.ts` and `queryKeys.platform.schedules`.
-- `useExtensions()` drives Finance Workspace route/nav visibility, `/extensions` state UI, and tool filtering for package capability profiles.
+- `useExtensions()` drives Finance Workspace route/nav visibility, `/extensions` state UI, and extension-owned tool filtering for package capability profiles. Digital Oracle contributes tool filtering only and has no route or nav surface in this upgrade.
 - The `/extensions` page is a system state surface only; render only the backend contract (`key`, `label`, `enabled`) and keep marketplace/install/remove behavior out of phase 1.
 - Model connection editors keep credentials write-only in the UI: blank edit submissions preserve the stored key, and inline connection tests run against the persisted backend connection only after save.
 - This parent guide owns `src/styles/`, `src/test/`, and `scripts/` because those folders are still small. Split them back out only if they gain independent ownership or materially different rules.

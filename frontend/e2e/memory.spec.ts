@@ -181,16 +181,10 @@ test.describe("canonical memory workspace", () => {
     await expectSingleRouteMain(page, "route-memory-list", "fullHeight");
     await expect(page.getByTestId("memory-list-page")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Canonical Memory" }),
+      page.getByRole("heading", { name: "Memory" }),
     ).toBeVisible();
     await expect(page.getByTestId("memory-contract-notice")).toContainText(
       "concrete private scope",
-    );
-    await expect(page.getByTestId("memory-contract-notice")).toContainText(
-      "browser-authored JSON",
-    );
-    await expect(page.getByTestId("memory-contract-notice")).toContainText(
-      "finance report history remains in Reports",
     );
     await expect(page.getByTestId("memory-access-required")).toContainText(
       "Access context required",

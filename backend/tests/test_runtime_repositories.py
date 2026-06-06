@@ -1484,9 +1484,7 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                             "apiVersion: signaldeck.workflowPackage/v1\n"
                             "key: market_review_package\n"
                         ),
-                        "packageDefinition": {
-                            "metadata": {"key": "market_review_package"}
-                        },
+                        "packageDefinition": {"metadata": {"key": "market_review_package"}},
                         "compiledPlan": {
                             "workflows": [{"key": workflow.key, "name": workflow.name}]
                         },

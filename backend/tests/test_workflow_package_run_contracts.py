@@ -13,12 +13,13 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
-from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-from app.extensions.signaldeck_finance.runtime_types import (
+from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
+from app.extensions.signaldeck_digital_oracle.runtime_types import (
     MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
     PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
     SEC_FILINGS_LOOKUP_TOOL_KEY,
 )
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.agent_memory import RunMemoryEvent
 from app.models.model_connection import ModelConnection
 from app.models.report import Report
@@ -2358,8 +2359,6 @@ def test_compat_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(
         session.flush()
         run = Run(
             id=fixture_run_id,
-            agent_id=None,
-            target_workflow_id=None,
             target_kind="workflowPackage",
             target_id=fixture_package_id,
             target_key=fixture_target_key,
@@ -2519,6 +2518,56 @@ def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
             FINANCE_WORKSPACE_EXTENSION_KEY,
             ExtensionToggleRequest(enabled=False),
         )
+
+
+def test_digital_oracle_guidance_launch_persists_digital_oracle_extension_dependencies(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    create_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _digital_oracle_guidance_package_source()},
+    )
+    assert create_response.status_code == 201, create_response.json()
+    package = cast(dict[str, Any], create_response.json())
+
+    launch_response = client.post(
+        f"/api/workflow-packages/{package['id']}/launches",
+        json={
+            "workflowKey": "research",
+            "parameters": {
+                "researchQuestion": "Will rates fall this quarter?",
+                "outputLanguage": "English",
+            },
+        },
+    )
+
+    assert launch_response.status_code == 201, launch_response.json()
+    run_id = int(launch_response.json()["id"])
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    dependencies = cast(list[dict[str, object]], detail_response.json()["extensionDependencies"])
+    assert FINANCE_WORKSPACE_EXTENSION_KEY not in json.dumps(dependencies, sort_keys=True)
+    assert dependencies == [
+        {
+            "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
+            "surfaces": sorted(
+                [
+                    *[f"runtime.tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
+                    *[f"tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
+                ]
+            ),
+            "fields": [
+                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
+                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
+                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
+            ],
+        }
+    ]
+    with session_factory() as session:
+        package_row = session.query(WorkflowPackage).filter_by(id=int(package["id"])).one()
+        assert package_row.extension_dependencies == dependencies
 
 
 def test_tradingagents_advisory_research_launch_persists_extension_dependencies(

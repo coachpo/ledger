@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +11,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents.runtime_tools.memory import MEMORY_LOOKUP_TOOL_KEY, MEMORY_WRITE_TOOL_KEY
 from app.core.errors import ApiError
+from app.extensions.signaldeck_digital_oracle.ownership import (
+    DIGITAL_ORACLE_EXTENSION_KEY,
+    DIGITAL_ORACLE_RUNTIME_TOOL_KEYS,
+)
 from app.extensions.signaldeck_finance.dependencies import FINANCE_SHARED_SERVICE_OWNERSHIP_MAP
 from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_EXTENSION_KEY,
@@ -112,6 +116,70 @@ spec:
 """
 
 
+def _digital_oracle_tool_package_source(package_key: str) -> str:
+    return f"""apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: {package_key}
+  name: Digital Oracle Matrix Package
+  description: Lifecycle matrix fixture for Digital Oracle-owned tools.
+spec:
+  inputs:
+    type: object
+    properties:
+      researchQuestion:
+        type: string
+    required: [researchQuestion]
+  capabilityProfiles:
+    - key: digital_oracle_tools
+      name: Digital Oracle Tools
+      toolKeys:
+        - signaldeck.prediction_markets.lookup
+        - signaldeck.sec_filings.lookup
+        - signaldeck.market_sentiment.lookup
+  outputSchemas:
+    - key: summary_output
+      name: Summary Output
+      jsonSchema:
+        type: object
+        properties:
+          summary:
+            type: string
+        required: [summary]
+  agents:
+    - key: digital_oracle_analyst
+      name: Digital Oracle Analyst
+      modelConnection: package_runtime_model
+      systemPrompt: Return a short JSON summary.
+      inputSchema:
+        type: object
+        properties:
+          researchQuestion:
+            type: string
+        required: [researchQuestion]
+      outputSchema: summary_output
+      capabilityProfiles: [digital_oracle_tools]
+  workflows:
+    - key: digital_oracle_matrix_flow
+      name: Digital Oracle Matrix Flow
+      inputSchema:
+        type: object
+        properties:
+          researchQuestion:
+            type: string
+        required: [researchQuestion]
+      flow:
+        kind: step
+        id: digital_oracle_analysis
+        slot: analysis
+        uses: digital_oracle_analyst
+        with:
+          researchQuestion: ${{{{ inputs.researchQuestion }}}}
+      output:
+        from: ${{{{ nodes.digital_oracle_analysis.outputs.analysis }}}}
+"""
+
+
 def _tool_keys(client: TestClient) -> list[str]:
     response = client.get("/api/tools")
     assert response.status_code == 200, response.json()
@@ -120,13 +188,22 @@ def _tool_keys(client: TestClient) -> list[str]:
     return [str(item["key"]) for item in items]
 
 
-def _create_finance_tool_package(client: TestClient, package_key: str) -> dict[str, Any]:
+def _create_finance_tool_package(client: TestClient, package_key: str) -> dict[str, object]:
     response = client.post(
         "/api/workflow-packages",
         json={"manifestSource": _finance_tool_package_source(package_key)},
     )
     assert response.status_code == 201, response.json()
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, object], response.json())
+
+
+def _create_digital_oracle_tool_package(client: TestClient, package_key: str) -> dict[str, object]:
+    response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _digital_oracle_tool_package_source(package_key)},
+    )
+    assert response.status_code == 201, response.json()
+    return cast(dict[str, object], response.json())
 
 
 def _set_finance_extension(client: TestClient, *, enabled: bool) -> dict[str, object]:
@@ -136,6 +213,24 @@ def _set_finance_extension(client: TestClient, *, enabled: bool) -> dict[str, ob
     )
     assert response.status_code == 200, response.json()
     return cast(dict[str, object], response.json())
+
+
+def _set_digital_oracle_extension(client: TestClient, *, enabled: bool) -> dict[str, object]:
+    response = client.patch(
+        f"/api/extensions/{DIGITAL_ORACLE_EXTENSION_KEY}",
+        json={"enabled": enabled},
+    )
+    assert response.status_code == 200, response.json()
+    return cast(dict[str, object], response.json())
+
+
+def _extension_state_by_key(client: TestClient) -> dict[str, dict[str, object]]:
+    response = client.get("/api/extensions")
+    assert response.status_code == 200, response.json()
+    body = cast(dict[str, object], response.json())
+    items = cast(list[dict[str, object]], body["items"])
+    assert all(set(item) == {"key", "label", "enabled"} for item in items)
+    return {str(item["key"]): item for item in items}
 
 
 def _assert_extension_disabled(response: Response, *, surface: str | None = None) -> None:
@@ -242,6 +337,92 @@ def _assert_direct_extension_disabled(exc: ApiError, *, surface: str) -> None:
     assert exc.details == [{"extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY, "surface": surface}]
 
 
+def test_finance_and_digital_oracle_mixed_states_are_independent(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    finance_package = _create_finance_tool_package(client, "finance_mixed_state_package")
+    digital_oracle_package = _create_digital_oracle_tool_package(
+        client,
+        "digital_oracle_mixed_state_package",
+    )
+
+    initial_states = _extension_state_by_key(client)
+    assert initial_states[FINANCE_WORKSPACE_EXTENSION_KEY]["enabled"] is True
+    assert initial_states[DIGITAL_ORACLE_EXTENSION_KEY]["enabled"] is True
+
+    disabled_digital_oracle = _set_digital_oracle_extension(client, enabled=False)
+    assert disabled_digital_oracle == {
+        "key": DIGITAL_ORACLE_EXTENSION_KEY,
+        "label": "Digital Oracle Runtime",
+        "enabled": False,
+    }
+    tool_keys = set(_tool_keys(client))
+    assert set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS) <= tool_keys
+    assert set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS).isdisjoint(tool_keys)
+    finance_preflight = client.post(
+        f"/api/workflow-packages/{finance_package['id']}/preflight",
+        params={"workflowKey": "finance_matrix_flow"},
+    )
+    assert finance_preflight.status_code == 200, finance_preflight.json()
+    assert finance_preflight.json()["ready"] is True
+    digital_oracle_preflight = client.post(
+        f"/api/workflow-packages/{digital_oracle_package['id']}/preflight",
+        params={"workflowKey": "digital_oracle_matrix_flow"},
+    )
+    assert digital_oracle_preflight.status_code == 200, digital_oracle_preflight.json()
+    digital_oracle_body = cast(dict[str, object], digital_oracle_preflight.json())
+    digital_oracle_errors = _blocking_extension_errors(digital_oracle_body)
+    assert {error["extensionKey"] for error in digital_oracle_errors} == {
+        DIGITAL_ORACLE_EXTENSION_KEY
+    }
+    assert {error["surface"] for error in digital_oracle_errors} == {
+        f"tool.{tool_key}" for tool_key in DIGITAL_ORACLE_RUNTIME_TOOL_KEYS
+    }
+
+    _ = _set_digital_oracle_extension(client, enabled=True)
+    disabled_finance = _set_finance_extension(client, enabled=False)
+    assert disabled_finance == {
+        "key": FINANCE_WORKSPACE_EXTENSION_KEY,
+        "label": "Finance Workspace",
+        "enabled": False,
+    }
+    tool_keys = set(_tool_keys(client))
+    assert set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS) <= tool_keys
+    assert set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS).isdisjoint(tool_keys)
+    _assert_extension_disabled(
+        client.get("/api/v1/portfolios"),
+        surface="/api/v1/portfolios",
+    )
+    digital_oracle_preflight = client.post(
+        f"/api/workflow-packages/{digital_oracle_package['id']}/preflight",
+        params={"workflowKey": "digital_oracle_matrix_flow"},
+    )
+    assert digital_oracle_preflight.status_code == 200, digital_oracle_preflight.json()
+    assert digital_oracle_preflight.json()["ready"] is True
+    assert digital_oracle_preflight.json()["blockingErrors"] == []
+    finance_preflight = client.post(
+        f"/api/workflow-packages/{finance_package['id']}/preflight",
+        params={"workflowKey": "finance_matrix_flow"},
+    )
+    assert finance_preflight.status_code == 200, finance_preflight.json()
+    finance_body = cast(dict[str, object], finance_preflight.json())
+    finance_errors = _blocking_extension_errors(finance_body)
+    assert finance_errors == [
+        {
+            "field": "spec.capabilityProfiles.quote_tools.toolKeys[0]",
+            "issue": (
+                "Server-declared tool 'signaldeck.market_data.quote_lookup' is disabled because "
+                "extension 'signaldeck.finance' is disabled"
+            ),
+            "code": "extension_disabled",
+            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "surface": "tool.signaldeck.market_data.quote_lookup",
+        }
+    ]
+
+
 def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -253,10 +434,11 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     _seed_model_connection(session_factory)
 
     enabled_tool_keys = _tool_keys(client)
-    assert set(enabled_tool_keys) == set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS) | {
-        MEMORY_WRITE_TOOL_KEY,
-        MEMORY_LOOKUP_TOOL_KEY,
-    }
+    assert set(enabled_tool_keys) == (
+        set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
+        | set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS)
+        | {MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY}
+    )
 
     portfolio = client.post(
         "/api/v1/portfolios",
@@ -312,7 +494,10 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     disabled_extension = _set_finance_extension(client, enabled=False)
     assert disabled_extension["enabled"] is False
 
-    assert set(_tool_keys(client)) == {MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY}
+    assert set(_tool_keys(client)) == set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS) | {
+        MEMORY_WRITE_TOOL_KEY,
+        MEMORY_LOOKUP_TOOL_KEY,
+    }
     _assert_extension_disabled(
         client.get("/api/v1/portfolios"),
         surface="/api/v1/portfolios",

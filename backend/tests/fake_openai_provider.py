@@ -269,7 +269,8 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default="18081")
     args = parser.parse_args()
-    server = ThreadingHTTPServer((args.host, int(args.port)), FakeOpenAIProviderHandler)
+    server = FakeOpenAIProviderServer((args.host, int(args.port)), FakeOpenAIProviderHandler)
+    server.request_log = []
     server.serve_forever()
 
 

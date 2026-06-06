@@ -7,6 +7,12 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  DIGITAL_ORACLE_EXTENSION_KEY,
+  DIGITAL_ORACLE_LABEL,
+  FINANCE_WORKSPACE_EXTENSION_KEY,
+  FINANCE_WORKSPACE_LABEL,
+} from "@/extensions";
 import type { ExtensionRead } from "@/lib/types/extension";
 
 import { ExtensionsListPage } from "./list";
@@ -42,8 +48,8 @@ function extensionFixture(
 ): ExtensionRead {
   return {
     enabled: true,
-    key: "signaldeck.finance",
-    label: "Finance Workspace",
+    key: FINANCE_WORKSPACE_EXTENSION_KEY,
+    label: FINANCE_WORKSPACE_LABEL,
     ...overrides,
   };
 }
@@ -61,7 +67,15 @@ describe("ExtensionsListPage", () => {
       mutateAsync: toggleExtensionMock,
     });
     useExtensionsMock.mockReturnValue({
-      data: { items: [extensionFixture()] },
+      data: {
+        items: [
+          extensionFixture(),
+          extensionFixture({
+            key: DIGITAL_ORACLE_EXTENSION_KEY,
+            label: DIGITAL_ORACLE_LABEL,
+          }),
+        ],
+      },
       error: null,
       isError: false,
       isPending: false,
@@ -93,32 +107,59 @@ describe("ExtensionsListPage", () => {
     expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    const row = screen.getByTestId("extension-row-signaldeck-finance");
-    expect(row).toHaveTextContent("Finance Workspace");
-    expect(row).toHaveTextContent("signaldeck.finance");
-    expect(row).toHaveTextContent("Enabled");
-    expect(row).not.toHaveTextContent(
+    expect(
+      Array.from(
+        page.querySelectorAll<HTMLElement>('[data-testid^="extension-row-"]'),
+      ).map((row) => row.dataset.testid),
+    ).toEqual([
+      "extension-row-signaldeck-digital-oracle",
+      "extension-row-signaldeck-finance",
+    ]);
+    const digitalOracleRow = screen.getByTestId(
+      "extension-row-signaldeck-digital-oracle",
+    );
+    expect(digitalOracleRow).toHaveTextContent("Digital Oracle Runtime");
+    expect(digitalOracleRow).toHaveTextContent("signaldeck.digital_oracle");
+    expect(digitalOracleRow).toHaveTextContent("Enabled");
+    expect(
+      within(digitalOracleRow).getByRole("switch", {
+        name: "Disable Digital Oracle Runtime extension",
+      }),
+    ).toHaveAttribute("data-state", "checked");
+    expect(
+      within(digitalOracleRow).getByTestId(
+        "extension-toggle-signaldeck-digital-oracle",
+      ),
+    ).toHaveAttribute("data-state", "checked");
+
+    const financeRow = screen.getByTestId("extension-row-signaldeck-finance");
+    expect(financeRow).toHaveTextContent("Finance Workspace");
+    expect(financeRow).toHaveTextContent("signaldeck.finance");
+    expect(financeRow).toHaveTextContent("Enabled");
+    expect(financeRow).not.toHaveTextContent(
       "Ownership: SignalDeck Core plus Finance Workspace extension",
     );
-    expect(row).not.toHaveTextContent("Blast radius");
-    expect(row).not.toHaveTextContent("Finance routes, nav, tools");
+    expect(financeRow).not.toHaveTextContent("Blast radius");
+    expect(financeRow).not.toHaveTextContent("Finance routes, nav, tools");
     expect(screen.queryByText(/marketplace/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/install/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/remove/i)).not.toBeInTheDocument();
     expect(
-      within(row).getByRole("switch", {
+      within(financeRow).getByRole("switch", {
         name: "Disable Finance Workspace extension",
       }),
     ).toHaveAttribute("data-state", "checked");
     expect(
-      within(row).getByTestId("extension-toggle-signaldeck-finance"),
+      within(financeRow).getByTestId("extension-toggle-signaldeck-finance"),
     ).toHaveAttribute("data-state", "checked");
-    expect(
-      within(row).queryByRole("button", { name: /install/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(row).queryByRole("button", { name: /remove/i }),
-    ).not.toBeInTheDocument();
+    for (const row of [digitalOracleRow, financeRow]) {
+      expect(
+        within(row).queryByRole("button", { name: /install/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(row).queryByRole("button", { name: /remove/i }),
+      ).not.toBeInTheDocument();
+    }
   });
 
   it("toggles extension enabled state through the backend mutation", async () => {

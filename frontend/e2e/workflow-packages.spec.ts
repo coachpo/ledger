@@ -431,7 +431,7 @@ test.describe("Workflow packages", () => {
       },
       workflowPackageKey: packageKey,
     });
-    await expect(page.getByTestId("runs-detail-status")).toContainText(
+    await expect(page.getByTestId("runs-detail-summary-line")).toContainText(
       "succeeded",
       { timeout: 15_000 },
     );
@@ -577,7 +577,7 @@ test.describe("Workflow packages", () => {
     const forkStepIndex = forkTarget.stepIndex;
 
     await page.reload();
-    await expect(page.getByTestId("runs-detail-status")).toContainText(
+    await expect(page.getByTestId("runs-detail-summary-line")).toContainText(
       "succeeded",
       { timeout: 15_000 },
     );
@@ -690,8 +690,13 @@ test.describe("Workflow packages", () => {
     await expect(
       page.getByTestId("workflow-package-launch-page"),
     ).toBeVisible();
-    await expect(page.getByText("Blocking diagnostics")).toBeVisible();
-    await expect(page.getByText("This workflow requires native tool calls")).toBeVisible();
+    await selectLaunchWorkflow(page, "advisory_flow");
+    await expect(page.getByTestId("workflow-package-launch-blockers")).toContainText(
+      "Blocking diagnostics",
+    );
+    await expect(page.getByTestId("workflow-package-launch-blockers")).toContainText(
+      "This workflow requires native tool calls",
+    );
 
     await seedModelConnectionPayload(request, {
       key: strictModelKey,
@@ -898,6 +903,7 @@ test.describe("Workflow packages", () => {
 
     await page.goto(`/runs/${usageRunId}`);
     await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+    await page.getByTestId("runs-detail-tab-trigger-runtime").click();
     await expect(page.getByTestId("runs-runtime-profile")).toContainText(
       "Runtime profile",
     );
@@ -956,12 +962,11 @@ test.describe("Workflow packages", () => {
       "data-route-shell-mode",
       "fullHeight",
     );
-    await expect(page.getByTestId("runs-detail-status")).toContainText(
+    await expect(page.getByTestId("runs-detail-summary-line")).toContainText(
       "succeeded",
       { timeout: 15_000 },
     );
     await expect(page.getByRole("heading", { name: "Final output" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
 
     const layoutMetrics = await page.evaluate(() => {
       const workspace = document.querySelector<HTMLElement>(

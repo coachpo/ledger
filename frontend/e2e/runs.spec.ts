@@ -178,16 +178,13 @@ test.describe("Runs inventory monitor", () => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/runs");
     await expect(page.getByTestId("runs-list-page")).toBeVisible();
-    await expect(page.getByLabel("Target key")).toBeVisible();
-    await expect(page.getByLabel("Target kind")).toBeVisible();
+    await expect(page.getByLabel("Package key")).toBeVisible();
+    await expect(page.getByLabel("Workflow key")).toBeVisible();
     await expect(page.getByLabel("Run status")).toBeVisible();
     await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
 
-    await page.getByLabel("Target key").fill(targetKey);
+    await page.getByLabel("Package key").fill(targetKey);
     await expect(page.getByText("Failed to load runs")).toHaveCount(0);
-
-    await page.getByLabel("Target kind").click();
-    await page.getByRole("option", { name: "workflow package" }).click();
     await expect(page.getByRole("table")).toContainText(targetKey);
 
     const row = page.getByTestId(`runs-row-${runId}`);
@@ -238,9 +235,9 @@ test.describe("Runs inventory monitor", () => {
     await expect(triggers[0]).toHaveAttribute("aria-selected", "true");
     await expect(triggers[0]).toHaveAttribute("data-state", "active");
     await expect(page.getByTestId("runs-detail-tab-panel-output")).toBeVisible();
-    await expect(page.getByTestId("runs-detail-tab-panel-execution")).toHaveCount(0);
-    await expect(page.getByTestId("runs-detail-tab-panel-input")).toHaveCount(0);
-    await expect(page.getByTestId("runs-detail-tab-panel-runtime")).toHaveCount(0);
+    await expect(page.getByTestId("runs-detail-tab-panel-execution")).toBeHidden();
+    await expect(page.getByTestId("runs-detail-tab-panel-input")).toBeHidden();
+    await expect(page.getByTestId("runs-detail-tab-panel-runtime")).toBeHidden();
     await expect(page.getByTestId("runs-detail-final-output")).toBeVisible();
     await expect(
       page.getByText("Rendered payload view for the immutable run result."),
@@ -258,7 +255,7 @@ test.describe("Runs inventory monitor", () => {
 
     await page.getByTestId("runs-detail-tab-trigger-execution").click();
     await expect(page.getByTestId("runs-detail-tab-panel-execution")).toBeVisible();
-    await expect(page.getByTestId("runs-detail-tab-panel-output")).toHaveCount(0);
+    await expect(page.getByTestId("runs-detail-tab-panel-output")).toBeHidden();
     await expect(page.getByRole("heading", { name: "Diagnostics" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Execution steps" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Final output" })).toHaveCount(0);
@@ -280,7 +277,9 @@ test.describe("Runs inventory monitor", () => {
 
     await page.getByTestId("runs-detail-tab-trigger-lineage").click();
     await expect(page.getByTestId("runs-detail-tab-panel-lineage")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Lineage" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Lineage", exact: true }),
+    ).toBeVisible();
     await expect(page.getByTestId("runs-lineage-workspace")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Runtime profile" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Final output" })).toHaveCount(0);

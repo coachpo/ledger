@@ -14,9 +14,6 @@ async function expectNoDocumentOverflow(page: Page) {
 async function expectSharedDialogShell(page: Page) {
   const dialog = page.getByRole("dialog");
   await expect(
-    dialog.locator('[data-slot="entity-dialog-constraint-strip"]'),
-  ).toBeVisible();
-  await expect(
     dialog.locator('[data-slot="entity-dialog-body"]'),
   ).toBeVisible();
   await expect(dialog.locator('[data-slot="dialog-footer"]')).toBeVisible();
@@ -42,7 +39,7 @@ test.describe("Portfolio details", () => {
     await expectSharedDialogShell(page);
     await expect(dialog).toContainText("Finance Workspace portfolio");
     await expect(dialog).toContainText("Slug");
-    await expect(dialog).toContainText("3-letter code");
+    await expect(dialog).toContainText("Use lowercase letters, numbers, and underscores.");
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await expect(dialog).toBeHidden();
   });
@@ -73,7 +70,9 @@ test.describe("Portfolio details", () => {
       ).toBeVisible();
 
       const header = page.getByTestId("portfolio-detail-header");
-      await expect(header.getByText("Portfolio workspace")).toBeVisible();
+      await expect(header.getByTestId("portfolio-detail-identity")).toContainText(
+        "Portfolio workspace",
+      );
       await expect(header.getByText("Finance Workspace")).toBeVisible();
       await expect(header.getByText("Quotes")).toBeVisible();
       const actions = page.getByTestId("portfolio-detail-actions");

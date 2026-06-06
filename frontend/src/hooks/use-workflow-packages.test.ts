@@ -62,6 +62,10 @@ vi.mock("@/lib/api/tools", () => ({
 }));
 
 import {
+  DIGITAL_ORACLE_EXTENSION_KEY,
+  FINANCE_WORKSPACE_EXTENSION_KEY,
+} from "@/extensions";
+import {
   createWorkflowPackageRuntimeInputPersonalEntry,
   deleteWorkflowPackage,
   deleteWorkflowPackageRuntimeInputPersonalEntry,
@@ -104,8 +108,13 @@ describe("useWorkflowPackages", () => {
         items: [
           {
             enabled: true,
-            key: "signaldeck.finance",
+            key: FINANCE_WORKSPACE_EXTENSION_KEY,
             label: "Finance Workspace",
+          },
+          {
+            enabled: true,
+            key: DIGITAL_ORACLE_EXTENSION_KEY,
+            label: "Digital Oracle Runtime",
           },
         ],
       },
@@ -120,9 +129,14 @@ describe("useWorkflowPackages", () => {
     vi.mocked(validateWorkflowPackageManifest).mockReset();
   });
 
-  it("filters Digital Oracle finance tools through existing tool discovery", () => {
+  it("filters finance and Digital Oracle tools independently through extension state", () => {
     const toolCatalog = {
       items: [
+        {
+          key: "signaldeck.reports.lookup",
+          displayName: "Report Lookup",
+          description: "Read persisted SignalDeck reports.",
+        },
         {
           key: "signaldeck.prediction_markets.lookup",
           displayName: "Prediction Markets",
@@ -153,6 +167,7 @@ describe("useWorkflowPackages", () => {
     });
 
     expect(useTools().data?.items.map((tool) => tool.key)).toEqual([
+      "signaldeck.reports.lookup",
       "signaldeck.prediction_markets.lookup",
       "signaldeck.sec_filings.lookup",
       "signaldeck.market_sentiment.lookup",
@@ -168,9 +183,14 @@ describe("useWorkflowPackages", () => {
       data: {
         items: [
           {
-            enabled: false,
-            key: "signaldeck.finance",
+            enabled: true,
+            key: FINANCE_WORKSPACE_EXTENSION_KEY,
             label: "Finance Workspace",
+          },
+          {
+            enabled: false,
+            key: DIGITAL_ORACLE_EXTENSION_KEY,
+            label: "Digital Oracle Runtime",
           },
         ],
       },
@@ -180,6 +200,34 @@ describe("useWorkflowPackages", () => {
     });
 
     expect(useTools().data?.items.map((tool) => tool.key)).toEqual([
+      "signaldeck.reports.lookup",
+      "signaldeck.memory.lookup",
+    ]);
+
+    toolDiscoveryState.useExtensionsMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            enabled: false,
+            key: FINANCE_WORKSPACE_EXTENSION_KEY,
+            label: "Finance Workspace",
+          },
+          {
+            enabled: true,
+            key: DIGITAL_ORACLE_EXTENSION_KEY,
+            label: "Digital Oracle Runtime",
+          },
+        ],
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    expect(useTools().data?.items.map((tool) => tool.key)).toEqual([
+      "signaldeck.prediction_markets.lookup",
+      "signaldeck.sec_filings.lookup",
+      "signaldeck.market_sentiment.lookup",
       "signaldeck.memory.lookup",
     ]);
   });

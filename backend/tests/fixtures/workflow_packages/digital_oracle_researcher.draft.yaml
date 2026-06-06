@@ -40,7 +40,7 @@ spec:
   capabilityProfiles:
     - key: digital_oracle_phase1_tools
       name: Digital Oracle Phase 1 Tools
-      description: Grants finance-owned prediction market, SEC filing, and market sentiment lookups.
+      description: Grants Digital Oracle prediction market, SEC filing, and market sentiment lookups.
       toolKeys:
         - signaldeck.prediction_markets.lookup
         - signaldeck.sec_filings.lookup

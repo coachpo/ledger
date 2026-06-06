@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.extensions.signaldeck_finance.runtime_types import (
+from app.extensions.signaldeck_digital_oracle.runtime_types import (
     RuntimeMarketSentimentLookupResult,
     RuntimePredictionMarketContract,
     RuntimePredictionMarketEvent,

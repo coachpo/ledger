@@ -27,6 +27,7 @@ import {
   type RouteNavIconName,
 } from "@/routes.metadata";
 
+import { listBundledFrontendExtensions } from "./registry";
 import { FinanceWorkspaceRouteGate } from "./runtime";
 import { financeWorkspaceFrontendExtension } from "./signaldeck-finance";
 import type { FrontendExtensionGateTag } from "./types";
@@ -198,10 +199,10 @@ export function filterToolsForExtensionState(
   tools: readonly ToolCatalogItemRead[],
   extensionList: ExtensionListRead | undefined,
 ): ToolCatalogItemRead[] {
-  const disabledToolPrefixes =
-    financeWorkspaceFrontendExtension.toolAuthoringDiscovery
-      .filter((contribution) => !isGateTagEnabled(extensionList, contribution))
-      .map((contribution) => contribution.toolKeyPrefix);
+  const disabledToolPrefixes = listBundledFrontendExtensions()
+    .flatMap((extension) => extension.toolAuthoringDiscovery)
+    .filter((contribution) => !isGateTagEnabled(extensionList, contribution))
+    .map((contribution) => contribution.toolKeyPrefix);
 
   if (disabledToolPrefixes.length === 0) {
     return [...tools];

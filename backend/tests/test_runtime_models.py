@@ -288,9 +288,7 @@ def _build_run(
             workflow_description="",
             manifest_hash="a" * 64,
             compiled_hash="b" * 64,
-            manifest_source=(
-                f"apiVersion: signaldeck.workflowPackage/v1\\nkey: {target_key}\\n"
-            ),
+            manifest_source=(f"apiVersion: signaldeck.workflowPackage/v1\\nkey: {target_key}\\n"),
             package_definition={"metadata": {"key": target_key}},
             compiled_plan={"workflows": [{"key": workflow_key}]},
             extension_dependencies=[],
@@ -2202,15 +2200,10 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
                 "workflowName": "Queued Workflow",
                 "workflowDescription": "",
                 "manifestSource": (
-                    "apiVersion: signaldeck.workflowPackage/v1\n"
-                    "key: queued_workflow_package\n"
+                    "apiVersion: signaldeck.workflowPackage/v1\n" "key: queued_workflow_package\n"
                 ),
-                "packageDefinition": {
-                    "metadata": {"key": "queued_workflow_package"}
-                },
-                "compiledPlan": {
-                    "workflows": [{"key": "queued_workflow"}]
-                },
+                "packageDefinition": {"metadata": {"key": "queued_workflow_package"}},
+                "compiledPlan": {"workflows": [{"key": "queued_workflow"}]},
                 "launchSnapshot": None,
                 "extensionDependencies": [],
                 "localResourceRefs": {

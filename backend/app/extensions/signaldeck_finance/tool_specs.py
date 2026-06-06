@@ -65,36 +65,6 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.prediction_markets.lookup",
-        display_name="Prediction Markets Lookup",
-        description=(
-            "Read normalized prediction-market signals from finance-owned market "
-            "lookups with structured warnings for partial coverage."
-        ),
-        module=_SERVER_DECLARED_MODULE,
-        owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
-    ),
-    ServerDeclaredToolSpec(
-        key="signaldeck.sec_filings.lookup",
-        display_name="SEC Filings Lookup",
-        description=(
-            "Read normalized SEC filing signals from finance-owned filing lookups "
-            "with structured warnings for partial coverage."
-        ),
-        module=_SERVER_DECLARED_MODULE,
-        owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
-    ),
-    ServerDeclaredToolSpec(
-        key="signaldeck.market_sentiment.lookup",
-        display_name="Market Sentiment Lookup",
-        description=(
-            "Read normalized market sentiment signals from finance-owned sentiment "
-            "lookups with structured warnings for partial coverage."
-        ),
-        module=_SERVER_DECLARED_MODULE,
-        owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
-    ),
-    ServerDeclaredToolSpec(
         key="signaldeck.insider_data.lookup",
         display_name="Insider Data Lookup",
         description=(

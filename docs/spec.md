@@ -31,7 +31,8 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 - `backend/app/main.py` owns app creation, exception handlers, CORS, and health.
 - `backend/app/api/router.py` composes preserved `/api/v1` finance routes behind extension gates.
 - `backend/app/api/platform_router.py` mounts `/api/memory`, `/api/workflow-packages`, `/api/schedules`, `/api/model-connections`, `/api/extensions`, `/api/tools`, and `/api/runs`.
-- `backend/app/extensions/signaldeck_finance/` contributes current finance/product/provider routes, tools, hooks, and registrars as `signaldeck.finance`.
+- `backend/app/extensions/signaldeck_finance/` contributes current finance/product/provider routes, finance tools, hooks, and registrars as `signaldeck.finance`.
+- `backend/app/extensions/signaldeck_digital_oracle/` contributes only Digital Oracle runtime tools as `signaldeck.digital_oracle`; it adds no API routers, frontend routes, nav, provider bundles, or lifecycle hooks in this upgrade.
 - `backend/app/api/dependencies.py` is the service composition root.
 - `backend/app/core/telemetry.py` owns optional Logfire setup and trace/span id formatting.
 - `backend/app/db/` owns PostgreSQL session lifecycle and startup schema repair.
@@ -41,7 +42,7 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 - `frontend/src/App.tsx` creates the TanStack Query client, theme provider, error boundary, and router provider.
 - `frontend/src/routes.ts` defines flat routes for dashboard, portfolios, templates, reports, Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Runs, and Memory. Tools are linked through package authoring metadata, not a standalone route.
 - `frontend/src/components/layout.tsx` owns sidebar labels, breadcrumbs, and the app shell.
-- `frontend/src/extensions/runtime-helpers.ts` assembles finance routes/nav from extension state; `ExtensionRead` is the slim `{key,label,enabled}` contract.
+- `frontend/src/extensions/runtime-helpers.ts` assembles finance routes/nav from extension state and filters package-authoring tools across bundled frontend extensions; `ExtensionRead` is the slim `{key,label,enabled}` contract.
 - API helpers live under `frontend/src/lib/api/`; wire types live under `frontend/src/lib/types/`; query keys live in `frontend/src/lib/query-keys.ts`.
 - Platform authoring helpers under `frontend/src/lib/platform-authoring/` keep schema/value/ref/manifest transforms out of routed pages.
 
@@ -111,13 +112,17 @@ Package secret bindings are package-local encrypted values, not manifest/export 
 
 ## Tools And Runtime Tool Boundaries
 
-`/api/tools` is the core global read-only discovery host. Finance-owned tools appear only while `signaldeck.finance` is enabled. Platform-core memory tools remain visible when finance is disabled.
+`/api/tools` is the core global read-only discovery host.
 
-Current native runtime tools include quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, finance-owned report lookup, `signaldeck.memory.write`, and `signaldeck.memory.lookup`. Finance also owns the phase-1 Digital Oracle-backed tools `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`. The retired `signaldeck_reports_write` function name is fail-closed at native dispatch and is not live catalog metadata, ownership plumbing, or MCP fallback.
+- Finance tools appear only while the `signaldeck.finance` toggle is enabled.
+- Digital Oracle tools appear only while the `signaldeck.digital_oracle` toggle is enabled.
+- Platform-core memory tools remain visible when bundled extensions are disabled.
 
-`signaldeck.news.lookup` and `signaldeck.social_sentiment.lookup` are separate tools. Social sentiment accepts one symbol, optional `sources` of `reddit` and `stocktwits`, optional date bounds, and `itemLimit` up to `50`, returning source blocks, aggregate metrics, and warnings.
+Current native runtime tools include quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, Finance Workspace report lookup, `signaldeck.memory.write`, and `signaldeck.memory.lookup`. `signaldeck.digital_oracle` owns the phase-1 Digital Oracle tools `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`; their tool keys and OpenAI function names stay unchanged. The retired `signaldeck_reports_write` function name is fail-closed at native dispatch and is not live catalog metadata, ownership plumbing, or MCP fallback.
 
-The Digital Oracle-backed phase-1 tools expose normalized finance payloads only. `signaldeck.prediction_markets.lookup` reads prediction-market events and contracts from finance-owned lookups, `signaldeck.sec_filings.lookup` reads SEC filing summaries by ticker, and `signaldeck.market_sentiment.lookup` reads the `fear_greed` indicator. All three serialize camelCase result models with `warnings[]`; provider internals, package secrets, EDGAR contact config, raw payloads, and speculative phase-2 providers are not public contracts.
+`signaldeck.news.lookup` and `signaldeck.social_sentiment.lookup` are separate finance-owned tools. Social sentiment accepts one symbol, optional `sources` of `reddit` and `stocktwits`, optional date bounds, and `itemLimit` up to `50`, returning source blocks, aggregate metrics, and warnings.
+
+The Digital Oracle-backed phase-1 tools expose normalized payloads only. `signaldeck.prediction_markets.lookup` reads prediction-market events and contracts, `signaldeck.sec_filings.lookup` reads SEC filing summaries by ticker, and `signaldeck.market_sentiment.lookup` reads the `fear_greed` indicator. All three serialize camelCase result models with `warnings[]`; provider internals, package secrets, EDGAR contact config, raw payloads, and speculative phase-2 providers are not public contracts.
 
 Tool failure metadata is typed with `failureClass`, `source`, `phase`, `retryable`, and `disposition`. The retryable allowlist is limited to pre-dispatch provider tool-argument JSON/object failures, native tool argument validation, and MCP argument JSON/schema validation before transport dispatch. Auth, permission, grants, namespaces, extension-disabled states, missing secrets, unsupported or retired tool names, provider/network/transport errors, MCP transport errors, executor/business-rule failures, policy failures, output-schema failures, and retry-bound exhaustion are fatal.
 

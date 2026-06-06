@@ -2,6 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 const FINANCE_EXTENSION_KEY = "signaldeck.finance";
 const FINANCE_EXTENSION_SEGMENT = "signaldeck-finance";
+const DIGITAL_ORACLE_EXTENSION_KEY = "signaldeck.digital_oracle";
+const DIGITAL_ORACLE_EXTENSION_SEGMENT = "signaldeck-digital-oracle";
 
 const financeTools = [
   {
@@ -12,39 +14,83 @@ const financeTools = [
   },
 ];
 
-function financeExtension(enabled: boolean) {
-  return {
-    key: FINANCE_EXTENSION_KEY,
-    label: "Finance Workspace",
-    enabled,
-  };
+const digitalOracleTools = [
+  {
+    key: "signaldeck.prediction_markets.lookup",
+    displayName: "Prediction Markets",
+    description: "Find prediction-market signals.",
+    module: "app.extensions.signaldeck_digital_oracle.tool_specs",
+  },
+  {
+    key: "signaldeck.sec_filings.lookup",
+    displayName: "SEC Filings",
+    description: "Find SEC filing summaries.",
+    module: "app.extensions.signaldeck_digital_oracle.tool_specs",
+  },
+  {
+    key: "signaldeck.market_sentiment.lookup",
+    displayName: "Market Sentiment",
+    description: "Read market sentiment snapshots.",
+    module: "app.extensions.signaldeck_digital_oracle.tool_specs",
+  },
+];
+
+function extensionState(
+  key: string,
+  label: string,
+  enabled: boolean,
+) {
+  return { enabled, key, label };
 }
 
 async function installExtensionLifecycleMocks(page: Page) {
-  let enabled = true;
+  let financeEnabled = true;
+  let digitalOracleEnabled = true;
 
-  await page.route(
-    /\/api\/extensions(?:\/signaldeck\.finance)?(?:\?.*)?$/,
-    async (route) => {
-      const request = route.request();
-      if (request.method() === "GET") {
-        await route.fulfill({
-          json: { items: [financeExtension(enabled)] },
-        });
+  const extensions = () => [
+    extensionState(FINANCE_EXTENSION_KEY, "Finance Workspace", financeEnabled),
+    extensionState(
+      DIGITAL_ORACLE_EXTENSION_KEY,
+      "Digital Oracle Runtime",
+      digitalOracleEnabled,
+    ),
+  ];
+
+  await page.route(/\/api\/extensions(?:\/([^/?]+))?(?:\?.*)?$/, async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      await route.fulfill({ json: { items: extensions() } });
+      return;
+    }
+    if (request.method() === "PATCH") {
+      const pathSegments = new URL(request.url()).pathname.split("/");
+      const extensionKey = decodeURIComponent(
+        pathSegments[pathSegments.length - 1] ?? "",
+      );
+      const payload = request.postDataJSON() as { enabled: boolean };
+      if (extensionKey === FINANCE_EXTENSION_KEY) {
+        financeEnabled = payload.enabled;
+        await route.fulfill({ json: extensions()[0] });
         return;
       }
-      if (request.method() === "PATCH") {
-        const payload = request.postDataJSON() as { enabled: boolean };
-        enabled = payload.enabled;
-        await route.fulfill({ json: financeExtension(enabled) });
+      if (extensionKey === DIGITAL_ORACLE_EXTENSION_KEY) {
+        digitalOracleEnabled = payload.enabled;
+        await route.fulfill({ json: extensions()[1] });
         return;
       }
-      await route.fallback();
-    },
-  );
+    }
+    await route.fallback();
+  });
 
   await page.route(/\/api\/tools(?:\?.*)?$/, async (route) => {
-    await route.fulfill({ json: { items: enabled ? financeTools : [] } });
+    await route.fulfill({
+      json: {
+        items: [
+          ...(financeEnabled ? financeTools : []),
+          ...(digitalOracleEnabled ? digitalOracleTools : []),
+        ],
+      },
+    });
   });
 
   await page.route(
@@ -76,7 +122,7 @@ async function openCapabilityToolPicker(page: Page) {
 }
 
 test.describe("Extension lifecycle browser matrix", () => {
-  test("hides disabled finance UI and restores nav, routes, and authoring tools", async ({
+  test("keeps finance and Digital Oracle lifecycle behavior independent", async ({
     page,
   }) => {
     await installExtensionLifecycleMocks(page);
@@ -84,22 +130,61 @@ test.describe("Extension lifecycle browser matrix", () => {
     await page.goto("/");
     await expect(page.getByTestId("nav-dashboard")).toBeVisible();
     await expect(page.getByTestId("nav-reports")).toBeVisible();
+    await expect(page.getByText("Digital Oracle Runtime")).toHaveCount(0);
 
     await page.goto("/extensions");
     await expect(page.getByTestId("route-extensions")).toHaveAttribute(
       "data-route-shell-mode",
       "scroll",
     );
-    const row = page.getByTestId(`extension-row-${FINANCE_EXTENSION_SEGMENT}`);
-    await expect(row).toContainText("Finance Workspace");
-    await expect(row).toContainText("Enabled");
+    const digitalOracleRow = page.getByTestId(
+      `extension-row-${DIGITAL_ORACLE_EXTENSION_SEGMENT}`,
+    );
+    const financeRow = page.getByTestId(
+      `extension-row-${FINANCE_EXTENSION_SEGMENT}`,
+    );
+    await expect(digitalOracleRow).toContainText("Digital Oracle Runtime");
+    await expect(digitalOracleRow).toContainText(DIGITAL_ORACLE_EXTENSION_KEY);
+    await expect(digitalOracleRow).toContainText("Enabled");
+    await expect(financeRow).toContainText("Finance Workspace");
+    await expect(financeRow).toContainText(FINANCE_EXTENSION_KEY);
+    await expect(financeRow).toContainText("Enabled");
     await expect(page.getByText(/marketplace/i)).toHaveCount(0);
     await expect(page.getByText(/install/i)).toHaveCount(0);
     await expect(page.getByText(/remove/i)).toHaveCount(0);
+
+    await page
+      .getByTestId(`extension-toggle-${DIGITAL_ORACLE_EXTENSION_SEGMENT}`)
+      .click();
+    await expect(digitalOracleRow).toContainText("Disabled");
+    await expect(financeRow).toContainText("Enabled");
+    await expect(page.getByTestId("nav-reports")).toBeVisible();
+
+    await page.goto("/reports");
+    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+    await expect(page.getByTestId("extension-disabled-state")).toHaveCount(0);
+    const digitalOracleDisabledToolPicker = await openCapabilityToolPicker(page);
+    await expect(digitalOracleDisabledToolPicker).toContainText("Report Lookup");
+    await expect(digitalOracleDisabledToolPicker).not.toContainText(
+      "Prediction Markets",
+    );
+    await expect(digitalOracleDisabledToolPicker).not.toContainText(
+      "SEC Filings",
+    );
+    await expect(digitalOracleDisabledToolPicker).not.toContainText(
+      "Market Sentiment",
+    );
+
+    await page.goto("/extensions");
+    await page
+      .getByTestId(`extension-toggle-${DIGITAL_ORACLE_EXTENSION_SEGMENT}`)
+      .click();
+    await expect(digitalOracleRow).toContainText("Enabled");
     await page
       .getByTestId(`extension-toggle-${FINANCE_EXTENSION_SEGMENT}`)
       .click();
-    await expect(row).toContainText("Disabled");
+    await expect(financeRow).toContainText("Disabled");
+    await expect(digitalOracleRow).toContainText("Enabled");
 
     await expect(page.getByTestId("nav-dashboard")).toHaveCount(0);
     await expect(page.getByTestId("nav-portfolios")).toHaveCount(0);
@@ -117,26 +202,22 @@ test.describe("Extension lifecycle browser matrix", () => {
     await expect(page.getByTestId("extension-disabled-state")).toContainText(
       "Blast radius",
     );
-    const disabledToolPicker = await openCapabilityToolPicker(page);
-    await expect(disabledToolPicker).not.toContainText("Report Lookup");
+    const financeDisabledToolPicker = await openCapabilityToolPicker(page);
+    await expect(financeDisabledToolPicker).not.toContainText("Report Lookup");
+    await expect(financeDisabledToolPicker).toContainText("Prediction Markets");
+    await expect(financeDisabledToolPicker).toContainText("SEC Filings");
+    await expect(financeDisabledToolPicker).toContainText("Market Sentiment");
 
     await page.goto("/extensions");
+    await expect(digitalOracleRow).toContainText("Enabled");
+    await expect(financeRow).toContainText("Disabled");
     await page
       .getByTestId(`extension-toggle-${FINANCE_EXTENSION_SEGMENT}`)
       .click();
-    await expect(row).toContainText("Finance Workspace");
-    await expect(row).toContainText("Enabled");
-
+    await expect(financeRow).toContainText("Enabled");
     await expect(page.getByTestId("nav-dashboard")).toBeVisible();
     await expect(page.getByTestId("nav-portfolios")).toBeVisible();
     await expect(page.getByTestId("nav-templates")).toBeVisible();
     await expect(page.getByTestId("nav-reports")).toBeVisible();
-
-    await page.goto("/reports");
-    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
-    await expect(page.getByTestId("extension-disabled-state")).toHaveCount(0);
-
-    const restoredToolPicker = await openCapabilityToolPicker(page);
-    await expect(restoredToolPicker).toContainText("Report Lookup");
   });
 });
