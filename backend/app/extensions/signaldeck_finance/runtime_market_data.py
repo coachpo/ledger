@@ -11,6 +11,10 @@ from app.agents.runtime_tools.types import (
     RuntimeToolWarning,
 )
 from app.core.formatting import normalize_currency, normalize_symbol, to_utc
+from app.extensions.signaldeck_finance.execution_dependencies import (
+    resolve_finance_quote_provider,
+    resolve_social_sentiment_adapters,
+)
 from app.extensions.signaldeck_finance.grant_policy import (
     MARKET_DATA_HISTORY_LOOKUP_GRANT_POLICY,
     MARKET_DATA_QUOTE_LOOKUP_GRANT_POLICY,
@@ -851,7 +855,9 @@ def execute_social_sentiment_lookup(
 ) -> dict[str, object]:
     from app.services.social_sentiment_service import SocialSentimentService
 
-    service = SocialSentimentService(source_adapters=tuple(context.social_sentiment_adapters or ()))
+    service = SocialSentimentService(
+        source_adapters=resolve_social_sentiment_adapters(context.provider_bundle)
+    )
     result = service.get_social_sentiment_snapshot(
         cast(str, arguments["symbol"]),
         sources=cast(tuple[str, ...], arguments["sources"]),
@@ -1273,12 +1279,13 @@ def _statement_matches_filters(
 
 
 def _require_quote_provider(context: RuntimeToolContext, *, function_name: str) -> QuoteProvider:
-    if context.quote_provider is None:
+    quote_provider = resolve_finance_quote_provider(context.provider_bundle)
+    if quote_provider is None:
         raise RuntimeToolError(
             code="agent_tool_dependency_missing",
             message=f"{function_name} requires an injected quote provider.",
         )
-    return context.quote_provider
+    return quote_provider
 
 
 def _trim_history_series(

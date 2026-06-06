@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.extensions.signaldeck_finance.execution_dependencies import resolve_finance_quote_provider
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.schemas.memory import MemoryEntryRead
 from app.services.market_data_service import MarketDataService
@@ -65,9 +66,7 @@ class FinanceMemoryFollowUpEvaluator:
 def _memory_follow_up_evaluators(
     context: WorkflowPackageStartContext,
 ) -> tuple[MemoryFollowUpEvaluator, ...]:
-    quote_provider = (
-        context.provider_bundle.quote_provider or context.provider_bundle.fallback_quote_provider
-    )
+    quote_provider = resolve_finance_quote_provider(context.provider_bundle)
     if quote_provider is None:
         return ()
     return (

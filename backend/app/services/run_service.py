@@ -104,7 +104,6 @@ from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
     WorkflowPackageExecutionPlanError,
 )
-from app.services.quote_provider import QuoteProvider
 from app.services.run_lifecycle import WorkflowPackageStartContext
 from app.services.run_read_projection import RunReadProjection
 from app.services.run_rerun_fork import PreparedRunFork, RunRerunForkPreparation
@@ -175,16 +174,11 @@ class RunService:
         self,
         session: Session,
         session_factory: sessionmaker[Session] | None = None,
-        quote_provider: QuoteProvider | None = None,
         provider_bundle: ExecutionProviderBundle | None = None,
     ) -> None:
         self.session = session
         self.session_factory = session_factory or get_session_factory()
-        self.provider_bundle: ExecutionProviderBundle = self._provider_bundle(
-            provider_bundle=provider_bundle,
-            quote_provider=quote_provider,
-        )
-        self.quote_provider: QuoteProvider | None = self.provider_bundle.quote_provider
+        self.provider_bundle: ExecutionProviderBundle = provider_bundle or ExecutionProviderBundle()
         self.output_schema_repository = OutputSchemaRepository(session)
         self.report_repository = ReportRepository(session)
         self.run_repository = RunRepository(session)
@@ -218,17 +212,6 @@ class RunService:
             workflow_package_snapshot_for_run=self._workflow_package_snapshot_for_run,
             resolve_runtime_agent=self._resolve_runtime_agent,
         )
-
-    @staticmethod
-    def _provider_bundle(
-        *,
-        provider_bundle: ExecutionProviderBundle | None,
-        quote_provider: QuoteProvider | None,
-    ) -> ExecutionProviderBundle:
-        base_bundle = provider_bundle or ExecutionProviderBundle()
-        if quote_provider is None:
-            return base_bundle
-        return replace(base_bundle, quote_provider=quote_provider)
 
     def list_runs(
         self,

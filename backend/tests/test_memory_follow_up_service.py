@@ -7,6 +7,9 @@ from typing import override
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.extensions.signaldeck_finance.execution_dependencies import (
+    finance_execution_provider_bundle_from_parts,
+)
 from app.extensions.signaldeck_finance.hooks import register_run_lifecycle_hooks
 from app.models.agent_memory import AgentMemoryEntry, RunMemoryEvent
 from app.models.report import Report
@@ -20,7 +23,6 @@ from app.schemas.memory import (
     MemoryWriteRequest,
 )
 from app.schemas.memory_report import AGENT_MEMORY_REVIEW_TYPE, AGENT_MEMORY_VERSION_GROUP
-from app.services.execution_providers import ExecutionProviderBundle
 from app.services.extension_gate import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.services.extension_service import ExtensionService
 from app.services.memory_follow_up_service import MemoryFollowUpService
@@ -316,7 +318,9 @@ def test_finance_evaluator_contribution_resolves_and_reflects_when_enabled(
         evaluators = evaluator_factory(
             WorkflowPackageStartContext(
                 session=session,
-                provider_bundle=ExecutionProviderBundle(quote_provider=_ResolvingQuoteProvider()),
+                provider_bundle=finance_execution_provider_bundle_from_parts(
+                    quote_provider=_ResolvingQuoteProvider()
+                ),
                 now=reviewed_at,
             )
         )

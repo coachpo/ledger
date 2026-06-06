@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 from pydantic import Field, field_validator
@@ -14,11 +14,10 @@ from app.agents.runtime_tools.failure_taxonomy import (
     runtime_failure_metadata,
 )
 from app.schemas.common import CamelModel
+from app.services.execution_providers import ExecutionProviderBundle
 
 if TYPE_CHECKING:
     from app.services.execution_ownership import PackageExecutionOwnership
-    from app.services.quote_provider import QuoteProvider
-    from app.services.social_sentiment_provider import SocialSentimentSourceAdapter
 
 
 class RuntimeToolError(Exception):
@@ -54,8 +53,7 @@ class RuntimeToolError(Exception):
 class RuntimeToolContext:
     session_factory: sessionmaker[Session]
     capability_references: Sequence[dict[str, object]]
-    quote_provider: QuoteProvider | None = None
-    social_sentiment_adapters: Sequence[SocialSentimentSourceAdapter] | None = None
+    provider_bundle: ExecutionProviderBundle = field(default_factory=ExecutionProviderBundle)
     run_id: int | None = None
     run_step_id: int | None = None
     run_agent_invocation_id: int | None = None

@@ -4,6 +4,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from app.core.config import Settings, get_settings
+from app.extensions.signaldeck_finance.execution_dependencies import (
+    finance_execution_provider_bundle_from_parts,
+)
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.quote_provider import (
     DeterministicQuoteProvider,
@@ -51,7 +54,7 @@ def create_execution_provider_bundle(
     settings: Settings | None = None,
 ) -> ExecutionProviderBundle:
     resolved_settings = settings or get_settings()
-    return ExecutionProviderBundle(
+    return finance_execution_provider_bundle_from_parts(
         quote_provider=create_quote_provider(resolved_settings),
         fallback_quote_provider=create_deterministic_quote_provider(),
         social_sentiment_adapters=create_social_sentiment_adapters(resolved_settings),

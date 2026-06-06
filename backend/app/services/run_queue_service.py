@@ -18,7 +18,6 @@ from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.repositories.run import RunRepository
 from app.services.execution_providers import ExecutionProviderBundle
-from app.services.quote_provider import QuoteProvider
 
 _STALE_LEASE_FAILURE_MESSAGE = (
     "Run marked as failed because its scheduler lease expired before the worker completed it."
@@ -38,7 +37,6 @@ class RunQueueService:
         self,
         session: Session,
         session_factory: sessionmaker[Session] | None = None,
-        quote_provider: QuoteProvider | None = None,
         provider_bundle: ExecutionProviderBundle | None = None,
         executor_factory: (
             Callable[[Session, sessionmaker[Session], ExecutionProviderBundle], RunExecutor] | None
@@ -49,11 +47,7 @@ class RunQueueService:
         self.session: Session = session
         self.session_factory: sessionmaker[Session] = session_factory or get_session_factory()
         settings = get_settings()
-        self.provider_bundle: ExecutionProviderBundle = self._provider_bundle(
-            provider_bundle=provider_bundle,
-            quote_provider=quote_provider,
-        )
-        self.quote_provider: QuoteProvider | None = self.provider_bundle.quote_provider
+        self.provider_bundle: ExecutionProviderBundle = provider_bundle or ExecutionProviderBundle()
         self.executor_factory: (
             Callable[[Session, sessionmaker[Session], ExecutionProviderBundle], RunExecutor] | None
         ) = executor_factory
@@ -64,21 +58,6 @@ class RunQueueService:
             else settings.run_scheduler_lease_ttl_seconds
         )
         self.run_repository: RunRepository = RunRepository(session)
-
-    @staticmethod
-    def _provider_bundle(
-        *,
-        provider_bundle: ExecutionProviderBundle | None,
-        quote_provider: QuoteProvider | None,
-    ) -> ExecutionProviderBundle:
-        base_bundle = provider_bundle or ExecutionProviderBundle()
-        if quote_provider is None:
-            return base_bundle
-        return ExecutionProviderBundle(
-            quote_provider=quote_provider,
-            fallback_quote_provider=base_bundle.fallback_quote_provider,
-            social_sentiment_adapters=base_bundle.social_sentiment_adapters,
-        )
 
     def claim_next_run(self, run_id: int | None = None) -> int | None:
         try:

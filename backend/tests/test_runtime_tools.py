@@ -91,6 +91,9 @@ from app.extensions.signaldeck_finance.digital_oracle.types import (
     DigitalOracleSecFilingsProviderResult,
     DigitalOracleSecFilingsQuery,
 )
+from app.extensions.signaldeck_finance.execution_dependencies import (
+    finance_execution_provider_bundle_from_parts,
+)
 from app.extensions.signaldeck_finance.grant_policy import (
     MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE,
     MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE,
@@ -228,6 +231,7 @@ from app.services.capability_service import (
     RuntimeToolGrantPolicy,
 )
 from app.services.execution_ownership import PackageExecutionOwnership
+from app.services.execution_providers import ExecutionProviderBundle
 from app.services.market_data_service import MarketDataService
 from app.services.model_gateway_dto import ModelGatewayError, ModelToolCall
 from app.services.model_gateway_tool_retry import ModelToolCallRetryState
@@ -557,6 +561,11 @@ def _runtime_context(
     selected_session_factory = session_factory_override or (
         _failing_session_factory if fail_on_session else _session_factory
     )
+    provider_bundle = (
+        finance_execution_provider_bundle_from_parts(quote_provider=quote_provider)
+        if quote_provider is not None
+        else ExecutionProviderBundle()
+    )
     return RuntimeToolContext(
         session_factory=cast(sessionmaker[Session], selected_session_factory),
         capability_references=list(
@@ -568,7 +577,7 @@ def _runtime_context(
                 }
             ]
         ),
-        quote_provider=quote_provider,
+        provider_bundle=provider_bundle,
         run_id=run_id,
         run_step_id=run_step_id,
         run_agent_invocation_id=run_agent_invocation_id,
@@ -3118,7 +3127,7 @@ def test_runtime_tool_context_carries_execution_identity_for_trusted_tools() -> 
 
     assert context.session_factory is not None
     assert context.capability_references == capability_references
-    assert context.quote_provider is quote_provider
+    assert context.provider_bundle.payload_for(FINANCE_WORKSPACE_EXTENSION_KEY) is not None
     assert context.run_id == 42
     assert context.agent_key == "portfolio_manager"
     assert context.agent_version == 7

@@ -45,8 +45,6 @@ from app.services.model_gateway_dto import (
     ModelToolResult,
 )
 from app.services.model_gateway_openai_responses import OpenAIResponsesAdapter
-from app.services.quote_provider import QuoteProvider
-from app.services.social_sentiment_provider import SocialSentimentSourceAdapter
 
 _RETIRED_REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME = "signaldeck_reports_write"
 _RETIRED_REPORT_MEMORY_WRITE_MESSAGE = (
@@ -120,43 +118,15 @@ class AgentExecutionService:
         self,
         session_factory: sessionmaker[Session],
         *,
-        quote_provider: QuoteProvider | None = None,
-        social_sentiment_adapters: Sequence[SocialSentimentSourceAdapter] | None = None,
         provider_bundle: ExecutionProviderBundle | None = None,
         model_gateway: ModelExecutionGateway | None = None,
         mcp_tool_client: McpToolClient | None = None,
     ) -> None:
         self.session_factory: sessionmaker[Session] = session_factory
-        self.provider_bundle: ExecutionProviderBundle = self._provider_bundle(
-            provider_bundle=provider_bundle,
-            quote_provider=quote_provider,
-            social_sentiment_adapters=social_sentiment_adapters,
-        )
-        self.quote_provider: QuoteProvider | None = self.provider_bundle.quote_provider
-        self.social_sentiment_adapters: tuple[SocialSentimentSourceAdapter, ...] = (
-            self.provider_bundle.social_sentiment_adapters
-        )
+        self.provider_bundle: ExecutionProviderBundle = provider_bundle or ExecutionProviderBundle()
         self.model_gateway = model_gateway or ModelExecutionGateway()
         self.compatibility_resolution_service = CompatibilityResolutionService()
         self.mcp_tool_client: McpToolClient | None = mcp_tool_client
-
-    @staticmethod
-    def _provider_bundle(
-        *,
-        provider_bundle: ExecutionProviderBundle | None,
-        quote_provider: QuoteProvider | None,
-        social_sentiment_adapters: Sequence[SocialSentimentSourceAdapter] | None,
-    ) -> ExecutionProviderBundle:
-        base_bundle = provider_bundle or ExecutionProviderBundle()
-        return ExecutionProviderBundle(
-            quote_provider=quote_provider or base_bundle.quote_provider,
-            fallback_quote_provider=base_bundle.fallback_quote_provider,
-            social_sentiment_adapters=(
-                tuple(social_sentiment_adapters)
-                if social_sentiment_adapters is not None
-                else base_bundle.social_sentiment_adapters
-            ),
-        )
 
     async def invoke(
         self,
@@ -378,8 +348,7 @@ class AgentExecutionService:
         runtime_tool_context = RuntimeToolContext(
             session_factory=self.session_factory,
             capability_references=capability_references,
-            quote_provider=self.quote_provider,
-            social_sentiment_adapters=self.social_sentiment_adapters,
+            provider_bundle=self.provider_bundle,
             run_id=run_id,
             run_step_id=run_step_id,
             run_agent_invocation_id=run_agent_invocation_id,

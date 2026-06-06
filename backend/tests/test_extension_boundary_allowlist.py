@@ -7,6 +7,19 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = REPO_ROOT / "backend"
 FINANCE_EXTENSION_IMPORT_PREFIX = "app.extensions.signaldeck_finance"
 APPROVED_STATIC_SCAN_EXCLUSIONS = ("app/extensions/registry.py",)
+CORE_RUNTIME_PROVIDER_MODULES = {
+    "app/agents/runtime_tools/types.py",
+    "app/api/dependencies.py",
+    "app/services/agent_execution_service.py",
+    "app/services/execution_providers.py",
+    "app/services/run_queue_service.py",
+    "app/services/run_service.py",
+    "app/services/workflow_package_service.py",
+}
+FINANCE_PROVIDER_PROTOCOL_MODULES = {
+    "app.services.quote_provider",
+    "app.services.social_sentiment_provider",
+}
 FINANCE_DEPENDENCIES_MODULE = "app.extensions.signaldeck_finance.dependencies"
 APPROVED_FINANCE_ROUTE_IMPORTS = {
     "app/api/balances.py": (f"{FINANCE_DEPENDENCIES_MODULE}:get_balance_service",),
@@ -81,29 +94,69 @@ def _unapproved_finance_import_entries(relative_path: str, path: Path) -> tuple[
 
 
 def _finance_import_entries(path: Path) -> list[str]:
+    return _import_entries_matching(path, prefix=FINANCE_EXTENSION_IMPORT_PREFIX)
+
+
+def _provider_protocol_import_entries(path: Path) -> list[str]:
+    return _import_entries_matching(path, exact_modules=FINANCE_PROVIDER_PROTOCOL_MODULES)
+
+
+def _import_entries_matching(
+    path: Path,
+    *,
+    prefix: str | None = None,
+    exact_modules: set[str] | None = None,
+) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     entries: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            entries.extend(_import_from_entries(node))
+            entries.extend(_import_from_entries_matching(node, prefix, exact_modules))
         elif isinstance(node, ast.Import):
             entries.extend(
                 alias.name
                 for alias in node.names
-                if alias.name.startswith(FINANCE_EXTENSION_IMPORT_PREFIX)
+                if _module_matches(alias.name, prefix, exact_modules)
             )
     return entries
 
 
-def _import_from_entries(node: ast.ImportFrom) -> list[str]:
+def _import_from_entries_matching(
+    node: ast.ImportFrom,
+    prefix: str | None,
+    exact_modules: set[str] | None,
+) -> list[str]:
     module = node.module or ""
-    if not module.startswith(FINANCE_EXTENSION_IMPORT_PREFIX):
+    if not _module_matches(module, prefix, exact_modules):
         return []
     return [f"{module}:{alias.name}" for alias in node.names]
 
 
+def _module_matches(
+    module: str,
+    prefix: str | None,
+    exact_modules: set[str] | None,
+) -> bool:
+    if prefix is not None and module.startswith(prefix):
+        return True
+    if exact_modules is not None and module in exact_modules:
+        return True
+    return False
+
+
 def test_shared_backend_has_no_finance_extension_imports_outside_private_registry() -> None:
     assert collect_shared_finance_imports() == {}
+
+
+def test_core_runtime_provider_modules_do_not_import_finance_provider_protocols() -> None:
+    actual: dict[str, tuple[str, ...]] = {}
+    for relative_path in CORE_RUNTIME_PROVIDER_MODULES:
+        path = BACKEND_ROOT / relative_path
+        entries = tuple(sorted(set(_provider_protocol_import_entries(path))))
+        if entries:
+            actual[relative_path] = entries
+
+    assert actual == {}
 
 
 def test_preserved_finance_routes_use_only_approved_finance_dependencies() -> None:

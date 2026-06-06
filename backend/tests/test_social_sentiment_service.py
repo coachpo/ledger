@@ -8,6 +8,9 @@ from typing import cast
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents.runtime_tools import RuntimeToolContext, RuntimeToolRegistry
+from app.extensions.signaldeck_finance.execution_dependencies import (
+    finance_execution_provider_bundle_from_parts,
+)
 from app.extensions.signaldeck_finance.provider_factories import create_social_sentiment_adapters
 from app.extensions.signaldeck_finance.provider_factories import (
     register as register_finance_workspace_provider_factories,
@@ -301,7 +304,9 @@ def test_social_adapter_runtime_executor_uses_injected_service_adapters() -> Non
     context = RuntimeToolContext(
         session_factory=cast(sessionmaker[Session], _failing_session_factory),
         capability_references=[{"capabilityKey": "social", "capabilityVersion": 1}],
-        social_sentiment_adapters=[reddit],
+        provider_bundle=finance_execution_provider_bundle_from_parts(
+            social_sentiment_adapters=[reddit]
+        ),
     )
 
     payload = registry.dispatch(

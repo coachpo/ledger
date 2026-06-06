@@ -1,53 +1,67 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 
-from app.services.quote_provider import QuoteProvider
-from app.services.social_sentiment_provider import SocialSentimentSourceAdapter
+
+@dataclass(frozen=True, slots=True)
+class ExecutionProviderContribution:
+    extension_key: str
+    payload: object
+
+    def __post_init__(self) -> None:
+        normalized_key = self.extension_key.strip()
+        if not normalized_key:
+            raise ValueError("Execution provider contribution requires an extension key.")
+        object.__setattr__(self, "extension_key", normalized_key)
 
 
 @dataclass(frozen=True, slots=True)
 class ExecutionProviderBundle:
-    quote_provider: QuoteProvider | None = None
-    fallback_quote_provider: QuoteProvider | None = None
-    social_sentiment_adapters: tuple[SocialSentimentSourceAdapter, ...] = ()
+    contributions: tuple[ExecutionProviderContribution, ...] = ()
+
+    def __post_init__(self) -> None:
+        normalized = tuple(self.contributions)
+        seen_keys: set[str] = set()
+        for contribution in normalized:
+            if contribution.extension_key in seen_keys:
+                message = "Duplicate execution provider contribution for extension " + (
+                    f"{contribution.extension_key!r}."
+                )
+                raise ValueError(message)
+            seen_keys.add(contribution.extension_key)
+        object.__setattr__(self, "contributions", normalized)
+
+    def payload_for(self, extension_key: str) -> object | None:
+        normalized_key = extension_key.strip()
+        for contribution in self.contributions:
+            if contribution.extension_key == normalized_key:
+                return contribution.payload
+        return None
 
 
 def execution_provider_bundle_from_parts(
     *,
-    quote_provider: QuoteProvider | None = None,
-    fallback_quote_provider: QuoteProvider | None = None,
-    social_sentiment_adapters: Sequence[SocialSentimentSourceAdapter] | None = None,
+    extension_key: str,
+    payload: object,
 ) -> ExecutionProviderBundle:
     return ExecutionProviderBundle(
-        quote_provider=quote_provider,
-        fallback_quote_provider=fallback_quote_provider,
-        social_sentiment_adapters=tuple(social_sentiment_adapters or ()),
+        contributions=(ExecutionProviderContribution(extension_key=extension_key, payload=payload),)
     )
 
 
 def merge_execution_provider_bundles(
     bundles: Iterable[ExecutionProviderBundle],
 ) -> ExecutionProviderBundle:
-    quote_provider: QuoteProvider | None = None
-    fallback_quote_provider: QuoteProvider | None = None
-    social_sentiment_adapters: list[SocialSentimentSourceAdapter] = []
+    contributions: list[ExecutionProviderContribution] = []
     for bundle in bundles:
-        if quote_provider is None and bundle.quote_provider is not None:
-            quote_provider = bundle.quote_provider
-        if fallback_quote_provider is None and bundle.fallback_quote_provider is not None:
-            fallback_quote_provider = bundle.fallback_quote_provider
-        social_sentiment_adapters.extend(bundle.social_sentiment_adapters)
-    return ExecutionProviderBundle(
-        quote_provider=quote_provider,
-        fallback_quote_provider=fallback_quote_provider,
-        social_sentiment_adapters=tuple(social_sentiment_adapters),
-    )
+        contributions.extend(bundle.contributions)
+    return ExecutionProviderBundle(contributions=tuple(contributions))
 
 
 __all__ = [
     "ExecutionProviderBundle",
+    "ExecutionProviderContribution",
     "execution_provider_bundle_from_parts",
     "merge_execution_provider_bundles",
 ]

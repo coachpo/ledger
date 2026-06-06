@@ -4,18 +4,16 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import Annotated
 
-from fastapi import Depends, status
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.agents import ToolCatalog
-from app.core.errors import ApiError
 from app.db.session import get_db_session, get_session_factory
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.extension_service import ExtensionService, ResolvedExtensionState
 from app.services.memory_service import MemoryService
 from app.services.model_connection_probe_service import ModelConnectionProbeService
 from app.services.model_connection_service import ModelConnectionService
-from app.services.quote_provider import QuoteProvider
 from app.services.run_service import RunService
 from app.services.workflow_package_runtime_input_registry import (
     WorkflowPackageRuntimeInputRegistryService,
@@ -63,19 +61,6 @@ def get_execution_provider_bundle(
     extension_service: Annotated[ExtensionService, Depends(get_extension_service)],
 ) -> ExecutionProviderBundle:
     return extension_service.get_execution_provider_bundle()
-
-
-def get_quote_provider(
-    provider_bundle: Annotated[ExecutionProviderBundle, Depends(get_execution_provider_bundle)],
-) -> QuoteProvider:
-    provider = provider_bundle.quote_provider or provider_bundle.fallback_quote_provider
-    if provider is None:
-        raise ApiError(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="quote_provider_unavailable",
-            message="No quote provider is available for the enabled extensions.",
-        )
-    return provider
 
 
 def get_model_connection_service(
@@ -133,7 +118,6 @@ __all__ = [
     "get_memory_service",
     "get_model_connection_probe_service",
     "get_model_connection_service",
-    "get_quote_provider",
     "get_run_service",
     "get_session",
     "get_tool_catalog",
