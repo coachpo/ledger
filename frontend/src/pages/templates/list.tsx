@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { FileText, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
@@ -15,7 +15,6 @@ import { formatDateTime } from "@/lib/format";
 import type { TextTemplateRead } from "@/lib/types/text-template";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
-import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
@@ -160,9 +159,9 @@ export function TemplateListPage() {
         {!templatesQuery.isPending &&
         !templatesQuery.isError &&
         templates.length === 0 ? (
-          <EmptyStatePanel
+          <InventoryStatePanel
             description="Create a reusable markdown template with portfolio, report, and runtime-input placeholders."
-            icon={<FileText className="size-4" />}
+            testId="templates-empty-state"
             title="No templates yet."
           />
         ) : null}
@@ -170,9 +169,9 @@ export function TemplateListPage() {
         !templatesQuery.isError &&
         templates.length > 0 &&
         filteredTemplates.length === 0 ? (
-          <EmptyStatePanel
+          <InventoryStatePanel
             description="Refine the search by template name or placeholder content."
-            icon={<FileText className="size-4" />}
+            testId="templates-filtered-empty-state"
             title="No templates match your search."
           />
         ) : null}

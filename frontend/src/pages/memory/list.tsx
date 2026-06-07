@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { ResourceRowCard } from "@/components/shared/resource-row-card";
 import { ResourceStatusStrip, type ResourceStatusStripItem } from "@/components/shared/resource-status-strip";
@@ -496,8 +497,9 @@ function MemoryListPane({
           {canQuery && isError ? <MemoryAccessState error={listError} /> : null}
           {canQuery && !isPending && !isError && items.length === 0 ? (
             <div data-testid="memory-empty-state">
-              <EmptyStatePanel
+              <InventoryStatePanel
                 description="No canonical memory entries are visible for this access context and private scope."
+                testId="memory-empty-state-panel"
                 title="No scoped memory entries"
               />
             </div>

@@ -91,6 +91,9 @@ describe("PortfolioListPage", () => {
     });
     const emptyState = within(inventory).getByText("No portfolios yet.");
     expect(emptyState).toBeVisible();
+    expect(within(inventory).getByTestId("portfolios-empty-state")).toHaveTextContent(
+      "No portfolios yet.",
+    );
     expect(emptyState.closest("[data-slot='card']")).toHaveClass(
       "border-dashed",
     );
@@ -137,6 +140,9 @@ describe("PortfolioListPage", () => {
     expect(
       within(inventory).getByText("No portfolios match your search."),
     ).toBeVisible();
+    expect(within(inventory).getByTestId("portfolios-filtered-empty-state")).toHaveTextContent(
+      "No portfolios match your search.",
+    );
     expect(screen.getByTestId("portfolios-active-filters")).toHaveTextContent(
       "missing",
     );

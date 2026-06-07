@@ -122,6 +122,9 @@ describe("ReportListPage", () => {
     expect(within(header as HTMLElement).queryByText("Shown")).not.toBeInTheDocument();
     expect(screen.getByText("Showing 0 of 0 reports")).toBeVisible();
     expect(screen.getByText("No reports yet.")).toBeVisible();
+    expect(screen.getByTestId("reports-empty-state")).toHaveTextContent(
+      "No reports yet.",
+    );
     expect(
       screen.getByText("Generate one from a template or upload a markdown file."),
     ).toBeVisible();
@@ -140,6 +143,9 @@ describe("ReportListPage", () => {
     expect(screen.queryByText("Error")).not.toBeInTheDocument();
     expect(screen.getByText("Reports could not be loaded")).toBeVisible();
     expect(screen.getByText("Reports API unavailable")).toBeVisible();
+    expect(screen.getByTestId("reports-error-state")).toHaveTextContent(
+      "Reports API unavailable",
+    );
   });
 
   it("keeps upload request ownership in the route", () => {

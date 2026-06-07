@@ -2,7 +2,7 @@ import { ArrowRight, RefreshCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 
-import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ResourceStatusBadge } from "@/components/shared/resource-status-strip";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
@@ -330,28 +330,31 @@ export function RunsListPage() {
       }}
     >
       {runsQuery.isPending ? (
-        <EmptyStatePanel
-          title="Loading runs"
+        <InventoryStatePanel
           description="Reading the latest run monitor state from the backend."
+          testId="runs-loading-state"
+          title="Loading runs"
         />
       ) : null}
 
       {runsQuery.isError ? (
-        <EmptyStatePanel
-          tone="danger"
-          title="Failed to load runs"
+        <InventoryStatePanel
           description={
             runsQuery.error instanceof Error
               ? runsQuery.error.message
               : "Failed to load runs."
           }
+          testId="runs-error-state"
+          title="Failed to load runs"
+          tone="danger"
         />
       ) : null}
 
       {!runsQuery.isPending && !runsQuery.isError && runs.length === 0 ? (
-        <EmptyStatePanel
-          title="No runs match the current monitor filters"
+        <InventoryStatePanel
           description="Adjust package key, workflow key, or status to widen the polling window."
+          testId="runs-empty-state"
+          title="No runs match the current monitor filters"
         />
       ) : null}
 

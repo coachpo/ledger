@@ -202,6 +202,17 @@ describe("MemoryListPage", () => {
     );
   });
 
+  it("renders scoped empty state through the inventory state panel", () => {
+    renderPage("/memory?packageKey=pkg_alpha&runId=41");
+
+    expect(screen.getByTestId("memory-empty-state")).toHaveTextContent(
+      "No scoped memory entries",
+    );
+    expect(screen.getByTestId("memory-empty-state-panel")).toHaveTextContent(
+      "No canonical memory entries are visible for this access context and private scope.",
+    );
+  });
+
   it("renders scoped rows and inspects detail, revisions, and events inline", async () => {
     useMemoryListMock.mockReturnValue(idleQuery(listResponse([listItem()])));
 

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { PortfolioFormDialog } from "@/components/forms/portfolio-form-dialog";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
-import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
 import { ResourceRowCard } from "@/components/shared/resource-row-card";
@@ -186,42 +186,43 @@ export function PortfolioListPage() {
         data-testid="portfolios-inventory"
       >
         {portfoliosQuery.isPending ? (
-          <EmptyStatePanel
-            title="Loading portfolios..."
+          <InventoryStatePanel
             description="Fetching the latest portfolio records."
+            testId="portfolios-loading-state"
+            title="Loading portfolios..."
           />
         ) : null}
         {portfoliosQuery.isError ? (
-          <EmptyStatePanel
-            tone="danger"
-            title="Failed to load portfolios."
+          <InventoryStatePanel
             description={
               portfoliosQuery.error instanceof Error
                 ? portfoliosQuery.error.message
                 : "Failed to load portfolios."
             }
+            testId="portfolios-error-state"
+            title="Failed to load portfolios."
+            tone="danger"
           />
         ) : null}
         {!portfoliosQuery.isPending &&
         !portfoliosQuery.isError &&
         portfolios.length === 0 ? (
-          <EmptyStatePanel
-            title="No portfolios yet."
-            description="Create a portfolio to start tracking positions, balances, and trades."
+          <InventoryStatePanel
             action={
               <Button size="sm" type="button" onClick={openCreateDialog}>
                 <Plus data-icon="inline-start" /> New Portfolio
               </Button>
             }
+            description="Create a portfolio to start tracking positions, balances, and trades."
+            testId="portfolios-empty-state"
+            title="No portfolios yet."
           />
         ) : null}
         {!portfoliosQuery.isPending &&
         !portfoliosQuery.isError &&
         portfolios.length > 0 &&
         filteredPortfolios.length === 0 ? (
-          <EmptyStatePanel
-            title="No portfolios match your search."
-            description="Clear the search to return to the full portfolio inventory."
+          <InventoryStatePanel
             action={
               <Button
                 size="sm"
@@ -232,6 +233,9 @@ export function PortfolioListPage() {
                 Clear search
               </Button>
             }
+            description="Clear the search to return to the full portfolio inventory."
+            testId="portfolios-filtered-empty-state"
+            title="No portfolios match your search."
           />
         ) : null}
         {viewMode === "cards" && filteredPortfolios.length > 0

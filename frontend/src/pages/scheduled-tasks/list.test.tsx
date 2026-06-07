@@ -356,6 +356,9 @@ describe("ScheduledTasksListPage", () => {
     );
     expect(screen.getByText("Failed to load scheduled tasks")).toBeVisible();
     expect(screen.getByText("Schedules API unavailable")).toBeVisible();
+    expect(screen.getByTestId("scheduled-tasks-error-state")).toHaveTextContent(
+      "Schedules API unavailable",
+    );
 
     useScheduledTasksMock.mockReturnValue({
       data: {
@@ -379,6 +382,9 @@ describe("ScheduledTasksListPage", () => {
     expect(
       screen.getByText("No scheduled tasks match this search or filters."),
     ).toBeVisible();
+    expect(screen.getByTestId("scheduled-tasks-filtered-empty-state")).toHaveTextContent(
+      "No scheduled tasks match this search or filters.",
+    );
     fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     useScheduledTasksMock.mockReturnValue({
@@ -393,6 +399,9 @@ describe("ScheduledTasksListPage", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText(/No scheduled tasks yet/i)).toBeVisible();
+    expect(screen.getByTestId("scheduled-tasks-empty-state")).toHaveTextContent(
+      "No scheduled tasks yet.",
+    );
   });
 
   it("renders redesigned schedule rows with sortable headers, grouped expansion, and inline actions", async () => {

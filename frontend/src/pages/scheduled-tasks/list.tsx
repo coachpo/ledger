@@ -3,7 +3,6 @@ import {
   CalendarClock,
   ChevronDown,
   ChevronRight,
-  ClipboardList,
   CopyPlus,
   ExternalLink,
   MoreHorizontal,
@@ -18,7 +17,7 @@ import { Link } from "react-router";
 import { toast } from "sonner";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
-import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
 import {
@@ -1405,13 +1404,17 @@ function ScheduledTasksBulkActions({
 
 function ScheduledTasksEmptyState({ hasFilters }: { hasFilters: boolean }) {
   return (
-    <EmptyStatePanel
+    <InventoryStatePanel
       description={
         hasFilters
           ? "Refine the search, status, package, or workflow filters to widen the schedule inventory."
           : "Create a scheduled task to materialize Workflow Package runs on a durable recurrence."
       }
-      icon={<ClipboardList />}
+      testId={
+        hasFilters
+          ? "scheduled-tasks-filtered-empty-state"
+          : "scheduled-tasks-empty-state"
+      }
       title={
         hasFilters
           ? "No scheduled tasks match this search or filters."
@@ -1749,12 +1752,13 @@ export function ScheduledTasksListPage() {
       {schedulesQuery.isPending ? <LoadingState /> : null}
 
       {schedulesQuery.isError ? (
-        <EmptyStatePanel
+        <InventoryStatePanel
           description={
             schedulesQuery.error instanceof Error
               ? schedulesQuery.error.message
               : "Failed to load scheduled tasks."
           }
+          testId="scheduled-tasks-error-state"
           title="Failed to load scheduled tasks"
           tone="danger"
         />

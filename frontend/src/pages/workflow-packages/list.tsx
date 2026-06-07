@@ -1,5 +1,4 @@
 import {
-  Box,
   CalendarClock,
   FileUp,
   MoreHorizontal,
@@ -7,7 +6,6 @@ import {
   PlayCircle,
   SquarePen,
   Trash2,
-  TriangleAlert,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -22,7 +20,7 @@ import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { formatDateTime } from "@/lib/format";
 import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
-import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ProvenanceBadge } from "@/components/shared/provenance-badge";
@@ -127,14 +125,18 @@ function EmptyState({ search }: { search: string }) {
   const hasSearch = Boolean(search.trim());
 
   return (
-    <EmptyStatePanel
+    <InventoryStatePanel
       className="bg-card/70"
       description={
         hasSearch
           ? "Refine the search by package name, key, manifest hash, or readiness cue."
           : "Create or import a package manifest to author private agents, schemas, capabilities, MCP bindings, and launch flows."
       }
-      icon={<Box aria-hidden="true" className="size-4 text-primary" />}
+      testId={
+        hasSearch
+          ? "workflow-packages-filtered-empty-state"
+          : "workflow-packages-empty-state"
+      }
       title={
         hasSearch ? "No packages match this search." : "No workflow packages yet."
       }
@@ -205,20 +207,17 @@ function WorkflowPackagesStateCards({
   }
 
   if (isError) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load workflow packages.";
+
     return (
-      <Card role="alert" aria-live="polite">
-        <CardContent className="flex items-start gap-3 p-4 text-sm text-muted-foreground">
-          <TriangleAlert
-            className="mt-0.5 size-4 shrink-0 text-destructive"
-            aria-hidden="true"
-          />
-          <span>
-            {error instanceof Error
-              ? error.message
-              : "Failed to load workflow packages."}
-          </span>
-        </CardContent>
-      </Card>
+      <InventoryStatePanel
+        testId="workflow-packages-error-state"
+        title={message}
+        tone="danger"
+      />
     );
   }
 

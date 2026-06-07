@@ -151,6 +151,9 @@ describe("TemplateListPage", () => {
 
     const inventory = screen.getByTestId("templates-inventory");
     expect(within(inventory).getByText("No templates yet.")).toBeVisible();
+    expect(within(inventory).getByTestId("templates-empty-state")).toHaveTextContent(
+      "No templates yet.",
+    );
     expect(
       within(inventory).getByText(/Create a reusable markdown template/i),
     ).toBeVisible();
@@ -170,6 +173,9 @@ describe("TemplateListPage", () => {
     expect(screen.getByLabelText("Search templates")).toBeVisible();
     expect(screen.getByRole("link", { name: /new template/i })).toBeVisible();
     expect(screen.getByText("No templates match your search.")).toBeVisible();
+    expect(screen.getByTestId("templates-filtered-empty-state")).toHaveTextContent(
+      "No templates match your search.",
+    );
     expect(screen.getByText("Showing 0 templates of 1 template")).toBeVisible();
     expect(screen.queryByText("No templates yet.")).not.toBeInTheDocument();
     expect(screen.queryByText("Quarterly Review")).not.toBeInTheDocument();

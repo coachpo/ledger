@@ -147,6 +147,9 @@ describe("RunsListPage", () => {
     expect(
       screen.getByText("No runs match the current monitor filters"),
     ).toBeVisible();
+    expect(screen.getByTestId("runs-empty-state")).toHaveTextContent(
+      "No runs match the current monitor filters",
+    );
     expect(screen.getByText(/widen the polling window/i)).toBeVisible();
 
     useRunsMock.mockReturnValue({
@@ -159,6 +162,9 @@ describe("RunsListPage", () => {
     rerender(<RunsListPage />);
 
     expect(screen.getByRole("alert")).toHaveTextContent("Runs API unavailable");
+    expect(screen.getByTestId("runs-error-state")).toHaveTextContent(
+      "Runs API unavailable",
+    );
   });
 
   it("expects the run monitor table to sit inside a framed horizontal containment wrapper", () => {

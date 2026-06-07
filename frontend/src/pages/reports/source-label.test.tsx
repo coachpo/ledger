@@ -297,6 +297,9 @@ describe("report source labels", () => {
     });
 
     expect(screen.getByText("No reports match your search.")).toBeVisible();
+    expect(screen.getByTestId("reports-filtered-empty-state")).toHaveTextContent(
+      "No reports match your search.",
+    );
     expect(screen.queryByText(/No reports yet/i)).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("reports-bulk-actions"),

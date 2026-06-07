@@ -125,6 +125,9 @@ describe("WorkflowPackagesListPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Package API unavailable",
     );
+    expect(screen.getByTestId("workflow-packages-error-state")).toHaveTextContent(
+      "Package API unavailable",
+    );
 
     useWorkflowPackagesMock.mockReturnValue({
       data: { items: [] },
@@ -138,6 +141,9 @@ describe("WorkflowPackagesListPage", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("No workflow packages yet.")).toBeVisible();
+    expect(screen.getByTestId("workflow-packages-empty-state")).toHaveTextContent(
+      "No workflow packages yet.",
+    );
   });
 
   it("renders package table by default, search controls, and secondary cards", () => {

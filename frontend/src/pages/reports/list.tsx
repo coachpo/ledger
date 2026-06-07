@@ -26,7 +26,7 @@ import { downloadReportUrl } from "@/lib/api/reports";
 import type { ReportRead } from "@/lib/types/report";
 import type { TextTemplateRead } from "@/lib/types/text-template";
 import { ReportUploadDialog } from "@/components/forms/report-upload-dialog";
-import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
 import { GroupedListCard } from "@/components/shared/resource-row-card";
@@ -365,18 +365,20 @@ export function ReportListPage() {
     >
       <div className="space-y-4">
         {reportsQuery.isPending ? (
-          <EmptyStatePanel
+          <InventoryStatePanel
             description="Fetching report inventory."
+            testId="reports-loading-state"
             title="Loading reports..."
           />
         ) : null}
         {reportsQuery.isError ? (
-          <EmptyStatePanel
+          <InventoryStatePanel
             description={
               reportsQuery.error instanceof Error
                 ? reportsQuery.error.message
                 : "Failed to load reports."
             }
+            testId="reports-error-state"
             title="Reports could not be loaded"
             tone="danger"
           />
@@ -384,8 +386,9 @@ export function ReportListPage() {
         {!reportsQuery.isPending &&
         !reportsQuery.isError &&
         reports.length === 0 ? (
-          <EmptyStatePanel
+          <InventoryStatePanel
             description="Generate one from a template or upload a markdown file."
+            testId="reports-empty-state"
             title="No reports yet."
           />
         ) : null}
@@ -393,7 +396,10 @@ export function ReportListPage() {
         !reportsQuery.isError &&
         reports.length > 0 &&
         filtered.length === 0 ? (
-          <EmptyStatePanel title="No reports match your search." />
+          <InventoryStatePanel
+            testId="reports-filtered-empty-state"
+            title="No reports match your search."
+          />
         ) : null}
 
         {Array.from(grouped.entries()).map(([groupLabel, groupReports]) => {
