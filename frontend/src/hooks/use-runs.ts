@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import {
-  buildRunsListQueryKey,
   createRunFork,
   createRunRerun,
   getRun,
@@ -65,7 +64,7 @@ export function useRuns(
   const refetchInterval = activeRefetchInterval(options);
 
   return useQuery({
-    queryKey: buildRunsListQueryKey(params),
+    queryKey: queryKeys.platform.runs.list(params),
     queryFn: ({ signal }) => listRuns(params, signal),
     refetchInterval: (query) =>
       hasActiveListRun(query.state.data) ? refetchInterval : false,

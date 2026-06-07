@@ -179,7 +179,7 @@ export function WorkflowPackageEditorPage() {
   const combinedIssues = [...localIssues, ...issues];
   const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map(
     (connection) => ({
-      description: `${connection.modelId} ${connection.apiStyle}`,
+      description: `${connection.modelId} ${connection.protocolProfile}`,
       label: connection.name,
       value: connection.key,
     }),

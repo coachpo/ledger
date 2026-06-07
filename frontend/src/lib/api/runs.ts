@@ -1,11 +1,10 @@
 import { requestPlatform, toPathSegment, toQueryRecord, type IdParam } from "../api-client";
-import { queryKeys } from "../query-keys";
 import type {
   RunCreatedRead,
-  RunListParams,
-  RunListRead,
   RunForkCreateRequest,
   RunForkDraftRead,
+  RunListParams,
+  RunListRead,
   RunRead,
   RunRerunCreateRequest,
   RunRerunDraftRead,
@@ -30,10 +29,6 @@ export function normalizeRunListParams(params: RunListParams = {}): RunListParam
     workflowPackageId: params.workflowPackageId,
     workflowPackageKey: normalizeOptionalText(params.workflowPackageKey),
   };
-}
-
-export function buildRunsListQueryKey(params: RunListParams = {}) {
-  return [...queryKeys.platform.runs.all, "list", normalizeRunListParams(params)] as const;
 }
 
 export function listRuns(params?: RunListParams, signal?: AbortSignal): Promise<RunListRead> {
@@ -86,7 +81,6 @@ export function createRunFork(
 }
 
 export const runsApi = {
-  buildListQueryKey: buildRunsListQueryKey,
   createFork: createRunFork,
   createRerun: createRunRerun,
   get: getRun,

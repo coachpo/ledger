@@ -67,8 +67,6 @@ export interface ModelConnectionListItemRead {
   name: string;
   description: string;
   protocolProfile: ModelConnectionProtocolProfile;
-  /** @deprecated Historical compatibility only; use protocolProfile. */
-  apiStyle?: ModelConnectionApiStyle;
   baseUrl: string;
   modelId: string;
   reasoningEffort: ModelConnectionReasoningEffort | null;

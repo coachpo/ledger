@@ -208,7 +208,7 @@ describe("WorkflowPackageEditorPage resource editors", () => {
             modelId: "gpt-5.5",
             reasoningEffort: null,
             timeoutSeconds: 60,
-            apiStyle: "responses",
+            protocolProfile: "openai_responses",
             status: "active",
           },
         ],

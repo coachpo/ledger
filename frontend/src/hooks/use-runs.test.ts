@@ -7,7 +7,6 @@ const reactQueryState = vi.hoisted(() => ({
 }));
 
 const runsApiState = vi.hoisted(() => ({
-  buildRunsListQueryKeyMock: vi.fn((params: unknown) => ["api", "platform", "runs", "list", params]),
   createRunForkMock: vi.fn(),
   createRunRerunMock: vi.fn(),
   getRunForkDraftMock: vi.fn(),
@@ -23,7 +22,6 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 vi.mock("@/lib/api/runs", () => ({
-  buildRunsListQueryKey: runsApiState.buildRunsListQueryKeyMock,
   createRunFork: runsApiState.createRunForkMock,
   createRunRerun: runsApiState.createRunRerunMock,
   getRun: runsApiState.getRunMock,
@@ -122,25 +120,35 @@ function lastQueryOptions<TData>() {
 }
 
 describe("useRuns hooks", () => {
-  it("uses the API helper's package-only list query key", () => {
+  it("uses the canonical package-only list query key", () => {
     reactQueryState.useQueryMock.mockClear();
-    runsApiState.buildRunsListQueryKeyMock.mockClear();
 
     const params = {
       status: "running" as const,
-      workflowKey: "market_review",
-      workflowPackageKey: "market_review_package",
+      workflowKey: " market_review ",
+      workflowPackageKey: " market_review_package ",
     };
 
     useRuns(params, { refetchInterval: 2_000 });
 
-    expect(runsApiState.buildRunsListQueryKeyMock).toHaveBeenLastCalledWith(params);
     expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        queryKey: ["api", "platform", "runs", "list", params],
+        queryKey: queryKeys.platform.runs.list(params),
         refetchInterval: expect.any(Function),
       }),
     );
+    expect(queryKeys.platform.runs.list(params)).toEqual([
+      "api",
+      "platform",
+      "runs",
+      "list",
+      {
+        offset: 0,
+        status: "running",
+        workflowKey: "market_review",
+        workflowPackageKey: "market_review_package",
+      },
+    ]);
   });
 
   it("keeps detail queries keyed by run id and disabled without an id", () => {

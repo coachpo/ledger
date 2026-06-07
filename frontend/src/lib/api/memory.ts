@@ -1,5 +1,4 @@
 import { requestPlatform, toPathSegment, type IdParam } from "../api-client";
-import { queryKeys } from "../query-keys";
 import type {
   MemoryApiAccessRequest,
   MemoryApiEntryRead,
@@ -11,10 +10,6 @@ import type {
 
 function memoryPath(memoryId: IdParam): string {
   return `/memory/${toPathSegment(memoryId)}`;
-}
-
-export function buildMemoryListQueryKey(payload: MemoryApiListRequest) {
-  return [...queryKeys.platform.memory.all, "list", payload] as const;
 }
 
 export function listMemory(
@@ -64,7 +59,6 @@ export function listMemoryEvents(
 }
 
 export const memoryApi = {
-  buildListQueryKey: buildMemoryListQueryKey,
   detail: getMemoryDetail,
   events: listMemoryEvents,
   list: listMemory,

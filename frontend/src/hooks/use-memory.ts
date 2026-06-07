@@ -1,7 +1,6 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
 import {
-  buildMemoryListQueryKey,
   getMemoryDetail,
   listMemory,
   listMemoryEvents,
@@ -27,7 +26,7 @@ export function useMemoryList(
   options: MemoryQueryOptions = {},
 ): UseQueryResult<MemoryApiListRead, Error> {
   return useQuery({
-    queryKey: buildMemoryListQueryKey(payload),
+    queryKey: queryKeys.platform.memory.list(payload),
     queryFn: ({ signal }) => listMemory(payload, signal),
     enabled: options.enabled ?? true,
   });
