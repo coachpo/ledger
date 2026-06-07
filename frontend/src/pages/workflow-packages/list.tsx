@@ -134,11 +134,7 @@ function EmptyState({ search }: { search: string }) {
           ? "Refine the search by package name, key, manifest hash, or readiness cue."
           : "Create or import a package manifest to author private agents, schemas, capabilities, MCP bindings, and launch flows."
       }
-      icon={
-        <div className="flex size-9 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
-          <Box aria-hidden="true" />
-        </div>
-      }
+      icon={<Box aria-hidden="true" className="size-4 text-primary" />}
       title={
         hasSearch ? "No packages match this search." : "No workflow packages yet."
       }
