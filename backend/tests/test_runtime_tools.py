@@ -221,6 +221,7 @@ from app.extensions.signaldeck_finance.runtime_types import (
     RuntimeSocialSentimentMetric,
     RuntimeSocialSentimentSourceBlock,
 )
+from app.main import create_app
 from app.models.agent_memory import AgentMemoryEntry, RunMemoryEvent
 from app.models.capability import Capability
 from app.models.report import Report
@@ -457,6 +458,118 @@ class _FakeFearGreedJsonClient:
     def get_json(self, url: str, *, timeout: float, source_url: str) -> object:
         self.calls.append({"url": url, "timeout": timeout, "sourceUrl": source_url})
         return self.payload
+
+
+_DIGITAL_ORACLE_FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "digital_oracle"
+
+
+def _normalize_digital_oracle_fixture_params(
+    params: Mapping[str, object] | None,
+) -> dict[str, object]:
+    if params is None:
+        return {}
+    return {str(key): value for key, value in sorted(params.items()) if value is not None}
+
+
+def _digital_oracle_fixture_request_key(
+    *,
+    kind: str,
+    url: str,
+    params: Mapping[str, object] | None,
+) -> str:
+    return json.dumps(
+        {
+            "kind": kind,
+            "url": url,
+            "params": _normalize_digital_oracle_fixture_params(params),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+class _DigitalOracleFixtureReplayJsonClient:
+    def __init__(
+        self,
+        fixture_names: Sequence[str],
+        *,
+        fixture_dir: Path = _DIGITAL_ORACLE_FIXTURE_DIR,
+    ) -> None:
+        self.calls: list[dict[str, object]] = []
+        self._fixtures: dict[str, dict[str, object]] = {}
+        for fixture_name in fixture_names:
+            path = fixture_dir / fixture_name
+            if not path.exists():
+                raise AssertionError(f"Missing Digital Oracle fixture file: {path}")
+            try:
+                raw_payload = cast(object, json.loads(path.read_text()))
+            except json.JSONDecodeError as exc:
+                raise AssertionError(f"Malformed Digital Oracle fixture JSON: {path}") from exc
+            if not isinstance(raw_payload, dict):
+                raise AssertionError(f"Digital Oracle fixture must be an object: {path}")
+            fixture = cast(dict[str, object], raw_payload)
+            kind = fixture.get("kind")
+            request = fixture.get("request")
+            if kind != "json" or not isinstance(request, dict):
+                raise AssertionError(f"Digital Oracle fixture has invalid envelope: {path}")
+            request_payload = cast(dict[str, object], request)
+            url = request_payload.get("url")
+            params = request_payload.get("params")
+            if not isinstance(url, str) or not isinstance(params, dict):
+                raise AssertionError(f"Digital Oracle fixture has invalid request: {path}")
+            has_response = "response" in fixture
+            has_error = "error" in fixture
+            if has_response == has_error:
+                raise AssertionError(
+                    f"Digital Oracle fixture must contain exactly one response or error: {path}"
+                )
+            params_payload = cast(dict[str, object], params)
+            key = _digital_oracle_fixture_request_key(
+                kind="json",
+                url=url,
+                params=params_payload,
+            )
+            if key in self._fixtures:
+                raise AssertionError(f"Duplicate Digital Oracle fixture request: {path}")
+            self._fixtures[key] = fixture
+
+    def get_json(
+        self,
+        url: str,
+        *,
+        timeout: float,
+        params: Mapping[str, object] | None = None,
+        provider: PredictionMarketVenue | str | None = None,
+        contact_email: str | None = None,
+        source_url: str | None = None,
+    ) -> object:
+        normalized_params = _normalize_digital_oracle_fixture_params(params)
+        call: dict[str, object] = {"url": url, "timeout": timeout, "params": normalized_params}
+        if provider is not None:
+            call["provider"] = provider
+        if contact_email is not None:
+            call["contactEmail"] = contact_email
+        if source_url is not None:
+            call["sourceUrl"] = source_url
+        self.calls.append(call)
+        key = _digital_oracle_fixture_request_key(kind="json", url=url, params=normalized_params)
+        fixture = self._fixtures.get(key)
+        if fixture is None:
+            raise AssertionError(
+                f"Missing Digital Oracle fixture for {url} params={normalized_params}"
+            )
+        error = fixture.get("error")
+        if isinstance(error, dict):
+            error_payload = cast(dict[str, object], error)
+            message = error_payload.get("message")
+            code = error_payload.get("code")
+            details = error_payload.get("details")
+            raise DigitalOracleProviderError(
+                message if isinstance(message, str) else "Digital Oracle fixture provider error",
+                code=code if isinstance(code, str) else "provider_error",
+                details=cast(Mapping[str, object], details if isinstance(details, dict) else {}),
+            )
+        return fixture["response"]
 
 
 class _SessionScope:
@@ -1424,12 +1537,14 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
     granted_tool_keys = {
         tool_key for profile in runtime_agent.capability_profiles for tool_key in profile.tool_keys
     }
-    assert runtime_agent.key == "digital_oracle_researcher"
+    assert runtime_agent.key == "digital_oracle_signal_researcher"
     assert runtime_agent.output_schema.key == "digital_oracle_report"
     assert granted_tool_keys == {
         PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
         SEC_FILINGS_LOOKUP_TOOL_KEY,
         MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+        MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
+        MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY,
     }
     assert "Package-ready draft" not in manifest_source
     assert "spec.skills" not in manifest_source
@@ -1665,6 +1780,38 @@ def test_digital_oracle_edgar_missing_config_returns_structured_failure() -> Non
         "provider": "edgar",
         "setting": EDGAR_CONTACT_EMAIL_SETTING,
     }
+
+
+def test_digital_oracle_missing_edgar_contact_does_not_break_app_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
+    reset_settings_cache()
+    try:
+        app = create_app(init_database=False)
+        payload = map_sec_filings_result(
+            DigitalOraclePhase1Service().lookup_sec_filings(
+                DigitalOracleSecFilingsQuery(ticker="NVDA")
+            )
+        ).model_dump(mode="json", by_alias=True)
+    finally:
+        reset_settings_cache()
+
+    assert app is not None
+    assert payload["toolKey"] == SEC_FILINGS_LOOKUP_TOOL_KEY
+    assert payload["ticker"] == "NVDA"
+    assert payload["filings"] == []
+    assert payload["warnings"] == [
+        {
+            "code": EDGAR_CONTACT_EMAIL_MISSING_CODE,
+            "message": EDGAR_CONTACT_EMAIL_MISSING_MESSAGE,
+            "details": {
+                "operation": "sec_filings",
+                "provider": "edgar",
+                "setting": EDGAR_CONTACT_EMAIL_SETTING,
+            },
+        }
+    ]
 
 
 def test_digital_oracle_service_disabled_provider_config_returns_warnings_without_calls() -> None:
@@ -3398,27 +3545,67 @@ def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typ
         RUNTIME_TOOL_SPECS,
         enabled_extension_keys={FINANCE_WORKSPACE_EXTENSION_KEY},
     )
+    digital_oracle_disabled_cases = (
+        (
+            PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
+            PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
+            '{"query":"NVDA earnings"}',
+        ),
+        (
+            SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME,
+            SEC_FILINGS_LOOKUP_TOOL_KEY,
+            '{"ticker":"NVDA"}',
+        ),
+        (
+            MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+            MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+            '{"indicator":"fear_greed"}',
+        ),
+    )
     assert (
-        digital_oracle_disabled_registry.get_openai_tools({PREDICTION_MARKETS_LOOKUP_TOOL_KEY})
+        digital_oracle_disabled_registry.get_openai_tools(set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS))
         == []
     )
     assert len(digital_oracle_disabled_registry.get_openai_tools({REPORT_LOOKUP_TOOL_KEY})) == 1
-    with pytest.raises(RuntimeToolError) as digital_oracle_exc_info:
-        _ = digital_oracle_disabled_registry.dispatch(
-            name=PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
-            arguments_json='{"query":"NVDA earnings"}',
-            granted_tool_keys={PREDICTION_MARKETS_LOOKUP_TOOL_KEY},
-            context=context,
-        )
+    for function_name, tool_key, arguments_json in digital_oracle_disabled_cases:
+        with pytest.raises(RuntimeToolError) as digital_oracle_exc_info:
+            _ = digital_oracle_disabled_registry.dispatch(
+                name=function_name,
+                arguments_json=arguments_json,
+                granted_tool_keys={tool_key},
+                context=context,
+            )
 
-    assert digital_oracle_exc_info.value.code == "extension_disabled"
-    assert digital_oracle_exc_info.value.message == "Extension is disabled"
-    assert digital_oracle_exc_info.value.details == [
-        {
-            "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
-            "surface": f"runtime.tool.{PREDICTION_MARKETS_LOOKUP_TOOL_KEY}",
-        }
-    ]
+        assert digital_oracle_exc_info.value.code == "extension_disabled"
+        assert digital_oracle_exc_info.value.message == "Extension is disabled"
+        assert digital_oracle_exc_info.value.details == [
+            {
+                "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
+                "surface": f"runtime.tool.{tool_key}",
+            }
+        ]
+
+
+def test_digital_oracle_runtime_registry_denies_ungranted_tools_before_parsing() -> None:
+    registry = get_default_runtime_tool_registry()
+    context = _runtime_context(fail_on_session=True)
+    cases = (
+        (PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME, PREDICTION_MARKETS_LOOKUP_TOOL_KEY),
+        (SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME, SEC_FILINGS_LOOKUP_TOOL_KEY),
+        (MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME, MARKET_SENTIMENT_LOOKUP_TOOL_KEY),
+    )
+
+    for function_name, tool_key in cases:
+        with pytest.raises(RuntimeToolError) as exc_info:
+            _ = registry.dispatch(
+                name=function_name,
+                arguments_json="not-json",
+                granted_tool_keys=set(),
+                context=context,
+            )
+
+        assert exc_info.value.code == "agent_execution_access_denied"
+        assert exc_info.value.message == DIGITAL_ORACLE_DENIED_MESSAGES[tool_key]
 
 
 def test_financial_runtime_tool_exposure_follows_quote_history_and_report_lookup_grants() -> None:
@@ -5695,6 +5882,324 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
     )
 
 
+@pytest.mark.parametrize(
+    ("function_name", "tool_key", "arguments_json", "expected_message"),
+    [
+        (
+            PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
+            PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
+            json.dumps({"query": "   "}),
+            "signaldeck_prediction_markets_lookup query must not be empty.",
+        ),
+        (
+            SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME,
+            SEC_FILINGS_LOOKUP_TOOL_KEY,
+            json.dumps(
+                {
+                    "ticker": "NVDA",
+                    "startDate": "2026-12-31",
+                    "endDate": "2026-01-01",
+                }
+            ),
+            "signaldeck_sec_filings_lookup startDate must be before or equal to endDate.",
+        ),
+        (
+            MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+            MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+            json.dumps({"indicator": "fear_greed", "asOfDate": "not-a-date"}),
+            "signaldeck_market_sentiment_lookup asOfDate must be a valid ISO date.",
+        ),
+    ],
+)
+def test_digital_oracle_invalid_runtime_arguments_fail_before_provider_clients(
+    monkeypatch: pytest.MonkeyPatch,
+    function_name: str,
+    tool_key: str,
+    arguments_json: str,
+    expected_message: str,
+) -> None:
+    def fail_provider_factory() -> object:
+        raise AssertionError("invalid Digital Oracle arguments must not construct providers")
+
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_prediction_markets.create_prediction_market_providers",
+        fail_provider_factory,
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
+        fail_provider_factory,
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_market_sentiment.create_market_sentiment_provider_adapter",
+        fail_provider_factory,
+    )
+    registry = get_default_runtime_tool_registry()
+
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = registry.dispatch(
+            name=function_name,
+            arguments_json=arguments_json,
+            granted_tool_keys={tool_key},
+            context=_runtime_context(fail_on_session=True),
+        )
+
+    assert exc_info.value.code == "agent_tool_call_invalid"
+    assert exc_info.value.message == expected_message
+
+
+def test_digital_oracle_fixture_replay_maps_success_payloads_without_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def blocked_httpx_client(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("Digital Oracle fixture tests must not construct live HTTP clients")
+
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_prediction_markets.httpx.Client",
+        blocked_httpx_client,
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.httpx.Client",
+        blocked_httpx_client,
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_market_sentiment.httpx.Client",
+        blocked_httpx_client,
+    )
+    fixture_client = _DigitalOracleFixtureReplayJsonClient(
+        (
+            "prediction_polymarket_success.json",
+            "prediction_kalshi_success.json",
+            "sec_company_tickers_success.json",
+            "sec_submissions_success.json",
+            "market_sentiment_success.json",
+        )
+    )
+
+    polymarket_result = PolymarketPredictionMarketsProvider(
+        fixture_client
+    ).lookup_prediction_markets(
+        DigitalOraclePredictionMarketsProviderQuery(
+            query="Fed cut",
+            venue="polymarket",
+            item_limit=5,
+            include_resolved=False,
+            timeout_seconds=1.5,
+        )
+    )
+    kalshi_result = KalshiPredictionMarketsProvider(fixture_client).lookup_prediction_markets(
+        DigitalOraclePredictionMarketsProviderQuery(
+            query="Fed cut",
+            venue="kalshi",
+            item_limit=5,
+            include_resolved=False,
+            timeout_seconds=1.5,
+        )
+    )
+    sec_result = EdgarSecFilingsProvider(http_client=fixture_client).lookup_sec_filings(
+        DigitalOracleSecFilingsProviderQuery(
+            ticker="NVDA",
+            form_types=(),
+            start_date=None,
+            end_date=None,
+            item_limit=10,
+            edgar_contact_email="sec-contact@example.test",
+            timeout_seconds=2.5,
+        )
+    )
+    sentiment_result = FearGreedMarketSentimentProvider(
+        http_client=fixture_client
+    ).lookup_market_sentiment(
+        DigitalOracleMarketSentimentProviderQuery(
+            indicator="fear_greed",
+            as_of_date=None,
+            source_url=MARKET_SENTIMENT_SOURCE_URL,
+            timeout_seconds=2.5,
+        )
+    )
+
+    assert polymarket_result.events[0].contracts[0].yes_price == Decimal("0.63")
+    assert kalshi_result.events[0].contracts[0].probability == Decimal("0.63")
+    assert sec_result.filings[0].form_type == "10-K"
+    assert sec_result.filings[0].accepted_at == datetime(2026, 2, 20, 16, 30, 1, tzinfo=UTC)
+    assert sentiment_result.score == 72
+    assert sentiment_result.label == "greed"
+    assert len(fixture_client.calls) == 5
+
+
+def test_digital_oracle_fixture_replay_malformed_empty_and_error_payloads() -> None:
+    fixture_client = _DigitalOracleFixtureReplayJsonClient(
+        (
+            "prediction_polymarket_malformed.json",
+            "prediction_kalshi_empty.json",
+            "sec_company_tickers_success.json",
+            "sec_submissions_malformed.json",
+        )
+    )
+    empty_sentiment_client = _DigitalOracleFixtureReplayJsonClient(("market_sentiment_empty.json",))
+    malformed_sentiment_client = _DigitalOracleFixtureReplayJsonClient(
+        ("market_sentiment_malformed.json",)
+    )
+    prediction_service = DigitalOraclePhase1Service(
+        settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
+        prediction_market_providers=(
+            PolymarketPredictionMarketsProvider(fixture_client),
+            KalshiPredictionMarketsProvider(fixture_client),
+        ),
+    )
+    prediction_payload = map_prediction_markets_result(
+        prediction_service.lookup_prediction_markets(
+            DigitalOraclePredictionMarketsQuery(
+                query="Malformed",
+                venues=("polymarket", "kalshi"),
+                item_limit=5,
+            )
+        )
+    ).model_dump(mode="json", by_alias=True)
+
+    sec_result = EdgarSecFilingsProvider(http_client=fixture_client).lookup_sec_filings(
+        DigitalOracleSecFilingsProviderQuery(
+            ticker="MALF",
+            form_types=(),
+            start_date=None,
+            end_date=None,
+            item_limit=10,
+            edgar_contact_email="sec-contact@example.test",
+            timeout_seconds=2.5,
+        )
+    )
+    empty_sentiment_result = FearGreedMarketSentimentProvider(
+        http_client=empty_sentiment_client
+    ).lookup_market_sentiment(
+        DigitalOracleMarketSentimentProviderQuery(
+            indicator="fear_greed",
+            as_of_date=None,
+            source_url=MARKET_SENTIMENT_SOURCE_URL,
+            timeout_seconds=2.5,
+        )
+    )
+    malformed_sentiment_payload = map_market_sentiment_result(
+        DigitalOraclePhase1Service(
+            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
+            market_sentiment_provider=FearGreedMarketSentimentProvider(
+                http_client=malformed_sentiment_client
+            ),
+        ).lookup_market_sentiment(DigitalOracleMarketSentimentQuery())
+    ).model_dump(mode="json", by_alias=True)
+
+    assert prediction_payload["events"] == []
+    assert [
+        warning["code"] for warning in cast(list[dict[str, object]], prediction_payload["warnings"])
+    ] == [
+        "prediction_markets_malformed_payload",
+        "prediction_markets_malformed_payload",
+        "prediction_markets_malformed_payload",
+        "prediction_markets_empty",
+        "prediction_markets_empty",
+        "prediction_markets_unavailable",
+    ]
+    assert sec_result.filings == ()
+    assert [warning.code for warning in sec_result.warnings] == ["sec_filings_malformed_payload"]
+    assert empty_sentiment_result.score is None
+    assert [warning.code for warning in empty_sentiment_result.warnings] == [
+        "market_sentiment_sparse_history"
+    ]
+    assert malformed_sentiment_payload["warnings"] == [
+        {
+            "code": "market_sentiment_provider_error",
+            "message": "Fear & Greed provider returned malformed market sentiment data",
+            "details": {"operation": "market_sentiment", "provider": "fear_greed"},
+        }
+    ]
+
+
+def test_digital_oracle_fixture_replay_provider_errors_degrade_without_network() -> None:
+    prediction_client = _DigitalOracleFixtureReplayJsonClient(
+        ("prediction_polymarket_timeout.json", "prediction_kalshi_empty.json")
+    )
+    prediction_payload = map_prediction_markets_result(
+        DigitalOraclePhase1Service(
+            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
+            prediction_market_providers=(
+                PolymarketPredictionMarketsProvider(prediction_client),
+                KalshiPredictionMarketsProvider(prediction_client),
+            ),
+        ).lookup_prediction_markets(
+            DigitalOraclePredictionMarketsQuery(
+                query="Timeout",
+                venues=("polymarket", "kalshi"),
+                item_limit=5,
+            )
+        )
+    ).model_dump(mode="json", by_alias=True)
+    sec_client = _DigitalOracleFixtureReplayJsonClient(("sec_company_tickers_timeout.json",))
+    sentiment_client = _DigitalOracleFixtureReplayJsonClient(("market_sentiment_unavailable.json",))
+    sec_payload = map_sec_filings_result(
+        DigitalOraclePhase1Service(
+            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
+            sec_filings_provider=EdgarSecFilingsProvider(http_client=sec_client),
+        ).lookup_sec_filings(DigitalOracleSecFilingsQuery(ticker="NVDA"))
+    ).model_dump(mode="json", by_alias=True)
+    sentiment_payload = map_market_sentiment_result(
+        DigitalOraclePhase1Service(
+            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
+            market_sentiment_provider=FearGreedMarketSentimentProvider(
+                http_client=sentiment_client
+            ),
+        ).lookup_market_sentiment(DigitalOracleMarketSentimentQuery())
+    ).model_dump(mode="json", by_alias=True)
+
+    assert [
+        warning["code"] for warning in cast(list[dict[str, object]], prediction_payload["warnings"])
+    ] == [
+        "prediction_markets_provider_timeout",
+        "prediction_markets_empty",
+        "prediction_markets_unavailable",
+    ]
+    assert [
+        warning["code"] for warning in cast(list[dict[str, object]], sec_payload["warnings"])
+    ] == [
+        "sec_filings_provider_timeout",
+        "sec_filings_unavailable",
+    ]
+    assert sentiment_payload["warnings"] == [
+        {
+            "code": "market_sentiment_provider_unavailable",
+            "message": "Fear & Greed fixture is unavailable for market sentiment",
+            "details": {"operation": "market_sentiment", "provider": "fear_greed"},
+        }
+    ]
+
+
+def test_digital_oracle_fixture_replay_missing_or_malformed_fixture_fails_deterministically(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(AssertionError, match="Missing Digital Oracle fixture file"):
+        _ = _DigitalOracleFixtureReplayJsonClient(("missing.json",))
+
+    fixture_client = _DigitalOracleFixtureReplayJsonClient(("prediction_kalshi_empty.json",))
+    with pytest.raises(AssertionError, match="Missing Digital Oracle fixture"):
+        _ = PolymarketPredictionMarketsProvider(fixture_client).lookup_prediction_markets(
+            DigitalOraclePredictionMarketsProviderQuery(
+                query="Fed cut",
+                venue="polymarket",
+                item_limit=5,
+                include_resolved=False,
+                timeout_seconds=1.5,
+            )
+        )
+
+    malformed_fixture = tmp_path / "malformed.json"
+    _ = malformed_fixture.write_text(
+        json.dumps({"kind": "json", "request": {"url": "https://example.test", "params": {}}})
+    )
+    with pytest.raises(AssertionError, match="exactly one response or error"):
+        _ = _DigitalOracleFixtureReplayJsonClient(
+            ("malformed.json",),
+            fixture_dir=tmp_path,
+        )
+
+
 def test_prediction_markets_runtime_providers_normalize_venue_payloads() -> None:
     polymarket_client = _FakePredictionMarketsJsonClient(
         {
@@ -5787,6 +6292,114 @@ def test_prediction_markets_runtime_providers_normalize_venue_payloads() -> None
     assert kalshi_event.contracts[0].no_price == Decimal("0.38")
     assert kalshi_event.contracts[0].open_interest == Decimal("1200")
     assert kalshi_result.warnings == ()
+
+
+def test_prediction_markets_runtime_providers_accept_upstream_shaped_payloads() -> None:
+    polymarket_client = _FakePredictionMarketsJsonClient(
+        {
+            "gamma-api.polymarket.com": [
+                {
+                    "slug": "resolved-fed-cut",
+                    "title": "Resolved market",
+                    "active": False,
+                    "closed": True,
+                    "tag_slug": "fed-cut",
+                    "markets": json.dumps(
+                        [
+                            {
+                                "question": "Resolved Fed cut market",
+                                "outcomes": json.dumps(["Yes", "No"]),
+                                "outcomePrices": json.dumps(["0.10", "0.90"]),
+                                "clobTokenIds": json.dumps(["resolved-yes-token"]),
+                            }
+                        ]
+                    ),
+                },
+                {
+                    "slug": "live-fed-cut",
+                    "title": "Live market",
+                    "active": True,
+                    "closed": False,
+                    "tagSlug": "fed-cut",
+                    "markets": json.dumps(
+                        [
+                            {
+                                "question": "Live Fed cut market",
+                                "outcomes": ["Yes", "No"],
+                                "outcomePrices": ["0.61", "0.39"],
+                                "outcomeTokenIds": ["live-yes-token"],
+                                "volume_24hr": "4567.89",
+                            }
+                        ]
+                    ),
+                },
+            ]
+        }
+    )
+    polymarket_result = PolymarketPredictionMarketsProvider(
+        polymarket_client
+    ).lookup_prediction_markets(
+        DigitalOraclePredictionMarketsProviderQuery(
+            query="Fed cut",
+            venue="polymarket",
+            item_limit=5,
+            include_resolved=True,
+            timeout_seconds=1.5,
+        )
+    )
+
+    assert [event.status for event in polymarket_result.events] == ["open", "closed"]
+    live_contract = polymarket_result.events[0].contracts[0]
+    assert live_contract.contract_id == "live-yes-token"
+    assert live_contract.volume == Decimal("4567.89")
+    assert polymarket_result.events[0].url == "https://polymarket.com/event/live-fed-cut"
+    assert polymarket_result.warnings == ()
+
+    kalshi_client = _FakePredictionMarketsJsonClient(
+        {
+            "api.elections.kalshi.com": {
+                "markets": [
+                    {
+                        "ticker": "KXFEDCUT-26JUN-T50",
+                        "eventTicker": "KXFEDCUT-26JUN",
+                        "event_title": "Fed cut before June 2026",
+                        "status": "open",
+                        "subtitle": "Yes",
+                        "yes_bid_dollars": "0.40",
+                        "yes_ask_dollars": "0.60",
+                        "no_ask_fp": "0.50",
+                        "last_price_fp": "0.90",
+                        "yes_bid": 1,
+                        "yes_ask": 2,
+                        "no_ask": 3,
+                        "last_price": 4,
+                        "openInterest": "345",
+                        "closeDate": "2026-06-01T12:00:00Z",
+                    }
+                ]
+            }
+        }
+    )
+    kalshi_result = KalshiPredictionMarketsProvider(kalshi_client).lookup_prediction_markets(
+        DigitalOraclePredictionMarketsProviderQuery(
+            query="Fed cut",
+            venue="kalshi",
+            item_limit=5,
+            include_resolved=False,
+            timeout_seconds=2.0,
+        )
+    )
+
+    assert cast(dict[str, object], kalshi_client.calls[0]["params"])["mve_filter"] == "exclude"
+    kalshi_event = kalshi_result.events[0]
+    assert kalshi_event.event_id == "KXFEDCUT-26JUN"
+    assert kalshi_event.title == "Fed cut before June 2026"
+    assert kalshi_event.end_date == datetime(2026, 6, 1, 12, tzinfo=UTC)
+    assert kalshi_event.contracts[0].title == "Yes"
+    assert kalshi_event.contracts[0].probability == Decimal("0.5")
+    assert kalshi_event.contracts[0].yes_price == Decimal("0.6")
+    assert kalshi_event.contracts[0].no_price == Decimal("0.50")
+    assert kalshi_event.contracts[0].open_interest == Decimal("345")
 
 
 def test_prediction_markets_runtime_executor_filters_venues_and_limits(
@@ -5959,6 +6572,60 @@ def test_prediction_markets_runtime_executor_returns_unavailable_when_all_provid
         {
             "code": "prediction_markets_empty",
             "message": "No prediction_markets data returned from kalshi.",
+            "details": {"operation": "prediction_markets", "provider": "kalshi"},
+        },
+        {
+            "code": "prediction_markets_unavailable",
+            "message": "No prediction_markets data available from configured providers.",
+            "details": {"operation": "prediction_markets"},
+        },
+    ]
+
+
+def test_prediction_markets_runtime_executor_returns_unavailable_when_all_providers_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    polymarket_provider = _FakeDigitalOraclePredictionProvider(
+        "polymarket",
+        failure=DigitalOracleProviderError(
+            "Polymarket timed out while fetching prediction markets",
+            code="provider_timeout",
+            details={"provider": "polymarket"},
+        ),
+    )
+    kalshi_provider = _FakeDigitalOraclePredictionProvider(
+        "kalshi",
+        failure=DigitalOracleProviderError(
+            "Kalshi is unavailable for prediction markets",
+            code="provider_unavailable",
+            details={"provider": "kalshi"},
+        ),
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_prediction_markets.create_prediction_market_providers",
+        lambda: (polymarket_provider, kalshi_provider),
+    )
+
+    payload = execute_prediction_markets_lookup(
+        _runtime_context(fail_on_session=True),
+        parse_prediction_markets_lookup_arguments(
+            json.dumps({"query": "Fed cut", "venues": ["polymarket", "kalshi"]})
+        ),
+    )
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert payload["toolKey"] == PREDICTION_MARKETS_LOOKUP_TOOL_KEY
+    assert payload["query"] == "Fed cut"
+    assert payload["events"] == []
+    assert payload["warnings"] == [
+        {
+            "code": "prediction_markets_provider_timeout",
+            "message": "Polymarket timed out while fetching prediction markets",
+            "details": {"operation": "prediction_markets", "provider": "polymarket"},
+        },
+        {
+            "code": "prediction_markets_provider_unavailable",
+            "message": "Kalshi is unavailable for prediction markets",
             "details": {"operation": "prediction_markets", "provider": "kalshi"},
         },
         {
@@ -6153,6 +6820,91 @@ def test_edgar_sec_filings_provider_maps_company_submissions_to_normalized_filin
         "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000010/nvda-20260131.htm"
     )
     assert result.filings[0].description == "Annual report"
+
+
+def test_edgar_sec_filings_provider_uses_first_exact_ticker_when_mapping_is_ambiguous() -> None:
+    client = _FakeEdgarJsonClient(
+        {
+            "company_tickers": {
+                "0": {"cik_str": 1111111, "ticker": "NVDA", "title": "FIRST NVDA CORP"},
+                "1": {"cik_str": 2222222, "ticker": "NVDA", "title": "SECOND NVDA CORP"},
+            },
+            "CIK0001111111": {
+                "name": "FIRST NVDA CORP",
+                "filings": {
+                    "recent": {
+                        "accessionNumber": ["0001111111-26-000010"],
+                        "form": ["10-K"],
+                        "filingDate": ["2026-02-20"],
+                    }
+                },
+            },
+        }
+    )
+
+    result = EdgarSecFilingsProvider(http_client=client).lookup_sec_filings(
+        DigitalOracleSecFilingsProviderQuery(
+            ticker="NVDA",
+            form_types=(),
+            start_date=None,
+            end_date=None,
+            item_limit=10,
+            edgar_contact_email="sec-contact@example.test",
+            timeout_seconds=2.5,
+        )
+    )
+
+    assert [call["url"] for call in client.calls] == [
+        "https://www.sec.gov/files/company_tickers.json",
+        "https://data.sec.gov/submissions/CIK0001111111.json",
+    ]
+    assert result.cik == "0001111111"
+    assert result.entity_name == "FIRST NVDA CORP"
+    assert result.filings[0].accession_number == "0001111111-26-000010"
+    assert result.warnings == ()
+
+
+def test_edgar_sec_filings_provider_tolerates_optional_arrays_and_reuses_cik_cache() -> None:
+    client = _FakeEdgarJsonClient(
+        {
+            "company_tickers": {
+                "0": {"cik_str": 1045810, "ticker": "NVDA", "title": "NVIDIA CORP"},
+            },
+            "CIK0001045810": {
+                "name": "NVIDIA CORP",
+                "filings": {
+                    "recent": {
+                        "accessionNumber": ["0001045810-26-000010"],
+                        "form": ["10-K"],
+                        "filingDate": ["2026-02-20"],
+                    }
+                },
+            },
+        }
+    )
+    provider = EdgarSecFilingsProvider(http_client=client)
+    query = DigitalOracleSecFilingsProviderQuery(
+        ticker="NVDA",
+        form_types=(),
+        start_date=None,
+        end_date=None,
+        item_limit=10,
+        edgar_contact_email="sec-contact@example.test",
+        timeout_seconds=2.5,
+    )
+
+    first_result = provider.lookup_sec_filings(query)
+    second_result = provider.lookup_sec_filings(query)
+
+    assert [call["url"] for call in client.calls].count(
+        "https://www.sec.gov/files/company_tickers.json"
+    ) == 1
+    assert first_result.filings[0].primary_document is None
+    assert first_result.filings[0].description is None
+    assert first_result.filings[0].url == (
+        "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000010"
+    )
+    assert second_result.filings[0].accession_number == "0001045810-26-000010"
 
 
 def test_edgar_sec_filings_provider_warns_when_recent_data_is_archived_only() -> None:
@@ -6572,6 +7324,50 @@ def test_fear_greed_provider_warns_for_sparse_history_without_inventing_values()
             },
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("score", "expected_label"),
+    [
+        (24, "extreme_fear"),
+        (25, "fear"),
+        (44, "fear"),
+        (45, "neutral"),
+        (55, "neutral"),
+        (74, "greed"),
+        (75, "extreme_greed"),
+    ],
+)
+def test_fear_greed_provider_derives_missing_rating_with_required_thresholds(
+    score: int,
+    expected_label: str,
+) -> None:
+    client = _FakeFearGreedJsonClient(
+        {
+            "fear_and_greed": {
+                "score": score,
+                "timestamp": "2026-01-02",
+                "previous_close": 70,
+                "previous_1_week": 64,
+                "previous_1_month": 55,
+                "previous_1_year": 41,
+            }
+        }
+    )
+
+    result = FearGreedMarketSentimentProvider(http_client=client).lookup_market_sentiment(
+        DigitalOracleMarketSentimentProviderQuery(
+            indicator="fear_greed",
+            as_of_date=None,
+            source_url=MARKET_SENTIMENT_SOURCE_URL,
+            timeout_seconds=2.5,
+        )
+    )
+
+    assert result.label == expected_label
+    assert result.score == score
+    assert result.source_url == MARKET_SENTIMENT_SOURCE_URL
+    assert result.warnings == ()
 
 
 def test_market_sentiment_runtime_executor_returns_normalized_fear_greed_payload(

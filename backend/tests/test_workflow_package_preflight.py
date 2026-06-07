@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import ApiError
 from app.core.formatting import utcnow
 from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
-from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import (
+    FINANCE_WORKSPACE_EXTENSION_KEY,
+    FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
+)
 from app.models.model_connection import ModelConnection
 from app.models.workflow_package import WorkflowPackage
 from app.repositories.workflow_package import WorkflowPackageRepository
@@ -62,6 +65,13 @@ _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
     "signaldeck.sec_filings.lookup",
     "signaldeck.market_sentiment.lookup",
 )
+_FINANCE_PRICE_HISTORY_TOOL_KEYS = (
+    "signaldeck.market_data.history_lookup",
+    "signaldeck.market_data.ohlcv_lookup",
+)
+_CROSS_EXTENSION_RESEARCH_TOOL_KEYS = tuple(
+    sorted([*_DIGITAL_ORACLE_PHASE1_TOOL_KEYS, *_FINANCE_PRICE_HISTORY_TOOL_KEYS])
+)
 
 
 def _package_source() -> str:
@@ -89,6 +99,22 @@ def _expected_digital_oracle_disabled_tool_errors() -> list[dict[str, object]]:
             "surface": f"tool.{tool_key}",
         }
         for index, tool_key in enumerate(sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS))
+    ]
+
+
+def _expected_finance_price_history_disabled_tool_errors() -> list[dict[str, object]]:
+    return [
+        {
+            "field": f"spec.capabilityProfiles.finance_price_history_tools.toolKeys[{index}]",
+            "issue": (
+                f"Server-declared tool {tool_key!r} is disabled because extension "
+                f"{FINANCE_WORKSPACE_EXTENSION_KEY!r} is disabled"
+            ),
+            "code": "extension_disabled",
+            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "surface": f"tool.{tool_key}",
+        }
+        for index, tool_key in enumerate(sorted(_FINANCE_PRICE_HISTORY_TOOL_KEYS))
     ]
 
 
@@ -136,6 +162,77 @@ spec:
             type: string
       outputSchema: digital_oracle_report
       capabilityProfiles: [digital_oracle_phase1_tools]
+  workflows:
+    - key: research
+      name: Research
+      inputSchema:
+        type: object
+        required: [researchQuestion]
+        properties:
+          researchQuestion:
+            type: string
+      flow:
+        kind: step
+        id: research_step
+        slot: report
+        uses: digital_oracle_researcher
+        with:
+          researchQuestion: ${{ inputs.researchQuestion }}
+      output:
+        from: ${{ nodes.research_step.outputs.report }}
+"""
+
+
+def _digital_oracle_research_with_finance_price_history_package_source() -> str:
+    return """apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: digital_oracle_finance_history_fixture
+  name: Digital Oracle Finance History Fixture
+  description: Package-level composition of Finance price history and Digital Oracle tools.
+spec:
+  inputs:
+    type: object
+    required: [researchQuestion]
+    properties:
+      researchQuestion:
+        type: string
+  capabilityProfiles:
+    - key: finance_price_history_tools
+      name: Finance Price History Tools
+      description: Grants Finance-owned price-history tools for package-level research context.
+      toolKeys:
+        - signaldeck.market_data.history_lookup
+        - signaldeck.market_data.ohlcv_lookup
+    - key: digital_oracle_phase1_tools
+      name: Digital Oracle Phase 1 Tools
+      description: Grants Digital Oracle-owned phase-1 research tools.
+      toolKeys:
+        - signaldeck.prediction_markets.lookup
+        - signaldeck.sec_filings.lookup
+        - signaldeck.market_sentiment.lookup
+  outputSchemas:
+    - key: digital_oracle_report
+      name: Digital Oracle Report
+      jsonSchema:
+        type: object
+        required: [summary]
+        properties:
+          summary:
+            type: string
+  agents:
+    - key: digital_oracle_researcher
+      name: Digital Oracle Researcher
+      modelConnection: digital_oracle_primary_model
+      systemPrompt: Use package-level Finance price history and Digital Oracle tools; return JSON.
+      inputSchema:
+        type: object
+        required: [researchQuestion]
+        properties:
+          researchQuestion:
+            type: string
+      outputSchema: digital_oracle_report
+      capabilityProfiles: [finance_price_history_tools, digital_oracle_phase1_tools]
   workflows:
     - key: research
       name: Research
@@ -842,6 +939,95 @@ def test_preflight_accepts_digital_oracle_server_declared_toolKeys(
     ]
 
 
+def test_preflight_accepts_digital_oracle_research_package_with_finance_price_history_tools(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    manifest_source = _digital_oracle_research_with_finance_price_history_package_source()
+    compiled = compile_workflow_package_manifest(manifest_source)
+    compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
+    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
+    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
+    extension_dependencies = cast(list[dict[str, Any]], compiled["extensionDependencies"])
+
+    with session_factory() as session:
+        tool_errors = _project_blocking_diagnostics(
+            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        )
+
+    requirements = PackageExecutionPlanBuilder.derive_package_requirements(compiled_plan)
+    plan = PackageExecutionPlanBuilder.build_from_compiled_plan(compiled_plan, "research")
+    runtime_agent = plan.steps[0].agents[0].package_runtime_agent
+    assert runtime_agent is not None
+
+    _seed_model_connection(
+        session_factory,
+        key="digital_oracle_primary_model",
+        name="Digital Oracle Primary Model",
+        protocol_profile="openai_chat_completions",
+        capabilities=_capabilities_with_statuses(),
+        last_test_ok=True,
+    )
+    response = client.post("/api/workflow-packages", json={"manifestSource": manifest_source})
+    assert response.status_code == 201, response.json()
+    preflight = client.post(
+        f"/api/workflow-packages/{response.json()['id']}/preflight",
+        params={"workflowKey": "research"},
+    )
+
+    assert tool_errors == []
+    assert preflight.status_code == 200, preflight.json()
+    preflight_body = cast(dict[str, object], preflight.json())
+    assert preflight_body["ready"] is True
+    assert preflight_body["blockingErrors"] == []
+    assert preflight_body["warnings"] == []
+    assert profiles_by_key["finance_price_history_tools"]["toolKeys"] == sorted(
+        _FINANCE_PRICE_HISTORY_TOOL_KEYS
+    )
+    assert profiles_by_key["digital_oracle_phase1_tools"]["toolKeys"] == sorted(
+        _DIGITAL_ORACLE_PHASE1_TOOL_KEYS
+    )
+    assert set(requirements.native_tool_sources) == {
+        "spec.capabilityProfiles.finance_price_history_tools.toolKeys",
+        "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys",
+    }
+    agent_profiles_by_key = {profile.key: profile for profile in runtime_agent.capability_profiles}
+    assert agent_profiles_by_key["finance_price_history_tools"].tool_keys == tuple(
+        sorted(_FINANCE_PRICE_HISTORY_TOOL_KEYS)
+    )
+    assert agent_profiles_by_key["digital_oracle_phase1_tools"].tool_keys == tuple(
+        sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
+    )
+    assert set(_FINANCE_PRICE_HISTORY_TOOL_KEYS) <= set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
+    dependencies_by_extension = {
+        str(dependency["extensionKey"]): dependency for dependency in extension_dependencies
+    }
+    assert dependencies_by_extension[DIGITAL_ORACLE_EXTENSION_KEY] == {
+        "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
+        "surfaces": sorted(
+            [
+                *[f"runtime.tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
+                *[f"tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
+            ]
+        ),
+        "fields": [
+            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
+            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
+            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
+        ],
+    }
+    finance_dependency = dependencies_by_extension[FINANCE_WORKSPACE_EXTENSION_KEY]
+    assert finance_dependency["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert set(cast(list[str], finance_dependency["fields"])) == {
+        "spec.capabilityProfiles.finance_price_history_tools.toolKeys[0]",
+        "spec.capabilityProfiles.finance_price_history_tools.toolKeys[1]",
+    }
+    assert {
+        *[f"runtime.tool.{tool_key}" for tool_key in _FINANCE_PRICE_HISTORY_TOOL_KEYS],
+        *[f"tool.{tool_key}" for tool_key in _FINANCE_PRICE_HISTORY_TOOL_KEYS],
+    } <= set(cast(list[str], finance_dependency["surfaces"]))
+
+
 def test_digital_oracle_researcher_demo_validates_compiles_and_preflights(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -900,15 +1086,20 @@ def test_digital_oracle_researcher_demo_validates_compiles_and_preflights(
     assert profiles_by_key["digital_oracle_phase1_tools"]["toolKeys"] == sorted(
         _DIGITAL_ORACLE_PHASE1_TOOL_KEYS
     )
-    assert requirements.native_tool_sources == (
+    assert set(requirements.native_tool_sources) == {
         "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys",
-    )
-    assert runtime_agent.key == "digital_oracle_researcher"
+        "spec.capabilityProfiles.finance_price_history_tools.toolKeys",
+    }
+    assert runtime_agent.key == "digital_oracle_signal_researcher"
     assert runtime_agent.system_prompt.startswith(
         "Digital Oracle methodology is package-local for this agent."
     )
-    assert runtime_agent.capability_profiles[0].tool_keys == tuple(
+    agent_profiles_by_key = {profile.key: profile for profile in runtime_agent.capability_profiles}
+    assert agent_profiles_by_key["digital_oracle_phase1_tools"].tool_keys == tuple(
         sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
+    )
+    assert agent_profiles_by_key["finance_price_history_tools"].tool_keys == tuple(
+        sorted(_FINANCE_PRICE_HISTORY_TOOL_KEYS)
     )
     assert "Package-ready draft" not in manifest_source
     assert "spec.skills" not in manifest_source
@@ -1584,6 +1775,39 @@ def test_preflight_allows_digital_oracle_toolKeys_when_finance_extension_disable
     assert body["warnings"] == []
 
 
+def test_preflight_blocks_only_finance_price_history_toolKeys_when_finance_disabled(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(
+        session_factory,
+        key="digital_oracle_primary_model",
+        protocol_profile="openai_chat_completions",
+        capabilities=_capabilities_with_statuses(),
+        last_test_ok=True,
+    )
+    response = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _digital_oracle_research_with_finance_price_history_package_source()
+        },
+    )
+    assert response.status_code == 201, response.json()
+    _disable_finance_extension(session_factory)
+
+    preflight = client.post(
+        f"/api/workflow-packages/{response.json()['id']}/preflight",
+        params={"workflowKey": "research"},
+    )
+
+    assert preflight.status_code == 200, preflight.json()
+    body = cast(dict[str, object], preflight.json())
+    errors = cast(list[dict[str, object]], body["blockingErrors"])
+    assert body["ready"] is False
+    assert errors == _expected_finance_price_history_disabled_tool_errors()
+    assert not any(error.get("extensionKey") == DIGITAL_ORACLE_EXTENSION_KEY for error in errors)
+
+
 def test_preflight_blocks_digital_oracle_toolKeys_when_digital_oracle_extension_disabled(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -1604,6 +1828,39 @@ def test_preflight_blocks_digital_oracle_toolKeys_when_digital_oracle_extension_
     body = preflight.json()
     assert body["ready"] is False
     assert body["blockingErrors"] == _expected_digital_oracle_disabled_tool_errors()
+
+
+def test_preflight_blocks_only_digital_oracle_toolKeys_when_digital_oracle_disabled(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(
+        session_factory,
+        key="digital_oracle_primary_model",
+        protocol_profile="openai_chat_completions",
+        capabilities=_capabilities_with_statuses(),
+        last_test_ok=True,
+    )
+    response = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _digital_oracle_research_with_finance_price_history_package_source()
+        },
+    )
+    assert response.status_code == 201, response.json()
+    _disable_digital_oracle_extension(session_factory)
+
+    preflight = client.post(
+        f"/api/workflow-packages/{response.json()['id']}/preflight",
+        params={"workflowKey": "research"},
+    )
+
+    assert preflight.status_code == 200, preflight.json()
+    body = cast(dict[str, object], preflight.json())
+    errors = cast(list[dict[str, object]], body["blockingErrors"])
+    assert body["ready"] is False
+    assert errors == _expected_digital_oracle_disabled_tool_errors()
+    assert not any(error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY for error in errors)
 
 
 def test_save_allows_disabled_extension_dependency_and_preflight_blocks(

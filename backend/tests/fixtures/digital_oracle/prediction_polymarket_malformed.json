@@ -1,0 +1,25 @@
+{
+  "kind": "json",
+  "request": {
+    "url": "https://gamma-api.polymarket.com/events",
+    "params": {
+      "active": true,
+      "ascending": false,
+      "closed": false,
+      "limit": 5,
+      "order": "volume24hr",
+      "tag_slug": "malformed"
+    }
+  },
+  "response": [
+    "not-an-event-row",
+    {
+      "id": "pm-malformed",
+      "slug": "malformed-market",
+      "title": "Malformed market fixture",
+      "markets": [
+        {"id": "pm-malformed-market", "question": "Malformed market fixture", "outcomes": "not-json", "outcomePrices": ["0.63", "0.37"]}
+      ]
+    }
+  ]
+}

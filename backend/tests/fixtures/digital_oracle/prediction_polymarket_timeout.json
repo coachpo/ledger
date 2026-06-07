@@ -1,0 +1,19 @@
+{
+  "kind": "json",
+  "request": {
+    "url": "https://gamma-api.polymarket.com/events",
+    "params": {
+      "active": true,
+      "ascending": false,
+      "closed": false,
+      "limit": 5,
+      "order": "volume24hr",
+      "tag_slug": "timeout"
+    }
+  },
+  "error": {
+    "code": "provider_timeout",
+    "message": "polymarket fixture timed out while fetching prediction markets",
+    "details": {"provider": "polymarket"}
+  }
+}

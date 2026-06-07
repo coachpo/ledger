@@ -1,0 +1,29 @@
+{
+  "kind": "json",
+  "request": {
+    "url": "https://api.elections.kalshi.com/trade-api/v2/markets",
+    "params": {
+      "limit": 5,
+      "mve_filter": "exclude",
+      "status": "open"
+    }
+  },
+  "response": {
+    "markets": [
+      {
+        "ticker": "KXFEDCUT-26JUN-T50",
+        "event_ticker": "KXFEDCUT-26JUN",
+        "title": "Fed cut before June 2026",
+        "status": "open",
+        "yes_sub_title": "Yes",
+        "yes_bid": 62,
+        "yes_ask": 64,
+        "no_ask": 38,
+        "last_price": 63,
+        "volume": "9000",
+        "open_interest": 1200,
+        "close_time": "2026-06-01T12:00:00Z"
+      }
+    ]
+  }
+}

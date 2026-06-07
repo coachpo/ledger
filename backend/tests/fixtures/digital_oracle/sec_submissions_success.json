@@ -1,0 +1,20 @@
+{
+  "kind": "json",
+  "request": {
+    "url": "https://data.sec.gov/submissions/CIK0001045810.json",
+    "params": {}
+  },
+  "response": {
+    "name": "NVIDIA CORP",
+    "filings": {
+      "recent": {
+        "accessionNumber": ["0001045810-26-000010"],
+        "form": ["10-K"],
+        "filingDate": ["2026-02-20"],
+        "acceptanceDateTime": ["2026-02-20T16:30:01.000Z"],
+        "primaryDocument": ["nvda-20260131.htm"],
+        "primaryDocDescription": ["Annual report"]
+      }
+    }
+  }
+}

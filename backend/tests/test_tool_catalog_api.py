@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import date
 from importlib import import_module
 from typing import cast
 
@@ -10,11 +11,24 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import ToolCatalogValidationError, get_default_tool_catalog
 from app.agents.runtime_tools import get_default_runtime_tool_registry
+from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
 from app.extensions.signaldeck_digital_oracle.ownership import (
     DIGITAL_ORACLE_EXTENSION_KEY,
     DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES,
     DIGITAL_ORACLE_RUNTIME_TOOL_KEYS,
+)
+from app.extensions.signaldeck_digital_oracle.provider_inventory import (
+    DEFERRED_PROVIDER_INVENTORY,
+    IN_SCOPE_PROVIDER_INVENTORY,
+    NO_NEW_RUNTIME_KEYS_REGISTERED,
+    RATES_LOOKUP_DEFERRED_TOOL_KEY,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_types import (
+    NATIVE_RUNTIME_DIGITAL_ORACLE_TOOL_KEYS,
+    RuntimeMarketSentimentLookupResult,
+    RuntimePredictionMarketsLookupResult,
+    RuntimeSecFilingsLookupResult,
 )
 from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_EXTENSION_KEY,
@@ -24,12 +38,36 @@ from app.extensions.signaldeck_finance.ownership import (
 from app.schemas.memory import MEMORY_CORE_RUNTIME_TOOL_KEYS
 from app.services.extension_service import ExtensionService
 
+_EXPECTED_DIGITAL_ORACLE_TOOL_KEYS = (
+    "signaldeck.prediction_markets.lookup",
+    "signaldeck.sec_filings.lookup",
+    "signaldeck.market_sentiment.lookup",
+)
+_EXPECTED_DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES = (
+    "signaldeck_prediction_markets_lookup",
+    "signaldeck_sec_filings_lookup",
+    "signaldeck_market_sentiment_lookup",
+)
 _DIGITAL_ORACLE_TOOL_KEYS = set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS)
+_FINANCE_PRICE_HISTORY_TOOL_KEYS = {
+    "signaldeck.market_data.history_lookup",
+    "signaldeck.market_data.ohlcv_lookup",
+}
 _REQUIRED_FINANCE_TOOL_KEYS = {
     "signaldeck.market_data.quote_lookup",
     "signaldeck.reports.lookup",
+    *_FINANCE_PRICE_HISTORY_TOOL_KEYS,
 }
 _REQUIRED_CORE_TOOL_KEYS = set(MEMORY_CORE_RUNTIME_TOOL_KEYS)
+_DEFERRED_DIGITAL_ORACLE_TOOL_KEYS = {
+    "signaldeck.rates.lookup",
+    "signaldeck.macro.lookup",
+    "signaldeck.derivatives.lookup",
+    "signaldeck.crypto.lookup",
+    "signaldeck.cftc.lookup",
+    "signaldeck.web.lookup",
+    "signaldeck.price_history.lookup",
+}
 
 
 def _valid_manifest_source() -> str:
@@ -44,6 +82,14 @@ def _api_tool_keys(client: TestClient) -> set[str]:
     body = cast(dict[str, object], response.json())
     items = cast(list[dict[str, object]], body["items"])
     return {str(item["key"]) for item in items}
+
+
+def _warning_payload() -> RuntimeToolWarning:
+    return RuntimeToolWarning(
+        code="provider_unavailable",
+        message="Fixture provider is unavailable.",
+        details={"provider": "fixture", "operation": "contract_freeze"},
+    )
 
 
 def test_extension_tool_inventories_match_catalog_and_runtime() -> None:
@@ -83,17 +129,149 @@ def test_extension_tool_inventories_match_catalog_and_runtime() -> None:
         if tool.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
     }
 
+    assert DIGITAL_ORACLE_RUNTIME_TOOL_KEYS == _EXPECTED_DIGITAL_ORACLE_TOOL_KEYS
+    assert NATIVE_RUNTIME_DIGITAL_ORACLE_TOOL_KEYS == _EXPECTED_DIGITAL_ORACLE_TOOL_KEYS
+    assert DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES == (_EXPECTED_DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES)
     assert set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS) == finance_server_declared_keys
     assert set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS) == finance_runtime_keys
     assert set(FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES) == finance_runtime_function_names
-    assert set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS) == digital_oracle_server_declared_keys
-    assert set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS) == digital_oracle_runtime_keys
-    assert set(DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES) == digital_oracle_runtime_function_names
+    assert _FINANCE_PRICE_HISTORY_TOOL_KEYS <= finance_server_declared_keys
+    assert _FINANCE_PRICE_HISTORY_TOOL_KEYS <= finance_runtime_keys
+    assert _FINANCE_PRICE_HISTORY_TOOL_KEYS.isdisjoint(digital_oracle_server_declared_keys)
+    assert _FINANCE_PRICE_HISTORY_TOOL_KEYS.isdisjoint(digital_oracle_runtime_keys)
+    assert set(_EXPECTED_DIGITAL_ORACLE_TOOL_KEYS) == digital_oracle_server_declared_keys
+    assert set(_EXPECTED_DIGITAL_ORACLE_TOOL_KEYS) == digital_oracle_runtime_keys
+    assert set(_EXPECTED_DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES) == (
+        digital_oracle_runtime_function_names
+    )
+    assert _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS.isdisjoint(digital_oracle_server_declared_keys)
+    assert _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS.isdisjoint(digital_oracle_runtime_keys)
     assert _REQUIRED_CORE_TOOL_KEYS <= core_server_declared_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= core_runtime_keys
     assert _REQUIRED_CORE_TOOL_KEYS.isdisjoint(finance_server_declared_keys)
     assert _REQUIRED_CORE_TOOL_KEYS.isdisjoint(digital_oracle_server_declared_keys)
     assert finance_server_declared_keys.isdisjoint(digital_oracle_server_declared_keys)
+
+
+def test_digital_oracle_runtime_response_aliases_and_warnings_are_stable() -> None:
+    warning = _warning_payload()
+    prediction_markets = RuntimePredictionMarketsLookupResult(
+        query="election markets",
+        events=[],
+        warnings=[warning],
+    ).model_dump(mode="json", by_alias=True)
+    sec_filings = RuntimeSecFilingsLookupResult(
+        ticker="AAPL",
+        filings=[],
+        warnings=[warning],
+    ).model_dump(mode="json", by_alias=True)
+    market_sentiment = RuntimeMarketSentimentLookupResult(
+        indicator="fear_greed",
+        as_of_date=date(2026, 6, 7),
+        provider="fear_greed",
+        warnings=[warning],
+    ).model_dump(mode="json", by_alias=True)
+
+    assert set(prediction_markets) == {"toolKey", "query", "events", "warnings"}
+    assert prediction_markets["toolKey"] == "signaldeck.prediction_markets.lookup"
+    assert set(sec_filings) == {
+        "toolKey",
+        "ticker",
+        "cik",
+        "entityName",
+        "filings",
+        "warnings",
+    }
+    assert sec_filings["toolKey"] == "signaldeck.sec_filings.lookup"
+    assert set(market_sentiment) == {
+        "toolKey",
+        "indicator",
+        "asOfDate",
+        "provider",
+        "score",
+        "label",
+        "previousClose",
+        "weekAgo",
+        "monthAgo",
+        "yearAgo",
+        "sourceUrl",
+        "warnings",
+    }
+    assert market_sentiment["toolKey"] == "signaldeck.market_sentiment.lookup"
+    for payload in (prediction_markets, sec_filings, market_sentiment):
+        assert payload["warnings"] == [
+            {
+                "code": "provider_unavailable",
+                "message": "Fixture provider is unavailable.",
+                "details": {"provider": "fixture", "operation": "contract_freeze"},
+            }
+        ]
+
+
+def test_digital_oracle_upstream_provider_inventory_freezes_migration_scope(
+    client: TestClient,
+) -> None:
+    api_tool_keys = _api_tool_keys(client)
+    runtime_specs = get_default_runtime_tool_registry().list_specs()
+    digital_oracle_runtime_keys = {
+        spec.key
+        for spec in runtime_specs
+        if spec.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
+    }
+    in_scope_by_provider = {item.upstream_provider: item for item in IN_SCOPE_PROVIDER_INVENTORY}
+    deferred_modules_by_family = {
+        item.capability_family: {
+            module.rsplit(".", maxsplit=1)[-1]
+            for module in (
+                provider.upstream_module
+                for provider in DEFERRED_PROVIDER_INVENTORY
+                if provider.capability_family == item.capability_family
+            )
+        }
+        for item in DEFERRED_PROVIDER_INVENTORY
+    }
+    deferred_tool_keys = {
+        item.signaldeck_tool_key
+        for item in DEFERRED_PROVIDER_INVENTORY
+        if item.signaldeck_tool_key is not None
+    }
+
+    assert set(in_scope_by_provider) == {
+        "PolymarketProvider",
+        "KalshiProvider",
+        "EdgarProvider",
+        "FearGreedProvider",
+        "methodology/package patterns",
+    }
+    assert in_scope_by_provider["PolymarketProvider"].signaldeck_tool_key == (
+        "signaldeck.prediction_markets.lookup"
+    )
+    assert in_scope_by_provider["KalshiProvider"].signaldeck_tool_key == (
+        "signaldeck.prediction_markets.lookup"
+    )
+    assert in_scope_by_provider["EdgarProvider"].signaldeck_tool_key == (
+        "signaldeck.sec_filings.lookup"
+    )
+    assert in_scope_by_provider["FearGreedProvider"].signaldeck_tool_key == (
+        "signaldeck.market_sentiment.lookup"
+    )
+    assert in_scope_by_provider["methodology/package patterns"].signaldeck_tool_key is None
+    assert in_scope_by_provider["methodology/package patterns"].capability_family == (
+        "Workflow Package methodology"
+    )
+    assert deferred_modules_by_family == {
+        "rates/macro": {"treasury", "bis", "worldbank", "cme_fedwatch"},
+        "derivatives/crypto": {"deribit", "coingecko", "yahoo", "yfinance_provider"},
+        "CFTC positioning": {"cftc"},
+        "generic web": {"web"},
+        "price/history": {"prices", "stooq"},
+    }
+    assert NO_NEW_RUNTIME_KEYS_REGISTERED is True
+    assert deferred_tool_keys == {RATES_LOOKUP_DEFERRED_TOOL_KEY}
+    assert RATES_LOOKUP_DEFERRED_TOOL_KEY == "signaldeck.rates.lookup"
+    assert _DIGITAL_ORACLE_TOOL_KEYS == set(_EXPECTED_DIGITAL_ORACLE_TOOL_KEYS)
+    assert _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS.isdisjoint(api_tool_keys)
+    assert _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS.isdisjoint(digital_oracle_runtime_keys)
 
 
 def test_default_tool_catalog_rejects_duplicate_and_unknown_keys() -> None:
@@ -140,6 +318,8 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     memory_write_tool = tools_by_key["signaldeck.memory.write"]
     memory_lookup_tool = tools_by_key["signaldeck.memory.lookup"]
     quote_tool = tools_by_key["signaldeck.market_data.quote_lookup"]
+    history_tool = tools_by_key["signaldeck.market_data.history_lookup"]
+    ohlcv_tool = tools_by_key["signaldeck.market_data.ohlcv_lookup"]
     report_lookup_tool = tools_by_key["signaldeck.reports.lookup"]
     prediction_markets_tool = tools_by_key["signaldeck.prediction_markets.lookup"]
     sec_filings_tool = tools_by_key["signaldeck.sec_filings.lookup"]
@@ -158,6 +338,16 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         "key": "signaldeck.market_data.quote_lookup",
         "displayName": "Market Data Quote Lookup",
         "description": "Read trusted market quote snapshots from server-owned integrations.",
+    }
+    assert history_tool == {
+        "key": "signaldeck.market_data.history_lookup",
+        "displayName": "Market Data History Lookup",
+        "description": "Read trusted historical market series from server-owned integrations.",
+    }
+    assert ohlcv_tool == {
+        "key": "signaldeck.market_data.ohlcv_lookup",
+        "displayName": "OHLCV Lookup",
+        "description": "Read server-owned OHLCV market data for supported symbols and ranges.",
     }
     assert report_lookup_tool == {
         "key": "signaldeck.reports.lookup",
@@ -192,6 +382,8 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         memory_write_tool,
         memory_lookup_tool,
         quote_tool,
+        history_tool,
+        ohlcv_tool,
         report_lookup_tool,
         prediction_markets_tool,
         sec_filings_tool,
@@ -286,6 +478,7 @@ def test_tools_catalog_route_is_get_only(client: TestClient) -> None:
 
 def test_tool_catalog_hides_disabled_extension_tools_and_validation_stays_artifact_only(
     client: TestClient,
+    session_factory: sessionmaker[Session],
 ) -> None:
     response = client.patch(
         f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
@@ -299,8 +492,25 @@ def test_tool_catalog_hides_disabled_extension_tools_and_validation_stays_artifa
     visible_items = cast(list[dict[str, object]], tools_body["items"])
     visible_keys = {str(item["key"]) for item in visible_items}
     assert not visible_keys & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
+    assert not visible_keys & _FINANCE_PRICE_HISTORY_TOOL_KEYS
     assert _DIGITAL_ORACLE_TOOL_KEYS <= visible_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= visible_keys
+
+    with session_factory() as session:
+        disabled_service = ExtensionService(session)
+        disabled_catalog_keys = {
+            tool.key for tool in disabled_service.get_tool_catalog().list_registered_tools()
+        }
+        disabled_runtime_keys = {
+            spec.key for spec in disabled_service.get_runtime_tool_registry().list_enabled_specs()
+        }
+
+    assert not disabled_catalog_keys & _FINANCE_PRICE_HISTORY_TOOL_KEYS
+    assert not disabled_runtime_keys & _FINANCE_PRICE_HISTORY_TOOL_KEYS
+    assert _DIGITAL_ORACLE_TOOL_KEYS <= disabled_catalog_keys
+    assert _DIGITAL_ORACLE_TOOL_KEYS <= disabled_runtime_keys
+    assert _REQUIRED_CORE_TOOL_KEYS <= disabled_catalog_keys
+    assert _REQUIRED_CORE_TOOL_KEYS <= disabled_runtime_keys
 
     manifest_source = _valid_manifest_source()
     validation_response = client.post(

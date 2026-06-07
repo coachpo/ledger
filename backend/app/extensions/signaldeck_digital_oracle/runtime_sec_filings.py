@@ -127,37 +127,44 @@ class EdgarSecFilingsProvider:
 
     def __init__(self, http_client: _EdgarJsonClient | None = None) -> None:
         self._http_client: _EdgarJsonClient = http_client or _HttpxEdgarJsonClient()
+        self._ticker_cik_cache: dict[str, tuple[str, str | None]] = {}
 
     def lookup_sec_filings(
         self,
         query: DigitalOracleSecFilingsProviderQuery,
     ) -> DigitalOracleSecFilingsProviderResult:
-        company_payload = self._http_client.get_json(
-            _COMPANY_TICKERS_URL,
-            timeout=query.timeout_seconds,
-            contact_email=query.edgar_contact_email,
-        )
-        company = _company_for_ticker(company_payload, query.ticker)
-        if company is None:
-            return DigitalOracleSecFilingsProviderResult(
-                provider=self.provider_name,
-                ticker=query.ticker,
-                warnings=(_ticker_not_found_warning(query.ticker),),
+        cached_company = self._ticker_cik_cache.get(query.ticker)
+        if cached_company is None:
+            company_payload = self._http_client.get_json(
+                _COMPANY_TICKERS_URL,
+                timeout=query.timeout_seconds,
+                contact_email=query.edgar_contact_email,
             )
+            company = _company_for_ticker(company_payload, query.ticker)
+            if company is None:
+                return DigitalOracleSecFilingsProviderResult(
+                    provider=self.provider_name,
+                    ticker=query.ticker,
+                    warnings=(_ticker_not_found_warning(query.ticker),),
+                )
 
-        cik = _company_cik(company)
-        if cik is None:
-            raise DigitalOracleProviderError(
-                "SEC EDGAR returned malformed ticker mapping",
-                details={"provider": self.provider_name, "ticker": query.ticker},
-            )
+            cik = _company_cik(company)
+            if cik is None:
+                raise DigitalOracleProviderError(
+                    "SEC EDGAR returned malformed ticker mapping",
+                    details={"provider": self.provider_name, "ticker": query.ticker},
+                )
+            entity_name = _text(company.get("title"))
+            self._ticker_cik_cache[query.ticker] = (cik, entity_name)
+        else:
+            cik, entity_name = cached_company
         submissions_payload = self._http_client.get_json(
             _SUBMISSIONS_URL_TEMPLATE.format(cik=cik),
             timeout=query.timeout_seconds,
             contact_email=query.edgar_contact_email,
         )
         submissions = _mapping_payload(submissions_payload, label="company submissions")
-        entity_name = _text(submissions.get("name")) or _text(company.get("title"))
+        entity_name = _text(submissions.get("name")) or entity_name
         recent = _recent_filings_payload(submissions)
         warnings: list[RuntimeToolWarning] = []
         filings = _map_recent_filings(recent, cik=cik, warnings=warnings)

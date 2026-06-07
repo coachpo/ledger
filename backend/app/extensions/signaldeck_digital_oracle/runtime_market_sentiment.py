@@ -378,13 +378,13 @@ def _label(value: object, score: int | None) -> str | None:
         return _normalize_label(value)
     if score is None:
         return None
-    if score <= 25:
+    if score < 25:
         return "extreme_fear"
-    if score <= 45:
+    if score < 45:
         return "fear"
     if score <= 55:
         return "neutral"
-    if score <= 75:
+    if score <= 74:
         return "greed"
     return "extreme_greed"
 

@@ -1,0 +1,18 @@
+{
+  "kind": "json",
+  "request": {
+    "url": "https://data.sec.gov/submissions/CIK0001111111.json",
+    "params": {}
+  },
+  "response": {
+    "name": "MALFORMED FIXTURE CORP",
+    "filings": {
+      "recent": {
+        "accessionNumber": ["0001111111-26-000010"],
+        "form": ["10-K"],
+        "filingDate": ["not-a-date"],
+        "primaryDocument": ["malf-20260131.htm"]
+      }
+    }
+  }
+}

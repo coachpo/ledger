@@ -1,0 +1,8 @@
+{
+  "kind": "json",
+  "request": {
+    "url": "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+    "params": {}
+  },
+  "response": {"unexpected": {}}
+}

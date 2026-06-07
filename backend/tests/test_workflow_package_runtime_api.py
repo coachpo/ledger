@@ -21,6 +21,7 @@ from app.core.formatting import utcnow
 from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.agent import Agent
+from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
@@ -1018,6 +1019,9 @@ def test_seeded_digital_oracle_launch_persists_question_input(
         assert snapshot.workflow_package_key == _DIGITAL_ORACLE_PRESET_KEY
         assert snapshot.workflow_key == "research"
         assert snapshot.launch_parameters == parameters
+        assert session.query(McpServer).count() == 0
+        assert session.query(Agent).count() == 0
+        assert session.query(Workflow).count() == 0
 
 
 def test_seeded_digital_oracle_run_omits_null_optional_inputs_before_agent_validation(

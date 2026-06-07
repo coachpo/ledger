@@ -45,6 +45,12 @@ spec:
         - signaldeck.prediction_markets.lookup
         - signaldeck.sec_filings.lookup
         - signaldeck.market_sentiment.lookup
+    - key: finance_price_history_tools
+      name: Finance Price History Tools
+      description: Grants Finance-owned price history and daily OHLCV lookups for package-level research.
+      toolKeys:
+        - signaldeck.market_data.history_lookup
+        - signaldeck.market_data.ohlcv_lookup
   outputSchemas:
     - key: digital_oracle_report
       name: Digital Oracle Report
@@ -54,6 +60,7 @@ spec:
         required:
           - summary
           - signals
+          - horizons
           - contradictions
           - limitations
           - nextQuestions
@@ -61,6 +68,10 @@ spec:
           summary:
             type: string
           signals:
+            type: array
+            items:
+              type: string
+          horizons:
             type: array
             items:
               type: string
@@ -76,27 +87,40 @@ spec:
             type: array
             items:
               type: string
+  mcpServers:
+    - key: exa
+      name: Exa Web Search
+      description: Package-private Exa MCP server for web search context.
+      transport: http-sse
+      url: https://mcp.exa.ai/mcp?tools=web_search_exa
+      toolKeys:
+        - web_search_exa
   agents:
-    - key: digital_oracle_researcher
-      name: Digital Oracle Researcher
+    - key: digital_oracle_signal_researcher
+      name: Digital Oracle Signal Researcher
       modelConnection: digital_oracle_primary_model
       systemPrompt: |-
         Digital Oracle methodology is package-local for this agent.
-        Decompose each research question into the variable, time window, and tradable or observable signals before using tools.
-        Call the minimum relevant granted tools. Use prediction markets for event probabilities, SEC filings for issuer facts, and market sentiment for broad risk appetite.
-        Compare contradictory signals across sources. Explain when markets, filings, or sentiment point in different directions.
-        Disclose warnings, sparse coverage, stale data, unresolved tickers, and any source gaps before drawing conclusions.
-        Synthesize a research-only report in the requested output language.
-        Never invent prices, filing facts, event probabilities, sentiment readings, source URLs, or unavailable history.
+        Decompose each research question into the variable, labeled horizon, observable market, and granted evidence sources before using tools.
+        Use market-data-only reasoning for price claims. Call Finance history or OHLCV tools for historical prices and bars, then explain only what the returned rows support.
+        Convert prices to judgment by naming the observed move, date window, direction, confidence, and link to the research question. Do not treat price alone as proof.
+        Seek at least three independent signal dimensions when available: prediction markets, SEC filings, broad sentiment, Finance price history or OHLCV, and package-private Exa web search context.
+        Label every horizon, including as-of date and horizon days when supplied.
+        Compare contradictions across sources. Explain when markets, filings, sentiment, prices, or search context point in different directions.
+        Disclose warnings, sparse coverage, stale data, unresolved tickers, source gaps, and any missing third signal before drawing conclusions.
+        Never invent prices, filing facts, event probabilities, sentiment readings, source URLs, search results, or unavailable history.
       inputSchema:
         type: object
         required:
           - researchQuestion
           - outputLanguage
+          - signalFocus
         properties:
           researchQuestion:
             type: string
           outputLanguage:
+            type: string
+          signalFocus:
             type: string
           ticker:
             type: string
@@ -107,6 +131,49 @@ spec:
       outputSchema: digital_oracle_report
       capabilityProfiles:
         - digital_oracle_phase1_tools
+        - finance_price_history_tools
+      mcpServers:
+        - exa
+    - key: digital_oracle_synthesizer
+      name: Digital Oracle Synthesizer
+      modelConnection: digital_oracle_primary_model
+      systemPrompt: |-
+        Digital Oracle synthesis is package-local for this agent.
+        Synthesize only from the supplied signal reports and their stated tool evidence.
+        Preserve labeled horizons, contradictions, limitations, warnings, and gaps.
+        Require at least three independent signal dimensions when available. If fewer are available, say which dimensions are missing.
+        Use price-to-judgment reasoning only when a supplied signal report includes returned Finance history or OHLCV data.
+        Do not invent missing market data, web results, filings, event probabilities, URLs, or sentiment values.
+        Return the final structured report in the requested output language.
+      inputSchema:
+        type: object
+        required:
+          - researchQuestion
+          - outputLanguage
+          - marketSignals
+          - filingSignals
+          - sentimentSearchSignals
+        properties:
+          researchQuestion:
+            type: string
+          outputLanguage:
+            type: string
+          marketSignals:
+            type: object
+          filingSignals:
+            type: object
+          sentimentSearchSignals:
+            type: object
+          asOfDate:
+            type: string
+          horizonDays:
+            type: integer
+      outputSchema: digital_oracle_report
+      capabilityProfiles:
+        - digital_oracle_phase1_tools
+        - finance_price_history_tools
+      mcpServers:
+        - exa
   workflows:
     - key: research
       name: Research
@@ -127,15 +194,62 @@ spec:
           horizonDays:
             type: integer
       flow:
-        kind: step
-        id: digital_oracle_research
-        slot: report
-        uses: digital_oracle_researcher
-        with:
-          researchQuestion: ${{ inputs.researchQuestion }}
-          outputLanguage: ${{ inputs.outputLanguage }}
-          ticker: ${{ inputs.ticker }}
-          asOfDate: ${{ inputs.asOfDate }}
-          horizonDays: ${{ inputs.horizonDays }}
+        kind: sequence
+        id: research_sequence
+        nodes:
+          - kind: fanout
+            id: signal_fanout
+            branches:
+              - id: market_signals
+                node:
+                  kind: step
+                  id: market_signals
+                  slot: market_signals
+                  uses: digital_oracle_signal_researcher
+                  with:
+                    researchQuestion: ${{ inputs.researchQuestion }}
+                    outputLanguage: ${{ inputs.outputLanguage }}
+                    signalFocus: ${{ inputs.researchQuestion }}
+                    ticker: ${{ inputs.ticker }}
+                    asOfDate: ${{ inputs.asOfDate }}
+                    horizonDays: ${{ inputs.horizonDays }}
+              - id: filing_signals
+                node:
+                  kind: step
+                  id: filing_signals
+                  slot: filing_signals
+                  uses: digital_oracle_signal_researcher
+                  with:
+                    researchQuestion: ${{ inputs.researchQuestion }}
+                    outputLanguage: ${{ inputs.outputLanguage }}
+                    signalFocus: ${{ inputs.researchQuestion }}
+                    ticker: ${{ inputs.ticker }}
+                    asOfDate: ${{ inputs.asOfDate }}
+                    horizonDays: ${{ inputs.horizonDays }}
+              - id: sentiment_search_signals
+                node:
+                  kind: step
+                  id: sentiment_search_signals
+                  slot: sentiment_search_signals
+                  uses: digital_oracle_signal_researcher
+                  with:
+                    researchQuestion: ${{ inputs.researchQuestion }}
+                    outputLanguage: ${{ inputs.outputLanguage }}
+                    signalFocus: ${{ inputs.researchQuestion }}
+                    ticker: ${{ inputs.ticker }}
+                    asOfDate: ${{ inputs.asOfDate }}
+                    horizonDays: ${{ inputs.horizonDays }}
+          - kind: step
+            id: synthesis
+            slot: report
+            uses: digital_oracle_synthesizer
+            with:
+              researchQuestion: ${{ inputs.researchQuestion }}
+              outputLanguage: ${{ inputs.outputLanguage }}
+              marketSignals: ${{ nodes.signal_fanout.outputs.market_signals }}
+              filingSignals: ${{ nodes.signal_fanout.outputs.filing_signals }}
+              sentimentSearchSignals: ${{ nodes.signal_fanout.outputs.sentiment_search_signals }}
+              asOfDate: ${{ inputs.asOfDate }}
+              horizonDays: ${{ inputs.horizonDays }}
       output:
-        from: ${{ nodes.digital_oracle_research.outputs.report }}
+        from: ${{ nodes.synthesis.outputs.report }}

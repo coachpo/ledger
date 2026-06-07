@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import deepcopy
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -18,6 +19,10 @@ from app.services.workflow_package_manifest_compiler import compile_workflow_pac
 from tests.test_workflow_package_manifest_parser import (
     _valid_http_sse_package_manifest_source,
     _valid_package_manifest_source,
+)
+
+_DIGITAL_ORACLE_RESEARCHER_DEMO = (
+    Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
 )
 
 
@@ -376,6 +381,194 @@ spec:
       output:
         from: ${{ nodes.analyst_fanout.outputs.market }}
 """
+
+
+def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis_with_private_exa() -> None:
+    plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
+        _compiled_plan(_DIGITAL_ORACLE_RESEARCHER_DEMO.read_text()),
+        "research",
+        model_bindings={
+            "digital_oracle_primary_model": _model_binding("digital_oracle_primary_model")
+        },
+    )
+
+    assert [step.index for step in plan.steps] == [1, 2, 3, 4]
+    assert [[agent.slot for agent in step.agents] for step in plan.steps] == [
+        ["market_signals"],
+        ["filing_signals"],
+        ["sentiment_search_signals"],
+        ["report"],
+    ]
+    assert plan.final_output.step_index == 4
+    assert plan.final_output.slot == "report"
+    fanout_metadata = [plan.steps[index].agents[0].graph_metadata for index in range(3)]
+    assert all(metadata is not None for metadata in fanout_metadata)
+    assert [metadata.branch_id for metadata in fanout_metadata if metadata is not None] == [
+        "market_signals",
+        "filing_signals",
+        "sentiment_search_signals",
+    ]
+    assert [metadata.fanout_id for metadata in fanout_metadata if metadata is not None] == [
+        "signal_fanout",
+        "signal_fanout",
+        "signal_fanout",
+    ]
+    synthesis = plan.steps[3].agents[0]
+    assert synthesis.agent_key == "digital_oracle_synthesizer"
+    assert synthesis.graph_metadata is not None
+    assert synthesis.graph_metadata.source_refs == {
+        "researchQuestion": {"source": "inputs", "path": "researchQuestion"},
+        "outputLanguage": {"source": "inputs", "path": "outputLanguage"},
+        "marketSignals": {
+            "source": "nodes",
+            "nodeId": "signal_fanout",
+            "slot": "market_signals",
+            "stepIndex": 1,
+            "compiledSlot": "market_signals",
+        },
+        "filingSignals": {
+            "source": "nodes",
+            "nodeId": "signal_fanout",
+            "slot": "filing_signals",
+            "stepIndex": 2,
+            "compiledSlot": "filing_signals",
+        },
+        "sentimentSearchSignals": {
+            "source": "nodes",
+            "nodeId": "signal_fanout",
+            "slot": "sentiment_search_signals",
+            "stepIndex": 3,
+            "compiledSlot": "sentiment_search_signals",
+        },
+        "asOfDate": {"source": "inputs", "path": "asOfDate"},
+        "horizonDays": {"source": "inputs", "path": "horizonDays"},
+    }
+    assert plan.package_workflow is not None
+    assert plan.package_workflow.package_key == "digital_oracle_researcher"
+    assert plan.package_workflow.key == "research"
+    assert plan.package_workflow.name == "Research"
+    assert plan.package_workflow.final_output == plan.final_output
+    assert plan.package_workflow.compiled_graph is not None
+    assert plan.package_workflow.compiled_graph["rootNodeId"] == "research_sequence"
+    compiled_nodes = cast(list[dict[str, object]], plan.package_workflow.compiled_graph["nodes"])
+    assert [node["kind"] for node in compiled_nodes] == [
+        "sequence",
+        "fanout",
+        "step",
+        "step",
+        "step",
+        "step",
+    ]
+
+    runtime_agents = [step.agents[0].package_runtime_agent for step in plan.steps]
+    assert [agent.key for agent in runtime_agents] == [
+        "digital_oracle_signal_researcher",
+        "digital_oracle_signal_researcher",
+        "digital_oracle_signal_researcher",
+        "digital_oracle_synthesizer",
+    ]
+    assert [agent.local_id for agent in runtime_agents] == [1, 1, 1, 2]
+    assert [agent.name for agent in runtime_agents] == [
+        "Digital Oracle Signal Researcher",
+        "Digital Oracle Signal Researcher",
+        "Digital Oracle Signal Researcher",
+        "Digital Oracle Synthesizer",
+    ]
+    assert [agent.model_binding for agent in runtime_agents] == [
+        _model_binding("digital_oracle_primary_model"),
+        _model_binding("digital_oracle_primary_model"),
+        _model_binding("digital_oracle_primary_model"),
+        _model_binding("digital_oracle_primary_model"),
+    ]
+    assert [agent.output_schema.key for agent in runtime_agents] == [
+        "digital_oracle_report",
+        "digital_oracle_report",
+        "digital_oracle_report",
+        "digital_oracle_report",
+    ]
+    assert runtime_agents[0].output_schema.json_schema["required"] == [
+        "summary",
+        "signals",
+        "horizons",
+        "contradictions",
+        "limitations",
+        "nextQuestions",
+    ]
+    assert runtime_agents[0].input_schema["required"] == [
+        "researchQuestion",
+        "outputLanguage",
+        "signalFocus",
+    ]
+    assert runtime_agents[3].input_schema["required"] == [
+        "researchQuestion",
+        "outputLanguage",
+        "marketSignals",
+        "filingSignals",
+        "sentimentSearchSignals",
+    ]
+
+    expected_profile_tools = [
+        (
+            "digital_oracle_phase1_tools",
+            (
+                "signaldeck.market_sentiment.lookup",
+                "signaldeck.prediction_markets.lookup",
+                "signaldeck.sec_filings.lookup",
+            ),
+        ),
+        (
+            "finance_price_history_tools",
+            (
+                "signaldeck.market_data.history_lookup",
+                "signaldeck.market_data.ohlcv_lookup",
+            ),
+        ),
+    ]
+    for runtime_agent in runtime_agents:
+        assert [
+            (profile.key, profile.tool_keys) for profile in runtime_agent.capability_profiles
+        ] == expected_profile_tools
+
+    expected_mcp_descriptor = {
+        "kind": "mcp",
+        "toolKey": "exa@1:mcp_exa_web_search_exa",
+        "openaiFunctionName": "mcp_exa_web_search_exa",
+        "description": "External MCP tool web_search_exa",
+        "strictSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query for the MCP tool.",
+                }
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        "schemaHash": "sha256:849614f78f3762b3a6b32a9a679ab329f168723548e69d23dade86a07914ee8f",
+        "redactionPolicy": "mcp.output.redact_text",
+        "ownerExtensionKey": "signaldeck.finance",
+        "mcpServerKey": "exa",
+        "mcpServerVersion": 1,
+        "originalToolName": "web_search_exa",
+    }
+    expected_mcp_ref = {
+        "packagePrivate": True,
+        "key": "exa",
+        "name": "Exa Web Search",
+        "description": "Package-private Exa MCP server for web search context.",
+        "transport": "http-sse",
+        "command": None,
+        "args": [],
+        "url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
+        "env": {},
+        "headers": {},
+        "query": {},
+        "toolKeys": ["web_search_exa"],
+        "toolDescriptors": [expected_mcp_descriptor],
+    }
+    for runtime_agent in runtime_agents:
+        assert AgentExecutionService._runtime_mcp_server_refs(runtime_agent) == [expected_mcp_ref]
 
 
 def test_package_execution_plan_preserves_fanout_loop_and_source_metadata() -> None:

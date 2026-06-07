@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
 
 import pytest
 
+from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_manifest_parser import parse_workflow_package_manifest
+
+_DIGITAL_ORACLE_RESEARCHER_DEMO = (
+    Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
+)
 
 
 def _valid_package_manifest_source() -> str:
@@ -240,6 +246,77 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     assert mcp_servers[0]["env"] == {"RESEARCH_CONTEXT_TOKEN": "local-token"}
     assert "secretRefs" not in mcp_servers[0]
     assert "requiredBindings" not in mcp_servers[0]
+
+
+def test_parse_digital_oracle_demo_preserves_methodology_tools_graph_and_private_exa() -> None:
+    demo_source = _DIGITAL_ORACLE_RESEARCHER_DEMO.read_text()
+    result = parse_workflow_package_manifest(demo_source)
+    compiled = compile_workflow_package_manifest(demo_source)
+
+    assert result.diagnostics == []
+    assert compiled["diagnostics"] == []
+    assert result.manifest is not None
+    dumped = result.manifest.model_dump(mode="json", by_alias=True)
+    spec = cast(dict[str, object], dumped["spec"])
+    profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
+    profile_tool_keys = {str(profile["key"]): profile["toolKeys"] for profile in profiles}
+    mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
+    agents = cast(list[dict[str, object]], spec["agents"])
+    workflows = cast(list[dict[str, object]], spec["workflows"])
+    workflow = workflows[0]
+    flow = cast(dict[str, object], workflow["flow"])
+    nodes = cast(list[dict[str, object]], flow["nodes"])
+    fanout = nodes[0]
+    synthesis = nodes[1]
+    branches = cast(list[dict[str, object]], fanout["branches"])
+    output = cast(dict[str, object], workflow["output"])
+
+    assert profile_tool_keys == {
+        "digital_oracle_phase1_tools": [
+            "signaldeck.prediction_markets.lookup",
+            "signaldeck.sec_filings.lookup",
+            "signaldeck.market_sentiment.lookup",
+        ],
+        "finance_price_history_tools": [
+            "signaldeck.market_data.history_lookup",
+            "signaldeck.market_data.ohlcv_lookup",
+        ],
+    }
+    assert mcp_servers[0]["key"] == "exa"
+    assert mcp_servers[0]["transport"] == "http-sse"
+    assert mcp_servers[0]["url"] == "https://mcp.exa.ai/mcp?tools=web_search_exa"
+    assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
+    assert mcp_servers[0]["headers"] == {}
+    assert mcp_servers[0]["query"] == {}
+    assert "market-data-only reasoning" in str(agents[0]["systemPrompt"])
+    assert "price-to-judgment reasoning" in str(agents[1]["systemPrompt"])
+    assert "Never invent prices" in str(agents[0]["systemPrompt"])
+    assert flow["kind"] == "sequence"
+    assert flow["id"] == "research_sequence"
+    assert [node["kind"] for node in nodes] == ["fanout", "step"]
+    assert fanout["id"] == "signal_fanout"
+    assert [branch["id"] for branch in branches] == [
+        "market_signals",
+        "filing_signals",
+        "sentiment_search_signals",
+    ]
+    assert synthesis == {
+        "kind": "step",
+        "id": "synthesis",
+        "slot": "report",
+        "uses": "digital_oracle_synthesizer",
+        "with": {
+            "researchQuestion": "${{ inputs.researchQuestion }}",
+            "outputLanguage": "${{ inputs.outputLanguage }}",
+            "marketSignals": "${{ nodes.signal_fanout.outputs.market_signals }}",
+            "filingSignals": "${{ nodes.signal_fanout.outputs.filing_signals }}",
+            "sentimentSearchSignals": "${{ nodes.signal_fanout.outputs.sentiment_search_signals }}",
+            "asOfDate": "${{ inputs.asOfDate }}",
+            "horizonDays": "${{ inputs.horizonDays }}",
+        },
+        "optional": False,
+    }
+    assert output["from"] == "${{ nodes.synthesis.outputs.report }}"
 
 
 def test_parse_rejects_package_schema_additional_properties_keyword() -> None:

@@ -1,0 +1,12 @@
+{
+  "kind": "json",
+  "request": {
+    "url": "https://api.elections.kalshi.com/trade-api/v2/markets",
+    "params": {
+      "limit": 5,
+      "mve_filter": "exclude",
+      "status": "open"
+    }
+  },
+  "response": {"markets": []}
+}

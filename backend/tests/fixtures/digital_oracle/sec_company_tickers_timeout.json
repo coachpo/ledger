@@ -1,0 +1,12 @@
+{
+  "kind": "json",
+  "request": {
+    "url": "https://www.sec.gov/files/company_tickers.json",
+    "params": {}
+  },
+  "error": {
+    "code": "provider_timeout",
+    "message": "SEC EDGAR fixture timed out while fetching ticker mapping",
+    "details": {"provider": "edgar"}
+  }
+}

@@ -175,7 +175,7 @@ class PolymarketPredictionMarketsProvider:
                 events.append(event)
         return DigitalOraclePredictionMarketsProviderResult(
             provider=self.venue,
-            events=tuple(events[: query.item_limit]),
+            events=tuple(_rank_prediction_events(events)[: query.item_limit]),
             warnings=tuple(warnings),
         )
 
@@ -219,7 +219,7 @@ class KalshiPredictionMarketsProvider:
                 events.append(event)
         return DigitalOraclePredictionMarketsProviderResult(
             provider=self.venue,
-            events=tuple(events[: query.item_limit]),
+            events=tuple(_rank_prediction_events(events)[: query.item_limit]),
             warnings=tuple(warnings),
         )
 
@@ -419,18 +419,25 @@ def _map_polymarket_event(
     query: DigitalOraclePredictionMarketsProviderQuery,
     warnings: list[RuntimeToolWarning],
 ) -> DigitalOraclePredictionMarketEvent | None:
-    title = _text(raw_event.get("title"))
     slug = _text(raw_event.get("slug"))
-    event_id = _text(raw_event.get("id")) or slug
+    title = _text(raw_event.get("title")) or _text(raw_event.get("name")) or slug
+    event_id = _text(raw_event.get("id")) or _text(raw_event.get("eventId")) or slug
     if event_id is None or title is None:
         warnings.append(_malformed_warning("polymarket", "event identity"))
         return None
-    if not _matches_query(query.query, title, slug or ""):
+    tag_slug = _text(raw_event.get("tagSlug")) or _text(raw_event.get("tag_slug"))
+    if not _matches_query(query.query, title, slug or "", tag_slug or ""):
+        return None
+
+    try:
+        raw_markets = _json_array(raw_event.get("markets"))
+    except ValueError:
+        warnings.append(_malformed_warning("polymarket", "markets", event_id=event_id))
         return None
 
     contracts: list[DigitalOraclePredictionMarketContract] = []
     open_interest = _decimal(raw_event.get("openInterest"))
-    for raw_market in _object_list(raw_event.get("markets")):
+    for raw_market in raw_markets:
         if not isinstance(raw_market, Mapping):
             warnings.append(_malformed_warning("polymarket", "market row", event_id=event_id))
             continue
@@ -487,6 +494,8 @@ def _map_polymarket_market(
         _text(raw_market.get("id"))
         or _text(raw_market.get("conditionId"))
         or _text(raw_market.get("slug"))
+        or _first_text_from_json_array(raw_market.get("clobTokenIds"))
+        or _first_text_from_json_array(raw_market.get("outcomeTokenIds"))
     )
     title = _text(raw_market.get("question"))
     if contract_id is None or title is None:
@@ -498,8 +507,12 @@ def _map_polymarket_market(
         probability=yes_price,
         yes_price=yes_price,
         no_price=no_price,
-        volume=_decimal(raw_market.get("volumeNum")) or _decimal(raw_market.get("volume")),
-        open_interest=_decimal(raw_market.get("openInterest")) or event_open_interest,
+        volume=_first_decimal(
+            raw_market,
+            ("volumeNum", "volume24hr", "volume_24hr", "volume"),
+        ),
+        open_interest=_first_decimal(raw_market, ("openInterest", "open_interest"))
+        or event_open_interest,
     )
 
 
@@ -510,29 +523,55 @@ def _map_kalshi_market(
     warnings: list[RuntimeToolWarning],
 ) -> DigitalOraclePredictionMarketEvent | None:
     ticker = _text(raw_market.get("ticker"))
-    title = _text(raw_market.get("title"))
-    event_ticker = _text(raw_market.get("event_ticker"))
+    title = _first_text(raw_market, ("title", "event_title", "series_title"))
+    event_ticker = _text(raw_market.get("event_ticker")) or _text(raw_market.get("eventTicker"))
     if ticker is None or title is None:
         warnings.append(_malformed_warning("kalshi", "market identity"))
         return None
     if not _matches_query(query.query, ticker, event_ticker or "", title):
         return None
 
-    yes_bid = _cent_decimal(raw_market.get("yes_bid"))
-    yes_ask = _cent_decimal(raw_market.get("yes_ask"))
-    no_ask = _cent_decimal(raw_market.get("no_ask"))
-    last_price = _cent_decimal(raw_market.get("last_price"))
-    probability = _midpoint(yes_bid, yes_ask) or last_price
+    yes_bid = _kalshi_price_decimal(
+        raw_market,
+        fixed_point_keys=("yes_bid_dollars", "yesBidDollars", "yes_bid_fp", "yesBidFp"),
+        legacy_cent_key="yes_bid",
+    )
+    yes_ask = _kalshi_price_decimal(
+        raw_market,
+        fixed_point_keys=("yes_ask_dollars", "yesAskDollars", "yes_ask_fp", "yesAskFp"),
+        legacy_cent_key="yes_ask",
+    )
+    no_ask = _kalshi_price_decimal(
+        raw_market,
+        fixed_point_keys=("no_ask_dollars", "noAskDollars", "no_ask_fp", "noAskFp"),
+        legacy_cent_key="no_ask",
+    )
+    last_price = _kalshi_price_decimal(
+        raw_market,
+        fixed_point_keys=(
+            "last_price_dollars",
+            "lastPriceDollars",
+            "last_price_fp",
+            "lastPriceFp",
+        ),
+        legacy_cent_key="last_price",
+    )
+    probability = _midpoint(yes_bid, yes_ask)
+    if probability is None:
+        probability = last_price
     contract = DigitalOraclePredictionMarketContract(
         contract_id=ticker,
-        title=_text(raw_market.get("yes_sub_title")) or title,
+        title=_first_text(raw_market, ("yes_sub_title", "yesSubTitle", "subtitle")) or title,
         probability=probability,
-        yes_price=yes_ask or probability,
+        yes_price=yes_ask if yes_ask is not None else probability,
         no_price=no_ask,
         volume=_decimal(raw_market.get("volume")),
-        open_interest=_decimal(raw_market.get("open_interest")),
+        open_interest=_first_decimal(raw_market, ("open_interest", "openInterest")),
     )
-    close_time = _text(raw_market.get("close_time")) or _text(raw_market.get("expiration_time"))
+    close_time = _first_text(
+        raw_market,
+        ("close_time", "closeTime", "close_date", "closeDate", "expiration_time"),
+    )
     return DigitalOraclePredictionMarketEvent(
         venue="kalshi",
         event_id=event_ticker or ticker,
@@ -602,6 +641,34 @@ def _object_list(value: object) -> list[object]:
     return list(cast(list[object], value)) if isinstance(value, list) else []
 
 
+def _first_text(payload: Mapping[str, object], keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = _text(payload.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _first_decimal(payload: Mapping[str, object], keys: tuple[str, ...]) -> Decimal | None:
+    for key in keys:
+        value = _decimal(payload.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _first_text_from_json_array(value: object) -> str | None:
+    try:
+        values = _json_array(value)
+    except ValueError:
+        return None
+    for item in values:
+        text = _text(item)
+        if text is not None:
+            return text
+    return None
+
+
 def _json_array(value: object) -> list[object]:
     if value is None:
         return []
@@ -645,6 +712,18 @@ def _cent_decimal(value: object) -> Decimal | None:
     return parsed / Decimal("100")
 
 
+def _kalshi_price_decimal(
+    payload: Mapping[str, object],
+    *,
+    fixed_point_keys: tuple[str, ...],
+    legacy_cent_key: str,
+) -> Decimal | None:
+    fixed_point_value = _first_decimal(payload, fixed_point_keys)
+    if fixed_point_value is not None:
+        return fixed_point_value
+    return _cent_decimal(payload.get(legacy_cent_key))
+
+
 def _midpoint(left: Decimal | None, right: Decimal | None) -> Decimal | None:
     if left is None or right is None:
         return None
@@ -670,6 +749,16 @@ def _polymarket_status(raw_event: Mapping[str, object]) -> str:
     if raw_event.get("active") is True:
         return "open"
     return "unknown"
+
+
+def _rank_prediction_events(
+    events: list[DigitalOraclePredictionMarketEvent],
+) -> list[DigitalOraclePredictionMarketEvent]:
+    return sorted(events, key=_prediction_event_rank)
+
+
+def _prediction_event_rank(event: DigitalOraclePredictionMarketEvent) -> tuple[int, str]:
+    return (0 if event.status.lower() in {"open", "active"} else 1, event.event_id)
 
 
 def _query_tokens(query: str) -> tuple[str, ...]:

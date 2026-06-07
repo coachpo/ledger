@@ -1,0 +1,12 @@
+{
+  "kind": "json",
+  "request": {
+    "url": "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+    "params": {}
+  },
+  "error": {
+    "code": "provider_unavailable",
+    "message": "Fear & Greed fixture is unavailable for market sentiment",
+    "details": {"provider": "fear_greed"}
+  }
+}

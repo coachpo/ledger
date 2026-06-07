@@ -166,7 +166,10 @@ def test_mcp_runtime_resolves_package_private_exa_tool(
     session_factory: sessionmaker[Session],
 ) -> None:
     client = _FakeMcpToolClient(
-        {"content": "Exa result", "metadata": {"exaApiKey": "json-secret-value-123456"}}
+        {
+            "content": "Bearer secret-token sk-live-secret-123456",
+            "metadata": {"exaApiKey": "json-secret-value-123456"},
+        }
     )
     dispatcher = McpRuntimeResolver(session_factory).build_dispatcher(
         mcp_server_refs=[
@@ -179,6 +182,14 @@ def test_mcp_runtime_resolves_package_private_exa_tool(
         timeout_seconds=2.5,
         enabled=True,
     )
+
+    descriptors = dispatcher.list_execution_descriptors()
+    assert len(descriptors) == 1
+    assert descriptors[0].tool_key == "exa@1:mcp_exa_web_search_exa"
+    assert descriptors[0].openai_function_name == "mcp_exa_web_search_exa"
+    assert descriptors[0].redaction_policy == "mcp.output.redact_text"
+    assert descriptors[0].owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert descriptors[0].original_tool_name == "web_search_exa"
 
     tools = dispatcher.get_openai_tools()
     assert [tool["name"] for tool in tools] == ["mcp_exa_web_search_exa"]
@@ -208,7 +219,11 @@ def test_mcp_runtime_resolves_package_private_exa_tool(
     assert call["tool_name"] == "web_search_exa"
     assert call["arguments"] == {"query": "AAPL latest company news"}
     assert call["timeout_seconds"] == 2.5
-    assert "json-secret-value" not in json.dumps(output)
+    output_payload = json.dumps(output)
+    assert "secret-token" not in output_payload
+    assert "sk-live-secret" not in output_payload
+    assert "json-secret-value" not in output_payload
+    assert "[REDACTED]" in output_payload
 
 
 def test_mcp_runtime_rejects_package_private_exa_without_descriptor(
@@ -231,12 +246,37 @@ def test_mcp_runtime_rejects_package_private_exa_with_drifted_descriptor_hash(
     descriptors[0] = {**descriptors[0], "schemaHash": "sha256:" + "a" * 64}
 
     with pytest.raises(RuntimeToolError) as exc_info:
-        McpRuntimeResolver(session_factory).build_dispatcher(
+        _ = McpRuntimeResolver(session_factory).build_dispatcher(
             mcp_server_refs=[ref],
             enabled=True,
         )
 
     assert exc_info.value.code == "mcp_tool_descriptor_invalid"
+
+
+def test_mcp_runtime_rejects_package_private_exa_malformed_descriptor_without_secret_leak(
+    session_factory: sessionmaker[Session],
+) -> None:
+    ref = _package_private_exa_ref(
+        headers={"Authorization": "Bearer package-token"},
+        query={"exaApiKey": "secret-token"},
+    )
+    descriptors = cast(list[dict[str, object]], ref["toolDescriptors"])
+    descriptors[0] = {**descriptors[0], "ownerExtensionKey": ""}
+
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = McpRuntimeResolver(session_factory).build_dispatcher(
+            mcp_server_refs=[ref],
+            enabled=True,
+        )
+
+    error_payload = json.dumps(
+        {"code": exc_info.value.code, "message": exc_info.value.message},
+        sort_keys=True,
+    )
+    assert exc_info.value.code == "mcp_tool_descriptor_invalid"
+    assert "secret-token" not in error_payload
+    assert "package-token" not in error_payload
 
 
 def test_mcp_runtime_blocks_package_private_exa_when_owner_extension_disabled(
@@ -261,6 +301,29 @@ def test_mcp_runtime_blocks_package_private_exa_when_owner_extension_disabled(
             "surface": "mcp.packagePrivate.web_search_exa",
         }
     ]
+
+
+def test_mcp_runtime_rejects_package_private_exa_malformed_config_without_secret_leak(
+    session_factory: sessionmaker[Session],
+) -> None:
+    ref = _package_private_exa_ref(
+        url=None,
+        headers={"Authorization": "Bearer package-token"},
+        query={"exaApiKey": "secret-token"},
+    )
+
+    with pytest.raises(McpClientConfigError) as exc_info:
+        _ = McpRuntimeResolver(session_factory).build_dispatcher(
+            mcp_server_refs=[ref],
+            enabled=True,
+        )
+
+    details_json = json.dumps(exc_info.value.details, sort_keys=True)
+    assert exc_info.value.details == [
+        {"field": "url", "issue": "HTTP/SSE transport requires a URL"}
+    ]
+    assert "secret-token" not in details_json
+    assert "package-token" not in details_json
 
 
 def test_mcp_boundary_scopes_secret_query_names_to_package_private_query_map() -> None:

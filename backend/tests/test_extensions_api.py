@@ -64,6 +64,21 @@ def test_list_extensions_returns_exact_slim_enabled_state(client: TestClient) ->
     ]
 
 
+def test_list_extensions_returns_slim_state(client: TestClient) -> None:
+    response = client.get("/api/extensions")
+
+    assert response.status_code == 200, response.json()
+    body = cast(dict[str, object], response.json())
+    assert set(body) == {"items"}
+    items = cast(list[dict[str, object]], body["items"])
+    assert items
+    assert all(set(item) == {"key", "label", "enabled"} for item in items)
+    assert {str(item["key"]) for item in items} == {
+        FINANCE_WORKSPACE_EXTENSION_KEY,
+        DIGITAL_ORACLE_EXTENSION_KEY,
+    }
+
+
 def test_toggle_extension_state_persistence_and_enabled_views(
     client: TestClient,
     session_factory: sessionmaker[Session],

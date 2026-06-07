@@ -1,6 +1,6 @@
 # Technical Specification
 
-> Status: Live technical reference for branch `main` at `1e43bf7`.
+> Status: Live technical reference for branch `main` at `87bae7a`.
 
 ## Overview
 
@@ -102,7 +102,7 @@ Runtime output strategies are recorded in run metadata under `graphMetadata.mode
 
 Workflow Packages use `signaldeck.workflowPackage/v1` YAML. Package-local refs stay local, model bindings use global Model Connection keys, tool grants use global server-declared tool keys, and workflow graph nodes currently ship as `kind: step`, `kind: sequence`, `kind: fanout`, `kind: loop`, and `kind: http`.
 
-Package-local agent prompts own methodology. The Digital Oracle researcher package keeps its research policy in the `digital_oracle_researcher` agent `systemPrompt`, grants the local `digital_oracle_phase1_tools` capability profile, and reserves `demo/digital_oracle_researcher.yaml` as the final proven artifact path. This is package data, not a global skill or platform orchestration surface.
+Package-local agent prompts own methodology. The Digital Oracle researcher package keeps research policy in package-local agent `systemPrompt` text, grants the local `digital_oracle_phase1_tools` capability profile, and reserves `demo/digital_oracle_researcher.yaml` as the final proven artifact path. This is package data, not a global skill or platform orchestration surface.
 
 `kind: step` invokes a local package agent through `AgentExecutionService`. `kind: http` is the shipped non-agent operation node and compiles into runtime operation specs rather than fake agents. HTTP request fields may contain literal JSON values, input refs, prior-node output refs, or `${{ secrets.key }}` refs. Secret refs are valid only in HTTP `url`, `headers`, `query`, and `body` fields.
 
@@ -123,6 +123,8 @@ Current native runtime tools include quote/history/OHLCV, indicators, fundamenta
 `signaldeck.news.lookup` and `signaldeck.social_sentiment.lookup` are separate finance-owned tools. Social sentiment accepts one symbol, optional `sources` of `reddit` and `stocktwits`, optional date bounds, and `itemLimit` up to `50`, returning source blocks, aggregate metrics, and warnings.
 
 The Digital Oracle-backed phase-1 tools expose normalized payloads only. `signaldeck.prediction_markets.lookup` reads prediction-market events and contracts, `signaldeck.sec_filings.lookup` reads SEC filing summaries by ticker, and `signaldeck.market_sentiment.lookup` reads the `fear_greed` indicator. All three serialize camelCase result models with `warnings[]`; provider internals, package secrets, EDGAR contact config, raw payloads, and speculative phase-2 providers are not public contracts.
+
+Deferred Digital Oracle candidates are not registered tools, not `/api/tools` entries, and not live acceptance paths. The roadmap order is `signaldeck.rates.lookup` first, then broader macro/rates coverage, derivatives/crypto, CFTC positioning, and optional `yfinance`-backed options only after stable schemas and optional-dependency tests exist. Generic web search remains package-private MCP configuration inside Workflow Packages, for example a package-local Exa MCP grant, not a shipped global Digital Oracle tool.
 
 Tool failure metadata is typed with `failureClass`, `source`, `phase`, `retryable`, and `disposition`. The retryable allowlist is limited to pre-dispatch provider tool-argument JSON/object failures, native tool argument validation, and MCP argument JSON/schema validation before transport dispatch. Auth, permission, grants, namespaces, extension-disabled states, missing secrets, unsupported or retired tool names, provider/network/transport errors, MCP transport errors, executor/business-rule failures, policy failures, output-schema failures, and retry-bound exhaustion are fatal.
 
@@ -199,4 +201,6 @@ Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contrac
 - `version-sync` checks `backend/VERSION` against `backend/pyproject.toml` and `frontend/VERSION` against `frontend/package.json`.
 - Backend CI runs ruff, black, isort, mypy, and pytest after `uv sync --frozen`.
 - Frontend CI runs lint, typecheck, build, unit tests, and Playwright after `pnpm install --frozen-lockfile`.
+- Automated CI must use fakes, fixtures, deterministic providers, and local descriptors only. It must not call live provider APIs, live MCP web search, or `yfinance` network paths.
+- Upstream/provider live regression is manual and dev-only. Evidence from fixture refreshes, provider smoke checks, or live MCP validation is captured outside CI.
 - Docker image publishing builds backend and frontend linux/arm64 images for GHCR.

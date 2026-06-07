@@ -1,0 +1,13 @@
+{
+  "kind": "json",
+  "request": {
+    "url": "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+    "params": {}
+  },
+  "response": {
+    "fear_and_greed": {
+      "timestamp": "2026-01-02T03:04:05Z",
+      "previous_close": 70
+    }
+  }
+}

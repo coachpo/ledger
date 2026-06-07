@@ -1,0 +1,28 @@
+{
+  "kind": "json",
+  "request": {
+    "url": "https://gamma-api.polymarket.com/events",
+    "params": {
+      "active": true,
+      "ascending": false,
+      "closed": false,
+      "limit": 5,
+      "order": "volume24hr",
+      "tag_slug": "fed-cut"
+    }
+  },
+  "response": [
+    {
+      "id": "pm-fed-cut",
+      "slug": "fed-cut-before-june-2026",
+      "title": "Will the Fed cut rates before June 2026?",
+      "active": true,
+      "closed": false,
+      "endDate": "2026-06-01T00:00:00Z",
+      "openInterest": "2500",
+      "markets": [
+        {"id": "pm-fed-cut-market", "question": "Will the Fed cut rates before June 2026?", "outcomes": ["Yes", "No"], "outcomePrices": ["0.63", "0.37"], "volumeNum": "125000.5"}
+      ]
+    }
+  ]
+}
