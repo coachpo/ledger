@@ -979,10 +979,20 @@ def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local
         runtime_tool_guidance=guidance,
     )
 
-    assert len(plan.steps) == 1
-    assert plan.steps[0].agents[0].agent_key == "digital_oracle_researcher"
+    expected_tool_keys = set(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS) | {
+        "signaldeck.market_data.history_lookup",
+        "signaldeck.market_data.ohlcv_lookup",
+    }
+
+    assert len(plan.steps) == 4
+    assert [step.agents[0].agent_key for step in plan.steps] == [
+        "digital_oracle_signal_researcher",
+        "digital_oracle_signal_researcher",
+        "digital_oracle_signal_researcher",
+        "digital_oracle_synthesizer",
+    ]
     assert runtime_agent.output_schema.key == "digital_oracle_report"
-    assert granted_tool_keys == set(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
+    assert granted_tool_keys == expected_tool_keys
     assert {declaration.tool_key for declaration in declarations} == granted_tool_keys
     assert "Package-ready draft" not in manifest_source
     assert "skills:" not in manifest_source
@@ -990,8 +1000,8 @@ def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local
     assert "secrets:" not in manifest_source
     assert "Digital Oracle methodology is package-local for this agent." in instructions
     assert "Decompose each research question" in instructions
-    assert "Call the minimum relevant granted tools" in instructions
-    assert "Compare contradictory signals" in instructions
+    assert "Use market-data-only reasoning" in instructions
+    assert "Seek at least three independent signal dimensions" in instructions
     assert "Disclose warnings" in instructions
     assert "Never invent prices" in instructions
     assert "call signaldeck_prediction_markets_lookup" in instructions

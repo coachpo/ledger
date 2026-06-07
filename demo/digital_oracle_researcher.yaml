@@ -160,10 +160,100 @@ spec:
             type: string
           marketSignals:
             type: object
+            required:
+              - summary
+              - signals
+              - horizons
+              - contradictions
+              - limitations
+              - nextQuestions
+            properties:
+              summary:
+                type: string
+              signals:
+                type: array
+                items:
+                  type: string
+              horizons:
+                type: array
+                items:
+                  type: string
+              contradictions:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+              nextQuestions:
+                type: array
+                items:
+                  type: string
           filingSignals:
             type: object
+            required:
+              - summary
+              - signals
+              - horizons
+              - contradictions
+              - limitations
+              - nextQuestions
+            properties:
+              summary:
+                type: string
+              signals:
+                type: array
+                items:
+                  type: string
+              horizons:
+                type: array
+                items:
+                  type: string
+              contradictions:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+              nextQuestions:
+                type: array
+                items:
+                  type: string
           sentimentSearchSignals:
             type: object
+            required:
+              - summary
+              - signals
+              - horizons
+              - contradictions
+              - limitations
+              - nextQuestions
+            properties:
+              summary:
+                type: string
+              signals:
+                type: array
+                items:
+                  type: string
+              horizons:
+                type: array
+                items:
+                  type: string
+              contradictions:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+              nextQuestions:
+                type: array
+                items:
+                  type: string
           asOfDate:
             type: string
           horizonDays:

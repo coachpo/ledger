@@ -718,7 +718,7 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-tab-panel-output")).toBeVisible();
   });
 
-  it("keeps run detail tabs sticky while rendering requested sections as flat compact detail grids", () => {
+  it("renders run detail tabs as a non-sticky normal row while preserving flat compact detail grids", () => {
     const run = buildRun({
       executedTokens: 2302,
       id: 362,
@@ -747,10 +747,14 @@ describe("RunsDetailPage", () => {
     };
 
     const outputRender = renderTab("output");
-    expect(screen.getByTestId("runs-detail-tab-list-scroll")).toHaveClass(
-      "sticky",
-      "top-0",
-    );
+    expect(
+      screen.queryByTestId("runs-detail-tab-list-scroll"),
+    ).not.toBeInTheDocument();
+    const tabList = screen.getByRole("tablist", {
+      name: /run detail sections/i,
+    });
+    expect(tabList).toBeInTheDocument();
+    expect(tabList).not.toHaveClass("sticky", "top-0");
     const outputProvenance = expectFlatDetailGrid(
       "runs-detail-section-output-provenance",
     );

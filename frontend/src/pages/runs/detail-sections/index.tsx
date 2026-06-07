@@ -2528,22 +2528,20 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
       }}
       value={selectedTab}
     >
-      <div
-        className="sticky top-0 z-10 max-w-full overflow-x-auto bg-background/95 pb-1"
-        data-testid="runs-detail-tab-list-scroll"
+      <TabsList
+        aria-label="Run detail sections"
+        className="h-8 max-w-full shrink-0 justify-start overflow-x-auto"
       >
-        <TabsList aria-label="Run detail sections" className="min-w-max">
-          {RUN_DETAIL_TAB_ORDER.map((tab) => (
-            <TabsTrigger
-              data-testid={`runs-detail-tab-trigger-${tab}`}
-              key={tab}
-              value={tab}
-            >
-              {RUN_DETAIL_TAB_LABELS[tab]}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </div>
+        {RUN_DETAIL_TAB_ORDER.map((tab) => (
+          <TabsTrigger
+            data-testid={`runs-detail-tab-trigger-${tab}`}
+            key={tab}
+            value={tab}
+          >
+            {RUN_DETAIL_TAB_LABELS[tab]}
+          </TabsTrigger>
+        ))}
+      </TabsList>
       {RUN_DETAIL_TAB_ORDER.map((tab) => (
         <TabsContent
           className="min-w-0"

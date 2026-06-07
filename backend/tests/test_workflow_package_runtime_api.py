@@ -1031,15 +1031,15 @@ def test_seeded_digital_oracle_run_omits_null_optional_inputs_before_agent_valid
 ) -> None:
     _RuntimeRecordingChatCompletionsClient.reset()
     _RuntimeRecordingChatCompletionsClient.tool_argument_sequence = []
-    _RuntimeRecordingChatCompletionsClient.final_output_text = json.dumps(
-        {
-            "summary": "digital oracle runtime output",
-            "signals": [],
-            "contradictions": [],
-            "limitations": [],
-            "nextQuestions": [],
-        }
-    )
+    runtime_output = {
+        "summary": "digital oracle runtime output",
+        "signals": [],
+        "horizons": [],
+        "contradictions": [],
+        "limitations": [],
+        "nextQuestions": [],
+    }
+    _RuntimeRecordingChatCompletionsClient.final_output_text = json.dumps(runtime_output)
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingChatCompletionsClient)
     _seed_model_connection(
         session_factory,
@@ -1070,12 +1070,24 @@ def test_seeded_digital_oracle_run_omits_null_optional_inputs_before_agent_valid
     _drain_run_queue(session_factory)
     detail = cast(dict[str, object], _wait_for_run(client, run_id))
     steps = cast(list[dict[str, object]], detail["steps"])
-    invocations = cast(list[dict[str, object]], steps[0]["invocations"])
-    invocation = invocations[0]
+    branch_invocations = [
+        cast(list[dict[str, object]], step["invocations"])[0] for step in steps[:3]
+    ]
+    synthesis_invocation = cast(list[dict[str, object]], steps[3]["invocations"])[0]
 
     assert detail["status"] == "succeeded"
     assert detail["input"] == parameters
-    assert invocation["resolvedInput"] == parameters
+    for invocation in branch_invocations:
+        assert invocation["resolvedInput"] == {
+            **parameters,
+            "signalFocus": parameters["researchQuestion"],
+        }
+    assert synthesis_invocation["resolvedInput"] == {
+        **parameters,
+        "marketSignals": runtime_output,
+        "filingSignals": runtime_output,
+        "sentimentSearchSignals": runtime_output,
+    }
 
 
 def test_run_queue_stale_lease_recovery_frees_serial_worker_lane(

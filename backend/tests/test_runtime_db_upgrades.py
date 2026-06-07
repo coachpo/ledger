@@ -373,14 +373,27 @@ _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES = [
             "tool.signaldeck.prediction_markets.lookup",
             "tool.signaldeck.sec_filings.lookup",
         ],
-    }
+    },
+    {
+        "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+        "fields": [
+            "spec.capabilityProfiles.finance_price_history_tools.toolKeys[0]",
+            "spec.capabilityProfiles.finance_price_history_tools.toolKeys[1]",
+            "spec.mcpServers.exa.toolKeys[0]",
+        ],
+        "surfaces": [
+            "hook.workflowPackageStart",
+            "mcp.packagePrivate.web_search_exa",
+            "provider.fallbackQuote",
+            "provider.quote",
+            "provider.socialSentiment",
+            "runtime.tool.signaldeck.market_data.history_lookup",
+            "runtime.tool.signaldeck.market_data.ohlcv_lookup",
+            "tool.signaldeck.market_data.history_lookup",
+            "tool.signaldeck.market_data.ohlcv_lookup",
+        ],
+    },
 ]
-_DIGITAL_ORACLE_FORBIDDEN_DEPENDENCY_SURFACES = {
-    "hook.workflowPackageStart",
-    "provider.fallbackQuote",
-    "provider.quote",
-    "provider.socialSentiment",
-}
 _TRADINGAGENTS_LAUNCH_METADATA_BY_WORKFLOW_KEY = {
     "advisory_research": (
         "Advisory Research",
@@ -4009,12 +4022,6 @@ def test_init_db_seeds_digital_oracle_preset_without_secret_state(database_url: 
         assert row["compiled_plan"] == expected_compiled_plan
         extension_dependencies = cast(list[dict[str, object]], row["extension_dependencies"])
         assert extension_dependencies == _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES
-        assert FINANCE_WORKSPACE_EXTENSION_KEY not in json.dumps(
-            extension_dependencies,
-            sort_keys=True,
-        )
-        surfaces = set(cast(list[str], extension_dependencies[0]["surfaces"]))
-        assert surfaces.isdisjoint(_DIGITAL_ORACLE_FORBIDDEN_DEPENDENCY_SURFACES)
 
         serialized_preset = (
             fixture_source
