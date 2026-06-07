@@ -14,6 +14,24 @@ vi.mock("@/hooks/use-positions", () => ({
 
 import { PositionFormDialog } from "./position-form-dialog";
 
+function expectSharedDialogShell(dialog: HTMLElement) {
+  const body = dialog.querySelector('[data-slot="entity-dialog-body"]');
+  const footer = dialog.querySelector('[data-slot="dialog-footer"]');
+
+  expect(
+    dialog.querySelector('[data-slot="entity-dialog-constraint-strip"]'),
+  ).toBeNull();
+  expect(body).toBeTruthy();
+  expect(footer).toBeTruthy();
+  expect(
+    Array.from(
+      dialog.querySelectorAll(
+        '[data-slot="entity-dialog-body"], [data-slot="dialog-footer"]',
+      ),
+    ),
+  ).toEqual([body, footer]);
+}
+
 describe("PositionFormDialog", () => {
   beforeEach(() => {
     usePositionSymbolLookupMock.mockReset();
@@ -27,6 +45,26 @@ describe("PositionFormDialog", () => {
         isFetching: false,
       }),
     );
+  });
+
+  it("renders create copy in the shared dialog shell order", () => {
+    render(
+      <PositionFormDialog
+        portfolioId={1}
+        open
+        isPending={false}
+        onOpenChange={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("Add Position");
+    expect(dialog).toHaveTextContent("Symbol");
+    expect(dialog).toHaveTextContent("Name");
+    expect(dialog).toHaveTextContent("Quantity");
+    expect(dialog).toHaveTextContent("Average Cost");
+    expectSharedDialogShell(dialog);
   });
 
   it("auto-fills a resolved name and keeps the field editable", async () => {

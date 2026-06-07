@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -15,13 +15,9 @@ import {
   type PositionCreateFormValues,
 } from "@/components/shared/form-schemas";
 
+import { EntityDialogShell } from "@/components/shared/entity-dialog-shell";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -126,16 +122,34 @@ export function PositionFormDialog({
           : "No company name found."
       : null;
 
+  const formId = useId();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {initial ? "Edit Position" : "Add Position"}
-          </DialogTitle>
-        </DialogHeader>
+      <EntityDialogShell
+        title={initial ? "Edit Position" : "Add Position"}
+        footer={
+          <>
+            <Button
+              onClick={() => onOpenChange(false)}
+              type="button"
+              variant="outline"
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button form={formId} disabled={isPending} type="submit">
+              {isPending ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : null}
+              Save
+            </Button>
+          </>
+        }
+      >
         <Form {...form}>
           <form
+            id={formId}
             className="space-y-4"
             onSubmit={form.handleSubmit((values) => {
               const payload = {
@@ -254,25 +268,9 @@ export function PositionFormDialog({
                 )}
               />
             </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                onClick={() => onOpenChange(false)}
-                type="button"
-                variant="outline"
-                disabled={isPending}
-              >
-                Cancel
-              </Button>
-              <Button disabled={isPending} type="submit">
-                {isPending ? (
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                ) : null}
-                Save
-              </Button>
-            </div>
           </form>
         </Form>
-      </DialogContent>
+      </EntityDialogShell>
     </Dialog>
   );
 }
