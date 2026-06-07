@@ -63,4 +63,11 @@ describe("launch schema templates", () => {
     expect(parseLaunchParametersJson("{\"ticker\":\"AAPL\"}")).toEqual({ ticker: "AAPL" });
     expect(() => parseLaunchParametersJson("[]")).toThrow("Runtime inputs JSON must be a valid object.");
   });
+
+  it("preserves explicit nulls in parsed launch parameter JSON", () => {
+    expect(parseLaunchParametersJson("{\"optionalNote\":null,\"ticker\":\"AAPL\"}")).toEqual({
+      optionalNote: null,
+      ticker: "AAPL",
+    });
+  });
 });

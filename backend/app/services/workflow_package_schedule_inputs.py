@@ -225,7 +225,7 @@ def render_and_validate_scheduled_input_template(
         )
     return ScheduledInputRenderPreview(
         template_context=deepcopy(dict(template_context)),
-        rendered_parameters=deepcopy(render_result.rendered_parameters),
+        rendered_parameters=deepcopy(validated_parameters),
         validation_errors=[],
         validated_parameters=validated_parameters,
     )

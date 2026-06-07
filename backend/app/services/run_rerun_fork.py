@@ -367,19 +367,15 @@ class RunRerunForkPreparation:
     ) -> dict[str, Any]:
         agent = self._resolve_runtime_agent(plan_agent)
         input_schema = self._runtime_agent_input_schema(agent)
-        input_model = self._build_input_model(
-            input_schema,
+        return validate_run_input_payload(
+            schema_compiler=self.schema_compiler,
+            input_schema=input_schema,
+            input_payload=invocation_input,
             candidate_key=f"{agent.key}_input",
+            resource_name="agent",
+            error_code="run_fork_invalid_invocation_input",
+            failure_message="Fork invocation input failed agent input schema validation",
         )
-        try:
-            validated = input_model.model_validate(invocation_input)
-        except ValidationError as exc:
-            raise business_rule_error(
-                "run_fork_invalid_invocation_input",
-                "Fork invocation input failed agent input schema validation",
-                details=self._validation_details_from_pydantic_error(exc),
-            ) from exc
-        return validated.model_dump(mode="json", exclude_none=True)
 
     def validate_run_input(
         self,

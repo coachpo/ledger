@@ -80,6 +80,7 @@ class SchemaNodeBase:
     description: str | None
     default_value: JsonValue | None
     has_default: bool
+    nullable: bool
 
 
 @dataclass
@@ -298,6 +299,7 @@ class OutputSchemaCompiler:
             "description": builder.description,
             "default_value": builder.default_value,
             "has_default": "default_value" in builder.model_fields_set,
+            "nullable": False,
         }
 
     def _json_schema_metadata(
@@ -330,6 +332,7 @@ class OutputSchemaCompiler:
             ),
             "default_value": default_value,
             "has_default": has_default,
+            "nullable": False,
         }
 
     def _builder_metadata_kwargs(self, node: SchemaNodeBase) -> dict[str, Any]:
@@ -344,8 +347,43 @@ class OutputSchemaCompiler:
             description=None,
             default_value=None,
             has_default=False,
+            nullable=False,
             schema_type="string",
         )
+
+    def _schema_type_and_nullable(
+        self,
+        raw_type: object,
+        *,
+        path: str,
+        issues: list[dict[str, str]],
+    ) -> tuple[str | None, bool]:
+        if isinstance(raw_type, str):
+            return raw_type, False
+        if isinstance(raw_type, list):
+            raw_types = cast(list[object], raw_type)
+            non_null_types = [item for item in raw_types if item != "null"]
+            if len(raw_types) != 2 or len(non_null_types) != 1 or "null" not in raw_types:
+                self._add_issue(
+                    issues,
+                    path,
+                    "Nullable schema types must use exactly one schema type and 'null'",
+                )
+                return None, True
+            schema_type = non_null_types[0]
+            if not isinstance(schema_type, str):
+                self._add_issue(issues, path, "Schema type entries must be strings")
+                return None, True
+            if schema_type not in {*_PRIMITIVE_TYPES, "array", "object"}:
+                self._add_issue(
+                    issues,
+                    path,
+                    "Nullable schema types support only primitive, array, and object schemas",
+                )
+                return None, True
+            return schema_type, True
+        self._add_issue(issues, path, "Schema type is required")
+        return None, False
 
     def _with_validated_default(
         self,
@@ -620,20 +658,35 @@ class OutputSchemaCompiler:
                     _join_path(path, "enum"),
                     "Enum values must all use the same primitive type",
                 )
+            declared_type: str | None = None
+            nullable = False
+            if "type" in schema:
+                declared_type, nullable = self._schema_type_and_nullable(
+                    schema.get("type"),
+                    path=_join_path(path, "type"),
+                    issues=issues,
+                )
+                if declared_type is None:
+                    return self._placeholder_node()
             self._validate_declared_primitive_type(
-                schema.get("type"),
+                declared_type,
                 expected_type=_primitive_kind(values[0]) if values else None,
                 path=_join_path(path, "type"),
                 issues=issues,
             )
             if not values:
                 return self._placeholder_node()
+            metadata["nullable"] = nullable
             return with_default(SchemaEnum(values=tuple(values), **metadata))
 
-        schema_type = schema.get("type")
-        if not isinstance(schema_type, str):
-            self._add_issue(issues, _join_path(path, "type"), "Schema type is required")
+        schema_type, nullable = self._schema_type_and_nullable(
+            schema.get("type"),
+            path=_join_path(path, "type"),
+            issues=issues,
+        )
+        if schema_type is None:
             return self._placeholder_node()
+        metadata["nullable"] = nullable
         if schema_type in _PRIMITIVE_TYPES:
             self._validate_allowed_keys(
                 schema,
@@ -1289,19 +1342,32 @@ class OutputSchemaCompiler:
             **metadata,
         )
 
+    @staticmethod
+    def _json_schema_type(schema_type: str, *, nullable: bool) -> str | list[str]:
+        if nullable:
+            return [schema_type, "null"]
+        return schema_type
+
     def _node_to_json_schema(self, node: SchemaNode) -> dict[str, Any]:
         if isinstance(node, SchemaPrimitive):
-            payload: dict[str, Any] = {"type": node.schema_type}
+            payload: dict[str, Any] = {
+                "type": self._json_schema_type(node.schema_type, nullable=node.nullable)
+            }
             return self._with_metadata(payload, node)
         if isinstance(node, SchemaEnum):
-            payload = {"type": _primitive_kind(node.values[0]), "enum": list(node.values)}
+            payload = {
+                "type": self._json_schema_type(
+                    _primitive_kind(node.values[0]), nullable=node.nullable
+                ),
+                "enum": list(node.values),
+            }
             return self._with_metadata(payload, node)
         if isinstance(node, SchemaLiteral):
             payload = {"type": _primitive_kind(node.value), "const": node.value}
             return self._with_metadata(payload, node)
         if isinstance(node, SchemaObject):
             payload = {
-                "type": "object",
+                "type": self._json_schema_type("object", nullable=node.nullable),
                 "properties": {
                     field.name: self._node_to_json_schema(field.schema) for field in node.fields
                 },
@@ -1309,7 +1375,10 @@ class OutputSchemaCompiler:
             }
             return self._with_metadata(payload, node)
         if isinstance(node, SchemaArray):
-            payload = {"type": "array", "items": self._node_to_json_schema(node.items)}
+            payload = {
+                "type": self._json_schema_type("array", nullable=node.nullable),
+                "items": self._node_to_json_schema(node.items),
+            }
             return self._with_metadata(payload, node)
         if isinstance(node, SchemaRef):
             payload = {"$ref": f"registry://{node.key}@{node.version}"}
@@ -1359,34 +1428,38 @@ class OutputSchemaCompiler:
 
     def _compile_annotation(self, node: SchemaNode, *, model_name: str) -> Any:
         if isinstance(node, SchemaPrimitive):
-            return {
+            annotation = {
                 "string": str,
                 "integer": int,
                 "number": float,
                 "boolean": bool,
             }[node.schema_type]
-        if isinstance(node, SchemaEnum):
+        elif isinstance(node, SchemaEnum):
             if not node.values:
                 raise OutputSchemaCompilerError("Enum schemas must include at least one value")
-            return cast(Any, Literal)[node.values]
-        if isinstance(node, SchemaLiteral):
-            return cast(Any, Literal)[(node.value,)]
-        if isinstance(node, SchemaObject):
-            return self._compile_object_model(node, model_name=model_name)
-        if isinstance(node, SchemaArray):
+            annotation = cast(Any, Literal)[node.values]
+        elif isinstance(node, SchemaLiteral):
+            annotation = cast(Any, Literal)[(node.value,)]
+        elif isinstance(node, SchemaObject):
+            annotation = self._compile_object_model(node, model_name=model_name)
+        elif isinstance(node, SchemaArray):
             item_annotation = self._compile_annotation(
                 node.items,
                 model_name=f"{model_name}Item",
             )
-            return cast(Any, list)[item_annotation]
-        if isinstance(node, SchemaRef):
+            annotation = cast(Any, list)[item_annotation]
+        elif isinstance(node, SchemaRef):
             row = self.repository.resolve_registry_ref(node.key, node.version)
             if row is None:
                 raise OutputSchemaCompilerError(
                     f"Shared registry ref {node.key!r} v{node.version} was not found"
                 )
-            return self.build_runtime_model(row)
-        return self._compile_discriminated_union(node, model_name=model_name)
+            annotation = self.build_runtime_model(row)
+        else:
+            annotation = self._compile_discriminated_union(node, model_name=model_name)
+        if node.nullable:
+            return annotation | None
+        return annotation
 
     def _compile_object_model(
         self,

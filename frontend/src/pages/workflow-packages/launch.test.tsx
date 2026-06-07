@@ -207,6 +207,10 @@ async function selectSingleWorkflow() {
   await waitFor(() => expect(workflowSelector()).toHaveTextContent("Market Review"));
 }
 
+function switchToJsonMode() {
+  fireEvent.click(screen.getByRole("radio", { name: "JSON" }));
+}
+
 async function completeReadyPreflight() {
   fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
   await waitFor(() =>
@@ -595,14 +599,15 @@ describe("WorkflowPackageLaunchPage", () => {
     await selectSingleWorkflow();
     const launchPanel = await screen.findByTestId("workflow-package-launch-tab");
     expect(within(launchPanel).getByRole("combobox", { name: /workflow/i })).toBeVisible();
-    expect(screen.queryByRole("textbox", { name: "Ticker" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("runtime-input-schema-form")).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Ticker" })).toBeVisible();
     fireEvent.change(screen.getByLabelText("Runtime inputs JSON"), { target: { value: '{"ticker":"AAPL"}' } });
     await completeReadyPreflight();
     fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
 
     await waitFor(() => expect(preflightPackageMock).toHaveBeenCalledWith({
       packageId: "42",
-      payload: { parameters: {}, workflowKey: "market_review" },
+      payload: { parameters: { ticker: "AAPL" }, workflowKey: "market_review" },
     }));
     expect(createLaunchMock).toHaveBeenCalledWith({
       packageId: "42",
@@ -693,6 +698,240 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "NVDA" }, null, 2));
     expect(preflightPackageMock).not.toHaveBeenCalled();
     expect(createLaunchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps stale extra saved inputs in advanced JSON with local validation details", async () => {
+    const personal = runtimeInputEntry({
+      id: 7,
+      name: "Baseline preset",
+      payload: { legacyWindow: "pre-upgrade", ticker: "MSFT" },
+      slot: "personal",
+      stale: {
+        reasons: [{ current: "compiled-hash-123", field: "compiledHash", issue: "Compiled package changed", stored: "old-compiled" }],
+        stale: true,
+      },
+    });
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
+      runtimeInputRegistry({ personal: [personal] }),
+    );
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    fireEvent.click(screen.getByRole("button", { name: "Load personal input Baseline preset" }));
+
+    const feedback = await screen.findByTestId("runtime-input-validation-feedback");
+    expect(feedback).toHaveTextContent("parameters.legacyWindow");
+    expect(feedback).toHaveTextContent("Extra inputs are not permitted.");
+    expect(screen.queryByTestId("runtime-input-primary-form")).not.toBeInTheDocument();
+    expect(screen.getByTestId("runtime-input-json-mode-notice")).toBeVisible();
+    expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
+      JSON.stringify({ legacyWindow: "pre-upgrade", ticker: "MSFT" }, null, 2),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
+    expect(preflightPackageMock).not.toHaveBeenCalled();
+  });
+
+  it("resets launch form to required and defaulted inputs", async () => {
+    useWorkflowPackageLaunchMock.mockReturnValue({
+      data: {
+        ...launchRead,
+        inputSchema: {
+          properties: {
+            includeNews: { default: true, title: "Include News", type: "boolean" },
+            lookbackDays: { default: 14, title: "Lookback Days", type: "integer" },
+            notes: { title: "Notes", type: "string" },
+            ticker: { title: "Ticker", type: "string" },
+          },
+          required: ["ticker"],
+          type: "object",
+        },
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    const schemaForm = await screen.findByTestId("runtime-input-schema-form");
+    fireEvent.change(within(schemaForm).getByRole("textbox", { name: "Ticker" }), {
+      target: { value: "AAPL" },
+    });
+    fireEvent.click(within(schemaForm).getByRole("button", { name: "Add Field" }));
+    fireEvent.change(within(schemaForm).getByRole("textbox", { name: "Notes" }), {
+      target: { value: "Loaded from a stale preset" },
+    });
+    switchToJsonMode();
+    fireEvent.change(screen.getByLabelText("Runtime inputs JSON"), {
+      target: { value: '{"ticker":null}' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
+    expect(await screen.findByTestId("runtime-input-validation-feedback")).toHaveTextContent("Null is only allowed");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset to template" }));
+
+    const resetForm = screen.getByTestId("runtime-input-schema-form");
+    expect(screen.getByTestId("runtime-input-primary-form")).toBeVisible();
+    expect(within(resetForm).getByRole("textbox", { name: "Ticker" })).toHaveValue("");
+    expect(within(resetForm).getByRole("spinbutton", { name: "Lookback Days" })).toHaveValue(14);
+    expect(within(resetForm).getByRole("switch", { name: "Include News" })).toBeChecked();
+    expect(within(resetForm).queryByRole("textbox", { name: "Notes" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runtime-input-validation-feedback")).not.toBeInTheDocument();
+    expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(JSON.stringify({
+      includeNews: true,
+      lookbackDays: 14,
+      ticker: "",
+    }, null, 2));
+  });
+
+  it("saves the canonical form payload for personal presets", async () => {
+    useWorkflowPackageLaunchMock.mockReturnValue({
+      data: {
+        ...launchRead,
+        inputSchema: {
+          properties: {
+            includeNews: { default: false, title: "Include News", type: "boolean" },
+            notes: { title: "Notes", type: "string" },
+            ticker: { title: "Ticker", type: "string" },
+          },
+          required: ["ticker"],
+          type: "object",
+        },
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    const schemaForm = await screen.findByTestId("runtime-input-schema-form");
+    fireEvent.change(within(schemaForm).getByRole("textbox", { name: "Ticker" }), {
+      target: { value: "NVDA" },
+    });
+    fireEvent.change(screen.getByLabelText("Personal preset name"), {
+      target: { value: "Canonical preset" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save current JSON" }));
+
+    await waitFor(() => expect(createRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({
+      packageId: "42",
+      payload: {
+        name: "Canonical preset",
+        payload: { includeNews: false, ticker: "NVDA" },
+      },
+      workflowKey: "market_review",
+    }));
+  });
+
+  it("overwrites personal presets from validated advanced JSON payloads", async () => {
+    const personal = runtimeInputEntry({
+      id: 7,
+      name: "Baseline preset",
+      payload: { ticker: "MSFT" },
+      slot: "personal",
+    });
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
+      runtimeInputRegistry({ personal: [personal] }),
+    );
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    switchToJsonMode();
+    fireEvent.change(screen.getByLabelText("Runtime inputs JSON"), {
+      target: { value: '{"ticker":"GOOG"}' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Overwrite personal input Baseline preset" }));
+
+    await waitFor(() => expect(updateRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({
+      entryId: 7,
+      packageId: "42",
+      payload: {
+        name: "Baseline preset",
+        payload: { ticker: "GOOG" },
+      },
+      workflowKey: "market_review",
+    }));
+  });
+
+  it("keeps invalid stale saved inputs in advanced JSON with local validation details", async () => {
+    const personal = runtimeInputEntry({
+      id: 7,
+      name: "Old nullable preset",
+      payload: { legacyField: "visible", ticker: null },
+      slot: "personal",
+      stale: {
+        reasons: [{ current: "schema-fingerprint-123", field: "schemaFingerprint", issue: "Schema changed", stored: "old-schema" }],
+        stale: true,
+      },
+    });
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
+      runtimeInputRegistry({ personal: [personal] }),
+    );
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    fireEvent.click(screen.getByRole("button", { name: "Load personal input Old nullable preset" }));
+
+    const feedback = await screen.findByTestId("runtime-input-validation-feedback");
+    expect(feedback).toHaveTextContent("parameters.legacyField");
+    expect(feedback).toHaveTextContent("Extra inputs are not permitted.");
+    expect(feedback).toHaveTextContent("parameters.ticker");
+    expect(feedback).toHaveTextContent("Null is only allowed for nullable runtime input fields.");
+    expect(screen.getByTestId("runtime-input-json-mode-notice")).toBeVisible();
+    expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
+      JSON.stringify({ legacyField: "visible", ticker: null }, null, 2),
+    );
+    fireEvent.change(screen.getByLabelText("Personal preset name"), {
+      target: { value: "Still invalid" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save current JSON" }));
+    expect(createRuntimeInputPersonalEntryMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+    expect(screen.getByTestId("runtime-input-json-mode-notice")).toBeVisible();
+  });
+
+  it("reloads nullable saved nulls and submits them when the current schema still allows null", async () => {
+    useWorkflowPackageLaunchMock.mockReturnValue({
+      data: {
+        ...launchRead,
+        inputSchema: {
+          properties: {
+            ticker: { title: "Ticker", type: ["string", "null"] },
+          },
+          required: ["ticker"],
+          type: "object",
+        },
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    const personal = runtimeInputEntry({
+      id: 7,
+      name: "Nullable preset",
+      payload: { ticker: null },
+      slot: "personal",
+    });
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
+      runtimeInputRegistry({ personal: [personal] }),
+    );
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    fireEvent.click(screen.getByRole("button", { name: "Load personal input Nullable preset" }));
+
+    expect(await screen.findByTestId("runtime-input-primary-form")).toBeVisible();
+    expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
+      JSON.stringify({ ticker: null }, null, 2),
+    );
+    await completeReadyPreflight();
+    fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
+
+    await waitFor(() => expect(createLaunchMock).toHaveBeenCalledWith({
+      packageId: "42",
+      payload: { parameters: { ticker: null }, workflowKey: "market_review" },
+    }));
   });
 
   it("shows workflow-scoped loading and personal cap messaging in the saved inputs helper", async () => {
@@ -803,7 +1042,280 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByRole("button", { name: "Load personal input Baseline preset" })).toBeVisible();
   });
 
-  it("submits raw launch parameters from the schema-derived template", async () => {
+  it("blocks launch when advanced JSON is invalid", async () => {
+    const personal = runtimeInputEntry({
+      id: 7,
+      name: "Baseline preset",
+      slot: "personal",
+    });
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
+      runtimeInputRegistry({ personal: [personal] }),
+    );
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    await completeReadyPreflight();
+    preflightPackageMock.mockClear();
+    switchToJsonMode();
+    const runtimeJson = screen.getByLabelText(
+      "Runtime inputs JSON",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(runtimeJson, { target: { value: '{"ticker":' } });
+    fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
+
+    const feedback = await screen.findByTestId(
+      "runtime-input-validation-feedback",
+    );
+    expect(feedback).toHaveTextContent("Runtime inputs JSON");
+    expect(preflightPackageMock).not.toHaveBeenCalled();
+    expect(createLaunchMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
+    expect(preflightPackageMock).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Personal preset name"), {
+      target: { value: "Broken preset" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save current JSON" }));
+    expect(createRuntimeInputPersonalEntryMock).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Overwrite personal input Baseline preset",
+      }),
+    );
+    expect(updateRuntimeInputPersonalEntryMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-nullable advanced JSON null before preflight or launch API calls", async () => {
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    await completeReadyPreflight();
+    preflightPackageMock.mockClear();
+    switchToJsonMode();
+    fireEvent.change(screen.getByLabelText("Runtime inputs JSON"), {
+      target: { value: '{"ticker":null}' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
+
+    const feedback = await screen.findByTestId("runtime-input-validation-feedback");
+    expect(feedback).toHaveTextContent("parameters.ticker");
+    expect(feedback).toHaveTextContent("Null is only allowed for nullable runtime input fields.");
+    expect(preflightPackageMock).not.toHaveBeenCalled();
+    expect(createLaunchMock).not.toHaveBeenCalled();
+  });
+
+  it("applies valid advanced JSON to the launch form", async () => {
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    switchToJsonMode();
+    const runtimeJson = screen.getByLabelText(
+      "Runtime inputs JSON",
+    ) as HTMLTextAreaElement;
+    expect(runtimeJson).not.toHaveAttribute("readonly");
+    fireEvent.change(runtimeJson, { target: { value: '{"ticker":"NVDA"}' } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply JSON to form" }));
+
+    const tickerInput = await screen.findByRole("textbox", { name: "Ticker" });
+    expect(tickerInput).toHaveValue("NVDA");
+    expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "NVDA" }, null, 2));
+    expect(screen.getByTestId("runtime-input-primary-form")).toBeVisible();
+  });
+
+  it("renders schema form as the primary launch input surface", async () => {
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    const schemaForm = await screen.findByTestId("runtime-input-schema-form");
+    expect(schemaForm).toBeVisible();
+    const tickerInput = screen.getByRole("textbox", { name: "Ticker" });
+    fireEvent.change(tickerInput, { target: { value: "AAPL" } });
+
+    expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
+      JSON.stringify({ ticker: "AAPL" }, null, 2),
+    );
+    await completeReadyPreflight();
+    fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
+
+    await waitFor(() => expect(createLaunchMock).toHaveBeenCalledWith({
+      packageId: "42",
+      payload: { parameters: { ticker: "AAPL" }, workflowKey: "market_review" },
+    }));
+  });
+
+  it("renders every declared workflow input as visible or addable", async () => {
+    useWorkflowPackageLaunchMock.mockReturnValue({
+      data: {
+        ...launchRead,
+        inputSchema: {
+          properties: {
+            includeNews: { title: "Include News", type: "boolean" },
+            lookbackDays: { default: 5, title: "Lookback Days", type: "integer" },
+            notes: {
+              description: "Optional memo for this launch.",
+              title: "Notes",
+              type: "string",
+            },
+            ticker: { title: "Ticker", type: "string" },
+          },
+          required: ["ticker", "includeNews"],
+          type: "object",
+        },
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    const primaryForm = await screen.findByTestId("runtime-input-primary-form");
+    const schemaForm = screen.getByTestId("runtime-input-schema-form");
+    expect(primaryForm).toHaveTextContent("Supported-schema input surface");
+    expect(within(schemaForm).getByRole("textbox", { name: "Ticker" })).toBeVisible();
+    expect(within(schemaForm).getByRole("switch", { name: "Include News" })).toBeVisible();
+    expect(within(schemaForm).getByRole("spinbutton", { name: "Lookback Days" })).toHaveValue(5);
+    expect(within(schemaForm).getByText("Notes")).toBeVisible();
+    expect(within(schemaForm).getByText("Optional memo for this launch.")).toBeVisible();
+    expect(within(schemaForm).getByRole("button", { name: "Add Field" })).toBeVisible();
+    expect(within(schemaForm).queryByRole("textbox", { name: "Notes" })).not.toBeInTheDocument();
+    const runtimeJson = screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement;
+    expect(screen.getByTestId("runtime-input-advanced-json")).toHaveTextContent("Advanced JSON preview");
+    expect(runtimeJson).toHaveAttribute("readonly");
+    expect(runtimeJson.value).toBe(JSON.stringify({
+      includeNews: false,
+      lookbackDays: 5,
+      ticker: "",
+    }, null, 2));
+
+    fireEvent.change(within(schemaForm).getByRole("textbox", { name: "Ticker" }), {
+      target: { value: "AAPL" },
+    });
+    await completeReadyPreflight();
+    fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
+    await waitFor(() => expect(createLaunchMock).toHaveBeenCalledWith({
+      packageId: "42",
+      payload: {
+        parameters: {
+          includeNews: false,
+          lookbackDays: 5,
+          ticker: "AAPL",
+        },
+        workflowKey: "market_review",
+      },
+    }));
+
+    fireEvent.click(within(schemaForm).getByRole("button", { name: "Add Field" }));
+    expect(within(schemaForm).getByRole("textbox", { name: "Notes" })).toBeVisible();
+  });
+
+  it("removes optional no-default inputs from the submitted launch payload", async () => {
+    useWorkflowPackageLaunchMock.mockReturnValue({
+      data: {
+        ...launchRead,
+        inputSchema: {
+          properties: {
+            notes: { title: "Notes", type: "string" },
+            ticker: { title: "Ticker", type: "string" },
+          },
+          required: ["ticker"],
+          type: "object",
+        },
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    const schemaForm = await screen.findByTestId("runtime-input-schema-form");
+    fireEvent.change(within(schemaForm).getByRole("textbox", { name: "Ticker" }), {
+      target: { value: "AAPL" },
+    });
+    expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
+      JSON.stringify({ ticker: "AAPL" }, null, 2),
+    );
+
+    fireEvent.click(within(schemaForm).getByRole("button", { name: "Add Field" }));
+    fireEvent.change(within(schemaForm).getByRole("textbox", { name: "Notes" }), {
+      target: { value: "Include memo in this run" },
+    });
+    expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
+      JSON.stringify({ notes: "Include memo in this run", ticker: "AAPL" }, null, 2),
+    );
+
+    fireEvent.click(within(schemaForm).getByRole("button", { name: /remove optional field/i }));
+    expect(within(schemaForm).queryByRole("textbox", { name: "Notes" })).not.toBeInTheDocument();
+    expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
+      JSON.stringify({ ticker: "AAPL" }, null, 2),
+    );
+    await completeReadyPreflight();
+    fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
+
+    await waitFor(() => expect(createLaunchMock).toHaveBeenCalledWith({
+      packageId: "42",
+      payload: { parameters: { ticker: "AAPL" }, workflowKey: "market_review" },
+    }));
+  });
+
+  it("renders optional inputs with defaults as active prefilled fields", async () => {
+    useWorkflowPackageLaunchMock.mockReturnValue({
+      data: {
+        ...launchRead,
+        inputSchema: {
+          properties: {
+            includeNews: { default: true, title: "Include News", type: "boolean" },
+            lookbackDays: { default: 14, title: "Lookback Days", type: "integer" },
+            notes: { title: "Notes", type: "string" },
+            strategy: { default: "balanced", title: "Strategy", type: "string" },
+            ticker: { title: "Ticker", type: "string" },
+          },
+          required: ["ticker"],
+          type: "object",
+        },
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    renderLaunchPage();
+
+    await selectSingleWorkflow();
+    const schemaForm = await screen.findByTestId("runtime-input-schema-form");
+    expect(within(schemaForm).getByRole("spinbutton", { name: "Lookback Days" })).toHaveValue(14);
+    expect(within(schemaForm).getByRole("textbox", { name: "Strategy" })).toHaveValue("balanced");
+    expect(within(schemaForm).getByRole("switch", { name: "Include News" })).toBeChecked();
+    expect(within(schemaForm).getByText("Notes")).toBeVisible();
+    expect(within(schemaForm).queryByRole("textbox", { name: "Notes" })).not.toBeInTheDocument();
+    expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(JSON.stringify({
+      includeNews: true,
+      lookbackDays: 14,
+      strategy: "balanced",
+      ticker: "",
+    }, null, 2));
+
+    fireEvent.change(within(schemaForm).getByRole("textbox", { name: "Ticker" }), {
+      target: { value: "MSFT" },
+    });
+    await completeReadyPreflight();
+    fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
+
+    await waitFor(() => expect(createLaunchMock).toHaveBeenCalledWith({
+      packageId: "42",
+      payload: {
+        parameters: {
+          includeNews: true,
+          lookbackDays: 14,
+          strategy: "balanced",
+          ticker: "MSFT",
+        },
+        workflowKey: "market_review",
+      },
+    }));
+  });
+
+  it("submits launch parameters from the schema-derived template", async () => {
     useWorkflowPackageLaunchMock.mockReturnValue({
       data: {
         ...launchRead,
@@ -897,11 +1409,13 @@ describe("WorkflowPackageLaunchPage", () => {
     await chooseWorkflow(/^Reset Workflow$/);
     const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
     await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2)));
+    switchToJsonMode();
     fireEvent.change(runtimeJson, { target: { value: '{"ticker":"AAPL"}' } });
     expect(runtimeJson.value).toBe('{"ticker":"AAPL"}');
 
     fireEvent.click(screen.getByRole("button", { name: "Reset to template" }));
     expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2));
+    switchToJsonMode();
     fireEvent.change(runtimeJson, { target: { value: '{"ticker":"MSFT"}' } });
 
     await chooseWorkflow(/^Alternate Workflow$/);
@@ -957,6 +1471,7 @@ describe("WorkflowPackageLaunchPage", () => {
     await chooseWorkflow(/^Reset Workflow$/);
     const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
     await chooseWorkflow(/^Alternate Workflow$/);
+    switchToJsonMode();
     fireEvent.change(runtimeJson, { target: { value: '{"ticker":"AAPL"}' } });
     useWorkflowPackageLaunchMock.mockReturnValue({
       data: {
@@ -986,6 +1501,15 @@ describe("WorkflowPackageLaunchPage", () => {
   });
 
   it("rejects non-object raw JSON locally", async () => {
+    useWorkflowPackageLaunchMock.mockReturnValue({
+      data: {
+        ...launchRead,
+        inputSchema: { additionalProperties: true, properties: { ticker: { title: "Ticker", type: "string" } }, required: ["ticker"], type: "object" },
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
     renderLaunchPage();
 
     await selectSingleWorkflow();
@@ -1002,20 +1526,20 @@ describe("WorkflowPackageLaunchPage", () => {
   it("shows backend path-specific launch validation details inline", async () => {
     createLaunchMock.mockRejectedValueOnce(new ApiRequestError({
       code: "validation_error",
-      details: [{ field: "parameters.extra", issue: "Unknown field" }],
+      details: [{ field: "parameters.ticker", issue: "Ticker blocked" }],
       message: "Validation failed",
       status: 422,
     }));
     renderLaunchPage();
 
     await selectSingleWorkflow();
-    fireEvent.change(await screen.findByLabelText("Runtime inputs JSON"), { target: { value: '{"ticker":"AAPL","extra":true}' } });
+    fireEvent.change(await screen.findByRole("textbox", { name: "Ticker" }), { target: { value: "AAPL" } });
     await completeReadyPreflight();
     fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
 
     const feedback = await screen.findByTestId("runtime-input-validation-feedback");
-    expect(feedback).toHaveTextContent("parameters.extra");
-    expect(feedback).toHaveTextContent("Unknown field");
+    expect(feedback).toHaveTextContent("parameters.ticker");
+    expect(feedback).toHaveTextContent("Ticker blocked");
   });
 
   it.each([
@@ -1027,7 +1551,7 @@ describe("WorkflowPackageLaunchPage", () => {
       expectedKeyword: /patternProperties/i,
       inputSchema: { patternProperties: { "^x-": { type: "string" } }, properties: {}, type: "object" },
     },
-  ])("keeps one raw JSON editor when templates start empty", async ({ expectedKeyword, inputSchema }) => {
+  ])("keeps raw JSON fallback for unsupported workflow input schemas", async ({ expectedKeyword, inputSchema }) => {
     useWorkflowPackageLaunchMock.mockReturnValue({
       data: { ...launchRead, inputSchema },
       error: null,

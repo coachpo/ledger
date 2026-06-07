@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
+import { SchemaValueEntryForm } from "@/components/platform-authoring/generated-form/schema-form";
 import {
   SavedRuntimeInputRegistryPanel,
   type SavedRuntimeInputRegistryEntry,
@@ -43,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/components/ui/utils";
 import {
   useCreateWorkflowPackageLaunch,
@@ -60,10 +62,14 @@ import { formatDateTime } from "@/lib/format";
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import { getWorkflowOptions } from "@/lib/workflow-options";
 import {
-  createLaunchParametersTemplate,
-  parseLaunchParametersJson,
-  resetLaunchParametersTemplate,
-} from "@/lib/platform-authoring/schema/schema-template";
+  createLaunchDraftFromValidatedPayload,
+  createLaunchInputState,
+  createLaunchPayloadFromDraft,
+  formatLaunchDraftJson,
+  parseLaunchPayloadJson,
+  reconcileLaunchDraftChange,
+} from "@/lib/platform-authoring/schema/launch-input-state";
+import type { ValueEntryObject } from "@/lib/platform-authoring/values/types";
 import type { ApiErrorDetail, UnknownRecord } from "@/lib/types/common";
 import type {
   WorkflowPackageLaunchRead,
@@ -78,9 +84,11 @@ type PackageDiagnostic = {
 };
 
 type SavedInputEntryMode = "history" | "personal";
+type LaunchInputMode = "form" | "json";
 
 const SAVED_INPUT_ENTRY_LIMIT = 20;
-const EMPTY_RUNTIME_INPUT_ENTRIES: readonly WorkflowPackageRuntimeInputEntryRead[] = [];
+const EMPTY_RUNTIME_INPUT_ENTRIES: readonly WorkflowPackageRuntimeInputEntryRead[] =
+  [];
 
 function validPackageId(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -92,10 +100,6 @@ function isUnknownRecord(value: unknown): value is UnknownRecord {
 }
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
-}
-
-function launchTemplateTextForInputSchema(inputSchema: unknown): string {
-  return resetLaunchParametersTemplate(createLaunchParametersTemplate(inputSchema));
 }
 
 function diagnosticFromRecord(
@@ -298,7 +302,9 @@ function ReadinessStatusChip({
       aria-label={`${label}: ${value}`}
       className={cn(
         "max-w-full gap-1.5 px-2 py-0.5 text-xs leading-5",
-        tone === "warning" ? "border-chart-3/30 bg-chart-3/10 text-chart-3" : null,
+        tone === "warning"
+          ? "border-chart-3/30 bg-chart-3/10 text-chart-3"
+          : null,
       )}
       data-tone={tone}
       variant={readinessChipVariantByTone[tone]}
@@ -327,7 +333,10 @@ function DiagnosticList({
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
       </h3>
-      <div className="min-w-0 divide-y rounded-lg border bg-background/60" role="list">
+      <div
+        className="min-w-0 divide-y rounded-lg border bg-background/60"
+        role="list"
+      >
         {diagnostics.map((diagnostic, diagnosticIndex) => (
           <div
             className="grid min-w-0 gap-2 p-3 text-sm md:grid-cols-[auto_minmax(0,11rem)_minmax(0,1fr)] md:items-center"
@@ -374,7 +383,10 @@ function PackageDetailsDisclosure({
   workflowPackage: WorkflowPackageRead;
 }) {
   return (
-    <Collapsible className="min-w-0" data-testid="workflow-package-launch-identity">
+    <Collapsible
+      className="min-w-0"
+      data-testid="workflow-package-launch-identity"
+    >
       <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <span>Package #{workflowPackage.id}</span>
         <span aria-hidden="true">·</span>
@@ -409,7 +421,9 @@ function PackageDetailsDisclosure({
           </div>
           <div className="min-w-0">
             <dt className="font-medium text-muted-foreground">Package name</dt>
-            <dd className="break-words text-foreground">{workflowPackage.name}</dd>
+            <dd className="break-words text-foreground">
+              {workflowPackage.name}
+            </dd>
           </div>
           <div className="min-w-0">
             <dt className="font-medium text-muted-foreground">Manifest hash</dt>
@@ -573,12 +587,30 @@ function LaunchReadinessSummary({
         >
           <ReadinessStatusChip
             label="Metadata"
-            tone={metadataError ? "danger" : isLoadingMetadata ? "warning" : readinessRead ? "success" : "neutral"}
+            tone={
+              metadataError
+                ? "danger"
+                : isLoadingMetadata
+                  ? "warning"
+                  : readinessRead
+                    ? "success"
+                    : "neutral"
+            }
             value={metadataValue}
           />
           <ReadinessStatusChip
             label="Preflight"
-            tone={preflightPending ? "warning" : preflightCompleted ? (ready ? "success" : blockingCount > 0 ? "danger" : "warning") : "neutral"}
+            tone={
+              preflightPending
+                ? "warning"
+                : preflightCompleted
+                  ? ready
+                    ? "success"
+                    : blockingCount > 0
+                      ? "danger"
+                      : "warning"
+                  : "neutral"
+            }
             value={preflightValue}
           />
           <ReadinessStatusChip
@@ -589,12 +621,20 @@ function LaunchReadinessSummary({
           <ReadinessStatusChip
             label="Manifest"
             tone={readinessRead?.manifestHash ? "success" : "warning"}
-            value={readinessRead?.manifestHash ? "Manifest recorded" : "Manifest not recorded"}
+            value={
+              readinessRead?.manifestHash
+                ? "Manifest recorded"
+                : "Manifest not recorded"
+            }
           />
           <ReadinessStatusChip
             label="Schema"
             tone={readinessRead?.inputSchema ? "success" : "warning"}
-            value={readinessRead?.inputSchema ? "Input schema available" : "Input schema unavailable"}
+            value={
+              readinessRead?.inputSchema
+                ? "Input schema available"
+                : "Input schema unavailable"
+            }
           />
           {blockingCount > 0 ? (
             <ReadinessStatusChip
@@ -651,14 +691,12 @@ function StickyLaunchActionBar({
       data-testid="workflow-package-run-actions"
     >
       <p className="min-w-0 text-sm text-muted-foreground">
-        Review the runtime JSON above, preflight the package, then launch a run.
+        Review the runtime inputs above, preflight the package, then launch a
+        run.
       </p>
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
         {launchDisabledReason ? (
-          <p
-            className="text-xs text-muted-foreground"
-            id={disabledReasonId}
-          >
+          <p className="text-xs text-muted-foreground" id={disabledReasonId}>
             {launchDisabledReason}
           </p>
         ) : null}
@@ -728,7 +766,10 @@ function SchemaTemplateWarning({
       </div>
       <CollapsibleContent className="min-w-0 pt-2">
         <div className="min-w-0 space-y-1 border-t border-chart-3/30 pt-2">
-          <p>{reason ?? "Schema could not be converted into a launch JSON template."}</p>
+          <p>
+            {reason ??
+              "Schema could not be converted into a launch JSON template."}
+          </p>
           {issues.length > 0 ? (
             <ul className="list-disc pl-5">
               {issues.map((issue) => (
@@ -744,7 +785,6 @@ function SchemaTemplateWarning({
   );
 }
 
-
 export function WorkflowPackageLaunchPage() {
   const { packageId: routePackageId } = useParams<{ packageId: string }>();
   const navigate = useNavigate();
@@ -754,6 +794,9 @@ export function WorkflowPackageLaunchPage() {
     WorkflowPackageLaunchRead | undefined
   >(undefined);
   const [parametersText, setParametersText] = useState(() => stringifyJson({}));
+  const [launchDraft, setLaunchDraft] = useState<ValueEntryObject | null>(null);
+  const [launchInputMode, setLaunchInputMode] =
+    useState<LaunchInputMode>("form");
   const [runtimeInputErrors, setRuntimeInputErrors] = useState<
     ApiErrorDetail[]
   >([]);
@@ -770,8 +813,9 @@ export function WorkflowPackageLaunchPage() {
   );
   const selectedManifestWorkflow = useMemo(
     () =>
-      manifestWorkflowOptions.find((option) => option.key === resolvedWorkflowKey) ??
-      null,
+      manifestWorkflowOptions.find(
+        (option) => option.key === resolvedWorkflowKey,
+      ) ?? null,
     [manifestWorkflowOptions, resolvedWorkflowKey],
   );
   const workflowOptions = useMemo(
@@ -782,7 +826,9 @@ export function WorkflowPackageLaunchPage() {
     [manifestQuery.data, resolvedWorkflowKey],
   );
   const selectedWorkflowOption = useMemo(
-    () => workflowOptions.find((option) => option.key === resolvedWorkflowKey) ?? null,
+    () =>
+      workflowOptions.find((option) => option.key === resolvedWorkflowKey) ??
+      null,
     [workflowOptions, resolvedWorkflowKey],
   );
   const activeWorkflowKey = selectedManifestWorkflow?.key ?? "";
@@ -837,8 +883,8 @@ export function WorkflowPackageLaunchPage() {
   );
   const savedPersonalPanelEntries = useMemo(
     () =>
-      newestRuntimeInputEntries(savedPersonalEntries, "updatedAt").map((entry) =>
-        savedRuntimeInputRegistryEntry(entry, "personal"),
+      newestRuntimeInputEntries(savedPersonalEntries, "updatedAt").map(
+        (entry) => savedRuntimeInputRegistryEntry(entry, "personal"),
       ),
     [savedPersonalEntries],
   );
@@ -876,26 +922,24 @@ export function WorkflowPackageLaunchPage() {
         : {},
     [inputSchemaFingerprint],
   );
-  const inputTemplate = useMemo(
-    () => createLaunchParametersTemplate(inputSchemaSnapshot),
+  const launchInputState = useMemo(
+    () => createLaunchInputState(inputSchemaSnapshot),
     [inputSchemaSnapshot],
   );
-  const parameterTemplateText = useMemo(
-    () => resetLaunchParametersTemplate(inputTemplate),
-    [inputTemplate],
-  );
+  const activeLaunchDraft = launchInputState.schemaSupported
+    ? (launchDraft ?? launchInputState.draft)
+    : null;
+  const activeLaunchInputMode: LaunchInputMode = launchInputState.schemaSupported
+    ? launchInputMode
+    : "json";
+  const activeFormParametersText = activeLaunchDraft
+    ? formatLaunchDraftJson(activeLaunchDraft)
+    : launchInputState.formattedJson;
+  const activeParametersText =
+    launchInputState.schemaSupported && activeLaunchInputMode === "form"
+      ? activeFormParametersText
+      : parametersText;
   const launchFormIdentity = `${packageId ?? ""}:${activeWorkflowKey}:${inputSchemaFingerprint}`;
-  const workflowTemplateText = useCallback(
-    (nextWorkflowKey: string) => {
-      const nextWorkflow = manifestWorkflowOptions.find(
-        (option) => option.key === nextWorkflowKey,
-      );
-      return nextWorkflow
-        ? launchTemplateTextForInputSchema(nextWorkflow.inputSchema)
-        : stringifyJson({});
-    },
-    [manifestWorkflowOptions],
-  );
   const updateWorkflowKey = useCallback(
     (nextWorkflowKey: string) => {
       const normalizedWorkflowKey = nextWorkflowKey.trim();
@@ -906,13 +950,11 @@ export function WorkflowPackageLaunchPage() {
       setWorkflowKey(normalizedWorkflowKey);
       setPreflightRead(undefined);
       setRuntimeInputErrors([]);
-      setParametersText(
-        normalizedWorkflowKey
-          ? workflowTemplateText(normalizedWorkflowKey)
-          : stringifyJson({}),
-      );
+      setLaunchDraft(null);
+      setLaunchInputMode("form");
+      setParametersText(stringifyJson({}));
     },
-    [resolvedWorkflowKey, workflowTemplateText],
+    [resolvedWorkflowKey],
   );
 
   useEffect(() => {
@@ -920,11 +962,16 @@ export function WorkflowPackageLaunchPage() {
       return;
     }
     lastTemplateIdentityRef.current = launchFormIdentity;
+    parametersEditedRef.current = false;
     setRuntimeInputErrors([]);
-    if (!parametersEditedRef.current) {
-      setParametersText(parameterTemplateText);
-    }
-  }, [launchFormIdentity, parameterTemplateText]);
+    setLaunchDraft(launchInputState.draft);
+    setLaunchInputMode("form");
+    setParametersText(launchInputState.formattedJson);
+  }, [
+    launchFormIdentity,
+    launchInputState.draft,
+    launchInputState.formattedJson,
+  ]);
 
   if (!packageId) {
     return (
@@ -970,21 +1017,93 @@ export function WorkflowPackageLaunchPage() {
 
   const resetParameters = () => {
     parametersEditedRef.current = false;
-    setParametersText(parameterTemplateText);
+    setLaunchDraft(launchInputState.draft);
+    setLaunchInputMode("form");
+    setParametersText(launchInputState.formattedJson);
     setRuntimeInputErrors([]);
   };
 
-  const parseCurrentRuntimeInputs = () => {
-    setRuntimeInputErrors([]);
+  const runtimeInputJsonError = (error: unknown): ApiErrorDetail[] => {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Runtime inputs JSON must be a valid object.";
+    return [{ field: "parameters", issue: message }];
+  };
+
+  const applyAdvancedJsonToForm = ({
+    showSuccess = true,
+    switchToForm = true,
+  }: {
+    showSuccess?: boolean;
+    switchToForm?: boolean;
+  } = {}): UnknownRecord | null => {
     try {
-      return parseLaunchParametersJson(parametersText);
+      const payload = parseLaunchPayloadJson(parametersText);
+      const { draft, issues } = createLaunchDraftFromValidatedPayload(
+        launchInputState,
+        payload,
+      );
+      if (issues.length > 0 || !draft) {
+        setRuntimeInputErrors(issues);
+        toast.error("Advanced JSON does not match the workflow input schema.");
+        return null;
+      }
+      setLaunchDraft(draft);
+      setParametersText(formatLaunchDraftJson(draft));
+      setRuntimeInputErrors([]);
+      if (switchToForm) {
+        setLaunchInputMode("form");
+      }
+      if (showSuccess) {
+        toast.success("Advanced JSON applied to the launch form");
+      }
+      return createLaunchPayloadFromDraft(draft);
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Runtime inputs JSON must be a valid object.";
-      setRuntimeInputErrors([{ field: "parameters", issue: message }]);
-      toast.error(message);
+      const details = runtimeInputJsonError(error);
+      setRuntimeInputErrors(details);
+      toast.error(details[0]?.issue ?? "Runtime inputs JSON is invalid.");
+      return null;
+    }
+  };
+
+  const updateLaunchInputMode = (nextMode: LaunchInputMode) => {
+    if (nextMode === activeLaunchInputMode) {
+      return;
+    }
+    if (nextMode === "json") {
+      setParametersText(activeFormParametersText);
+      setLaunchInputMode("json");
+      setRuntimeInputErrors([]);
+      return;
+    }
+    applyAdvancedJsonToForm({ showSuccess: false, switchToForm: true });
+  };
+
+  const resetAdvancedJsonToFormPayload = () => {
+    setParametersText(activeFormParametersText);
+    setRuntimeInputErrors([]);
+  };
+
+  const parseCurrentRuntimeInputs = (): UnknownRecord | null => {
+    if (launchInputState.schemaSupported) {
+      if (activeLaunchInputMode === "json") {
+        return applyAdvancedJsonToForm({
+          showSuccess: false,
+          switchToForm: false,
+        });
+      }
+      setRuntimeInputErrors([]);
+      return activeLaunchDraft ? createLaunchPayloadFromDraft(activeLaunchDraft) : {};
+    }
+    try {
+      const payload = parseLaunchPayloadJson(parametersText);
+      setRuntimeInputErrors([]);
+      return payload;
+    } catch (error) {
+      const details = runtimeInputJsonError(error);
+      setRuntimeInputErrors(details);
+      toast.error(details[0]?.issue ?? "Runtime inputs JSON is invalid.");
       return null;
     }
   };
@@ -994,41 +1113,66 @@ export function WorkflowPackageLaunchPage() {
       return;
     }
     parametersEditedRef.current = true;
-    setParametersText(stringifyJson(entry.payload));
+    if (launchInputState.schemaSupported) {
+      const { draft, issues } = createLaunchDraftFromValidatedPayload(
+        launchInputState,
+        entry.payload,
+      );
+      if (issues.length > 0 || !draft) {
+        setLaunchDraft(null);
+        setLaunchInputMode("json");
+        setParametersText(stringifyJson(entry.payload));
+        setRuntimeInputErrors(issues);
+        toast.error("Saved input needs review before it can update the form.");
+        return;
+      }
+      setLaunchDraft(draft);
+      setLaunchInputMode("form");
+      setParametersText(formatLaunchDraftJson(draft));
+    } else {
+      setParametersText(stringifyJson(entry.payload));
+    }
     setRuntimeInputErrors([]);
-    toast.success("Saved input loaded into the JSON editor");
+    toast.success(
+      launchInputState.schemaSupported
+        ? "Saved input loaded into the launch form"
+        : "Saved input loaded into the JSON editor",
+    );
   };
 
-  const runLaunchPreflight =
-    async (): Promise<WorkflowPackageLaunchRead | null> => {
-      try {
-        const result = await preflightPackage.mutateAsync({
-          packageId,
-          payload: { parameters: {}, workflowKey: activeWorkflowKey || null },
-        });
-        setPreflightRead(result);
-        const resultDiagnostics = diagnosticsFromLaunch(result);
-        if (
-          resultDiagnostics.some(
-            (diagnostic) => diagnostic.severity === "error",
-          )
-        ) {
-          toast.warning("Package preflight found blocking diagnostics");
-        } else {
-          toast.success(
-            result.warnings.length > 0
-              ? "Package preflight passed with warnings"
-              : "Package preflight passed",
-          );
-        }
-        return result;
-      } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : "Package preflight failed.",
+  const runLaunchPreflight = async (
+    runtimeParameters?: UnknownRecord,
+  ): Promise<WorkflowPackageLaunchRead | null> => {
+    const parameters = runtimeParameters ?? parseCurrentRuntimeInputs();
+    if (!parameters) {
+      return null;
+    }
+    try {
+      const result = await preflightPackage.mutateAsync({
+        packageId,
+        payload: { parameters, workflowKey: activeWorkflowKey || null },
+      });
+      setPreflightRead(result);
+      const resultDiagnostics = diagnosticsFromLaunch(result);
+      if (
+        resultDiagnostics.some((diagnostic) => diagnostic.severity === "error")
+      ) {
+        toast.warning("Package preflight found blocking diagnostics");
+      } else {
+        toast.success(
+          result.warnings.length > 0
+            ? "Package preflight passed with warnings"
+            : "Package preflight passed",
         );
-        return null;
       }
-    };
+      return result;
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Package preflight failed.",
+      );
+      return null;
+    }
+  };
 
   const savePersonalInput = async () => {
     if (!activeWorkflowKey) {
@@ -1113,24 +1257,27 @@ export function WorkflowPackageLaunchPage() {
 
   const updateParametersText = (nextParametersText: string) => {
     parametersEditedRef.current = true;
+    if (launchInputState.schemaSupported) {
+      setLaunchInputMode("json");
+    }
     setParametersText(nextParametersText);
+    setRuntimeInputErrors([]);
+  };
+
+  const updateLaunchDraft = (nextDraft: ValueEntryObject) => {
+    parametersEditedRef.current = true;
+    setRuntimeInputErrors([]);
+    setLaunchDraft((previousDraft) =>
+      reconcileLaunchDraftChange(launchInputState, previousDraft, nextDraft),
+    );
   };
 
   const launchPackage = async () => {
-    setRuntimeInputErrors([]);
-    let parameters: UnknownRecord;
-    try {
-      parameters = parseLaunchParametersJson(parametersText);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Runtime inputs JSON must be a valid object.";
-      setRuntimeInputErrors([{ field: "parameters", issue: message }]);
-      toast.error(message);
+    const parameters = parseCurrentRuntimeInputs();
+    if (!parameters) {
       return;
     }
-    const preflight = await runLaunchPreflight();
+    const preflight = await runLaunchPreflight(parameters);
     if (!preflight) {
       return;
     }
@@ -1250,14 +1397,18 @@ export function WorkflowPackageLaunchPage() {
       />
 
       <div data-testid="workflow-package-launch-tab">
-        <Card className="min-w-0 gap-4" data-testid="workflow-package-run-config">
+        <Card
+          className="min-w-0 gap-4"
+          data-testid="workflow-package-run-config"
+        >
           <CardHeader className="px-4 pt-4">
             <div className="min-w-0">
               <CardTitle className="text-sm font-semibold tracking-tight">
                 Runtime inputs
               </CardTitle>
               <CardDescription className="mt-1 text-xs leading-5">
-                Choose a workflow from the manifest and provide a JSON object for launch.
+                Choose a workflow from the manifest and provide launch inputs
+                from the generated schema form.
               </CardDescription>
             </div>
             <CardAction>
@@ -1273,7 +1424,7 @@ export function WorkflowPackageLaunchPage() {
               </Button>
             </CardAction>
           </CardHeader>
-          <CardContent className="min-w-0 space-y-4 px-4 pb-4">
+          <CardContent className="flex min-w-0 flex-col gap-4 px-4 pb-4">
             <div className="flex min-w-0 flex-col gap-2">
               <Label htmlFor="workflow-selector">Workflow</Label>
               <Select
@@ -1330,10 +1481,10 @@ export function WorkflowPackageLaunchPage() {
                 </p>
               ) : null}
             </div>
-            {!inputTemplate.schemaSupported ? (
+            {!launchInputState.schemaSupported ? (
               <SchemaTemplateWarning
-                issues={inputTemplate.issues}
-                reason={inputTemplate.reason}
+                issues={launchInputState.issues}
+                reason={launchInputState.reason}
               />
             ) : null}
             <RuntimeInputValidationAlert errors={runtimeInputErrors} />
@@ -1342,19 +1493,189 @@ export function WorkflowPackageLaunchPage() {
               data-testid="runtime-input-console-grid"
             >
               <div
-                className="min-w-0 space-y-2"
+                className="flex min-w-0 flex-col gap-4"
                 data-testid="runtime-input-json-panel"
               >
-                <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
-                <Textarea
-                  id="runtime-json"
-                  aria-label="Runtime inputs JSON"
-                  className="min-h-72 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
-                  disabled={!workflowSelected}
-                  rows={14}
-                  value={parametersText}
-                  onChange={(event) => updateParametersText(event.target.value)}
-                />
+                {launchInputState.schemaSupported ? (
+                  <div
+                    className="flex min-w-0 flex-col gap-2 rounded-lg border bg-muted/10 p-3"
+                    data-testid="runtime-input-mode-controls"
+                  >
+                    <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <Label>Input mode</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Form mode is canonical. JSON mode lets you edit a raw
+                          object and apply it back to the form after validation.
+                        </p>
+                      </div>
+                      <ToggleGroup
+                        aria-label="Launch input mode"
+                        className="w-full sm:w-fit"
+                        type="single"
+                        value={activeLaunchInputMode}
+                        onValueChange={(value) => {
+                          if (value === "form" || value === "json") {
+                            updateLaunchInputMode(value);
+                          }
+                        }}
+                      >
+                        <ToggleGroupItem
+                          className="h-8 px-3 text-xs"
+                          disabled={!workflowSelected}
+                          value="form"
+                        >
+                          Form
+                        </ToggleGroupItem>
+                        <ToggleGroupItem
+                          className="h-8 px-3 text-xs"
+                          disabled={!workflowSelected}
+                          value="json"
+                        >
+                          JSON
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </div>
+                  </div>
+                ) : null}
+                {launchInputState.schemaSupported &&
+                launchInputState.schema &&
+                activeLaunchDraft &&
+                activeLaunchInputMode === "form" ? (
+                  <div
+                    className="flex min-w-0 flex-col gap-3 rounded-xl border bg-background/60 p-3"
+                    data-testid="runtime-input-primary-form"
+                  >
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <Badge variant="secondary">Primary</Badge>
+                        <p className="text-sm font-medium text-foreground">
+                          Supported-schema input surface
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Required and defaulted inputs are active now; optional
+                        inputs without defaults stay visible as addable rows.
+                      </p>
+                    </div>
+                    <SchemaValueEntryForm
+                      data-testid="runtime-input-schema-form"
+                      disabled={!workflowSelected}
+                      label="Runtime inputs"
+                      schema={launchInputState.schema}
+                      value={activeLaunchDraft}
+                      onChange={(nextValue) =>
+                        updateLaunchDraft(nextValue as ValueEntryObject)
+                      }
+                    />
+                  </div>
+                ) : null}
+                {launchInputState.schemaSupported &&
+                activeLaunchInputMode === "json" ? (
+                  <Alert data-testid="runtime-input-json-mode-notice">
+                    <AlertCircle />
+                    <AlertTitle>Advanced JSON mode</AlertTitle>
+                    <AlertDescription>
+                      Apply valid JSON to update the canonical form. Invalid JSON
+                      stays local and blocks preflight, launch, save, and
+                      overwrite actions.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+                {launchInputState.schemaSupported ? (
+                  <Collapsible
+                    className="flex min-w-0 flex-col gap-3 rounded-lg border border-dashed bg-muted/10 p-3"
+                    data-testid="runtime-input-advanced-json"
+                    defaultOpen
+                  >
+                    <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <p className="text-sm font-medium text-foreground">
+                          {activeLaunchInputMode === "form"
+                            ? "Advanced JSON preview"
+                            : "Advanced JSON editor"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {activeLaunchInputMode === "form"
+                            ? "Read-only canonical payload derived from the schema form."
+                            : "Edit a JSON object, then apply it to validate and update the form."}
+                        </p>
+                      </div>
+                      <CollapsibleTrigger asChild>
+                        <Button
+                          className="w-full sm:w-auto"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          {activeLaunchInputMode === "form"
+                            ? "Advanced JSON preview"
+                            : "Advanced JSON editor"}
+                          <ChevronDown data-icon="inline-end" />
+                        </Button>
+                      </CollapsibleTrigger>
+                    </div>
+                    <CollapsibleContent>
+                      <div className="flex min-w-0 flex-col gap-3">
+                        <div className="flex min-w-0 flex-col gap-2">
+                          <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
+                          <Textarea
+                            id="runtime-json"
+                            aria-invalid={
+                              runtimeInputErrors.length > 0 ? true : undefined
+                            }
+                            aria-label="Runtime inputs JSON"
+                            className="min-h-48 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
+                            disabled={!workflowSelected}
+                            readOnly={activeLaunchInputMode === "form"}
+                            rows={10}
+                            value={activeParametersText}
+                            onChange={(event) =>
+                              updateParametersText(event.target.value)
+                            }
+                          />
+                        </div>
+                        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                          <Button
+                            disabled={
+                              !workflowSelected || activeLaunchInputMode !== "json"
+                            }
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                            onClick={() => applyAdvancedJsonToForm()}
+                          >
+                            Apply JSON to form
+                          </Button>
+                          <Button
+                            disabled={!workflowSelected}
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                            onClick={resetAdvancedJsonToFormPayload}
+                          >
+                            Reset to form payload
+                          </Button>
+                        </div>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                ) : (
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
+                    <Textarea
+                      id="runtime-json"
+                      aria-label="Runtime inputs JSON"
+                      className="min-h-72 max-w-full overflow-x-auto whitespace-pre font-mono text-xs"
+                      disabled={!workflowSelected}
+                      rows={14}
+                      value={activeParametersText}
+                      onChange={(event) =>
+                        updateParametersText(event.target.value)
+                      }
+                    />
+                  </div>
+                )}
               </div>
               <SavedRuntimeInputRegistryPanel
                 capMessage="Personal presets are capped at 20 per workflow. Delete one before saving another."
@@ -1404,8 +1725,12 @@ export function WorkflowPackageLaunchPage() {
                 onLoad={(entry) => {
                   const savedEntry =
                     entry.mode === "history"
-                      ? savedHistoryEntries.find((candidate) => candidate.id === entry.id)
-                      : savedPersonalEntries.find((candidate) => candidate.id === entry.id);
+                      ? savedHistoryEntries.find(
+                          (candidate) => candidate.id === entry.id,
+                        )
+                      : savedPersonalEntries.find(
+                          (candidate) => candidate.id === entry.id,
+                        );
                   if (savedEntry) {
                     loadSavedInput(savedEntry);
                   }

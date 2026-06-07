@@ -13,7 +13,10 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError, not_found_error, validation_error
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
+from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
+from app.services.output_schema_compiler import OutputSchemaCompiler
+from app.services.run_input_validation import validate_run_input_payload
 from app.services.workflow_package_runtime_inputs import (
     RuntimeInputStaleEvaluation,
     RuntimeInputStoredMetadata,
@@ -89,6 +92,9 @@ class WorkflowPackageRuntimeInputRegistryService:
     def __init__(self, session: Session) -> None:
         self.session: Session = session
         self.repository: WorkflowPackageRepository = WorkflowPackageRepository(session)
+        self.schema_compiler: OutputSchemaCompiler = OutputSchemaCompiler(
+            OutputSchemaRepository(session)
+        )
 
     def list_registry(
         self,
@@ -140,13 +146,14 @@ class WorkflowPackageRuntimeInputRegistryService:
         )
         current_metadata = self._require_current_metadata(package, scope["workflow_key"])
         safe_payload = validate_runtime_input_payload_safety(payload)
+        canonical_payload = self._canonical_personal_payload(current_metadata, safe_payload)
         try:
             self._acquire_scope_lock(scope, slot="personal")
             self._enforce_personal_limit(scope)
             entry = self.repository.create_runtime_input_personal_entry(
                 **scope,
                 name=self._normalize_name(name),
-                payload=deepcopy(safe_payload),
+                payload=deepcopy(canonical_payload),
                 source_kind=self._normalize_source_kind(source_kind),
                 source_run_id=self._normalize_source_run_id(source_run_id),
                 **self._metadata_fields(current_metadata),
@@ -191,9 +198,12 @@ class WorkflowPackageRuntimeInputRegistryService:
         if not isinstance(source_run_id, _UnsetType):
             fields["source_run_id"] = self._normalize_source_run_id(source_run_id)
         if not isinstance(payload, _UnsetType):
-            fields["payload"] = deepcopy(validate_runtime_input_payload_safety(payload))
-            if current_metadata is not None:
-                fields.update(self._metadata_fields(current_metadata))
+            current_metadata = self._require_current_metadata(package, scope["workflow_key"])
+            safe_payload = validate_runtime_input_payload_safety(payload)
+            fields["payload"] = deepcopy(
+                self._canonical_personal_payload(current_metadata, safe_payload)
+            )
+            fields.update(self._metadata_fields(current_metadata))
         if not fields:
             return self._to_entry_read(entry, current_metadata)
 
@@ -440,6 +450,21 @@ class WorkflowPackageRuntimeInputRegistryService:
                 [{"field": "sourceRunId", "issue": "Source run id must be positive"}],
             )
         return value
+
+    def _canonical_personal_payload(
+        self,
+        current_metadata: RuntimeInputWorkflowMetadata,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return validate_run_input_payload(
+            schema_compiler=self.schema_compiler,
+            input_schema=current_metadata.input_schema,
+            input_payload=payload,
+            candidate_key=(
+                "workflow_package_runtime_input_" f"{current_metadata.schema_fingerprint[:12]}"
+            ),
+            resource_name="workflowPackage",
+        )
 
     @staticmethod
     def _metadata_fields(metadata: RuntimeInputWorkflowMetadata) -> _RuntimeInputMetadataFields:

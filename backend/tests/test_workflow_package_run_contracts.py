@@ -413,6 +413,83 @@ spec:
 """
 
 
+def _package_source_with_optional_contract_inputs(
+    *,
+    package_key: str,
+    workflow_sector_nullable: bool = False,
+    agent_sector_nullable: bool = False,
+) -> str:
+    workflow_sector_type = '[string, "null"]' if workflow_sector_nullable else "string"
+    agent_sector_type = '[string, "null"]' if agent_sector_nullable else "string"
+    return f"""apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: {package_key}
+  name: Optional Contract Runtime Package
+  description: Runtime package fixture for descendant input contracts.
+spec:
+  inputs:
+    type: object
+    properties:
+      ticker:
+        type: string
+      sector:
+        type: {workflow_sector_type}
+      horizonDays:
+        type: integer
+    required: [ticker]
+  capabilityProfiles: []
+  outputSchemas:
+    - key: summary_output
+      name: Summary Output
+      jsonSchema:
+        type: object
+        properties:
+          summary:
+            type: string
+        required: [summary]
+  agents:
+    - key: package_analyst
+      name: Package Analyst
+      modelConnection: package_runtime_model
+      systemPrompt: Return a short JSON summary.
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+          sector:
+            type: {agent_sector_type}
+          horizonDays:
+            type: integer
+        required: [ticker]
+      outputSchema: summary_output
+      capabilityProfiles: []
+  workflows:
+    - key: runtime_workflow
+      name: Runtime Workflow
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+          sector:
+            type: {workflow_sector_type}
+          horizonDays:
+            type: integer
+        required: [ticker]
+      flow:
+        kind: step
+        id: package_analysis
+        slot: analysis
+        uses: package_analyst
+        with:
+          ticker: ${{{{ inputs.ticker }}}}
+      output:
+        from: ${{{{ nodes.package_analysis.outputs.analysis }}}}
+"""
+
+
 def _create_package(
     client: TestClient,
     *,
@@ -1181,6 +1258,131 @@ def _assert_current_readiness_create_rejected(
             detail.get("field") == expected_detail_field
             for detail in cast(list[dict[str, Any]], body["details"])
         )
+
+
+def test_rerun_omits_absent_optional_workflow_inputs(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_optional_contract_inputs(
+                package_key="rerun_optional_omission_package"
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package = cast(dict[str, object], created.json())
+    source = _launch_package_run(client, package, ticker="MSFT")
+    source_run_id = int(source["id"])
+
+    rerun = client.post(
+        f"/api/runs/{source_run_id}/reruns",
+        json={"parameters": {"ticker": "AAPL"}},
+    )
+
+    assert rerun.status_code == 201, rerun.json()
+    rerun_id = int(rerun.json()["id"])
+    with session_factory() as session:
+        source_run = session.get(Run, source_run_id)
+        rerun_run = session.get(Run, rerun_id)
+        rerun_snapshot = session.get(RunWorkflowPackageSnapshot, rerun_id)
+        assert source_run is not None
+        assert rerun_run is not None
+        assert rerun_snapshot is not None
+        assert source_run.input == {"ticker": "MSFT"}
+        assert rerun_run.input == {"ticker": "AAPL"}
+        assert rerun_snapshot.launch_parameters == {"ticker": "AAPL"}
+        assert "sector" not in rerun_run.input
+        assert "horizonDays" not in rerun_run.input
+
+
+def test_rerun_rejects_non_nullable_null(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_optional_contract_inputs(
+                package_key="rerun_non_nullable_null_package"
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package = cast(dict[str, object], created.json())
+    source = _launch_package_run(client, package, ticker="MSFT")
+    source_run_id = int(source["id"])
+    with session_factory() as session:
+        runs_before = session.query(Run).count()
+
+    rerun = client.post(
+        f"/api/runs/{source_run_id}/reruns",
+        json={"parameters": {"ticker": "AAPL", "sector": None}},
+    )
+
+    assert rerun.status_code == 400, rerun.json()
+    body = cast(dict[str, Any], rerun.json())
+    assert body["code"] == "run_invalid_input"
+    assert any(detail["field"] == "sector" for detail in body["details"])
+    with session_factory() as session:
+        assert session.query(Run).count() == runs_before
+
+
+def test_fork_invocation_input_preserves_nullable_null(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_optional_contract_inputs(
+                package_key="fork_nullable_invocation_input_package",
+                agent_sector_nullable=True,
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package = cast(dict[str, object], created.json())
+    source = _launch_package_run(client, package, ticker="MSFT")
+    source_run_id = int(source["id"])
+    _drain_run_queue(session_factory)
+    source_detail = _wait_for_run(client, source_run_id)
+    assert source_detail["status"] == "succeeded"
+    source_invocation = cast(dict[str, Any], source_detail["steps"][0]["invocations"][0])
+    source_invocation_id = int(source_invocation["id"])
+    assert source_invocation["resolvedInput"] == {"ticker": "MSFT"}
+
+    fork = client.post(
+        f"/api/runs/{source_run_id}/forks",
+        json={
+            "sourceInvocationId": source_invocation_id,
+            "invocationInput": {"ticker": "TSLA", "sector": None},
+        },
+    )
+
+    assert fork.status_code == 201, fork.json()
+    fork_id = int(fork.json()["id"])
+    fork_detail = client.get(f"/api/runs/{fork_id}")
+    assert fork_detail.status_code == 200, fork_detail.json()
+    fork_invocation = cast(dict[str, Any], fork_detail.json()["steps"][0]["invocations"][0])
+    assert fork_invocation["resolvedInput"] == {"ticker": "TSLA", "sector": None}
+    assert "horizonDays" not in fork_invocation["resolvedInput"]
+    with session_factory() as session:
+        target_invocation = (
+            session.query(RunAgentInvocation)
+            .filter_by(run_id=fork_id, step_index=1, slot="analysis")
+            .one()
+        )
+        assert target_invocation.resolved_input == {"ticker": "TSLA", "sector": None}
+        assert "horizonDays" not in target_invocation.resolved_input
 
 
 def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(

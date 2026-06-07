@@ -1426,36 +1426,35 @@ def test_runtime_input_service_personal_cap_uses_scope_lock_for_concurrent_creat
         assert len(registry.personal) == RUNTIME_INPUT_PERSONAL_ENTRY_LIMIT
 
 
-def test_runtime_input_service_schema_deferred(
+def test_runtime_input_service_personal_payload_updates_validate_current_schema(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_model_connection(session_factory)
     created = _create_package(
         client,
-        package_key="runtime_input_service_schema_deferred_package",
+        package_key="runtime_input_service_schema_validated_package",
     )
     package_id = cast(int, created["id"])
-    schema_agnostic_payload = {"unexpected": {"still": ["safe", "json", "object"]}}
 
     with session_factory() as session:
         service = WorkflowPackageRuntimeInputRegistryService(session)
         created_entry = service.create_personal_entry(
             package_id,
             "runtime_workflow",
-            name="Schema agnostic preset",
-            payload=schema_agnostic_payload,
+            name="Validated preset",
+            payload={"ticker": "MSFT"},
         )
-        assert created_entry.payload == schema_agnostic_payload
+        assert created_entry.payload == {"ticker": "MSFT"}
         assert created_entry.stale.to_payload() == {"stale": False, "reasons": []}
 
         updated_entry = service.update_personal_entry(
             package_id,
             "runtime_workflow",
             created_entry.id,
-            payload={"stillArbitrary": {"afterUpdate": True}},
+            payload={"ticker": "AAPL"},
         )
-        assert updated_entry.payload == {"stillArbitrary": {"afterUpdate": True}}
+        assert updated_entry.payload == {"ticker": "AAPL"}
         assert updated_entry.stale.stale is False
 
         package = session.get(WorkflowPackage, package_id)
@@ -1497,23 +1496,143 @@ def test_runtime_input_service_schema_deferred(
             name="Renamed stale preset",
         )
         assert renamed_entry.name == "Renamed stale preset"
+        assert renamed_entry.payload == {"ticker": "AAPL"}
         assert renamed_entry.stale.stale is True
+
+        with pytest.raises(ApiError) as exc_info:
+            _ = service.update_personal_entry(
+                package_id,
+                "runtime_workflow",
+                created_entry.id,
+                payload={"noTicker": True},
+            )
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.code == "run_invalid_input"
+        assert {"field": "ticker", "issue": "Field required"} in exc_info.value.details
 
         resaved_entry = service.update_personal_entry(
             package_id,
             "runtime_workflow",
             created_entry.id,
-            payload={"noTicker": True},
+            payload={"ticker": "MSFT", "horizonDays": 30},
         )
-        assert resaved_entry.payload == {"noTicker": True}
+        assert resaved_entry.payload == {"ticker": "MSFT", "horizonDays": 30}
         assert resaved_entry.stale.to_payload() == {"stale": False, "reasons": []}
 
-    launch = client.post(
-        f"/api/workflow-packages/{package_id}/launches",
-        json={"workflowKey": "runtime_workflow", "parameters": {"noTicker": True}},
+
+def test_runtime_input_personal_entry_persists_canonical_workflow_schema_payload(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_personal_runtime_input_schema(
+            package_key="runtime_input_personal_canonical_package"
+        ),
     )
-    assert launch.status_code == 400, launch.json()
-    assert launch.json()["code"] == "run_invalid_input"
+    package_id = cast(int, created["id"])
+    endpoint = f"/api/workflow-packages/{package_id}/runtime-input-registry/personal"
+    params = {"workflowKey": "runtime_workflow"}
+
+    created_entry = client.post(
+        endpoint,
+        params=params,
+        json={"name": "Canonical preset", "payload": {"ticker": "MSFT", "sector": None}},
+    )
+
+    assert created_entry.status_code == 201, created_entry.json()
+    created_body = cast(dict[str, Any], created_entry.json())
+    entry_id = int(created_body["id"])
+    expected_payload = {"ticker": "MSFT", "sector": None, "horizonDays": 14}
+    assert created_body["payload"] == expected_payload
+    assert "optionalNote" not in created_body["payload"]
+
+    renamed = client.patch(
+        f"{endpoint}/{entry_id}",
+        params=params,
+        json={"name": "Renamed canonical preset"},
+    )
+
+    assert renamed.status_code == 200, renamed.json()
+    renamed_body = cast(dict[str, Any], renamed.json())
+    assert renamed_body["name"] == "Renamed canonical preset"
+    assert renamed_body["payload"] == expected_payload
+
+    updated = client.patch(
+        f"{endpoint}/{entry_id}",
+        params=params,
+        json={"payload": {"ticker": "AAPL"}},
+    )
+
+    assert updated.status_code == 200, updated.json()
+    updated_body = cast(dict[str, Any], updated.json())
+    assert updated_body["name"] == "Renamed canonical preset"
+    assert updated_body["payload"] == {"ticker": "AAPL", "horizonDays": 14}
+    assert "sector" not in updated_body["payload"]
+    assert "optionalNote" not in updated_body["payload"]
+
+
+def test_runtime_input_personal_entry_rejects_missing_required_workflow_input(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_personal_runtime_input_schema(
+            package_key="runtime_input_personal_invalid_package"
+        ),
+    )
+    package_id = cast(int, created["id"])
+
+    response = client.post(
+        f"/api/workflow-packages/{package_id}/runtime-input-registry/personal",
+        params={"workflowKey": "runtime_workflow"},
+        json={
+            "name": "Invalid preset",
+            "payload": {"unexpected": True, "horizonDays": "soon"},
+        },
+    )
+
+    assert response.status_code == 400, response.json()
+    body = cast(dict[str, Any], response.json())
+    assert body["code"] == "run_invalid_input"
+    details_by_field = {detail["field"]: detail["issue"] for detail in body["details"]}
+    assert details_by_field["ticker"] == "Field required"
+    assert details_by_field["unexpected"] == "Extra inputs are not permitted"
+    assert "valid integer" in details_by_field["horizonDays"]
+
+
+def test_runtime_input_personal_entry_rejects_non_nullable_null(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_optional_wired_inputs(
+            package_key="runtime_input_personal_non_nullable_null_package"
+        ),
+    )
+    package_id = cast(int, created["id"])
+
+    response = client.post(
+        f"/api/workflow-packages/{package_id}/runtime-input-registry/personal",
+        params={"workflowKey": "runtime_workflow"},
+        json={
+            "name": "Invalid null preset",
+            "payload": {"ticker": "MSFT", "horizonDays": None},
+        },
+    )
+
+    assert response.status_code == 400, response.json()
+    body = cast(dict[str, Any], response.json())
+    assert body["code"] == "run_invalid_input"
+    assert {
+        "field": "horizonDays",
+        "issue": "Input should be a valid integer",
+    } in body["details"]
 
 
 def test_runtime_input_registry_api_contract_and_personal_mutations(
@@ -1545,7 +1664,7 @@ def test_runtime_input_registry_api_contract_and_personal_mutations(
     created_entry = client.post(
         f"/api/workflow-packages/{package_id}/runtime-input-registry/personal",
         params={"workflowKey": "runtime_workflow"},
-        json={"name": "  Morning preset  ", "payload": {"unexpected": {"saved": True}}},
+        json={"name": "  Morning preset  ", "payload": {"ticker": "SAVED"}},
     )
     assert created_entry.status_code == 201, created_entry.json()
     created_entry_body = cast(dict[str, Any], created_entry.json())
@@ -1554,7 +1673,7 @@ def test_runtime_input_registry_api_contract_and_personal_mutations(
     assert created_entry_body["workflowKey"] == "runtime_workflow"
     assert created_entry_body["slot"] == "personal"
     assert created_entry_body["name"] == "Morning preset"
-    assert created_entry_body["payload"] == {"unexpected": {"saved": True}}
+    assert created_entry_body["payload"] == {"ticker": "SAVED"}
     assert created_entry_body["sourceKind"] == "manual"
     assert created_entry_body["sourceRunId"] is None
     assert created_entry_body["inputSchemaSnapshot"]["required"] == ["ticker"]
@@ -1609,13 +1728,13 @@ def test_runtime_input_registry_api_contract_and_personal_mutations(
     updated = client.patch(
         f"/api/workflow-packages/{package_id}/runtime-input-registry/personal/{entry_id}",
         params={"workflowKey": "runtime_workflow"},
-        json={"name": "Renamed preset", "payload": {"stillArbitrary": True}},
+        json={"name": "Renamed preset", "payload": {"ticker": "RENAMED"}},
     )
     assert updated.status_code == 200, updated.json()
     updated_body = cast(dict[str, Any], updated.json())
     assert updated_body["id"] == entry_id
     assert updated_body["name"] == "Renamed preset"
-    assert updated_body["payload"] == {"stillArbitrary": True}
+    assert updated_body["payload"] == {"ticker": "RENAMED"}
     assert updated_body["stale"] == {"stale": False, "reasons": []}
 
     deleted = client.delete(
@@ -3895,6 +4014,73 @@ def _package_source_with_runtime_input_default(*, package_key: str) -> str:
     )
 
 
+def _package_source_with_personal_runtime_input_schema(*, package_key: str) -> str:
+    original_input_schema = (
+        "      inputSchema:\n"
+        "        type: object\n"
+        "        properties:\n"
+        "          ticker:\n"
+        "            type: string\n"
+        "        required: [ticker]\n"
+        "      flow:\n"
+    )
+    personal_input_schema = (
+        "      inputSchema:\n"
+        "        type: object\n"
+        "        properties:\n"
+        "          ticker:\n"
+        "            type: string\n"
+        "          sector:\n"
+        '            type: [string, "null"]\n'
+        "          horizonDays:\n"
+        "            type: integer\n"
+        "            default: 14\n"
+        "          optionalNote:\n"
+        "            type: string\n"
+        "        required: [ticker]\n"
+        "      flow:\n"
+    )
+    return _package_source(package_key=package_key).replace(
+        original_input_schema,
+        personal_input_schema,
+        1,
+    )
+
+
+def _package_source_with_nullable_optional_input(*, package_key: str) -> str:
+    return (
+        _package_source_with_optional_wired_inputs(package_key=package_key)
+        .replace(
+            "      sector:\n        type: string\n",
+            '      sector:\n        type: [string, "null"]\n',
+            1,
+        )
+        .replace(
+            "          sector:\n            type: string\n",
+            '          sector:\n            type: [string, "null"]\n',
+            2,
+        )
+    )
+
+
+def _package_source_with_enum_optional_input(*, package_key: str, nullable: bool) -> str:
+    sector_schema = (
+        '      sector:\n        type: [string, "null"]\n        enum: [growth, value]\n'
+        if nullable
+        else "      sector:\n        type: string\n        enum: [growth, value]\n"
+    )
+    agent_sector_schema = (
+        '          sector:\n            type: [string, "null"]\n            enum: [growth, value]\n'
+        if nullable
+        else "          sector:\n            type: string\n            enum: [growth, value]\n"
+    )
+    return (
+        _package_source_with_optional_wired_inputs(package_key=package_key)
+        .replace("      sector:\n        type: string\n", sector_schema, 1)
+        .replace("          sector:\n            type: string\n", agent_sector_schema, 2)
+    )
+
+
 def _package_source_with_optional_wired_inputs(
     *, package_key: str, require_sector: bool = False
 ) -> str:
@@ -4015,6 +4201,174 @@ def test_workflow_package_launch_omits_absent_optional_inputs_without_defaults(
         assert snapshot is not None
         assert run.input == expected_parameters
         assert snapshot.launch_parameters == expected_parameters
+
+
+def test_workflow_package_launch_materializes_defaulted_optional_input(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_runtime_input_default(
+                package_key="defaulted_optional_input_package"
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package_id = int(created.json()["id"])
+    expected_parameters = {"ticker": "MSFT", "horizonDays": 14}
+
+    launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+    history = _runtime_input_history_entries(client, package_id)
+    assert history[0]["payload"] == expected_parameters
+    with session_factory() as session:
+        run = session.get(Run, run_id)
+        snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+        assert run is not None
+        assert snapshot is not None
+        assert run.input == expected_parameters
+        assert snapshot.launch_parameters == expected_parameters
+
+
+def test_workflow_package_launch_preserves_explicit_empty_string(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_optional_wired_inputs(
+                package_key="explicit_empty_string_input_package"
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package_id = int(created.json()["id"])
+    expected_parameters = {"ticker": "MSFT", "sector": ""}
+
+    launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": expected_parameters},
+    )
+
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+    history = _runtime_input_history_entries(client, package_id)
+    assert history[0]["payload"] == expected_parameters
+    with session_factory() as session:
+        run = session.get(Run, run_id)
+        snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+        assert run is not None
+        assert snapshot is not None
+        assert run.input == expected_parameters
+        assert snapshot.launch_parameters == expected_parameters
+
+
+def test_workflow_package_launch_preserves_nullable_null_when_schema_allows_it(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_nullable_optional_input(
+                package_key="nullable_optional_input_package"
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package_id = int(created.json()["id"])
+    expected_parameters = {"ticker": "MSFT", "sector": None}
+
+    launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": expected_parameters},
+    )
+
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+    history = _runtime_input_history_entries(client, package_id)
+    assert history[0]["payload"] == expected_parameters
+    with session_factory() as session:
+        run = session.get(Run, run_id)
+        snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+        assert run is not None
+        assert snapshot is not None
+        assert run.input == expected_parameters
+        assert snapshot.launch_parameters == expected_parameters
+
+
+def test_workflow_package_launch_preserves_nullable_null_for_enum_when_schema_allows_it(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_enum_optional_input(
+                package_key="nullable_enum_optional_input_package",
+                nullable=True,
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package_id = int(created.json()["id"])
+    expected_parameters = {"ticker": "MSFT", "sector": None}
+
+    launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": expected_parameters},
+    )
+
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+    history = _runtime_input_history_entries(client, package_id)
+    assert history[0]["payload"] == expected_parameters
+    with session_factory() as session:
+        run = session.get(Run, run_id)
+        snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+        assert run is not None
+        assert snapshot is not None
+        assert run.input == expected_parameters
+        assert snapshot.launch_parameters == expected_parameters
+
+
+def test_workflow_package_launch_rejects_explicit_null_for_non_nullable_optional_input_enum(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_enum_optional_input(
+                package_key="non_nullable_enum_optional_input_package",
+                nullable=False,
+            )
+        },
+    )
+    assert created.status_code == 201, created.json()
+    package_id = int(created.json()["id"])
+
+    launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT", "sector": None}},
+    )
+
+    assert launch.status_code == 400, launch.json()
+    assert launch.json()["code"] == "run_invalid_input"
+    assert any(detail["field"] == "sector" for detail in launch.json()["details"])
 
 
 def test_workflow_package_launch_rejects_explicit_null_for_non_nullable_optional_input(
@@ -4857,6 +5211,115 @@ def test_schedule_api_run_now_persists_schedule_provenance_and_lineage_only_desc
             assert descendant.scheduled_for is None
             assert descendant.schedule_reason is None
             assert descendant.schedule_provenance is None
+
+
+def test_scheduled_input_preview_returns_canonical_workflow_parameters(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created_package = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_runtime_input_default(
+                package_key="scheduled_preview_canonical_package"
+            )
+        },
+    )
+    assert created_package.status_code == 201, created_package.json()
+    package_id = int(created_package.json()["id"])
+    scheduled_for = "2026-06-01T13:00:00Z"
+    expected_parameters = {"ticker": "MSFT", "horizonDays": 14}
+    preview_payload = {
+        "packageId": package_id,
+        "workflowKey": "runtime_workflow",
+        "timezone": "UTC",
+        "recurrence": {"type": "interval", "every": 1, "unit": "hours"},
+        "scheduledFor": scheduled_for,
+        "inputTemplate": {"ticker": "{{vars.ticker}}"},
+        "templateVars": {"ticker": "MSFT"},
+    }
+
+    unsaved_preview = client.post("/api/schedules/preview", json=preview_payload)
+
+    assert unsaved_preview.status_code == 200, unsaved_preview.json()
+    unsaved_body = cast(dict[str, Any], unsaved_preview.json())
+    assert unsaved_body["scheduleId"] is None
+    assert unsaved_body["renderedParameters"] == expected_parameters
+    assert unsaved_body["validationErrors"] == []
+    assert unsaved_body["ready"] is True
+    with session_factory() as session:
+        assert session.query(Run).count() == 0
+        assert session.query(WorkflowPackageScheduleFire).count() == 0
+
+    schedule_payload = _schedule_api_payload(package_id, name="Canonical preview schedule")
+    schedule_payload["inputTemplate"] = {"ticker": "{{vars.ticker}}"}
+    schedule_payload["templateVars"] = {"ticker": "MSFT"}
+    created_schedule = client.post("/api/schedules", json=schedule_payload)
+    assert created_schedule.status_code == 201, created_schedule.json()
+    schedule_id = int(created_schedule.json()["id"])
+
+    saved_preview = client.post(
+        f"/api/schedules/{schedule_id}/preview",
+        json={"scheduledFor": scheduled_for},
+    )
+
+    assert saved_preview.status_code == 200, saved_preview.json()
+    saved_body = cast(dict[str, Any], saved_preview.json())
+    assert saved_body["scheduleId"] == schedule_id
+    assert saved_body["renderedParameters"] == expected_parameters
+    assert saved_body["validationErrors"] == []
+    assert saved_body["ready"] is True
+
+
+def test_scheduled_run_materializes_canonical_workflow_parameters(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created_package = client.post(
+        "/api/workflow-packages",
+        json={
+            "manifestSource": _package_source_with_runtime_input_default(
+                package_key="scheduled_materialization_canonical_package"
+            )
+        },
+    )
+    assert created_package.status_code == 201, created_package.json()
+    package_id = int(created_package.json()["id"])
+    materialized_at = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
+    expected_parameters = {"ticker": "MSFT", "horizonDays": 14}
+    with session_factory() as session:
+        schedule = WorkflowPackageScheduleService(session).create_schedule(
+            ScheduleCreate(
+                package_id=package_id,
+                workflow_key="runtime_workflow",
+                name="Canonical materialization schedule",
+                timezone="UTC",
+                recurrence=IntervalRecurrence(every=1, unit=IntervalUnit.HOURS),
+                input_template={"ticker": "{{vars.ticker}}"},
+                template_vars={"ticker": "MSFT"},
+            ),
+            next_fire_at=materialized_at,
+        )
+        schedule_id = schedule.id
+
+    result = WorkflowPackageScheduleMaterializer(session_factory).materialize_due(
+        now=materialized_at
+    )
+
+    assert result.processed_count == 1
+    assert result.queued_count == 1
+    with session_factory() as session:
+        fire = session.query(WorkflowPackageScheduleFire).filter_by(schedule_id=schedule_id).one()
+        run = session.query(Run).filter_by(schedule_id=schedule_id).one()
+        snapshot = session.get(RunWorkflowPackageSnapshot, run.id)
+        assert snapshot is not None
+        assert fire.status == FireStatus.QUEUED.value
+        assert fire.rendered_parameters == expected_parameters
+        assert run.status == "queued"
+        assert run.input == expected_parameters
+        assert snapshot.launch_parameters == expected_parameters
 
 
 def test_schedule_api_run_now_blocks_secretless_model_connection(

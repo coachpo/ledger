@@ -231,6 +231,33 @@ describe("SchemaForm", () => {
     expect(screen.getByRole("button", { name: /add field/i })).toBeVisible();
   });
 
+  it("removes optional no-default fields from the generated value after they are added", () => {
+    const onChange = vi.fn();
+    const schema = schemaWithDefaults({
+      fields: [
+        {
+          name: "comment",
+          required: false,
+          schema: { kind: "string", title: "Comment" },
+        },
+      ],
+      kind: "object",
+    });
+
+    render(<StatefulSchemaForm onChange={onChange} schema={schema} value={encodeValueEntry({})} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /add field/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Comment" }), {
+      target: { value: "Run with an operator memo" },
+    });
+    expect(lastDecodedChange(onChange)).toEqual({ comment: "Run with an operator memo" });
+
+    fireEvent.click(screen.getByRole("button", { name: /remove optional field/i }));
+
+    expect(screen.queryByRole("textbox", { name: "Comment" })).not.toBeInTheDocument();
+    expect(lastDecodedChange(onChange)).toEqual({});
+  });
+
   it("preserves explicit empty values instead of replacing them with schema defaults", () => {
     const onChange = vi.fn();
     const schema = schemaWithDefaults({
