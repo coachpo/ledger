@@ -1,8 +1,7 @@
-import { Puzzle } from "lucide-react";
 import { toast } from "sonner";
 
-import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
+import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { Switch } from "@/components/ui/switch";
 import { useExtensions, useToggleExtension } from "@/hooks/use-extensions";
 import type { ExtensionRead } from "@/lib/types/extension";
@@ -99,21 +98,21 @@ export function ExtensionsListPage() {
       toolbar={null}
     >
       {extensionsQuery.isPending ? (
-        <EmptyStatePanel
+        <InventoryStatePanel
           description="Loading the slim bundled-extension state before route gates and tool discovery update."
-          icon={<Puzzle className="size-4" />}
+          testId="extensions-loading-state"
           title="Loading extension state"
         />
       ) : null}
 
       {extensionsQuery.isError ? (
-        <EmptyStatePanel
+        <InventoryStatePanel
           description={
             extensionsQuery.error instanceof Error
               ? extensionsQuery.error.message
               : "Failed to load extensions."
           }
-          icon={<Puzzle className="size-4" />}
+          testId="extensions-error-state"
           title="Unable to load extension state."
           tone="danger"
         />
@@ -122,9 +121,9 @@ export function ExtensionsListPage() {
       {!extensionsQuery.isPending &&
       !extensionsQuery.isError &&
       extensions.length === 0 ? (
-        <EmptyStatePanel
+        <InventoryStatePanel
           description="The backend returned an empty bundled-extension list. This route remains limited to bundled extension state."
-          icon={<Puzzle className="size-4" />}
+          testId="extensions-empty-state"
           title="No bundled extensions are registered."
         />
       ) : null}

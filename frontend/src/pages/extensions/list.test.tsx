@@ -223,6 +223,23 @@ describe("ExtensionsListPage", () => {
     ).toHaveTextContent("Enabled");
   });
 
+  it("uses a canonical route state panel while loading extension state", () => {
+    useExtensionsMock.mockReturnValue({
+      data: undefined,
+      error: null,
+      isError: false,
+      isPending: true,
+    });
+
+    render(<ExtensionsListPage />);
+
+    const loadingState = screen.getByTestId("extensions-loading-state");
+    expect(loadingState).toHaveTextContent("Loading extension state");
+    expect(loadingState).toHaveTextContent(
+      "Loading the slim bundled-extension state before route gates and tool discovery update.",
+    );
+  });
+
   it("keeps sparse system-state copy for empty and error states", () => {
     useExtensionsMock.mockReturnValue({
       data: { items: [] },
@@ -232,9 +249,8 @@ describe("ExtensionsListPage", () => {
     });
     const { rerender } = render(<ExtensionsListPage />);
 
-    expect(
-      screen.getByText("No bundled extensions are registered."),
-    ).toBeVisible();
+    const emptyState = screen.getByTestId("extensions-empty-state");
+    expect(emptyState).toHaveTextContent("No bundled extensions are registered.");
     expect(
       screen.queryByRole("button", { name: /install/i }),
     ).not.toBeInTheDocument();
@@ -247,8 +263,8 @@ describe("ExtensionsListPage", () => {
     });
     rerender(<ExtensionsListPage />);
 
-    const alert = screen.getByRole("alert");
-    expect(alert).toHaveTextContent("Unable to load extension state.");
-    expect(alert).toHaveTextContent("Extension API unavailable");
+    const errorState = screen.getByTestId("extensions-error-state");
+    expect(errorState).toHaveTextContent("Unable to load extension state.");
+    expect(errorState).toHaveTextContent("Extension API unavailable");
   });
 });
