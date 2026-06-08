@@ -437,7 +437,8 @@ export function usePreflightWorkflowPackage() {
   return useMutation({
     mutationFn: ({ packageId, payload }: WorkflowPackageLaunchVariables) =>
       preflightWorkflowPackage(packageId, {
-        workflowKey: payload.workflowKey ?? undefined,
+        parameters: payload.parameters ?? {},
+        workflowKey: payload.workflowKey ?? null,
       }),
   });
 }

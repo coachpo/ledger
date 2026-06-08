@@ -36,6 +36,7 @@ from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.schedule import (
     DailyRecurrence,
+    FireReason,
     FireStatus,
     IntervalRecurrence,
     IntervalUnit,
@@ -2057,7 +2058,7 @@ def test_workflow_package_read_contract_is_artifact_inventory_and_launch_keeps_l
 
     preflight = client.post(
         f"/api/workflow-packages/{package_id}/preflight",
-        params={"workflowKey": "runtime_workflow"},
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
     )
     assert preflight.status_code == 200, preflight.json()
     preflight_body = cast(dict[str, object], preflight.json())
@@ -2072,6 +2073,20 @@ def test_workflow_package_launch_rejects_unknown_root_parameter_key(
 ) -> None:
     _seed_model_connection(session_factory)
     created = _create_package(client, package_key="runtime_unknown_root_package")
+
+    preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        json={
+            "workflowKey": "runtime_workflow",
+            "parameters": {"ticker": "MSFT", "unexpected": True},
+        },
+    )
+    assert preflight.status_code == 200, preflight.json()
+    preflight_body = preflight.json()
+    assert preflight_body["ready"] is False
+    assert preflight_body["blockingErrors"] == [
+        {"field": "unexpected", "issue": "Extra inputs are not permitted"}
+    ]
 
     response = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
@@ -2129,6 +2144,23 @@ def test_workflow_package_launch_rejects_unknown_nested_parameter_key(
     assert created_response.status_code == 201, created_response.json()
     created = cast(dict[str, object], created_response.json())
 
+    preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        json={
+            "workflowKey": "runtime_workflow",
+            "parameters": {
+                "ticker": "MSFT",
+                "context": {"sector": "semiconductors", "unexpected": True},
+            },
+        },
+    )
+    assert preflight.status_code == 200, preflight.json()
+    preflight_body = preflight.json()
+    assert preflight_body["ready"] is False
+    assert preflight_body["blockingErrors"] == [
+        {"field": "context.unexpected", "issue": "Extra inputs are not permitted"}
+    ]
+
     response = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
         json={
@@ -2146,6 +2178,36 @@ def test_workflow_package_launch_rejects_unknown_nested_parameter_key(
     assert body["details"] == [
         {"field": "context.unexpected", "issue": "Extra inputs are not permitted"}
     ]
+    with session_factory() as session:
+        assert session.query(Run).count() == 0
+
+
+def test_workflow_package_preflight_rejects_typed_parameter_errors_before_launch(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package_from_source(
+        client,
+        manifest_source=_package_source_with_personal_runtime_input_schema(
+            package_key="runtime_preflight_invalid_typed_package"
+        ),
+    )
+    package_id = cast(int, created["id"])
+
+    preflight = client.post(
+        f"/api/workflow-packages/{package_id}/preflight",
+        json={
+            "workflowKey": "runtime_workflow",
+            "parameters": {"ticker": "MSFT", "horizonDays": "soon"},
+        },
+    )
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is False
+    details_by_field = {detail["field"]: detail["issue"] for detail in body["blockingErrors"]}
+    assert "valid integer" in details_by_field["horizonDays"]
     with session_factory() as session:
         assert session.query(Run).count() == 0
 
@@ -4733,7 +4795,7 @@ def test_runtime_input_no_history_on_invalid_launch_or_preflight(
 
     preflight = client.post(
         f"/api/workflow-packages/{package_id}/preflight",
-        params={"workflowKey": "runtime_workflow"},
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
     )
     assert preflight.status_code == 200, preflight.json()
     assert _runtime_input_history_entries(client, package_id) == []
@@ -4823,6 +4885,7 @@ def test_schedule_api_schedule_crud_contract_package_first_and_camelcase(
     patched = client.patch(
         f"/api/schedules/{schedule_id}",
         json={
+            "workflowKey": "runtime_workflow",
             "status": "paused",
             "description": None,
             "startsAt": None,
@@ -4832,6 +4895,7 @@ def test_schedule_api_schedule_crud_contract_package_first_and_camelcase(
     )
     assert patched.status_code == 200, patched.json()
     patched_body = patched.json()
+    assert patched_body["workflowKey"] == "runtime_workflow"
     assert patched_body["status"] == "paused"
     assert patched_body["description"] is None
     assert patched_body["startsAt"] is None
@@ -4906,6 +4970,71 @@ def test_schedule_api_schedule_crud_contract_package_first_and_camelcase(
         assert remaining_fire_count == 0
 
 
+def test_schedule_api_rejects_unknown_workflow_key_before_create_or_update_persistence(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    created_package = _create_package(client, package_key="schedule_api_workflow_key_guard_package")
+    package_id = cast(int, created_package["id"])
+
+    invalid_create_payload = _schedule_api_payload(package_id, name="Invalid workflow schedule")
+    invalid_create_payload["workflowKey"] = "missing_workflow"
+    invalid_create = client.post("/api/schedules", json=invalid_create_payload)
+
+    assert invalid_create.status_code == 422, invalid_create.json()
+    invalid_create_body = cast(dict[str, Any], invalid_create.json())
+    assert invalid_create_body["code"] == "validation_error"
+    assert invalid_create_body["message"] == "Schedule validation failed"
+    assert invalid_create_body["details"] == [
+        {
+            "field": "workflowKey",
+            "issue": (
+                "Workflow key 'missing_workflow' is not present in workflow package "
+                "'schedule_api_workflow_key_guard_package'"
+            ),
+        }
+    ]
+    with session_factory() as session:
+        assert (
+            session.query(WorkflowPackageSchedule)
+            .filter(WorkflowPackageSchedule.package_id == package_id)
+            .count()
+            == 0
+        )
+
+    valid_create = client.post(
+        "/api/schedules",
+        json=_schedule_api_payload(package_id, name="Workflow key guard schedule"),
+    )
+    assert valid_create.status_code == 201, valid_create.json()
+    schedule_id = int(valid_create.json()["id"])
+
+    invalid_update = client.patch(
+        f"/api/schedules/{schedule_id}",
+        json={"workflowKey": "missing_workflow", "name": "Mutated name"},
+    )
+
+    assert invalid_update.status_code == 422, invalid_update.json()
+    invalid_update_body = cast(dict[str, Any], invalid_update.json())
+    assert invalid_update_body["code"] == "validation_error"
+    assert invalid_update_body["message"] == "Schedule validation failed"
+    assert invalid_update_body["details"][0]["field"] == "workflowKey"
+    detail = client.get(f"/api/schedules/{schedule_id}")
+    assert detail.status_code == 200, detail.json()
+    detail_body = cast(dict[str, Any], detail.json())
+    assert detail_body["workflowKey"] == "runtime_workflow"
+    assert detail_body["name"] == "Workflow key guard schedule"
+    with session_factory() as session:
+        schedules = (
+            session.query(WorkflowPackageSchedule)
+            .filter(WorkflowPackageSchedule.package_id == package_id)
+            .all()
+        )
+        assert len(schedules) == 1
+        assert schedules[0].workflow_key == "runtime_workflow"
+        assert schedules[0].name == "Workflow key guard schedule"
+
+
 def test_schedule_api_list_rejects_archived_status_filter(client: TestClient) -> None:
     archived_filter = client.get("/api/schedules", params={"status": "archived"})
 
@@ -4919,6 +5048,7 @@ def test_schedule_api_list_rejects_archived_status_filter(client: TestClient) ->
 @pytest.mark.parametrize(
     ("field_name", "null_patch"),
     [
+        ("workflowKey", {"workflowKey": None}),
         ("status", {"status": None}),
         ("name", {"name": None}),
         ("timezone", {"timezone": None}),
@@ -5366,6 +5496,15 @@ def test_schedule_api_run_now_blocks_secretless_model_connection(
     assert body["message"] == "Workflow package launch validation failed"
     assert body["details"][0]["field"] == "spec.agents[0].modelConnection"
     assert body["details"][0]["issue"] == "API key is not configured"
+    with session_factory() as session:
+        fires = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items
+        runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
+        assert len(fires) == 1
+        assert fires[0].reason == FireReason.MANUAL
+        assert fires[0].status == FireStatus.FAILED
+        assert fires[0].error_code == "validation_error"
+        assert fires[0].error_message == "Workflow package launch validation failed"
+        assert runs == []
 
 
 @pytest.mark.parametrize(
@@ -5608,6 +5747,48 @@ def test_schedule_api_stale_workflow_preview_and_materializer_fail_deterministic
         assert fires[0].status == FireStatus.FAILED
         assert fires[0].error_code == SCHEDULE_RENDER_VALIDATION_FAILED
         assert fires[0].error_message == "Scheduled input template validation failed"
+        assert runs == []
+
+
+def test_schedule_api_run_now_records_failed_fire_for_missing_render_placeholder(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    created_package = _create_package(
+        client,
+        package_key="schedule_run_now_missing_placeholder_package",
+    )
+    package_id = cast(int, created_package["id"])
+    payload = _schedule_api_payload(package_id, name="Missing placeholder run-now schedule")
+    payload["inputTemplate"] = {"ticker": "{{vars.missingTicker}}"}
+    payload["templateVars"] = {}
+    created_schedule = client.post("/api/schedules", json=payload)
+    assert created_schedule.status_code == 201, created_schedule.json()
+    schedule_id = int(created_schedule.json()["id"])
+
+    run_now = client.post(
+        f"/api/schedules/{schedule_id}/run-now",
+        json={
+            "idempotencyKey": "missing-placeholder-run-now",
+            "scheduledFor": "2026-06-01T13:00:00Z",
+        },
+    )
+
+    assert run_now.status_code == 400, run_now.json()
+    body = cast(dict[str, Any], run_now.json())
+    assert body["code"] == SCHEDULE_TEMPLATE_MISSING_VALUE
+    assert body["message"] == "Scheduled input template validation failed"
+    with session_factory() as session:
+        fires = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items
+        runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
+        schedule = WorkflowPackageScheduleService(session).get_schedule(schedule_id)
+        assert len(fires) == 1
+        assert fires[0].reason == FireReason.MANUAL
+        assert fires[0].status == FireStatus.FAILED
+        assert fires[0].error_code == SCHEDULE_TEMPLATE_MISSING_VALUE
+        assert fires[0].error_message == "Scheduled input template validation failed"
+        schedule_body = schedule.model_dump(mode="json", by_alias=True)
+        assert schedule_body["nextFireAt"] == created_schedule.json()["nextFireAt"]
         assert runs == []
 
 

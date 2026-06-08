@@ -7,7 +7,9 @@ const ORIGINAL_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 const ORIGINAL_FETCH = globalThis.fetch;
 
 function createFetchMock() {
-  return vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+  return vi.fn<
+    (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+  >();
 }
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -27,15 +29,21 @@ function textResponse(body: string, status: number): Response {
 async function loadApiModule(baseUrl: string = "") {
   vi.resetModules();
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", baseUrl);
-  const [apiClient, extensionsApi, marketDataApi, modelConnectionsApi, portfoliosApi, positionsApi] =
-    await Promise.all([
-      import("./api-client"),
-      import("./api/extensions"),
-      import("./api/market-data"),
-      import("./api/model-connections"),
-      import("./api/portfolios"),
-      import("./api/positions"),
-    ]);
+  const [
+    apiClient,
+    extensionsApi,
+    marketDataApi,
+    modelConnectionsApi,
+    portfoliosApi,
+    positionsApi,
+  ] = await Promise.all([
+    import("./api-client"),
+    import("./api/extensions"),
+    import("./api/market-data"),
+    import("./api/model-connections"),
+    import("./api/portfolios"),
+    import("./api/positions"),
+  ]);
 
   return {
     ...apiClient,
@@ -112,19 +120,25 @@ describe("api client", () => {
     const { createPortfolio } = await loadApiModule();
     fetchMock.mockResolvedValueOnce(jsonResponse(portfolioFixture, 201));
 
-    await expect(createPortfolio(portfolioInput)).resolves.toEqual(portfolioFixture);
+    await expect(createPortfolio(portfolioInput)).resolves.toEqual(
+      portfolioFixture,
+    );
 
     const { init, url } = getLastFetchCall(fetchMock);
     expect(url).toBe(`${DEFAULT_API_BASE_URL}/portfolios`);
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify(portfolioInput));
     expect(new Headers(init?.headers).get("Accept")).toBe("application/json");
-    expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
+    expect(new Headers(init?.headers).get("Content-Type")).toBe(
+      "application/json",
+    );
   });
 
-  it("maps JSON detail strings into ApiRequestError messages for 404 responses", async () => {
+  it("does not read stale JSON detail aliases for 404 responses", async () => {
     const { ApiRequestError, getPortfolio } = await loadApiModule();
-    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: "Portfolio not found" }, 404));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ detail: "Portfolio not found" }, 404),
+    );
 
     let error: unknown;
     try {
@@ -137,7 +151,7 @@ describe("api client", () => {
     expect(error).toMatchObject({
       status: 404,
       code: "request_failed",
-      message: "Portfolio not found",
+      message: "Request failed with status 404",
       details: [],
     });
   });
@@ -152,7 +166,24 @@ describe("api client", () => {
           details: [
             { field: "name", issue: "Required" },
             { field: "baseCurrency", issue: "Unsupported currency" },
-            { issue: "Missing field" },
+            {
+              code: "extension_disabled",
+              extensionKey: "signaldeck.finance",
+              surface: "tool.marketQuote",
+              retryAfterSeconds: 30,
+              enabled: false,
+              optional: null,
+            },
+            {
+              field: "credentials",
+              issue: "Invalid credentials",
+              apiKey: "sk-secret",
+              exceptionType: "RuntimeError",
+              debugPayload: { path: "/home/qing/private.py" },
+              rawList: ["internal"],
+              "bad-key": "not exposed",
+            },
+            "not an object",
           ],
         },
         422,
@@ -174,7 +205,45 @@ describe("api client", () => {
       details: [
         { field: "name", issue: "Required" },
         { field: "baseCurrency", issue: "Unsupported currency" },
+        {
+          code: "extension_disabled",
+          extensionKey: "signaldeck.finance",
+          surface: "tool.marketQuote",
+          retryAfterSeconds: 30,
+          enabled: false,
+          optional: null,
+        },
+        { field: "credentials", issue: "Invalid credentials" },
       ],
+    });
+  });
+
+  it("drops malformed non-array details from JSON error envelopes", async () => {
+    const { ApiRequestError, listPortfolios } = await loadApiModule();
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          code: "validation_error",
+          message: "Validation failed",
+          details: { field: "name", issue: "Required" },
+        },
+        422,
+      ),
+    );
+
+    let error: unknown;
+    try {
+      await listPortfolios();
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect(error).toMatchObject({
+      status: 422,
+      code: "validation_error",
+      message: "Validation failed",
+      details: [],
     });
   });
 
@@ -199,16 +268,22 @@ describe("api client", () => {
   });
 
   it("derives v1 and platform URLs from a configured versioned base", async () => {
-    const { buildApiUrl, buildPlatformApiUrl } = await loadApiModule("https://signaldeck.example.com/api/v2/");
+    const { buildApiUrl, buildPlatformApiUrl } = await loadApiModule(
+      "https://signaldeck.example.com/api/v2/",
+    );
 
-    expect(buildApiUrl("/portfolios")).toBe("https://signaldeck.example.com/api/v1/portfolios");
+    expect(buildApiUrl("/portfolios")).toBe(
+      "https://signaldeck.example.com/api/v1/portfolios",
+    );
     expect(buildPlatformApiUrl("/workflow-packages")).toBe(
       "https://signaldeck.example.com/api/workflow-packages",
     );
   });
 
   it("routes platform modules through the unversioned api base", async () => {
-    const { listModelConnections } = await loadApiModule("https://signaldeck.example.com/api/v1/");
+    const { listModelConnections } = await loadApiModule(
+      "https://signaldeck.example.com/api/v1/",
+    );
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
 
     await expect(listModelConnections()).resolves.toEqual({ items: [] });
@@ -218,25 +293,35 @@ describe("api client", () => {
   });
 
   it("lists and toggles extensions through the unversioned api base", async () => {
-    const { listExtensions, toggleExtension } = await loadApiModule("https://signaldeck.example.com/api/v1/");
+    const { listExtensions, toggleExtension } = await loadApiModule(
+      "https://signaldeck.example.com/api/v1/",
+    );
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
 
     await expect(listExtensions()).resolves.toEqual({ items: [] });
-    expect(getLastFetchCall(fetchMock).url).toBe("https://signaldeck.example.com/api/extensions");
+    expect(getLastFetchCall(fetchMock).url).toBe(
+      "https://signaldeck.example.com/api/extensions",
+    );
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({ key: "signaldeck.finance", enabled: false }, 200));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ key: "signaldeck.finance", enabled: false }, 200),
+    );
     await expect(
       toggleExtension("signaldeck.finance", { enabled: false }),
     ).resolves.toMatchObject({ enabled: false, key: "signaldeck.finance" });
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(url).toBe("https://signaldeck.example.com/api/extensions/signaldeck.finance");
+    expect(url).toBe(
+      "https://signaldeck.example.com/api/extensions/signaldeck.finance",
+    );
     expect(init?.method).toBe("PATCH");
     expect(init?.body).toBe(JSON.stringify({ enabled: false }));
   });
 
   it("encodes symbol lookup requests against the derived v1 base URL", async () => {
-    const { getPositionSymbolLookup } = await loadApiModule("https://signaldeck.example.com/api/");
+    const { getPositionSymbolLookup } = await loadApiModule(
+      "https://signaldeck.example.com/api/",
+    );
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ symbol: "BRK/B", name: "Berkshire Hathaway Inc." }, 200),
     );

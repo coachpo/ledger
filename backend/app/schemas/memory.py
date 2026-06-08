@@ -4,7 +4,6 @@ import hashlib
 import math
 import re
 from datetime import UTC, datetime
-from decimal import Decimal
 from enum import Enum
 from typing import Final, Literal, Self, cast
 
@@ -56,22 +55,12 @@ MEMORY_IDEMPOTENCY_FALLBACK_FIELDS: Final[tuple[str, ...]] = (
 )
 MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS: Final[frozenset[str]] = frozenset(
     {
-        "ticker",
-        "benchmarkSymbol",
-        "rawReturn",
-        "alpha",
         "reportId",
         "reportSlug",
         "reportName",
         "url",
         "downloadUrl",
         "auditLinks",
-        "action",
-        "decision",
-        "portfolioSlug",
-        "horizonDays",
-        "confidence",
-        "decisionSummary",
         "outcome",
         "reflections",
     }
@@ -124,16 +113,8 @@ type JsonValue = JsonScalar | list[JsonScalar] | dict[str, JsonScalar]
 type MemoryAttributes = dict[str, JsonValue]
 
 _MEMORY_COMPATIBILITY_EXCLUDE: Final[set[str]] = {
-    "action",
-    "benchmark_symbol",
-    "confidence",
-    "decision",
-    "decision_summary",
-    "horizon_days",
     "outcome",
-    "portfolio_slug",
     "reflections",
-    "ticker",
 }
 _NAMESPACE_KEY_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
 
@@ -522,93 +503,26 @@ class MemoryContent(CamelModel):
         return _normalize_attributes(value)
 
 
-class MemoryDecision(MemoryContent):
-    action: Literal["buy", "hold", "sell"] = "hold"
-    rationale: str = ""
-    risk_summary: str = ""
-    execution_plan: str = ""
-
-    @model_validator(mode="before")
-    @classmethod
-    def populate_neutral_content(cls, data: object) -> object:
-        if not isinstance(data, dict):
-            return data
-        payload = dict(data)
-        rationale = _normalize_optional_text(payload.get("rationale"), field_name="rationale")
-        risk_summary = _normalize_optional_text(
-            payload.get("risk_summary") or payload.get("riskSummary"),
-            field_name="riskSummary",
-        )
-        execution_plan = _normalize_optional_text(
-            payload.get("execution_plan") or payload.get("executionPlan"),
-            field_name="executionPlan",
-        )
-        if "summary" not in payload:
-            payload["summary"] = rationale or "Memory decision"
-        if "content" not in payload:
-            payload["content"] = (
-                "\n".join(
-                    part for part in (rationale, risk_summary, execution_plan) if part is not None
-                )
-                or payload["summary"]
-            )
-        return payload
-
-
 class MemoryOutcome(CamelModel):
     status: MemoryLifecycleStatus = MemoryLifecycleStatus.RESOLVED
     summary: str = Field(default="Memory resolved", min_length=1)
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     attributes: MemoryAttributes = Field(default_factory=dict)
-    resolved_status: Literal["resolved", "expired"] = "resolved"
-    resolved_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    raw_return: Decimal | None = None
-    benchmark_return: Decimal | None = None
-    alpha: Decimal | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def populate_neutral_outcome(cls, data: object) -> object:
-        if not isinstance(data, dict):
-            return data
-        payload = dict(data)
-        resolved_status = str(
-            payload.get("resolved_status") or payload.get("resolvedStatus") or "resolved"
-        )
-        if "status" not in payload:
-            payload["status"] = resolved_status
-        if "summary" not in payload:
-            payload["summary"] = f"Memory {resolved_status}"
-        if "observed_at" not in payload and "observedAt" not in payload:
-            observed_at = payload.get("resolved_at") or payload.get("resolvedAt")
-            if observed_at is not None:
-                payload["observed_at"] = observed_at
-        return payload
 
     @field_validator("summary", mode="before")
     @classmethod
     def validate_summary(cls, value: object) -> str:
         return _normalize_required_text(value, field_name="Outcome summary")
 
-    @field_validator("observed_at", "resolved_at")
+    @field_validator("observed_at")
     @classmethod
-    def validate_timestamps(cls, value: datetime) -> datetime:
+    def validate_observed_at(cls, value: datetime) -> datetime:
         return ensure_timezone(value)
 
     @field_validator("attributes", mode="before")
     @classmethod
     def normalize_attributes(cls, value: object) -> MemoryAttributes:
         return _normalize_attributes(value)
-
-    @model_serializer(mode="wrap")
-    def serialize_legacy_resolution_payload(
-        self,
-        handler: SerializerFunctionWrapHandler,
-    ) -> dict[str, object]:
-        payload = cast(dict[str, object], handler(self))
-        for key in ("status", "summary", "observedAt", "observed_at", "attributes"):
-            _ = payload.pop(key, None)
-        return payload
 
 
 class MemoryReflection(MemoryContent):
@@ -651,10 +565,6 @@ def _default_memory_revision() -> MemoryRevisionRead:
         content_hash=_content_hash(""),
         created_at=datetime.now(UTC),
     )
-
-
-def _default_memory_decision() -> MemoryDecision:
-    return MemoryDecision(summary="Memory decision", content="Memory decision")
 
 
 def _default_memory_outcome() -> MemoryOutcome:
@@ -757,13 +667,6 @@ class MemoryEntryRead(_MemoryProjectionMixin):
     revision: MemoryRevisionRead = Field(default_factory=_default_memory_revision)
     created_at: datetime
     updated_at: datetime | None = None
-    ticker: str = ""
-    decision: MemoryDecision = Field(default_factory=_default_memory_decision)
-    portfolio_slug: str | None = None
-    horizon_days: int | None = Field(default=None, ge=1)
-    confidence: str | None = None
-    decision_summary: str | None = None
-    benchmark_symbol: str | None = None
     outcome: MemoryOutcome | None = None
     reflections: list[MemoryReflection] = Field(default_factory=list)
     audit_links: MemoryAuditLinks | None = None
@@ -775,18 +678,14 @@ class MemoryEntryRead(_MemoryProjectionMixin):
             return data
         payload = dict(data)
         memory_id = str(payload.get("memory_id") or payload.get("memoryId") or "memory")
-        decision = payload.get("decision")
-        summary = payload.get("decision_summary") or payload.get("decisionSummary")
         if "revision_id" not in payload and "revisionId" not in payload:
             payload["revision_id"] = f"{memory_id}:rev"
         if "kind" not in payload:
             payload["kind"] = "memory"
         if "summary" not in payload:
-            payload["summary"] = summary or "Memory entry"
+            payload["summary"] = "Memory entry"
         if "content" not in payload:
-            payload["content"] = summary or (
-                str(decision) if decision is not None else payload["summary"]
-            )
+            payload["content"] = payload["summary"]
         if "scope" not in payload:
             payload["scope"] = {
                 "scopeType": "run",
@@ -857,13 +756,6 @@ class MemoryWriteRequest(CamelModel):
     idempotency_fallback_fields: tuple[str, ...] = Field(
         default=MEMORY_IDEMPOTENCY_FALLBACK_FIELDS,
     )
-    ticker: str = ""
-    decision: MemoryDecision = Field(default_factory=_default_memory_decision)
-    portfolio_slug: str | None = None
-    horizon_days: int | None = Field(default=None, ge=1)
-    confidence: str | None = None
-    decision_summary: str | None = None
-    benchmark_symbol: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -871,17 +763,12 @@ class MemoryWriteRequest(CamelModel):
         if not isinstance(data, dict):
             return data
         payload = dict(data)
-        decision = payload.get("decision")
-        summary = payload.get("decision_summary") or payload.get("decisionSummary")
-        ticker = payload.get("ticker")
         if "kind" not in payload:
             payload["kind"] = "memory"
         if "summary" not in payload:
-            payload["summary"] = summary or "Memory entry"
+            payload["summary"] = "Memory entry"
         if "content" not in payload:
-            payload["content"] = summary or (
-                str(decision) if decision is not None else payload["summary"]
-            )
+            payload["content"] = payload["summary"]
         if "scope" not in payload:
             provenance = payload.get("provenance")
             if isinstance(provenance, MemoryProvenance):
@@ -891,8 +778,6 @@ class MemoryWriteRequest(CamelModel):
             else:
                 run_id = "run"
             payload["scope"] = {"scopeType": "run", "scopeKey": str(run_id)}
-        if "subjectRefs" not in payload and ticker:
-            payload["subjectRefs"] = [{"kind": "instrument", "id": ticker}]
         return payload
 
     @field_validator("kind", mode="before")
@@ -1010,33 +895,11 @@ class MemoryWriteResult(_MemoryProjectionMixin):
 
 
 class MemoryQuery(CamelModel):
-    @model_validator(mode="before")
-    @classmethod
-    def clamp_legacy_finance_budget(cls, data: object) -> object:
-        if not isinstance(data, dict):
-            return data
-        payload = dict(data)
-        max_characters = payload.get("max_characters") or payload.get("maxCharacters")
-        has_legacy_selector = any(
-            payload.get(key) is not None
-            for key in ("ticker", "portfolio_slug", "portfolioSlug", "agent_key", "agentKey")
-        )
-        if (
-            isinstance(max_characters, int)
-            and max_characters > MEMORY_LOOKUP_MAX_CHARACTERS
-            and has_legacy_selector
-        ):
-            payload["max_characters"] = MEMORY_LOOKUP_MAX_CHARACTERS
-            _ = payload.pop("maxCharacters", None)
-        return payload
-
     query: str | None = Field(default=None, max_length=1_000)
     scope: MemoryScope | None = None
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
     kind: str | None = Field(default=None, max_length=80)
     status: MemoryLifecycleStatus | None = None
-    ticker: str | None = Field(default=None, max_length=32)
-    portfolio_slug: str | None = None
     agent_key: str | None = Field(default=None, max_length=120)
     workflow_key: str | None = Field(default=None, max_length=120)
     tags: list[str] = Field(default_factory=list)
@@ -1065,9 +928,9 @@ class MemoryQuery(CamelModel):
     def normalize_kind(cls, value: object) -> str | None:
         return _normalize_optional_kind(value)
 
-    @field_validator("ticker", "portfolio_slug", "agent_key", "workflow_key", mode="before")
+    @field_validator("agent_key", "workflow_key", mode="before")
     @classmethod
-    def normalize_legacy_filters(cls, value: object) -> str | None:
+    def normalize_context_filters(cls, value: object) -> str | None:
         return _normalize_optional_text(value, field_name="Memory query field", max_length=120)
 
     @field_validator("tags", mode="before")
@@ -1529,7 +1392,6 @@ __all__ = [
     "MemoryAuditReportLink",
     "MemoryAttributes",
     "MemoryContent",
-    "MemoryDecision",
     "MemoryEntryRead",
     "MemoryId",
     "MemoryLifecycleStatus",

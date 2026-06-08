@@ -20,6 +20,7 @@ from app.db.upgrades import _ensure_agent_model_connection_snapshot_support, upg
 from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.mcp_server import McpServer
+from app.models.report import REPORT_SOURCE_CHECK_CONSTRAINT
 from app.reset_seed import (
     MAG7_COMPANIES,
     STARTER_PORTFOLIO_SLUG,
@@ -1096,6 +1097,27 @@ def _report_upgrade_rows_by_slug(
     }
 
 
+def _assert_report_source_constraint(engine: Engine) -> None:
+    constraints = {
+        constraint["name"] for constraint in inspect(engine).get_check_constraints("reports")
+    }
+    assert REPORT_SOURCE_CHECK_CONSTRAINT in constraints
+
+
+def _assert_invalid_report_source_rejected(engine: Engine, *, slug: str) -> None:
+    with pytest.raises(IntegrityError):
+        with engine.begin() as connection:
+            _ = connection.execute(
+                text(
+                    """
+                    INSERT INTO reports (name, slug, source, content, metadata)
+                    VALUES (:name, :slug, 'wire', '# Invalid', '{}'::jsonb)
+                    """
+                ),
+                {"name": slug.replace("_", " ").title(), "slug": slug},
+            )
+
+
 def _foreign_key_signature(
     foreign_key: Mapping[str, object],
 ) -> tuple[tuple[str, ...], str | None, str | None]:
@@ -1373,6 +1395,8 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "ix_agent_memory_entries_scope_status_kind",
         "ix_agent_memory_entries_status_kind",
         "ix_agent_memory_entries_content_hash",
+        "ix_agent_memory_entries_subject_refs_gin",
+        "ix_agent_memory_entries_attributes_gin",
         "ix_agent_memory_entries_source",
         "uq_agent_memory_entries_idempotency_key",
         "uq_agent_memory_entries_idempotency_fallback",
@@ -2032,6 +2056,8 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "ix_run_workflow_package_snapshots_workflow_key",
         "ix_run_workflow_package_snapshots_manifest_hash",
         "ix_run_workflow_package_snapshots_compiled_hash",
+        "ix_run_workflow_package_snapshots_compiled_plan_gin",
+        "ix_run_workflow_package_snapshots_model_connections_gin",
     } <= snapshot_indexes
     assert snapshot_foreign_keys == {(("run_id",), "runs", "CASCADE")}
 
@@ -3280,6 +3306,61 @@ def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> N
                         "scope_key": str(run_id),
                     },
                 )
+    finally:
+        engine.dispose()
+
+
+def test_init_db_repairs_jsonb_and_text_indexes_on_existing_persistence_tables(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    index_names = (
+        "ix_agent_memory_entries_subject_refs_gin",
+        "ix_agent_memory_entries_attributes_gin",
+        "ix_agent_memory_revisions_search_text",
+        "ix_run_workflow_package_snapshots_compiled_plan_gin",
+        "ix_run_workflow_package_snapshots_model_connections_gin",
+    )
+
+    try:
+        with engine.begin() as connection:
+            for index_name in index_names:
+                connection.exec_driver_sql(f"DROP INDEX IF EXISTS {index_name}")
+
+        init_db(database_url)
+        _assert_core_memory_table_shape(engine)
+        _assert_runtime_execution_table_shape(engine)
+
+        with engine.connect() as connection:
+            index_definitions = dict(
+                connection.execute(
+                    text(
+                        """
+                        SELECT indexname, indexdef
+                        FROM pg_indexes
+                        WHERE indexname IN :index_names
+                        """
+                    ).bindparams(bindparam("index_names", expanding=True)),
+                    {"index_names": index_names},
+                ).all()
+            )
+
+        assert set(index_definitions) == set(index_names)
+        assert "jsonb_path_ops" in index_definitions["ix_agent_memory_entries_subject_refs_gin"]
+        assert "jsonb_path_ops" in index_definitions["ix_agent_memory_entries_attributes_gin"]
+        assert (
+            "to_tsvector('simple'::regconfig"
+            in index_definitions["ix_agent_memory_revisions_search_text"]
+        )
+        assert (
+            "jsonb_path_ops"
+            in index_definitions["ix_run_workflow_package_snapshots_compiled_plan_gin"]
+        )
+        assert (
+            "jsonb_path_ops"
+            in index_definitions["ix_run_workflow_package_snapshots_model_connections_gin"]
+        )
     finally:
         engine.dispose()
 
@@ -5582,6 +5663,50 @@ def test_init_db_repairs_legacy_enum_only_model_connection_reasoning_effort(
         engine.dispose()
 
 
+def test_init_db_refuses_existing_reports_with_unknown_source(database_url: str) -> None:
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE reports (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    name VARCHAR(200) NOT NULL,
+                    slug VARCHAR(200) NOT NULL,
+                    source VARCHAR(20) NOT NULL DEFAULT 'compiled',
+                    content TEXT NOT NULL,
+                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    CONSTRAINT uq_reports_name UNIQUE (name),
+                    CONSTRAINT uq_reports_slug UNIQUE (slug)
+                )
+                """
+            )
+            _insert_report_upgrade_row(
+                connection,
+                slug="unknown_source_report",
+                source="wire",
+                metadata={"tags": ["invalid"]},
+            )
+
+        with pytest.raises(RuntimeError) as error:
+            init_db(database_url)
+
+        message = str(error.value)
+        assert "reports.source contains unsupported values: wire (1 rows)" in message
+        assert "Expected one of: compiled, uploaded, external, agent" in message
+        assert "without an explicit repair" in message
+        with engine.connect() as connection:
+            invalid_count = connection.execute(
+                text("SELECT COUNT(*) FROM reports WHERE source = 'wire'")
+            ).scalar_one()
+        assert invalid_count == 1
+    finally:
+        engine.dispose()
+
+
 def test_upgrade_legacy_schema_migrates_agent_memory_reports_to_agent_source(
     session_factory,
 ) -> None:
@@ -5656,6 +5781,8 @@ def test_upgrade_legacy_schema_migrates_agent_memory_reports_to_agent_source(
     assert rows[malformed_slug] == {"source": "external", "metadata": malformed_metadata}
     assert rows[uploaded_slug] == {"source": "uploaded", "metadata": uploaded_metadata}
     assert rows[compiled_slug] == {"source": "compiled", "metadata": compiled_metadata}
+    _assert_report_source_constraint(engine)
+    _assert_invalid_report_source_rejected(engine, slug="invalid_after_agent_source_repair")
 
 
 def test_upgrade_legacy_schema_agent_memory_source_repair_is_idempotent(session_factory) -> None:

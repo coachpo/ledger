@@ -92,12 +92,24 @@ describe("useExtensions", () => {
 
     await mutationOptions.onSuccess?.(financeExtension, {});
 
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledTimes(5);
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledTimes(9);
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.extensions.all,
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.tools.all,
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.launches(),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.preflights(),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.rerunDrafts(),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.forkDrafts(),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.portfolios.all,
@@ -110,7 +122,7 @@ describe("useExtensions", () => {
     });
   });
 
-  it("invalidates only extension and tool caches after Digital Oracle state changes", async () => {
+  it("invalidates extension, tool, and readiness caches after Digital Oracle state changes", async () => {
     vi.mocked(toggleExtension).mockResolvedValue(digitalOracleExtension);
     useToggleExtension();
 
@@ -126,12 +138,24 @@ describe("useExtensions", () => {
 
     await mutationOptions.onSuccess?.(digitalOracleExtension, {});
 
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledTimes(2);
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledTimes(6);
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.extensions.all,
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.tools.all,
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.launches(),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.preflights(),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.rerunDrafts(),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.forkDrafts(),
     });
     expect(reactQueryState.invalidateQueriesMock).not.toHaveBeenCalledWith({
       queryKey: queryKeys.portfolios.all,

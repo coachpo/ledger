@@ -15,10 +15,17 @@ from app.extensions.signaldeck_digital_oracle.ownership import (
     DIGITAL_ORACLE_EXTENSION_KEY,
     DIGITAL_ORACLE_RUNTIME_TOOL_KEYS,
 )
+from app.extensions.signaldeck_finance import service_gate as finance_service_gate
 from app.extensions.signaldeck_finance.dependencies import FINANCE_SHARED_SERVICE_OWNERSHIP_MAP
 from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_EXTENSION_KEY,
     FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
+)
+from app.extensions.signaldeck_finance.service_gate import (
+    MARKET_DATA_SERVICE_SURFACE,
+    PORTFOLIO_SERVICE_SURFACE,
+    POSITION_SERVICE_SURFACE,
+    TEXT_TEMPLATE_SERVICE_SURFACE,
 )
 from app.models.report import Report
 from app.models.text_template import TextTemplate
@@ -26,12 +33,7 @@ from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.portfolio import PortfolioCreate
 from app.schemas.position import PositionCreate
 from app.schemas.text_template import TextTemplateCreate
-from app.services.extension_gate import (
-    MARKET_DATA_SERVICE_SURFACE,
-    PORTFOLIO_SERVICE_SURFACE,
-    POSITION_SERVICE_SURFACE,
-    TEXT_TEMPLATE_SERVICE_SURFACE,
-)
+from app.services import extension_gate as generic_extension_gate
 from app.services.extension_service import ExtensionService
 from app.services.market_data_service import MarketDataService
 from app.services.portfolio_service import PortfolioService
@@ -363,13 +365,16 @@ def test_finance_and_digital_oracle_mixed_states_are_independent(
     assert set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS).isdisjoint(tool_keys)
     finance_preflight = client.post(
         f"/api/workflow-packages/{finance_package['id']}/preflight",
-        params={"workflowKey": "finance_matrix_flow"},
+        json={"workflowKey": "finance_matrix_flow", "parameters": {"ticker": "MSFT"}},
     )
     assert finance_preflight.status_code == 200, finance_preflight.json()
     assert finance_preflight.json()["ready"] is True
     digital_oracle_preflight = client.post(
         f"/api/workflow-packages/{digital_oracle_package['id']}/preflight",
-        params={"workflowKey": "digital_oracle_matrix_flow"},
+        json={
+            "workflowKey": "digital_oracle_matrix_flow",
+            "parameters": {"researchQuestion": "Will rates move lower?"},
+        },
     )
     assert digital_oracle_preflight.status_code == 200, digital_oracle_preflight.json()
     digital_oracle_body = cast(dict[str, object], digital_oracle_preflight.json())
@@ -397,14 +402,17 @@ def test_finance_and_digital_oracle_mixed_states_are_independent(
     )
     digital_oracle_preflight = client.post(
         f"/api/workflow-packages/{digital_oracle_package['id']}/preflight",
-        params={"workflowKey": "digital_oracle_matrix_flow"},
+        json={
+            "workflowKey": "digital_oracle_matrix_flow",
+            "parameters": {"researchQuestion": "Will rates move lower?"},
+        },
     )
     assert digital_oracle_preflight.status_code == 200, digital_oracle_preflight.json()
     assert digital_oracle_preflight.json()["ready"] is True
     assert digital_oracle_preflight.json()["blockingErrors"] == []
     finance_preflight = client.post(
         f"/api/workflow-packages/{finance_package['id']}/preflight",
-        params={"workflowKey": "finance_matrix_flow"},
+        json={"workflowKey": "finance_matrix_flow", "parameters": {"ticker": "MSFT"}},
     )
     assert finance_preflight.status_code == 200, finance_preflight.json()
     finance_body = cast(dict[str, object], finance_preflight.json())
@@ -464,7 +472,7 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     package = _create_finance_tool_package(client, "finance_matrix_package")
     preflight = client.post(
         f"/api/workflow-packages/{package['id']}/preflight",
-        params={"workflowKey": "finance_matrix_flow"},
+        json={"workflowKey": "finance_matrix_flow", "parameters": {"ticker": "MSFT"}},
     )
     assert preflight.status_code == 200, preflight.json()
     assert preflight.json()["ready"] is True
@@ -513,7 +521,7 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
 
     disabled_preflight = client.post(
         f"/api/workflow-packages/{package['id']}/preflight",
-        params={"workflowKey": "finance_matrix_flow"},
+        json={"workflowKey": "finance_matrix_flow", "parameters": {"ticker": "MSFT"}},
     )
     assert disabled_preflight.status_code == 200, disabled_preflight.json()
     disabled_preflight_body = cast(dict[str, object], disabled_preflight.json())
@@ -588,7 +596,7 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
 
     restored_preflight = client.post(
         f"/api/workflow-packages/{package['id']}/preflight",
-        params={"workflowKey": "finance_matrix_flow"},
+        json={"workflowKey": "finance_matrix_flow", "parameters": {"ticker": "MSFT"}},
     )
     assert restored_preflight.status_code == 200, restored_preflight.json()
     assert restored_preflight.json()["ready"] is True
@@ -616,6 +624,14 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
         list[str],
         restored_dependency["surfaces"],
     )
+
+
+def test_finance_service_gate_owns_finance_surface_constants() -> None:
+    assert not hasattr(generic_extension_gate, "FINANCE_WORKSPACE_EXTENSION_KEY")
+    assert not hasattr(generic_extension_gate, "require_finance_workspace_enabled")
+    assert finance_service_gate.FINANCE_WORKSPACE_EXTENSION_KEY == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert finance_service_gate.PORTFOLIO_SERVICE_SURFACE == "service.portfolio"
+    assert finance_service_gate.REPORT_SERVICE_SURFACE == "service.report"
 
 
 def test_finance_shared_service_ownership_map_classifies_task_5_services() -> None:

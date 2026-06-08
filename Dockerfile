@@ -55,9 +55,16 @@ RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.13-slim AS runtime
 
+LABEL org.opencontainers.image.title="SignalDeck local/demo combined image" \
+      org.opencontainers.image.description="Local/demo-only combined SignalDeck app; not a supported production artifact." \
+      io.signaldeck.support="local-demo-only" \
+      io.signaldeck.production-artifact="false"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
+    SIGNALDECK_RUNTIME_MODE=local \
+    SIGNALDECK_ROOT_IMAGE_SCOPE=local-demo-only \
     PORT=8080 \
     BACKEND_PORT=8000 \
     RUN_SCHEDULER=true
@@ -79,5 +86,8 @@ RUN chmod +x /entrypoint.sh \
     && chown -R www-data:www-data /usr/share/nginx/html
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import os, sys, urllib.request; port = os.environ.get('PORT', '8080'); url = f'http://127.0.0.1:{port}/ready'; sys.exit(0 if urllib.request.urlopen(url, timeout=3).status == 200 else 1)"
 
 ENTRYPOINT ["/entrypoint.sh"]

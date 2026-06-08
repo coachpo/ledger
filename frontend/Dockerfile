@@ -24,7 +24,8 @@ FROM node:24-alpine AS runner
 
 WORKDIR /app
 
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    PORT=3000
 
 RUN apk add --no-cache curl
 
@@ -32,5 +33,8 @@ COPY --from=build /app/dist ./dist
 COPY server.mjs ./server.mjs
 
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl --fail "http://127.0.0.1:${PORT:-3000}/health" || exit 1
 
 CMD ["node", "server.mjs"]

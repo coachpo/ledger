@@ -7,12 +7,12 @@ from typing import Literal
 
 from sqlalchemy.orm import Session
 
-from app.core.formatting import normalize_symbol, to_utc
-from app.schemas.memory import MemoryEntryRead, MemoryOutcome
-from app.services.extension_gate import (
+from app.core.formatting import decimal_to_string, normalize_symbol, to_utc
+from app.extensions.signaldeck_finance.service_gate import (
     RETURN_RESOLUTION_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
+from app.schemas.memory import MemoryEntryRead, MemoryLifecycleStatus, MemoryOutcome
 from app.services.market_data_service import MarketClosePoint, MarketDataService
 from app.services.memory_service import MemoryService
 from app.services.quote_provider import QuoteProviderError
@@ -59,6 +59,9 @@ class ReturnResolutionService:
         memory_id: str,
         *,
         end_date: datetime,
+        symbol: str,
+        action: Literal["buy", "hold", "sell"],
+        horizon_days: int | None = None,
         benchmark_symbol: str | None = None,
         commit: bool = True,
     ) -> ReturnResolutionResult:
@@ -74,7 +77,7 @@ class ReturnResolutionService:
         start_boundary = self._start_boundary(memory.created_at)
         requested_end_boundary = self._end_boundary(end_date)
         resolution_end = self._resolution_end_boundary(
-            memory=memory,
+            horizon_days=horizon_days,
             start_boundary=start_boundary,
             requested_end_boundary=requested_end_boundary,
         )
@@ -86,7 +89,8 @@ class ReturnResolutionService:
             )
 
         outcome, reason = self._build_resolution(
-            memory=memory,
+            symbol=symbol,
+            action=action,
             start_boundary=start_boundary,
             end_boundary=resolution_end,
             benchmark_symbol=benchmark_symbol,
@@ -97,7 +101,7 @@ class ReturnResolutionService:
             commit=commit,
         )
         return ReturnResolutionResult(
-            status=outcome.resolved_status,
+            status=outcome.status.value,
             memory=updated_memory,
             reason=reason,
         )
@@ -105,14 +109,15 @@ class ReturnResolutionService:
     def _build_resolution(
         self,
         *,
-        memory: MemoryEntryRead,
+        symbol: str,
+        action: Literal["buy", "hold", "sell"],
         start_boundary: datetime,
         end_boundary: datetime,
         benchmark_symbol: str | None,
     ) -> tuple[MemoryOutcome, str | None]:
         raw_return = self._resolve_directional_return(
-            action=memory.decision.action,
-            symbol=memory.ticker,
+            action=action,
+            symbol=symbol,
             start_boundary=start_boundary,
             end_boundary=end_boundary,
         )
@@ -133,11 +138,18 @@ class ReturnResolutionService:
 
         benchmark_baseline = benchmark_return if benchmark_return is not None else Decimal("0")
         outcome = MemoryOutcome(
-            resolved_status="resolved",
-            resolved_at=self._resolved_at(end_boundary),
-            raw_return=raw_return,
-            benchmark_return=benchmark_return,
-            alpha=raw_return - benchmark_baseline,
+            status=MemoryLifecycleStatus.RESOLVED,
+            summary="Finance return resolved.",
+            observed_at=self._resolved_at(end_boundary),
+            attributes={
+                "rawReturn": decimal_to_string(raw_return),
+                "alpha": decimal_to_string(raw_return - benchmark_baseline),
+                **(
+                    {"benchmarkReturn": decimal_to_string(benchmark_return)}
+                    if benchmark_return is not None
+                    else {}
+                ),
+            },
         )
         return outcome, None
 
@@ -221,20 +233,21 @@ class ReturnResolutionService:
     @staticmethod
     def _resolution_end_boundary(
         *,
-        memory: MemoryEntryRead,
+        horizon_days: int | None,
         start_boundary: datetime,
         requested_end_boundary: datetime,
     ) -> datetime:
-        if memory.horizon_days is None:
+        if horizon_days is None:
             return requested_end_boundary
-        horizon_end = start_boundary + timedelta(days=memory.horizon_days)
+        horizon_end = start_boundary + timedelta(days=horizon_days)
         return ReturnResolutionService._end_boundary(horizon_end)
 
     @staticmethod
     def _expired_resolution(end_boundary: datetime) -> MemoryOutcome:
         return MemoryOutcome(
-            resolved_status="expired",
-            resolved_at=ReturnResolutionService._resolved_at(end_boundary),
+            status=MemoryLifecycleStatus.EXPIRED,
+            summary="Finance return expired.",
+            observed_at=ReturnResolutionService._resolved_at(end_boundary),
         )
 
     @staticmethod

@@ -1,3 +1,5 @@
+import type { RuntimeInputMap } from "../runtime-inputs";
+
 export interface TextTemplateRead {
   id: number;
   name: string;
@@ -16,15 +18,13 @@ export interface TextTemplateUpdateInput {
   content?: string;
 }
 
-export type TemplateRuntimeInputs = Record<string, string>;
-
 export interface TextTemplateInlineCompileInput {
   content: string;
-  inputs?: TemplateRuntimeInputs;
+  inputs?: RuntimeInputMap;
 }
 
 export interface TextTemplateStoredCompileInput {
-  inputs?: TemplateRuntimeInputs;
+  inputs?: RuntimeInputMap;
 }
 
 export interface TextTemplateCompileRead {

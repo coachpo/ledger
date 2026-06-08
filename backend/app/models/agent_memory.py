@@ -72,6 +72,18 @@ class AgentMemoryEntry(IdMixin, Base):
         ),
         Index("ix_agent_memory_entries_status_kind", "status", "kind"),
         Index("ix_agent_memory_entries_content_hash", "content_hash"),
+        Index(
+            "ix_agent_memory_entries_subject_refs_gin",
+            "subject_refs",
+            postgresql_using="gin",
+            postgresql_ops={"subject_refs": "jsonb_path_ops"},
+        ),
+        Index(
+            "ix_agent_memory_entries_attributes_gin",
+            "attributes",
+            postgresql_using="gin",
+            postgresql_ops={"attributes": "jsonb_path_ops"},
+        ),
         Index("ix_agent_memory_entries_source", "source_run_id", "source_agent_key"),
         Index(
             "uq_agent_memory_entries_idempotency_key",
@@ -185,6 +197,11 @@ class AgentMemoryRevision(IdMixin, Base):
         ),
         Index("ix_agent_memory_revisions_entry", "memory_entry_id"),
         Index("ix_agent_memory_revisions_content_hash", "content_hash"),
+        Index(
+            "ix_agent_memory_revisions_search_text",
+            sql_text("to_tsvector('simple'::regconfig, summary || ' ' || content)"),
+            postgresql_using="gin",
+        ),
         Index("ix_agent_memory_revisions_created_at", "created_at"),
         Index("ix_agent_memory_revisions_supersedes", "supersedes_revision_id"),
     )

@@ -5,9 +5,9 @@ import {
   buildRuntimeInputs,
   createRuntimeInputRow,
   createRuntimeInputRows,
+  type RuntimeInputMap,
   type RuntimeInputRow,
 } from "@/lib/runtime-inputs";
-import type { TemplateRuntimeInputs } from "@/lib/types/text-template";
 
 import { Button } from "@/components/ui/button";
 import { EntityDialogShell } from "@/components/shared/entity-dialog-shell";
@@ -30,14 +30,14 @@ type GenerateReportTemplateOption = {
 };
 
 type GenerateReportPayload = {
-  inputs: TemplateRuntimeInputs;
+  inputs: RuntimeInputMap;
   templateId: string;
 };
 
 type GenerateReportDialogProps = {
   defaultTemplateId?: string;
   description?: string;
-  initialInputs?: TemplateRuntimeInputs;
+  initialInputs?: RuntimeInputMap;
   isPending: boolean;
   lockTemplateSelection?: boolean;
   onGenerate: (payload: GenerateReportPayload) => void;

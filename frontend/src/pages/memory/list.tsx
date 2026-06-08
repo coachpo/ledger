@@ -39,7 +39,7 @@ import type {
   MemoryApiEventRead,
   MemoryApiListItemRead,
   MemoryApiListRequest,
-  MemoryRevisionRead,
+  MemoryApiRevisionRead,
   MemoryScope,
 } from "@/lib/types/memory";
 
@@ -377,7 +377,7 @@ function DetailInspection({ detail }: { detail: MemoryApiEntryRead }) {
   );
 }
 
-function RevisionCard({ revision }: { revision: MemoryRevisionRead }) {
+function RevisionCard({ revision }: { revision: MemoryApiRevisionRead }) {
   return (
     <article className="flex min-w-0 flex-col gap-2 rounded-md border bg-background/70 p-3 text-sm">
       <div className="flex flex-wrap gap-2">
@@ -394,7 +394,7 @@ function RevisionCard({ revision }: { revision: MemoryRevisionRead }) {
   );
 }
 
-function RevisionsInspection({ revisions }: { revisions: readonly MemoryRevisionRead[] }) {
+function RevisionsInspection({ revisions }: { revisions: readonly MemoryApiRevisionRead[] }) {
   if (revisions.length === 0) {
     return <EmptyStatePanel description="This memory has no visible revision history for the current access context." title="No revisions returned" />;
   }
@@ -535,7 +535,7 @@ function buildInspectorTabs({
   events: readonly MemoryApiEventRead[] | undefined;
   eventsError: unknown;
   eventsPending: boolean;
-  revisions: readonly MemoryRevisionRead[] | undefined;
+  revisions: readonly MemoryApiRevisionRead[] | undefined;
   revisionsError: unknown;
   revisionsPending: boolean;
 }): SplitInspectorLayoutTab<MemoryInspectorTab>[] {

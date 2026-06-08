@@ -18,6 +18,8 @@ def to_camel(value: str) -> str:
 
 _RUNTIME_INPUT_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+type BrowserSafeErrorDetailValue = str | int | float | bool | None
+
 
 def normalize_runtime_inputs(value: Any) -> dict[str, str]:
     if value is None:
@@ -72,7 +74,7 @@ class CamelModel(BaseModel):
 class ErrorEnvelope(CamelModel):
     code: str
     message: str
-    details: list[dict[str, Any]]
+    details: list[dict[str, BrowserSafeErrorDetailValue]]
 
 
 class TradingSide(str, Enum):  # noqa: UP042

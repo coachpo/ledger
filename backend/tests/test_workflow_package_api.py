@@ -40,6 +40,23 @@ def _package_source() -> str:
     return _FIXTURE.read_text()
 
 
+def _advisory_research_parameters() -> dict[str, object]:
+    return {
+        "ticker": "AAPL",
+        "asOfDate": "2026-05-08",
+        "horizonDays": 30,
+        "benchmarkSymbol": "SPY",
+    }
+
+
+def _secondary_research_parameters() -> dict[str, object]:
+    return {
+        "ticker": "AAPL",
+        "asOfDate": "2026-05-08",
+        "horizonDays": 30,
+    }
+
+
 def _seed_model_connection(
     session_factory: sessionmaker[Session],
     *,
@@ -417,6 +434,28 @@ def test_validate_manifest_reports_diagnostics_without_persisting(
         assert session.query(WorkflowPackage).count() == package_count_before
 
 
+def test_validate_manifest_rejects_unsupported_api_version(
+    client: TestClient,
+) -> None:
+    bad_source = _package_source().replace(
+        "signaldeck.workflowPackage/v1",
+        "signaldeck.workflowPackage/v2",
+        1,
+    )
+
+    response = client.post(
+        "/api/workflow-packages/validate-manifest",
+        json={"manifestSource": bad_source},
+    )
+
+    assert response.status_code == 200, response.json()
+    body = cast(dict[str, object], response.json())
+    assert body["metadata"] is None
+    diagnostics = cast(list[dict[str, object]], body["diagnostics"])
+    assert diagnostics[0]["path"] == "apiVersion"
+    assert "signaldeck.workflowPackage/v1" in cast(str, diagnostics[0]["message"])
+
+
 def test_launch_metadata_and_create_contract_reject_removed_version(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -440,7 +479,10 @@ def test_launch_metadata_and_create_contract_reject_removed_version(
     )
     assert versioned_launch.status_code == 422, versioned_launch.json()
 
-    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        json={"workflowKey": None, "parameters": _advisory_research_parameters()},
+    )
     assert preflight.status_code == 200, preflight.json()
     preflight_body = cast(dict[str, object], preflight.json())
     assert "packageVersion" not in preflight_body
@@ -452,6 +494,7 @@ def test_launch_metadata_and_create_contract_reject_removed_version(
     versioned_preflight = client.post(
         f"/api/workflow-packages/{created['id']}/preflight",
         params={"version": 1},
+        json={"workflowKey": None, "parameters": {}},
     )
     assert versioned_preflight.status_code == 422, versioned_preflight.json()
 
@@ -510,7 +553,7 @@ def test_launch_and_preflight_accept_secondary_tradingagents_workflow_key(
 
         preflight = client.post(
             f"/api/workflow-packages/{package_id}/preflight",
-            params={"workflowKey": workflow_key},
+            json={"workflowKey": workflow_key, "parameters": _secondary_research_parameters()},
         )
         assert preflight.status_code == 200, preflight.json()
         preflight_body = cast(dict[str, object], preflight.json())
@@ -557,7 +600,10 @@ def test_launch_blocks_failed_model_connection(
     }
     assert {error["issue"] for error in launch_errors} == {"Connection test failed."}
 
-    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        json={"workflowKey": None, "parameters": {}},
+    )
     assert preflight.status_code == 200, preflight.json()
     preflight_body = cast(dict[str, object], preflight.json())
     assert preflight_body["ready"] is False

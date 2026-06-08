@@ -784,6 +784,14 @@ def test_parse_package_workflow_graph_preserves_duplicate_diagnostics(
             True,
         ),
         (
+            _valid_package_manifest_source().replace(
+                "signaldeck.workflowPackage/v1", "signaldeck.workflowPackage/v2", 1
+            ),
+            "apiVersion",
+            "Input should be 'signaldeck.workflowPackage/v1'",
+            True,
+        ),
+        (
             _valid_package_manifest_source().replace("kind: WorkflowPackage", "kind: Workflow", 1),
             "kind",
             "Input should be 'WorkflowPackage'",

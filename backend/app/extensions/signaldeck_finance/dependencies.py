@@ -9,9 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
 from app.extensions.signaldeck_finance.provider_factories import create_quote_provider
-from app.services.balance_service import BalanceService
-from app.services.csv_import_service import CsvImportService
-from app.services.extension_gate import (
+from app.extensions.signaldeck_finance.service_gate import (
     BALANCE_SERVICE_SURFACE,
     CSV_IMPORT_SERVICE_SURFACE,
     MARKET_DATA_SERVICE_SURFACE,
@@ -25,6 +23,8 @@ from app.services.extension_gate import (
     TEXT_TEMPLATE_SERVICE_SURFACE,
     TRADING_OPERATION_SERVICE_SURFACE,
 )
+from app.services.balance_service import BalanceService
+from app.services.csv_import_service import CsvImportService
 from app.services.market_data_service import MarketDataService
 from app.services.portfolio_service import PortfolioService
 from app.services.position_service import PositionService

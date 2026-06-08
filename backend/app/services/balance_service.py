@@ -3,10 +3,13 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.core.errors import business_rule_error, not_found_error
+from app.extensions.signaldeck_finance.service_gate import (
+    BALANCE_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.balance import Balance
 from app.repositories.balance import BalanceRepository
 from app.schemas.balance import BalanceCreate, BalanceRead, BalanceUpdate
-from app.services.extension_gate import BALANCE_SERVICE_SURFACE, require_finance_workspace_enabled
 from app.services.portfolio_service import PortfolioService
 
 

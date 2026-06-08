@@ -111,14 +111,8 @@ import type {
 } from "@/lib/types/schedule";
 import type { WorkflowPackageRuntimeInputEntryRead } from "@/lib/types/workflow-package";
 
-import {
-  ScheduleDateTimePicker,
-  ScheduleTimePicker,
-} from "./pickers";
-import {
-  buildTimeZoneOptions,
-  resolveBrowserTimeZone,
-} from "./time-zones";
+import { ScheduleDateTimePicker, ScheduleTimePicker } from "./pickers";
+import { buildTimeZoneOptions, resolveBrowserTimeZone } from "./time-zones";
 
 type DiagnosticSeverity = "error" | "warning" | "info";
 
@@ -175,7 +169,13 @@ const FIRE_HISTORY_ROW_DEFERRED_CLASS_NAME =
 
 const SCHEDULE_PLACEHOLDER_GROUPS = [
   {
-    items: ["schedule.id", "schedule.name", "schedule.timezone", "schedule.packageKey", "schedule.workflowKey"],
+    items: [
+      "schedule.id",
+      "schedule.name",
+      "schedule.timezone",
+      "schedule.packageKey",
+      "schedule.workflowKey",
+    ],
     title: "Schedule",
   },
   {
@@ -229,15 +229,16 @@ const EXACT_SCHEDULE_PLACEHOLDER_EXPRESSIONS = new Set([
 const PLACEHOLDER_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
 const TEMPLATE_VAR_KEY_PATTERN = /^[A-Za-z0-9_.-]+$/;
 
-const DAY_OF_WEEK_OPTIONS: Array<{ label: string; value: ScheduleDayOfWeek }> = [
-  { label: "Monday", value: "mon" },
-  { label: "Tuesday", value: "tue" },
-  { label: "Wednesday", value: "wed" },
-  { label: "Thursday", value: "thu" },
-  { label: "Friday", value: "fri" },
-  { label: "Saturday", value: "sat" },
-  { label: "Sunday", value: "sun" },
-];
+const DAY_OF_WEEK_OPTIONS: Array<{ label: string; value: ScheduleDayOfWeek }> =
+  [
+    { label: "Monday", value: "mon" },
+    { label: "Tuesday", value: "tue" },
+    { label: "Wednesday", value: "wed" },
+    { label: "Thursday", value: "thu" },
+    { label: "Friday", value: "fri" },
+    { label: "Saturday", value: "sat" },
+    { label: "Sunday", value: "sun" },
+  ];
 
 const MONTH_DAY_OPTIONS = Array.from({ length: 31 }, (_, index) => index + 1);
 
@@ -257,7 +258,10 @@ type ScheduleWorkflowState = {
   workflowDisplayLabel: string;
 };
 
-function resolveScheduleWorkflowState(schedule: ScheduleRead, manifest: unknown): ScheduleWorkflowState {
+function resolveScheduleWorkflowState(
+  schedule: ScheduleRead,
+  manifest: unknown,
+): ScheduleWorkflowState {
   const persistedWorkflowKey = schedule.workflowKey.trim();
   const fallbackPackageLabel = schedule.packageKey.trim() || "package";
   if (!manifest) {
@@ -273,10 +277,14 @@ function resolveScheduleWorkflowState(schedule: ScheduleRead, manifest: unknown)
     manifest && typeof manifest === "object" && !Array.isArray(manifest)
       ? (manifest as UnknownRecord)
       : null;
-  const packageDefinition = manifestRecord && isUnknownRecord(manifestRecord.packageDefinition)
-    ? manifestRecord.packageDefinition
-    : null;
-  const metadata = packageDefinition && isUnknownRecord(packageDefinition.metadata) ? packageDefinition.metadata : null;
+  const packageDefinition =
+    manifestRecord && isUnknownRecord(manifestRecord.packageDefinition)
+      ? manifestRecord.packageDefinition
+      : null;
+  const metadata =
+    packageDefinition && isUnknownRecord(packageDefinition.metadata)
+      ? packageDefinition.metadata
+      : null;
   const packageDisplayLabel =
     typeof metadata?.name === "string" && metadata.name.trim().length > 0
       ? metadata.name.trim()
@@ -286,7 +294,8 @@ function resolveScheduleWorkflowState(schedule: ScheduleRead, manifest: unknown)
     persistedWorkflowKey || null,
   );
   const displayWorkflowLabel =
-    workflowOptions.find((option) => option.key === persistedWorkflowKey)?.label ??
+    workflowOptions.find((option) => option.key === persistedWorkflowKey)
+      ?.label ??
     persistedWorkflowKey ??
     "workflow";
   const manifestWorkflow = getWorkflowOptions(
@@ -341,7 +350,10 @@ function isSupportedPlaceholderExpression(expression: string): boolean {
   return Boolean(key) && TEMPLATE_VAR_KEY_PATTERN.test(key);
 }
 
-function collectUnsupportedPlaceholders(value: unknown, field = "inputTemplate"): ScheduleValidationError[] {
+function collectUnsupportedPlaceholders(
+  value: unknown,
+  field = "inputTemplate",
+): ScheduleValidationError[] {
   if (typeof value === "string") {
     const issues: ScheduleValidationError[] = [];
     for (const match of value.matchAll(PLACEHOLDER_PATTERN)) {
@@ -356,7 +368,9 @@ function collectUnsupportedPlaceholders(value: unknown, field = "inputTemplate")
     return issues;
   }
   if (Array.isArray(value)) {
-    return value.flatMap((item, index) => collectUnsupportedPlaceholders(item, `${field}[${index}]`));
+    return value.flatMap((item, index) =>
+      collectUnsupportedPlaceholders(item, `${field}[${index}]`),
+    );
   }
   if (isUnknownRecord(value)) {
     return Object.entries(value).flatMap(([key, nestedValue]) =>
@@ -366,7 +380,9 @@ function collectUnsupportedPlaceholders(value: unknown, field = "inputTemplate")
   return [];
 }
 
-function scheduleInputDraftErrors(inputTemplateText: string): ScheduleValidationError[] {
+function scheduleInputDraftErrors(
+  inputTemplateText: string,
+): ScheduleValidationError[] {
   try {
     const inputTemplate = parseScheduleInputTemplateJson(inputTemplateText);
     return collectUnsupportedPlaceholders(inputTemplate);
@@ -374,7 +390,10 @@ function scheduleInputDraftErrors(inputTemplateText: string): ScheduleValidation
     return [
       {
         field: "inputTemplate",
-        issue: error instanceof Error ? error.message : "Scheduled input template JSON must be valid.",
+        issue:
+          error instanceof Error
+            ? error.message
+            : "Scheduled input template JSON must be valid.",
       },
     ];
   }
@@ -385,12 +404,16 @@ function newestRuntimeInputEntries(
   timestampKey: "createdAt" | "updatedAt",
 ): WorkflowPackageRuntimeInputEntryRead[] {
   return [...entries].sort((left, right) => {
-    const timestampDelta = Date.parse(right[timestampKey]) - Date.parse(left[timestampKey]);
+    const timestampDelta =
+      Date.parse(right[timestampKey]) - Date.parse(left[timestampKey]);
     return timestampDelta === 0 ? right.id - left.id : timestampDelta;
   });
 }
 
-function savedInputEntryLabel(entry: WorkflowPackageRuntimeInputEntryRead, mode: SavedInputEntryMode): string {
+function savedInputEntryLabel(
+  entry: WorkflowPackageRuntimeInputEntryRead,
+  mode: SavedInputEntryMode,
+): string {
   const name = entry.name?.trim();
   if (name) {
     return name;
@@ -415,7 +438,10 @@ function summarizeRenderedParameterValue(value: unknown): string {
     if (value.length === 0) {
       return "[]";
     }
-    const preview = value.slice(0, 2).map(summarizeRenderedParameterValue).join(", ");
+    const preview = value
+      .slice(0, 2)
+      .map(summarizeRenderedParameterValue)
+      .join(", ");
     return value.length > 2 ? `[${preview}, ...]` : `[${preview}]`;
   }
   if (isUnknownRecord(value)) {
@@ -423,7 +449,9 @@ function summarizeRenderedParameterValue(value: unknown): string {
     if (keys.length === 0) {
       return "{}";
     }
-    return keys.length > 2 ? `{${keys.slice(0, 2).join(", ")}, ...}` : `{${keys.join(", ")}}`;
+    return keys.length > 2
+      ? `{${keys.slice(0, 2).join(", ")}, ...}`
+      : `{${keys.join(", ")}}`;
   }
   return String(value);
 }
@@ -431,7 +459,12 @@ function summarizeRenderedParameterValue(value: unknown): string {
 function summarizeRenderedParameters(value: unknown): string[] {
   if (isUnknownRecord(value)) {
     const entries = Object.entries(value);
-    return entries.slice(0, 4).map(([key, entryValue]) => `${key}: ${summarizeRenderedParameterValue(entryValue)}`);
+    return entries
+      .slice(0, 4)
+      .map(
+        ([key, entryValue]) =>
+          `${key}: ${summarizeRenderedParameterValue(entryValue)}`,
+      );
   }
   if (value === undefined) {
     return [];
@@ -439,7 +472,10 @@ function summarizeRenderedParameters(value: unknown): string[] {
   return [summarizeRenderedParameterValue(value)];
 }
 
-function formatOptionalDateTime(value: string | null, fallback: string): string {
+function formatOptionalDateTime(
+  value: string | null,
+  fallback: string,
+): string {
   return value ? formatDateTime(value) : fallback;
 }
 
@@ -565,11 +601,16 @@ function recurrenceFromDraft(draft: ScheduleEditorDraft): ScheduleRecurrence {
   };
 }
 
-function scheduleUpdatePayloadFromDraft(draft: ScheduleEditorDraft): ScheduleUpdateRequest {
+function scheduleUpdatePayloadFromDraft(
+  draft: ScheduleEditorDraft,
+): ScheduleUpdateRequest {
   return {
     description: draft.description.trim() || null,
     endsAt: serializeDateTimeLocalInput(draft.endsAt),
-    misfireGraceSeconds: clampPositiveInteger(draft.misfireGraceSeconds, 86_400),
+    misfireGraceSeconds: clampPositiveInteger(
+      draft.misfireGraceSeconds,
+      86_400,
+    ),
     misfirePolicy: draft.misfirePolicy,
     name: draft.name.trim(),
     overlapPolicy: draft.overlapPolicy,
@@ -580,7 +621,11 @@ function scheduleUpdatePayloadFromDraft(draft: ScheduleEditorDraft): ScheduleUpd
   };
 }
 
-function toggleDraftValue<T>(values: readonly T[], value: T, enabled: boolean): T[] {
+function toggleDraftValue<T>(
+  values: readonly T[],
+  value: T,
+  enabled: boolean,
+): T[] {
   if (enabled) {
     return values.includes(value) ? [...values] : [...values, value];
   }
@@ -627,7 +672,10 @@ function fireIssueMessage(fire: ScheduleFireRead): string | null {
     return `Skipped: ${formatStatusLabel(fire.skipReason)}`;
   }
   if (fire.errorCode || fire.errorMessage) {
-    return [fire.errorCode ? formatStatusLabel(fire.errorCode) : null, fire.errorMessage]
+    return [
+      fire.errorCode ? formatStatusLabel(fire.errorCode) : null,
+      fire.errorMessage,
+    ]
       .filter(Boolean)
       .join(" — ");
   }
@@ -645,12 +693,16 @@ function fireLocalSummary(fire: ScheduleFireRead): string {
     return fire.scheduledLocalDateTime;
   }
   if (fire.scheduledLocalDate || fire.scheduledLocalTime) {
-    return [fire.scheduledLocalDate, fire.scheduledLocalTime].filter(Boolean).join(" ");
+    return [fire.scheduledLocalDate, fire.scheduledLocalTime]
+      .filter(Boolean)
+      .join(" ");
   }
   return "No local occurrence recorded";
 }
 
-function fireHistoryFromRead(read: ScheduleFireListRead | undefined): FireHistoryState {
+function fireHistoryFromRead(
+  read: ScheduleFireListRead | undefined,
+): FireHistoryState {
   return {
     error: null,
     fires: read?.items ?? [],
@@ -660,7 +712,11 @@ function fireHistoryFromRead(read: ScheduleFireListRead | undefined): FireHistor
   };
 }
 
-function buildRunNowFeedback(schedule: ScheduleRead, fire: ScheduleFireRead, runId: number): RunNowFeedback {
+function buildRunNowFeedback(
+  schedule: ScheduleRead,
+  fire: ScheduleFireRead,
+  runId: number,
+): RunNowFeedback {
   const issue = fireIssueMessage(fire);
   if (issue) {
     return {
@@ -689,12 +745,15 @@ function buildRunNowFeedback(schedule: ScheduleRead, fire: ScheduleFireRead, run
   };
 }
 
-function buildScheduleDiagnostics(schedule: ScheduleRead): ScheduleDiagnostic[] {
+function buildScheduleDiagnostics(
+  schedule: ScheduleRead,
+): ScheduleDiagnostic[] {
   const diagnostics: ScheduleDiagnostic[] = [];
 
   if (schedule.status === "enabled" && !schedule.nextFireAt) {
     diagnostics.push({
-      message: "This task is enabled, but it does not have another upcoming run yet.",
+      message:
+        "This task is enabled, but it does not have another upcoming run yet.",
       severity: "error",
       title: "No upcoming run",
     });
@@ -702,7 +761,8 @@ function buildScheduleDiagnostics(schedule: ScheduleRead): ScheduleDiagnostic[] 
 
   if (schedule.latestStatus === "failed") {
     diagnostics.push({
-      message: "The latest run did not finish successfully. Review the recent run details before relying on this task.",
+      message:
+        "The latest run did not finish successfully. Review the recent run details before relying on this task.",
       severity: "error",
       title: "Latest fire failed",
     });
@@ -710,14 +770,16 @@ function buildScheduleDiagnostics(schedule: ScheduleRead): ScheduleDiagnostic[] 
 
   if (schedule.status === "paused") {
     diagnostics.push({
-      message: "This task is paused. Its settings stay here, but it will not start new scheduled runs.",
+      message:
+        "This task is paused. Its settings stay here, but it will not start new scheduled runs.",
       severity: "warning",
       title: "Schedule paused",
     });
   }
 
   diagnostics.push({
-    message: "Custom inputs start from the workflow's current input shape and are only saved after you review the preview.",
+    message:
+      "Custom inputs start from the workflow's current input shape and are only saved after you review the preview.",
     severity: "info",
     title: "Inputs use schema draft source",
   });
@@ -753,7 +815,10 @@ function DetailPageSkeleton() {
       contextBar={<Skeleton className="h-24 w-full" />}
       testId="scheduled-task-detail-page"
     >
-      <div data-testid="scheduled-task-detail-loading" className="grid gap-3 xl:grid-cols-3">
+      <div
+        data-testid="scheduled-task-detail-loading"
+        className="grid gap-3 xl:grid-cols-3"
+      >
         <Skeleton className="h-36 w-full" />
         <Skeleton className="h-36 w-full" />
         <Skeleton className="h-36 w-full" />
@@ -784,7 +849,10 @@ function DetailPageMessage({
       }
       testId="scheduled-task-detail-page"
     >
-      <Card className="min-w-0 border-destructive/30 bg-destructive/5 shadow-sm" data-testid={testId}>
+      <Card
+        className="min-w-0 border-destructive/30 bg-destructive/5 shadow-sm"
+        data-testid={testId}
+      >
         <CardHeader>
           <CardTitle className="flex min-w-0 items-center gap-2 text-destructive">
             <AlertCircle />
@@ -851,14 +919,21 @@ function ScheduleHeader({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-1.5" data-testid="scheduled-task-detail-header">
+    <div
+      className="flex min-w-0 flex-col gap-1.5"
+      data-testid="scheduled-task-detail-header"
+    >
       <div
         className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
         data-testid="scheduled-task-detail-header-top-row"
       >
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-          <h1 className="min-w-0 text-xl font-semibold tracking-tight">{schedule.name}</h1>
-          <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">schedule:{schedule.id}</span>
+          <h1 className="min-w-0 text-xl font-semibold tracking-tight">
+            {schedule.name}
+          </h1>
+          <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">
+            schedule:{schedule.id}
+          </span>
           <StatusBadge status={schedule.status} />
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
@@ -890,7 +965,12 @@ function ScheduleHeader({
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button aria-label="More actions" size="icon" type="button" variant="outline">
+              <Button
+                aria-label="More actions"
+                size="icon"
+                type="button"
+                variant="outline"
+              >
                 <MoreHorizontal />
               </Button>
             </DropdownMenuTrigger>
@@ -903,14 +983,20 @@ function ScheduleHeader({
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link to={`/scheduled-tasks/new?duplicateFrom=${schedule.id}`}>
+                  <Link
+                    to={`/scheduled-tasks/new?duplicateFrom=${schedule.id}`}
+                  >
                     <CopyPlus data-icon="inline-start" />
                     Duplicate
                   </Link>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem disabled={mutationPending} variant="destructive" onSelect={onDelete}>
+              <DropdownMenuItem
+                disabled={mutationPending}
+                variant="destructive"
+                onSelect={onDelete}
+              >
                 <Trash2 data-icon="inline-start" />
                 Delete
               </DropdownMenuItem>
@@ -956,12 +1042,18 @@ function SummaryCard({
     <Card className="min-w-0 gap-3" data-testid={testId}>
       <CardHeader className="gap-1.5 px-4 pt-4 pb-0">
         <div className="min-w-0">
-          <CardTitle className="text-sm font-semibold tracking-tight">{title}</CardTitle>
-          <CardDescription className="mt-1 text-xs leading-5">{description}</CardDescription>
+          <CardTitle className="text-sm font-semibold tracking-tight">
+            {title}
+          </CardTitle>
+          <CardDescription className="mt-1 text-xs leading-5">
+            {description}
+          </CardDescription>
         </div>
         {action ? <CardAction>{action}</CardAction> : null}
       </CardHeader>
-      <CardContent className="min-w-0 px-4 pt-0 pb-4 text-sm">{children}</CardContent>
+      <CardContent className="min-w-0 px-4 pt-0 pb-4 text-sm">
+        {children}
+      </CardContent>
     </Card>
   );
 }
@@ -981,19 +1073,25 @@ function DetailRows({ rows }: { rows: Array<[string, React.ReactNode]> }) {
 
 function StaleWorkflowAlert({ workflowKey }: { workflowKey: string }) {
   return (
-    <Alert data-testid="scheduled-task-stale-workflow-warning" variant="default">
+    <Alert
+      data-testid="scheduled-task-stale-workflow-warning"
+      variant="default"
+    >
       <AlertCircle />
       <AlertTitle>Workflow no longer available</AlertTitle>
       <AlertDescription>
-        This schedule still references <span className="font-mono">{workflowKey}</span>, but that workflow is no
-        longer present in the current package manifest. Preview, run now, and runtime inputs are disabled until the
-        schedule target is recreated.
+        This schedule still references{" "}
+        <span className="font-mono">{workflowKey}</span>, but that workflow is
+        no longer present in the current package manifest. Preview, run now, and
+        runtime inputs are disabled until the schedule target is recreated.
       </AlertDescription>
     </Alert>
   );
 }
 
-function actionableDiagnostics(diagnostics: readonly ScheduleDiagnostic[]): ScheduleDiagnostic[] {
+function actionableDiagnostics(
+  diagnostics: readonly ScheduleDiagnostic[],
+): ScheduleDiagnostic[] {
   return diagnostics.filter((diagnostic) => diagnostic.severity !== "info");
 }
 
@@ -1013,7 +1111,10 @@ function SummaryPanels({
   const visibleDiagnostics = actionableDiagnostics(diagnostics);
 
   return (
-    <div className="grid min-w-0 gap-3 lg:grid-cols-2 2xl:grid-cols-4" data-testid="scheduled-task-detail-summary-grid">
+    <div
+      className="grid min-w-0 gap-3 lg:grid-cols-2 2xl:grid-cols-4"
+      data-testid="scheduled-task-detail-summary-grid"
+    >
       <SummaryCard
         action={<CalendarClock className="text-muted-foreground" />}
         description="The next scheduled occurrence in this task's timezone."
@@ -1022,7 +1123,11 @@ function SummaryPanels({
       >
         <div className="flex min-w-0 flex-col gap-3">
           <p className="break-words text-base font-semibold tracking-tight">
-            {formatOptionalDateTimeInTimeZone(schedule.nextFireAt, schedule.timezone, "No upcoming run")}
+            {formatOptionalDateTimeInTimeZone(
+              schedule.nextFireAt,
+              schedule.timezone,
+              "No upcoming run",
+            )}
           </p>
           <DetailRows
             rows={[
@@ -1044,7 +1149,9 @@ function SummaryPanels({
               ["Workflow", workflowDisplayLabel],
             ]}
           />
-          {workflowIsStale ? <StaleWorkflowAlert workflowKey={schedule.workflowKey} /> : null}
+          {workflowIsStale ? (
+            <StaleWorkflowAlert workflowKey={schedule.workflowKey} />
+          ) : null}
         </div>
       </SummaryCard>
       <SummaryCard
@@ -1057,14 +1164,22 @@ function SummaryPanels({
             <LatestStatusBadge status={schedule.latestStatus} />
             {schedule.latestRunId ? (
               <Button asChild size="sm" variant="outline">
-                <Link to={`/runs/${schedule.latestRunId}`}>Open run #{schedule.latestRunId}</Link>
+                <Link to={`/runs/${schedule.latestRunId}`}>
+                  Open run #{schedule.latestRunId}
+                </Link>
               </Button>
             ) : null}
           </div>
           <DetailRows
             rows={[
-              ["Fire", schedule.latestFireId ? `#${schedule.latestFireId}` : "None"],
-              ["Run", schedule.latestRunId ? `#${schedule.latestRunId}` : "None"],
+              [
+                "Fire",
+                schedule.latestFireId ? `#${schedule.latestFireId}` : "None",
+              ],
+              [
+                "Run",
+                schedule.latestRunId ? `#${schedule.latestRunId}` : "None",
+              ],
             ]}
           />
         </div>
@@ -1085,7 +1200,9 @@ function SummaryPanels({
                 <Alert
                   className="min-w-0"
                   key={`${diagnostic.severity}-${diagnostic.title}`}
-                  variant={diagnostic.severity === "error" ? "destructive" : "default"}
+                  variant={
+                    diagnostic.severity === "error" ? "destructive" : "default"
+                  }
                 >
                   <AlertCircle />
                   <AlertTitle>{diagnostic.title}</AlertTitle>
@@ -1100,7 +1217,11 @@ function SummaryPanels({
   );
 }
 
-function RunNowFeedbackAlert({ feedback }: { feedback: RunNowFeedback | null }) {
+function RunNowFeedbackAlert({
+  feedback,
+}: {
+  feedback: RunNowFeedback | null;
+}) {
   if (!feedback) {
     return null;
   }
@@ -1114,7 +1235,10 @@ function RunNowFeedbackAlert({ feedback }: { feedback: RunNowFeedback | null }) 
       <AlertTitle>{feedback.title}</AlertTitle>
       <AlertDescription>
         <span>{feedback.message}</span>{" "}
-        <Link className="font-medium underline underline-offset-4" to={`/runs/${feedback.runId}`}>
+        <Link
+          className="font-medium underline underline-offset-4"
+          to={`/runs/${feedback.runId}`}
+        >
           Open run #{feedback.runId}
         </Link>
       </AlertDescription>
@@ -1130,18 +1254,30 @@ type ScheduleFieldProps = {
   labelId?: string;
 };
 
-function ScheduleField({ children, description, htmlFor, label, labelId }: ScheduleFieldProps) {
+function ScheduleField({
+  children,
+  description,
+  htmlFor,
+  label,
+  labelId,
+}: ScheduleFieldProps) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {htmlFor ? (
-        <Label htmlFor={htmlFor} id={labelId}>{label}</Label>
+        <Label htmlFor={htmlFor} id={labelId}>
+          {label}
+        </Label>
       ) : labelId ? (
-        <div className="text-sm font-medium leading-none" id={labelId}>{label}</div>
+        <div className="text-sm font-medium leading-none" id={labelId}>
+          {label}
+        </div>
       ) : (
         <div className="text-sm font-medium leading-none">{label}</div>
       )}
       {children}
-      {description ? <p className="text-xs leading-5 text-muted-foreground">{description}</p> : null}
+      {description ? (
+        <p className="text-xs leading-5 text-muted-foreground">{description}</p>
+      ) : null}
     </div>
   );
 }
@@ -1157,7 +1293,9 @@ function ScheduleConfigurationEditor({
   schedule: ScheduleRead;
   onSave: (payload: ScheduleUpdateRequest) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState<ScheduleEditorDraft>(() => scheduleDraftFromRead(schedule));
+  const [draft, setDraft] = useState<ScheduleEditorDraft>(() =>
+    scheduleDraftFromRead(schedule),
+  );
 
   useEffect(() => {
     setDraft(scheduleDraftFromRead(schedule));
@@ -1165,7 +1303,11 @@ function ScheduleConfigurationEditor({
 
   const browserTimeZone = useMemo(() => resolveBrowserTimeZone(), []);
   const timeZoneOptions = useMemo(
-    () => buildTimeZoneOptions({ browserTimeZone, selectedTimeZone: draft.timezone }),
+    () =>
+      buildTimeZoneOptions({
+        browserTimeZone,
+        selectedTimeZone: draft.timezone,
+      }),
     [browserTimeZone, draft.timezone],
   );
   const controlDisabled = disabled || isSaving;
@@ -1177,7 +1319,10 @@ function ScheduleConfigurationEditor({
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-5" data-testid="scheduled-task-recurrence-editor">
+    <div
+      className="flex min-w-0 flex-col gap-5"
+      data-testid="scheduled-task-recurrence-editor"
+    >
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">
         <ScheduleField
           description="This title appears in the scheduled task header and list views."
@@ -1200,7 +1345,9 @@ function ScheduleConfigurationEditor({
             id="schedule-description"
             value={draft.description}
             disabled={controlDisabled}
-            onChange={(event) => updateDraft({ description: event.target.value })}
+            onChange={(event) =>
+              updateDraft({ description: event.target.value })
+            }
           />
         </ScheduleField>
       </div>
@@ -1215,9 +1362,13 @@ function ScheduleConfigurationEditor({
               aria-label="Schedule enabled"
               checked={draft.status === "enabled"}
               disabled={controlDisabled}
-              onCheckedChange={(checked) => updateDraft({ status: checked ? "enabled" : "paused" })}
+              onCheckedChange={(checked) =>
+                updateDraft({ status: checked ? "enabled" : "paused" })
+              }
             />
-            <span className="text-sm font-medium">{draft.status === "enabled" ? "Enabled" : "Paused"}</span>
+            <span className="text-sm font-medium">
+              {draft.status === "enabled" ? "Enabled" : "Paused"}
+            </span>
           </div>
         </ScheduleField>
         <div
@@ -1231,10 +1382,15 @@ function ScheduleConfigurationEditor({
           >
             <Select
               value={draft.recurrenceType}
-              onValueChange={(value: ScheduleRecurrenceType) => updateDraft({ recurrenceType: value })}
+              onValueChange={(value: ScheduleRecurrenceType) =>
+                updateDraft({ recurrenceType: value })
+              }
               disabled={controlDisabled}
             >
-              <SelectTrigger id="schedule-recurrence-type" aria-labelledby="schedule-recurrence-type-label">
+              <SelectTrigger
+                id="schedule-recurrence-type"
+                aria-labelledby="schedule-recurrence-type-label"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1257,7 +1413,10 @@ function ScheduleConfigurationEditor({
               onValueChange={(timezone) => updateDraft({ timezone })}
               disabled={controlDisabled}
             >
-              <SelectTrigger id="schedule-timezone" aria-labelledby="schedule-timezone-label">
+              <SelectTrigger
+                id="schedule-timezone"
+                aria-labelledby="schedule-timezone-label"
+              >
                 <SelectValue placeholder="Select timezone..." />
               </SelectTrigger>
               <SelectContent>
@@ -1286,16 +1445,28 @@ function ScheduleConfigurationEditor({
                 type="number"
                 value={draft.every}
                 disabled={controlDisabled}
-                onChange={(event) => updateDraft({ every: Number.parseInt(event.target.value, 10) || 1 })}
+                onChange={(event) =>
+                  updateDraft({
+                    every: Number.parseInt(event.target.value, 10) || 1,
+                  })
+                }
               />
             </ScheduleField>
-            <ScheduleField label="Interval unit" labelId="schedule-interval-unit-label">
+            <ScheduleField
+              label="Interval unit"
+              labelId="schedule-interval-unit-label"
+            >
               <Select
                 value={draft.intervalUnit}
-                onValueChange={(value: ScheduleIntervalUnit) => updateDraft({ intervalUnit: value })}
+                onValueChange={(value: ScheduleIntervalUnit) =>
+                  updateDraft({ intervalUnit: value })
+                }
                 disabled={controlDisabled}
               >
-                <SelectTrigger id="schedule-interval-unit" aria-labelledby="schedule-interval-unit-label">
+                <SelectTrigger
+                  id="schedule-interval-unit"
+                  aria-labelledby="schedule-interval-unit-label"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1337,15 +1508,23 @@ function ScheduleConfigurationEditor({
           <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {DAY_OF_WEEK_OPTIONS.map((option) => {
               const checked = draft.daysOfWeek.includes(option.value);
-              const disableLastChecked = checked && draft.daysOfWeek.length === 1;
+              const disableLastChecked =
+                checked && draft.daysOfWeek.length === 1;
               return (
-                <label key={option.value} className="flex min-w-0 items-center gap-2 rounded-md border p-2 text-sm">
+                <label
+                  key={option.value}
+                  className="flex min-w-0 items-center gap-2 rounded-md border p-2 text-sm"
+                >
                   <Checkbox
                     checked={checked}
                     disabled={controlDisabled || disableLastChecked}
                     onCheckedChange={(nextChecked) =>
                       updateDraft({
-                        daysOfWeek: toggleDraftValue(draft.daysOfWeek, option.value, nextChecked === true),
+                        daysOfWeek: toggleDraftValue(
+                          draft.daysOfWeek,
+                          option.value,
+                          nextChecked === true,
+                        ),
                       })
                     }
                   />
@@ -1365,17 +1544,23 @@ function ScheduleConfigurationEditor({
           <div className="grid min-w-0 grid-cols-4 gap-2 sm:grid-cols-8 lg:grid-cols-12">
             {MONTH_DAY_OPTIONS.map((day) => {
               const checked = draft.daysOfMonth.includes(day);
-              const disableLastChecked = checked && draft.daysOfMonth.length === 1;
+              const disableLastChecked =
+                checked && draft.daysOfMonth.length === 1;
               return (
-                <label key={day} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                <label
+                  key={day}
+                  className="flex items-center gap-2 rounded-md border p-2 text-sm"
+                >
                   <Checkbox
                     checked={checked}
                     disabled={controlDisabled || disableLastChecked}
                     onCheckedChange={(nextChecked) =>
                       updateDraft({
-                        daysOfMonth: toggleDraftValue(draft.daysOfMonth, day, nextChecked === true).sort(
-                          (left, right) => left - right,
-                        ),
+                        daysOfMonth: toggleDraftValue(
+                          draft.daysOfMonth,
+                          day,
+                          nextChecked === true,
+                        ).sort((left, right) => left - right),
                       })
                     }
                   />
@@ -1436,11 +1621,18 @@ function ScheduleConfigurationEditor({
           <div className="min-w-0">
             <h3 className="text-sm font-semibold">Extra settings</h3>
             <p className="text-xs leading-5 text-muted-foreground">
-              Tune overlap and missed-run handling only when this task needs custom behavior.
+              Tune overlap and missed-run handling only when this task needs
+              custom behavior.
             </p>
           </div>
           <CollapsibleTrigger asChild>
-            <Button aria-label="Advanced options" className="h-7 shrink-0 gap-1 px-2 text-xs" size="sm" type="button" variant="ghost">
+            <Button
+              aria-label="Advanced options"
+              className="h-7 shrink-0 gap-1 px-2 text-xs"
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
               More options
               <ChevronDown className="size-3" />
             </Button>
@@ -1455,10 +1647,15 @@ function ScheduleConfigurationEditor({
             >
               <Select
                 value={draft.overlapPolicy}
-                onValueChange={(value: ScheduleOverlapPolicy) => updateDraft({ overlapPolicy: value })}
+                onValueChange={(value: ScheduleOverlapPolicy) =>
+                  updateDraft({ overlapPolicy: value })
+                }
                 disabled={controlDisabled}
               >
-                <SelectTrigger id="schedule-overlap-policy" aria-labelledby="schedule-overlap-policy-label">
+                <SelectTrigger
+                  id="schedule-overlap-policy"
+                  aria-labelledby="schedule-overlap-policy-label"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1476,10 +1673,15 @@ function ScheduleConfigurationEditor({
             >
               <Select
                 value={draft.misfirePolicy}
-                onValueChange={(value: ScheduleMisfirePolicy) => updateDraft({ misfirePolicy: value })}
+                onValueChange={(value: ScheduleMisfirePolicy) =>
+                  updateDraft({ misfirePolicy: value })
+                }
                 disabled={controlDisabled}
               >
-                <SelectTrigger id="schedule-misfire-policy" aria-labelledby="schedule-misfire-policy-label">
+                <SelectTrigger
+                  id="schedule-misfire-policy"
+                  aria-labelledby="schedule-misfire-policy-label"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1502,7 +1704,10 @@ function ScheduleConfigurationEditor({
                 value={draft.misfireGraceSeconds}
                 disabled={controlDisabled}
                 onChange={(event) =>
-                  updateDraft({ misfireGraceSeconds: Number.parseInt(event.target.value, 10) || 1 })
+                  updateDraft({
+                    misfireGraceSeconds:
+                      Number.parseInt(event.target.value, 10) || 1,
+                  })
                 }
               />
             </ScheduleField>
@@ -1511,7 +1716,11 @@ function ScheduleConfigurationEditor({
       </Collapsible>
 
       <div className="flex justify-end">
-        <Button disabled={controlDisabled} type="button" onClick={() => void saveDraft()}>
+        <Button
+          disabled={controlDisabled}
+          type="button"
+          onClick={() => void saveDraft()}
+        >
           {isSaving ? "Saving schedule..." : "Save schedule"}
         </Button>
       </div>
@@ -1539,8 +1748,14 @@ function ScheduleInputValidationAlert({
       <AlertDescription>
         <ul className="flex list-disc flex-col gap-1 pl-5">
           {errors.map((error) => (
-            <li className="min-w-0 break-words" key={`${error.field}-${error.issue}`}>
-              <code className="break-all rounded bg-muted/40 px-1 py-0.5 text-xs">{error.field}</code>: {error.issue}
+            <li
+              className="min-w-0 break-words"
+              key={`${error.field}-${error.issue}`}
+            >
+              <code className="break-all rounded bg-muted/40 px-1 py-0.5 text-xs">
+                {error.field}
+              </code>
+              : {error.issue}
             </li>
           ))}
         </ul>
@@ -1567,7 +1782,6 @@ function savedRuntimeInputRegistryEntry(
   };
 }
 
-
 function ScheduleTemplateVarsEditor({
   disabled,
   rows,
@@ -1578,16 +1792,24 @@ function ScheduleTemplateVarsEditor({
   onRowsChange: (rows: RuntimeInputRow[]) => void;
 }) {
   const updateRow = (rowId: string, field: "key" | "value", value: string) => {
-    onRowsChange(rows.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)));
+    onRowsChange(
+      rows.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)),
+    );
   };
 
   return (
-    <div className="min-w-0 rounded-xl border bg-card p-3" data-testid="scheduled-input-template-vars">
+    <div
+      className="min-w-0 rounded-xl border bg-card p-3"
+      data-testid="scheduled-input-template-vars"
+    >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <div className="min-w-0">
-          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Template variables</span>
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Template variables
+          </span>
           <p className="text-xs leading-5 text-muted-foreground">
-            Each row becomes a <code>{"vars.<key>"}</code> placeholder you can use in custom inputs.
+            Each row becomes a <code>{"vars.<key>"}</code> placeholder you can
+            use in custom inputs.
           </p>
         </div>
         <Button
@@ -1596,17 +1818,27 @@ function ScheduleTemplateVarsEditor({
           size="sm"
           type="button"
           variant="outline"
-          onClick={() => onRowsChange([...rows, createRuntimeInputRow("scheduled-template-vars")])}
+          onClick={() =>
+            onRowsChange([
+              ...rows,
+              createRuntimeInputRow("scheduled-template-vars"),
+            ])
+          }
         >
           Add variable
         </Button>
       </div>
       <div className="mt-2 flex min-w-0 flex-col gap-2">
         {rows.length === 0 ? (
-          <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs italic text-muted-foreground">No template variables yet.</p>
+          <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs italic text-muted-foreground">
+            No template variables yet.
+          </p>
         ) : null}
         {rows.map((row) => (
-          <div key={row.id} className="grid min-w-0 gap-2 sm:grid-cols-[minmax(8rem,14rem)_minmax(0,1fr)_2rem]">
+          <div
+            key={row.id}
+            className="grid min-w-0 gap-2 sm:grid-cols-[minmax(8rem,14rem)_minmax(0,1fr)_2rem]"
+          >
             <Input
               aria-label={`Template variable key ${row.key || row.id}`}
               className="h-8 min-w-0 text-xs"
@@ -1621,7 +1853,9 @@ function ScheduleTemplateVarsEditor({
               disabled={disabled}
               placeholder="core_portfolio"
               value={row.value}
-              onChange={(event) => updateRow(row.id, "value", event.target.value)}
+              onChange={(event) =>
+                updateRow(row.id, "value", event.target.value)
+              }
             />
             <Button
               aria-label={`Remove template variable ${row.key || row.id}`}
@@ -1630,7 +1864,9 @@ function ScheduleTemplateVarsEditor({
               size="icon"
               type="button"
               variant="ghost"
-              onClick={() => onRowsChange(rows.filter((item) => item.id !== row.id))}
+              onClick={() =>
+                onRowsChange(rows.filter((item) => item.id !== row.id))
+              }
             >
               <Trash2 className="size-3" />
             </Button>
@@ -1650,11 +1886,21 @@ function SchedulePlaceholderReference() {
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold">Allowed scheduled placeholders</h3>
-          <p className="text-xs leading-5 text-muted-foreground">Use only these supported placeholder groups when you build custom inputs.</p>
+          <h3 className="text-sm font-semibold">
+            Allowed scheduled placeholders
+          </h3>
+          <p className="text-xs leading-5 text-muted-foreground">
+            Use only these supported placeholder groups when you build custom
+            inputs.
+          </p>
         </div>
         <CollapsibleTrigger asChild>
-          <Button className="h-7 shrink-0 gap-1 px-2 text-xs" size="sm" type="button" variant="ghost">
+          <Button
+            className="h-7 shrink-0 gap-1 px-2 text-xs"
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
             Reference
             <ChevronDown className="size-3" />
           </Button>
@@ -1664,14 +1910,23 @@ function SchedulePlaceholderReference() {
         <div className="flex min-w-0 flex-col gap-3 border-t pt-3">
           <div className="grid min-w-0 gap-3 lg:grid-cols-2 2xl:grid-cols-5">
             {SCHEDULE_PLACEHOLDER_GROUPS.map((group) => (
-              <div className="min-w-0 rounded-lg border bg-background/60 p-3" key={group.title}>
+              <div
+                className="min-w-0 rounded-lg border bg-background/60 p-3"
+                key={group.title}
+              >
                 <div className="flex min-w-0 items-center justify-between gap-2">
-                  <h4 className="text-xs font-semibold tracking-tight">{group.title}</h4>
+                  <h4 className="text-xs font-semibold tracking-tight">
+                    {group.title}
+                  </h4>
                   <Badge variant="secondary">{group.items.length}</Badge>
                 </div>
                 <div className="mt-2 flex min-w-0 flex-wrap gap-2">
                   {group.items.map((example) => (
-                    <Badge className="font-mono" key={example} variant="outline">
+                    <Badge
+                      className="font-mono"
+                      key={example}
+                      variant="outline"
+                    >
                       {`{{${example}}}`}
                     </Badge>
                   ))}
@@ -1680,7 +1935,8 @@ function SchedulePlaceholderReference() {
             ))}
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
-            Use a full placeholder when you want to keep the original JSON type. Mixed text values are always saved as strings.
+            Use a full placeholder when you want to keep the original JSON type.
+            Mixed text values are always saved as strings.
           </p>
         </div>
       </CollapsibleContent>
@@ -1718,18 +1974,30 @@ function ScheduleInputPreview({
 }) {
   if (!preview) {
     return (
-      <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-xs leading-5 text-muted-foreground" data-testid="schedule-input-preview-empty">
-        Preview the next run to fill in placeholders and check the input shape before saving.
+      <div
+        className="rounded-lg border border-dashed bg-muted/20 p-3 text-xs leading-5 text-muted-foreground"
+        data-testid="schedule-input-preview-empty"
+      >
+        Preview the next run to fill in placeholders and check the input shape
+        before saving.
       </div>
     );
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3" data-testid="schedule-input-preview">
+    <div
+      className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3"
+      data-testid="schedule-input-preview"
+    >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <Badge variant={preview.ready ? "secondary" : "destructive"}>{preview.ready ? "Ready" : "Not ready"}</Badge>
+        <Badge variant={preview.ready ? "secondary" : "destructive"}>
+          {preview.ready ? "Ready" : "Not ready"}
+        </Badge>
         <span className="text-xs text-muted-foreground">
-          Scheduled for {preview.scheduledFor ? formatDateTimeInTimeZone(preview.scheduledFor, timeZone) : "not available"}
+          Scheduled for{" "}
+          {preview.scheduledFor
+            ? formatDateTimeInTimeZone(preview.scheduledFor, timeZone)
+            : "not available"}
         </span>
       </div>
       <ScheduleInputValidationAlert
@@ -1739,12 +2007,20 @@ function ScheduleInputPreview({
       />
       <div className="grid min-w-0 gap-3 lg:grid-cols-2">
         <div className="min-w-0">
-          <p className="mb-1 text-xs font-medium text-muted-foreground">Rendered parameters</p>
-          <pre className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 text-xs">{stringifyJson(preview.renderedParameters)}</pre>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">
+            Rendered parameters
+          </p>
+          <pre className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 text-xs">
+            {stringifyJson(preview.renderedParameters)}
+          </pre>
         </div>
         <div className="min-w-0">
-          <p className="mb-1 text-xs font-medium text-muted-foreground">Template context</p>
-          <pre className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 text-xs">{stringifyJson(preview.templateContext)}</pre>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">
+            Template context
+          </p>
+          <pre className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 text-xs">
+            {stringifyJson(preview.templateContext)}
+          </pre>
         </div>
       </div>
     </div>
@@ -1764,27 +2040,55 @@ function ScheduledInputsEditor({
   isSaving: boolean;
   schedule: ScheduleRead;
   workflowInputsUnavailableReason: string | null;
-  onSave: (payload: ScheduleUpdateRequest, successMessage?: string) => Promise<void>;
+  onSave: (
+    payload: ScheduleUpdateRequest,
+    successMessage?: string,
+  ) => Promise<void>;
 }) {
-  const runtimeInputRegistry = useWorkflowPackageRuntimeInputRegistry(schedule.packageId, activeWorkflowKey);
-  const createPersonalEntry = useCreateWorkflowPackageRuntimeInputPersonalEntry();
-  const updatePersonalEntry = useUpdateWorkflowPackageRuntimeInputPersonalEntry();
-  const deletePersonalEntry = useDeleteWorkflowPackageRuntimeInputPersonalEntry();
+  const runtimeInputRegistry = useWorkflowPackageRuntimeInputRegistry(
+    schedule.packageId,
+    activeWorkflowKey,
+  );
+  const createPersonalEntry =
+    useCreateWorkflowPackageRuntimeInputPersonalEntry();
+  const updatePersonalEntry =
+    useUpdateWorkflowPackageRuntimeInputPersonalEntry();
+  const deletePersonalEntry =
+    useDeleteWorkflowPackageRuntimeInputPersonalEntry();
   const previewScheduledInputs = usePreviewUnsavedScheduledTask();
-  const [inputTemplateText, setInputTemplateText] = useState(() => stringifyJson({}));
-  const [templateVarRows, setTemplateVarRows] = useState<RuntimeInputRow[]>(() => createRuntimeInputRows("scheduled-template-vars"));
+  const [inputTemplateText, setInputTemplateText] = useState(() =>
+    stringifyJson({}),
+  );
+  const [templateVarRows, setTemplateVarRows] = useState<RuntimeInputRow[]>(
+    () => createRuntimeInputRows("scheduled-template-vars"),
+  );
   const [personalPresetName, setPersonalPresetName] = useState("");
-  const [previewRead, setPreviewRead] = useState<SchedulePreviewRead | null>(null);
-  const [previewRequestErrors, setPreviewRequestErrors] = useState<ScheduleValidationError[]>([]);
+  const [previewRead, setPreviewRead] = useState<SchedulePreviewRead | null>(
+    null,
+  );
+  const [previewRequestErrors, setPreviewRequestErrors] = useState<
+    ScheduleValidationError[]
+  >([]);
   const inputTemplateEditedRef = useRef(false);
   const lastTemplateIdentityRef = useRef<string | null>(null);
 
   const inputSchema = runtimeInputRegistry.data?.currentMetadata?.inputSchema;
-  const inputSchemaFingerprint = runtimeInputRegistry.data?.currentMetadata?.schemaFingerprint ?? stringifyJson(inputSchema);
-  const inputTemplate = useMemo(() => createLaunchParametersTemplate(inputSchema), [inputSchema]);
-  const schemaTemplateText = useMemo(() => resetLaunchParametersTemplate(inputTemplate), [inputTemplate]);
+  const inputSchemaFingerprint =
+    runtimeInputRegistry.data?.currentMetadata?.schemaFingerprint ??
+    stringifyJson(inputSchema);
+  const inputTemplate = useMemo(
+    () => createLaunchParametersTemplate(inputSchema),
+    [inputSchema],
+  );
+  const schemaTemplateText = useMemo(
+    () => resetLaunchParametersTemplate(inputTemplate),
+    [inputTemplate],
+  );
   const templateIdentity = `${schedule.packageId}:${activeWorkflowKey}:${inputSchemaFingerprint}`;
-  const draftErrors = useMemo(() => scheduleInputDraftErrors(inputTemplateText), [inputTemplateText]);
+  const draftErrors = useMemo(
+    () => scheduleInputDraftErrors(inputTemplateText),
+    [inputTemplateText],
+  );
   const personalPanelEntries = useMemo(
     () =>
       newestRuntimeInputEntries(
@@ -1848,7 +2152,9 @@ function ScheduledInputsEditor({
 
   const buildDraft = (): ScheduleInputDraft | null => {
     if (draftErrors.length > 0) {
-      toast.error(draftErrors[0]?.issue ?? "Fix scheduled input template errors first.");
+      toast.error(
+        draftErrors[0]?.issue ?? "Fix scheduled input template errors first.",
+      );
       return null;
     }
     return {
@@ -1857,9 +2163,17 @@ function ScheduledInputsEditor({
     };
   };
 
-  const previewDraft = async (draft: ScheduleInputDraft): Promise<SchedulePreviewRead | null> => {
+  const previewDraft = async (
+    draft: ScheduleInputDraft,
+  ): Promise<SchedulePreviewRead | null> => {
     if (!schedule.nextFireAt) {
-      const errors = [{ field: "scheduledFor", issue: "Next fire is unavailable, so the scheduled input template cannot be rendered yet." }];
+      const errors = [
+        {
+          field: "scheduledFor",
+          issue:
+            "Next fire is unavailable, so the scheduled input template cannot be rendered yet.",
+        },
+      ];
       setPreviewRequestErrors(errors);
       setPreviewRead(null);
       toast.error(errors[0].issue);
@@ -1884,9 +2198,17 @@ function ScheduledInputsEditor({
       }
       return result;
     } catch (error) {
-      const errors = error instanceof ApiRequestError && error.details.length > 0
-        ? error.details
-        : [{ field: "preview", issue: errorMessage(error, "Scheduled input preview failed.") }];
+      const fallbackIssue = errorMessage(
+        error,
+        "Scheduled input preview failed.",
+      );
+      const errors =
+        error instanceof ApiRequestError && error.details.length > 0
+          ? error.details.map((detail) => ({
+              field: detail.field ?? "preview",
+              issue: detail.issue ?? fallbackIssue,
+            }))
+          : [{ field: "preview", issue: fallbackIssue }];
       setPreviewRequestErrors(errors);
       setPreviewRead(null);
       toast.error(errorMessage(error, "Scheduled input preview failed."));
@@ -1947,11 +2269,15 @@ function ScheduledInputsEditor({
       setPersonalPresetName("");
       toast.success("Saved scheduled input preset");
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to save scheduled input preset."));
+      toast.error(
+        errorMessage(error, "Failed to save scheduled input preset."),
+      );
     }
   };
 
-  const overwritePersonalInput = async (entry: WorkflowPackageRuntimeInputEntryRead) => {
+  const overwritePersonalInput = async (
+    entry: WorkflowPackageRuntimeInputEntryRead,
+  ) => {
     const draft = buildDraft();
     if (!draft) {
       return;
@@ -1967,11 +2293,15 @@ function ScheduledInputsEditor({
       setPersonalPresetName("");
       toast.success("Updated scheduled input preset");
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to update scheduled input preset."));
+      toast.error(
+        errorMessage(error, "Failed to update scheduled input preset."),
+      );
     }
   };
 
-  const deletePersonalInput = async (entry: WorkflowPackageRuntimeInputEntryRead) => {
+  const deletePersonalInput = async (
+    entry: WorkflowPackageRuntimeInputEntryRead,
+  ) => {
     try {
       await deletePersonalEntry.mutateAsync({
         entryId: entry.id,
@@ -1980,17 +2310,25 @@ function ScheduledInputsEditor({
       });
       toast.success("Deleted scheduled input preset");
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to delete scheduled input preset."));
+      toast.error(
+        errorMessage(error, "Failed to delete scheduled input preset."),
+      );
     }
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-4" data-testid="scheduled-inputs-editor">
+    <div
+      className="flex min-w-0 flex-col gap-4"
+      data-testid="scheduled-inputs-editor"
+    >
       {!canUseNextFire ? (
         <Alert variant="destructive">
           <AlertCircle />
           <AlertTitle>Next fire preview unavailable</AlertTitle>
-          <AlertDescription>Next run preview and save are blocked until a future occurrence exists.</AlertDescription>
+          <AlertDescription>
+            Next run preview and save are blocked until a future occurrence
+            exists.
+          </AlertDescription>
         </Alert>
       ) : null}
       <ScheduleInputValidationAlert
@@ -2003,38 +2341,64 @@ function ScheduledInputsEditor({
         testId="scheduled-input-preview-request-feedback"
         title="Scheduled input preview failed"
       />
-      <div className="flex min-w-0 flex-col gap-3" data-testid="scheduled-input-json-panel">
+      <div
+        className="flex min-w-0 flex-col gap-3"
+        data-testid="scheduled-input-json-panel"
+      >
         <div
           className="scheduled-inputs-toolbar flex min-w-0 flex-col gap-3 rounded-xl border bg-muted/10 p-3 lg:flex-row lg:items-center lg:justify-between"
           data-testid="scheduled-inputs-toolbar"
         >
           <div className="min-w-0">
-            <Label htmlFor="schedule-input-template-json">Scheduled input template JSON</Label>
+            <Label htmlFor="schedule-input-template-json">
+              Scheduled input template JSON
+            </Label>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Edit the workflow-seeded template, preview the next fire, then save the validated payload back to this task.
+              Edit the workflow-seeded template, preview the next fire, then
+              save the validated payload back to this task.
             </p>
           </div>
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
-            <Button disabled={controlDisabled} size="sm" type="button" variant="outline" onClick={resetInputTemplate}>
+            <Button
+              disabled={controlDisabled}
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={resetInputTemplate}
+            >
               Reset to schema template
             </Button>
             <Button
-              disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
+              disabled={
+                controlDisabled ||
+                previewScheduledInputs.isPending ||
+                draftErrors.length > 0 ||
+                !canUseNextFire
+              }
               size="sm"
               type="button"
               variant="outline"
               onClick={() => void previewCurrentDraft()}
             >
-              {previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+              {previewScheduledInputs.isPending ? (
+                <Loader2 className="animate-spin" data-icon="inline-start" />
+              ) : null}
               Preview next run
             </Button>
             <Button
-              disabled={controlDisabled || previewScheduledInputs.isPending || draftErrors.length > 0 || !canUseNextFire}
+              disabled={
+                controlDisabled ||
+                previewScheduledInputs.isPending ||
+                draftErrors.length > 0 ||
+                !canUseNextFire
+              }
               size="sm"
               type="button"
               onClick={() => void saveInputTemplate()}
             >
-              {isSaving || previewScheduledInputs.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+              {isSaving || previewScheduledInputs.isPending ? (
+                <Loader2 className="animate-spin" data-icon="inline-start" />
+              ) : null}
               Save inputs
             </Button>
           </div>
@@ -2048,25 +2412,42 @@ function ScheduledInputsEditor({
           value={inputTemplateText}
           onChange={(event) => updateInputTemplateText(event.target.value)}
         />
-        <ScheduleInputPreview preview={previewRead} timeZone={schedule.timezone} />
+        <ScheduleInputPreview
+          preview={previewRead}
+          timeZone={schedule.timezone}
+        />
       </div>
       <div className="flex min-w-0 flex-col gap-3">
         {!inputTemplate.schemaSupported ? (
           <Alert data-testid="scheduled-input-schema-template-warning">
             <AlertCircle />
             <AlertTitle>Schema template started empty</AlertTitle>
-            <AlertDescription>{inputTemplate.reason ?? "The workflow input schema could not seed a JSON object template."}</AlertDescription>
+            <AlertDescription>
+              {inputTemplate.reason ??
+                "The workflow input schema could not seed a JSON object template."}
+            </AlertDescription>
           </Alert>
         ) : null}
         <SchedulePlaceholderReference />
-        <ScheduleTemplateVarsEditor disabled={controlDisabled} rows={templateVarRows} onRowsChange={setTemplateVarRows} />
+        <ScheduleTemplateVarsEditor
+          disabled={controlDisabled}
+          rows={templateVarRows}
+          onRowsChange={setTemplateVarRows}
+        />
         <SavedRuntimeInputRegistryPanel
           capMessage="Personal presets are capped at 20 per workflow. Delete one before saving another."
-          createDisabled={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching || !personalPresetName.trim() || draftErrors.length > 0}
+          createDisabled={
+            runtimeInputRegistry.isPending ||
+            runtimeInputRegistry.isFetching ||
+            !personalPresetName.trim() ||
+            draftErrors.length > 0
+          }
           createPending={createPersonalEntry.isPending}
           deletePending={deletePersonalEntry.isPending}
           entryLabelNoun="scheduled input"
-          error={runtimeInputRegistry.isError ? runtimeInputRegistry.error : null}
+          error={
+            runtimeInputRegistry.isError ? runtimeInputRegistry.error : null
+          }
           errorTitle="Saved scheduled inputs unavailable"
           helperCopy="Load personal presets or reuse previous run inputs as a starting point for this task."
           historyEmptyMessage="No runtime input history yet for this workflow."
@@ -2074,7 +2455,9 @@ function ScheduledInputsEditor({
           historyListClassName="scheduled-input-history-list flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1"
           historyListTestId="scheduled-input-history-list"
           historySectionLabel="Recent run-captured inputs"
-          loading={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching}
+          loading={
+            runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching
+          }
           loadingMessage={`Loading saved inputs for ${activeWorkflowKey || "this workflow"}...`}
           personalEntries={personalPanelEntries}
           personalEmptyMessage="No personal presets saved for this workflow."
@@ -2154,25 +2537,45 @@ function FireHistoryRow({
       <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold tracking-tight">Fire #{fire.id}</p>
-            <Badge className="capitalize" variant={fireStatusBadgeVariant(fire.status)}>
+            <p className="text-sm font-semibold tracking-tight">
+              Fire #{fire.id}
+            </p>
+            <Badge
+              className="capitalize"
+              variant={fireStatusBadgeVariant(fire.status)}
+            >
               {formatStatusLabel(fire.status)}
             </Badge>
             <Badge variant="outline">{formatFireReason(fire.reason)}</Badge>
           </div>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Occurrence {formatDateTimeInTimeZone(fire.scheduledFor, timeZone)} · Schedule local {fireLocalSummary(fire)}
+            Occurrence {formatDateTimeInTimeZone(fire.scheduledFor, timeZone)} ·
+            Schedule local {fireLocalSummary(fire)}
           </p>
         </div>
         {fire.runId ? (
-          <Button asChild className="w-full lg:w-auto" size="sm" variant="outline">
-            <Link aria-label={`Open run #${fire.runId} for fire #${fire.id}`} to={`/runs/${fire.runId}`}>
+          <Button
+            asChild
+            className="w-full lg:w-auto"
+            size="sm"
+            variant="outline"
+          >
+            <Link
+              aria-label={`Open run #${fire.runId} for fire #${fire.id}`}
+              to={`/runs/${fire.runId}`}
+            >
               Open run #{fire.runId}
               <ExternalLink data-icon="inline-end" />
             </Link>
           </Button>
         ) : (
-          <Button className="w-full lg:w-auto" disabled size="sm" type="button" variant="outline">
+          <Button
+            className="w-full lg:w-auto"
+            disabled
+            size="sm"
+            type="button"
+            variant="outline"
+          >
             No linked run
           </Button>
         )}
@@ -2180,7 +2583,10 @@ function FireHistoryRow({
       <DetailRows
         rows={[
           ["Fire key", <span className="font-mono">{fire.fireKey}</span>],
-          ["Prepared", formatOptionalDateTime(fire.materializedAt, "Not prepared")],
+          [
+            "Prepared",
+            formatOptionalDateTime(fire.materializedAt, "Not prepared"),
+          ],
           ["Created", formatDateTime(fire.createdAt)],
           ["Linked run", fire.runId ? `#${fire.runId}` : "None"],
         ]}
@@ -2189,7 +2595,11 @@ function FireHistoryRow({
         <span className="font-medium text-muted-foreground">Parameters</span>
         {parameterSummary.length > 0 ? (
           parameterSummary.map((item) => (
-            <Badge className="max-w-full font-mono" key={`${fire.id}-${item}`} variant="secondary">
+            <Badge
+              className="max-w-full font-mono"
+              key={`${fire.id}-${item}`}
+              variant="secondary"
+            >
               {item}
             </Badge>
           ))
@@ -2198,17 +2608,30 @@ function FireHistoryRow({
         )}
       </div>
       {issue ? (
-        <Alert data-testid={`scheduled-task-fire-issue-${fire.id}`} variant={fire.status === "failed" ? "destructive" : "default"}>
+        <Alert
+          data-testid={`scheduled-task-fire-issue-${fire.id}`}
+          variant={fire.status === "failed" ? "destructive" : "default"}
+        >
           <AlertCircle />
-          <AlertTitle>{fire.status === "failed" ? "Fire failed" : "Fire skipped"}</AlertTitle>
+          <AlertTitle>
+            {fire.status === "failed" ? "Fire failed" : "Fire skipped"}
+          </AlertTitle>
           <AlertDescription>{issue}</AlertDescription>
         </Alert>
       ) : null}
-      <Collapsible className="min-w-0" open={detailsOpen} onOpenChange={setDetailsOpen}>
+      <Collapsible
+        className="min-w-0"
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
+      >
         <div className="flex min-w-0 flex-col gap-2 rounded-md border bg-muted/10 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-medium text-foreground">Rendered parameters</p>
-            <p className="text-xs text-muted-foreground">Open the full JSON only when you need the expanded payload.</p>
+            <p className="text-xs font-medium text-foreground">
+              Rendered parameters
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Open the full JSON only when you need the expanded payload.
+            </p>
           </div>
           <CollapsibleTrigger asChild>
             <Button
@@ -2219,13 +2642,21 @@ function FireHistoryRow({
               variant="ghost"
             >
               {detailsOpen ? "Hide details" : "Show details"}
-              <ChevronDown className={`size-3 ${detailsOpen ? "rotate-180" : ""}`} />
+              <ChevronDown
+                className={`size-3 ${detailsOpen ? "rotate-180" : ""}`}
+              />
             </Button>
           </CollapsibleTrigger>
         </div>
         <CollapsibleContent className="pt-2">
-          <div className="min-w-0" data-testid={`scheduled-task-fire-details-${fire.id}`}>
-            <pre className="max-h-56 overflow-auto rounded-md bg-muted/40 p-3 text-xs" data-testid={`scheduled-task-fire-parameters-${fire.id}`}>
+          <div
+            className="min-w-0"
+            data-testid={`scheduled-task-fire-details-${fire.id}`}
+          >
+            <pre
+              className="max-h-56 overflow-auto rounded-md bg-muted/40 p-3 text-xs"
+              data-testid={`scheduled-task-fire-parameters-${fire.id}`}
+            >
               {stringifyJson(fire.renderedParameters)}
             </pre>
           </div>
@@ -2235,14 +2666,18 @@ function FireHistoryRow({
   );
 }
 
-function normalizeFireHistoryState(history: FireHistoryState | undefined): FireHistoryState {
-  return history ?? {
-    error: null,
-    fires: [],
-    isError: false,
-    isPending: false,
-    totalCount: 0,
-  };
+function normalizeFireHistoryState(
+  history: FireHistoryState | undefined,
+): FireHistoryState {
+  return (
+    history ?? {
+      error: null,
+      fires: [],
+      isError: false,
+      isPending: false,
+      totalCount: 0,
+    }
+  );
 }
 
 function FireHistoryPanel({
@@ -2265,22 +2700,35 @@ function FireHistoryPanel({
   }
   if (safeHistory.isError) {
     return (
-      <Alert data-testid="scheduled-task-fire-history-error" variant="destructive">
+      <Alert
+        data-testid="scheduled-task-fire-history-error"
+        variant="destructive"
+      >
         <AlertCircle />
         <AlertTitle>Runs unavailable</AlertTitle>
-        <AlertDescription>{safeHistory.error?.message ?? "Failed to load runs for this task."}</AlertDescription>
+        <AlertDescription>
+          {safeHistory.error?.message ?? "Failed to load runs for this task."}
+        </AlertDescription>
       </Alert>
     );
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-3" data-testid="scheduled-task-fire-history-panel">
+    <div
+      className="flex min-w-0 flex-col gap-3"
+      data-testid="scheduled-task-fire-history-panel"
+    >
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
           <Badge variant="outline">{safeHistory.totalCount} total fires</Badge>
         </div>
         {latestRunId ? (
-          <Button asChild className="w-full sm:w-auto" size="sm" variant="outline">
+          <Button
+            asChild
+            className="w-full sm:w-auto"
+            size="sm"
+            variant="outline"
+          >
             <Link to={`/runs/${latestRunId}`}>
               Open latest run #{latestRunId}
               <ExternalLink data-icon="inline-end" />
@@ -2295,7 +2743,13 @@ function FireHistoryPanel({
             <p>Scheduled and manual runs will appear here.</p>
           </div>
           <div>
-            <Button className="h-8" disabled={runNowDisabled} size="sm" type="button" onClick={onRunNow}>
+            <Button
+              className="h-8"
+              disabled={runNowDisabled}
+              size="sm"
+              type="button"
+              onClick={onRunNow}
+            >
               <PlayCircle data-icon="inline-start" />
               Run now
             </Button>
@@ -2329,7 +2783,10 @@ function ScheduleTabs({
   fireHistory: FireHistoryState | undefined;
   mutationPending: boolean;
   onRunNow: () => void;
-  onSaveSchedule: (payload: ScheduleUpdateRequest, successMessage?: string) => Promise<void>;
+  onSaveSchedule: (
+    payload: ScheduleUpdateRequest,
+    successMessage?: string,
+  ) => Promise<void>;
   packageDisplayLabel: string;
   runNowDisabled: boolean;
   schedule: ScheduleRead;
@@ -2338,11 +2795,22 @@ function ScheduleTabs({
   workflowInputsUnavailableReason: string | null;
   workflowRegistryKey: string;
 }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "schedule" | "inputs" | "runs">("overview");
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "schedule" | "inputs" | "runs"
+  >("overview");
 
   return (
-    <Tabs className="min-h-0 min-w-0 flex-1 gap-3" value={activeTab} onValueChange={(value) => setActiveTab(value as "overview" | "schedule" | "inputs" | "runs")}>
-      <TabsList aria-label="Scheduled task detail sections" className="h-8 max-w-full shrink-0 justify-start overflow-x-auto">
+    <Tabs
+      className="min-h-0 min-w-0 flex-1 gap-3"
+      value={activeTab}
+      onValueChange={(value) =>
+        setActiveTab(value as "overview" | "schedule" | "inputs" | "runs")
+      }
+    >
+      <TabsList
+        aria-label="Scheduled task detail sections"
+        className="h-8 max-w-full shrink-0 justify-start overflow-x-auto"
+      >
         <TabsTrigger value="overview">Overview</TabsTrigger>
         <TabsTrigger value="schedule">Schedule</TabsTrigger>
         <TabsTrigger value="inputs">Inputs</TabsTrigger>
@@ -2367,7 +2835,10 @@ function ScheduleTabs({
         forceMount
         value="schedule"
       >
-        <SummaryCard description="Update timing, timezone, and advanced run rules for this task." title="Schedule configuration">
+        <SummaryCard
+          description="Update timing, timezone, and advanced run rules for this task."
+          title="Schedule configuration"
+        >
           <ScheduleConfigurationEditor
             disabled={false}
             isSaving={mutationPending}
@@ -2382,7 +2853,10 @@ function ScheduleTabs({
         forceMount
         value="inputs"
       >
-        <SummaryCard description="Review the workflow-seeded input template, placeholders, presets, and future-run values." title="Inputs">
+        <SummaryCard
+          description="Review the workflow-seeded input template, placeholders, presets, and future-run values."
+          title="Inputs"
+        >
           <ScheduledInputsEditor
             activeWorkflowKey={workflowRegistryKey}
             disabled={false}
@@ -2399,7 +2873,10 @@ function ScheduleTabs({
         value="runs"
       >
         <div className="flex min-w-0 flex-col gap-3">
-          <SummaryCard description="Recent scheduled and manual runs for this task." title="Runs">
+          <SummaryCard
+            description="Recent scheduled and manual runs for this task."
+            title="Runs"
+          >
             <FireHistoryPanel
               history={fireHistory}
               latestRunId={schedule.latestRunId}
@@ -2418,9 +2895,13 @@ export function ScheduledTaskDetailPage() {
   const { scheduleId } = useParams<{ scheduleId: string }>();
   const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [runNowFeedback, setRunNowFeedback] = useState<RunNowFeedback | null>(null);
+  const [runNowFeedback, setRunNowFeedback] = useState<RunNowFeedback | null>(
+    null,
+  );
   const scheduleQuery = useScheduledTask(scheduleId);
-  const workflowManifestQuery = useWorkflowPackageManifest(scheduleQuery.data?.packageId);
+  const workflowManifestQuery = useWorkflowPackageManifest(
+    scheduleQuery.data?.packageId,
+  );
   const firesQuery = useScheduledTaskFires(scheduleId, { limit: 20 });
   const updateSchedule = useUpdateScheduledTask();
   const runNow = useRunScheduledTaskNow();
@@ -2449,7 +2930,10 @@ export function ScheduledTaskDetailPage() {
       />
     ) : (
       <DetailPageMessage
-        description={errorMessage(scheduleQuery.error, "Failed to load scheduled task.")}
+        description={errorMessage(
+          scheduleQuery.error,
+          "Failed to load scheduled task.",
+        )}
         testId="scheduled-task-detail-error"
         title="Failed to load scheduled task"
       />
@@ -2471,13 +2955,14 @@ export function ScheduledTaskDetailPage() {
     schedule,
     workflowManifestQuery.data,
   );
-  const workflowScopedActionUnavailableReason =
-    workflowInputsUnavailableReason({
+  const workflowScopedActionUnavailableReason = workflowInputsUnavailableReason(
+    {
       manifestError: workflowManifestQuery.isError,
       manifestPending: workflowManifestQuery.isPending,
       workflowKey: schedule.workflowKey,
       workflowState,
-    });
+    },
+  );
   const diagnostics = buildScheduleDiagnostics(schedule);
   const fireHistory = {
     ...fireHistoryFromRead(firesQuery?.data),
@@ -2485,20 +2970,26 @@ export function ScheduledTaskDetailPage() {
     isError: firesQuery?.isError ?? false,
     isPending: firesQuery?.isPending ?? false,
   };
-  const mutationPending = updateSchedule.isPending || runNow.isPending || deleteSchedule.isPending;
+  const mutationPending =
+    updateSchedule.isPending || runNow.isPending || deleteSchedule.isPending;
   const runNowDisabled =
     mutationPending || Boolean(workflowScopedActionUnavailableReason);
 
   const toggleScheduleStatus = async () => {
-    const nextStatus: ScheduleWriteStatus = schedule.status === "enabled" ? "paused" : "enabled";
+    const nextStatus: ScheduleWriteStatus =
+      schedule.status === "enabled" ? "paused" : "enabled";
     try {
       await updateSchedule.mutateAsync({
         scheduleId: schedule.id,
         payload: { status: nextStatus },
       });
-      toast.success(`Scheduled task ${nextStatus === "enabled" ? "resumed" : "paused"}`);
+      toast.success(
+        `Scheduled task ${nextStatus === "enabled" ? "resumed" : "paused"}`,
+      );
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to update scheduled task status."));
+      toast.error(
+        errorMessage(error, "Failed to update scheduled task status."),
+      );
     }
   };
 
@@ -2516,7 +3007,11 @@ export function ScheduledTaskDetailPage() {
           scheduledFor,
         },
       });
-      const feedback = buildRunNowFeedback(schedule, result.fire, result.run.id);
+      const feedback = buildRunNowFeedback(
+        schedule,
+        result.fire,
+        result.run.id,
+      );
       setRunNowFeedback(feedback);
       if (feedback.severity === "info") {
         toast.success(feedback.message);
@@ -2542,7 +3037,9 @@ export function ScheduledTaskDetailPage() {
       });
       toast.success(successMessage);
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to save scheduled task configuration."));
+      toast.error(
+        errorMessage(error, "Failed to save scheduled task configuration."),
+      );
     }
   };
 

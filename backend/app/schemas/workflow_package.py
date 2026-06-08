@@ -63,7 +63,7 @@ class WorkflowPackageImportRequest(WorkflowPackageManifestRequest):
 
 
 class WorkflowPackageMetadataRead(CamelModel):
-    api_version: str
+    api_version: Literal["signaldeck.workflowPackage/v1"]
     key: str
     name: str
     description: str
@@ -207,6 +207,11 @@ class WorkflowPackageRuntimeInputPersonalEntryUpdateRequest(CamelModel):
     payload: object | None = None
 
 
+class WorkflowPackagePreflightRequest(CamelModel):
+    workflow_key: str | None = None
+    parameters: dict[str, object] = Field(default_factory=dict)
+
+
 class WorkflowPackageLaunchCreateRequest(CamelModel):
     workflow_key: str | None = None
     parameters: dict[str, object] = Field(default_factory=dict)
@@ -235,6 +240,7 @@ __all__ = [
     "WorkflowPackageManifestRead",
     "WorkflowPackageManifestRequest",
     "WorkflowPackageMetadataRead",
+    "WorkflowPackagePreflightRequest",
     "WorkflowPackageRead",
     "WorkflowPackageRuntimeInputCurrentMetadataRead",
     "WorkflowPackageRuntimeInputEntryRead",

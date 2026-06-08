@@ -687,46 +687,27 @@ describe("router", () => {
     expect(matchedRouteComponent("/digital-oracle")).toBe(NotFoundPage);
     expect(matchedRouteComponent("/prediction-markets")).toBe(NotFoundPage);
 
-    const expectedFinanceRoutes = [
-      { path: "/", requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY },
-      {
-        path: "/portfolios",
-        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      },
-      {
-        path: "/portfolios/:portfolioId",
-        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      },
-      {
-        path: "/templates",
-        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      },
-      {
-        path: "/templates/new",
-        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      },
-      {
-        path: "/templates/:templateId/edit",
-        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      },
-      {
-        path: "/reports",
-        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      },
-      {
-        path: "/reports/:slug",
-        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      },
-    ];
-
-    expect(
-      financeExtension.routeContributions.map((contribution) => ({
+    const financeRouteContracts = financeExtension.routeContributions.map(
+      (contribution) => ({
         path: contribution.path,
         requiredExtensionKey: contribution.requiredExtensionKey,
-      })),
-    ).toEqual(expectedFinanceRoutes);
+        routeMetadata: contribution.routeMetadata,
+      }),
+    );
 
     expect(
+      financeExtension.routeContributions.map((contribution) =>
+        Object.keys(contribution).sort(),
+      ),
+    ).toEqual(
+      financeExtension.routeContributions.map(() => [
+        "Component",
+        "path",
+        "requiredExtensionKey",
+        "routeMetadata",
+      ]),
+    );
+    expect(financeRouteContracts).toEqual(
       liveRouteMetadata
         .filter((metadata) => metadata.owner.kind === "extension")
         .map((metadata) => {
@@ -734,12 +715,34 @@ describe("router", () => {
             throw new Error("Expected extension-owned route metadata.");
           }
 
+          const { owner, pattern, ...routeMetadata } = metadata;
+
           return {
-            path: metadata.pattern,
-            requiredExtensionKey: metadata.owner.extensionKey,
+            path: pattern,
+            requiredExtensionKey: owner.extensionKey,
+            routeMetadata,
           };
         }),
-    ).toEqual(expectedFinanceRoutes);
+    );
+    expect(financeExtension.navContributions).toEqual(
+      financeExtension.routeContributions
+        .filter((contribution) => contribution.routeMetadata.nav.sidebar)
+        .map((contribution) => {
+          const { nav } = contribution.routeMetadata;
+
+          if (!nav.path) {
+            throw new Error("Expected sidebar finance route to own a nav path.");
+          }
+
+          return {
+            iconName: nav.iconName,
+            label: nav.label,
+            requiredExtensionKey: contribution.requiredExtensionKey,
+            testId: nav.testId,
+            to: nav.path,
+          };
+        }),
+    );
 
     for (const contribution of financeExtension.navContributions) {
       const metadata = getRouteMetadataByPattern(

@@ -1,4 +1,8 @@
-import type { ApiErrorDetail, ApiErrorResponse } from "./types/common";
+import type {
+  ApiErrorDetail,
+  ApiErrorDetailValue,
+  ApiErrorResponse,
+} from "./types/common";
 
 export type RequestMethod = "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
 export type RequestQueryValue = boolean | number | string | null | undefined;
@@ -21,9 +25,26 @@ export interface ApiRequestErrorOptions {
 export type IdParam = number | string;
 
 const DEFAULT_API_V1_BASE_URL = "http://127.0.0.1:8000/api/v1";
-const CONFIGURED_API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const CONFIGURED_API_BASE_URL = normalizeApiBaseUrl(
+  import.meta.env.VITE_API_BASE_URL,
+);
 const API_BASE_URL = toVersionedApiBaseUrl(CONFIGURED_API_BASE_URL, "v1");
 const PLATFORM_API_BASE_URL = toPlatformApiBaseUrl(CONFIGURED_API_BASE_URL);
+const DETAIL_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
+const UNSAFE_DETAIL_KEY_PARTS = [
+  "apikey",
+  "authorization",
+  "credential",
+  "exception",
+  "header",
+  "internal",
+  "password",
+  "secret",
+  "stack",
+  "token",
+  "traceback",
+] as const;
+const MAX_DETAIL_STRING_LENGTH = 500;
 
 export class ApiRequestError extends Error {
   readonly code: string;
@@ -125,15 +146,66 @@ function buildUrlForBaseUrl(
   return `${baseUrl}${normalizedPath}?${queryString}`;
 }
 
-function isApiErrorDetail(value: unknown): value is ApiErrorDetail {
-  if (!value || typeof value !== "object") {
+function isSafeDetailKey(key: string): boolean {
+  if (!DETAIL_KEY_PATTERN.test(key)) {
     return false;
   }
 
-  return (
-    typeof Reflect.get(value, "field") === "string" &&
-    typeof Reflect.get(value, "issue") === "string"
-  );
+  const normalizedKey = key.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+  return !UNSAFE_DETAIL_KEY_PARTS.some((part) => normalizedKey.includes(part));
+}
+
+type ApiErrorDetailValueResult =
+  | { safe: false }
+  | { safe: true; value: ApiErrorDetailValue };
+
+function toApiErrorDetailValue(value: unknown): ApiErrorDetailValueResult {
+  if (value === null) {
+    return { safe: true, value };
+  }
+  if (typeof value === "boolean") {
+    return { safe: true, value };
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? { safe: true, value } : { safe: false };
+  }
+  if (typeof value === "string") {
+    return {
+      safe: true,
+      value:
+        value.length <= MAX_DETAIL_STRING_LENGTH
+          ? value
+          : `${value.slice(0, MAX_DETAIL_STRING_LENGTH - 3)}...`,
+    };
+  }
+
+  return { safe: false };
+}
+
+function toApiErrorDetail(value: unknown): ApiErrorDetail | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const detail: ApiErrorDetail = {};
+  for (const [key, rawValue] of Object.entries(value)) {
+    if (!isSafeDetailKey(key)) {
+      continue;
+    }
+    const safeValue = toApiErrorDetailValue(rawValue);
+    if (!safeValue.safe) {
+      continue;
+    }
+    detail[key] = safeValue.value;
+  }
+
+  return Object.keys(detail).length > 0 ? detail : null;
+}
+
+function isApiErrorDetail(
+  value: ApiErrorDetail | null,
+): value is ApiErrorDetail {
+  return value !== null;
 }
 
 async function toApiRequestError(response: Response): Promise<ApiRequestError> {
@@ -141,21 +213,15 @@ async function toApiRequestError(response: Response): Promise<ApiRequestError> {
   const contentType = response.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
-    const payload = (await response.json()) as
-      | (Partial<ApiErrorResponse> & { detail?: unknown })
-      | null;
+    const payload = (await response.json()) as Partial<ApiErrorResponse> | null;
 
     return new ApiRequestError({
       status: response.status,
       code: typeof payload?.code === "string" ? payload.code : "request_failed",
       message:
-        typeof payload?.message === "string"
-          ? payload.message
-          : typeof payload?.detail === "string"
-            ? payload.detail
-            : defaultMessage,
+        typeof payload?.message === "string" ? payload.message : defaultMessage,
       details: Array.isArray(payload?.details)
-        ? payload.details.filter(isApiErrorDetail)
+        ? payload.details.map(toApiErrorDetail).filter(isApiErrorDetail)
         : [],
     });
   }
@@ -191,12 +257,15 @@ async function requestWithBaseUrl<T>(
     headers.set("Accept", "application/json");
   }
 
-  const response = await fetch(buildUrlForBaseUrl(baseUrl, path, options.query), {
-    body,
-    headers,
-    method,
-    signal: options.signal,
-  });
+  const response = await fetch(
+    buildUrlForBaseUrl(baseUrl, path, options.query),
+    {
+      body,
+      headers,
+      method,
+      signal: options.signal,
+    },
+  );
 
   if (!response.ok) {
     throw await toApiRequestError(response);
@@ -215,7 +284,10 @@ async function requestWithBaseUrl<T>(
   return JSON.parse(text) as T;
 }
 
-export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function request<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   return requestWithBaseUrl<T>(API_BASE_URL, path, options);
 }
 

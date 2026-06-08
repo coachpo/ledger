@@ -123,8 +123,6 @@ def _outcome() -> MemoryOutcome:
         summary="Sizing check completed.",
         observed_at=datetime(2026, 1, 17, 10, 30, tzinfo=UTC),
         attributes={"verdict": "useful"},
-        resolved_status="resolved",
-        resolved_at=datetime(2026, 1, 17, 10, 30, tzinfo=UTC),
     )
 
 
@@ -440,9 +438,7 @@ def test_repositories_expose_canonical_lookup_helpers(
             scope_key="pkg-advisory",
             subject_refs=[{"kind": "instrument", "id": "nvda"}],
             kind="research.note",
-            status="resolved",
-            ticker=None,
-            portfolio_slug=None,
+            status=MemoryLifecycleStatus.RESOLVED.value,
             agent_key="memory_curator",
             workflow_key="daily_review",
             tags=[],

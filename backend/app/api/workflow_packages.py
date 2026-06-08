@@ -18,6 +18,7 @@ from app.schemas.workflow_package import (
     WorkflowPackageListRead,
     WorkflowPackageManifestRead,
     WorkflowPackageManifestRequest,
+    WorkflowPackagePreflightRequest,
     WorkflowPackageRead,
     WorkflowPackageRuntimeInputEntryRead,
     WorkflowPackageRuntimeInputPersonalEntryCreateRequest,
@@ -290,10 +291,14 @@ def export_workflow_package(
 @router.post("/{package_id}/preflight", response_model=WorkflowPackageLaunchRead)
 def preflight_workflow_package(
     package_id: int,
+    payload: WorkflowPackagePreflightRequest,
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
-    workflow_key: Annotated[str | None, Query(alias="workflowKey")] = None,
 ) -> WorkflowPackageLaunchRead:
-    return service.preflight_package(package_id, workflow_key=workflow_key)
+    return service.preflight_package(
+        package_id,
+        workflow_key=payload.workflow_key,
+        parameters=payload.parameters,
+    )
 
 
 @router.get("/{package_id}/launch", response_model=WorkflowPackageLaunchRead)

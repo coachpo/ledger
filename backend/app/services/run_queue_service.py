@@ -32,6 +32,24 @@ class RunExecutor(Protocol):
     def execute_claimed_run(self, run_id: int) -> None: ...
 
 
+def default_run_executor_factory(
+    session: Session,
+    session_factory: sessionmaker[Session],
+    provider_bundle: ExecutionProviderBundle,
+) -> RunExecutor:
+    import importlib
+
+    run_service_class = importlib.import_module("app.services.run_service").__dict__["RunService"]
+    return cast(
+        RunExecutor,
+        run_service_class(
+            session,
+            session_factory,
+            provider_bundle=provider_bundle,
+        ),
+    )
+
+
 class RunQueueService:
     def __init__(
         self,
@@ -48,11 +66,11 @@ class RunQueueService:
         self.session_factory: sessionmaker[Session] = session_factory or get_session_factory()
         settings = get_settings()
         self.provider_bundle: ExecutionProviderBundle = provider_bundle or ExecutionProviderBundle()
-        self.executor_factory: (
-            Callable[[Session, sessionmaker[Session], ExecutionProviderBundle], RunExecutor] | None
-        ) = executor_factory
-        self.lease_owner = lease_owner or f"scheduler:{socket.gethostname()}:{os.getpid()}:0"
-        self.lease_ttl_seconds = (
+        self.executor_factory: Callable[
+            [Session, sessionmaker[Session], ExecutionProviderBundle], RunExecutor
+        ] = (executor_factory or default_run_executor_factory)
+        self.lease_owner: str = lease_owner or f"scheduler:{socket.gethostname()}:{os.getpid()}:0"
+        self.lease_ttl_seconds: float = (
             lease_ttl_seconds
             if lease_ttl_seconds is not None
             else settings.run_scheduler_lease_ttl_seconds
@@ -157,7 +175,7 @@ class RunQueueService:
                 self._build_executor(session).execute_claimed_run(run_id)
         finally:
             with self.session_factory() as session:
-                _ = RunQueueService(
+                _ = type(self)(
                     session,
                     self.session_factory,
                     provider_bundle=self.provider_bundle,
@@ -206,20 +224,7 @@ class RunQueueService:
             )
 
     def _build_executor(self, session: Session) -> RunExecutor:
-        if self.executor_factory is not None:
-            return self.executor_factory(session, self.session_factory, self.provider_bundle)
-
-        import importlib
-
-        run_service_module = importlib.import_module("app.services.run_service")
-        return cast(
-            RunExecutor,
-            run_service_module.RunService(
-                session,
-                self.session_factory,
-                provider_bundle=self.provider_bundle,
-            ),
-        )
+        return self.executor_factory(session, self.session_factory, self.provider_bundle)
 
 
 __all__ = ["RunQueueService"]

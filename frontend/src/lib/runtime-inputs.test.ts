@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 
 import {
   buildRuntimeInputs,
   createRuntimeInputRow,
   createRuntimeInputRows,
+  type RuntimeInputMap,
 } from "./runtime-inputs";
 
 describe("runtime-inputs", () => {
@@ -16,7 +21,12 @@ describe("runtime-inputs", () => {
   });
 
   it("creates row lists from runtime input maps", () => {
-    expect(createRuntimeInputRows("report", { ticker: "MSFT", portfolio_slug: "growth" })).toEqual([
+    const runtimeInputs = {
+      ticker: "MSFT",
+      portfolio_slug: "growth",
+    } satisfies RuntimeInputMap;
+
+    expect(createRuntimeInputRows("report", runtimeInputs)).toEqual([
       expect.objectContaining({ key: "ticker", value: "MSFT" }),
       expect.objectContaining({ key: "portfolio_slug", value: "growth" }),
     ]);

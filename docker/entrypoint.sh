@@ -4,8 +4,19 @@ set -eu
 PORT="${PORT:-8080}"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 RUN_SCHEDULER="${RUN_SCHEDULER:-true}"
+SIGNALDECK_RUNTIME_MODE="${SIGNALDECK_RUNTIME_MODE:-local}"
+SIGNALDECK_ROOT_IMAGE_SCOPE="${SIGNALDECK_ROOT_IMAGE_SCOPE:-local-demo-only}"
 
-export PORT BACKEND_PORT
+case "$SIGNALDECK_RUNTIME_MODE" in
+  production|prod|staging|PRODUCTION|PROD|STAGING)
+    echo "The root combined SignalDeck image is local/demo-only. Use backend/Dockerfile and frontend/Dockerfile images for production." >&2
+    exit 1
+    ;;
+esac
+
+echo "Starting SignalDeck root combined image in ${SIGNALDECK_ROOT_IMAGE_SCOPE} mode." >&2
+
+export PORT BACKEND_PORT SIGNALDECK_RUNTIME_MODE SIGNALDECK_ROOT_IMAGE_SCOPE
 
 mkdir -p /etc/supervisor/conf.d /run/nginx
 rm -f /etc/supervisor/conf.d/*.conf

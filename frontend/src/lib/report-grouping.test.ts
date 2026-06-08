@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import { groupReports } from "./report-grouping";
-import type { ReportRead } from "./types/report";
+import type { ReportCreatedByMetadata, ReportRead } from "./types/report";
+
+const backendCreatedByReadContract = {
+  type: "agent",
+  runId: 42,
+  agentKey: "research_agent",
+  agentVersion: 3,
+  workflowKey: "daily_review",
+  workflowVersion: 2,
+  traceId: "trace-report-created-by",
+} satisfies ReportCreatedByMetadata;
 
 function buildReport(overrides: Partial<ReportRead> = {}): ReportRead {
   return {
@@ -14,12 +24,7 @@ function buildReport(overrides: Partial<ReportRead> = {}): ReportRead {
       author: "SignalDeck Agent",
       description: null,
       tags: [],
-      createdBy: {
-        type: "agent",
-        runId: 42,
-        agentKey: "research_agent",
-        agentVersion: 3,
-      },
+      createdBy: backendCreatedByReadContract,
     },
     createdAt: "2026-05-04T10:00:00Z",
     updatedAt: "2026-05-04T10:00:00Z",

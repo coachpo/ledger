@@ -46,6 +46,15 @@ export function invalidateFinanceWorkspaceExtensionCaches(queryClient: QueryClie
   ]);
 }
 
+export function invalidateExtensionReadinessCaches(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.launches() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.preflights() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.rerunDrafts() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.forkDrafts() }),
+  ]);
+}
+
 export function useToggleExtension() {
   const queryClient = useQueryClient();
 
@@ -60,6 +69,7 @@ export function useToggleExtension() {
     onSuccess: async (extension) => {
       await Promise.all([
         invalidateExtensionToolStateCaches(queryClient),
+        invalidateExtensionReadinessCaches(queryClient),
         extension.key === FINANCE_WORKSPACE_EXTENSION_KEY
           ? invalidateFinanceWorkspaceExtensionCaches(queryClient)
           : Promise.resolve(),

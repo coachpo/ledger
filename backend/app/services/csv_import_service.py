@@ -11,13 +11,13 @@ from sqlalchemy.orm import Session
 from app.core.constants import CSV_IMPORT_MODE
 from app.core.errors import malformed_file_error, validation_error
 from app.core.formatting import normalize_symbol, parse_decimal_string
-from app.models.position import Position
-from app.repositories.position import PositionRepository
-from app.schemas.csv_import import CsvAcceptedRow, CsvCommitRead, CsvPreviewRead, CsvRowError
-from app.services.extension_gate import (
+from app.extensions.signaldeck_finance.service_gate import (
     CSV_IMPORT_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
+from app.models.position import Position
+from app.repositories.position import PositionRepository
+from app.schemas.csv_import import CsvAcceptedRow, CsvCommitRead, CsvPreviewRead, CsvRowError
 from app.services.portfolio_service import PortfolioService
 
 REQUIRED_HEADERS = {"symbol", "quantity", "average_cost"}

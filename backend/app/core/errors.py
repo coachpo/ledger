@@ -1,10 +1,31 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
+import math
+import re
+from collections.abc import Mapping, Sequence
+from typing import cast
 
 from fastapi import status
 from fastapi.exceptions import RequestValidationError
+
+type BrowserSafeErrorDetailValue = str | int | float | bool | None
+type BrowserSafeErrorDetail = dict[str, BrowserSafeErrorDetailValue]
+
+_DETAIL_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+_UNSAFE_DETAIL_KEY_PARTS = (
+    "apikey",
+    "authorization",
+    "credential",
+    "exception",
+    "header",
+    "internal",
+    "password",
+    "secret",
+    "stack",
+    "token",
+    "traceback",
+)
+_MAX_DETAIL_STRING_LENGTH = 500
 
 
 class ApiError(Exception):
@@ -14,13 +35,58 @@ class ApiError(Exception):
         status_code: int,
         code: str,
         message: str,
-        details: Sequence[dict[str, Any]] | None = None,
+        details: Sequence[Mapping[str, object]] | None = None,
     ) -> None:
         super().__init__(message)
-        self.status_code = status_code
-        self.code = code
-        self.message = message
-        self.details = list(details or [])
+        self.status_code: int = status_code
+        self.code: str = code
+        self.message: str = message
+        self.details: list[BrowserSafeErrorDetail] = browser_safe_error_details(details)
+
+
+def browser_safe_error_details(details: object) -> list[BrowserSafeErrorDetail]:
+    if not isinstance(details, Sequence) or isinstance(details, str | bytes | bytearray):
+        return []
+
+    safe_details: list[BrowserSafeErrorDetail] = []
+    for detail in details:
+        if not isinstance(detail, Mapping):
+            continue
+
+        safe_detail: BrowserSafeErrorDetail = {}
+        detail_mapping = cast(Mapping[object, object], detail)
+        for raw_key, raw_value in detail_mapping.items():
+            if not isinstance(raw_key, str) or not _browser_safe_detail_key(raw_key):
+                continue
+            is_safe_value, safe_value = _browser_safe_detail_value(raw_value)
+            if not is_safe_value:
+                continue
+            safe_detail[raw_key] = safe_value
+
+        if safe_detail:
+            safe_details.append(safe_detail)
+
+    return safe_details
+
+
+def _browser_safe_detail_key(key: str) -> bool:
+    if _DETAIL_KEY_RE.fullmatch(key) is None:
+        return False
+
+    normalized_key = re.sub(r"[^A-Za-z0-9]", "", key).lower()
+    return not any(part in normalized_key for part in _UNSAFE_DETAIL_KEY_PARTS)
+
+
+def _browser_safe_detail_value(value: object) -> tuple[bool, BrowserSafeErrorDetailValue]:
+    if value is None or isinstance(value, bool | int):
+        return True, value
+    if isinstance(value, float):
+        return (True, value) if math.isfinite(value) else (False, None)
+    if isinstance(value, str):
+        if len(value) <= _MAX_DETAIL_STRING_LENGTH:
+            return True, value
+        return True, f"{value[:_MAX_DETAIL_STRING_LENGTH - 3]}..."
+    return False, None
 
 
 def not_found_error(resource_name: str) -> ApiError:
@@ -32,7 +98,7 @@ def not_found_error(resource_name: str) -> ApiError:
 
 
 def business_rule_error(
-    code: str, message: str, details: Sequence[dict[str, Any]] | None = None
+    code: str, message: str, details: Sequence[Mapping[str, object]] | None = None
 ) -> ApiError:
     return ApiError(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -51,7 +117,9 @@ def extension_disabled_error(extension_key: str, surface: str) -> ApiError:
     )
 
 
-def validation_error(message: str, details: Sequence[dict[str, Any]] | None = None) -> ApiError:
+def validation_error(
+    message: str, details: Sequence[Mapping[str, object]] | None = None
+) -> ApiError:
     return ApiError(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         code="validation_error",
@@ -60,7 +128,9 @@ def validation_error(message: str, details: Sequence[dict[str, Any]] | None = No
     )
 
 
-def malformed_file_error(message: str, details: Sequence[dict[str, Any]] | None = None) -> ApiError:
+def malformed_file_error(
+    message: str, details: Sequence[Mapping[str, object]] | None = None
+) -> ApiError:
     return ApiError(
         status_code=status.HTTP_400_BAD_REQUEST,
         code="malformed_file",
@@ -69,19 +139,20 @@ def malformed_file_error(message: str, details: Sequence[dict[str, Any]] | None 
     )
 
 
-def request_validation_to_details(exc: RequestValidationError) -> list[dict[str, Any]]:
-    details: list[dict[str, Any]] = []
-    for error in exc.errors():
+def request_validation_to_details(exc: RequestValidationError) -> list[BrowserSafeErrorDetail]:
+    details: list[BrowserSafeErrorDetail] = []
+    validation_errors = cast(Sequence[Mapping[str, object]], exc.errors())
+    for error in validation_errors:
         location = error.get("loc", ())
-        field_parts = [str(part) for part in location if part not in {"body", "query", "path"}]
-        details.append(
-            {
-                "field": (
-                    ".".join(field_parts)
-                    if field_parts
-                    else str(location[-1]) if location else "request"
-                ),
-                "issue": str(error.get("msg", "Invalid value")),
-            }
+        location_parts = (
+            location
+            if isinstance(location, Sequence) and not isinstance(location, str | bytes | bytearray)
+            else ()
         )
+        field_parts = [
+            str(part) for part in location_parts if part not in {"body", "query", "path"}
+        ]
+        field = ".".join(field_parts) if field_parts else "request"
+        issue = error.get("msg", "Invalid value")
+        details.append({"field": field, "issue": str(issue)})
     return details

@@ -2,15 +2,28 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, ClassVar, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+DEFAULT_DATABASE_URL = "postgresql+psycopg://signaldeck:signaldeck@localhost:25432/signaldeck"
+DEFAULT_AGENT_PLATFORM_ENCRYPTION_KEY = "signaldeck-agent-platform-dev-key"
+PRODUCTION_RUNTIME_MODES = {"production", "prod", "staging"}
+PLACEHOLDER_AGENT_PLATFORM_ENCRYPTION_KEYS = {
+    DEFAULT_AGENT_PLATFORM_ENCRYPTION_KEY,
+    "change-me",
+    "changeme",
+}
 
 
 class Settings(BaseSettings):
+    runtime_mode: Literal["local", "development", "test", "staging", "production", "prod"] = Field(
+        default="local",
+        alias="SIGNALDECK_RUNTIME_MODE",
+    )
     database_url: str = Field(
-        default="postgresql+psycopg://signaldeck:signaldeck@localhost:25432/signaldeck",
+        default=DEFAULT_DATABASE_URL,
         alias="DATABASE_URL",
     )
     quote_provider_timeout_seconds: float = Field(default=5.0, alias="QUOTE_PROVIDER_TIMEOUT")
@@ -45,7 +58,7 @@ class Settings(BaseSettings):
         alias="DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL",
     )
     agent_platform_encryption_key: str = Field(
-        default="signaldeck-agent-platform-dev-key",
+        default=DEFAULT_AGENT_PLATFORM_ENCRYPTION_KEY,
         alias="AGENT_PLATFORM_ENCRYPTION_KEY",
     )
     market_data_cache_dir: str = Field(
@@ -130,7 +143,7 @@ class Settings(BaseSettings):
         alias="CORS_ALLOWED_ORIGINS",
     )
 
-    model_config = SettingsConfigDict(
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
@@ -179,6 +192,18 @@ class Settings(BaseSettings):
             return None
         return normalized
 
+    @field_validator("runtime_mode", mode="before")
+    @classmethod
+    def normalize_runtime_mode(cls, value: object) -> object:
+        if value is None:
+            return value
+        return str(value).strip().lower()
+
+    @field_validator("agent_platform_encryption_key", mode="before")
+    @classmethod
+    def normalize_agent_platform_encryption_key(cls, value: object) -> str:
+        return str(value).strip() if value is not None else ""
+
     @field_validator("quote_provider_backend", mode="before")
     @classmethod
     def normalize_quote_provider_backend(cls, value: object) -> str:
@@ -186,6 +211,28 @@ class Settings(BaseSettings):
         if normalized not in {"yahoo", "deterministic"}:
             raise ValueError("QUOTE_PROVIDER_BACKEND must be one of: yahoo, deterministic")
         return normalized
+
+    @model_validator(mode="after")
+    def validate_production_runtime_config(self) -> Settings:
+        if self.runtime_mode not in PRODUCTION_RUNTIME_MODES:
+            return self
+
+        if "database_url" not in self.model_fields_set or self.database_url == DEFAULT_DATABASE_URL:
+            raise ValueError(
+                "DATABASE_URL must be explicitly configured in production runtime mode"
+            )
+
+        if (
+            "agent_platform_encryption_key" not in self.model_fields_set
+            or self.agent_platform_encryption_key in PLACEHOLDER_AGENT_PLATFORM_ENCRYPTION_KEYS
+        ):
+            message = (
+                "AGENT_PLATFORM_ENCRYPTION_KEY must be explicitly configured to a non-placeholder "
+                "value in production runtime mode"
+            )
+            raise ValueError(message)
+
+        return self
 
 
 @lru_cache

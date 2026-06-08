@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import business_rule_error, not_found_error
 from app.core.formatting import portfolio_cash_total, utcnow
+from app.extensions.signaldeck_finance.service_gate import (
+    TRADING_OPERATION_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.balance import Balance
 from app.models.position import Position
 from app.models.trading_operation import TradingOperation
@@ -24,10 +28,6 @@ from app.schemas.trading_operation import (
     TradingOperationCreate,
     TradingOperationRead,
     TradingOperationResult,
-)
-from app.services.extension_gate import (
-    TRADING_OPERATION_SERVICE_SURFACE,
-    require_finance_workspace_enabled,
 )
 from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import QuoteProvider, QuoteProviderError

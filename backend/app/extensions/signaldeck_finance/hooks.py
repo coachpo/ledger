@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.extensions.signaldeck_finance.execution_dependencies import resolve_finance_quote_provider
+from app.extensions.signaldeck_finance.memory_metadata import read_finance_memory_metadata
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.schemas.memory import MemoryEntryRead
 from app.services.market_data_service import MarketDataService
@@ -22,6 +23,7 @@ class FinanceMemoryFollowUpEvaluator:
     memory_kinds: frozenset[str] = _FINANCE_MEMORY_KINDS
 
     def __init__(self, session: Session, market_data_service: MarketDataService) -> None:
+        self.session: Session = session
         self.return_resolution_service: ReturnResolutionService = ReturnResolutionService(
             session,
             market_data_service,
@@ -34,7 +36,8 @@ class FinanceMemoryFollowUpEvaluator:
         *,
         reviewed_at: datetime,
     ) -> MemoryFollowUpEvaluation:
-        if not memory.ticker.strip():
+        metadata = read_finance_memory_metadata(self.session, memory.memory_id)
+        if metadata is None:
             return MemoryFollowUpEvaluation(
                 status="pending",
                 reason="finance_metadata_missing",
@@ -43,13 +46,19 @@ class FinanceMemoryFollowUpEvaluator:
         resolution = self.return_resolution_service.resolve_memory(
             memory.memory_id,
             end_date=reviewed_at,
-            benchmark_symbol=memory.benchmark_symbol,
+            symbol=metadata.ticker,
+            action=metadata.action,
+            horizon_days=metadata.horizon_days,
+            benchmark_symbol=metadata.benchmark_symbol,
             commit=False,
         )
         reflected = False
         if resolution.status != "pending" and not resolution.memory.reflections:
             _ = self.reflection_service.generate_and_append_reflection(
                 memory.memory_id,
+                ticker=metadata.ticker,
+                action=metadata.action,
+                decision_summary=metadata.decision_summary or metadata.rationale,
                 reflected_at=reviewed_at,
                 commit=False,
             )

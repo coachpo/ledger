@@ -1,15 +1,25 @@
 from __future__ import annotations
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.db_errors import is_unique_constraint_violation
 from app.core.errors import business_rule_error, not_found_error
+from app.extensions.signaldeck_finance.service_gate import (
+    PORTFOLIO_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.portfolio import Portfolio
 from app.repositories.portfolio import PortfolioRepository
 from app.schemas.portfolio import PortfolioCreate, PortfolioRead, PortfolioUpdate
-from app.services.extension_gate import PORTFOLIO_SERVICE_SURFACE, require_finance_workspace_enabled
+
+_PORTFOLIO_SLUG_CONSTRAINTS = frozenset({"uq_portfolios_slug"})
 
 
 class PortfolioService:
+    session: Session
+    repository: PortfolioRepository
+
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repository = PortfolioRepository(session)
@@ -41,19 +51,25 @@ class PortfolioService:
     def create_portfolio(self, payload: PortfolioCreate) -> PortfolioRead:
         self._require_enabled()
         if self.repository.get_by_slug(payload.slug) is not None:
-            raise business_rule_error(
-                "duplicate_portfolio_slug",
-                "A portfolio with this slug already exists",
-            )
+            raise self._duplicate_slug_error()
         portfolio = Portfolio(
             name=payload.name,
             slug=payload.slug,
             description=payload.description,
             base_currency=payload.base_currency,
         )
-        self.repository.add(portfolio)
-        self.session.commit()
-        self.session.refresh(portfolio)
+        _ = self.repository.add(portfolio)
+        try:
+            self.session.commit()
+            self.session.refresh(portfolio)
+        except IntegrityError as exc:
+            self.session.rollback()
+            if is_unique_constraint_violation(exc, _PORTFOLIO_SLUG_CONSTRAINTS):
+                raise self._duplicate_slug_error() from exc
+            raise
+        except Exception:
+            self.session.rollback()
+            raise
         return self._to_read_model(portfolio)
 
     def update_portfolio(self, portfolio_id: int, payload: PortfolioUpdate) -> PortfolioRead:
@@ -72,6 +88,13 @@ class PortfolioService:
         portfolio = self.get_portfolio_model(portfolio_id)
         self.repository.delete(portfolio)
         self.session.commit()
+
+    @staticmethod
+    def _duplicate_slug_error() -> Exception:
+        return business_rule_error(
+            "duplicate_portfolio_slug",
+            "A portfolio with this slug already exists",
+        )
 
     def _to_read_model(self, portfolio: Portfolio) -> PortfolioRead:
         return PortfolioRead.model_validate(

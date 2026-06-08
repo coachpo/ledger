@@ -343,7 +343,7 @@ class AgentService:
     def _api_error_to_manifest_diagnostics(
         self,
         manifest_source: str,
-        details: list[dict[str, object]],
+        details: Sequence[Mapping[str, object]],
     ) -> list[AgentManifestDiagnostic]:
         if not details:
             return [

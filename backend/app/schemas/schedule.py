@@ -208,6 +208,7 @@ class ScheduleCreate(CamelModel):
 
 
 class ScheduleUpdate(CamelModel):
+    workflow_key: str | None = None
     name: str | None = None
     description: str | None = None
     status: ScheduleWriteStatus | None = None
@@ -221,7 +222,7 @@ class ScheduleUpdate(CamelModel):
     input_template: dict[str, Any] | None = None
     template_vars: dict[str, Any] | None = None
 
-    @field_validator("name")
+    @field_validator("workflow_key", "name")
     @classmethod
     def validate_optional_required_text(cls, value: str | None) -> str | None:
         if value is None:

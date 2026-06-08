@@ -38,17 +38,24 @@ Legacy global authoring routes are unsupported. `/api/agents`, `/api/capabilitie
 - Docker with `docker compose`
 - An LLM provider key if you want live model-backed agent-platform execution
 
-## Production Docker Image and Root Compose
+## Production Release Images and Local Root Compose
 
-The root Docker setup is additive. It does not replace `backend/Dockerfile`, `frontend/Dockerfile`, or the DB-only `backend/docker-compose.yml`.
+The supported production container artifacts are the backend and frontend images built from `backend/Dockerfile` and `frontend/Dockerfile` by `.github/workflows/docker-images.yml` and published to GitHub Container Registry as:
 
-### Build and Run the App Image
+- `ghcr.io/<owner>/signaldeck-backend`
+- `ghcr.io/<owner>/signaldeck-frontend`
+
+Published backend/frontend images include Docker Buildx provenance and SBOM attestations on non-PR pushes. The backend image sets `SIGNALDECK_RUNTIME_MODE=production`, rejects missing `DATABASE_URL` or placeholder `AGENT_PLATFORM_ENCRYPTION_KEY` values at startup, and exposes a Docker health check against `/ready`. The frontend image exposes a Docker health check against its static server `/health` endpoint. The root Docker setup remains additive for local/demo combined-stack runs; it is not the supported production image and does not replace `backend/Dockerfile`, `frontend/Dockerfile`, or the DB-only `backend/docker-compose.yml`.
+
+The root `Dockerfile` and root `docker-compose.yml` are labeled `local-demo-only` and are not published by CI, released to GHCR, or covered by production SBOM/provenance support. The root combined image entrypoint refuses `SIGNALDECK_RUNTIME_MODE=production`, `prod`, or `staging`; use the supported backend/frontend images for production deployments instead.
+
+### Build and Run the Local App Image
 
 ```bash
 docker build -t signaldeck .
 ```
 
-The root `Dockerfile` builds one production image with Nginx, the FastAPI backend, the scheduler worker, and static frontend files. PostgreSQL/pgvector is external to the app image.
+The root `Dockerfile` builds one combined local app image with Nginx, the FastAPI backend, the scheduler worker, and static frontend files. PostgreSQL/pgvector is external to the app image. This image is for local evaluation and demos only; it is intentionally blocked from `production`, `prod`, and `staging` runtime modes.
 
 ```bash
 docker run --rm -p 8080:8080 \
@@ -79,7 +86,7 @@ docker compose down
 docker compose down -v
 ```
 
-The root `docker-compose.yml` runs:
+The root `docker-compose.yml` is local/demo-only and runs:
 
 - `app`, built from the root `Dockerfile`
 - `db`, using `pgvector/pgvector:pg16`
@@ -93,7 +100,7 @@ Only the app/Nginx port is published on the host:
 - backend: internal only at `127.0.0.1:${BACKEND_PORT:-8000}` inside the app container
 - database: internal only on the compose network
 
-Nginx listens on `${PORT:-8080}`, serves `/usr/share/nginx/html`, falls back to `index.html` for frontend routes, and proxies `/health`, `/api/`, and `/api/v1/` to FastAPI. The final image does not run Vite, the React dev server, or `frontend/server.mjs`.
+Nginx listens on `${PORT:-8080}`, serves `/usr/share/nginx/html`, falls back to `index.html` for frontend routes, and proxies `/health`, `/ready`, `/api/`, and `/api/v1/` to FastAPI. The local combined image has a Docker health check against `/ready`. The final image does not run Vite, the React dev server, or `frontend/server.mjs`.
 
 Build args:
 
@@ -103,8 +110,9 @@ Build args:
 
 Runtime env vars:
 
-- `DATABASE_URL` is required unless the backend default points at a reachable PostgreSQL instance.
-- `AGENT_PLATFORM_ENCRYPTION_KEY` protects stored model-connection secrets; change it for every real deployment.
+- `SIGNALDECK_RUNTIME_MODE` defaults to `local`; the supported backend production image sets it to `production` so startup fails closed unless required runtime config is explicit. The root combined image rejects `production`, `prod`, and `staging` because it is local/demo-only.
+- `DATABASE_URL` is required in `production` runtime mode and should point at the managed PostgreSQL instance.
+- `AGENT_PLATFORM_ENCRYPTION_KEY` protects stored model-connection secrets; `production` runtime mode rejects the local placeholder key and requires an explicit non-placeholder value.
 - `PUBLIC_BASE_URL` should be the externally reachable app origin.
 - `CORS_ALLOWED_ORIGINS` should list the allowed browser origins.
 - `PORT` controls the internal Nginx listen port, default `8080`.
@@ -112,7 +120,7 @@ Runtime env vars:
 - `BACKEND_CMD` overrides the default `uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_PORT:-8000}` command.
 - `RUN_SCHEDULER=true|false` controls the scheduler worker, default `true`.
 
-Compose sets safe local defaults for `DATABASE_URL`, `PUBLIC_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `RUN_SCHEDULER`, `BACKEND_PORT`, and `PORT`. The defaults `POSTGRES_PASSWORD=signaldeck` and `AGENT_PLATFORM_ENCRYPTION_KEY=signaldeck-agent-platform-dev-key` are for local development only; do not use them as production secrets.
+Compose sets safe local defaults for `SIGNALDECK_RUNTIME_MODE`, `SIGNALDECK_ROOT_IMAGE_SCOPE`, `DATABASE_URL`, `PUBLIC_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `RUN_SCHEDULER`, `BACKEND_PORT`, and `PORT`. The defaults `POSTGRES_PASSWORD=signaldeck` and `AGENT_PLATFORM_ENCRYPTION_KEY=signaldeck-agent-platform-dev-key` are for local development only; do not use them as production secrets.
 
 ## Run the Full Stack Locally
 
@@ -147,10 +155,12 @@ It will:
 - prefer PostgreSQL on `25432`, then fall back to `25433` or `25434` if needed
 - prefer the backend on `28000`, then fall back to `28001` or `28002` if the requested port is occupied by a non-SignalDeck service
 - prefer the frontend on `25173`, then fall back to `25174` if needed
-- stop previously running SignalDeck backend, scheduler worker, frontend, and local Docker database instances before starting fresh ones
+- stop SignalDeck-owned scheduler workers and the local Docker database before starting fresh ones
 - start the dedicated scheduler worker that materializes due Scheduled Tasks and claims queued Workflow Package runs
 - derive `DATABASE_URL` for backend and scheduler startup when you do not provide one
 - derive `VITE_API_BASE_URL` for frontend startup
+
+By default, `start.sh` does not kill unrelated processes that happen to listen on the usual development ports. If you intentionally want it to terminate existing port listeners, run `SIGNALDECK_START_FORCE_PORT_CLEANUP=1 ./start.sh`.
 
 ### 5. Open the app and verify the stack
 
@@ -158,6 +168,7 @@ Once startup finishes, open:
 
 - Frontend: `http://127.0.0.1:25173/` or the fallback port printed by `start.sh`
 - Backend health: `http://127.0.0.1:28000/health` or the fallback backend port printed by `start.sh`
+- Backend readiness: `http://127.0.0.1:28000/ready` returns 200 only when the backend can reach PostgreSQL
 
 ### 6. Stop the stack
 
@@ -228,7 +239,7 @@ Visit `http://127.0.0.1:25173/`.
 
 - `ci.yml` runs version sync, backend quality, frontend quality, and frontend E2E
 - Backend CI installs with `uv sync --frozen`; frontend CI installs with `pnpm install --frozen-lockfile`
-- `docker-images.yml` builds backend and frontend linux/arm64 images for GitHub Container Registry
+- `docker-images.yml` builds and publishes the supported backend/frontend linux/arm64 images for GitHub Container Registry with SBOM/provenance metadata on non-PR pushes
 - `cleanup.yml` keeps at least 3 recent workflow runs and deletes untagged backend/frontend container packages
 
 ## Versioning

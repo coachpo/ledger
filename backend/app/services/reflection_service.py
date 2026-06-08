@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.core.formatting import decimal_to_string
-from app.schemas.memory import MemoryEntryRead, MemoryReflection
-from app.services.extension_gate import (
+from app.extensions.signaldeck_finance.service_gate import (
     REFLECTION_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
+from app.schemas.memory import MemoryEntryRead, MemoryReflection
 from app.services.memory_service import MemoryService
 
 
@@ -45,12 +43,20 @@ class ReflectionService:
         self,
         memory_id: str,
         *,
+        ticker: str,
+        action: str,
+        decision_summary: str | None,
         reflected_at: datetime,
         commit: bool = True,
     ) -> MemoryEntryRead:
         self._require_enabled()
         memory = self.memory_service.get_memory(memory_id)
-        reflection = self.generate_reflection_text(memory)
+        reflection = self.generate_reflection_text(
+            memory,
+            ticker=ticker,
+            action=action,
+            decision_summary=decision_summary,
+        )
         return self.append_reflection(
             memory_id,
             reflection=reflection,
@@ -59,32 +65,33 @@ class ReflectionService:
         )
 
     @classmethod
-    def generate_reflection_text(cls, memory: MemoryEntryRead) -> str:
+    def generate_reflection_text(
+        cls,
+        memory: MemoryEntryRead,
+        *,
+        ticker: str,
+        action: str,
+        decision_summary: str | None,
+    ) -> str:
         outcome = cls._outcome_summary(memory)
-        decision_summary = memory.decision_summary or memory.decision.rationale
-        return (
-            f"{memory.ticker} {memory.decision.action} memory resolved with {outcome}. "
-            f"Lesson: {decision_summary}"
-        )
+        lesson = decision_summary or "No decision summary provided."
+        return f"{ticker} {action} memory resolved with {outcome}. Lesson: {lesson}"
 
     @staticmethod
     def _outcome_summary(memory: MemoryEntryRead) -> str:
         outcome = memory.outcome
-        if outcome is None or outcome.raw_return is None or outcome.alpha is None:
+        if outcome is None:
             return f"status {memory.status.value}"
+        raw_return = outcome.attributes.get("rawReturn")
+        alpha = outcome.attributes.get("alpha")
+        if raw_return is None or alpha is None:
+            return f"status {outcome.status.value}"
 
-        parts = [
-            f"raw return {ReflectionService._format_decimal(outcome.raw_return)}",
-            f"alpha {ReflectionService._format_decimal(outcome.alpha)}",
-        ]
-        if outcome.benchmark_return is not None:
-            benchmark_return = ReflectionService._format_decimal(outcome.benchmark_return)
+        parts = [f"raw return {raw_return}", f"alpha {alpha}"]
+        benchmark_return = outcome.attributes.get("benchmarkReturn")
+        if benchmark_return is not None:
             parts.append(f"benchmark return {benchmark_return}")
         return ", ".join(parts)
-
-    @staticmethod
-    def _format_decimal(value: Decimal) -> str:
-        return decimal_to_string(value)
 
 
 __all__ = ["ReflectionService"]

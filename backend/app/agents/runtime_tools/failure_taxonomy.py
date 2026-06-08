@@ -231,7 +231,6 @@ _ERROR_CODE_CLASSIFICATIONS: Final[dict[str, ToolFailureClassification]] = {
     "model_tool_call_retry_exhausted": RETRY_BOUND_EXHAUSTED_FAILURE,
     "model_reasoning_unsupported": POLICY_FAILURE,
     "model_tool_call_payload_invalid": PROVIDER_TRANSPORT_FAILURE,
-    "report_memory_write_retired": UNSUPPORTED_TOOL_FAILURE,
     "run_agent_model_connection_missing": SECRET_CONTEXT_FAILURE,
     "run_agent_model_connection_unavailable": SECRET_CONTEXT_FAILURE,
 }

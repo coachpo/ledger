@@ -5,8 +5,13 @@ from typing import Any, Final
 
 from sqlalchemy.orm import Session
 
-from app.core.formatting import normalize_symbol, to_utc
-from app.schemas.memory import MemoryLifecycleStatus, MemoryPromptSnippet, MemoryQuery
+from app.core.formatting import to_utc
+from app.schemas.memory import (
+    MemoryLifecycleStatus,
+    MemoryPromptSnippet,
+    MemoryQuery,
+    MemorySubjectRef,
+)
 from app.services.memory_service import MemoryLookupContext, MemoryService
 from app.services.memory_store import MemoryStore
 
@@ -37,8 +42,9 @@ class MemoryContextService:
     def get_prompt_snippets(
         self,
         *,
-        ticker: str | None = None,
-        portfolio_slug: str | None = None,
+        query: str | None = None,
+        subject_refs: list[MemorySubjectRef] | None = None,
+        kind: str | None = None,
         agent_key: str | None = None,
         max_items: int = _DEFAULT_MAX_ITEMS,
         max_characters: int = _DEFAULT_MAX_CHARACTERS,
@@ -47,12 +53,13 @@ class MemoryContextService:
         if max_items <= 0 or max_characters <= 0:
             return []
 
-        normalized_ticker = self._normalize_ticker(ticker)
-        normalized_portfolio_slug = self._normalize_optional_text(portfolio_slug)
+        normalized_query = self._normalize_optional_text(query)
+        normalized_kind = self._normalize_optional_text(kind)
         normalized_agent_key = self._normalize_optional_text(agent_key)
         snippets = self._ordered_snippets(
-            ticker=normalized_ticker,
-            portfolio_slug=normalized_portfolio_slug,
+            query=normalized_query,
+            subject_refs=subject_refs or [],
+            kind=normalized_kind,
             agent_key=normalized_agent_key,
             current_context=current_context or self.current_context,
         )
@@ -65,16 +72,18 @@ class MemoryContextService:
     def build_prompt_context(
         self,
         *,
-        ticker: str | None = None,
-        portfolio_slug: str | None = None,
+        query: str | None = None,
+        subject_refs: list[MemorySubjectRef] | None = None,
+        kind: str | None = None,
         agent_key: str | None = None,
         max_items: int = _DEFAULT_MAX_ITEMS,
         max_characters: int = _DEFAULT_MAX_CHARACTERS,
         current_context: MemoryLookupContext | None = None,
     ) -> str:
         snippets = self.get_prompt_snippets(
-            ticker=ticker,
-            portfolio_slug=portfolio_slug,
+            query=query,
+            subject_refs=subject_refs,
+            kind=kind,
             agent_key=agent_key,
             max_items=max_items,
             max_characters=max_characters,
@@ -85,8 +94,9 @@ class MemoryContextService:
             snippets=snippets,
             injected_text=prompt_context,
             filters=self._filter_snapshot(
-                ticker=ticker,
-                portfolio_slug=portfolio_slug,
+                query=query,
+                subject_refs=subject_refs or [],
+                kind=kind,
                 agent_key=agent_key,
             ),
             budget={
@@ -101,16 +111,18 @@ class MemoryContextService:
     def _ordered_snippets(
         self,
         *,
-        ticker: str | None,
-        portfolio_slug: str | None,
+        query: str | None,
+        subject_refs: list[MemorySubjectRef],
+        kind: str | None,
         agent_key: str | None,
         current_context: MemoryLookupContext | None,
     ) -> list[MemoryPromptSnippet]:
         seen_memory_ids: set[str] = set()
         ordered: list[MemoryPromptSnippet] = []
         for group in self._query_groups(
-            ticker=ticker,
-            portfolio_slug=portfolio_slug,
+            query=query,
+            subject_refs=subject_refs,
+            kind=kind,
             agent_key=agent_key,
         ):
             group_snippets = sorted(
@@ -127,37 +139,22 @@ class MemoryContextService:
     @staticmethod
     def _query_groups(
         *,
-        ticker: str | None,
-        portfolio_slug: str | None,
+        query: str | None,
+        subject_refs: list[MemorySubjectRef],
+        kind: str | None,
         agent_key: str | None,
     ) -> list[MemoryQuery]:
-        groups: list[MemoryQuery] = []
-        if ticker is not None and portfolio_slug is not None:
-            groups.append(
-                MemoryQuery(
-                    ticker=ticker,
-                    portfolio_slug=portfolio_slug,
-                    agent_key=agent_key,
-                    status=MemoryLifecycleStatus.RESOLVED,
-                )
+        groups = [
+            MemoryQuery(
+                query=query,
+                subject_refs=subject_refs,
+                kind=kind,
+                agent_key=agent_key,
+                status=MemoryLifecycleStatus.RESOLVED,
             )
-        if ticker is not None:
-            groups.append(
-                MemoryQuery(
-                    ticker=ticker,
-                    agent_key=agent_key,
-                    status=MemoryLifecycleStatus.RESOLVED,
-                )
-            )
-        if portfolio_slug is not None:
-            groups.append(
-                MemoryQuery(
-                    portfolio_slug=portfolio_slug,
-                    agent_key=agent_key,
-                    status=MemoryLifecycleStatus.RESOLVED,
-                )
-            )
-        groups.append(MemoryQuery(agent_key=agent_key, status=MemoryLifecycleStatus.RESOLVED))
+        ]
+        if query is not None or subject_refs or kind is not None:
+            groups.append(MemoryQuery(agent_key=agent_key, status=MemoryLifecycleStatus.RESOLVED))
         return groups
 
     def _query_all(
@@ -214,7 +211,7 @@ class MemoryContextService:
         )
         if latest_reflection is not None:
             return latest_reflection
-        return to_utc(snippet.outcome.resolved_at)
+        return to_utc(snippet.outcome.observed_at)
 
     @staticmethod
     def _prompt_safe_snippet(snippet: MemoryPromptSnippet) -> MemoryPromptSnippet:
@@ -228,26 +225,26 @@ class MemoryContextService:
     @staticmethod
     def _filter_snapshot(
         *,
-        ticker: str | None,
-        portfolio_slug: str | None,
+        query: str | None,
+        subject_refs: list[MemorySubjectRef],
+        kind: str | None,
         agent_key: str | None,
     ) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             key: value
             for key, value in {
-                "ticker": MemoryContextService._normalize_ticker(ticker),
-                "portfolioSlug": MemoryContextService._normalize_optional_text(portfolio_slug),
+                "query": MemoryContextService._normalize_optional_text(query),
+                "kind": MemoryContextService._normalize_optional_text(kind),
                 "agentKey": MemoryContextService._normalize_optional_text(agent_key),
             }.items()
             if value is not None
         }
-
-    @staticmethod
-    def _normalize_ticker(value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = normalize_symbol(value)
-        return normalized or None
+        if subject_refs:
+            payload["subjectRefs"] = [
+                subject_ref.model_dump(mode="json", by_alias=True, exclude_none=True)
+                for subject_ref in subject_refs
+            ]
+        return payload
 
     @staticmethod
     def _normalize_optional_text(value: str | None) -> str | None:

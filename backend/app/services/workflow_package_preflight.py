@@ -108,8 +108,15 @@ class WorkflowPackagePreflightResult:
 
 
 class WorkflowPackagePreflightService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        extension_service: ExtensionService | None = None,
+        extension_service_factory: Callable[[Session], ExtensionService] = ExtensionService,
+    ) -> None:
         self.session = session
+        self.extension_service = extension_service or extension_service_factory(session)
         self.model_connection_service = ModelConnectionService(session)
         self.model_connection_repository = ModelConnectionRepository(session)
         self.secret_binding_repository = WorkflowPackageSecretBindingRepository(session)
@@ -678,7 +685,7 @@ class WorkflowPackagePreflightService:
         return f"{base_field}.{issue_field}"
 
     def _tool_errors(self, compiled_plan: dict[str, Any]) -> list[WorkflowPackageDiagnosticFact]:
-        catalog = ExtensionService(self.session).get_tool_catalog()
+        catalog = self.extension_service.get_tool_catalog()
         known_keys = {tool.key for tool in catalog.list_known_tools()}
         diagnostics: list[dict[str, Any]] = []
         for profile in self._compiled_section(compiled_plan, "capabilityProfiles"):
@@ -747,7 +754,6 @@ class WorkflowPackagePreflightService:
             for fact in existing_facts
             if fact.code == "extension_disabled"
         }
-        extension_service = ExtensionService(self.session)
         diagnostics: list[dict[str, Any]] = []
         for dependency in dependencies:
             extension_key = str(dependency.get("extensionKey") or "")
@@ -755,7 +761,7 @@ class WorkflowPackagePreflightService:
                 continue
             surface = self._preferred_dependency_surface(dependency)
             try:
-                _ = extension_service.require_enabled(extension_key, surface=surface)
+                _ = self.extension_service.require_enabled(extension_key, surface=surface)
             except ApiError as exc:
                 diagnostics.extend(dict(detail) for detail in exc.details)
         return [self._extension_dependency_error_fact(diagnostic) for diagnostic in diagnostics]

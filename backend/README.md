@@ -20,11 +20,12 @@ The backend expects PostgreSQL everywhere. The default local connection is `post
 
 ## Model Connections
 
-Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
+Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest. Local development may use the default placeholder, but `SIGNALDECK_RUNTIME_MODE=production` requires explicit `DATABASE_URL` and non-placeholder `AGENT_PLATFORM_ENCRYPTION_KEY` values.
 
 ## Live API Surfaces
 
-- `/health` for backend health
+- `/health` for process liveness
+- `/ready` for readiness; returns 200 only when the backend can connect to PostgreSQL
 - `/api/v1` for portfolios, balances, positions, trading operations, market data, templates, and reports
 - `/api/workflow-packages` for package-first authoring, validation, import, export, preflight, launch metadata, and launch creation
 - `/api/schedules` for Scheduled Tasks targeting Workflow Packages, including create, list, detail, patch, delete, preview, run-now, and fire-history reads

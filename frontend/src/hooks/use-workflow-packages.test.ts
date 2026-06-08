@@ -69,6 +69,7 @@ import {
   createWorkflowPackageRuntimeInputPersonalEntry,
   deleteWorkflowPackage,
   deleteWorkflowPackageRuntimeInputPersonalEntry,
+  preflightWorkflowPackage,
   updateWorkflowPackageRuntimeInputPersonalEntry,
   validateWorkflowPackageManifest,
 } from "@/lib/api/workflow-packages";
@@ -79,6 +80,7 @@ import {
   useDeleteWorkflowPackage,
   useDeleteWorkflowPackages,
   useDeleteWorkflowPackageRuntimeInputPersonalEntry,
+  usePreflightWorkflowPackage,
   useTools,
   useUpdateWorkflowPackage,
   useUpdateWorkflowPackageRuntimeInputPersonalEntry,
@@ -125,6 +127,7 @@ describe("useWorkflowPackages", () => {
     vi.mocked(createWorkflowPackageRuntimeInputPersonalEntry).mockReset();
     vi.mocked(deleteWorkflowPackage).mockReset();
     vi.mocked(deleteWorkflowPackageRuntimeInputPersonalEntry).mockReset();
+    vi.mocked(preflightWorkflowPackage).mockReset();
     vi.mocked(updateWorkflowPackageRuntimeInputPersonalEntry).mockReset();
     vi.mocked(validateWorkflowPackageManifest).mockReset();
   });
@@ -327,6 +330,21 @@ describe("useWorkflowPackages", () => {
     });
     expect(validateWorkflowPackageManifest).toHaveBeenCalledWith({ manifestSource: "source" });
     expect(reactQueryState.invalidateQueriesMock).not.toHaveBeenCalled();
+  });
+
+  it("posts workflow preflight with workflow key and launch parameters", async () => {
+    usePreflightWorkflowPackage();
+
+    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await mutationOptions.mutationFn?.({
+      packageId: 15,
+      payload: { parameters: { ticker: "AVGO" }, workflowKey: "summarize" },
+    });
+
+    expect(preflightWorkflowPackage).toHaveBeenCalledWith(15, {
+      parameters: { ticker: "AVGO" },
+      workflowKey: "summarize",
+    });
   });
 
   it("invalidates package, run, and launch scopes after creating a package launch", async () => {

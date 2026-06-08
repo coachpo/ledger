@@ -2,17 +2,17 @@
 from __future__ import annotations
 
 import calendar
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from enum import Enum
-from typing import Any, Final, cast
+from typing import Any, Final, Protocol, cast
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.errors import not_found_error
+from app.core.errors import ApiError, not_found_error, validation_error
 from app.core.formatting import to_utc, utcnow
 from app.db.engine import get_session_factory
 from app.models.run import Run
@@ -101,6 +101,13 @@ class ScheduleFireMetadata:
 
 
 @dataclass(frozen=True)
+class ScheduleQueuedRunResult:
+    fire: WorkflowPackageScheduleFire
+    run: Run
+    created_run: bool
+
+
+@dataclass(frozen=True)
 class ScheduleOccurrenceContext:
     scheduled_for: datetime
     previous_scheduled_for: datetime | None
@@ -110,6 +117,16 @@ class ScheduleOccurrenceContext:
     scheduled_local_datetime: str
 
 
+class RunServiceFactory(Protocol):
+    def __call__(
+        self,
+        session: Session,
+        session_factory: sessionmaker[Session] | None = None,
+        *,
+        provider_bundle: ExecutionProviderBundle | None = None,
+    ) -> RunService: ...
+
+
 class WorkflowPackageScheduleService:
     def __init__(
         self,
@@ -117,10 +134,14 @@ class WorkflowPackageScheduleService:
         session_factory: sessionmaker[Session] | None = None,
         *,
         provider_bundle: ExecutionProviderBundle | None = None,
+        run_service: RunService | None = None,
+        run_service_factory: RunServiceFactory = RunService,
     ) -> None:
         self.session: Session = session
         self.session_factory: sessionmaker[Session] = session_factory or get_session_factory()
         self.provider_bundle: ExecutionProviderBundle | None = provider_bundle
+        self.run_service: RunService | None = run_service
+        self.run_service_factory: RunServiceFactory = run_service_factory
         self.schedule_repository: WorkflowPackageScheduleRepository = (
             WorkflowPackageScheduleRepository(session)
         )
@@ -132,6 +153,23 @@ class WorkflowPackageScheduleService:
         )
         self.schema_compiler: OutputSchemaCompiler = OutputSchemaCompiler(
             OutputSchemaRepository(session)
+        )
+
+    def _run_service(self) -> RunService:
+        if self.run_service is not None:
+            return self.run_service
+        return self.run_service_factory(
+            self.session,
+            self.session_factory,
+            provider_bundle=self.provider_bundle,
+        )
+
+    def _fresh_schedule_service(self, session: Session) -> WorkflowPackageScheduleService:
+        return type(self)(
+            session,
+            self.session_factory,
+            provider_bundle=self.provider_bundle,
+            run_service_factory=self.run_service_factory,
         )
 
     def list_schedules(
@@ -179,6 +217,7 @@ class WorkflowPackageScheduleService:
     ) -> ScheduleRead:
         try:
             package = self._get_package_model(payload.package_id)
+            self._validate_package_workflow_key(package, payload.workflow_key)
             resolved_next_fire_at = (
                 self._initial_next_fire_at(payload)
                 if next_fire_at is _UNSET
@@ -218,6 +257,9 @@ class WorkflowPackageScheduleService:
         try:
             schedule = self._get_schedule_model_for_update(schedule_id)
             fields = self._update_fields(payload)
+            if "workflow_key" in fields:
+                package = self._get_package_model(schedule.package_id)
+                self._validate_package_workflow_key(package, str(fields["workflow_key"]))
             if next_fire_at is not _UNSET:
                 fields["next_fire_at"] = next_fire_at
             elif self._requires_next_fire_recompute(payload):
@@ -254,7 +296,7 @@ class WorkflowPackageScheduleService:
             limit=limit,
             lock_rows=lock_rows,
         )
-        return [self._to_due_schedule(schedule) for schedule in schedules]
+        return [self.to_due_schedule(schedule) for schedule in schedules]
 
     def list_fire_history(
         self,
@@ -360,6 +402,7 @@ class WorkflowPackageScheduleService:
     ) -> ScheduleRunNowRead:
         materialized_at = utcnow()
         scheduled_for = to_utc(payload.scheduled_for)
+        metadata: ScheduleFireMetadata | None = None
         try:
             schedule = self._get_schedule_model_for_update(schedule_id)
             package = self._get_package_model(schedule.package_id)
@@ -370,69 +413,111 @@ class WorkflowPackageScheduleService:
                 scheduled_for=scheduled_for,
                 timezone_name=schedule.timezone,
             )
-            fire = self.fire_repository.insert_idempotent(
-                schedule_id=metadata.schedule_id,
-                fire_key=metadata.fire_key,
-                reason=metadata.reason.value,
-                status=FireStatus.PENDING.value,
-                scheduled_for=metadata.scheduled_for,
-                scheduled_local_date=metadata.scheduled_local_date,
-                scheduled_local_time=metadata.scheduled_local_time,
-                scheduled_local_datetime=metadata.scheduled_local_datetime,
+            queued = self.queue_schedule_fire_run(
+                schedule=schedule,
+                package=package,
+                metadata=metadata,
                 materialized_at=materialized_at,
+                window_start=self._window_start_for_recurrence(
+                    schedule.recurrence,
+                    scheduled_for,
+                    timezone_name=schedule.timezone,
+                ),
+                window_end=scheduled_for,
+                last_run=self._latest_terminal_run_context(schedule.id),
             )
-            run = self.fire_repository.get_run_for_fire(fire.id)
-            if run is None:
-                preview = self.preview_schedule_input_render(
-                    package_id=schedule.package_id,
-                    package_key=package.key,
-                    workflow_key=schedule.workflow_key,
-                    schedule_id=schedule.id,
-                    schedule_name=schedule.name,
-                    timezone=schedule.timezone,
-                    input_template=deepcopy(schedule.input_template),
-                    template_vars=deepcopy(schedule.template_vars),
-                    fire_metadata=metadata,
-                    fire_id=fire.id,
-                    materialized_at=materialized_at,
-                    window_start=self._window_start_for_recurrence(
-                        schedule.recurrence,
-                        scheduled_for,
-                        timezone_name=schedule.timezone,
-                    ),
-                    window_end=scheduled_for,
-                    last_run=self._latest_terminal_run_context(schedule.id),
-                )
-                rendered_parameters = require_scheduled_input_render_ready(preview)
-                created_run = RunService(
-                    self.session,
-                    self.session_factory,
-                    provider_bundle=self.provider_bundle,
-                ).create_scheduled_workflow_package_run(
-                    package_id=schedule.package_id,
-                    workflow_key=schedule.workflow_key,
-                    parameters=rendered_parameters,
-                    schedule_id=schedule.id,
-                    schedule_fire_id=fire.id,
-                    scheduled_for=metadata.scheduled_for,
-                    schedule_reason=metadata.reason,
-                    commit=False,
-                )
-                run = self.session.get(Run, created_run.id)
-                if run is None:
-                    raise RuntimeError("Scheduled run creation did not return a persisted run")
-                fire = self.fire_repository.mark_queued(
-                    fire,
-                    materialized_at=materialized_at,
-                    rendered_parameters=rendered_parameters,
-                )
             self.session.commit()
-            self.session.refresh(fire)
-            self.session.refresh(run)
-            return self._to_run_now_read(schedule, package, fire, run)
+            self.session.refresh(queued.fire)
+            self.session.refresh(queued.run)
+            return self._to_run_now_read(schedule, package, queued.fire, queued.run)
+        except ApiError as exc:
+            self.session.rollback()
+            if metadata is not None:
+                self._record_fire_failure_after_rollback(
+                    metadata,
+                    materialized_at=materialized_at,
+                    error_code=exc.code,
+                    error_message=exc.message,
+                )
+            raise
         except Exception:
             self.session.rollback()
+            if metadata is not None:
+                self._record_fire_failure_after_rollback(
+                    metadata,
+                    materialized_at=materialized_at,
+                    error_code="schedule_run_now_failed",
+                    error_message="Schedule run-now failed",
+                )
             raise
+
+    def queue_schedule_fire_run(
+        self,
+        *,
+        schedule: WorkflowPackageSchedule,
+        metadata: ScheduleFireMetadata,
+        materialized_at: datetime,
+        window_start: datetime | None,
+        window_end: datetime | None,
+        last_run: ScheduledInputLastRunContext | None = None,
+        package: WorkflowPackage | None = None,
+        fire: WorkflowPackageScheduleFire | None = None,
+    ) -> ScheduleQueuedRunResult:
+        queued_fire = fire or self.fire_repository.insert_idempotent(
+            schedule_id=metadata.schedule_id,
+            fire_key=metadata.fire_key,
+            reason=metadata.reason.value,
+            status=FireStatus.PENDING.value,
+            scheduled_for=metadata.scheduled_for,
+            scheduled_local_date=metadata.scheduled_local_date,
+            scheduled_local_time=metadata.scheduled_local_time,
+            scheduled_local_datetime=metadata.scheduled_local_datetime,
+            materialized_at=materialized_at,
+        )
+        existing_run = self.fire_repository.get_run_for_fire(queued_fire.id)
+        if existing_run is not None:
+            return ScheduleQueuedRunResult(
+                fire=queued_fire,
+                run=existing_run,
+                created_run=False,
+            )
+        resolved_package = package or self._get_package_model(schedule.package_id)
+        preview = self.preview_schedule_input_render(
+            package_id=schedule.package_id,
+            package_key=resolved_package.key,
+            workflow_key=schedule.workflow_key,
+            schedule_id=schedule.id,
+            schedule_name=schedule.name,
+            timezone=schedule.timezone,
+            input_template=deepcopy(schedule.input_template),
+            template_vars=deepcopy(schedule.template_vars),
+            fire_metadata=metadata,
+            fire_id=queued_fire.id,
+            materialized_at=materialized_at,
+            window_start=window_start,
+            window_end=window_end,
+            last_run=last_run,
+        )
+        rendered_parameters = require_scheduled_input_render_ready(preview)
+        created_run = self._run_service().create_scheduled_workflow_package_run(
+            package_id=schedule.package_id,
+            workflow_key=schedule.workflow_key,
+            parameters=rendered_parameters,
+            schedule_id=schedule.id,
+            schedule_fire_id=queued_fire.id,
+            scheduled_for=metadata.scheduled_for,
+            schedule_reason=metadata.reason,
+            commit=False,
+        )
+        run = self.session.get(Run, created_run.id)
+        if run is None:
+            raise RuntimeError("Scheduled run creation did not return a persisted run")
+        queued_fire = self.fire_repository.mark_queued(
+            queued_fire,
+            materialized_at=materialized_at,
+            rendered_parameters=rendered_parameters,
+        )
+        return ScheduleQueuedRunResult(fire=queued_fire, run=run, created_run=True)
 
     def create_or_get_fire(
         self,
@@ -535,6 +620,58 @@ class WorkflowPackageScheduleService:
         except Exception:
             self.session.rollback()
             raise
+
+    def _record_fire_failure_after_rollback(
+        self,
+        metadata: ScheduleFireMetadata,
+        *,
+        materialized_at: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        with self.session_factory() as session:
+            schedule_service = self._fresh_schedule_service(session)
+            schedule = schedule_service.schedule_repository.get_for_update(metadata.schedule_id)
+            if schedule is None:
+                session.rollback()
+                return
+            _ = schedule_service.insert_or_mark_fire_failed(
+                metadata,
+                materialized_at=materialized_at,
+                error_code=error_code,
+                error_message=error_message,
+            )
+            session.commit()
+
+    def insert_or_mark_fire_failed(
+        self,
+        metadata: ScheduleFireMetadata,
+        *,
+        materialized_at: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> WorkflowPackageScheduleFire:
+        fire = self.fire_repository.insert_idempotent(
+            schedule_id=metadata.schedule_id,
+            fire_key=metadata.fire_key,
+            reason=metadata.reason.value,
+            status=FireStatus.FAILED.value,
+            scheduled_for=metadata.scheduled_for,
+            scheduled_local_date=metadata.scheduled_local_date,
+            scheduled_local_time=metadata.scheduled_local_time,
+            scheduled_local_datetime=metadata.scheduled_local_datetime,
+            materialized_at=materialized_at,
+            error_code=error_code,
+            error_message=error_message,
+        )
+        if fire.status == FireStatus.FAILED.value:
+            return fire
+        return self.fire_repository.mark_failed(
+            fire,
+            error_code=error_code,
+            error_message=error_message,
+            materialized_at=materialized_at,
+        )
 
     def preview_due_schedule_input_render(
         self,
@@ -650,6 +787,8 @@ class WorkflowPackageScheduleService:
 
     def _update_fields(self, payload: ScheduleUpdate) -> dict[str, object]:
         fields: dict[str, object] = {}
+        if "workflow_key" in payload.model_fields_set:
+            fields["workflow_key"] = payload.workflow_key
         if "name" in payload.model_fields_set:
             fields["name"] = payload.name
         if "description" in payload.model_fields_set:
@@ -1145,11 +1284,7 @@ class WorkflowPackageScheduleService:
     def _delete_schedule_rows(self, schedule_id: int) -> None:
         schedule = self._get_schedule_model_for_update(schedule_id)
         fire_ids = self.fire_repository.list_ids_for_schedule(schedule.id)
-        RunService(
-            self.session,
-            self.session_factory,
-            provider_bundle=self.provider_bundle,
-        ).detach_runs_for_deleted_schedule(
+        self._run_service().detach_runs_for_deleted_schedule(
             schedule=schedule,
             fire_ids=fire_ids,
             commit=False,
@@ -1298,7 +1433,7 @@ class WorkflowPackageScheduleService:
             }
         )
 
-    def _to_due_schedule(self, schedule: WorkflowPackageSchedule) -> DueWorkflowPackageSchedule:
+    def to_due_schedule(self, schedule: WorkflowPackageSchedule) -> DueWorkflowPackageSchedule:
         package = self._get_package_model(schedule.package_id)
         if schedule.next_fire_at is None:
             raise ValueError("Due schedule must have next_fire_at populated")
@@ -1344,6 +1479,43 @@ class WorkflowPackageScheduleService:
         runs = self.fire_repository.list_runs_for_fire_ids(fire_ids)
         return {int(run.schedule_fire_id): run for run in runs if run.schedule_fire_id is not None}
 
+    def _validate_package_workflow_key(
+        self,
+        package: WorkflowPackage,
+        workflow_key: str,
+    ) -> None:
+        if workflow_key in self._package_workflow_keys(package):
+            return
+        raise validation_error(
+            "Schedule validation failed",
+            [
+                {
+                    "field": "workflowKey",
+                    "issue": (
+                        f"Workflow key {workflow_key!r} is not present in workflow package "
+                        f"{package.key!r}"
+                    ),
+                }
+            ],
+        )
+
+    @staticmethod
+    def _package_workflow_keys(package: WorkflowPackage) -> set[str]:
+        compiled_plan = cast(Mapping[str, object], package.compiled_plan)
+        raw_workflows = compiled_plan.get("workflows")
+        if not isinstance(raw_workflows, list):
+            return set()
+        workflows = cast(list[object], raw_workflows)
+        workflow_keys: set[str] = set()
+        for raw_workflow in workflows:
+            if not isinstance(raw_workflow, dict):
+                continue
+            workflow = cast(Mapping[str, object], raw_workflow)
+            raw_key = workflow.get("key")
+            if raw_key is not None:
+                workflow_keys.add(str(raw_key))
+        return workflow_keys
+
     def _get_schedule_model(self, schedule_id: int) -> WorkflowPackageSchedule:
         schedule = self.schedule_repository.get(schedule_id)
         if schedule is None:
@@ -1384,5 +1556,6 @@ __all__ = [
     "ScheduleFireMetadata",
     "ScheduleLatestMetadata",
     "ScheduleOccurrenceContext",
+    "ScheduleQueuedRunResult",
     "WorkflowPackageScheduleService",
 ]

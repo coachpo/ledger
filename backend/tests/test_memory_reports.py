@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import cast
 
 import pytest
@@ -16,10 +15,11 @@ from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMe
 from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.schemas.memory import (
-    MemoryDecision,
+    MemoryLifecycleStatus,
     MemoryOutcome,
     MemoryProvenance,
     MemoryQuery,
+    MemorySubjectRef,
     MemoryWriteRequest,
 )
 from app.schemas.memory_report import (
@@ -133,18 +133,11 @@ def _seed_run(session: Session, *, run_id: int | None = None) -> Run:
 
 def _core_memory_write_request(run_id: int) -> MemoryWriteRequest:
     return MemoryWriteRequest(
-        ticker="NVDA",
-        portfolio_slug="core_us",
-        horizon_days=14,
-        confidence="high",
-        decision_summary="Core memory survives report retirement.",
-        benchmark_symbol="SPY",
-        decision=MemoryDecision(
-            action="buy",
-            rationale="Core memory is table backed.",
-            risk_summary="Report rows must not participate.",
-            execution_plan="Use signaldeck.memory.write only.",
-        ),
+        kind="research.note",
+        summary="Core memory survives report retirement.",
+        content="Core memory is table backed; report rows must not participate.",
+        subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
+        attributes={"confidence": "high"},
         provenance=MemoryProvenance(
             run_id=run_id,
             agent_key="analyst",
@@ -236,7 +229,10 @@ def test_core_memory_ignores_legacy_agent_memory_reports(
         )
 
         before = service.query_memory(
-            MemoryQuery(ticker="NVDA", agent_key="analyst"),
+            MemoryQuery(
+                subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
+                agent_key="analyst",
+            ),
             record_event=False,
         )
         with pytest.raises(ApiError) as missing_error:
@@ -249,14 +245,17 @@ def test_core_memory_ignores_legacy_agent_memory_reports(
         _ = service.resolve_memory(
             created.memory_id,
             MemoryOutcome(
-                resolved_status="resolved",
-                resolved_at=datetime(2026, 1, 17, 10, 30, tzinfo=UTC),
-                raw_return=Decimal("0.125"),
-                alpha=Decimal("0.095"),
+                status=MemoryLifecycleStatus.RESOLVED,
+                summary="Core memory resolved.",
+                observed_at=datetime(2026, 1, 17, 10, 30, tzinfo=UTC),
+                attributes={"rawReturn": "0.125", "alpha": "0.095"},
             ),
         )
         after = service.query_memory(
-            MemoryQuery(ticker="NVDA", agent_key="analyst"),
+            MemoryQuery(
+                subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
+                agent_key="analyst",
+            ),
             record_event=False,
         )
         reports = list(session.scalars(select(Report).order_by(Report.id)))

@@ -11,6 +11,7 @@ SELECTED_BACKEND_PORT="$REQUESTED_BACKEND_PORT"
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 REQUESTED_FRONTEND_PORT="${FRONTEND_PORT:-25173}"
 SELECTED_FRONTEND_PORT="$REQUESTED_FRONTEND_PORT"
+FORCE_PORT_CLEANUP="${SIGNALDECK_START_FORCE_PORT_CLEANUP:-0}"
 
 is_port_listening() {
   lsof -tiTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
@@ -117,6 +118,17 @@ merged_cors_allowed_origins() {
   printf '%s' "$allowed_origins"
 }
 
+force_port_cleanup_enabled() {
+  case "$FORCE_PORT_CLEANUP" in
+    1|true|TRUE|yes|YES)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 kill_listener_on_port() {
   local port="$1"
   local pids
@@ -127,7 +139,7 @@ kill_listener_on_port() {
     return 0
   fi
 
-  printf 'Stopping process(es) listening on port %s.\n' "$port"
+  printf 'SIGNALDECK_START_FORCE_PORT_CLEANUP is enabled; stopping listener(s) on port %s.\n' "$port"
   for pid in $pids; do
     kill "$pid" 2>/dev/null || true
   done
@@ -141,7 +153,7 @@ kill_listener_on_port() {
   done
 
   if is_port_listening "$port"; then
-    printf 'Force-stopping process(es) still listening on port %s.\n' "$port"
+    printf 'Force-stopping listener(s) still on port %s because cleanup was explicitly enabled.\n' "$port"
     for pid in $pids; do
       kill -9 "$pid" 2>/dev/null || true
     done
@@ -178,9 +190,14 @@ stop_existing_scheduler_workers() {
 stop_existing_instances() {
   local port
 
-  printf 'Stopping existing SignalDeck development instances.\n'
+  printf 'Stopping SignalDeck-owned local database and scheduler worker instances.\n'
   stop_local_database
   stop_existing_scheduler_workers
+
+  if ! force_port_cleanup_enabled; then
+    printf 'Leaving existing backend/frontend port listeners untouched; set SIGNALDECK_START_FORCE_PORT_CLEANUP=1 to opt in to port listener cleanup.\n'
+    return 0
+  fi
 
   for port in "$REQUESTED_BACKEND_PORT" 28000 28001 28002 "$REQUESTED_FRONTEND_PORT" 25173 25174; do
     kill_listener_on_port "$port"
@@ -224,6 +241,9 @@ if [[ -z "${FRONTEND_PORT:-}" ]]; then
     printf 'Port %s is in use; switching frontend to 25174 so backend CORS stays valid.\n' "$SELECTED_FRONTEND_PORT"
     SELECTED_FRONTEND_PORT=25174
   fi
+elif is_port_listening "$SELECTED_FRONTEND_PORT"; then
+  printf 'Configured frontend port %s is occupied; stop that service or set SIGNALDECK_START_FORCE_PORT_CLEANUP=1.\n' "$SELECTED_FRONTEND_PORT" >&2
+  exit 1
 fi
 
 if is_port_listening "$SELECTED_BACKEND_PORT"; then
@@ -231,14 +251,14 @@ if is_port_listening "$SELECTED_BACKEND_PORT"; then
     fallback_backend_port="$(first_available_port 28001 28002 || true)"
 
     if [[ -z "$fallback_backend_port" ]]; then
-      printf 'Backend port %s is still occupied after cleanup and no fallback backend port is available.\n' "$SELECTED_BACKEND_PORT" >&2
+      printf 'Backend port %s is occupied and no fallback backend port is available.\n' "$SELECTED_BACKEND_PORT" >&2
       exit 1
     fi
 
-    printf 'Backend port %s is still occupied after cleanup; switching backend to %s.\n' "$SELECTED_BACKEND_PORT" "$fallback_backend_port"
+    printf 'Backend port %s is occupied; switching backend to %s.\n' "$SELECTED_BACKEND_PORT" "$fallback_backend_port"
     SELECTED_BACKEND_PORT="$fallback_backend_port"
   else
-    printf 'Configured backend port %s is still occupied after cleanup.\n' "$SELECTED_BACKEND_PORT" >&2
+    printf 'Configured backend port %s is occupied; stop that service or set SIGNALDECK_START_FORCE_PORT_CLEANUP=1.\n' "$SELECTED_BACKEND_PORT" >&2
     exit 1
   fi
 fi

@@ -32,7 +32,6 @@ from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.memory import (
     MEMORY_NAMESPACE_ACCESS_DENIED_CODE,
     MEMORY_NAMESPACE_ACCESS_DENIED_MESSAGE,
-    MemoryDecision,
     MemoryLifecycleStatus,
     MemoryNamespaceGrant,
     MemoryNamespaceSelector,
@@ -41,6 +40,7 @@ from app.schemas.memory import (
     MemoryQuery,
     MemoryScope,
     MemoryScopeType,
+    MemorySubjectRef,
     MemoryWriteRequest,
 )
 from app.services.capability_service import RuntimeToolGrantError
@@ -152,18 +152,14 @@ def _seed_run_invocation(session: Session, run: Run) -> RunAgentInvocation:
 
 def _write_request(run_id: int = 42) -> MemoryWriteRequest:
     return MemoryWriteRequest(
-        ticker=" nvda ",
-        portfolio_slug=" core_us ",
-        horizon_days=14,
-        confidence=" high ",
-        decision_summary="Long-term compounding memory.",
-        benchmark_symbol=" spy ",
-        decision=MemoryDecision(
-            action="buy",
-            rationale="Earnings durability supports a long position.",
-            risk_summary="Sizing should account for semiconductor cyclicality.",
-            execution_plan="Scale in after the next market-data refresh.",
+        kind="research.note",
+        summary="Long-term compounding memory.",
+        content=(
+            "Earnings durability supports a long position. "
+            "Sizing should account for semiconductor cyclicality."
         ),
+        subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
+        attributes={"confidence": "high"},
         provenance=MemoryProvenance(
             run_id=run_id,
             agent_key="portfolio_manager",

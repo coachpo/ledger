@@ -1,18 +1,25 @@
 from __future__ import annotations
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.db_errors import is_unique_constraint_violation
 from app.core.errors import business_rule_error, not_found_error
-from app.models.text_template import TextTemplate
-from app.repositories.text_template import TextTemplateRepository
-from app.schemas.text_template import TextTemplateCreate, TextTemplateRead, TextTemplateUpdate
-from app.services.extension_gate import (
+from app.extensions.signaldeck_finance.service_gate import (
     TEXT_TEMPLATE_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
+from app.models.text_template import TextTemplate
+from app.repositories.text_template import TextTemplateRepository
+from app.schemas.text_template import TextTemplateCreate, TextTemplateRead, TextTemplateUpdate
+
+_TEXT_TEMPLATE_NAME_CONSTRAINTS = frozenset({"uq_text_templates_name"})
 
 
 class TextTemplateService:
+    session: Session
+    repository: TextTemplateRepository
+
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repository = TextTemplateRepository(session)
@@ -37,17 +44,23 @@ class TextTemplateService:
     def create_template(self, payload: TextTemplateCreate) -> TextTemplateRead:
         self._require_enabled()
         if self.repository.get_by_name(payload.name) is not None:
-            raise business_rule_error(
-                "duplicate_template_name",
-                "A template with this name already exists",
-            )
+            raise self._duplicate_name_error()
         template = TextTemplate(
             name=payload.name,
             content=payload.content,
         )
-        self.repository.add(template)
-        self.session.commit()
-        self.session.refresh(template)
+        _ = self.repository.add(template)
+        try:
+            self.session.commit()
+            self.session.refresh(template)
+        except IntegrityError as exc:
+            self.session.rollback()
+            if is_unique_constraint_violation(exc, _TEXT_TEMPLATE_NAME_CONSTRAINTS):
+                raise self._duplicate_name_error() from exc
+            raise
+        except Exception:
+            self.session.rollback()
+            raise
         return TextTemplateRead.model_validate(template)
 
     def update_template(self, template_id: int, payload: TextTemplateUpdate) -> TextTemplateRead:
@@ -72,6 +85,13 @@ class TextTemplateService:
         template = self._get_model(template_id)
         self.repository.delete(template)
         self.session.commit()
+
+    @staticmethod
+    def _duplicate_name_error() -> Exception:
+        return business_rule_error(
+            "duplicate_template_name",
+            "A template with this name already exists",
+        )
 
     def _get_model(self, template_id: int) -> TextTemplate:
         template = self.repository.get(template_id)

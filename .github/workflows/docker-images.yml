@@ -41,6 +41,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -106,5 +107,5 @@ jobs:
           cache-to: |
             type=gha,scope=${{ matrix.service }},mode=max
           platforms: ${{ env.BUILD_PLATFORM }}
-          provenance: false
-          sbom: false
+          provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name != 'pull_request' }}

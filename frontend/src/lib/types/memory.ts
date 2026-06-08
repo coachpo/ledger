@@ -80,7 +80,7 @@ export interface MemoryApiListItemRead {
   retrievalScore?: MemoryRetrievalScore | null;
 }
 
-export interface MemoryRevisionRead {
+export interface MemoryApiRevisionRead {
   revisionId: string;
   version: number;
   status: MemoryLifecycleStatus;
@@ -110,7 +110,7 @@ export interface MemoryApiEntryRead {
   attributes: UnknownRecord;
   scope: MemoryScope;
   provenance: MemoryProvenance;
-  revision: MemoryRevisionRead;
+  revision: MemoryApiRevisionRead;
   createdAt: string;
   updatedAt?: string | null;
 }
@@ -125,7 +125,7 @@ export interface MemoryApiListRead {
 }
 
 export interface MemoryApiRevisionListRead {
-  items: MemoryRevisionRead[];
+  items: MemoryApiRevisionRead[];
   count: number;
   limit: number;
   offset: number;

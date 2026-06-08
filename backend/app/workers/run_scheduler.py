@@ -169,6 +169,17 @@ class RunSchedulerWorker:
             logger.warning("Recovered %d stale SignalDeck scheduler lease(s)", recovered_count)
         return recovered_count
 
+    def _run_executor(self, session: Session) -> RunService:
+        extension_service_class = ExtensionService
+        extension_service = extension_service_class(session)
+        run_service_class = RunService
+        return run_service_class(
+            session,
+            self.session_factory,
+            provider_bundle=extension_service.get_execution_provider_bundle(),
+            extension_service=extension_service,
+        )
+
     def _execute_claimed_run(self, scheduled_run: ScheduledRun) -> None:
         stop_heartbeat = threading.Event()
         heartbeat = threading.Thread(
@@ -180,12 +191,7 @@ class RunSchedulerWorker:
         heartbeat.start()
         try:
             with self.session_factory() as session:
-                provider_bundle = ExtensionService(session).get_execution_provider_bundle()
-                RunService(
-                    session,
-                    self.session_factory,
-                    provider_bundle=provider_bundle,
-                ).execute_claimed_run(scheduled_run.run_id)
+                self._run_executor(session).execute_claimed_run(scheduled_run.run_id)
         finally:
             stop_heartbeat.set()
             heartbeat.join(timeout=self.settings.run_scheduler_heartbeat_seconds)

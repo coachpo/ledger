@@ -1645,7 +1645,10 @@ def test_secret_binding_delete_preserves_historical_detail_and_blocks_future_rea
     assert all(value not in serialized_detail for value in secret_values.values())
     assert "secretPayload" not in serialized_detail
 
-    preflight_response = client.post(f"/api/workflow-packages/{package_id}/preflight")
+    preflight_response = client.post(
+        f"/api/workflow-packages/{package_id}/preflight",
+        json={"workflowKey": None, "parameters": {}},
+    )
     assert preflight_response.status_code == 200, preflight_response.json()
     preflight = cast(dict[str, Any], preflight_response.json())
     assert preflight["ready"] is False
@@ -2160,7 +2163,10 @@ def test_deleted_model_connection_preserves_historical_detail_and_blocks_future_
     assert provenance["resolvedModelConnections"][0]["key"] == "package_runtime_model"
     assert provenance["currentPackage"]["available"] is True
 
-    preflight_response = client.post(f"/api/workflow-packages/{package_id}/preflight")
+    preflight_response = client.post(
+        f"/api/workflow-packages/{package_id}/preflight",
+        json={"workflowKey": None, "parameters": {}},
+    )
     assert preflight_response.status_code == 200, preflight_response.json()
     preflight = cast(dict[str, Any], preflight_response.json())
     assert preflight["ready"] is False

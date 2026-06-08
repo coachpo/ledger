@@ -61,7 +61,7 @@ def _scope() -> MemoryScope:
 
 
 def _subject_ref() -> MemorySubjectRef:
-    return MemorySubjectRef(kind=" portfolio ", id=" core-us ", label=" Core US ")
+    return MemorySubjectRef(kind=" topic ", id=" drawdown-risk ", label=" Drawdown Risk ")
 
 
 def _provenance() -> MemoryProvenance:
@@ -146,13 +146,13 @@ def test_projection_matrix_documents_neutral_visibility_surfaces() -> None:
     assert "auditLinks" not in MEMORY_PROJECTION_MATRIX["model-visible"]
     assert "auditLinks" not in MEMORY_PROJECTION_MATRIX["api-visible"]
     assert MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS >= {
-        "ticker",
-        "benchmarkSymbol",
-        "rawReturn",
-        "alpha",
         "auditLinks",
         "reportId",
+        "reportSlug",
+        "reportName",
     }
+    assert "ticker" not in MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS
+    assert "portfolioSlug" not in MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS
 
 
 def test_memory_write_request_accepts_neutral_core_contract() -> None:
@@ -161,8 +161,8 @@ def test_memory_write_request_accepts_neutral_core_contract() -> None:
     assert request.kind == "research.note"
     assert request.scope.scope_type == MemoryScopeType.PACKAGE
     assert request.scope.scope_key == "pkg-advisory"
-    assert request.subject_refs[0].kind == "portfolio"
-    assert request.subject_refs[0].id == "core-us"
+    assert request.subject_refs[0].kind == "topic"
+    assert request.subject_refs[0].id == "drawdown-risk"
     assert request.attributes == {"confidence": "medium", "reviewCount": 1}
     assert request.provenance.agent_key == "memory_curator"
     assert request.revision.mode == MEMORY_REVISION_WRITE_MODE
@@ -183,14 +183,14 @@ def test_memory_write_request_accepts_neutral_core_contract() -> None:
     assert identity["source_slot"] == "post_run_note"
 
 
-def test_memory_write_request_does_not_require_finance_shaped_core_fields() -> None:
+def test_memory_write_request_does_not_expose_finance_shaped_core_fields() -> None:
     request = MemoryWriteRequest.model_validate(_write_payload())
 
     payload = request.model_dump(mode="json", by_alias=True)
     assert payload["kind"] == "research.note"
-    assert "ticker" in payload
-    assert payload["ticker"] == ""
-    assert payload["benchmarkSymbol"] is None
+    assert "ticker" not in payload
+    assert "benchmarkSymbol" not in payload
+    assert "portfolioSlug" not in payload
     assert request.idempotency_fallback_fields == MEMORY_IDEMPOTENCY_FALLBACK_FIELDS
 
 
@@ -217,7 +217,7 @@ def test_memory_query_defaults_to_current_context_fallback_and_budgets() -> None
 def test_memory_query_with_scope_or_subject_uses_explicit_selectors() -> None:
     scoped = MemoryQuery.model_validate(
         {
-            "query": "portfolio context",
+            "query": "risk context",
             "scope": _scope().model_dump(mode="json", by_alias=True),
         }
     )
@@ -232,7 +232,7 @@ def test_memory_query_with_scope_or_subject_uses_explicit_selectors() -> None:
     assert scoped.scope is not None
     assert subject_scoped.scope_mode == "explicit-selectors"
     assert subject_scoped.kind == "research.note"
-    assert subject_scoped.subject_refs[0].id == "core-us"
+    assert subject_scoped.subject_refs[0].id == "drawdown-risk"
 
 
 def test_write_result_uses_revision_semantics_without_action_field() -> None:
@@ -275,7 +275,7 @@ def test_memory_entry_read_uses_neutral_fields_and_camel_case() -> None:
         revision_id="rev_1002",
         kind="Observation",
         summary="Cross-run context",
-        content="The prior agent recorded context that applies beyond finance.",
+        content="The prior agent recorded context that applies across workflows.",
         subject_refs=[_subject_ref()],
         attributes={"source": "agent_note"},
         scope=_scope(),
@@ -293,7 +293,7 @@ def test_memory_entry_read_uses_neutral_fields_and_camel_case() -> None:
     assert payload["createdAt"] == "2026-05-08T09:30:00Z"
     assert payload["updatedAt"] == "2026-05-09T09:30:00Z"
     assert payload["subjectRefs"] == [
-        {"kind": "portfolio", "id": "core-us", "label": "Core US", "attributes": {}}
+        {"kind": "topic", "id": "drawdown-risk", "label": "Drawdown Risk", "attributes": {}}
     ]
 
     serialized = _serialized_text(payload)

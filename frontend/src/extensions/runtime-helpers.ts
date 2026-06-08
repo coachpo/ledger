@@ -14,13 +14,6 @@ import type { LucideIcon } from "lucide-react";
 
 import type { ExtensionListRead, ExtensionRead } from "@/lib/types/extension";
 import type { ToolCatalogItemRead } from "@/lib/types/tool";
-import { Dashboard } from "@/pages/dashboard";
-import { PortfolioDetailPage } from "@/pages/portfolios/detail";
-import { PortfolioListPage } from "@/pages/portfolios/list";
-import { ReportDetailPage } from "@/pages/reports/detail";
-import { ReportListPage } from "@/pages/reports/list";
-import { TemplateEditorPage } from "@/pages/templates/editor";
-import { TemplateListPage } from "@/pages/templates/list";
 import {
   getSidebarRouteMetadataGroups,
   type RouteMetadata,
@@ -48,16 +41,6 @@ type ExtensionRouteDefinition = {
   Component: ComponentType;
   index?: boolean;
   path?: string;
-};
-
-const financeRouteComponents: Record<string, ComponentType> = {
-  "@/pages/dashboard#Dashboard": Dashboard,
-  "@/pages/portfolios/list#PortfolioListPage": PortfolioListPage,
-  "@/pages/portfolios/detail#PortfolioDetailPage": PortfolioDetailPage,
-  "@/pages/templates/list#TemplateListPage": TemplateListPage,
-  "@/pages/templates/editor#TemplateEditorPage": TemplateEditorPage,
-  "@/pages/reports/list#ReportListPage": ReportListPage,
-  "@/pages/reports/detail#ReportDetailPage": ReportDetailPage,
 };
 
 const navIconByName: Record<RouteNavIconName, LucideIcon> = {
@@ -175,15 +158,7 @@ export function assembleFinanceWorkspaceRoutes(): ExtensionRouteDefinition[] {
         );
       }
 
-      const Component = financeRouteComponents[contribution.componentModule];
-
-      if (!Component) {
-        throw new Error(
-          `Unknown extension route component: ${contribution.componentModule}`,
-        );
-      }
-
-      const GuardedComponent = withFinanceWorkspaceGate(Component);
+      const GuardedComponent = withFinanceWorkspaceGate(contribution.Component);
 
       return contribution.path === "/"
         ? { index: true, Component: GuardedComponent }

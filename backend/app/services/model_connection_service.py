@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import cast
 
 from fastapi import status
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.db_errors import is_unique_constraint_violation
 from app.core.errors import ApiError, not_found_error, validation_error
 from app.core.formatting import utcnow
 from app.models.model_connection import ModelConnection
@@ -43,9 +45,14 @@ class _ModelConnectionTestResult:
     tested_at: datetime
 
 
+_MODEL_CONNECTION_KEY_CONSTRAINTS = frozenset({"uq_model_connections_key"})
+
+
 class ModelConnectionService:
     session: Session
     repository: ModelConnectionRepository
+    compatibility_resolution_service: CompatibilityResolutionService
+    model_gateway: ModelExecutionGateway
 
     def __init__(
         self,
@@ -109,11 +116,7 @@ class ModelConnectionService:
 
     def create_connection(self, payload: ModelConnectionCreate) -> ModelConnectionRead:
         if self.repository.get_by_key(payload.key) is not None:
-            raise ApiError(
-                status_code=status.HTTP_409_CONFLICT,
-                code="model_connection_duplicate_key",
-                message="A model connection with this key already exists",
-            )
+            raise self._duplicate_key_error()
 
         connection = ModelConnection(
             key=payload.key,
@@ -140,6 +143,11 @@ class ModelConnectionService:
             _ = self.repository.add(connection)
             self.session.commit()
             self.session.refresh(connection)
+        except IntegrityError as exc:
+            self.session.rollback()
+            if is_unique_constraint_violation(exc, _MODEL_CONNECTION_KEY_CONSTRAINTS):
+                raise self._duplicate_key_error() from exc
+            raise
         except Exception:
             self.session.rollback()
             raise
@@ -243,6 +251,14 @@ class ModelConnectionService:
             self.session.rollback()
             raise
 
+    @staticmethod
+    def _duplicate_key_error() -> ApiError:
+        return ApiError(
+            status_code=status.HTTP_409_CONFLICT,
+            code="model_connection_duplicate_key",
+            message="A model connection with this key already exists",
+        )
+
     def _get_model(self, connection_id: int) -> ModelConnection:
         connection = self.repository.get(connection_id)
         if connection is None:
@@ -292,7 +308,7 @@ class ModelConnectionService:
             }
         )
 
-    def _read_payload(self, connection: ModelConnection) -> dict[str, Any]:
+    def _read_payload(self, connection: ModelConnection) -> dict[str, object]:
         resolution = self.compatibility_resolution_service.resolve_connection(connection)
         return {
             "id": connection.id,
@@ -352,7 +368,8 @@ class ModelConnectionService:
 
     @staticmethod
     def _get_api_key(connection: ModelConnection) -> str | None:
-        payload = connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
+        raw_payload = cast(object, connection.secret_payload)
+        payload = cast(dict[str, object], raw_payload) if isinstance(raw_payload, dict) else {}
         raw_api_key = payload.get("apiKey")
         if raw_api_key is None:
             return None
@@ -361,11 +378,12 @@ class ModelConnectionService:
 
     @staticmethod
     def _set_api_key(connection: ModelConnection, api_key: str | None) -> None:
+        raw_payload = cast(object, connection.secret_payload)
         payload = (
-            dict(connection.secret_payload) if isinstance(connection.secret_payload, dict) else {}
+            dict(cast(dict[str, object], raw_payload)) if isinstance(raw_payload, dict) else {}
         )
         if api_key is None:
-            payload.pop("apiKey", None)
+            _ = payload.pop("apiKey", None)
         else:
             payload["apiKey"] = api_key
         connection.secret_payload = payload

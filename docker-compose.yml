@@ -1,6 +1,11 @@
+# Local/demo-only combined stack. Supported production artifacts are the
+# backend/frontend GHCR images built from backend/Dockerfile and frontend/Dockerfile.
 services:
   db:
     image: pgvector/pgvector:pg16
+    labels:
+      io.signaldeck.support: "local-demo-only"
+      io.signaldeck.production-artifact: "false"
     environment:
       POSTGRES_DB: signaldeck
       POSTGRES_USER: signaldeck
@@ -20,10 +25,15 @@ services:
       args:
         BUILD_FRONTEND: ${BUILD_FRONTEND:-true}
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+    labels:
+      io.signaldeck.support: "local-demo-only"
+      io.signaldeck.production-artifact: "false"
     depends_on:
       db:
         condition: service_healthy
     environment:
+      SIGNALDECK_RUNTIME_MODE: local
+      SIGNALDECK_ROOT_IMAGE_SCOPE: local-demo-only
       DATABASE_URL: postgresql+psycopg://signaldeck:${POSTGRES_PASSWORD:-signaldeck}@db:5432/signaldeck
       AGENT_PLATFORM_ENCRYPTION_KEY: ${AGENT_PLATFORM_ENCRYPTION_KEY:-signaldeck-agent-platform-dev-key}
       PUBLIC_BASE_URL: http://localhost:${APP_PORT:-8080}

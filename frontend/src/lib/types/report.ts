@@ -1,4 +1,4 @@
-import type { TemplateRuntimeInputs } from "./text-template";
+import type { RuntimeInputMap } from "../runtime-inputs";
 
 export interface ReportAnalysisMetadata {
   ticker?: string | null;
@@ -10,8 +10,10 @@ export interface ReportAnalysisMetadata {
   [key: string]: unknown;
 }
 
+export type ReportCreatedByType = "agent";
+
 export interface ReportCreatedByMetadata {
-  type: "agent";
+  type: ReportCreatedByType;
   runId: number;
   agentKey: string;
   agentVersion: number;
@@ -50,5 +52,5 @@ export interface ReportUpdateInput {
 }
 
 export interface ReportCompileInput {
-  inputs?: TemplateRuntimeInputs;
+  inputs?: RuntimeInputMap;
 }

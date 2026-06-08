@@ -67,6 +67,18 @@ describe("query keys", () => {
       "preflight",
       "9",
     ]);
+    expect(queryKeys.platform.workflowPackages.launches()).toEqual([
+      "api",
+      "platform",
+      "workflowPackages",
+      "launch",
+    ]);
+    expect(queryKeys.platform.workflowPackages.preflights()).toEqual([
+      "api",
+      "platform",
+      "workflowPackages",
+      "preflight",
+    ]);
     expect(queryKeys.platform.workflowPackages.runtimeInputRegistry("9", " review ")).toEqual(
       queryKeys.platform.workflowPackages.runtimeInputRegistry(9, "review"),
     );
@@ -180,6 +192,18 @@ describe("query keys", () => {
       "platform",
       "runs",
       "list",
+    ]);
+    expect(queryKeys.platform.runs.rerunDrafts()).toEqual([
+      "api",
+      "platform",
+      "runs",
+      "rerunDraft",
+    ]);
+    expect(queryKeys.platform.runs.forkDrafts()).toEqual([
+      "api",
+      "platform",
+      "runs",
+      "forkDraft",
     ]);
     expect(
       queryKeys.platform.runs.list({

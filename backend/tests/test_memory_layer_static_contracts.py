@@ -55,20 +55,6 @@ def _python_node_source(relative_path: str, node_name: str) -> str:
     raise AssertionError(f"Missing {node_name} in {relative_path}")
 
 
-def _python_nodes_with_name_fragment(relative_path: str, fragment: str) -> list[str]:
-    source = _read(relative_path)
-    module = ast.parse(source, filename=relative_path)
-    segments: list[str] = []
-    for node in ast.walk(module):
-        if isinstance(node, ast.FunctionDef) and fragment in node.name:
-            segment = ast.get_source_segment(source, node)
-            if segment is not None:
-                segments.append(segment)
-    if not segments:
-        raise AssertionError(f"Missing functions containing {fragment} in {relative_path}")
-    return segments
-
-
 def _assert_fragments_absent(label: str, source: str, fragments: tuple[str, ...]) -> None:
     violations = [fragment for fragment in fragments if fragment in source]
     assert not violations, f"{label} leaked forbidden fragments: {violations}"
@@ -107,22 +93,34 @@ def _interface_body(source: str, name: str) -> str:
 
 def test_model_visible_runtime_write_contracts_do_not_leak_report_identity() -> None:
     result_contract = _python_node_source(
-        "backend/app/extensions/signaldeck_finance/runtime_types.py",
-        "RuntimeReportMemoryWriteResult",
+        "backend/app/agents/runtime_tools/memory.py",
+        "RuntimeMemoryWriteResult",
     )
     _assert_fragments_absent(
-        "RuntimeReportMemoryWriteResult",
+        "RuntimeMemoryWriteResult",
         result_contract,
         MODEL_VISIBLE_RUNTIME_FORBIDDEN,
     )
 
-    runtime_tests = "\n\n".join(
-        _python_nodes_with_name_fragment("backend/tests/test_runtime_tools.py", "reports_write")
+
+def test_retired_report_memory_write_runtime_ballast_is_removed() -> None:
+    forbidden_fragments = (
+        "signaldeck.reports.write",
+        "signaldeck_reports_write",
+        "report_memory_write_retired",
+        "REPORT_MEMORY_WRITE",
+        "RuntimeReportMemoryWriteResult",
     )
-    _assert_no_forbidden_lines(
-        "reports_write runtime tests",
-        runtime_tests,
-        MODEL_VISIBLE_RUNTIME_FORBIDDEN,
+    production_files = sorted((BACKEND / "app").rglob("*.py"))
+    violations: list[str] = []
+    for path in production_files:
+        relative_path = path.relative_to(ROOT)
+        source = path.read_text(encoding="utf-8")
+        for line_number, line in enumerate(source.splitlines(), start=1):
+            if any(fragment in line for fragment in forbidden_fragments):
+                violations.append(f"{relative_path}:{line_number}: {line.strip()}")
+    assert not violations, "retired report-memory write runtime ballast remains: " + repr(
+        violations
     )
 
 
@@ -151,6 +149,29 @@ def test_postgres_memory_store_does_not_use_reports_as_substrate() -> None:
             "download",
         ),
     )
+
+
+def test_core_memory_contracts_do_not_define_finance_shaped_fields() -> None:
+    core_memory_source = _read("backend/app/schemas/memory.py")
+    for node_name in ("MemoryEntryRead", "MemoryWriteRequest", "MemoryQuery"):
+        node_source = _python_node_source("backend/app/schemas/memory.py", node_name)
+        _assert_fragments_absent(
+            node_name,
+            node_source,
+            (
+                "ticker",
+                "portfolio_slug",
+                "portfolioSlug",
+                "decision_summary",
+                "decisionSummary",
+                "benchmark_symbol",
+                "benchmarkSymbol",
+                "raw_return",
+                "rawReturn",
+                "alpha",
+            ),
+        )
+    _assert_fragments_absent("core memory schema", core_memory_source, ("MemoryDecision",))
 
 
 def test_frontend_run_memory_artifacts_do_not_read_removed_report_fields() -> None:

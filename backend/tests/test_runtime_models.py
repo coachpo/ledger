@@ -404,9 +404,14 @@ def test_core_memory_tables_are_registered_on_metadata() -> None:
         "ix_agent_memory_entries_scope_status_kind",
         "ix_agent_memory_entries_status_kind",
         "ix_agent_memory_entries_content_hash",
+        "ix_agent_memory_entries_subject_refs_gin",
+        "ix_agent_memory_entries_attributes_gin",
         "uq_agent_memory_entries_idempotency_key",
         "uq_agent_memory_entries_idempotency_fallback",
     } <= {index.name for index in entry_table.indexes}
+    assert "ix_agent_memory_revisions_search_text" in {
+        index.name for index in revision_table.indexes
+    }
     assert {
         "ix_agent_memory_chunks_revision",
         "ix_agent_memory_chunks_content_hash",

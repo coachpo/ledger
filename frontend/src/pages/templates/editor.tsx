@@ -29,9 +29,9 @@ import {
   buildRuntimeInputs,
   createRuntimeInputRow,
   createRuntimeInputRows,
+  type RuntimeInputMap,
   type RuntimeInputRow,
 } from "@/lib/runtime-inputs";
-import type { TemplateRuntimeInputs } from "@/lib/types/text-template";
 
 function TemplateEditorHeader({
   isEditing,
@@ -265,7 +265,7 @@ export function TemplateEditorPage() {
     inputs,
     templateId: selectedTemplateId,
   }: {
-    inputs: TemplateRuntimeInputs;
+    inputs: RuntimeInputMap;
     templateId: string;
   }) => {
     setRuntimeInputRows(createRuntimeInputRows("template", inputs));

@@ -5,14 +5,14 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError, not_found_error
+from app.extensions.signaldeck_finance.service_gate import (
+    MEMORY_REPORT_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.report import Report
 from app.repositories.report import ReportRepository
 from app.schemas.memory_report import AgentMemoryReportMetadata
 from app.schemas.report import ReportRead
-from app.services.extension_gate import (
-    MEMORY_REPORT_SERVICE_SURFACE,
-    require_finance_workspace_enabled,
-)
 
 _MEMORY_REPORT_SOURCE = "agent"
 

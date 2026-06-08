@@ -10,7 +10,6 @@ from pydantic import Field, field_validator, model_validator
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.schemas.common import CamelModel, ensure_timezone
 from app.schemas.market_data import MarketHistorySeriesRead, MarketQuoteRead
-from app.schemas.memory import MemoryLifecycleStatus, MemoryProvenance, MemoryWriteResult
 from app.services.market_data_snapshots import (
     MarketDataFinancialStatement as RuntimeFinancialStatement,
 )
@@ -55,7 +54,6 @@ SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY = "signaldeck.social_sentiment.lookup"
 INSIDER_DATA_LOOKUP_TOOL_KEY = "signaldeck.insider_data.lookup"
 POSITION_LOOKUP_TOOL_KEY = "signaldeck.positions.lookup"
 REPORT_LOOKUP_TOOL_KEY = "signaldeck.reports.lookup"
-REPORT_MEMORY_WRITE_TOOL_KEY = "signaldeck.reports.write"
 
 NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS = (
     MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
@@ -151,32 +149,6 @@ class RuntimeInsiderDataLookupResult(MarketDataInsiderDataLookupResult):
     tool_key: Literal["signaldeck.insider_data.lookup"] = "signaldeck.insider_data.lookup"
 
 
-class RuntimeReportMemoryWriteResult(CamelModel):
-    tool_key: Literal["signaldeck.reports.write"] = "signaldeck.reports.write"
-    memory_id: str = Field(min_length=1)
-    status: MemoryLifecycleStatus
-    action: Literal["created", "existing"]
-    created_at: datetime
-    provenance: MemoryProvenance
-    warnings: list[dict[str, object]] = Field(default_factory=list)
-
-    @classmethod
-    def from_memory_write_result(cls, result: MemoryWriteResult) -> Self:
-        return cls(
-            memory_id=result.memory_id,
-            status=result.status,
-            action=result.action,
-            created_at=result.created_at,
-            provenance=result.provenance,
-            warnings=result.warnings,
-        )
-
-    @field_validator("created_at")
-    @classmethod
-    def validate_created_at(cls, value: datetime) -> datetime:
-        return ensure_timezone(value)
-
-
 __all__ = [
     "FUNDAMENTALS_LOOKUP_TOOL_KEY",
     "INDICATORS_LOOKUP_TOOL_KEY",
@@ -188,7 +160,6 @@ __all__ = [
     "NEWS_LOOKUP_TOOL_KEY",
     "POSITION_LOOKUP_TOOL_KEY",
     "REPORT_LOOKUP_TOOL_KEY",
-    "REPORT_MEMORY_WRITE_TOOL_KEY",
     "SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY",
     "RuntimeFinancialStatement",
     "RuntimeFinancialStatementLine",
@@ -207,7 +178,6 @@ __all__ = [
     "RuntimeOhlcvRow",
     "RuntimeOhlcvSeries",
     "RuntimeQuoteLookupResult",
-    "RuntimeReportMemoryWriteResult",
     "RuntimeSocialSentimentLookupResult",
     "RuntimeSocialSentimentMetric",
     "RuntimeSocialSentimentSourceBlock",

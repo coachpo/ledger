@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import ClassVar, Literal, cast
 
 from pydantic import ConfigDict, Field, field_serializer, field_validator, model_validator
 
@@ -17,7 +17,7 @@ REPORT_SOURCE_VALUES: tuple[ReportSource, ...] = (
 
 
 class ReportAnalysisMetadata(CamelModel):
-    model_config = ConfigDict(
+    model_config: ClassVar[ConfigDict] = ConfigDict(
         alias_generator=to_camel,
         from_attributes=True,
         populate_by_name=True,
@@ -56,8 +56,21 @@ class ReportAnalysisMetadata(CamelModel):
         return value.upper()
 
 
+class ReportCreatedByMetadata(CamelModel):
+    type: Literal["agent"]
+    run_id: int
+    agent_key: str
+    agent_version: int
+    agent_name: str | None = None
+    workflow_key: str | None = None
+    workflow_version: int | None = None
+    step_id: str | None = None
+    slot: str | None = None
+    trace_id: str | None = None
+
+
 class ReportMetadata(CamelModel):
-    model_config = ConfigDict(
+    model_config: ClassVar[ConfigDict] = ConfigDict(
         alias_generator=to_camel,
         from_attributes=True,
         populate_by_name=True,
@@ -81,7 +94,7 @@ class ReportMetadata(CamelModel):
 
     @field_validator("tags", mode="before")
     @classmethod
-    def coerce_tags(cls, value: Any) -> Any:
+    def coerce_tags(cls, value: object) -> object:
         if value is None:
             return []
         return value
@@ -95,6 +108,10 @@ class ReportMetadata(CamelModel):
             if trimmed:
                 normalized_tags.append(trimmed)
         return normalized_tags
+
+
+class ReportReadMetadata(ReportMetadata):
+    created_by: ReportCreatedByMetadata | None = None
 
 
 class ReportCompileCreate(CamelModel):
@@ -138,25 +155,30 @@ class ReportRead(CamelModel):
     slug: str
     source: ReportSource
     content: str
-    metadata: ReportMetadata = Field(validation_alias="metadata_")
+    metadata: ReportReadMetadata = Field(validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
 
     @field_validator("metadata", mode="before")
     @classmethod
-    def coerce_metadata(cls, value: Any) -> Any:
+    def coerce_metadata(cls, value: object) -> object:
         if value is None:
             return {}
         return value
 
     @field_serializer("metadata", when_used="json")
-    def serialize_metadata(self, value: ReportMetadata) -> dict[str, Any]:
-        payload = value.model_dump(by_alias=True)
+    def serialize_metadata(self, value: ReportReadMetadata) -> dict[str, object]:
+        payload = cast(dict[str, object], value.model_dump(by_alias=True))
         analysis = value.analysis
         if analysis is None:
-            payload.pop("analysis", None)
+            _ = payload.pop("analysis", None)
         else:
             payload["analysis"] = analysis.model_dump(by_alias=True, exclude_none=True)
+        created_by = value.created_by
+        if created_by is None:
+            _ = payload.pop("createdBy", None)
+        else:
+            payload["createdBy"] = created_by.model_dump(by_alias=True, exclude_none=True)
         return payload
 
 

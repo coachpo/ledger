@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy.orm import Session
 
 from app.core.formatting import decimal_to_string, portfolio_cash_total, to_utc
+from app.extensions.signaldeck_finance.service_gate import (
+    TEMPLATE_COMPILER_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.balance import Balance
 from app.models.portfolio import Portfolio
 from app.models.position import Position
@@ -17,7 +21,6 @@ from app.repositories.portfolio import PortfolioRepository
 from app.repositories.position import PositionRepository
 from app.repositories.report import ReportRepository
 from app.schemas.market_data import MarketQuoteRead
-from app.services.extension_gate import TEMPLATE_COMPILER_SURFACE, require_finance_workspace_enabled
 
 if TYPE_CHECKING:
     from app.services.market_data_service import MarketDataService

@@ -6,17 +6,22 @@ from collections.abc import Mapping, Sequence
 from typing import cast
 
 from fastapi import status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.agents import get_default_tool_catalog
+from app.core.db_errors import is_unique_constraint_violation
 from app.core.errors import ApiError, not_found_error
 from app.core.formatting import utcnow
+from app.extensions.signaldeck_finance.service_gate import (
+    REPORT_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.repositories.report import ReportRepository
-from app.schemas.report import ReportMetadata, ReportRead, ReportUpdate
+from app.schemas.report import ReportMetadata, ReportRead, ReportReadMetadata, ReportUpdate
 from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
-from app.services.extension_gate import REPORT_SERVICE_SURFACE, require_finance_workspace_enabled
 
 _MAX_NAME_LENGTH = 200
 _DATETIME_SUFFIX_LENGTH = 16
@@ -24,6 +29,7 @@ _DEFAULT_EXTERNAL_REPORT_BASENAME = "external_report"
 _CREATED_BY_PROVENANCE_ERROR_MESSAGE = (
     "Report createdBy provenance is server-owned and cannot be supplied for non-agent reports."
 )
+_REPORT_SLUG_CONSTRAINTS = frozenset({"uq_reports_slug"})
 
 
 class ReportService:
@@ -138,11 +144,7 @@ class ReportService:
             normalized_slug = normalized_slug[:_MAX_NAME_LENGTH].rstrip("_")
 
         if self.repository.get_by_slug(normalized_slug) is not None:
-            raise ApiError(
-                status_code=status.HTTP_409_CONFLICT,
-                code="slug_conflict",
-                message=f'A report with slug "{normalized_slug}" already exists',
-            )
+            raise self._slug_conflict_error(normalized_slug)
 
         validated_metadata = ReportMetadata.model_validate(metadata or {})
 
@@ -175,11 +177,7 @@ class ReportService:
         if slug is not None:
             normalized_slug = self._normalize_slug(slug)
             if self.repository.get_by_slug(normalized_slug) is not None:
-                raise ApiError(
-                    status_code=status.HTTP_409_CONFLICT,
-                    code="slug_conflict",
-                    message=f'A report with slug "{normalized_slug}" already exists',
-                )
+                raise self._slug_conflict_error(normalized_slug)
         else:
             normalized_slug = self._generate_unique_slug(report_name)
 
@@ -308,9 +306,26 @@ class ReportService:
             metadata_=self._serialize_metadata(validated_metadata),
         )
         _ = self.repository.add(report)
-        self.session.commit()
-        self.session.refresh(report)
+        try:
+            self.session.commit()
+            self.session.refresh(report)
+        except IntegrityError as exc:
+            self.session.rollback()
+            if is_unique_constraint_violation(exc, _REPORT_SLUG_CONSTRAINTS):
+                raise self._slug_conflict_error(slug) from exc
+            raise
+        except Exception:
+            self.session.rollback()
+            raise
         return ReportRead.model_validate(report)
+
+    @staticmethod
+    def _slug_conflict_error(slug: str) -> ApiError:
+        return ApiError(
+            status_code=status.HTTP_409_CONFLICT,
+            code="slug_conflict",
+            message=f'A report with slug "{slug}" already exists',
+        )
 
     def _validate_metadata(
         self, metadata: ReportMetadata | Mapping[str, object] | None
@@ -341,7 +356,7 @@ class ReportService:
             return False
         if isinstance(metadata, Mapping):
             return "createdBy" in metadata or "created_by" in metadata
-        payload = metadata.model_dump(by_alias=True)
+        payload = metadata.model_dump(by_alias=True, exclude_none=True)
         return "createdBy" in payload or "created_by" in payload
 
     def _serialize_metadata(self, metadata: ReportMetadata) -> dict[str, object]:
@@ -351,6 +366,13 @@ class ReportService:
             payload.pop("analysis", None)
         else:
             payload["analysis"] = analysis.model_dump(by_alias=True, exclude_none=True)
+        if isinstance(metadata, ReportReadMetadata) and metadata.created_by is not None:
+            payload["createdBy"] = metadata.created_by.model_dump(
+                by_alias=True,
+                exclude_none=True,
+            )
+        else:
+            payload.pop("createdBy", None)
         return cast(dict[str, object], payload)
 
     def _resolve_external_report_name(self, name: str | None) -> str:

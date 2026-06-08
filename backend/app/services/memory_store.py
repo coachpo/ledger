@@ -29,7 +29,6 @@ from app.schemas.memory import (
     MemoryArtifactRead,
     MemoryAttributes,
     MemoryAuditLinks,
-    MemoryDecision,
     MemoryEntryRead,
     MemoryLifecycleStatus,
     MemoryOutcome,
@@ -63,7 +62,6 @@ _SCOPE_SPECIFICITY: Final[dict[str, int]] = {
     "package": 2,
     "workspace": 1,
 }
-_FINANCE_LIFECYCLE_ATTRIBUTES_KEY: Final = "_finance"
 
 
 def canonical_package_qualified_scope_key(*, package_key: str, local_key: str) -> str:
@@ -216,7 +214,6 @@ class PostgresMemoryStore:
 
         subject_refs = self._payload_subject_refs(payload)
         attributes = self._attributes_payload(payload.attributes)
-        self._merge_finance_lifecycle_attributes(attributes, payload)
         entry = AgentMemoryEntry(
             memory_id=self._new_memory_id(),
             scope_type=payload.scope.scope_type.value,
@@ -483,8 +480,6 @@ class PostgresMemoryStore:
             "subject_refs": self._query_subject_refs(query.subject_refs),
             "kind": query.kind,
             "status": (query.status or MemoryLifecycleStatus.RESOLVED).value,
-            "ticker": query.ticker,
-            "portfolio_slug": query.portfolio_slug,
             "agent_key": query.agent_key,
             "workflow_key": query.workflow_key,
             "tags": query.tags,
@@ -751,7 +746,6 @@ class PostgresMemoryStore:
         revision: AgentMemoryRevision,
     ) -> MemoryEntryRead:
         stored_attributes = self._attributes_payload(revision.attributes)
-        finance_attributes = self._finance_lifecycle_attributes(stored_attributes)
         return MemoryEntryRead(
             memory_id=entry.memory_id,
             revision_id=revision.revision_id,
@@ -769,13 +763,6 @@ class PostgresMemoryStore:
             revision=self._revision_read(revision),
             created_at=entry.created_at,
             updated_at=entry.updated_at,
-            ticker=self._finance_text(finance_attributes, "ticker") or "",
-            decision=self._finance_decision(finance_attributes),
-            portfolio_slug=self._finance_text(finance_attributes, "portfolioSlug"),
-            horizon_days=self._finance_int(finance_attributes, "horizonDays"),
-            confidence=self._finance_text(finance_attributes, "confidence"),
-            decision_summary=self._finance_text(finance_attributes, "decisionSummary"),
-            benchmark_symbol=self._finance_text(finance_attributes, "benchmarkSymbol"),
             outcome=self._outcome_from_attributes(stored_attributes),
             reflections=self._reflections_from_attributes(stored_attributes),
         )
@@ -934,14 +921,7 @@ class PostgresMemoryStore:
 
     @staticmethod
     def _payload_subject_refs(payload: MemoryWriteRequest) -> list[dict[str, Any]]:
-        refs = list(payload.subject_refs)
-        if payload.portfolio_slug is not None:
-            portfolio_ref = MemorySubjectRef(kind="portfolio", id=payload.portfolio_slug)
-            if (portfolio_ref.kind, portfolio_ref.id) not in {
-                (item.kind, item.id) for item in refs
-            }:
-                refs.append(portfolio_ref)
-        return PostgresMemoryStore._subject_refs_payload(refs)
+        return PostgresMemoryStore._subject_refs_payload(payload.subject_refs)
 
     @staticmethod
     def _query_subject_refs(subject_refs: list[MemorySubjectRef]) -> list[dict[str, str]]:
@@ -974,68 +954,10 @@ class PostgresMemoryStore:
         payload = dict(attributes)
         _ = payload.pop("outcome", None)
         _ = payload.pop("reflections", None)
-        _ = payload.pop(_FINANCE_LIFECYCLE_ATTRIBUTES_KEY, None)
+        for key in tuple(payload):
+            if key.startswith("_"):
+                _ = payload.pop(key, None)
         return payload
-
-    @staticmethod
-    def _merge_finance_lifecycle_attributes(
-        attributes: MemoryAttributes,
-        payload: MemoryWriteRequest,
-    ) -> None:
-        finance: dict[str, object] = {}
-        for key, value in (
-            ("ticker", payload.ticker),
-            ("portfolioSlug", payload.portfolio_slug),
-            ("horizonDays", payload.horizon_days),
-            ("confidence", payload.confidence),
-            ("decisionSummary", payload.decision_summary),
-            ("benchmarkSymbol", payload.benchmark_symbol),
-            ("rationale", payload.decision.rationale),
-            ("riskSummary", payload.decision.risk_summary),
-            ("executionPlan", payload.decision.execution_plan),
-        ):
-            if value not in (None, ""):
-                finance[key] = value
-        if finance or payload.decision.action != "hold":
-            finance["action"] = payload.decision.action
-        if finance:
-            attributes[_FINANCE_LIFECYCLE_ATTRIBUTES_KEY] = cast(Any, finance)
-
-    @staticmethod
-    def _finance_lifecycle_attributes(attributes: MemoryAttributes) -> dict[str, object]:
-        raw = attributes.get(_FINANCE_LIFECYCLE_ATTRIBUTES_KEY)
-        if not isinstance(raw, dict):
-            return {}
-        return {str(key): value for key, value in raw.items()}
-
-    @staticmethod
-    def _finance_text(finance: dict[str, object], key: str) -> str | None:
-        value = finance.get(key)
-        if not isinstance(value, str):
-            return None
-        normalized = value.strip()
-        return normalized or None
-
-    @staticmethod
-    def _finance_int(finance: dict[str, object], key: str) -> int | None:
-        value = finance.get(key)
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str) and value.strip().isdigit():
-            return int(value.strip())
-        return None
-
-    @classmethod
-    def _finance_decision(cls, finance: dict[str, object]) -> MemoryDecision:
-        action = cls._finance_text(finance, "action")
-        if action not in {"buy", "hold", "sell"}:
-            action = "hold"
-        return MemoryDecision(
-            action=cast(Literal["buy", "hold", "sell"], action),
-            rationale=cls._finance_text(finance, "rationale") or "",
-            risk_summary=cls._finance_text(finance, "riskSummary") or "",
-            execution_plan=cls._finance_text(finance, "executionPlan") or "",
-        )
 
     @staticmethod
     def _outcome_payload(outcome: MemoryOutcome) -> dict[str, Any]:
@@ -1126,8 +1048,6 @@ class PostgresMemoryStore:
                 query.scope is not None,
                 bool(query.subject_refs),
                 query.kind is not None,
-                query.ticker is not None,
-                query.portfolio_slug is not None,
                 query.agent_key is not None,
                 query.workflow_key is not None,
                 bool(query.tags),

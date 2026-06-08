@@ -95,6 +95,7 @@ class RunRerunForkPreparation:
         run_operation_invocation_repository: RunOperationInvocationRepository,
         schema_compiler: OutputSchemaCompiler,
         read_projection: RunReadProjection,
+        preflight_service: WorkflowPackagePreflightService,
         workflow_package_snapshot_for_run: _WorkflowPackageSnapshotResolver,
         resolve_runtime_agent: _RuntimeAgentResolver,
     ) -> None:
@@ -108,6 +109,7 @@ class RunRerunForkPreparation:
         )
         self.schema_compiler: OutputSchemaCompiler = schema_compiler
         self.read_projection: RunReadProjection = read_projection
+        self.preflight_service: WorkflowPackagePreflightService = preflight_service
         self._workflow_package_snapshot_for_run: _WorkflowPackageSnapshotResolver = (
             workflow_package_snapshot_for_run
         )
@@ -238,7 +240,7 @@ class RunRerunForkPreparation:
 
     def _current_readiness_for_run(self, run: Run) -> WorkflowPackagePreflightResult:
         snapshot = self._workflow_package_snapshot_for_run(run)
-        return WorkflowPackagePreflightService(self.session).strict_readiness(
+        return self.preflight_service.strict_readiness(
             self._workflow_package_from_snapshot(snapshot),
             workflow_key=snapshot.workflow_key,
         )

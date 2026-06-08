@@ -180,6 +180,7 @@ const workflowPackagesQueryKeys = {
       { workflowKey: normalizedWorkflowKey },
     ] as const;
   },
+  launches: () => [...workflowPackagesRoot, "launch"] as const,
   list: () => [...workflowPackagesRoot, "list"] as const,
   preflight: (packageId: IdParam, workflowKey?: string | null) => {
     const normalizedWorkflowKey = normalizeOptionalText(workflowKey);
@@ -193,6 +194,7 @@ const workflowPackagesQueryKeys = {
       { workflowKey: normalizedWorkflowKey },
     ] as const;
   },
+  preflights: () => [...workflowPackagesRoot, "preflight"] as const,
   runtimeInputRegistry: (packageId: IdParam, workflowKey: string | null | undefined) =>
     [
       ...workflowPackageRuntimeInputRegistryRoot(packageId),
@@ -244,8 +246,10 @@ const platformQueryKeys = {
       [...platformApiRoot, "runs", "detail", normalizeId(runId)] as const,
     rerunDraft: (runId: IdParam) =>
       [...platformApiRoot, "runs", "rerunDraft", normalizeId(runId)] as const,
+    rerunDrafts: () => [...platformApiRoot, "runs", "rerunDraft"] as const,
     forkDraft: (runId: IdParam, sourceInvocationId: number) =>
       [...platformApiRoot, "runs", "forkDraft", normalizeId(runId), { sourceInvocationId }] as const,
+    forkDrafts: () => [...platformApiRoot, "runs", "forkDraft"] as const,
     list: (params: RunListParams = {}) =>
       [...platformApiRoot, "runs", "list", normalizeRunListParams(params)] as const,
   },

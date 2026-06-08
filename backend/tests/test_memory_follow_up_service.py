@@ -11,19 +11,17 @@ from app.extensions.signaldeck_finance.execution_dependencies import (
     finance_execution_provider_bundle_from_parts,
 )
 from app.extensions.signaldeck_finance.hooks import register_run_lifecycle_hooks
+from app.extensions.signaldeck_finance.memory_metadata import (
+    FinanceMemoryMetadata,
+    finance_memory_attributes_payload,
+)
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.agent_memory import AgentMemoryEntry, RunMemoryEvent
 from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.schemas.extension import ExtensionToggleRequest
-from app.schemas.memory import (
-    MemoryDecision,
-    MemoryProvenance,
-    MemoryScope,
-    MemoryScopeType,
-    MemoryWriteRequest,
-)
+from app.schemas.memory import MemoryProvenance, MemoryScope, MemoryScopeType, MemoryWriteRequest
 from app.schemas.memory_report import AGENT_MEMORY_REVIEW_TYPE, AGENT_MEMORY_VERSION_GROUP
-from app.services.extension_gate import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.services.extension_service import ExtensionService
 from app.services.memory_follow_up_service import MemoryFollowUpService
 from app.services.memory_service import MemoryService
@@ -243,17 +241,20 @@ def _neutral_memory_request(run_id: int) -> MemoryWriteRequest:
 
 def _finance_memory_request(run_id: int) -> MemoryWriteRequest:
     return MemoryWriteRequest(
-        ticker="NVDA",
-        portfolio_slug="core_us",
-        horizon_days=2,
-        confidence="high",
-        decision_summary="Finance evaluator should resolve this decision.",
-        benchmark_symbol="SPY",
-        decision=MemoryDecision(
-            action="buy",
-            rationale="Demand supports a long position.",
-            risk_summary="Watch valuation.",
-            execution_plan="Review after the horizon elapses.",
+        kind="research.note",
+        summary="Finance evaluator should resolve this decision.",
+        content="Demand supports a long position. Watch valuation.",
+        attributes=finance_memory_attributes_payload(
+            FinanceMemoryMetadata(
+                ticker="NVDA",
+                action="buy",
+                rationale="Demand supports a long position.",
+                risk_summary="Watch valuation.",
+                execution_plan="Review after the horizon elapses.",
+                horizon_days=2,
+                benchmark_symbol="SPY",
+                decision_summary="Finance evaluator should resolve this decision.",
+            )
         ),
         scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key="pkg-finance"),
         provenance=_provenance(run_id),
@@ -364,7 +365,7 @@ def test_finance_evaluator_contribution_resolves_and_reflects_when_enabled(
     assert result.items[0].reason is None
     assert memory.status.value == "resolved"
     assert memory.outcome is not None
-    assert memory.outcome.raw_return == Decimal("0.2")
+    assert memory.outcome.attributes["rawReturn"] == "0.2"
     assert memory.reflections
     assert [event.event_type for event in events] == ["written", "reviewed", "reviewed"]
     assert events[1].status_snapshot == {"status": "resolved"}

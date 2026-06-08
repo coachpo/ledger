@@ -40,7 +40,7 @@ export interface WorkflowPackageSecretBindingUpdateRequest {
 export type WorkflowPackageImportRequest = WorkflowPackageManifestRequest;
 
 export interface WorkflowPackageMetadataRead {
-  apiVersion: WorkflowPackageManifestApiVersion | string;
+  apiVersion: WorkflowPackageManifestApiVersion;
   key: string;
   name: string;
   description: string;
@@ -157,6 +157,11 @@ export interface WorkflowPackageRuntimeInputPersonalEntryCreateRequest {
 export interface WorkflowPackageRuntimeInputPersonalEntryUpdateRequest {
   name?: string | null;
   payload?: UnknownRecord;
+}
+
+export interface WorkflowPackagePreflightRequest {
+  workflowKey?: string | null;
+  parameters?: UnknownRecord;
 }
 
 export interface WorkflowPackageLaunchCreateRequest {

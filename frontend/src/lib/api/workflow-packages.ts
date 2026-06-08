@@ -13,6 +13,7 @@ import type {
   WorkflowPackageListRead,
   WorkflowPackageManifestRead,
   WorkflowPackageManifestRequest,
+  WorkflowPackagePreflightRequest,
   WorkflowPackageRead,
   WorkflowPackageRuntimeInputEntryRead,
   WorkflowPackageRuntimeInputPersonalEntryCreateRequest,
@@ -234,12 +235,13 @@ export function exportWorkflowPackageUrl(packageId: IdParam): string {
 
 export function preflightWorkflowPackage(
   packageId: IdParam,
-  options: WorkflowPackageWorkflowOptions = {},
+  payload: WorkflowPackagePreflightRequest,
+  signal?: AbortSignal,
 ): Promise<WorkflowPackageLaunchRead> {
   return requestPlatform<WorkflowPackageLaunchRead>(`${workflowPackagePath(packageId)}/preflight`, {
+    body: payload,
     method: "POST",
-    query: workflowKeyQuery(options),
-    signal: options.signal,
+    signal,
   });
 }
 

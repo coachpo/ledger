@@ -6,18 +6,7 @@ from decimal import Decimal
 from typing import Any
 from typing import cast as type_cast
 
-from sqlalchemy import (
-    bindparam,
-    case,
-    cast,
-    desc,
-    func,
-    inspect,
-    literal,
-    literal_column,
-    or_,
-    select,
-)
+from sqlalchemy import bindparam, case, cast, desc, func, inspect, literal, literal_column, select
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.agent_memory import (
@@ -115,8 +104,6 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         subject_refs: Sequence[dict[str, str]],
         kind: str | None,
         status: str,
-        ticker: str | None,
-        portfolio_slug: str | None,
         agent_key: str | None,
         workflow_key: str | None,
         tags: Sequence[str],
@@ -130,8 +117,6 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             subject_refs=subject_refs,
             kind=kind,
             status=status,
-            ticker=ticker,
-            portfolio_slug=portfolio_slug,
             agent_key=agent_key,
             workflow_key=workflow_key,
             tags=tags,
@@ -149,8 +134,6 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         subject_refs: Sequence[dict[str, str]],
         kind: str | None,
         status: str,
-        ticker: str | None,
-        portfolio_slug: str | None,
         agent_key: str | None,
         workflow_key: str | None,
         tags: Sequence[str],
@@ -165,8 +148,6 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             subject_refs=subject_refs,
             kind=kind,
             status=status,
-            ticker=ticker,
-            portfolio_slug=portfolio_slug,
             agent_key=agent_key,
             workflow_key=workflow_key,
             tags=tags,
@@ -174,11 +155,9 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
 
         rank_expression: Any = literal(0.0)
         if query_text is not None:
-            search_config: Any = literal_column("'simple'")
-            search_document = func.concat(
-                AgentMemoryRevision.summary,
-                literal(" "),
-                AgentMemoryRevision.content,
+            search_config: Any = literal_column("'simple'::regconfig")
+            search_document = (
+                AgentMemoryRevision.summary + literal_column("' '") + AgentMemoryRevision.content
             )
             search_vector = func.to_tsvector(search_config, search_document)
             search_query = func.plainto_tsquery(search_config, query_text)
@@ -220,8 +199,6 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         subject_refs: Sequence[dict[str, str]],
         kind: str | None,
         status: str,
-        ticker: str | None,
-        portfolio_slug: str | None,
         agent_key: str | None,
         workflow_key: str | None,
         tags: Sequence[str],
@@ -242,8 +219,6 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             subject_refs=subject_refs,
             kind=kind,
             status=status,
-            ticker=ticker,
-            portfolio_slug=portfolio_slug,
             agent_key=agent_key,
             workflow_key=workflow_key,
             tags=tags,
@@ -339,8 +314,6 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         subject_refs: Sequence[dict[str, str]],
         kind: str | None,
         status: str,
-        ticker: str | None,
-        portfolio_slug: str | None,
         agent_key: str | None,
         workflow_key: str | None,
         tags: Sequence[str],
@@ -357,12 +330,6 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             filters.append(self.model.source_workflow_key == workflow_key)
         for subject_ref in subject_refs:
             filters.append(self.model.subject_refs.contains([subject_ref]))
-        ticker_filter = self._legacy_subject_filter("instrument", ticker)
-        if ticker_filter is not None:
-            filters.append(ticker_filter)
-        portfolio_filter = self._legacy_subject_filter("portfolio", portfolio_slug)
-        if portfolio_filter is not None:
-            filters.append(portfolio_filter)
         for tag in tags:
             filters.append(self.model.attributes.contains({"tags": [tag]}))
         return filters
@@ -388,24 +355,6 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         if distance is None:
             return None
         return 1.0 / (1.0 + max(distance, 0.0))
-
-    @staticmethod
-    def _legacy_subject_filter(
-        kind: str,
-        value: str | None,
-    ) -> ColumnElement[bool] | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            return None
-        identifiers = {normalized, normalized.lower(), normalized.upper()}
-        return or_(
-            *(
-                AgentMemoryEntry.subject_refs.contains([{"kind": kind, "id": identifier}])
-                for identifier in sorted(identifiers)
-            )
-        )
 
     @classmethod
     def _scope_specificity_expression(cls) -> Any:

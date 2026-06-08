@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import cast
@@ -14,6 +14,7 @@ from httpx import Response
 from pydantic import ValidationError
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine.default import DefaultDialect
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
@@ -22,7 +23,7 @@ from app.extensions.signaldeck_finance.dependencies import get_quote_provider
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.market_quote import MarketQuote
 from app.models.model_connection import ModelConnection
-from app.models.report import Report
+from app.models.report import REPORT_SOURCE_CHECK_CONSTRAINT, Report
 from app.models.symbol_name_cache import SymbolNameCache
 from app.models.text_template import TextTemplate
 from app.schemas.model_connection import (
@@ -33,6 +34,7 @@ from app.schemas.model_connection import (
     default_model_connection_capabilities,
     dump_model_connection_capabilities,
 )
+from app.schemas.report import ReportRead
 from app.services.quote_provider import (
     ProviderHistoryPoint,
     ProviderHistorySeries,
@@ -64,6 +66,116 @@ _REMOVED_MODEL_CONNECTION_KIND_DB_FIELD = f"connection{'_'}kind"
 def _assert_logfire_trace_id(value: object) -> None:
     assert isinstance(value, str)
     assert _TRACE_ID_PATTERN.fullmatch(value) is not None
+
+
+def test_browser_safe_error_details_preserve_public_scalars_and_drop_unsafe_values() -> None:
+    long_issue = "x" * 520
+
+    error = ApiError(
+        status_code=400,
+        code="contract_probe",
+        message="Contract probe failed",
+        details=cast(
+            Sequence[Mapping[str, object]],
+            cast(
+                object,
+                [
+                    {
+                        "field": "workflowKey",
+                        "issue": long_issue,
+                        "extensionKey": "signaldeck.finance",
+                        "surface": "tool.marketQuote",
+                        "retryAfterSeconds": 30,
+                        "enabled": False,
+                        "ratio": 0.5,
+                        "optional": None,
+                        "apiKey": "sk-secret",
+                        "authorizationHeader": "Bearer token",
+                        "exceptionType": "RuntimeError",
+                        "debugPayload": {"path": "/home/qing/private.py"},
+                        "rawList": ["internal"],
+                        "bad-key": "not exposed",
+                        1: "not exposed",
+                    },
+                    "not an object",
+                    {"apiKey": "sk-secret"},
+                ],
+            ),
+        ),
+    )
+
+    assert error.details == [
+        {
+            "field": "workflowKey",
+            "issue": f"{'x' * 497}...",
+            "extensionKey": "signaldeck.finance",
+            "surface": "tool.marketQuote",
+            "retryAfterSeconds": 30,
+            "enabled": False,
+            "ratio": 0.5,
+            "optional": None,
+        }
+    ]
+
+    dict_detail_error = ApiError(
+        status_code=400,
+        code="contract_probe",
+        message="Contract probe failed",
+        details=cast(
+            Sequence[Mapping[str, object]],
+            cast(object, {"field": "name", "issue": "invalid"}),
+        ),
+    )
+    text_detail_error = ApiError(
+        status_code=400,
+        code="contract_probe",
+        message="Contract probe failed",
+        details=cast(Sequence[Mapping[str, object]], cast(object, "not an array")),
+    )
+
+    assert dict_detail_error.details == []
+    assert text_detail_error.details == []
+
+
+def test_api_error_envelope_details_are_browser_safe(app: FastAPI) -> None:
+    def api_error_details_probe() -> None:
+        raise ApiError(
+            status_code=400,
+            code="contract_probe",
+            message="Contract probe failed",
+            details=[
+                {
+                    "field": "workflowKey",
+                    "issue": "Unknown workflow",
+                    "extensionKey": "signaldeck.digital_oracle",
+                    "surface": "tool.predictionMarkets",
+                    "retryAfterSeconds": 15,
+                    "apiKey": "sk-secret",
+                    "exceptionType": "RuntimeError",
+                    "debugPayload": {"path": "/home/qing/private.py"},
+                }
+            ],
+        )
+
+    app.add_api_route("/__test/api-error-details", api_error_details_probe, methods=["GET"])
+
+    with TestClient(app) as test_client:
+        response = test_client.get("/__test/api-error-details")
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "contract_probe",
+        "message": "Contract probe failed",
+        "details": [
+            {
+                "field": "workflowKey",
+                "issue": "Unknown workflow",
+                "extensionKey": "signaldeck.digital_oracle",
+                "surface": "tool.predictionMarkets",
+                "retryAfterSeconds": 15,
+            }
+        ],
+    }
 
 
 class UnsupportedEngine:
@@ -2507,6 +2619,99 @@ def test_report_source_filter_accepts_agent(
     assert reports[0]["metadata"]["createdBy"]["agentKey"] == "analyst"
 
 
+def test_report_read_schema_explicitly_owns_created_by_metadata(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    schema = ReportRead.model_json_schema(by_alias=True)
+    report_read_properties = cast(dict[str, object], schema["properties"])
+    metadata_schema = cast(dict[str, object], report_read_properties["metadata_"])
+    metadata_schema_ref = metadata_schema["$ref"]
+    metadata_definition_key = str(metadata_schema_ref).removeprefix("#/$defs/")
+    read_metadata_schema = cast(dict[str, object], schema["$defs"])[metadata_definition_key]
+    read_metadata_properties = cast(
+        dict[str, object],
+        cast(dict[str, object], read_metadata_schema)["properties"],
+    )
+    assert metadata_definition_key == "ReportReadMetadata"
+
+    created_by_schema = cast(dict[str, object], read_metadata_properties["createdBy"])
+    created_by_schema_options = cast(list[object], created_by_schema["anyOf"])
+    created_by_schema_ref = cast(
+        dict[str, object],
+        created_by_schema_options[0],
+    )["$ref"]
+    created_by_definition_key = str(created_by_schema_ref).removeprefix("#/$defs/")
+    created_by_definition = cast(dict[str, object], schema["$defs"])[created_by_definition_key]
+    created_by_properties = cast(
+        dict[str, object],
+        cast(dict[str, object], created_by_definition)["properties"],
+    )
+
+    assert set(created_by_properties) == {
+        "type",
+        "runId",
+        "agentKey",
+        "agentVersion",
+        "agentName",
+        "workflowKey",
+        "workflowVersion",
+        "stepId",
+        "slot",
+        "traceId",
+    }
+    assert cast(dict[str, object], created_by_definition)["required"] == [
+        "type",
+        "runId",
+        "agentKey",
+        "agentVersion",
+    ]
+
+    report_id = insert_report_row(
+        session_factory,
+        name="Explicit CreatedBy Read Contract",
+        slug="explicit_created_by_read_contract",
+        source="agent",
+        content="# Agent Memory",
+        metadata={
+            "createdBy": {
+                "type": "agent",
+                "runId": 404,
+                "agentKey": "analyst",
+                "agentVersion": 7,
+                "workflowKey": "daily_review",
+                "workflowVersion": 2,
+                "traceId": "trace-explicit-created-by",
+            },
+            "analysis": {
+                "reviewType": "agent_memory",
+                "versionGroup": "agent_memory/v1",
+            },
+            "unmodeledExtensionField": "preserved",
+        },
+    )
+
+    response = client.get("/api/v1/reports/explicit_created_by_read_contract")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == report_id
+    assert payload["metadata"]["createdBy"] == {
+        "type": "agent",
+        "runId": 404,
+        "agentKey": "analyst",
+        "agentVersion": 7,
+        "workflowKey": "daily_review",
+        "workflowVersion": 2,
+        "traceId": "trace-explicit-created-by",
+    }
+    assert payload["metadata"]["analysis"] == {
+        "reviewType": "agent_memory",
+        "versionGroup": "agent_memory/v1",
+    }
+    assert payload["metadata"]["unmodeledExtensionField"] == "preserved"
+
+
 def test_report_source_filter_external_excludes_agent_reports(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -2993,9 +3198,22 @@ def test_init_db_upgrades_legacy_report_schema(database_url: str) -> None:
                 " WHERE name = 'legacy_report_20260101_120000'"
             ).one()
 
+        check_constraints = {
+            constraint["name"] for constraint in inspector.get_check_constraints("reports")
+        }
+        assert REPORT_SOURCE_CHECK_CONSTRAINT in check_constraints
         assert row[0] == "legacy_report_20260101_120000"  # slug backfilled from name
         assert row[1] == "compiled"  # source defaults to 'compiled'
         assert row[2] == {}  # metadata defaults to empty object
+
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    """
+                    INSERT INTO reports (name, slug, source, content, metadata)
+                    VALUES ('Invalid Source', 'invalid_source', 'wire', '# Invalid', '{}'::jsonb)
+                    """
+                )
     finally:
         engine.dispose()
 

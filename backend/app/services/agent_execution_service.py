@@ -46,12 +46,6 @@ from app.services.model_gateway_dto import (
 )
 from app.services.model_gateway_openai_responses import OpenAIResponsesAdapter
 
-_RETIRED_REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME = "signaldeck_reports_write"
-_RETIRED_REPORT_MEMORY_WRITE_MESSAGE = (
-    "signaldeck_reports_write is retired; use signaldeck_memory_write for "
-    "canonical platform memory writes."
-)
-
 
 class RunExecutionError(Exception):
     def __init__(
@@ -598,11 +592,6 @@ class AgentExecutionService:
         except RuntimeToolError as exc:
             if exc.code != "agent_tool_call_unsupported":
                 raise
-            if tool_call.tool_name == _RETIRED_REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME:
-                raise RuntimeToolError(
-                    code="report_memory_write_retired",
-                    message=_RETIRED_REPORT_MEMORY_WRITE_MESSAGE,
-                ) from exc
             if AgentExecutionService._is_reserved_native_function_name(tool_call.tool_name):
                 raise
         return mcp_dispatcher.dispatch(

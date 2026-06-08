@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -15,7 +16,6 @@ from app.models.workflow_package_schedule import (
     WorkflowPackageScheduleFire,
 )
 from app.schemas.schedule import FireReason, FireStatus, MisfirePolicy, OverlapPolicy
-from app.services.run_service import RunService
 from app.services.workflow_package_schedule_inputs import ScheduledInputLastRunContext
 from app.services.workflow_package_schedule_service import (
     DueWorkflowPackageSchedule,
@@ -64,14 +64,25 @@ class WorkflowPackageScheduleMaterializer:
         session_factory: sessionmaker[Session] | None = None,
         *,
         batch_size: int = 25,
+        schedule_service_factory: Callable[[Session], WorkflowPackageScheduleService] | None = None,
     ) -> None:
         self.session_factory: sessionmaker[Session] = session_factory or get_session_factory()
         self.batch_size: int = batch_size
+        self.schedule_service_factory: Callable[[Session], WorkflowPackageScheduleService] = (
+            schedule_service_factory or self._default_schedule_service
+        )
+
+    def _default_schedule_service(self, session: Session) -> WorkflowPackageScheduleService:
+        service_class = WorkflowPackageScheduleService
+        return service_class(session, self.session_factory)
+
+    def _schedule_service(self, session: Session) -> WorkflowPackageScheduleService:
+        return self.schedule_service_factory(session)
 
     def materialize_due(self, *, now: datetime | None = None) -> ScheduleMaterializationResult:
         materialized_at = to_utc(now or utcnow())
         with self.session_factory() as session:
-            schedule_service = WorkflowPackageScheduleService(session)
+            schedule_service = self._schedule_service(session)
             due_schedules = schedule_service.list_due_schedules(
                 now=materialized_at,
                 limit=self.batch_size,
@@ -99,7 +110,7 @@ class WorkflowPackageScheduleMaterializer:
     ) -> ScheduleMaterializationResult:
         try:
             with self.session_factory() as session:
-                schedule_service = WorkflowPackageScheduleService(session)
+                schedule_service = self._schedule_service(session)
                 locked_schedule = schedule_service.schedule_repository.get_for_update(
                     due_schedule.id
                 )
@@ -113,7 +124,7 @@ class WorkflowPackageScheduleMaterializer:
                     session.rollback()
                     return ScheduleMaterializationResult()
 
-                locked_due = schedule_service._to_due_schedule(locked_schedule)
+                locked_due = schedule_service.to_due_schedule(locked_schedule)
                 decision = self._materialization_decision(locked_due, now=materialized_at)
                 metadata = self._fire_metadata(locked_due, decision.occurrence)
                 fire = self._insert_fire(
@@ -140,7 +151,7 @@ class WorkflowPackageScheduleMaterializer:
                     return ScheduleMaterializationResult(processed_count=1)
 
                 if decision.skip_reason is not None:
-                    schedule_service.fire_repository.mark_skipped(
+                    _ = schedule_service.fire_repository.mark_skipped(
                         fire,
                         skip_reason=decision.skip_reason,
                         materialized_at=materialized_at,
@@ -153,7 +164,7 @@ class WorkflowPackageScheduleMaterializer:
                     session.commit()
                     return ScheduleMaterializationResult(processed_count=1, skipped_count=1)
                 if self._should_skip_for_overlap(schedule_service, locked_due):
-                    schedule_service.fire_repository.mark_skipped(
+                    _ = schedule_service.fire_repository.mark_skipped(
                         fire,
                         skip_reason=_OVERLAP_SKIP_REASON,
                         materialized_at=materialized_at,
@@ -166,33 +177,14 @@ class WorkflowPackageScheduleMaterializer:
                     session.commit()
                     return ScheduleMaterializationResult(processed_count=1, skipped_count=1)
 
-                last_run = self._latest_terminal_run_context(schedule_service, locked_due.id)
-                rendered_parameters = schedule_service.render_due_schedule_input_or_raise(
-                    locked_due,
-                    metadata,
-                    fire_id=fire.id,
+                queued = schedule_service.queue_schedule_fire_run(
+                    schedule=locked_schedule,
+                    metadata=metadata,
                     materialized_at=materialized_at,
                     window_start=decision.occurrence.previous_scheduled_for,
                     window_end=decision.occurrence.scheduled_for,
-                    last_run=last_run,
-                )
-                run = RunService(
-                    session,
-                    self.session_factory,
-                ).create_scheduled_workflow_package_run(
-                    package_id=locked_due.package_id,
-                    workflow_key=locked_due.workflow_key,
-                    parameters=rendered_parameters,
-                    schedule_id=locked_due.id,
-                    schedule_fire_id=fire.id,
-                    scheduled_for=decision.occurrence.scheduled_for,
-                    schedule_reason=metadata.reason,
-                    commit=False,
-                )
-                schedule_service.fire_repository.mark_queued(
-                    fire,
-                    materialized_at=materialized_at,
-                    rendered_parameters=rendered_parameters,
+                    last_run=self._latest_terminal_run_context(schedule_service, locked_due.id),
+                    fire=fire,
                 )
                 self._advance_schedule(
                     schedule_service,
@@ -204,7 +196,7 @@ class WorkflowPackageScheduleMaterializer:
                     "Materialized schedule %d fire %s into run %d",
                     locked_due.id,
                     metadata.fire_key,
-                    run.id,
+                    queued.run.id,
                 )
                 return ScheduleMaterializationResult(processed_count=1, queued_count=1)
         except ApiError as exc:
@@ -232,28 +224,19 @@ class WorkflowPackageScheduleMaterializer:
         error_message: str,
     ) -> ScheduleMaterializationResult:
         with self.session_factory() as session:
-            schedule_service = WorkflowPackageScheduleService(session)
+            schedule_service = self._schedule_service(session)
             locked_schedule = schedule_service.schedule_repository.get_for_update(due_schedule.id)
             if locked_schedule is None or locked_schedule.next_fire_at is None:
                 session.rollback()
                 return ScheduleMaterializationResult()
-            locked_due = schedule_service._to_due_schedule(locked_schedule)
+            locked_due = schedule_service.to_due_schedule(locked_schedule)
             decision = self._materialization_decision(locked_due, now=materialized_at)
-            fire = self._insert_fire(
-                schedule_service,
+            _ = schedule_service.insert_or_mark_fire_failed(
                 self._fire_metadata(locked_due, decision.occurrence),
                 materialized_at=materialized_at,
-                status=FireStatus.FAILED,
                 error_code=error_code,
                 error_message=error_message,
             )
-            if fire.status != FireStatus.FAILED.value:
-                schedule_service.fire_repository.mark_failed(
-                    fire,
-                    error_code=error_code,
-                    error_message=error_message,
-                    materialized_at=materialized_at,
-                )
             self._advance_schedule(
                 schedule_service,
                 locked_schedule,
@@ -371,7 +354,7 @@ class WorkflowPackageScheduleMaterializer:
         schedule: WorkflowPackageSchedule,
         next_fire_at: datetime | None,
     ) -> None:
-        schedule_service.schedule_repository.update_schedule(
+        _ = schedule_service.schedule_repository.update_schedule(
             schedule,
             next_fire_at=next_fire_at,
         )

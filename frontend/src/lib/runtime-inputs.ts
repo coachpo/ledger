@@ -1,4 +1,4 @@
-import type { TemplateRuntimeInputs } from "@/lib/types/text-template";
+export type RuntimeInputMap = Record<string, string>;
 
 export type RuntimeInputRow = {
   id: string;
@@ -28,15 +28,15 @@ export function createRuntimeInputRow(
 
 export function createRuntimeInputRows(
   prefix: string,
-  inputs?: TemplateRuntimeInputs,
+  inputs?: RuntimeInputMap,
 ): RuntimeInputRow[] {
   return Object.entries(inputs ?? {}).map(([key, value]) =>
     createRuntimeInputRow(prefix, key, value),
   );
 }
 
-export function buildRuntimeInputs(rows: RuntimeInputRow[]): TemplateRuntimeInputs {
-  const result: TemplateRuntimeInputs = {};
+export function buildRuntimeInputs(rows: RuntimeInputRow[]): RuntimeInputMap {
+  const result: RuntimeInputMap = {};
 
   for (const row of rows) {
     const key = row.key.trim();

@@ -23,6 +23,11 @@ from app.models.agent import (
     TEMPORARY_AGENT_MANIFEST_HASH,
     TEMPORARY_AGENT_MANIFEST_SOURCE,
 )
+from app.models.report import (
+    REPORT_SOURCE_CHECK_CONSTRAINT,
+    REPORT_SOURCE_CHECK_SQL,
+    REPORT_SOURCE_VALUES,
+)
 from app.models.workflow import TEMPORARY_WORKFLOW_MANIFEST_SOURCE, WORKFLOW_MANIFEST_API_VERSION
 from app.schemas.workflow_package_manifest import WorkflowPackageManifest
 
@@ -576,6 +581,15 @@ $$,
             (
                 "CREATE INDEX IF NOT EXISTS ix_run_workflow_package_snapshots_compiled_hash "
                 "ON run_workflow_package_snapshots (compiled_hash)"
+            ),
+            (
+                "CREATE INDEX IF NOT EXISTS ix_run_workflow_package_snapshots_compiled_plan_gin "
+                "ON run_workflow_package_snapshots USING gin (compiled_plan jsonb_path_ops)"
+            ),
+            (
+                "CREATE INDEX IF NOT EXISTS ix_run_workflow_package_snapshots_model_connections_gin "
+                "ON run_workflow_package_snapshots USING gin "
+                "(resolved_model_connections jsonb_path_ops)"
             ),
         ),
     ),
@@ -1403,6 +1417,14 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
         "ON agent_memory_entries (content_hash)"
     ),
     (
+        "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_subject_refs_gin "
+        "ON agent_memory_entries USING gin (subject_refs jsonb_path_ops)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_attributes_gin "
+        "ON agent_memory_entries USING gin (attributes jsonb_path_ops)"
+    ),
+    (
         "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_source "
         "ON agent_memory_entries (source_run_id, source_agent_key)"
     ),
@@ -1423,6 +1445,11 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
     (
         "CREATE INDEX IF NOT EXISTS ix_agent_memory_revisions_content_hash "
         "ON agent_memory_revisions (content_hash)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_agent_memory_revisions_search_text "
+        "ON agent_memory_revisions USING gin "
+        "(to_tsvector('simple'::regconfig, summary || ' ' || content))"
     ),
     (
         "CREATE INDEX IF NOT EXISTS ix_agent_memory_revisions_created_at "
@@ -3139,6 +3166,7 @@ def _ensure_browser_proven_package_preset(engine: Engine, table_names: set[str])
     _ensure_db_upgrade_marker_table(engine, table_names)
     _ensure_report_agent_memory_cleanup_columns(engine, table_names)
     _repair_legacy_agent_memory_report_sources(engine, table_names)
+    _ensure_report_source_constraint(engine, table_names)
     run_columns: set[str] = set()
     if "runs" in table_names:
         run_columns = {str(column["name"]) for column in inspect(engine).get_columns("runs")}
@@ -5040,6 +5068,49 @@ def _repair_legacy_agent_memory_report_sources(engine: Engine, table_names: set[
         )
 
 
+def _ensure_report_source_constraint(engine: Engine, table_names: set[str]) -> None:
+    if "reports" not in table_names:
+        return
+
+    report_columns = {column["name"]: column for column in inspect(engine).get_columns("reports")}
+    if "source" not in report_columns:
+        return
+
+    invalid_source_query = text(
+        """
+        SELECT source, COUNT(*) AS row_count
+        FROM reports
+        WHERE source IS NULL OR source NOT IN :source_values
+        GROUP BY source
+        ORDER BY source NULLS FIRST
+        """
+    ).bindparams(bindparam("source_values", expanding=True))
+    constraint_exists = _constraint_exists(engine, "reports", REPORT_SOURCE_CHECK_CONSTRAINT)
+    with engine.begin() as connection:
+        invalid_rows = connection.execute(
+            invalid_source_query,
+            {"source_values": REPORT_SOURCE_VALUES},
+        ).all()
+        if invalid_rows:
+            invalid_sources = ", ".join(
+                f"{row.source if row.source is not None else '<NULL>'} ({row.row_count} rows)"
+                for row in invalid_rows
+            )
+            allowed_sources = ", ".join(REPORT_SOURCE_VALUES)
+            raise RuntimeError(
+                "reports.source contains unsupported values: "
+                f"{invalid_sources}. Expected one of: {allowed_sources}. "
+                "Refusing to add the report source invariant without an explicit repair."
+            )
+        if report_columns["source"].get("nullable", True):
+            connection.exec_driver_sql("ALTER TABLE reports ALTER COLUMN source SET NOT NULL")
+        if not constraint_exists:
+            connection.exec_driver_sql(
+                "ALTER TABLE reports ADD CONSTRAINT "
+                f"{REPORT_SOURCE_CHECK_CONSTRAINT} CHECK ({REPORT_SOURCE_CHECK_SQL})"
+            )
+
+
 def upgrade_legacy_schema(engine: Engine) -> None:
     validate_supported_database_engine(engine)
     inspector = inspect(engine)
@@ -5151,6 +5222,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
                     "ALTER TABLE reports ADD COLUMN metadata JSONB DEFAULT '{}' NOT NULL"
                 )
         _repair_legacy_agent_memory_report_sources(engine, table_names)
+        _ensure_report_source_constraint(engine, table_names)
 
     if "market_quotes" in table_names:
         market_quote_columns = {column["name"] for column in inspector.get_columns("market_quotes")}

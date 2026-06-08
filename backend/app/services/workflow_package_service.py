@@ -1,15 +1,19 @@
 # pyright: reportExplicitAny=false, reportAny=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownParameterType=false, reportUnannotatedClassAttribute=false, reportMissingImports=false, reportUnusedCallResult=false, reportUnnecessaryCast=false, reportUnnecessaryIsInstance=false
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, NoReturn, cast
 from urllib.parse import quote
 
 from fastapi import Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import ToolCatalog
+from app.core.db_errors import is_unique_constraint_violation
 from app.core.errors import ApiError, not_found_error, validation_error
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageSecretBinding
+from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
 from app.schemas.workflow_package import (
@@ -30,6 +34,8 @@ from app.schemas.workflow_package import (
 )
 from app.schemas.workflow_package_manifest import WorkflowPackageManifestDiagnostic
 from app.services.execution_providers import ExecutionProviderBundle
+from app.services.output_schema_compiler import OutputSchemaCompiler
+from app.services.run_input_validation import validate_run_input_payload
 from app.services.run_service import RunService
 from app.services.workflow_package_export import (
     build_workflow_package_manifest_hydration_payload,
@@ -51,6 +57,9 @@ class _WorkflowPackageDiagnosticsError(ValueError):
         self.diagnostics = diagnostics
 
 
+_WORKFLOW_PACKAGE_KEY_CONSTRAINTS = frozenset({"uq_workflow_packages_key"})
+
+
 class WorkflowPackageService:
     def __init__(
         self,
@@ -58,6 +67,11 @@ class WorkflowPackageService:
         session_factory: sessionmaker[Session] | None = None,
         provider_bundle: ExecutionProviderBundle | None = None,
         tool_catalog: ToolCatalog | None = None,
+        run_service: RunService | None = None,
+        preflight_service: WorkflowPackagePreflightService | None = None,
+        preflight_service_factory: Callable[
+            [Session], WorkflowPackagePreflightService
+        ] = WorkflowPackagePreflightService,
     ) -> None:
         self.session = session
         self.session_factory = session_factory
@@ -65,6 +79,9 @@ class WorkflowPackageService:
         self.tool_catalog = self._artifact_tool_catalog(tool_catalog)
         self.repository = WorkflowPackageRepository(session)
         self.secret_binding_repository = WorkflowPackageSecretBindingRepository(session)
+        self.schema_compiler = OutputSchemaCompiler(OutputSchemaRepository(session))
+        self.run_service = run_service
+        self.preflight_service = preflight_service or preflight_service_factory(session)
 
     @staticmethod
     def _artifact_tool_catalog(tool_catalog: ToolCatalog | None) -> ToolCatalog:
@@ -107,27 +124,11 @@ class WorkflowPackageService:
 
     def create_package(self, payload: WorkflowPackageManifestRequest) -> WorkflowPackageRead:
         prepared = self._prepare_manifest_or_raise(payload.manifest_source)
-        metadata = cast(dict[str, Any], prepared["packageDefinition"])["metadata"]
-        key = str(cast(dict[str, Any], metadata)["key"])
-        if self.repository.get_by_key(key) is not None:
-            raise ApiError(
-                status_code=status.HTTP_409_CONFLICT,
-                code="workflow_package_duplicate_key",
-                message="A workflow package with this key already exists",
-            )
-        package = self.repository.create_package(
-            key=key,
-            name=str(cast(dict[str, Any], metadata)["name"]),
-            description=str(cast(dict[str, Any], metadata).get("description") or ""),
-            **self._current_artifact_fields(prepared, payload.manifest_source),
+        return self._create_prepared_package(
+            prepared,
+            manifest_source=payload.manifest_source,
+            duplicate_error=self._duplicate_key_error(),
         )
-        try:
-            self.session.commit()
-            self.session.refresh(package)
-        except Exception:
-            self.session.rollback()
-            raise
-        return self._to_package_read(package)
 
     def update_package(
         self,
@@ -171,11 +172,7 @@ class WorkflowPackageService:
     def delete_package(self, package_id: int) -> None:
         package = self._get_package(package_id)
         try:
-            RunService(
-                self.session,
-                self.session_factory,
-                provider_bundle=self.provider_bundle,
-            ).delete_runs_for_workflow_package(
+            self._run_service().delete_runs_for_workflow_package(
                 package_id=package.id,
                 commit=False,
             )
@@ -249,29 +246,25 @@ class WorkflowPackageService:
 
     def import_package(self, payload: WorkflowPackageImportRequest) -> WorkflowPackageRead:
         prepared = self._prepare_manifest_or_raise(payload.manifest_source)
-        metadata = cast(dict[str, Any], prepared["packageDefinition"])["metadata"]
-        key = str(cast(dict[str, Any], metadata)["key"])
-        existing = self.repository.get_by_key(key)
-        if existing is not None:
-            raise ApiError(
-                status_code=status.HTTP_409_CONFLICT,
-                code="workflow_package_import_conflict",
-                message="An active workflow package with this key already exists",
-            )
-        request = WorkflowPackageManifestRequest(manifest_source=payload.manifest_source)
-        return self.create_package(request)
+        return self._create_prepared_package(
+            prepared,
+            manifest_source=payload.manifest_source,
+            duplicate_error=self._import_conflict_error(),
+        )
 
     def preflight_package(
         self,
         package_id: int,
         *,
         workflow_key: str | None = None,
+        parameters: dict[str, object] | None = None,
     ) -> WorkflowPackageLaunchRead:
         package = self._get_package(package_id)
         return self._build_launch_read(
             package,
             workflow_key=workflow_key,
             require_api_key=True,
+            parameters=parameters,
         )
 
     def get_launch(
@@ -292,11 +285,12 @@ class WorkflowPackageService:
         package_id: int,
         payload: WorkflowPackageLaunchCreateRequest,
     ) -> WorkflowPackageLaunchCreateResponse:
-        return RunService(
-            self.session,
-            self.session_factory,
-            provider_bundle=self.provider_bundle,
-        ).create_workflow_package_launch(package_id, payload)
+        return self._run_service().create_workflow_package_launch(package_id, payload)
+
+    def _run_service(self) -> RunService:
+        if self.run_service is None:
+            raise RuntimeError("WorkflowPackageService requires RunService for run mutations")
+        return self.run_service
 
     def _build_launch_read(
         self,
@@ -304,15 +298,21 @@ class WorkflowPackageService:
         *,
         workflow_key: str | None,
         require_api_key: bool,
+        parameters: dict[str, object] | None = None,
     ) -> WorkflowPackageLaunchRead:
         workflow = self._select_compiled_workflow(package, workflow_key)
         selected_workflow_key = str(workflow["key"])
-        preflight_service = WorkflowPackagePreflightService(self.session)
         preflight = (
-            preflight_service.strict_readiness(package, workflow_key=selected_workflow_key)
+            self.preflight_service.strict_readiness(package, workflow_key=selected_workflow_key)
             if require_api_key
-            else preflight_service.launch_metadata(package, workflow_key=selected_workflow_key)
+            else self.preflight_service.launch_metadata(package, workflow_key=selected_workflow_key)
         )
+        parameter_errors = (
+            self._workflow_input_validation_errors(workflow, parameters)
+            if parameters is not None and not preflight.blocking_errors
+            else []
+        )
+        blocking_errors = [*preflight.blocking_errors, *parameter_errors]
         return WorkflowPackageLaunchRead.model_validate(
             {
                 "packageId": package.id,
@@ -322,11 +322,61 @@ class WorkflowPackageService:
                 "name": workflow.get("name") or selected_workflow_key,
                 "description": workflow.get("description") or "",
                 "inputSchema": workflow.get("inputSchema") or {},
-                "ready": preflight.ready,
-                "blockingErrors": preflight.blocking_errors,
+                "ready": preflight.ready and not parameter_errors,
+                "blockingErrors": blocking_errors,
                 "warnings": preflight.warnings,
             }
         )
+
+    def _workflow_input_validation_errors(
+        self,
+        workflow: dict[str, Any],
+        parameters: dict[str, object],
+    ) -> list[dict[str, Any]]:
+        try:
+            _ = validate_run_input_payload(
+                schema_compiler=self.schema_compiler,
+                input_schema=cast(dict[str, Any], workflow.get("inputSchema") or {}),
+                input_payload=cast(dict[str, Any], parameters),
+                candidate_key="workflow_package_input",
+                resource_name="workflow_package",
+            )
+        except ApiError as exc:
+            if exc.code != "run_invalid_input":
+                raise
+            return exc.details
+        return []
+
+    def _create_prepared_package(
+        self,
+        prepared: dict[str, object],
+        *,
+        manifest_source: str,
+        duplicate_error: ApiError,
+    ) -> WorkflowPackageRead:
+        metadata = cast(dict[str, Any], prepared["packageDefinition"])["metadata"]
+        metadata_payload = cast(dict[str, Any], metadata)
+        key = str(metadata_payload["key"])
+        if self.repository.get_by_key(key) is not None:
+            raise duplicate_error
+        package = self.repository.create_package(
+            key=key,
+            name=str(metadata_payload["name"]),
+            description=str(metadata_payload.get("description") or ""),
+            **self._current_artifact_fields(prepared, manifest_source),
+        )
+        try:
+            self.session.commit()
+            self.session.refresh(package)
+        except IntegrityError as exc:
+            self.session.rollback()
+            if is_unique_constraint_violation(exc, _WORKFLOW_PACKAGE_KEY_CONSTRAINTS):
+                raise duplicate_error from exc
+            raise
+        except Exception:
+            self.session.rollback()
+            raise
+        return self._to_package_read(package)
 
     def _prepare_manifest_or_raise(self, manifest_source: str) -> dict[str, object]:
         try:
@@ -394,6 +444,22 @@ class WorkflowPackageService:
         return package
 
     @staticmethod
+    def _duplicate_key_error() -> ApiError:
+        return ApiError(
+            status_code=status.HTTP_409_CONFLICT,
+            code="workflow_package_duplicate_key",
+            message="A workflow package with this key already exists",
+        )
+
+    @staticmethod
+    def _import_conflict_error() -> ApiError:
+        return ApiError(
+            status_code=status.HTTP_409_CONFLICT,
+            code="workflow_package_import_conflict",
+            message="An active workflow package with this key already exists",
+        )
+
+    @staticmethod
     def _normalize_secret_binding_key(key: str) -> str:
         try:
             return normalize_workflow_package_secret_binding_key(key)
@@ -443,11 +509,10 @@ class WorkflowPackageService:
             prepared["compiledPlan"],
             mode=MCP_SECRET_PROJECTION_REDACTED,
         )
-        preflight_service = WorkflowPackagePreflightService(self.session)
         return WorkflowPackageValidationRead.model_validate(
             {
                 "diagnostics": [],
-                "warnings": preflight_service.validation_warnings(package_definition),
+                "warnings": self.preflight_service.validation_warnings(package_definition),
                 "metadata": {
                     "apiVersion": package_definition["apiVersion"],
                     "key": metadata["key"],

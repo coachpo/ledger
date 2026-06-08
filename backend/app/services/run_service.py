@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, replace
@@ -167,6 +168,28 @@ _CURRENT_RUNTIME_INVOCATION_CONTEXT: ContextVar[_RuntimeInvocationContext | None
     default=None,
 )
 
+RunQueueServiceFactory = Callable[
+    [Session, sessionmaker[Session], ExecutionProviderBundle],
+    Any,
+]
+
+
+def _default_run_queue_service_factory(
+    session: Session,
+    session_factory: sessionmaker[Session],
+    provider_bundle: ExecutionProviderBundle,
+) -> Any:
+    import importlib
+
+    queue_service_class = importlib.import_module("app.services.run_queue_service").__dict__[
+        "RunQueueService"
+    ]
+    return queue_service_class(
+        session,
+        session_factory,
+        provider_bundle=provider_bundle,
+    )
+
 
 class RunService:
     def __init__(
@@ -174,10 +197,24 @@ class RunService:
         session: Session,
         session_factory: sessionmaker[Session] | None = None,
         provider_bundle: ExecutionProviderBundle | None = None,
+        preflight_service: WorkflowPackagePreflightService | None = None,
+        preflight_service_factory: Callable[
+            [Session], WorkflowPackagePreflightService
+        ] = WorkflowPackagePreflightService,
+        extension_service: ExtensionService | None = None,
+        extension_service_factory: Callable[[Session], ExtensionService] = ExtensionService,
+        queue_service_factory: RunQueueServiceFactory = _default_run_queue_service_factory,
     ) -> None:
         self.session = session
         self.session_factory = session_factory or get_session_factory()
         self.provider_bundle: ExecutionProviderBundle = provider_bundle or ExecutionProviderBundle()
+        self.preflight_service: WorkflowPackagePreflightService = (
+            preflight_service or preflight_service_factory(session)
+        )
+        self.extension_service: ExtensionService = extension_service or extension_service_factory(
+            session
+        )
+        self.queue_service_factory: RunQueueServiceFactory = queue_service_factory
         self.output_schema_repository = OutputSchemaRepository(session)
         self.report_repository = ReportRepository(session)
         self.run_repository = RunRepository(session)
@@ -208,6 +245,7 @@ class RunService:
             run_operation_invocation_repository=self.run_operation_invocation_repository,
             schema_compiler=self.schema_compiler,
             read_projection=self._run_read_projection,
+            preflight_service=self.preflight_service,
             workflow_package_snapshot_for_run=self._workflow_package_snapshot_for_run,
             resolve_runtime_agent=self._resolve_runtime_agent,
         )
@@ -428,11 +466,10 @@ class RunService:
             package,
             workflow_key,
         )
-        preflight_service = WorkflowPackagePreflightService(self.session)
         preflight = (
-            preflight_service.strict_readiness(package, workflow_key=selected_workflow_key)
+            self.preflight_service.strict_readiness(package, workflow_key=selected_workflow_key)
             if require_api_key
-            else preflight_service.launch_metadata(package, workflow_key=selected_workflow_key)
+            else self.preflight_service.launch_metadata(package, workflow_key=selected_workflow_key)
         )
         if require_api_key and preflight.blocking_errors:
             raise validation_error(
@@ -606,12 +643,11 @@ class RunService:
         )
         if not dependencies:
             return
-        extension_service = ExtensionService(self.session)
         for dependency in dependencies:
             extension_key = str(dependency.get("extensionKey") or "")
             if not extension_key:
                 continue
-            extension_service.require_enabled(
+            _ = self.extension_service.require_enabled(
                 extension_key,
                 surface=self._preferred_extension_dependency_surface(
                     dependency,
@@ -1288,13 +1324,10 @@ class RunService:
         )
 
     def execute_run(self, run_id: int) -> None:
-        import importlib
-
-        queue_module = importlib.import_module("app.services.run_queue_service")
-        _ = queue_module.RunQueueService(
+        _ = self.queue_service_factory(
             self.session,
             self.session_factory,
-            provider_bundle=self.provider_bundle,
+            self.provider_bundle,
         ).drain_once(run_id=run_id)
 
     def execute_claimed_run(self, run_id: int) -> None:
@@ -1412,7 +1445,7 @@ class RunService:
             provider_bundle=self.provider_bundle,
             now=now,
         )
-        hooks = ExtensionService(self.session).get_run_lifecycle_hooks(extension_keys)
+        hooks = self.extension_service.get_run_lifecycle_hooks(extension_keys)
         evaluators: list[MemoryFollowUpEvaluator] = []
         for hook in hooks:
             if hook.memory_follow_up_evaluators is not None:
@@ -2507,13 +2540,9 @@ class RunService:
         return current
 
     def _mark_run_failed_in_fresh_session(self, run_id: int, *, code: str, message: str) -> None:
+        _ = code
         with self.session_factory() as session:
-            service = RunService(
-                session,
-                self.session_factory,
-                provider_bundle=self.provider_bundle,
-            )
-            run = service.run_repository.get(run_id)
+            run = session.get(Run, run_id)
             if run is None or run.status not in {_RUN_STATUS_QUEUED, _RUN_STATUS_RUNNING}:
                 return
             run.status = _RUN_STATUS_FAILED

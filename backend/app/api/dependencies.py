@@ -15,6 +15,7 @@ from app.services.memory_service import MemoryService
 from app.services.model_connection_probe_service import ModelConnectionProbeService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.run_service import RunService
+from app.services.workflow_package_preflight import WorkflowPackagePreflightService
 from app.services.workflow_package_runtime_input_registry import (
     WorkflowPackageRuntimeInputRegistryService,
 )
@@ -26,16 +27,16 @@ def get_session() -> Iterator[Session]:
     yield from get_db_session()
 
 
-def get_tool_catalog(
-    session: Annotated[Session, Depends(get_session)],
-) -> ToolCatalog:
-    return ExtensionService(session).get_tool_catalog()
-
-
 def get_extension_service(
     session: Annotated[Session, Depends(get_session)],
 ) -> ExtensionService:
     return ExtensionService(session)
+
+
+def get_tool_catalog(
+    extension_service: Annotated[ExtensionService, Depends(get_extension_service)],
+) -> ToolCatalog:
+    return extension_service.get_tool_catalog()
 
 
 def get_memory_service(
@@ -75,16 +76,48 @@ def get_model_connection_probe_service(
     return ModelConnectionProbeService(session)
 
 
+def get_workflow_package_preflight_service(
+    session: Annotated[Session, Depends(get_session)],
+    extension_service: Annotated[ExtensionService, Depends(get_extension_service)],
+) -> WorkflowPackagePreflightService:
+    return WorkflowPackagePreflightService(session, extension_service=extension_service)
+
+
+def get_run_service(
+    session: Annotated[Session, Depends(get_session)],
+    provider_bundle: Annotated[ExecutionProviderBundle, Depends(get_execution_provider_bundle)],
+    preflight_service: Annotated[
+        WorkflowPackagePreflightService,
+        Depends(get_workflow_package_preflight_service),
+    ],
+    extension_service: Annotated[ExtensionService, Depends(get_extension_service)],
+) -> RunService:
+    return RunService(
+        session,
+        get_session_factory(),
+        provider_bundle=provider_bundle,
+        preflight_service=preflight_service,
+        extension_service=extension_service,
+    )
+
+
 def get_workflow_package_service(
     session: Annotated[Session, Depends(get_session)],
     provider_bundle: Annotated[ExecutionProviderBundle, Depends(get_execution_provider_bundle)],
     tool_catalog: Annotated[ToolCatalog, Depends(get_tool_catalog)],
+    preflight_service: Annotated[
+        WorkflowPackagePreflightService,
+        Depends(get_workflow_package_preflight_service),
+    ],
+    run_service: Annotated[RunService, Depends(get_run_service)],
 ) -> WorkflowPackageService:
     return WorkflowPackageService(
         session,
         get_session_factory(),
         provider_bundle=provider_bundle,
         tool_catalog=tool_catalog,
+        run_service=run_service,
+        preflight_service=preflight_service,
     )
 
 
@@ -97,19 +130,14 @@ def get_workflow_package_runtime_input_registry_service(
 def get_workflow_package_schedule_service(
     session: Annotated[Session, Depends(get_session)],
     provider_bundle: Annotated[ExecutionProviderBundle, Depends(get_execution_provider_bundle)],
+    run_service: Annotated[RunService, Depends(get_run_service)],
 ) -> WorkflowPackageScheduleService:
     return WorkflowPackageScheduleService(
         session,
         get_session_factory(),
         provider_bundle=provider_bundle,
+        run_service=run_service,
     )
-
-
-def get_run_service(
-    session: Annotated[Session, Depends(get_session)],
-    provider_bundle: Annotated[ExecutionProviderBundle, Depends(get_execution_provider_bundle)],
-) -> RunService:
-    return RunService(session, get_session_factory(), provider_bundle=provider_bundle)
 
 
 __all__ = [
@@ -121,6 +149,7 @@ __all__ = [
     "get_run_service",
     "get_session",
     "get_tool_catalog",
+    "get_workflow_package_preflight_service",
     "get_workflow_package_runtime_input_registry_service",
     "get_workflow_package_schedule_service",
     "get_workflow_package_service",

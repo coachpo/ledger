@@ -266,6 +266,18 @@ class RunWorkflowPackageSnapshot(TimestampMixin, Base):
         Index("ix_run_workflow_package_snapshots_workflow_key", "workflow_key"),
         Index("ix_run_workflow_package_snapshots_manifest_hash", "manifest_hash"),
         Index("ix_run_workflow_package_snapshots_compiled_hash", "compiled_hash"),
+        Index(
+            "ix_run_workflow_package_snapshots_compiled_plan_gin",
+            "compiled_plan",
+            postgresql_using="gin",
+            postgresql_ops={"compiled_plan": "jsonb_path_ops"},
+        ),
+        Index(
+            "ix_run_workflow_package_snapshots_model_connections_gin",
+            "resolved_model_connections",
+            postgresql_using="gin",
+            postgresql_ops={"resolved_model_connections": "jsonb_path_ops"},
+        ),
     )
 
     run_id: Mapped[int] = mapped_column(

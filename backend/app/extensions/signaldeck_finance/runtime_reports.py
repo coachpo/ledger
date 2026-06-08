@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import NoReturn, cast
-
-from pydantic import ValidationError
+from typing import cast
 
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError, RuntimeToolSpec
 from app.core.formatting import normalize_symbol
@@ -11,15 +9,9 @@ from app.extensions.signaldeck_finance.grant_policy import (
     REPORT_LOOKUP_ACCESS_DENIED_CODE,
     REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
     REPORT_LOOKUP_GRANT_POLICY,
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
 )
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-from app.extensions.signaldeck_finance.runtime_types import (
-    REPORT_LOOKUP_TOOL_KEY,
-    REPORT_MEMORY_WRITE_TOOL_KEY,
-)
-from app.schemas.memory_report import AgentMemoryReportCreateMetadata
+from app.extensions.signaldeck_finance.runtime_types import REPORT_LOOKUP_TOOL_KEY
 from app.services.report_service import ReportService
 
 REPORT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_reports_lookup"
@@ -60,52 +52,6 @@ _REPORT_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
         "limit",
         "offset",
     ],
-    "additionalProperties": False,
-}
-
-REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME = "signaldeck_reports_write"
-
-_REPORT_MEMORY_WRITE_DISPLAY_NAME = "Retired Report Memory Write"
-_REPORT_MEMORY_WRITE_DESCRIPTION = "Retired legacy report-backed memory write tool."
-_REPORT_MEMORY_WRITE_GUIDANCE = (
-    "The signaldeck_reports_write tool is retired. Use signaldeck_memory_write for "
-    "canonical platform memory writes."
-)
-_REPORT_MEMORY_WRITE_PARAMETERS_SCHEMA: dict[str, object] = {
-    "type": "object",
-    "properties": {
-        "analysis": {
-            "type": "object",
-            "properties": {
-                "ticker": {"type": "string"},
-                "portfolioSlug": {"type": ["string", "null"]},
-                "horizonDays": {"type": ["integer", "null"], "minimum": 1},
-                "confidence": {"type": ["string", "null"]},
-                "decisionSummary": {"type": ["string", "null"]},
-                "decision": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["buy", "hold", "sell"]},
-                        "rationale": {"type": "string"},
-                        "riskSummary": {"type": "string"},
-                        "executionPlan": {"type": "string"},
-                    },
-                    "required": ["action", "rationale", "riskSummary", "executionPlan"],
-                    "additionalProperties": False,
-                },
-            },
-            "required": [
-                "ticker",
-                "portfolioSlug",
-                "horizonDays",
-                "confidence",
-                "decisionSummary",
-                "decision",
-            ],
-            "additionalProperties": False,
-        }
-    },
-    "required": ["analysis"],
     "additionalProperties": False,
 }
 
@@ -197,92 +143,6 @@ def execute_report_lookup(
     }
 
 
-def parse_report_memory_write_arguments(arguments_json: str) -> dict[str, object]:
-    raw_arguments = _parse_json_object(
-        arguments_json,
-        function_name=REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
-    )
-    _reject_unexpected_keys(
-        raw_arguments,
-        allowed_keys={"analysis"},
-        function_name=REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
-    )
-    try:
-        payload = AgentMemoryReportCreateMetadata.model_validate(raw_arguments)
-    except ValidationError as exc:
-        raise RuntimeToolError(
-            code="agent_tool_call_invalid",
-            message="signaldeck_reports_write arguments failed validation.",
-            details=_validation_details_from_pydantic_error(exc),
-        ) from exc
-    return {"payload": payload}
-
-
-def raise_report_memory_write_retired() -> NoReturn:
-    raise RuntimeToolError(
-        code="report_memory_write_retired",
-        message=(
-            "signaldeck_reports_write is retired; use signaldeck_memory_write for "
-            "canonical platform memory writes."
-        ),
-    )
-
-
-def execute_report_memory_write(
-    context: RuntimeToolContext,
-    arguments: dict[str, object],
-) -> dict[str, object]:
-    del context, arguments
-    raise_report_memory_write_retired()
-
-
-def _parse_json_object(arguments_json: str, *, function_name: str) -> dict[str, object]:
-    try:
-        raw_payload = cast(object, json.loads(arguments_json))
-    except json.JSONDecodeError as exc:
-        raise RuntimeToolError(
-            code="agent_tool_call_invalid",
-            message=f"OpenAI response requested {function_name} with invalid JSON arguments.",
-        ) from exc
-    if not isinstance(raw_payload, dict):
-        raise RuntimeToolError(
-            code="agent_tool_call_invalid",
-            message=f"{function_name} arguments must be a JSON object.",
-        )
-    return cast(dict[str, object], raw_payload)
-
-
-def _reject_unexpected_keys(
-    raw_arguments: dict[str, object],
-    *,
-    allowed_keys: set[str],
-    function_name: str,
-) -> None:
-    unexpected_keys = sorted(set(raw_arguments) - allowed_keys)
-    if unexpected_keys:
-        raise RuntimeToolError(
-            code="agent_tool_call_invalid",
-            message=(
-                f"{function_name} arguments contained unsupported fields: "
-                f"{', '.join(unexpected_keys)}"
-            ),
-        )
-
-
-def _validation_details_from_pydantic_error(exc: ValidationError) -> list[dict[str, object]]:
-    details: list[dict[str, object]] = []
-    for error in exc.errors():
-        location = error.get("loc", ())
-        field = ".".join(str(part) for part in location) if location else "input"
-        details.append(
-            {
-                "field": field or "input",
-                "issue": str(error.get("msg", "Invalid value")),
-            }
-        )
-    return details
-
-
 def _parse_optional_string_argument(value: object) -> str | None:
     if value is None:
         return None
@@ -337,30 +197,9 @@ REPORT_LOOKUP_TOOL_SPEC = RuntimeToolSpec(
     owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
 )
 
-REPORT_MEMORY_WRITE_TOOL_SPEC = RuntimeToolSpec(
-    key=REPORT_MEMORY_WRITE_TOOL_KEY,
-    openai_function_name=REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
-    display_name=_REPORT_MEMORY_WRITE_DISPLAY_NAME,
-    description=_REPORT_MEMORY_WRITE_DESCRIPTION,
-    parameters_schema=_REPORT_MEMORY_WRITE_PARAMETERS_SCHEMA,
-    guidance=_REPORT_MEMORY_WRITE_GUIDANCE,
-    sort_order=15,
-    denied_code=REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
-    denied_message=REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
-    parser=parse_report_memory_write_arguments,
-    executor=execute_report_memory_write,
-    owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
-)
-
-
 __all__ = [
     "REPORT_LOOKUP_OPENAI_FUNCTION_NAME",
     "REPORT_LOOKUP_TOOL_SPEC",
-    "REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME",
-    "REPORT_MEMORY_WRITE_TOOL_SPEC",
     "execute_report_lookup",
-    "raise_report_memory_write_retired",
-    "execute_report_memory_write",
     "parse_report_lookup_arguments",
-    "parse_report_memory_write_arguments",
 ]

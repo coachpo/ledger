@@ -5,6 +5,10 @@ from sqlalchemy.orm import Session
 from app.agents import get_default_tool_catalog
 from app.core.errors import business_rule_error, not_found_error
 from app.core.formatting import normalize_symbol, utcnow
+from app.extensions.signaldeck_finance.service_gate import (
+    POSITION_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.position import Position
 from app.repositories.position import PositionRepository
 from app.repositories.symbol_name_cache import SymbolNameCacheRepository
@@ -15,7 +19,6 @@ from app.schemas.position import (
     PositionUpdate,
 )
 from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
-from app.services.extension_gate import POSITION_SERVICE_SURFACE, require_finance_workspace_enabled
 from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import QuoteProvider, QuoteProviderError
 

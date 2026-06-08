@@ -1,81 +1,269 @@
-import type { FrontendExtensionDefinition } from "../types";
+import { Dashboard } from "@/pages/dashboard";
+import { PortfolioDetailPage } from "@/pages/portfolios/detail";
+import { PortfolioListPage } from "@/pages/portfolios/list";
+import { ReportDetailPage } from "@/pages/reports/detail";
+import { ReportListPage } from "@/pages/reports/list";
+import { TemplateEditorPage } from "@/pages/templates/editor";
+import { TemplateListPage } from "@/pages/templates/list";
+
+import type {
+  FrontendExtensionDefinition,
+  FrontendNavContribution,
+  FrontendRouteContribution,
+} from "../types";
 
 export const FINANCE_WORKSPACE_EXTENSION_KEY = "signaldeck.finance";
 export const FINANCE_WORKSPACE_LABEL = "Finance Workspace";
 
+function financeRouteOwnerNav(
+  nav: FrontendRouteContribution["routeMetadata"]["nav"],
+  requiredExtensionKey: string,
+): FrontendNavContribution | undefined {
+  if (!nav.sidebar) {
+    return undefined;
+  }
+
+  if (!nav.path) {
+    throw new Error(`Finance sidebar nav is missing a path for ${nav.label}`);
+  }
+
+  return {
+    iconName: nav.iconName,
+    label: nav.label,
+    requiredExtensionKey,
+    testId: nav.testId,
+    to: nav.path,
+  };
+}
+
 const financeRouteContributions = [
   {
-    componentModule: "@/pages/dashboard#Dashboard",
+    Component: Dashboard,
     path: "/",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+    routeMetadata: {
+      archetype: "dashboard",
+      breadcrumb: { title: "Dashboard" },
+      nav: {
+        group: FINANCE_WORKSPACE_LABEL,
+        iconName: "LayoutDashboard",
+        label: "Dashboard",
+        path: "/",
+        sidebar: true,
+        testId: "nav-dashboard",
+      },
+      shellMode: "scroll",
+      widthMode: "wide",
+      stateVariants: ["loading", "ready", "error", "disabledExtension"],
+      testId: "route-dashboard",
+    },
   },
   {
-    componentModule: "@/pages/portfolios/list#PortfolioListPage",
+    Component: PortfolioListPage,
     path: "/portfolios",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+    routeMetadata: {
+      archetype: "inventory",
+      breadcrumb: { title: "Portfolios" },
+      nav: {
+        group: FINANCE_WORKSPACE_LABEL,
+        iconName: "Briefcase",
+        label: "Portfolios",
+        path: "/portfolios",
+        sidebar: true,
+        testId: "nav-portfolios",
+      },
+      shellMode: "scroll",
+      widthMode: "wide",
+      stateVariants: ["loading", "ready", "error", "empty", "disabledExtension"],
+      testId: "route-portfolios-list",
+    },
   },
   {
-    componentModule: "@/pages/portfolios/detail#PortfolioDetailPage",
+    Component: PortfolioDetailPage,
     path: "/portfolios/:portfolioId",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+    routeMetadata: {
+      archetype: "detail",
+      breadcrumb: {
+        parent: { href: "/portfolios", title: "Portfolios" },
+        title: "Portfolio Detail",
+      },
+      nav: {
+        group: FINANCE_WORKSPACE_LABEL,
+        iconName: "Briefcase",
+        label: "Portfolios",
+        path: "/portfolios",
+        sidebar: false,
+        testId: "nav-portfolios",
+      },
+      shellMode: "scroll",
+      widthMode: "wide",
+      stateVariants: [
+        "loading",
+        "ready",
+        "error",
+        "notFound",
+        "disabledExtension",
+      ],
+      testId: "route-portfolio-detail",
+    },
   },
   {
-    componentModule: "@/pages/templates/list#TemplateListPage",
+    Component: TemplateListPage,
     path: "/templates",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+    routeMetadata: {
+      archetype: "inventory",
+      breadcrumb: { title: "Templates" },
+      nav: {
+        group: FINANCE_WORKSPACE_LABEL,
+        iconName: "FileText",
+        label: "Templates",
+        path: "/templates",
+        sidebar: true,
+        testId: "nav-templates",
+      },
+      shellMode: "scroll",
+      widthMode: "wide",
+      stateVariants: [
+        "loading",
+        "ready",
+        "error",
+        "empty",
+        "filteredEmpty",
+        "disabledExtension",
+      ],
+      testId: "route-templates-list",
+    },
   },
   {
-    componentModule: "@/pages/templates/editor#TemplateEditorPage",
+    Component: TemplateEditorPage,
     path: "/templates/new",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+    routeMetadata: {
+      archetype: "editor",
+      breadcrumb: {
+        parent: { href: "/templates", title: "Templates" },
+        title: "New Template",
+      },
+      nav: {
+        group: FINANCE_WORKSPACE_LABEL,
+        iconName: "FileText",
+        label: "Templates",
+        path: "/templates",
+        sidebar: false,
+        testId: "nav-templates",
+      },
+      shellMode: "fullHeight",
+      widthMode: "full",
+      stateVariants: ["creating", "saving", "error", "disabledExtension"],
+      testId: "route-template-new",
+    },
   },
   {
-    componentModule: "@/pages/templates/editor#TemplateEditorPage",
+    Component: TemplateEditorPage,
     path: "/templates/:templateId/edit",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+    routeMetadata: {
+      archetype: "editor",
+      breadcrumb: {
+        parent: { href: "/templates", title: "Templates" },
+        title: "Edit Template",
+      },
+      nav: {
+        group: FINANCE_WORKSPACE_LABEL,
+        iconName: "FileText",
+        label: "Templates",
+        path: "/templates",
+        sidebar: false,
+        testId: "nav-templates",
+      },
+      shellMode: "fullHeight",
+      widthMode: "full",
+      stateVariants: [
+        "loading",
+        "editing",
+        "saving",
+        "error",
+        "notFound",
+        "disabledExtension",
+      ],
+      testId: "route-template-edit",
+    },
   },
   {
-    componentModule: "@/pages/reports/list#ReportListPage",
+    Component: ReportListPage,
     path: "/reports",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+    routeMetadata: {
+      archetype: "inventory",
+      breadcrumb: { title: "Reports" },
+      nav: {
+        group: FINANCE_WORKSPACE_LABEL,
+        iconName: "ClipboardList",
+        label: "Reports",
+        path: "/reports",
+        sidebar: true,
+        testId: "nav-reports",
+      },
+      shellMode: "scroll",
+      widthMode: "wide",
+      stateVariants: [
+        "loading",
+        "ready",
+        "error",
+        "empty",
+        "filteredEmpty",
+        "disabledExtension",
+      ],
+      testId: "route-reports-list",
+    },
   },
   {
-    componentModule: "@/pages/reports/detail#ReportDetailPage",
+    Component: ReportDetailPage,
     path: "/reports/:slug",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+    routeMetadata: {
+      archetype: "detail",
+      breadcrumb: {
+        parent: { href: "/reports", title: "Reports" },
+        title: "Report Detail",
+      },
+      nav: {
+        group: FINANCE_WORKSPACE_LABEL,
+        iconName: "ClipboardList",
+        label: "Reports",
+        path: "/reports",
+        sidebar: false,
+        testId: "nav-reports",
+      },
+      shellMode: "scroll",
+      widthMode: "readable",
+      stateVariants: [
+        "loading",
+        "editing",
+        "saving",
+        "error",
+        "notFound",
+        "disabledExtension",
+      ],
+      testId: "route-report-detail",
+    },
   },
-] as const;
+] as const satisfies readonly FrontendRouteContribution[];
 
-const financeNavContributions = [
-  {
-    iconName: "LayoutDashboard",
-    label: "Dashboard",
-    requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-    testId: "nav-dashboard",
-    to: "/",
-  },
-  {
-    iconName: "Briefcase",
-    label: "Portfolios",
-    requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-    testId: "nav-portfolios",
-    to: "/portfolios",
-  },
-  {
-    iconName: "FileText",
-    label: "Templates",
-    requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-    testId: "nav-templates",
-    to: "/templates",
-  },
-  {
-    iconName: "ClipboardList",
-    label: "Reports",
-    requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-    testId: "nav-reports",
-    to: "/reports",
-  },
-] as const;
+const financeNavContributions = financeRouteContributions
+  .map((contribution) =>
+    financeRouteOwnerNav(
+      contribution.routeMetadata.nav,
+      contribution.requiredExtensionKey,
+    ),
+  )
+  .filter(
+    (contribution): contribution is FrontendNavContribution =>
+      contribution !== undefined,
+  );
 
 export const financeWorkspaceFrontendExtension = {
   key: FINANCE_WORKSPACE_EXTENSION_KEY,

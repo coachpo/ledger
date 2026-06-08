@@ -1,17 +1,27 @@
+import type { ComponentType } from "react";
+
+import type { AbsoluteRoutePath, RouteMetadata } from "@/routes.metadata";
+
 export type FrontendExtensionGateTag = {
   requiredExtensionKey: string;
 };
 
+export type FrontendRouteMetadataContribution = Omit<
+  RouteMetadata,
+  "owner" | "pattern"
+>;
+
 export type FrontendRouteContribution = FrontendExtensionGateTag & {
-  componentModule: string;
-  path: string;
+  Component: ComponentType;
+  path: AbsoluteRoutePath;
+  routeMetadata: FrontendRouteMetadataContribution;
 };
 
 export type FrontendNavContribution = FrontendExtensionGateTag & {
   iconName: string;
   label: string;
   testId: string;
-  to: string;
+  to: AbsoluteRoutePath;
 };
 
 export type FrontendToolAuthoringDiscoveryContribution =

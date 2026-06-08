@@ -13,6 +13,10 @@ from app.agents import get_default_tool_catalog
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.core.config import Settings, get_settings
 from app.core.formatting import normalize_symbol, to_utc, utcnow
+from app.extensions.signaldeck_finance.service_gate import (
+    MARKET_DATA_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.market_quote import MarketQuote
 from app.repositories.market_quote import MarketQuoteRepository
 from app.schemas.common import to_camel
@@ -24,10 +28,6 @@ from app.schemas.market_data import (
     MarketQuoteRead,
 )
 from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
-from app.services.extension_gate import (
-    MARKET_DATA_SERVICE_SURFACE,
-    require_finance_workspace_enabled,
-)
 from app.services.market_data_snapshots import (
     MarketDataFinancialStatement as RuntimeFinancialStatement,
 )

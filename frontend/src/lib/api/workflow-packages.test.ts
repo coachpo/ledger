@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { WorkflowPackageMetadataRead } from "../types/workflow-package";
+
 const ORIGINAL_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -81,7 +83,12 @@ describe("workflow packages api", () => {
     const validationRead = {
       diagnostics: [],
       warnings: [],
-      metadata: { apiVersion: "signaldeck.workflowPackage/v1", key: "research_package", name: "Research Package", description: "" },
+      metadata: {
+        apiVersion: "signaldeck.workflowPackage/v1",
+        key: "research_package",
+        name: "Research Package",
+        description: "",
+      } satisfies WorkflowPackageMetadataRead,
       packageDefinition: { metadata: { key: "research_package" } },
       compiledPlan: { packageKey: "research_package" },
       manifestHash: "abc",
@@ -125,18 +132,25 @@ describe("workflow packages api", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("reads current preflight and launch metadata with only workflowKey query params", async () => {
+  it("posts preflight bodies and reads launch metadata with workflowKey query params", async () => {
     const { getWorkflowPackageLaunch, preflightWorkflowPackage } = await loadWorkflowPackagesApi(
       "https://signaldeck.example.com/api/v1/",
     );
     fetchMock.mockResolvedValueOnce(jsonResponse({ packageId: 12, ready: true }, 200));
     fetchMock.mockResolvedValueOnce(jsonResponse({ packageId: 12, ready: true }, 200));
 
-    await preflightWorkflowPackage(12, { workflowKey: "summarize" });
+    await preflightWorkflowPackage(12, {
+      parameters: { ticker: "MSFT" },
+      workflowKey: "summarize",
+    });
     let lastCall = getLastFetchCall(fetchMock);
     expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages/12/preflight");
-    expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({ workflowKey: "summarize" });
+    expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({});
     expect(lastCall.init?.method).toBe("POST");
+    expect(JSON.parse(String(lastCall.init?.body))).toEqual({
+      parameters: { ticker: "MSFT" },
+      workflowKey: "summarize",
+    });
 
     await getWorkflowPackageLaunch(12, { workflowKey: "summarize" });
     lastCall = getLastFetchCall(fetchMock);

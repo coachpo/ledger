@@ -6,18 +6,7 @@ from fastapi import APIRouter, Depends
 
 from app.agents import ToolCatalog
 from app.api.dependencies import get_tool_catalog
-from app.schemas.common import CamelModel
-
-
-class ToolCatalogItemRead(CamelModel):
-    key: str
-    display_name: str
-    description: str
-
-
-class ToolCatalogListRead(CamelModel):
-    items: list[ToolCatalogItemRead]
-
+from app.schemas.tool import ToolCatalogItemRead, ToolCatalogListRead
 
 router = APIRouter(prefix="/tools", tags=["tools"])
 

@@ -183,6 +183,21 @@ spec:
 """
 
 
+def _digital_oracle_phase1_parameters() -> dict[str, object]:
+    return {"researchQuestion": "What changed in NVDA filings?"}
+
+
+def _digital_oracle_demo_parameters() -> dict[str, object]:
+    return {
+        "researchQuestion": "What changed in NVDA filings?",
+        "outputLanguage": "English",
+    }
+
+
+def _tool_required_parameters() -> dict[str, object]:
+    return {"topic": "market structure"}
+
+
 def _digital_oracle_research_with_finance_price_history_package_source() -> str:
     return """apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
@@ -972,7 +987,7 @@ def test_preflight_accepts_digital_oracle_research_package_with_finance_price_hi
     assert response.status_code == 201, response.json()
     preflight = client.post(
         f"/api/workflow-packages/{response.json()['id']}/preflight",
-        params={"workflowKey": "research"},
+        json={"workflowKey": "research", "parameters": _digital_oracle_phase1_parameters()},
     )
 
     assert tool_errors == []
@@ -1072,7 +1087,7 @@ def test_digital_oracle_researcher_demo_validates_compiles_and_preflights(
     assert created.status_code == 201, created.json()
     preflight = client.post(
         f"/api/workflow-packages/{created.json()['id']}/preflight",
-        params={"workflowKey": "research"},
+        json={"workflowKey": "research", "parameters": _digital_oracle_demo_parameters()},
     )
 
     assert preflight.status_code == 200, preflight.json()
@@ -1183,7 +1198,10 @@ def test_preflight_blocks_tool_required_fixture_with_unsupported_native_tool_cal
         strict_json_schema_status=ModelConnectionCapabilityStatus.UNSUPPORTED,
     )
 
-    preflight = client.post("/api/workflow-packages/9101/preflight")
+    preflight = client.post(
+        "/api/workflow-packages/9101/preflight",
+        json={"workflowKey": None, "parameters": {}},
+    )
 
     assert preflight.status_code == 200, preflight.json()
     body = preflight.json()
@@ -1221,7 +1239,10 @@ def test_preflight_warns_when_required_model_capabilities_are_unproven(
         json_object_status=ModelConnectionCapabilityStatus.UNKNOWN,
     )
 
-    preflight = client.post("/api/workflow-packages/9101/preflight")
+    preflight = client.post(
+        "/api/workflow-packages/9101/preflight",
+        json={"workflowKey": None, "parameters": _tool_required_parameters()},
+    )
 
     assert preflight.status_code == 200, preflight.json()
     body = preflight.json()
@@ -1266,7 +1287,10 @@ def test_preflight_warns_when_structured_output_falls_back_to_json_object_valida
         json_object_status=ModelConnectionCapabilityStatus.SUPPORTED,
     )
 
-    preflight = client.post("/api/workflow-packages/9101/preflight")
+    preflight = client.post(
+        "/api/workflow-packages/9101/preflight",
+        json={"workflowKey": None, "parameters": _tool_required_parameters()},
+    )
 
     assert preflight.status_code == 200, preflight.json()
     body = preflight.json()
@@ -1322,7 +1346,7 @@ def test_preflight_multi_agent_per_agent_structured_output_scope_keeps_unrelated
 
     preflight = client.post(
         f"/api/workflow-packages/{created.json()['id']}/preflight",
-        params={"workflowKey": "main"},
+        json={"workflowKey": "main", "parameters": _tool_required_parameters()},
     )
 
     assert preflight.status_code == 200, preflight.json()
@@ -1415,7 +1439,7 @@ def test_save_allows_missing_model_connection_and_preflight_blocks(
     expected_identities = {(field, expected_issue) for field in expected_fields}
     preflight = client.post(
         f"/api/workflow-packages/{package_id}/preflight",
-        params={"workflowKey": "advisory_research"},
+        json={"workflowKey": "advisory_research", "parameters": {}},
     )
 
     assert preflight.status_code == 200, preflight.json()
@@ -1477,7 +1501,10 @@ def test_update_allows_unresolved_model_connection_and_preflight_blocks(
     )
 
     assert response.status_code == 200, response.json()
-    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        json={"workflowKey": None, "parameters": {}},
+    )
     assert preflight.status_code == 200, preflight.json()
     body = preflight.json()
     assert body["ready"] is False
@@ -1533,7 +1560,10 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
         package.package_definition = package_definition
         session.commit()
 
-    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        json={"workflowKey": None, "parameters": {}},
+    )
 
     assert preflight.status_code == 200, preflight.json()
     body = preflight.json()
@@ -1578,7 +1608,7 @@ def test_missing_api_key_is_relaxed_for_launch_metadata_but_blocks_strict_readin
 
     preflight = client.post(
         f"/api/workflow-packages/{created['id']}/preflight",
-        params={"workflowKey": "advisory_research"},
+        json={"workflowKey": "advisory_research", "parameters": {}},
     )
 
     assert preflight.status_code == 200, preflight.json()
@@ -1624,7 +1654,10 @@ def test_preflight_blocks_failed_model_connection(
     )
     created = _create_package(client)
 
-    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        json={"workflowKey": None, "parameters": {}},
+    )
 
     assert preflight.status_code == 200, preflight.json()
     assert preflight.json()["ready"] is False
@@ -1650,7 +1683,10 @@ def test_preflight_blocks_missing_secret_binding_for_http_node(
 ) -> None:
     created = _create_http_package(client)
 
-    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        json={"workflowKey": None, "parameters": {}},
+    )
 
     assert preflight.status_code == 200, preflight.json()
     body = preflight.json()
@@ -1684,7 +1720,10 @@ def test_preflight_accepts_configured_secret_bindings_for_http_node(
             "updatedAt": response.json()["updatedAt"],
         }
 
-    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        json={"workflowKey": None, "parameters": {}},
+    )
 
     assert preflight.status_code == 200, preflight.json()
     body = preflight.json()
@@ -1765,7 +1804,8 @@ def test_preflight_allows_digital_oracle_toolKeys_when_finance_extension_disable
     _disable_finance_extension(session_factory)
 
     preflight = client.post(
-        f"/api/workflow-packages/{response.json()['id']}/preflight?workflowKey=research"
+        f"/api/workflow-packages/{response.json()['id']}/preflight",
+        json={"workflowKey": "research", "parameters": _digital_oracle_phase1_parameters()},
     )
 
     assert preflight.status_code == 200, preflight.json()
@@ -1797,7 +1837,7 @@ def test_preflight_blocks_only_finance_price_history_toolKeys_when_finance_disab
 
     preflight = client.post(
         f"/api/workflow-packages/{response.json()['id']}/preflight",
-        params={"workflowKey": "research"},
+        json={"workflowKey": "research", "parameters": {}},
     )
 
     assert preflight.status_code == 200, preflight.json()
@@ -1821,7 +1861,8 @@ def test_preflight_blocks_digital_oracle_toolKeys_when_digital_oracle_extension_
     _disable_digital_oracle_extension(session_factory)
 
     preflight = client.post(
-        f"/api/workflow-packages/{response.json()['id']}/preflight?workflowKey=research"
+        f"/api/workflow-packages/{response.json()['id']}/preflight",
+        json={"workflowKey": "research", "parameters": {}},
     )
 
     assert preflight.status_code == 200, preflight.json()
@@ -1852,7 +1893,7 @@ def test_preflight_blocks_only_digital_oracle_toolKeys_when_digital_oracle_disab
 
     preflight = client.post(
         f"/api/workflow-packages/{response.json()['id']}/preflight",
-        params={"workflowKey": "research"},
+        json={"workflowKey": "research", "parameters": {}},
     )
 
     assert preflight.status_code == 200, preflight.json()
@@ -1874,7 +1915,10 @@ def test_save_allows_disabled_extension_dependency_and_preflight_blocks(
     response = client.post("/api/workflow-packages", json={"manifestSource": _package_source()})
 
     assert response.status_code == 201, response.json()
-    preflight = client.post(f"/api/workflow-packages/{response.json()['id']}/preflight")
+    preflight = client.post(
+        f"/api/workflow-packages/{response.json()['id']}/preflight",
+        json={"workflowKey": None, "parameters": {}},
+    )
     assert preflight.status_code == 200, preflight.json()
     body = preflight.json()
     assert body["ready"] is False
@@ -1895,7 +1939,10 @@ def test_preflight_blocks_tradingagents_advisory_research_when_extension_disable
     created = _create_package(client)
     _disable_finance_extension(session_factory)
 
-    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        json={"workflowKey": None, "parameters": {}},
+    )
 
     assert preflight.status_code == 200, preflight.json()
     body = preflight.json()
@@ -1960,7 +2007,12 @@ def test_schedule_run_now_surfaces_digital_oracle_extension_disabled_preflight_f
     )
     with session_factory() as session:
         history = WorkflowPackageScheduleService(session).list_fire_history(schedule_id)
-        assert history.total_count == 0
+        assert history.total_count == 1
+        failed_fire = history.items[0]
+        assert failed_fire.status == "failed"
+        assert failed_fire.run_id is None
+        assert failed_fire.error_code == "validation_error"
+        assert failed_fire.error_message == "Workflow package launch validation failed"
 
 
 def _schedule_render_validation_package(session: Session) -> WorkflowPackage:
