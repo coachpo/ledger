@@ -267,7 +267,7 @@ export function PortfolioListPage() {
                         />
                       </TableCell>
                       <TableCell className="min-w-56 whitespace-normal">
-                        <div className="space-y-1">
+                        <div className="flex flex-col gap-1">
                           <p className="font-medium text-foreground">
                             {portfolio.name}
                           </p>

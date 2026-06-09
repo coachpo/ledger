@@ -341,10 +341,10 @@ describe("ScheduledTasksListPage", () => {
     const { rerender } = renderPage();
 
     expect(screen.getByTestId("scheduled-tasks-list-page")).toBeInTheDocument();
-    expect(document.querySelectorAll("[data-slot='skeleton']")).toHaveLength(4);
-    expect(
-      document.querySelector("[data-slot='skeleton']")?.closest("[data-slot='card']"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("scheduled-tasks-loading-state")).toHaveTextContent(
+      "Loading scheduled tasks",
+    );
+    expect(screen.getByText(/scheduled package-run automation/i)).toBeVisible();
 
     useScheduledTasksMock.mockReturnValue({
       data: undefined,

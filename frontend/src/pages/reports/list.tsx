@@ -370,7 +370,7 @@ export function ReportListPage() {
           selectedCount > 0 ? `${selectedCount} selected` : undefined,
       }}
     >
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         {reportsQuery.isPending ? (
           <InventoryStatePanel
             description="Fetching report inventory."
@@ -425,7 +425,7 @@ export function ReportListPage() {
               key={groupLabel}
               open={!isCollapsed}
               onOpenChange={() => toggleGroup(groupLabel)}
-              className="space-y-2"
+              className="flex flex-col gap-2"
             >
               {showHeader && (
                 <CollapsibleTrigger asChild>

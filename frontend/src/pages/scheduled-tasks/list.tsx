@@ -44,7 +44,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -421,18 +420,6 @@ function buildWorkflowFilterOptions({
   }
 
   return [...manifestOptions, ...staleOptions];
-}
-
-function LoadingState() {
-  return (
-    <ResourceTableFrame>
-      <div className="flex flex-col gap-3 p-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <Skeleton className="h-14 w-full" key={index} />
-        ))}
-      </div>
-    </ResourceTableFrame>
-  );
 }
 
 function ScheduleStatusFilters({
@@ -1610,7 +1597,6 @@ export function ScheduledTasksListPage() {
       }}
       testId="scheduled-tasks-list-page"
       toolbar={{
-        className: "[&>div:first-child]:items-start",
         filters: (
           <ScheduleFilters
             packageItems={packageItems}
@@ -1638,7 +1624,13 @@ export function ScheduledTasksListPage() {
         },
       }}
     >
-      {schedulesQuery.isPending ? <LoadingState /> : null}
+      {schedulesQuery.isPending ? (
+        <InventoryStatePanel
+          description="Reading scheduled package-run automation from the backend."
+          testId="scheduled-tasks-loading-state"
+          title="Loading scheduled tasks"
+        />
+      ) : null}
 
       {schedulesQuery.isError ? (
         <InventoryStatePanel

@@ -153,6 +153,10 @@ async function seedModelConnection(request: APIRequestContext, key: string) {
     protocolProfile: "openai_responses",
     timeoutSeconds: 5,
     apiKey: "sk-e2e-fake-provider",
+    capabilities: {
+      nativeToolCalls: capability("supported", "Native tool calls are supported."),
+      strictJsonSchemaOutput: capability("supported", "Strict schema output is supported."),
+    },
   });
 }
 
@@ -286,16 +290,17 @@ async function launchPackageFromDedicatedPage(
   await expect(page.getByTestId("workflow-package-launch-tab")).toBeVisible();
 
   const launchButton = page.getByRole("button", { name: "Launch Run" });
-  const runtimeInputs = page.getByLabel("Runtime inputs JSON");
-  await expect(runtimeInputs).toBeDisabled();
+  const runtimeInputsPreview = page.getByLabel("Runtime inputs JSON");
+  await expect(runtimeInputsPreview).toBeVisible();
   await selectLaunchWorkflow(page, workflowKey);
-  await expect(runtimeInputs).toBeEnabled();
   await page.getByRole("button", { name: "Run preflight" }).click();
   await expect(page.getByTestId("workflow-package-preflight-status")).toContainText(
     "Preflight ready",
   );
-  await runtimeInputs.fill(JSON.stringify(parameters, null, 2));
-  await expect(runtimeInputs).toHaveValue(JSON.stringify(parameters, null, 2));
+  for (const [fieldName, value] of Object.entries(parameters)) {
+    await page.getByRole("textbox", { name: fieldName }).fill(String(value));
+  }
+  await expect(runtimeInputsPreview).toHaveValue(JSON.stringify(parameters, null, 2));
   await expect(launchButton).toBeEnabled();
   await launchButton.click();
 
@@ -475,7 +480,7 @@ test.describe("Workflow packages", () => {
     const preflight = await request.post(
       `${PLATFORM_API_BASE}/workflow-packages/${created.id}/preflight`,
       {
-        params: { workflowKey: "advisory_flow" },
+        data: { workflowKey: "advisory_flow", parameters: { ticker: "AAPL" } },
       },
     );
     expect(preflight.ok()).toBeTruthy();

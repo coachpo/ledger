@@ -7,22 +7,22 @@ import {
 
 const API_BASE = "http://127.0.0.1:8001/api/v1";
 
-function reportCardByText(page: Page, text: string) {
-  return page.locator("[data-slot='card']").filter({ hasText: text });
+function reportRowByText(page: Page, text: string) {
+  return page.getByRole("row").filter({ hasText: text });
 }
 
 async function expectReportDeleted(
   page: Page,
   request: APIRequestContext,
   slug: string,
-  cardText: string,
+  rowText: string,
 ) {
   await expect
     .poll(async () =>
       (await request.get(`${API_BASE}/reports/${slug}`)).status(),
     )
     .toBe(404);
-  await expect(reportCardByText(page, cardText)).toHaveCount(0);
+  await expect(reportRowByText(page, rowText)).toHaveCount(0);
 }
 
 async function expectNoDocumentOverflow(page: Page) {
@@ -167,10 +167,10 @@ test.describe("Reports", () => {
     await page.goto("/reports");
     await page.waitForLoadState("networkidle");
 
-    const reportCard = reportCardByText(page, report.name).first();
-    await expect(reportCard).toBeVisible();
+    const reportRow = reportRowByText(page, report.name).first();
+    await expect(reportRow).toBeVisible();
 
-    await reportCard.getByRole("button", { name: /open actions/i }).click();
+    await reportRow.getByRole("button", { name: /open actions/i }).click();
     await page.getByRole("menuitem", { name: /delete/i }).click();
     await page.getByRole("button", { name: /^delete$/i }).click();
     await expectReportDeleted(page, request, generatedSlug, report.name);
@@ -218,9 +218,9 @@ test.describe("Reports", () => {
     await page.goto("/reports");
     await page.waitForLoadState("networkidle");
 
-    const reportCard = reportCardByText(page, uploadSlug).first();
-    await expect(reportCard).toBeVisible();
-    await reportCard.getByRole("button", { name: /open actions/i }).click();
+    const reportRow = reportRowByText(page, uploadSlug).first();
+    await expect(reportRow).toBeVisible();
+    await reportRow.getByRole("button", { name: /open actions/i }).click();
     await page.getByRole("menuitem", { name: /delete/i }).click();
     await page.getByRole("button", { name: /^delete$/i }).click();
     await expectReportDeleted(page, request, uploadSlug, uploadSlug);

@@ -46,14 +46,23 @@ async function seedTradingAgentsModel(request: APIRequestContext) {
     timeoutSeconds: 5,
     apiKey: "sk-e2e-tradingagents-fake-provider",
   };
+  let connectionId: number;
   if (existing) {
     const { key: _key, ...updatePayload } = payload;
     const response = await request.patch(`${PLATFORM_API_BASE}/model-connections/${existing.id}`, { data: updatePayload });
     expect(response.ok()).toBeTruthy();
-    return;
+    connectionId = existing.id;
+  } else {
+    const response = await request.post(`${PLATFORM_API_BASE}/model-connections`, { data: payload });
+    expect(response.ok()).toBeTruthy();
+    connectionId = Number((await response.json()).id);
   }
-  const response = await request.post(`${PLATFORM_API_BASE}/model-connections`, { data: payload });
-  expect(response.ok()).toBeTruthy();
+
+  const probe = await request.post(
+    `${PLATFORM_API_BASE}/model-connections/${connectionId}/capability-probe`,
+    { data: { capabilityKeys: ["nativeToolCalls", "strictJsonSchemaOutput"], refresh: true } },
+  );
+  expect(probe.ok()).toBeTruthy();
 }
 
 async function createOrUpdatePackage(request: APIRequestContext, manifestSource: string) {
@@ -109,7 +118,7 @@ test.describe("TradingAgents workflow-package smoke", () => {
     const workflowPackage = await createOrUpdatePackage(request, fixtureSource());
 
     const preflight = await request.post(`${PLATFORM_API_BASE}/workflow-packages/${workflowPackage.id}/preflight`, {
-      params: { workflowKey: "advisory_research" },
+      data: { workflowKey: "advisory_research", parameters: LAUNCH_PARAMETERS },
     });
     expect(preflight.ok()).toBeTruthy();
     expect(await preflight.json()).toMatchObject({ ready: true, workflowKey: "advisory_research" });

@@ -110,7 +110,7 @@ test.describe("Portfolio details", () => {
       await expect(header.getByTestId("portfolio-detail-identity")).toContainText(
         "Detail surface browser fixture",
       );
-      await expect(header.getByText("Finance Workspace")).toBeVisible();
+      await expect(header.getByText("Portfolio ID")).toBeVisible();
       const statusList = header.getByRole("list", {
         name: "Portfolio resource status",
       });
