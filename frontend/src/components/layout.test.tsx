@@ -337,10 +337,8 @@ describe("Layout", () => {
           "min-h-full",
           "min-w-0",
           "max-w-full",
-          "[&>*]:mx-auto",
           "[&>*]:min-w-0",
           "[&>*]:w-full",
-          "[&>*]:max-w-5xl",
         ],
       },
     ] as const;
