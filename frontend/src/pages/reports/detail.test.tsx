@@ -117,11 +117,23 @@ describe("ReportDetailPage", () => {
       within(actions).getByRole("button", { name: /edit/i }),
     ).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: "Report content" }),
-    ).toBeVisible();
-    expect(screen.getByTestId("report-content-pane")).toHaveTextContent(
-      "Agent-created report.",
+      screen.queryByRole("heading", { name: "Report content" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Only markdown content is editable; report identity, source, and slug remain fixed.",
+      ),
+    ).not.toBeInTheDocument();
+    const contentPane = screen.getByTestId("report-content-pane");
+    expect(contentPane).toHaveClass(
+      "rounded-md",
+      "border",
+      "border-border",
+      "bg-muted/30",
+      "px-6",
+      "py-4",
     );
+    expect(contentPane).toHaveTextContent("Agent-created report.");
   });
 
   it("saves only edited markdown content for the slug route", async () => {
@@ -129,8 +141,8 @@ describe("ReportDetailPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
     expect(
-      screen.getByRole("heading", { name: "Edit report content" }),
-    ).toBeVisible();
+      screen.queryByRole("heading", { name: "Edit report content" }),
+    ).not.toBeInTheDocument();
     const textarea = screen.getByLabelText("Report markdown content");
     expect(textarea).toHaveValue("# Memory Snapshot\n\nAgent-created report.");
 

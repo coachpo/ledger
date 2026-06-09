@@ -22,6 +22,7 @@ import {
 import type { PortfolioUpdateInput } from "@/lib/types/portfolio";
 
 import { ConsoleSection } from "@/components/shared/console-section";
+import { MetricCard } from "@/components/shared/metric-card";
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -119,7 +120,6 @@ export function PortfolioDetailPage() {
   }
 
   const portfolioMetadataItems = [
-    { label: "Workspace", value: "Finance Workspace" },
     { label: "Base currency", value: portfolio.baseCurrency },
     { label: "Portfolio ID", value: `#${portfolio.id}` },
     { label: "Last updated", value: formatDateTime(portfolio.updatedAt) },
@@ -264,24 +264,17 @@ export function PortfolioDetailPage() {
       </div>
 
       <div
-        className="grid min-w-0 divide-y divide-border border-y border-border md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4"
+        className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4"
         aria-label="Portfolio metrics"
       >
         {portfolioMetricItems.map((metric) => (
-          <div
-            className="flex min-w-0 flex-col gap-1 bg-background px-3 py-2"
+          <MetricCard
+            density="compact"
             key={metric.label}
-          >
-            <p className="truncate text-xs font-medium text-muted-foreground">
-              {metric.label}
-            </p>
-            <p className="min-w-0 break-words text-lg font-semibold tracking-tight text-foreground">
-              {metric.value}
-            </p>
-            <p className="min-w-0 break-words text-xs text-muted-foreground">
-              {metric.note}
-            </p>
-          </div>
+            note={metric.note}
+            title={metric.label}
+            value={metric.value}
+          />
         ))}
       </div>
 

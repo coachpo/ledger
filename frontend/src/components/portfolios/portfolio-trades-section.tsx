@@ -10,7 +10,6 @@ import type { TradingOperationRead } from "@/lib/types/trading";
 import { ConsoleSection } from "@/components/shared/console-section";
 import { DataTable } from "@/components/shared/data-table";
 import { DataTableColumnHeader } from "@/components/shared/data-table-column-header";
-import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -106,23 +105,6 @@ export function PortfolioTradesSection({
         title="Trading Operations"
       >
         <div className="flex flex-col gap-3">
-          {depositBalances.length === 0 ? (
-            <EvidenceCluster
-              items={[
-                {
-                  description: hasPositions
-                    ? "SPLIT remains available for existing positions."
-                    : "SPLIT requires an existing position.",
-                  label: "Funding scope",
-                  tone: "warning",
-                  value: hasPositions
-                    ? "Add a deposit balance for BUY, SELL, or DIVIDEND operations."
-                    : "Add a deposit balance before recording BUY, SELL, or DIVIDEND operations.",
-                },
-              ]}
-              layout="list"
-            />
-          ) : null}
           <DataTable
             columns={columns}
             data={sortedOperations}

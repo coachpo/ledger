@@ -24,6 +24,44 @@ async function expectSharedDialogShell(page: Page) {
   ).toBeVisible();
 }
 
+async function expectPortfolioMetricCards(page: Page) {
+  const metrics = page.locator('[aria-label="Portfolio metrics"]');
+  const cards = metrics.locator('[data-slot="card"]');
+
+  await expect(metrics).toBeVisible();
+  await expect(cards).toHaveCount(4);
+  await expect(cards.nth(0)).toContainText("Total Value");
+  await expect(cards.nth(0)).toContainText("Balances plus marked positions");
+  await expect(cards.nth(1)).toContainText("Cash Balances");
+  await expect(cards.nth(1)).toContainText("balance accounts");
+  await expect(cards.nth(2)).toContainText("Unrealized P&L");
+  await expect(cards.nth(2)).toContainText("tracked positions");
+  await expect(cards.nth(3)).toContainText("Latest Activity");
+}
+
+async function expectPortfolioMetricCardsShareOneRow(page: Page) {
+  const topPositions = await page
+    .locator('[aria-label="Portfolio metrics"] [data-slot="card"]')
+    .evaluateAll((cards) =>
+      cards.map((card) => Math.round(card.getBoundingClientRect().top)),
+    );
+
+  expect(
+    Math.max(...topPositions) - Math.min(...topPositions),
+  ).toBeLessThanOrEqual(1);
+}
+
+async function expectPortfolioMetricCardsWrap(page: Page) {
+  const topPositions = await page
+    .locator('[aria-label="Portfolio metrics"] [data-slot="card"]')
+    .evaluateAll((cards) =>
+      cards.map((card) => Math.round(card.getBoundingClientRect().top)),
+    );
+  const uniqueRows = new Set(topPositions);
+
+  expect(uniqueRows.size).toBeGreaterThan(1);
+}
+
 test.describe("Portfolio details", () => {
   test("opens the portfolio create dialog with the shared shell", async ({
     page,
@@ -71,7 +109,7 @@ test.describe("Portfolio details", () => {
 
       const header = page.getByTestId("portfolio-detail-header");
       await expect(header.getByTestId("portfolio-detail-identity")).toContainText(
-        "Portfolio workspace",
+        "Detail surface browser fixture",
       );
       await expect(header.getByText("Finance Workspace")).toBeVisible();
       await expect(header.getByText("Quotes")).toBeVisible();
@@ -82,6 +120,9 @@ test.describe("Portfolio details", () => {
       await expect(
         actions.getByRole("button", { name: /delete/i }),
       ).toBeVisible();
+      await expectPortfolioMetricCards(page);
+      await expectPortfolioMetricCardsShareOneRow(page);
+      await expectNoDocumentOverflow(page);
 
       await expect(
         page.getByRole("heading", { name: "Portfolio sections" }),
@@ -101,6 +142,11 @@ test.describe("Portfolio details", () => {
       await expect(
         page.getByRole("button", { name: "Add Operation" }),
       ).toBeVisible();
+      await expectNoDocumentOverflow(page);
+
+      await page.setViewportSize({ width: 390, height: 800 });
+      await expectPortfolioMetricCards(page);
+      await expectPortfolioMetricCardsWrap(page);
       await expectNoDocumentOverflow(page);
     } finally {
       if (portfolioId) {

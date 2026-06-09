@@ -13,7 +13,6 @@ import { getReportSourceLabel } from "@/lib/report-grouping";
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 
 export function ReportDetailPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -204,41 +203,22 @@ export function ReportDetailPage() {
         />
       </div>
 
-      <section
-        className="flex min-w-0 flex-col gap-3 border-y border-border py-4"
-        aria-labelledby="report-content-title"
-      >
-        <div className="flex min-w-0 flex-col gap-1">
-          <h2
-            id="report-content-title"
-            className="text-sm font-semibold tracking-tight text-foreground"
-          >
-            {isEditing ? "Edit report content" : "Report content"}
-          </h2>
-          <p className="text-xs leading-5 text-muted-foreground">
-            Only markdown content is editable; report identity, source, and slug remain fixed.
-          </p>
+      {isEditing ? (
+        <textarea
+          aria-label="Report markdown content"
+          className="min-h-[400px] w-full resize-y rounded-md border border-border bg-background px-4 py-3 font-mono text-sm leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          value={editContent}
+          onChange={(e) => setEditContent(e.target.value)}
+          spellCheck={false}
+        />
+      ) : (
+        <div
+          className="prose prose-sm dark:prose-invert min-w-0 max-w-none rounded-md border border-border bg-muted/30 px-6 py-4 text-foreground [&_*]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto"
+          data-testid="report-content-pane"
+        >
+          <Markdown remarkPlugins={[remarkGfm]}>{report.content}</Markdown>
         </div>
-        <Separator />
-        {isEditing ? (
-          <textarea
-            aria-label="Report markdown content"
-            className="min-h-[400px] w-full resize-y rounded-md border border-border bg-background px-4 py-3 font-mono text-sm leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            value={editContent}
-            onChange={(e) => setEditContent(e.target.value)}
-            spellCheck={false}
-          />
-        ) : (
-          <div
-            className="min-w-0 max-w-4xl break-words text-foreground"
-            data-testid="report-content-pane"
-          >
-            <div className="prose prose-sm dark:prose-invert max-w-none [&_*]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto">
-              <Markdown remarkPlugins={[remarkGfm]}>{report.content}</Markdown>
-            </div>
-          </div>
-        )}
-      </section>
+      )}
     </div>
   );
 }

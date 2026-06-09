@@ -239,7 +239,7 @@ const financeRouteContributions = [
         testId: "nav-reports",
       },
       shellMode: "scroll",
-      widthMode: "readable",
+      widthMode: "wide",
       stateVariants: [
         "loading",
         "editing",

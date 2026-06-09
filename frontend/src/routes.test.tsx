@@ -348,7 +348,7 @@ describe("router", () => {
     expect(getRouteMetadataByPattern("/reports/:slug")).toMatchObject({
       archetype: "detail",
       shellMode: "scroll",
-      widthMode: "readable",
+      widthMode: "wide",
     });
     expect(getRouteMetadataByPattern("/scheduled-tasks/new")).toMatchObject({
       archetype: "editor",

@@ -110,14 +110,21 @@ test.describe("Reports", () => {
     ).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Report content" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
+    await expect(
+      page.getByText(
+        "Only markdown content is editable; report identity, source, and slug remain fixed.",
+      ),
+    ).toHaveCount(0);
+    const contentPane = page.getByTestId("report-content-pane");
+    await expect(contentPane).toHaveClass(/rounded-md/);
+    await expect(contentPane).toHaveClass(/border/);
+    await expect(contentPane).toHaveClass(/bg-muted\/30/);
     await expect(
       page.getByTestId("report-detail-header").getByRole("heading", { name: report.name }),
     ).toBeVisible();
     await expect(
-      page
-        .getByTestId("report-content-pane")
-        .getByRole("heading", { name: "E2E Report" }),
+      contentPane.getByRole("heading", { name: "E2E Report" }),
     ).toBeVisible();
     await expect(page.getByText("Hello world.")).toBeVisible();
     await expect(page.getByText("Item one")).toBeVisible();

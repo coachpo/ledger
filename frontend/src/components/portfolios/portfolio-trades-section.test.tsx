@@ -41,6 +41,32 @@ describe("PortfolioTradesSection", () => {
     });
   });
 
+  it("hides funding scope evidence while preserving the empty funding disabled state", () => {
+    render(
+      <PortfolioTradesSection
+        balances={[]}
+        hasPositions={false}
+        operations={[]}
+        portfolioId={1}
+        positions={[]}
+      />,
+    );
+
+    expect(screen.queryByText("Funding scope")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Add a deposit balance before recording BUY, SELL, or DIVIDEND operations.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("SPLIT requires an existing position."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /add operation/i }),
+    ).toBeDisabled();
+    expect(screen.getByText("No operations recorded yet.")).toBeVisible();
+  });
+
   it("allows recording the first buy before the portfolio has positions", async () => {
     render(
       <PortfolioTradesSection

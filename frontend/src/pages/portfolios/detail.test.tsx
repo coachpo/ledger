@@ -165,8 +165,6 @@ describe("PortfolioDetailPage", () => {
     expect(contextBar).not.toHaveClass("rounded-xl", "bg-card/95");
     expect(identity).toHaveClass("min-w-0", "break-words", "text-sm");
     expect(identity).toHaveTextContent(/Long-term allocation/);
-    expect(within(header).getByText("Workspace")).toBeVisible();
-    expect(within(header).getByText("Finance Workspace")).toBeVisible();
     expect(within(header).getByText("Base currency")).toBeVisible();
     expect(within(header).getByText("USD")).toBeVisible();
     expect(within(header).getByText("Portfolio ID")).toBeVisible();
@@ -176,8 +174,27 @@ describe("PortfolioDetailPage", () => {
     expect(within(header).getByText("Ready")).toBeVisible();
 
     const metrics = screen.getByLabelText("Portfolio metrics");
-    expect(metrics).toHaveClass("border-y", "divide-border");
+    expect(metrics).toHaveClass(
+      "grid",
+      "min-w-0",
+      "gap-3",
+      "sm:grid-cols-2",
+      "xl:grid-cols-4",
+    );
+    expect(metrics).not.toHaveClass("border-y", "divide-border");
+    expect(metrics.querySelectorAll('[data-slot="card"]')).toHaveLength(4);
     expect(within(metrics).getByText("Total Value")).toBeVisible();
+    expect(within(metrics).getByText("Cash Balances")).toBeVisible();
+    expect(within(metrics).getByText("Unrealized P&L")).toBeVisible();
+    expect(within(metrics).getByText("Latest Activity")).toBeVisible();
+    expect(within(metrics).getAllByText("$0.00")).toHaveLength(3);
+    expect(within(metrics).getByText("None")).toBeVisible();
+    expect(
+      within(metrics).getByText("Balances plus marked positions"),
+    ).toBeVisible();
+    expect(within(metrics).getByText("0 balance accounts")).toBeVisible();
+    expect(within(metrics).getByText("0 tracked positions")).toBeVisible();
+    expect(within(metrics).getByText("No operations yet")).toBeVisible();
 
     const tabs = screen.getByTestId("portfolio-detail-tabs");
     expect(within(tabs).getByRole("tab", { name: "Positions" })).toBeVisible();

@@ -407,7 +407,7 @@ test.describe("Unified shell responsive regression matrix", () => {
         routeTestId: "route-report-detail",
         shellMode: "scroll",
         url: `/reports/${report.slug}`,
-        widthMode: "readable",
+        widthMode: "wide",
       },
     ];
 
