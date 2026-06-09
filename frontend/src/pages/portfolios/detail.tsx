@@ -22,6 +22,7 @@ import {
 import type { PortfolioUpdateInput } from "@/lib/types/portfolio";
 
 import { ConsoleSection } from "@/components/shared/console-section";
+import { InlineStatePanel } from "@/components/shared/inline-state-panel";
 import { MetricCard } from "@/components/shared/metric-card";
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { Button } from "@/components/ui/button";
@@ -128,13 +129,6 @@ export function PortfolioDetailPage() {
     { label: "Positions", value: positions.length.toLocaleString() },
     { label: "Balances", value: balances.length.toLocaleString() },
     { label: "Trades", value: operations.length.toLocaleString() },
-    {
-      label: "Quotes",
-      value:
-        quoteWarnings.length > 0
-          ? `${quoteWarnings.length.toLocaleString()} quote warnings`
-          : "Ready",
-    },
   ];
   const portfolioMetricItems = [
     {
@@ -262,6 +256,22 @@ export function PortfolioDetailPage() {
           }
         />
       </div>
+
+      {quoteWarnings.length > 0 ? (
+        <InlineStatePanel
+          testId="portfolio-detail-quote-warnings"
+          title="Quote warnings"
+          tone="warning"
+        >
+          <ul className="flex list-disc flex-col gap-1 pl-4">
+            {quoteWarnings.map((warning) => (
+              <li className="min-w-0 break-words" key={warning}>
+                {warning}
+              </li>
+            ))}
+          </ul>
+        </InlineStatePanel>
+      ) : null}
 
       <div
         className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4"

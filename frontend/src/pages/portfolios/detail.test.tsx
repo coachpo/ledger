@@ -6,6 +6,7 @@ import { PortfolioDetailPage } from "./detail";
 const {
   deletePortfolioMock,
   navigateMock,
+  portfolioPositionsSectionMock,
   updatePortfolioMock,
   useBalancesMock,
   useMarketQuotesMock,
@@ -15,6 +16,7 @@ const {
 } = vi.hoisted(() => ({
   deletePortfolioMock: vi.fn(),
   navigateMock: vi.fn(),
+  portfolioPositionsSectionMock: vi.fn(),
   updatePortfolioMock: vi.fn(),
   useBalancesMock: vi.fn(),
   useMarketQuotesMock: vi.fn(),
@@ -62,7 +64,10 @@ vi.mock("@/components/portfolios/portfolio-balances-section", () => ({
 }));
 
 vi.mock("@/components/portfolios/portfolio-positions-section", () => ({
-  PortfolioPositionsSection: () => <section>Positions workspace</section>,
+  PortfolioPositionsSection: (props: { quoteWarnings: string[] }) => {
+    portfolioPositionsSectionMock(props);
+    return <section>Positions workspace</section>;
+  },
 }));
 
 vi.mock("@/components/portfolios/portfolio-trades-section", () => ({
@@ -106,6 +111,7 @@ describe("PortfolioDetailPage", () => {
   beforeEach(() => {
     deletePortfolioMock.mockReset();
     navigateMock.mockReset();
+    portfolioPositionsSectionMock.mockReset();
     updatePortfolioMock.mockReset();
     useBalancesMock.mockReset();
     useMarketQuotesMock.mockReset();
@@ -170,8 +176,17 @@ describe("PortfolioDetailPage", () => {
     expect(within(header).getByText("Portfolio ID")).toBeVisible();
     expect(within(header).getByText("#42")).toBeVisible();
     expect(within(header).getByText("Last updated")).toBeVisible();
-    expect(within(header).getByText("Quotes")).toBeVisible();
-    expect(within(header).getByText("Ready")).toBeVisible();
+
+    const statusList = within(header).getByRole("list", {
+      name: "Portfolio resource status",
+    });
+    expect(within(statusList).getAllByRole("listitem")).toHaveLength(3);
+    expect(within(statusList).getByText("Positions")).toBeVisible();
+    expect(within(statusList).getByText("Balances")).toBeVisible();
+    expect(within(statusList).getByText("Trades")).toBeVisible();
+    expect(within(statusList).queryByText("Quotes")).not.toBeInTheDocument();
+    expect(within(statusList).queryByText("Ready")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("portfolio-detail-quote-warnings")).not.toBeInTheDocument();
 
     const metrics = screen.getByLabelText("Portfolio metrics");
     expect(metrics).toHaveClass(
@@ -203,5 +218,28 @@ describe("PortfolioDetailPage", () => {
     expect(
       screen.getByRole("heading", { name: "Portfolio sections" }),
     ).toBeVisible();
+  });
+
+  it("renders quote warnings as an inline banner while preserving positions section props", () => {
+    const quoteWarnings = [
+      "AAPL quote is delayed by 15 minutes.",
+      "MSFT quote unavailable; using last cached mark.",
+    ];
+    useMarketQuotesMock.mockReturnValue(
+      queryResult({ quotes: [], warnings: quoteWarnings }),
+    );
+
+    render(<PortfolioDetailPage />);
+
+    const banner = screen.getByTestId("portfolio-detail-quote-warnings");
+    expect(banner).toBeVisible();
+    expect(within(banner).getByText("Quote warnings")).toBeVisible();
+    for (const warning of quoteWarnings) {
+      expect(within(banner).getByText(warning)).toBeVisible();
+    }
+
+    expect(portfolioPositionsSectionMock).toHaveBeenCalled();
+    const [positionsProps] = portfolioPositionsSectionMock.mock.calls[0];
+    expect(positionsProps.quoteWarnings).toBe(quoteWarnings);
   });
 });
