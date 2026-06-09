@@ -170,6 +170,9 @@ describe("TemplateListPage", () => {
 
     expect(screen.getByLabelText("Search templates")).toBeVisible();
     expect(screen.getByRole("link", { name: /new template/i })).toBeVisible();
+    expect(screen.getByTestId("templates-active-filters")).toHaveTextContent(
+      "missing",
+    );
     expect(screen.getByText("No templates match your search.")).toBeVisible();
     expect(screen.getByTestId("templates-filtered-empty-state")).toHaveTextContent(
       "No templates match your search.",
@@ -177,6 +180,15 @@ describe("TemplateListPage", () => {
     expect(screen.getByText("Showing 0 templates of 1 template")).toBeVisible();
     expect(screen.queryByText("No templates yet.")).not.toBeInTheDocument();
     expect(screen.queryByText("Quarterly Review")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(screen.getByTestId("templates-active-filters")).getByRole("button", {
+        name: "Clear filters",
+      }),
+    );
+
+    expect(screen.queryByTestId("templates-active-filters")).not.toBeInTheDocument();
+    expect(screen.getByText("Quarterly Review")).toBeVisible();
   });
 
   it("renders table editor links and keeps row delete confirmation route-owned", () => {

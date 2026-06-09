@@ -390,6 +390,10 @@ function createUnknownWorkflowOption(workflowKey: string): WorkflowOption {
   };
 }
 
+function isDefined<T>(value: T | null): value is T {
+  return value !== null;
+}
+
 function buildWorkflowFilterOptions({
   manifestOptions,
   schedules,
@@ -1373,6 +1377,65 @@ export function ScheduledTasksListPage() {
       workflowKey.trim() ||
       statusFilter !== ALL_STATUS_FILTER,
   );
+  const activeSearch = search.trim();
+  const activeStatusLabel =
+    statusFilter !== ALL_STATUS_FILTER
+      ? STATUS_FILTER_OPTIONS.find((option) => option.value === statusFilter)?.label ??
+        statusFilter
+      : null;
+  const activePackageLabel = resolvedPackageKey
+    ? packageItems.find((item) => item.value === resolvedPackageKey)?.label ??
+      resolvedPackageKey
+    : null;
+  const activeWorkflowLabel = resolvedWorkflowKey
+    ? workflowItems.find((item) => item.value === resolvedWorkflowKey)?.label ??
+      resolvedWorkflowKey
+    : null;
+  const activeFilterItems = [
+    activeSearch
+      ? {
+          active: true,
+          clearLabel: "Clear scheduled task search",
+          id: "search",
+          label: "Search",
+          value: activeSearch,
+          onClear: () => setSearch(""),
+        }
+      : null,
+    activeStatusLabel
+      ? {
+          active: true,
+          clearLabel: "Clear scheduled task status filter",
+          id: "status",
+          label: "Status",
+          value: activeStatusLabel,
+          onClear: () => setStatusFilter(ALL_STATUS_FILTER),
+        }
+      : null,
+    activePackageLabel
+      ? {
+          active: true,
+          clearLabel: "Clear scheduled task package filter",
+          id: "package",
+          label: "Package",
+          value: activePackageLabel,
+          onClear: () => {
+            setPackageKey("");
+            setWorkflowKey("");
+          },
+        }
+      : null,
+    activeWorkflowLabel
+      ? {
+          active: true,
+          clearLabel: "Clear scheduled task workflow filter",
+          id: "workflow",
+          label: "Workflow",
+          value: activeWorkflowLabel,
+          onClear: () => setWorkflowKey(""),
+        }
+      : null,
+  ].filter(isDefined);
 
   const updatePackageFilter = (nextValue: string) => {
     const nextPackageKey =
@@ -1526,6 +1589,20 @@ export function ScheduledTasksListPage() {
 
   return (
     <InventoryPageShell
+      filterBar={
+        activeFilterItems.length > 0
+          ? {
+              items: activeFilterItems,
+              onClearAll: () => {
+                setSearch("");
+                setStatusFilter(ALL_STATUS_FILTER);
+                setPackageKey("");
+                setWorkflowKey("");
+              },
+              testId: "scheduled-tasks-active-filters",
+            }
+          : null
+      }
       pageContext={{
         actions: <ScheduledTasksPageActions />,
         description: "Manage durable Workflow Package schedules.",

@@ -901,9 +901,34 @@ describe("ScheduledTasksListPage", () => {
       packageKey: "market_research_package",
       workflowKey: "daily_research",
     });
+    expect(screen.getByTestId("scheduled-tasks-active-filters")).toHaveTextContent(
+      "no-match",
+    );
+    expect(screen.getByTestId("scheduled-tasks-active-filters")).toHaveTextContent(
+      "Market Research Package",
+    );
+    expect(screen.getByTestId("scheduled-tasks-active-filters")).toHaveTextContent(
+      "Daily Research",
+    );
     expect(
       screen.getByText("No scheduled tasks match this search or filters."),
     ).toBeVisible();
+
+    fireEvent.click(
+      within(screen.getByTestId("scheduled-tasks-active-filters")).getByRole(
+        "button",
+        { name: "Clear filters" },
+      ),
+    );
+
+    expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
+      limit: 50,
+      packageKey: undefined,
+      workflowKey: undefined,
+    });
+    expect(
+      screen.queryByTestId("scheduled-tasks-active-filters"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows manifest-order workflow options and keeps stale workflow keys selectable", async () => {

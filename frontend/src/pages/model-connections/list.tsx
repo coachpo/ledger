@@ -552,6 +552,7 @@ export function ModelConnectionsListPage() {
     () => filterConnections(connections, search),
     [connections, search],
   );
+  const activeSearch = search.trim();
   const selectedConnections = useMemo(
     () =>
       filteredConnections.filter((connection) =>
@@ -645,6 +646,24 @@ export function ModelConnectionsListPage() {
 
   return (
     <InventoryPageShell
+      filterBar={
+        activeSearch
+          ? {
+              items: [
+                {
+                  active: true,
+                  clearLabel: "Clear model connection search",
+                  id: "search",
+                  label: "Search",
+                  value: activeSearch,
+                  onClear: () => setSearch(""),
+                },
+              ],
+              onClearAll: () => setSearch(""),
+              testId: "model-connections-active-filters",
+            }
+          : null
+      }
       pageContext={{
         actions: <ModelConnectionsPageActions />,
         description: "Manage model connections.",

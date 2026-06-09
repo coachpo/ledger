@@ -68,6 +68,10 @@ function targetSearchPlaceholder(): string {
   return "Filter by workflow package key...";
 }
 
+function isDefined<T>(value: T | null): value is T {
+  return value !== null;
+}
+
 function queueStateLabel(run: RunListItemRead): string {
   if (!run.queue) {
     return run.status === "queued"
@@ -290,8 +294,53 @@ export function RunsListPage() {
     () => runsQuery.data?.items ?? [],
     [runsQuery.data?.items],
   );
+  const activeFilterItems = [
+    appliedWorkflowPackageKey
+      ? {
+          active: true,
+          clearLabel: "Clear package key filter",
+          id: "workflow-package-key",
+          label: "Package key",
+          value: appliedWorkflowPackageKey,
+          onClear: () => setWorkflowPackageKey(""),
+        }
+      : null,
+    appliedWorkflowKey
+      ? {
+          active: true,
+          clearLabel: "Clear workflow key filter",
+          id: "workflow-key",
+          label: "Workflow key",
+          value: appliedWorkflowKey,
+          onClear: () => setWorkflowKey(""),
+        }
+      : null,
+    status
+      ? {
+          active: true,
+          clearLabel: "Clear run status filter",
+          id: "status",
+          label: "Status",
+          value: status,
+          onClear: () => setStatus(undefined),
+        }
+      : null,
+  ].filter(isDefined);
   return (
     <InventoryPageShell
+      filterBar={
+        activeFilterItems.length > 0
+          ? {
+              items: activeFilterItems,
+              onClearAll: () => {
+                setWorkflowPackageKey("");
+                setWorkflowKey("");
+                setStatus(undefined);
+              },
+              testId: "runs-active-filters",
+            }
+          : null
+      }
       pageContext={{
         description: "Monitor workflow runs.",
         layout: "toolbar",

@@ -341,6 +341,9 @@ describe("ModelConnectionsListPage", () => {
       { target: { value: "responses-compatible" } },
     );
 
+    expect(screen.getByTestId("model-connections-active-filters")).toHaveTextContent(
+      "responses-compatible",
+    );
     expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
     expect(
@@ -352,6 +355,9 @@ describe("ModelConnectionsListPage", () => {
       { target: { value: "provider.example.com/custom-root" } },
     );
 
+    expect(screen.getByTestId("model-connections-active-filters")).toHaveTextContent(
+      "provider.example.com/custom-root",
+    );
     expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
     expect(
       screen.queryByTestId("model-connections-row-9"),
@@ -364,9 +370,26 @@ describe("ModelConnectionsListPage", () => {
       screen.getByRole("textbox", { name: "Search model connections" }),
       { target: { value: "missing" } },
     );
+    expect(screen.getByTestId("model-connections-active-filters")).toHaveTextContent(
+      "missing",
+    );
     expect(
       screen.getByText("No model connections match this search."),
     ).toBeVisible();
+
+    fireEvent.click(
+      within(screen.getByTestId("model-connections-active-filters")).getByRole(
+        "button",
+        { name: "Clear filters" },
+      ),
+    );
+
+    expect(
+      screen.queryByTestId("model-connections-active-filters"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
+    expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
+    expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
   });
 
   it("scopes table selection to filtered rows and batch deletes", async () => {

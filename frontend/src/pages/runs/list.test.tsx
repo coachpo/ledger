@@ -343,6 +343,9 @@ describe("RunsListPage", () => {
       },
       { refetchInterval: 2000 },
     );
+    expect(screen.getByTestId("runs-active-filters")).toHaveTextContent(
+      "market_review_package",
+    );
     expect(screen.queryByTestId("runs-monitor-filter-card")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Package key")).toHaveValue(
       " market_review_package ",
@@ -363,5 +366,27 @@ describe("RunsListPage", () => {
       },
       { refetchInterval: 2000 },
     );
+    expect(screen.getByTestId("runs-active-filters")).toHaveTextContent(
+      "market_review",
+    );
+
+    fireEvent.click(
+      within(screen.getByTestId("runs-active-filters")).getByRole("button", {
+        name: "Clear filters",
+      }),
+    );
+
+    expect(useRunsMock).toHaveBeenLastCalledWith(
+      {
+        limit: 50,
+        status: undefined,
+        workflowKey: undefined,
+        workflowPackageKey: undefined,
+      },
+      { refetchInterval: 2000 },
+    );
+    expect(screen.queryByTestId("runs-active-filters")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Package key")).toHaveValue("");
+    expect(screen.getByLabelText("Workflow key")).toHaveValue("");
   });
 });

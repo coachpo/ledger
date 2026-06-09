@@ -74,6 +74,7 @@ export function TemplateListPage() {
       items: templates,
       searchText: getTemplateSearchText,
     });
+  const activeSearch = search.trim();
   const templateSelection = useResourceSelectionState({
     getId: getTemplateId,
     items: filteredTemplates,
@@ -101,6 +102,24 @@ export function TemplateListPage() {
 
   return (
     <InventoryPageShell
+      filterBar={
+        activeSearch
+          ? {
+              items: [
+                {
+                  active: true,
+                  clearLabel: "Clear template search",
+                  id: "search",
+                  label: "Search",
+                  value: activeSearch,
+                  onClear: () => setSearch(""),
+                },
+              ],
+              onClearAll: () => setSearch(""),
+              testId: "templates-active-filters",
+            }
+          : null
+      }
       pageContext={{
         actions: (
           <Button asChild size="sm">

@@ -279,6 +279,9 @@ describe("report source labels", () => {
       target: { value: "missing" },
     });
 
+    expect(screen.getByTestId("reports-active-filters")).toHaveTextContent(
+      "missing",
+    );
     expect(screen.getByText("No reports match your search.")).toBeVisible();
     expect(screen.getByTestId("reports-filtered-empty-state")).toHaveTextContent(
       "No reports match your search.",
@@ -291,10 +294,13 @@ describe("report source labels", () => {
       screen.queryByRole("button", { name: /delete selected/i }),
     ).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Search reports"), {
-      target: { value: "" },
-    });
+    fireEvent.click(
+      within(screen.getByTestId("reports-active-filters")).getByRole("button", {
+        name: "Clear filters",
+      }),
+    );
 
+    expect(screen.queryByTestId("reports-active-filters")).not.toBeInTheDocument();
     expect(
       within(screen.getByTestId("reports-bulk-actions")).getByText(
         "1 of 1 reports selected",

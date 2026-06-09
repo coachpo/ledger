@@ -120,6 +120,7 @@ export function ReportListPage() {
     () => filterReports(reports, search),
     [reports, search],
   );
+  const activeSearch = search.trim();
   const grouped = useMemo(
     () => groupReports(filtered, groupBy),
     [filtered, groupBy],
@@ -292,6 +293,24 @@ export function ReportListPage() {
 
   return (
     <InventoryPageShell
+      filterBar={
+        activeSearch
+          ? {
+              items: [
+                {
+                  active: true,
+                  clearLabel: "Clear report search",
+                  id: "search",
+                  label: "Search",
+                  value: activeSearch,
+                  onClear: () => setSearch(""),
+                },
+              ],
+              onClearAll: () => setSearch(""),
+              testId: "reports-active-filters",
+            }
+          : null
+      }
       pageContext={{
         actions: (
           <div className="flex flex-wrap items-center gap-2">
