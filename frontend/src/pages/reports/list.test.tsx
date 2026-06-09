@@ -105,10 +105,8 @@ describe("ReportListPage", () => {
         .querySelectorAll("[data-inventory-shell-region]"),
     ).map((region) => region.getAttribute("data-inventory-shell-region"));
     expect(shellRegions).toEqual(["context", "toolbar", "content"]);
-    expect(screen.getByRole("radio", { name: /cards view/i })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     const heading = screen.getByRole("heading", { level: 1, name: "Reports" });
     expect(heading).toBeVisible();
     const header = heading.closest("[data-slot='page-context-bar']");

@@ -110,6 +110,9 @@ describe("WorkflowPackagesListPage", () => {
       screen.getByTestId("workflow-packages-list-page"),
     ).toBeInTheDocument();
     expect(document.querySelectorAll("[data-slot='skeleton']")).toHaveLength(4);
+    expect(
+      document.querySelector("[data-slot='skeleton']")?.closest("[data-slot='card']"),
+    ).not.toBeInTheDocument();
 
     useWorkflowPackagesMock.mockReturnValue({
       data: undefined,
@@ -146,7 +149,7 @@ describe("WorkflowPackagesListPage", () => {
     );
   });
 
-  it("renders package table by default, search controls, and secondary cards", () => {
+  it("renders package table by default with no view switcher controls", () => {
     useWorkflowPackagesMock.mockReturnValue({
       data: {
         items: [
@@ -190,10 +193,8 @@ describe("WorkflowPackagesListPage", () => {
       "Search packages by name, key, hash, or readiness...",
     );
 
-    expect(screen.getByLabelText("Table view")).toHaveAttribute(
-      "data-state",
-      "on",
-    );
+    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     expect(screen.getByRole("table").parentElement).toHaveClass(
       "min-w-0",
       "overflow-x-auto",
@@ -257,30 +258,11 @@ describe("WorkflowPackagesListPage", () => {
     );
     expect(allocationRow).toHaveTextContent("Not recorded");
 
-    fireEvent.click(screen.getByLabelText("Cards view"));
-    expect(screen.getByLabelText("Cards view")).toHaveAttribute(
-      "data-state",
-      "on",
-    );
     expect(
-      screen.queryByRole("checkbox", {
-        name: "Select all shown workflow packages",
-      }),
-    ).not.toBeInTheDocument();
-    const cardRiskRow = screen.getByTestId("workflow-packages-row-risk_review");
-    expect(
-      within(cardRiskRow).getByRole("button", {
+      screen.queryByRole("button", {
         name: "Open actions for package Risk Review",
       }),
-    ).toBeVisible();
-    expect(
-      within(cardRiskRow).queryByRole("button", {
-        name: "Delete package Risk Review",
-      }),
     ).not.toBeInTheDocument();
-    expect(
-      within(cardRiskRow).getByLabelText("Manifest: manifest-has"),
-    ).toBeVisible();
   });
 
   it("filters packages through search while keeping Open and Launch routes separate", () => {
@@ -328,22 +310,6 @@ describe("WorkflowPackagesListPage", () => {
         name: "Launch package Macro Digest",
       }),
     ).toHaveAttribute("href", "/workflow-packages/4/run");
-
-    fireEvent.click(screen.getByLabelText("Table view"));
-    const tableMacroRow = screen.getByTestId(
-      "workflow-packages-row-macro_digest",
-    );
-
-    expect(
-      within(tableMacroRow).getByRole("link", {
-        name: "Open package Macro Digest",
-      }),
-    ).toHaveAttribute("href", "/workflow-packages/4");
-    expect(
-      within(tableMacroRow).getByRole("link", {
-        name: "Launch package Macro Digest",
-      }),
-    ).toHaveAttribute("href", "/workflow-packages/4/run");
   });
 
   it("selects packages in table view and bulk deletes selected packages", async () => {
@@ -375,7 +341,6 @@ describe("WorkflowPackagesListPage", () => {
 
     renderPage();
 
-    fireEvent.click(screen.getByLabelText("Table view"));
     const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
     fireEvent.click(
       within(riskRow).getByRole("checkbox", {
@@ -460,7 +425,7 @@ describe("WorkflowPackagesListPage", () => {
     expect(toastSuccessMock).toHaveBeenCalledWith("1 workflow package deleted");
   });
 
-  it("clears active package selection when switching from table to cards", () => {
+  it("keeps package selection table-only with no card-mode reset path", () => {
     useWorkflowPackagesMock.mockReturnValue({
       data: {
         items: [
@@ -474,7 +439,8 @@ describe("WorkflowPackagesListPage", () => {
 
     renderPage();
 
-    fireEvent.click(screen.getByLabelText("Table view"));
+    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     fireEvent.click(
       within(screen.getByTestId("workflow-packages-row-risk_review")).getByRole(
         "checkbox",
@@ -483,25 +449,7 @@ describe("WorkflowPackagesListPage", () => {
     );
     expect(screen.getByText("1 of 1 workflow packages selected")).toBeVisible();
 
-    fireEvent.click(screen.getByLabelText("Cards view"));
-    expect(
-      screen.queryByText("1 of 1 workflow packages selected"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("Select all shown")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", {
-        name: "Select all shown workflow packages",
-      }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(
-        screen.getByTestId("workflow-packages-row-risk_review"),
-      ).queryByRole("checkbox", {
-        name: "Select workflow package Risk Review",
-      }),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText("Table view"));
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(
       within(screen.getByTestId("workflow-packages-row-risk_review")).getByRole(
         "checkbox",

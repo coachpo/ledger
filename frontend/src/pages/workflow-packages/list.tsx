@@ -1,7 +1,6 @@
 import {
   CalendarClock,
   FileUp,
-  MoreHorizontal,
   PackagePlus,
   PlayCircle,
   SquarePen,
@@ -16,29 +15,16 @@ import {
   useDeleteWorkflowPackages,
   useWorkflowPackages,
 } from "@/hooks/use-workflow-packages";
-import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { formatDateTime } from "@/lib/format";
 import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
-import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
-import { ProvenanceBadge } from "@/components/shared/provenance-badge";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
-import {
-  ResourceStatusBadge,
-  ResourceStatusStrip,
-} from "@/components/shared/resource-status-strip";
+import { ResourceStatusBadge } from "@/components/shared/resource-status-strip";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -48,10 +34,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  PlatformResourceCard,
-  PlatformResourceList,
-} from "../platform-resource-shared";
 
 function formatNullableHash(value: string | null): string {
   return value ? value.slice(0, 12) : "Not recorded";
@@ -111,13 +93,13 @@ function filterPackages(items: readonly WorkflowPackageRead[], search: string) {
 
 function LoadingTable() {
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-3 p-4">
+    <ResourceTableFrame>
+      <div className="flex flex-col gap-3 p-4">
         {Array.from({ length: 4 }).map((_, index) => (
           <Skeleton className="h-12 w-full" key={index} />
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </ResourceTableFrame>
   );
 }
 
@@ -222,189 +204,6 @@ function WorkflowPackagesStateCards({
   }
 
   return filteredCount === 0 ? <EmptyState search={search} /> : null;
-}
-
-function WorkflowPackageStatusStrip({
-  workflowPackage,
-}: {
-  workflowPackage: WorkflowPackageRead;
-}) {
-  const readiness = getPackageReadiness(workflowPackage);
-  const hasManifest = hasRecordedHash(workflowPackage.manifestHash);
-  const hasCompiledPlan = hasRecordedHash(workflowPackage.compiledHash);
-
-  return (
-    <ResourceStatusStrip
-      density="compact"
-      items={[
-        {
-          description: readiness.description,
-          label: "Readiness",
-          tone: readiness.tone,
-          value: readiness.label,
-        },
-        {
-          label: "Manifest",
-          tone: hasManifest ? "success" : "warning",
-          value: hasManifest ? "Recorded" : "Missing",
-        },
-        {
-          label: "Compiled",
-          tone: hasCompiledPlan ? "success" : "warning",
-          value: hasCompiledPlan ? "Recorded" : "Missing",
-        },
-      ]}
-    />
-  );
-}
-
-function WorkflowPackageProvenance({
-  workflowPackage,
-}: {
-  workflowPackage: WorkflowPackageRead;
-}) {
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-      <ProvenanceBadge
-        detail={formatNullableHash(workflowPackage.manifestHash)}
-        label="Manifest"
-        tone={hasRecordedHash(workflowPackage.manifestHash) ? "verified" : "warning"}
-      />
-      <ProvenanceBadge
-        detail={formatNullableHash(workflowPackage.compiledHash)}
-        label="Compiled"
-        tone={hasRecordedHash(workflowPackage.compiledHash) ? "verified" : "warning"}
-      />
-      <ProvenanceBadge
-        detail={formatDateTime(workflowPackage.updatedAt)}
-        label="Updated"
-      />
-    </div>
-  );
-}
-
-function WorkflowPackageEvidence({
-  workflowPackage,
-}: {
-  workflowPackage: WorkflowPackageRead;
-}) {
-  return (
-    <EvidenceCluster
-      layout="inline"
-      items={[
-        {
-          label: "Package key",
-          tone: "neutral",
-          value: <span className="font-mono">{workflowPackage.key}</span>,
-        },
-        {
-          label: "Created",
-          tone: "neutral",
-          value: formatDateTime(workflowPackage.createdAt),
-        },
-      ]}
-    />
-  );
-}
-
-function WorkflowPackageActions({
-  deletePending,
-  workflowPackage,
-  onDelete,
-}: {
-  deletePending: boolean;
-  workflowPackage: WorkflowPackageRead;
-  onDelete: (workflowPackage: WorkflowPackageRead) => void;
-}) {
-  const packagePath = `/workflow-packages/${workflowPackage.id}`;
-  const launchPath = `/workflow-packages/${workflowPackage.id}/run`;
-
-  return (
-    <>
-      <Button asChild size="sm" variant="outline">
-        <Link
-          aria-label={`Open package ${workflowPackage.name}`}
-          to={packagePath}
-        >
-          <SquarePen data-icon="inline-start" />
-          Open
-        </Link>
-      </Button>
-      <Button asChild size="sm">
-        <Link
-          aria-label={`Launch package ${workflowPackage.name}`}
-          to={launchPath}
-        >
-          <PlayCircle data-icon="inline-start" />
-          Launch
-        </Link>
-      </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            aria-label={`Open actions for package ${workflowPackage.name}`}
-            className="cursor-pointer"
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <MoreHorizontal className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            disabled={deletePending}
-            onSelect={() => onDelete(workflowPackage)}
-            variant="destructive"
-          >
-            <Trash2 className="size-3.5" />
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
-  );
-}
-
-function WorkflowPackageCards({
-  deletePending,
-  packages,
-  onDelete,
-}: {
-  deletePending: boolean;
-  packages: readonly WorkflowPackageRead[];
-  onDelete: (workflowPackage: WorkflowPackageRead) => void;
-}) {
-  return (
-    <PlatformResourceList>
-      {packages.map((workflowPackage) => (
-        <PlatformResourceCard
-          key={workflowPackage.id}
-          density="compact"
-          testId={`workflow-packages-row-${workflowPackage.key}`}
-          title={workflowPackage.name}
-          subtitle={<span className="font-mono">{workflowPackage.key}</span>}
-          description={
-            workflowPackage.description || "No description provided."
-          }
-          statusStrip={
-            <WorkflowPackageStatusStrip workflowPackage={workflowPackage} />
-          }
-          provenance={
-            <WorkflowPackageProvenance workflowPackage={workflowPackage} />
-          }
-          evidence={<WorkflowPackageEvidence workflowPackage={workflowPackage} />}
-          actions={
-            <WorkflowPackageActions
-              deletePending={deletePending}
-              workflowPackage={workflowPackage}
-              onDelete={onDelete}
-            />
-          }
-        />
-      ))}
-    </PlatformResourceList>
-  );
 }
 
 function WorkflowPackagesTable({
@@ -599,10 +398,6 @@ export function WorkflowPackagesListPage() {
   const [selectedPackageIds, setSelectedPackageIds] = useState<
     Set<WorkflowPackageRead["id"]>
   >(new Set());
-  const { viewMode, onViewModeChange } = useInventoryViewState({
-    initialViewMode: "table",
-    onCardsMode: () => setSelectedPackageIds(new Set()),
-  });
   const filteredPackages = useMemo(
     () => filterPackages(packages, search),
     [packages, search],
@@ -625,16 +420,10 @@ export function WorkflowPackagesListPage() {
   );
 
   const deletePending = deletePackage.isPending || deletePackages.isPending;
-  const showCards =
-    !packagesQuery.isPending &&
-    !packagesQuery.isError &&
-    filteredPackages.length > 0 &&
-    viewMode === "cards";
   const showTable =
     !packagesQuery.isPending &&
     !packagesQuery.isError &&
-    filteredPackages.length > 0 &&
-    viewMode === "table";
+    filteredPackages.length > 0;
 
   const setPackagesSelected = (
     packagesToUpdate: readonly WorkflowPackageRead[],
@@ -720,8 +509,6 @@ export function WorkflowPackagesListPage() {
           value: search,
           onChange: setSearch,
         },
-        viewMode,
-        onViewModeChange,
       }}
     >
       <WorkflowPackagesStateCards
@@ -731,13 +518,6 @@ export function WorkflowPackagesListPage() {
         isPending={packagesQuery.isPending}
         search={search}
       />
-      {showCards ? (
-        <WorkflowPackageCards
-          deletePending={deletePending}
-          packages={filteredPackages}
-          onDelete={setDeleting}
-        />
-      ) : null}
       {showTable ? (
         <WorkflowPackagesTable
           allFilteredSelected={allFilteredSelected}
@@ -749,15 +529,13 @@ export function WorkflowPackagesListPage() {
           onSelect={setPackagesSelected}
         />
       ) : null}
-      {viewMode === "table" ? (
-        <WorkflowPackagesBulkActions
-          filteredCount={filteredPackages.length}
-          selectedCount={selectedCount}
-          isPending={deletePackages.isPending}
-          onClear={() => setSelectedPackageIds(new Set())}
-          onDeleteSelected={() => setIsBulkDeleting(true)}
-        />
-      ) : null}
+      <WorkflowPackagesBulkActions
+        filteredCount={filteredPackages.length}
+        selectedCount={selectedCount}
+        isPending={deletePackages.isPending}
+        onClear={() => setSelectedPackageIds(new Set())}
+        onDeleteSelected={() => setIsBulkDeleting(true)}
+      />
       <ConfirmDeleteDialog
         open={isBulkDeleting}
         title="Delete selected workflow packages"

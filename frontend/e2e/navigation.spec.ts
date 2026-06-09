@@ -160,8 +160,8 @@ test.describe("Primary workspace navigation", () => {
     await expect(
       page.getByRole("link", { name: "Create new workflow package" }),
     ).toHaveAttribute("href", "/workflow-packages/new");
-    await expect(page.getByRole("radio", { name: "Cards view" })).toBeVisible();
-    await expect(page.getByRole("radio", { name: "Table view" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Cards view" })).toHaveCount(0);
+    await expect(page.getByRole("radio", { name: "Table view" })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Toggle theme" }).click();
     await page.getByRole("menuitem", { name: "Dark" }).click();

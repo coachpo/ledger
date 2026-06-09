@@ -8,7 +8,6 @@ import {
   useDeleteModelConnections,
   useModelConnections,
 } from "@/hooks/use-model-connections";
-import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
@@ -27,10 +26,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  PlatformResourceCard,
-  PlatformResourceList,
-} from "../platform-resource-shared";
 import {
   PROTOCOL_PROFILE_DESCRIPTIONS,
   PROTOCOL_PROFILE_LABELS,
@@ -151,94 +146,6 @@ function ModelConnectionsStateCards({
           : "No model connections exist yet."
       }
     />
-  );
-}
-
-function ModelConnectionCard({
-  connection,
-  deletePending,
-  onDelete,
-}: {
-  connection: ModelConnectionListItemRead;
-  deletePending: boolean;
-  onDelete: (connection: ModelConnectionListItemRead) => void;
-}) {
-  return (
-    <PlatformResourceCard
-      actions={
-        <ModelConnectionActions
-          connection={connection}
-          deletePending={deletePending}
-          onDelete={onDelete}
-        />
-      }
-      density="compactPlus"
-      description={connection.description || "No description provided."}
-      factsGrid={<ModelConnectionCardDetails connection={connection} />}
-      testId={`model-connections-row-${connection.id}`}
-      title={connection.name}
-    />
-  );
-}
-
-function ModelConnectionsCards({
-  connections,
-  deletePending,
-  onDelete,
-}: {
-  connections: readonly ModelConnectionListItemRead[];
-  deletePending: boolean;
-  onDelete: (connection: ModelConnectionListItemRead) => void;
-}) {
-  return (
-    <PlatformResourceList>
-      {connections.map((connection) => (
-        <ModelConnectionCard
-          connection={connection}
-          deletePending={deletePending}
-          key={connection.id}
-          onDelete={onDelete}
-        />
-      ))}
-    </PlatformResourceList>
-  );
-}
-
-function ModelConnectionActions({
-  connection,
-  deletePending,
-  onDelete,
-}: {
-  connection: ModelConnectionListItemRead;
-  deletePending: boolean;
-  onDelete: (connection: ModelConnectionListItemRead) => void;
-}) {
-  return (
-    <>
-      <Button asChild className="h-8 px-2" size="sm" variant="outline">
-        <Link
-          aria-label={`Edit model connection ${connection.name}`}
-          data-testid={`model-connections-open-${connection.id}`}
-          to={`/model-connections/${connection.id}/edit`}
-        >
-          <SquarePen data-icon="inline-start" />
-          Edit
-        </Link>
-      </Button>
-      <Button
-        aria-label={`Delete model connection ${connection.name}`}
-        className="h-8 px-2 cursor-pointer"
-        data-testid={`model-connections-delete-${connection.id}`}
-        disabled={deletePending}
-        onClick={() => onDelete(connection)}
-        size="sm"
-        type="button"
-        variant="destructive"
-      >
-        <Trash2 data-icon="inline-start" />
-        Delete
-      </Button>
-    </>
   );
 }
 
@@ -399,21 +306,6 @@ function ModelConnectionDetailSections({
           {formatReasoningEffort(connection.reasoningEffort)}
         </CompactDetailField>
       </CompactDetailGroup>
-    </div>
-  );
-}
-
-function ModelConnectionCardDetails({
-  connection,
-}: {
-  connection: ModelConnectionListItemRead;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <ModelConnectionDetailSections
-        className="rounded-lg border bg-muted/15 p-3"
-        connection={connection}
-      />
     </div>
   );
 }
@@ -653,10 +545,6 @@ export function ModelConnectionsListPage() {
   const [selectedConnectionIds, setSelectedConnectionIds] = useState<
     Set<ModelConnectionListItemRead["id"]>
   >(new Set());
-  const { viewMode, onViewModeChange } = useInventoryViewState({
-    initialViewMode: "table",
-    onCardsMode: () => setSelectedConnectionIds(new Set()),
-  });
   const [deleting, setDeleting] = useState<ModelConnectionListItemRead | null>(
     null,
   );
@@ -683,16 +571,10 @@ export function ModelConnectionsListPage() {
 
   const deletePending =
     deleteMutation.isPending || deleteConnectionsMutation.isPending;
-  const showCards =
-    !connectionsQuery.isPending &&
-    !connectionsQuery.isError &&
-    filteredConnections.length > 0 &&
-    viewMode === "cards";
   const showTable =
     !connectionsQuery.isPending &&
     !connectionsQuery.isError &&
-    filteredConnections.length > 0 &&
-    viewMode === "table";
+    filteredConnections.length > 0;
 
   const setConnectionsSelected = (
     connectionsToUpdate: readonly ModelConnectionListItemRead[],
@@ -779,8 +661,6 @@ export function ModelConnectionsListPage() {
           value: search,
           onChange: setSearch,
         },
-        viewMode,
-        onViewModeChange,
       }}
     >
       <ModelConnectionsStateCards
@@ -790,13 +670,6 @@ export function ModelConnectionsListPage() {
         isPending={connectionsQuery.isPending}
         search={search}
       />
-      {showCards ? (
-        <ModelConnectionsCards
-          connections={filteredConnections}
-          deletePending={deletePending}
-          onDelete={setDeleting}
-        />
-      ) : null}
       {showTable ? (
         <ModelConnectionsTable
           allFilteredSelected={allFilteredSelected}
@@ -808,15 +681,13 @@ export function ModelConnectionsListPage() {
           onSelect={setConnectionsSelected}
         />
       ) : null}
-      {viewMode === "table" ? (
-        <ModelConnectionsBulkActions
-          filteredCount={filteredConnections.length}
-          isPending={deleteConnectionsMutation.isPending}
-          selectedCount={selectedCount}
-          onClear={() => setSelectedConnectionIds(new Set())}
-          onDeleteSelected={handleDeleteSelected}
-        />
-      ) : null}
+      <ModelConnectionsBulkActions
+        filteredCount={filteredConnections.length}
+        isPending={deleteConnectionsMutation.isPending}
+        selectedCount={selectedCount}
+        onClear={() => setSelectedConnectionIds(new Set())}
+        onDeleteSelected={handleDeleteSelected}
+      />
       <ConfirmDeleteDialog
         open={deleting !== null}
         title="Delete model connection"

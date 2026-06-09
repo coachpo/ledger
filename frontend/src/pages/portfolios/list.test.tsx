@@ -81,10 +81,8 @@ describe("PortfolioListPage", () => {
         .querySelectorAll("[data-inventory-shell-region]"),
     ).map((region) => region.getAttribute("data-inventory-shell-region"));
     expect(shellRegions).toEqual(["context", "toolbar", "content"]);
-    expect(screen.getByRole("radio", { name: /cards view/i })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
 
     const inventory = screen.getByRole("region", {
       name: "Portfolio inventory",
@@ -159,7 +157,7 @@ describe("PortfolioListPage", () => {
     expect(screen.getByText("Growth Fund")).toBeVisible();
   });
 
-  it("renders portfolio card navigation as links and keeps menu actions isolated", () => {
+  it("renders portfolio table navigation as links and keeps row actions isolated", () => {
     usePortfoliosMock.mockReturnValue({
       data: [
         {
@@ -179,31 +177,34 @@ describe("PortfolioListPage", () => {
 
     render(<PortfolioListPage />);
 
+    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     const inventory = screen.getByRole("region", {
       name: "Portfolio inventory",
     });
-    const primaryLink = within(inventory).getByRole("link", {
+    const table = within(inventory).getByRole("table");
+    expect(table.parentElement?.parentElement).toHaveClass(
+      "min-w-0",
+      "max-w-full",
+      "rounded-md",
+      "border",
+    );
+    expect(
+      within(table).getByRole("checkbox", { name: /select portfolio growth fund/i }),
+    ).toBeVisible();
+
+    const visibleOpen = within(table).getByRole("link", {
       name: "Open portfolio Growth Fund",
     });
-    const card = primaryLink.closest("[data-slot='card']");
-    expect(primaryLink).toHaveAttribute("href", "/portfolios/42");
-    expect(card).not.toBeNull();
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-
-    const visibleOpen = within(card as HTMLElement).getByRole("link", {
-      name: "Open",
-    });
     expect(visibleOpen).toHaveAttribute("href", "/portfolios/42");
-    expect(
-      within(card as HTMLElement).queryByRole("button", { name: "Open" }),
-    ).not.toBeInTheDocument();
+    expect(within(table).queryByRole("button", { name: "Open" })).not.toBeInTheDocument();
 
-    const menuButton = within(card as HTMLElement).getByRole("button", {
-      name: "Open actions for Growth Fund",
+    const editButton = within(table).getByRole("button", {
+      name: "Edit portfolio Growth Fund",
     });
-    fireEvent.click(menuButton);
+    fireEvent.click(editButton);
 
-    expect(menuButton.closest("a")).toBeNull();
+    expect(editButton.closest("a")).toBeNull();
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
@@ -236,7 +237,6 @@ describe("PortfolioListPage", () => {
 
     render(<PortfolioListPage />);
 
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
     const inventory = screen.getByRole("region", {
       name: "Portfolio inventory",
     });
@@ -274,7 +274,7 @@ describe("PortfolioListPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("clears portfolio selection when switching back to cards", () => {
+  it("keeps portfolio selection clearable in table-only view", () => {
     usePortfoliosMock.mockReturnValue({
       data: [
         {
@@ -294,19 +294,14 @@ describe("PortfolioListPage", () => {
 
     render(<PortfolioListPage />);
 
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("checkbox", { name: /select portfolio growth fund/i }),
     );
     expect(screen.getByTestId("portfolios-bulk-actions")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("radio", { name: /cards view/i }));
-    expect(
-      screen.queryByTestId("portfolios-bulk-actions"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(
       screen.getByRole("checkbox", { name: /select portfolio growth fund/i }),
     ).toHaveAttribute("aria-checked", "false");

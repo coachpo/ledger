@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -19,7 +19,6 @@ import {
   useReports,
   useUploadReport,
 } from "@/hooks/use-reports";
-import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { useTemplates } from "@/hooks/use-templates";
 import { formatDateTime } from "@/lib/format";
 import { downloadReportUrl } from "@/lib/api/reports";
@@ -29,7 +28,6 @@ import { ReportUploadDialog } from "@/components/forms/report-upload-dialog";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
-import { GroupedListCard } from "@/components/shared/resource-row-card";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 
 import { Badge } from "@/components/ui/badge";
@@ -131,12 +129,6 @@ export function ReportListPage() {
     [filtered, selectedSlugs],
   );
   const selectedCount = selectedReports.length;
-  const clearReportSelection = useCallback(() => {
-    setSelectedSlugs(new Set());
-  }, []);
-  const { viewMode, onViewModeChange } = useInventoryViewState({
-    onCardsMode: clearReportSelection,
-  });
   const toggleGroup = (label: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -356,11 +348,7 @@ export function ReportListPage() {
           </div>
         ),
         selectionSummary:
-          viewMode === "table" && selectedCount > 0
-            ? `${selectedCount} selected`
-            : undefined,
-        viewMode,
-        onViewModeChange,
+          selectedCount > 0 ? `${selectedCount} selected` : undefined,
       }}
     >
       <div className="space-y-4">
@@ -439,75 +427,8 @@ export function ReportListPage() {
                   </Button>
                 </CollapsibleTrigger>
               )}
-              <CollapsibleContent
-                className={viewMode === "cards" ? "space-y-2" : ""}
-              >
-                {viewMode === "cards" ? (
-                  sortedReports.map((report) => {
-                    const sourceLabel = getReportSourceLabel(report.source);
-
-                    return (
-                      <GroupedListCard
-                        key={report.id}
-                        testId={`reports-row-${report.slug}`}
-                        title={report.name}
-                        badges={<Badge variant="outline">{sourceLabel}</Badge>}
-                        metadata={
-                          <>Created {formatDateTime(report.createdAt)}</>
-                        }
-                        primaryAction={{
-                          kind: "link",
-                          label: `Open report ${report.name}`,
-                          to: `/reports/${report.slug}`,
-                        }}
-                        actions={
-                          <>
-                            <Button asChild size="sm">
-                              <Link
-                                aria-label={`View report ${report.name}`}
-                                to={`/reports/${report.slug}`}
-                              >
-                                <Eye data-icon="inline-start" />
-                                View
-                              </Link>
-                            </Button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  aria-label={`Open actions for ${report.name}`}
-                                  size="icon"
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  <MoreHorizontal className="size-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem asChild>
-                                  <a
-                                    href={downloadReportUrl(report.slug)}
-                                    download
-                                  >
-                                    <Download className="size-3.5" />
-                                    Download
-                                  </a>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => setDeleting(report)}
-                                  variant="destructive"
-                                >
-                                  <Trash2 className="size-3.5" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </>
-                        }
-                      />
-                    );
-                  })
-                ) : (
-                  <ResourceTableFrame>
+              <CollapsibleContent>
+                <ResourceTableFrame>
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -628,15 +549,14 @@ export function ReportListPage() {
                         })}
                       </TableBody>
                     </Table>
-                  </ResourceTableFrame>
-                )}
+                </ResourceTableFrame>
               </CollapsibleContent>
             </Collapsible>
           );
         })}
       </div>
 
-      {viewMode === "table" && selectedCount > 0 ? (
+      {selectedCount > 0 ? (
         <ResourceFilterBar
           actions={
             <>

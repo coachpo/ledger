@@ -342,6 +342,9 @@ describe("ScheduledTasksListPage", () => {
 
     expect(screen.getByTestId("scheduled-tasks-list-page")).toBeInTheDocument();
     expect(document.querySelectorAll("[data-slot='skeleton']")).toHaveLength(4);
+    expect(
+      document.querySelector("[data-slot='skeleton']")?.closest("[data-slot='card']"),
+    ).not.toBeInTheDocument();
 
     useScheduledTasksMock.mockReturnValue({
       data: undefined,
@@ -458,14 +461,8 @@ describe("ScheduledTasksListPage", () => {
       screen.getByRole("link", { name: "Create scheduled task" }),
     ).toHaveAttribute("href", "/scheduled-tasks/new");
     expect(screen.getByLabelText("Search scheduled tasks")).toBeVisible();
-    expect(screen.getByLabelText("Table view")).toHaveAttribute(
-      "data-state",
-      "on",
-    );
-    expect(screen.getByLabelText("Cards view")).toHaveAttribute(
-      "data-state",
-      "off",
-    );
+    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     for (const filter of ["All", "Running", "Failed", "Succeeded", "Paused"]) {
       expect(screen.getByRole("radio", { name: filter })).toBeVisible();
     }
@@ -845,142 +842,8 @@ describe("ScheduledTasksListPage", () => {
         }),
       ).not.toBeInTheDocument();
 
-      fireEvent.click(screen.getByLabelText("Cards view"));
-
-      const firstCard = screen.getByTestId("scheduled-task-card-44");
-      const pausedCard = screen.getByTestId("scheduled-task-card-55");
-      const firstCardNextRun = within(firstCard).getByTestId(
-        "scheduled-task-row-next-run-44",
-      );
-      const secondCardNextRun = within(
-        screen.getByTestId("scheduled-task-card-45"),
-      ).getByTestId("scheduled-task-row-next-run-45");
-      const noUpcomingCardNextRun = within(pausedCard).getByTestId(
-        "scheduled-task-row-next-run-55",
-      );
-
-      fireEvent.click(
-        within(firstCardNextRun).getByRole("button", {
-          name: scheduleNextRunLabel,
-        }),
-      );
-      expect(
-        within(firstCardNextRun).getByRole("button", {
-          name: browserNextRunLabel,
-        }),
-      ).toBeVisible();
-      fireEvent.click(
-        within(firstCardNextRun).getByRole("button", {
-          name: browserNextRunLabel,
-        }),
-      );
-      expect(
-        within(firstCardNextRun).getByRole("button", {
-          name: scheduleNextRunLabel,
-        }),
-      ).toBeVisible();
-
-      expect(
-        within(secondCardNextRun).getByRole("button", {
-          name: secondScheduleTimeZoneLabel,
-        }),
-      ).toBeVisible();
-      expect(noUpcomingCardNextRun).toHaveTextContent("No upcoming run");
-      expect(within(noUpcomingCardNextRun).queryByRole("button")).not.toBeInTheDocument();
-
-      const firstCardShowDetailsButton = within(firstCard).queryByRole("button", {
-        name: "Show details",
-      });
-      if (firstCardShowDetailsButton) {
-        fireEvent.click(firstCardShowDetailsButton);
-      }
-      expect(within(firstCard).getByRole("button", { name: "Hide details" })).toBeVisible();
-      const firstCardDetails = within(firstCard).getByRole("group", {
-        name: "Expanded details for Daily market brief",
-      });
-      expect(within(firstCardDetails).getByText("America/New_York")).toBeVisible();
-
-      fireEvent.click(
-        within(firstCardDetails).getByRole("button", {
-          name: scheduleStartsAtLabel,
-        }),
-      );
-      expect(
-        within(firstCardDetails).getByRole("button", {
-          name: browserStartsAtLabel,
-        }),
-      ).toBeVisible();
-      fireEvent.click(
-        within(firstCardDetails).getByRole("button", {
-          name: browserStartsAtLabel,
-        }),
-      );
-      expect(
-        within(firstCardDetails).getByRole("button", {
-          name: scheduleStartsAtLabel,
-        }),
-      ).toBeVisible();
-
-      fireEvent.click(
-        within(firstCardDetails).getByRole("button", {
-          name: scheduleEndsAtLabel,
-        }),
-      );
-      expect(
-        within(firstCardDetails).getByRole("button", {
-          name: browserEndsAtLabel,
-        }),
-      ).toBeVisible();
-      fireEvent.click(
-        within(firstCardDetails).getByRole("button", {
-          name: browserEndsAtLabel,
-        }),
-      );
-      expect(
-        within(firstCardDetails).getByRole("button", {
-          name: scheduleEndsAtLabel,
-        }),
-      ).toBeVisible();
-
-      fireEvent.click(
-        within(firstCardDetails).getByRole("button", {
-          name: scheduleNextRunLabel,
-        }),
-      );
-      expect(
-        within(firstCardDetails).getByRole("button", {
-          name: browserNextRunLabel,
-        }),
-      ).toBeVisible();
-      fireEvent.click(
-        within(firstCardDetails).getByRole("button", {
-          name: browserNextRunLabel,
-        }),
-      );
-      expect(
-        within(firstCardDetails).getByRole("button", {
-          name: scheduleNextRunLabel,
-        }),
-      ).toBeVisible();
-
-      const pausedCardShowDetailsButton = within(pausedCard).queryByRole("button", {
-        name: "Show details",
-      });
-      if (pausedCardShowDetailsButton) {
-        fireEvent.click(pausedCardShowDetailsButton);
-      }
-      expect(within(pausedCard).getByRole("button", { name: "Hide details" })).toBeVisible();
-      const pausedCardDetails = within(pausedCard).getByRole("group", {
-        name: "Expanded details for Paused allocation check",
-      });
-      expect(pausedCardDetails).toHaveTextContent("Not set");
-      expect(pausedCardDetails).toHaveTextContent("No upcoming run");
-      expect(within(pausedCardDetails).queryByRole("button", { name: "Not set" })).not.toBeInTheDocument();
-      expect(
-        within(pausedCardDetails).queryByRole("button", {
-          name: "No upcoming run",
-        }),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     } finally {
       resolvedOptionsSpy.mockRestore();
     }
@@ -1264,7 +1127,7 @@ describe("ScheduledTasksListPage", () => {
     expect(toastSuccessMock).toHaveBeenCalledWith("1 scheduled task deleted");
   });
 
-  it("clears table selection when switching to cards and keeps cards browse-only", () => {
+  it("keeps scheduled-task selection clearable in table-only view", () => {
     useScheduledTasksMock.mockReturnValue({
       data: {
         items: [
@@ -1295,36 +1158,9 @@ describe("ScheduledTasksListPage", () => {
     expect(screen.getByText("1 of 2 scheduled tasks selected")).toBeVisible();
     expect(screen.getByTestId("scheduled-tasks-bulk-actions")).toBeVisible();
 
-    fireEvent.click(screen.getByLabelText("Cards view"));
-
-    expect(screen.getByLabelText("Cards view")).toHaveAttribute(
-      "data-state",
-      "on",
-    );
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("1 of 2 scheduled tasks selected"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("scheduled-tasks-bulk-actions"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", {
-        name: "Select all shown scheduled tasks",
-      }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(screen.getByTestId("scheduled-task-card-44")).queryByRole("checkbox", {
-        name: "Select scheduled task Daily market brief",
-      }),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText("Table view"));
-
-    expect(screen.getByLabelText("Table view")).toHaveAttribute(
-      "data-state",
-      "on",
-    );
+    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(
       within(screen.getByTestId("scheduled-task-row-44")).getByRole("checkbox", {
         name: "Select scheduled task Daily market brief",
@@ -1535,7 +1371,7 @@ describe("ScheduledTasksListPage", () => {
     );
   });
 
-  it("switches to cards view through the shared toolbar toggle", () => {
+  it("keeps scheduled tasks in the table-only inventory", () => {
     useScheduledTasksMock.mockReturnValue({
       data: {
         items: [scheduleFixture()],
@@ -1550,35 +1386,28 @@ describe("ScheduledTasksListPage", () => {
 
     renderPage();
 
-    expect(screen.getByRole("table")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText("Cards view"));
-
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    const card = screen.getByTestId("scheduled-task-card-44");
-    expect(card).toHaveTextContent("Daily market brief");
-    expect(card).toHaveTextContent("Schedule");
-    expect(card).toHaveTextContent("Next run");
-    expect(card).toHaveTextContent("Latest activity");
+    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(table).toBeInTheDocument();
+    const row = screen.getByTestId("scheduled-task-row-44");
+    expect(row).toHaveTextContent("Daily market brief");
     expect(
-      screen.queryByRole("checkbox", {
-        name: "Select all shown scheduled tasks",
-      }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(card).queryByRole("checkbox", {
+      within(row).getByRole("checkbox", {
         name: "Select scheduled task Daily market brief",
       }),
-    ).not.toBeInTheDocument();
+    ).toBeVisible();
     expect(
-      within(card).getByRole("button", { name: "Run schedule Daily market brief now" }),
+      within(row).getByRole("button", { name: "Run schedule Daily market brief now" }),
     ).toBeVisible();
 
     fireEvent.click(
-      within(card).getByRole("button", {
+      within(row).getByRole("button", {
         name: "Show details",
       }),
     );
-    expect(card).toHaveTextContent("Package ID");
+    expect(screen.getByTestId("scheduled-task-row-details-44")).toHaveTextContent(
+      "Package ID",
+    );
   });
 });

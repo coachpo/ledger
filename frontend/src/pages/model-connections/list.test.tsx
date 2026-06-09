@@ -256,7 +256,7 @@ describe("ModelConnectionsListPage", () => {
     );
   });
 
-  it("renders search and table controls by default while keeping cards browse-only", () => {
+  it("renders search and table controls by default with no view switcher controls", () => {
     render(<ModelConnectionsListPage />);
 
     expect(
@@ -265,10 +265,8 @@ describe("ModelConnectionsListPage", () => {
       "placeholder",
       "Search by name, key, model, protocol, or compatibility evidence...",
     );
-    expect(screen.getByLabelText("Table view")).toHaveAttribute(
-      "data-state",
-      "on",
-    );
+    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     expect(screen.getByRole("table").parentElement).toHaveClass(
       "min-w-0",
       "overflow-x-auto",
@@ -333,87 +331,6 @@ describe("ModelConnectionsListPage", () => {
       "Delete Primary Compatible?",
     );
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
-    fireEvent.click(screen.getByLabelText("Cards view"));
-    expect(screen.getByLabelText("Cards view")).toHaveAttribute(
-      "data-state",
-      "on",
-    );
-    expect(
-      screen.queryByRole("checkbox", {
-        name: "Select all shown model connections",
-      }),
-    ).not.toBeInTheDocument();
-    const primaryCardElement = screen.getByTestId("model-connections-row-9");
-    const primaryCard = within(primaryCardElement);
-    expect(
-      primaryCard.queryByRole("checkbox", {
-        name: "Select model connection Primary Compatible",
-      }),
-    ).not.toBeInTheDocument();
-    expect(primaryCard.getByText("Production traffic")).toBeVisible();
-
-    const endpointSection = primaryCard
-      .getByRole("heading", { name: "Endpoint" })
-      .closest("section") as HTMLElement;
-    expect(endpointSection).toHaveTextContent("Profile");
-    expect(endpointSection).toHaveTextContent("Responses-compatible");
-    expect(endpointSection).toHaveTextContent("Stable key");
-    expect(endpointSection).toHaveTextContent("primary_compatible");
-    expect(endpointSection).toHaveTextContent("Model ID");
-    expect(endpointSection).toHaveTextContent("gpt-4.1");
-    expect(endpointSection).toHaveTextContent("Base URL");
-    expect(endpointSection).toHaveTextContent("https://api.openai.com/v1");
-    expect(endpointSection).toHaveTextContent("Timeout");
-    expect(endpointSection).toHaveTextContent("90s");
-
-    const capabilitySection = primaryCard
-      .getByRole("heading", { name: "Capability support" })
-      .closest("section") as HTMLElement;
-    expect(capabilitySection).toHaveTextContent(
-      "3 supported · 0 unsupported · 7 unknown",
-    );
-    expect(capabilitySection).toHaveTextContent(
-      /strict json schema output: supported/i,
-    );
-
-    const testSection = primaryCard
-      .getByRole("heading", { name: "Test and reachability" })
-      .closest("section") as HTMLElement;
-    expect(testSection).toHaveTextContent("Last test");
-    expect(testSection).toHaveTextContent("Passed");
-    expect(testSection).toHaveTextContent("Tested at");
-    expect(testSection).toHaveTextContent("Apr 22, 2026");
-    expect(testSection).toHaveTextContent("Message");
-    expect(testSection).toHaveTextContent("Connection OK");
-
-    const runtimeSection = primaryCard
-      .getByRole("heading", { name: "Runtime policy" })
-      .closest("section") as HTMLElement;
-    expect(runtimeSection).toHaveTextContent("Policy");
-    expect(runtimeSection).toHaveTextContent("strict schema");
-    expect(runtimeSection).toHaveTextContent("Serialize tool calls");
-    expect(runtimeSection).toHaveTextContent("Reasoning");
-    expect(runtimeSection).toHaveTextContent("Omitted");
-    expect(
-      primaryCard.getByRole("link", {
-        name: "Edit model connection Primary Compatible",
-      }),
-    ).toBeVisible();
-    expect(
-      primaryCard.getByRole("button", {
-        name: "Delete model connection Primary Compatible",
-      }),
-    ).toBeVisible();
-    expect(primaryCardElement).toHaveTextContent("Stable key");
-    expect(primaryCardElement).toHaveTextContent("Model ID");
-    expect(primaryCardElement).toHaveTextContent("Endpoint");
-    expect(primaryCardElement).toHaveTextContent("Timeout");
-
-    const customRootCardElement = screen.getByTestId("model-connections-row-4");
-    expect(customRootCardElement).toHaveTextContent(
-      "https://provider.example.com/custom-root",
-    );
   });
 
   it("filters the sorted model connection inventory locally", () => {
@@ -460,7 +377,6 @@ describe("ModelConnectionsListPage", () => {
 
     render(<ModelConnectionsListPage />);
 
-    fireEvent.click(screen.getByLabelText("Table view"));
     fireEvent.click(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
         "checkbox",
@@ -511,10 +427,9 @@ describe("ModelConnectionsListPage", () => {
     expect(toastSuccessMock).toHaveBeenCalledWith("1 model connection deleted");
   });
 
-  it("clears table selection when switching back to cards", () => {
+  it("keeps model-connection selection clearable in table-only view", () => {
     render(<ModelConnectionsListPage />);
 
-    fireEvent.click(screen.getByLabelText("Table view"));
     fireEvent.click(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
         "checkbox",
@@ -523,18 +438,10 @@ describe("ModelConnectionsListPage", () => {
     );
     expect(screen.getByText("1 of 4 model connections selected")).toBeVisible();
 
-    fireEvent.click(screen.getByLabelText("Cards view"));
+    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
 
-    expect(
-      screen.queryByText("1 of 4 model connections selected"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", {
-        name: "Select all shown model connections",
-      }),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText("Table view"));
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
         "checkbox",

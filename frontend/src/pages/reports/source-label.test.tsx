@@ -132,24 +132,13 @@ describe("report source labels", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.getByText("Memory Snapshot")).toBeVisible();
-    expect(
-      screen.getByRole("link", { name: "Open report Memory Snapshot" }),
-    ).toHaveAttribute("href", "/reports/agent_memory_snapshot");
+    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "View report Memory Snapshot" }),
     ).toHaveAttribute("href", "/reports/agent_memory_snapshot");
     expect(screen.getByText("Agent")).toBeVisible();
     expect(screen.queryByText("External")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", { name: /select all shown reports/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", {
-        name: /select report memory snapshot/i,
-      }),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
     expect(
       screen.queryByRole("checkbox", { name: /select all shown reports/i }),
     ).not.toBeInTheDocument();
@@ -200,8 +189,6 @@ describe("report source labels", () => {
     expect(screen.getByText("Uploaded")).toBeVisible();
     expect(screen.queryByText("Agent")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
-
     const table = screen.getByRole("table");
     expect(within(table).getByText("Uploaded")).toBeVisible();
     expect(within(table).queryByText("Agent")).not.toBeInTheDocument();
@@ -241,8 +228,6 @@ describe("report source labels", () => {
     );
 
     renderReportRoute("/reports");
-
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
     expect(
       screen.queryByRole("checkbox", { name: /select all shown reports/i }),
     ).not.toBeInTheDocument();
@@ -281,8 +266,6 @@ describe("report source labels", () => {
 
   it("hides bulk actions when the current search filters away selected reports", () => {
     renderReportRoute("/reports");
-
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
     fireEvent.click(
       screen.getByRole("checkbox", { name: /select report memory snapshot/i }),
     );
@@ -319,43 +302,6 @@ describe("report source labels", () => {
     ).toBeVisible();
   });
 
-  it("clears active report selection when switching from table to cards", () => {
-    renderReportRoute("/reports");
-
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: /select report memory snapshot/i }),
-    );
-    const bulkActions = screen.getByTestId("reports-bulk-actions");
-    expect(
-      within(bulkActions).getByText("1 of 1 reports selected"),
-    ).toBeVisible();
-    expect(
-      within(bulkActions).getByRole("button", { name: "Clear" }),
-    ).toBeVisible();
-
-    fireEvent.click(screen.getByRole("radio", { name: /cards view/i }));
-    expect(
-      screen.queryByTestId("reports-bulk-actions"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", { name: /select all shown reports/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", {
-        name: /select report memory snapshot/i,
-      }),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
-    expect(
-      screen.getByRole("checkbox", { name: /select report memory snapshot/i }),
-    ).toHaveAttribute("aria-checked", "false");
-    expect(
-      screen.queryByRole("button", { name: /delete selected/i }),
-    ).not.toBeInTheDocument();
-  });
-
   it("renders Agent source badge on report detail", () => {
     renderReportRoute("/reports/agent_memory_snapshot");
 
@@ -374,7 +320,11 @@ describe("report source labels", () => {
       "tracking-tight",
     );
     expect(detailHeading).not.toHaveClass("truncate", "text-lg");
-    expect(screen.getByText("Agent")).toBeVisible();
+    expect(
+      within(screen.getByTestId("report-detail-header")).getByText("Agent", {
+        selector: "[data-slot='badge']",
+      }),
+    ).toBeVisible();
     expect(screen.queryByText("External")).not.toBeInTheDocument();
 
     const actions = screen.getByTestId("report-detail-actions");

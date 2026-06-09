@@ -3,7 +3,6 @@ import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
-import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { useResourceFilterState } from "@/hooks/use-resource-filter-state";
 import { useResourceSelectionState } from "@/hooks/use-resource-selection-state";
 import {
@@ -18,7 +17,6 @@ import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dial
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
-import { ResourceRowCard } from "@/components/shared/resource-row-card";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -82,10 +80,6 @@ export function TemplateListPage() {
   });
   const selectedTemplates = templateSelection.selectedItems;
   const selectedCount = templateSelection.selectedCount;
-  const { viewMode, onViewModeChange } = useInventoryViewState({
-    onCardsMode: templateSelection.clearSelection,
-  });
-
   const handleDeleteSelected = () => {
     if (selectedTemplates.length === 0) {
       return;
@@ -133,8 +127,6 @@ export function TemplateListPage() {
           value: search,
           onChange: setSearch,
         },
-        viewMode,
-        onViewModeChange,
       }}
     >
       <section
@@ -175,55 +167,7 @@ export function TemplateListPage() {
             title="No templates match your search."
           />
         ) : null}
-        {viewMode === "cards"
-          ? filteredTemplates.map((template) => (
-              <ResourceRowCard
-                density="compact"
-                key={template.id}
-                metadata={<>Updated {formatDateTime(template.updatedAt)}</>}
-                primaryAction={{
-                  kind: "link",
-                  label: `Open template ${template.name} in editor`,
-                  to: `/templates/${template.id}/edit`,
-                }}
-                title={template.name}
-                actions={
-                  <>
-                    <Button asChild size="sm" variant="outline">
-                      <Link
-                        aria-label={`Open editor for ${template.name}`}
-                        to={`/templates/${template.id}/edit`}
-                      >
-                        Open Editor
-                      </Link>
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          aria-label={`Open actions for ${template.name}`}
-                          size="icon"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <MoreHorizontal />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onSelect={() => setDeleting(template)}
-                          variant="destructive"
-                        >
-                          <Trash2 className="size-3.5" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </>
-                }
-              />
-            ))
-          : null}
-        {viewMode === "table" && filteredTemplates.length > 0 ? (
+        {filteredTemplates.length > 0 ? (
           <ResourceTableFrame>
             <Table>
               <TableHeader>
@@ -328,7 +272,7 @@ export function TemplateListPage() {
         ) : null}
       </section>
 
-      {viewMode === "table" && selectedCount > 0 ? (
+      {selectedCount > 0 ? (
         <ResourceFilterBar
           actions={
             <>

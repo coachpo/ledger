@@ -303,7 +303,8 @@ describe("TemplateEditorPage", () => {
 
     render(<TemplateListPage />);
 
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
 
     const table = screen.getByRole("table");
     expect(table.parentElement?.parentElement).toHaveClass(
@@ -367,8 +368,8 @@ describe("TemplateEditorPage", () => {
 
     render(<TemplateListPage />);
 
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("checkbox", { name: /select all shown templates/i }),
     );
@@ -403,7 +404,7 @@ describe("TemplateEditorPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("clears template selection when switching back to cards", () => {
+  it("clears template selection from the table-only bulk action bar", () => {
     useTemplatesListMock.mockReturnValue(
       queryResult({
         items: [
@@ -420,25 +421,18 @@ describe("TemplateEditorPage", () => {
 
     render(<TemplateListPage />);
 
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: /select template quarterly review/i,
-      }),
-    );
+    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
+    const templateCheckbox = screen.getByRole("checkbox", {
+      name: /select template quarterly review/i,
+    });
+    fireEvent.click(templateCheckbox);
     expect(screen.getByTestId("templates-bulk-actions")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("radio", { name: /cards view/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(
       screen.queryByTestId("templates-bulk-actions"),
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
-    expect(
-      screen.getByRole("checkbox", {
-        name: /select template quarterly review/i,
-      }),
-    ).toHaveAttribute("aria-checked", "false");
+    expect(templateCheckbox).toHaveAttribute("aria-checked", "false");
   });
 });

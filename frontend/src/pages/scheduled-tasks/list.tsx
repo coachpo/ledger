@@ -26,7 +26,6 @@ import {
 } from "@/components/shared/resource-status-strip";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -56,7 +55,6 @@ import {
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/components/ui/utils";
-import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import {
   useDeleteScheduledTask,
   useDeleteScheduledTasks,
@@ -423,13 +421,13 @@ function buildWorkflowFilterOptions({
 
 function LoadingState() {
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-3 p-4">
+    <ResourceTableFrame>
+      <div className="flex flex-col gap-3 p-4">
         {Array.from({ length: 4 }).map((_, index) => (
           <Skeleton className="h-14 w-full" key={index} />
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </ResourceTableFrame>
   );
 }
 
@@ -919,81 +917,6 @@ function ExpandedScheduleDetails({
   );
 }
 
-function MobileActionMenu({
-  mutationPending,
-  schedule,
-  onDelete,
-  onToggleStatus,
-}: ScheduleActionHandlers & { schedule: ScheduleRead }) {
-  const duplicatePath = `/scheduled-tasks/new?duplicateFrom=${schedule.id}`;
-  const showPauseAction = schedule.status === "enabled";
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          aria-label={`Open actions for ${schedule.name}`}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <MoreHorizontal className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuGroup>
-          <DropdownMenuItem asChild>
-            <Link aria-label={`Edit schedule ${schedule.name}`} to={`/scheduled-tasks/${schedule.id}`}>
-              <SquarePen className="size-3.5" />
-              Edit
-            </Link>
-          </DropdownMenuItem>
-          {showPauseAction ? (
-            <DropdownMenuItem
-              disabled={mutationPending}
-              onSelect={() => onToggleStatus(schedule)}
-            >
-              <PauseCircle className="size-3.5" />
-              Pause
-            </DropdownMenuItem>
-          ) : null}
-          <DropdownMenuItem asChild>
-            <Link aria-label={`Duplicate schedule ${schedule.name}`} to={duplicatePath}>
-              <CopyPlus className="size-3.5" />
-              Duplicate
-            </Link>
-          </DropdownMenuItem>
-          {schedule.latestRunId ? (
-            <DropdownMenuItem asChild>
-              <Link
-                aria-label={`Open latest run for ${schedule.name}`}
-                to={`/runs/${schedule.latestRunId}`}
-              >
-                <ExternalLink className="size-3.5" />
-                Latest run
-              </Link>
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem disabled>
-              <ExternalLink className="size-3.5" />
-              Latest run
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          disabled={mutationPending}
-          variant="destructive"
-          onSelect={() => onDelete(schedule)}
-        >
-          <Trash2 className="size-3.5" />
-          Delete
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function ScheduleTableActions({
   detailsId,
   expanded,
@@ -1264,104 +1187,6 @@ function ScheduleTable({
   );
 }
 
-function ScheduleCards({
-  expandedScheduleIds,
-  mutationPending,
-  schedules,
-  onDelete,
-  onRunNow,
-  onToggleExpand,
-  onToggleStatus,
-}: {
-  expandedScheduleIds: ReadonlySet<ScheduleRead["id"]>;
-  schedules: readonly ScheduleRead[];
-  onToggleExpand: (scheduleId: number) => void;
-} & ScheduleActionHandlers) {
-  return (
-    <div className="flex flex-col gap-3">
-      {schedules.map((schedule) => {
-        const expanded = expandedScheduleIds.has(schedule.id);
-        const detailsId = `scheduled-task-card-details-${schedule.id}`;
-
-        return (
-          <Card data-testid={`scheduled-task-card-${schedule.id}`} key={schedule.id}>
-            <CardContent className="flex flex-col gap-4 p-4">
-              <div className="flex min-w-0 flex-wrap items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <WorkflowCell schedule={schedule} />
-                </div>
-                <ScheduleDetailsToggleButton
-                  className="h-7 px-2 text-xs"
-                  detailsId={detailsId}
-                  expanded={expanded}
-                  onToggle={() => onToggleExpand(schedule.id)}
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Schedule
-                  </p>
-                  <ScheduleCell schedule={schedule} />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Next run
-                  </p>
-                  <NextRunCell schedule={schedule} />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Latest activity
-                  </p>
-                  <LatestActivityCell schedule={schedule} />
-                </div>
-              </div>
-              {expanded ? (
-                <div id={detailsId}>
-                  <ExpandedScheduleDetails schedule={schedule} />
-                </div>
-              ) : null}
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                  aria-label={`Run schedule ${schedule.name} now`}
-                  disabled={mutationPending}
-                  size="sm"
-                  type="button"
-                  onClick={() => onRunNow(schedule)}
-                >
-                  <PlayCircle data-icon="inline-start" />
-                  Run now
-                </Button>
-                {schedule.status === "paused" ? (
-                  <Button
-                    aria-label={`Resume schedule ${schedule.name}`}
-                    disabled={mutationPending}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                    onClick={() => onToggleStatus(schedule)}
-                  >
-                    <RotateCcw data-icon="inline-start" />
-                    Resume
-                  </Button>
-                ) : null}
-                <MobileActionMenu
-                  mutationPending={mutationPending}
-                  schedule={schedule}
-                  onDelete={onDelete}
-                  onRunNow={onRunNow}
-                  onToggleStatus={onToggleStatus}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
-
 function ScheduledTasksBulkActions({
   filteredCount,
   isPending,
@@ -1441,11 +1266,6 @@ export function ScheduledTasksListPage() {
     direction: "asc",
     field: "nextRun",
   });
-  const { viewMode, onViewModeChange } = useInventoryViewState({
-    initialViewMode: "table",
-    onCardsMode: () => setSelectedScheduleIds(new Set()),
-  });
-
   const updateSchedule = useUpdateScheduledTask();
   const runNow = useRunScheduledTaskNow();
   const deleteSchedule = useDeleteScheduledTask();
@@ -1543,16 +1363,10 @@ export function ScheduledTasksListPage() {
     runNow.isPending ||
     deleteSchedule.isPending ||
     deleteSchedules.isPending;
-  const showCards =
-    !schedulesQuery.isPending &&
-    !schedulesQuery.isError &&
-    visibleSchedules.length > 0 &&
-    viewMode === "cards";
   const showTable =
     !schedulesQuery.isPending &&
     !schedulesQuery.isError &&
-    visibleSchedules.length > 0 &&
-    viewMode === "table";
+    visibleSchedules.length > 0;
   const hasFilters = Boolean(
     search.trim() ||
       packageKey.trim() ||
@@ -1745,8 +1559,6 @@ export function ScheduledTasksListPage() {
           value: search,
           onChange: setSearch,
         },
-        viewMode,
-        onViewModeChange,
       }}
     >
       {schedulesQuery.isPending ? <LoadingState /> : null}
@@ -1770,18 +1582,6 @@ export function ScheduledTasksListPage() {
         <ScheduledTasksEmptyState hasFilters={hasFilters} />
       ) : null}
 
-      {showCards ? (
-        <ScheduleCards
-          expandedScheduleIds={expandedScheduleIds}
-          mutationPending={mutationPending}
-          schedules={visibleSchedules}
-          onDelete={setDeleting}
-          onRunNow={runScheduleNow}
-          onToggleExpand={toggleScheduleExpanded}
-          onToggleStatus={toggleScheduleStatus}
-        />
-      ) : null}
-
       {showTable ? (
         <ScheduleTable
           allFilteredSelected={allFilteredSelected}
@@ -1800,15 +1600,13 @@ export function ScheduledTasksListPage() {
         />
       ) : null}
 
-      {viewMode === "table" ? (
-        <ScheduledTasksBulkActions
-          filteredCount={visibleSchedules.length}
-          isPending={deleteSchedules.isPending}
-          selectedCount={selectedCount}
-          onClear={() => setSelectedScheduleIds(new Set())}
-          onDeleteSelected={() => setIsBulkDeleting(true)}
-        />
-      ) : null}
+      <ScheduledTasksBulkActions
+        filteredCount={visibleSchedules.length}
+        isPending={deleteSchedules.isPending}
+        selectedCount={selectedCount}
+        onClear={() => setSelectedScheduleIds(new Set())}
+        onDeleteSelected={() => setIsBulkDeleting(true)}
+      />
 
       <ConfirmDeleteDialog
         confirmLabel="Delete selected"

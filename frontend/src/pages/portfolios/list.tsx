@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -8,17 +8,10 @@ import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dial
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
-import { ResourceRowCard } from "@/components/shared/resource-row-card";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -27,7 +20,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useInventoryViewState } from "@/hooks/use-inventory-view-state";
 import { useResourceFilterState } from "@/hooks/use-resource-filter-state";
 import { useResourceSelectionState } from "@/hooks/use-resource-selection-state";
 import {
@@ -101,10 +93,6 @@ export function PortfolioListPage() {
     items: filteredPortfolios,
   });
 
-  const { viewMode, onViewModeChange } = useInventoryViewState({
-    onCardsMode: clearSelection,
-  });
-
   const openCreateDialog = useCallback(() => {
     setEditing(null);
     setShowForm(true);
@@ -176,8 +164,6 @@ export function PortfolioListPage() {
           value: search,
           onChange: setSearch,
         },
-        viewMode,
-        onViewModeChange,
       }}
     >
       <section
@@ -238,71 +224,7 @@ export function PortfolioListPage() {
             title="No portfolios match your search."
           />
         ) : null}
-        {viewMode === "cards" && filteredPortfolios.length > 0
-          ? filteredPortfolios.map((portfolio) => (
-              <ResourceRowCard
-                density="compactPlus"
-                key={portfolio.id}
-                title={portfolio.name}
-                badges={
-                  <>
-                    <Badge variant="outline">{portfolio.baseCurrency}</Badge>
-                    <Badge variant="outline">
-                      {portfolio.positionCount} pos
-                    </Badge>
-                    <Badge variant="outline">
-                      {portfolio.balanceCount} bal
-                    </Badge>
-                  </>
-                }
-                description={portfolio.description || "No description"}
-                metadata={<>Updated {formatDateTime(portfolio.updatedAt)}</>}
-                primaryAction={{
-                  kind: "link",
-                  label: `Open portfolio ${portfolio.name}`,
-                  to: `/portfolios/${portfolio.id}`,
-                }}
-                actions={
-                  <>
-                    <Button asChild size="sm">
-                      <Link to={`/portfolios/${portfolio.id}`}>Open</Link>
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          aria-label={`Open actions for ${portfolio.name}`}
-                          size="icon"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <MoreHorizontal aria-hidden="true" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onSelect={() => {
-                            setEditing(portfolio);
-                            setShowForm(true);
-                          }}
-                        >
-                          <Pencil className="size-3.5" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => setDeleting(portfolio)}
-                          variant="destructive"
-                        >
-                          <Trash2 className="size-3.5" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </>
-                }
-              />
-            ))
-          : null}
-        {viewMode === "table" && filteredPortfolios.length > 0 ? (
+        {filteredPortfolios.length > 0 ? (
           <ResourceTableFrame>
             <Table>
               <TableHeader>
@@ -413,7 +335,7 @@ export function PortfolioListPage() {
         ) : null}
       </section>
 
-      {viewMode === "table" && selectedCount > 0 ? (
+      {selectedCount > 0 ? (
         <ResourceFilterBar
           actions={
             <>

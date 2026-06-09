@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,8 @@ import { ResourceFilterBar } from "./resource-filter-bar";
 import { ResourceToolbar } from "./resource-toolbar";
 
 describe("ResourceToolbar", () => {
-  it("renders compact search and view controls with caller-owned handlers", () => {
+  it("renders compact search controls with caller-owned handlers", () => {
     const onSearchChange = vi.fn();
-    const onViewModeChange = vi.fn();
 
     render(
       <ResourceToolbar
@@ -21,8 +20,6 @@ describe("ResourceToolbar", () => {
           value: "alpha",
           onChange: onSearchChange,
         }}
-        viewMode="cards"
-        onViewModeChange={onViewModeChange}
       />,
     );
 
@@ -33,16 +30,12 @@ describe("ResourceToolbar", () => {
     expect(screen.getByText("3 packages shown")).toHaveClass(
       "text-muted-foreground",
     );
+    expect(screen.queryByRole("radio", { name: "Cards view" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Table view" })).not.toBeInTheDocument();
 
     fireEvent.change(searchInput, { target: { value: "beta" } });
-    fireEvent.click(screen.getByRole("radio", { name: "Table view" }));
 
     expect(onSearchChange).toHaveBeenCalledWith("beta");
-    expect(onViewModeChange).toHaveBeenCalledWith("table");
-    expect(screen.getByRole("radio", { name: "Cards view" })).toHaveAttribute(
-      "data-state",
-      "on",
-    );
   });
 
   it("keeps filter affordances, actions, and selection summary presentational", () => {
@@ -93,29 +86,5 @@ describe("ResourceToolbar", () => {
     expect(onClearOwner).toHaveBeenCalledTimes(1);
     expect(onClearAll).toHaveBeenCalledTimes(1);
     expect(onExport).toHaveBeenCalledTimes(1);
-  });
-
-  it("renders caller-supplied view modes without forcing card/table choices", () => {
-    const onViewModeChange = vi.fn();
-
-    render(
-      <ResourceToolbar
-        viewMode="timeline"
-        viewModes={[
-          { label: "Timeline view", value: "timeline" },
-          { label: "Ledger view", value: "ledger" },
-        ]}
-        onViewModeChange={onViewModeChange}
-      />,
-    );
-
-    const group = screen.getByRole("group");
-    expect(within(group).getByRole("radio", { name: "Timeline view" })).toHaveAttribute(
-      "data-state",
-      "on",
-    );
-
-    fireEvent.click(within(group).getByRole("radio", { name: "Ledger view" }));
-    expect(onViewModeChange).toHaveBeenCalledWith("ledger");
   });
 });

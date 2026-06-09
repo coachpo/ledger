@@ -92,8 +92,8 @@ describe("TemplateListPage", () => {
       "/templates/new",
     );
     expect(screen.getByLabelText("Search templates")).toBeVisible();
-    expect(screen.getByRole("radio", { name: /cards view/i })).toBeVisible();
-    expect(screen.getByRole("radio", { name: /table view/i })).toBeVisible();
+    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     expect(screen.getByText("No templates loaded")).toBeVisible();
 
     const inventory = screen.getByTestId("templates-inventory");
@@ -135,10 +135,8 @@ describe("TemplateListPage", () => {
         .querySelectorAll("[data-inventory-shell-region]"),
     ).map((region) => region.getAttribute("data-inventory-shell-region"));
     expect(shellRegions).toEqual(["context", "toolbar", "content"]);
-    expect(screen.getByRole("radio", { name: /cards view/i })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Templates" })).toBeVisible();
     const newTemplateLink = screen.getByRole("link", {
       name: /new template/i,
@@ -146,8 +144,8 @@ describe("TemplateListPage", () => {
     expect(newTemplateLink).toBeVisible();
     expect(newTemplateLink).toHaveAttribute("href", "/templates/new");
     expect(screen.getByLabelText("Search templates")).toBeVisible();
-    expect(screen.getByRole("radio", { name: /cards view/i })).toBeVisible();
-    expect(screen.getByRole("radio", { name: /table view/i })).toBeVisible();
+    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
 
     const inventory = screen.getByTestId("templates-inventory");
     expect(within(inventory).getByText("No templates yet.")).toBeVisible();
@@ -181,24 +179,25 @@ describe("TemplateListPage", () => {
     expect(screen.queryByText("Quarterly Review")).not.toBeInTheDocument();
   });
 
-  it("renders dense card editor links and keeps row delete confirmation route-owned", () => {
+  it("renders table editor links and keeps row delete confirmation route-owned", () => {
     useTemplatesListMock.mockReturnValue(
       queryResult({ items: [quarterlyTemplate] }),
     );
 
     render(<TemplateListPage />);
 
+    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
+    const table = screen.getByRole("table");
     expect(
-      screen.getByRole("link", {
-        name: "Open template Quarterly Review in editor",
-      }),
+      within(table).getByRole("link", { name: "Quarterly Review" }),
     ).toHaveAttribute("href", "/templates/7/edit");
     expect(
-      screen.getByRole("link", { name: "Open editor for Quarterly Review" }),
+      within(table).getByRole("link", { name: "Open editor for Quarterly Review" }),
     ).toHaveAttribute("href", "/templates/7/edit");
 
     fireEvent.keyDown(
-      screen.getByRole("button", {
+      within(table).getByRole("button", {
         name: "Open actions for Quarterly Review",
       }),
       { key: "Enter" },
@@ -222,9 +221,6 @@ describe("TemplateListPage", () => {
     );
 
     render(<TemplateListPage />);
-
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
 
     const table = screen.getByRole("table");
     expect(table.parentElement?.parentElement).toHaveClass(
