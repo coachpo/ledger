@@ -31,8 +31,10 @@ Future frontend upgrade work must keep platform-core route, query, and authoring
 - `src/pages/workflow-packages/AGENTS.md` — package list, authoring-only editor, dedicated `/workflow-packages/:packageId/run` launch page, validation, import, and export flows
 - `src/pages/scheduled-tasks/AGENTS.md` — scheduled package-run automation list, create, detail, preview, fire history, and run-now flows
 - `src/pages/runs/AGENTS.md` — runs list, detail, root-parameter rerun, invocation-input fork, package provenance, polling monitor, trace-link views, and historical replay lineage reads
+- `src/pages/runs/detail-sections/AGENTS.md` — run detail evidence panes, lineage diagrams, runtime sections, and invocation fork dialog
 - `src/components/AGENTS.md` — layout shell, theme system, shared components, platform-authoring widgets, feature UI, and primitives
 - `src/components/platform-authoring/AGENTS.md` — schema composer, generated form, refs, inspectors, and workflow-builder widgets
+- `src/components/forms/AGENTS.md` — cross-route dialogs, report-generation/upload forms, and write-only secret input UI
 - `src/components/templates/AGENTS.md` — placeholder browser and runtime-input support components
 - `src/components/ui/AGENTS.md` — shadcn/ui wrappers, sidebar primitives, and shared variant tokens
 - `src/components/shared/AGENTS.md` — reusable inventory/workspace shells, resource chrome, evidence helpers, tables, and field schemas

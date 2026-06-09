@@ -19,6 +19,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 ## CHILD DOCS
 - `signaldeck_finance/AGENTS.md` — statically resident `signaldeck.finance` ownership, route registrations, provider factories, tool specs, report lookup, and historical agent-memory report readers
+- `signaldeck_digital_oracle/AGENTS.md` — statically resident `signaldeck.digital_oracle` tool-only runtime ownership
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -26,6 +27,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Bundled registry | `registry.py` | extension identity, initial enabled seed, and private registrar references |
 | Extension package exports | `__init__.py` | statically resident extension registry exports |
 | Finance extension | `signaldeck_finance/AGENTS.md` | current first-party finance workspace extension |
+| Digital Oracle extension | `signaldeck_digital_oracle/AGENTS.md` | tool-only prediction markets, SEC filings, and market sentiment runtime extension |
 | Service state/filtering | `../services/extension_service.py` | persisted slim state plus ToolCatalog/runtime registry filtering |
 | API state | `../api/extensions.py` | `/api/extensions` list/toggle route family |
 | DB state | `../models/extension.py`, `../db/upgrades.py` | `extension_states` persistence and default statically resident extension seeding |

@@ -19,7 +19,8 @@ src/components/
 ├── theme-toggle.tsx        # header control for light/dark/system
 ├── theme.ts                # theme context types
 ├── shared/                 # reusable components across features
-├── forms/                  # small cross-feature dialog/form helpers for templates, reports, portfolios, and model-connection secrets; covered here
+├── forms/                  # small cross-feature dialog/form helpers for templates, reports, portfolios, and model-connection secrets
+│   └── AGENTS.md
 ├── templates/              # template-editor support components and placeholder/runtime-input UI
 │   └── AGENTS.md
 ├── portfolios/             # portfolio feature-specific components
@@ -33,7 +34,7 @@ src/components/
 | App shell / navigation | `layout.tsx`, `shared/error-boundary.tsx` | sidebar shell, metadata-driven shell/width framing, and route-safe fallback UI |
 | Theme behavior | `theme-provider.tsx`, `theme-toggle.tsx`, `theme.ts` | persisted theme state and system-sync logic |
 | Shared components | `shared/AGENTS.md` | reusable inventory/workspace shells, resource chrome, evidence helpers, tables, metrics, and field schemas |
-| Cross-route dialogs and form helpers | `forms/portfolio-form-dialog.tsx`, `forms/generate-report-dialog.tsx`, `forms/secret-input.tsx` | small shared dialogs and write-only secret input UI |
+| Cross-route dialogs and form helpers | `forms/AGENTS.md`, `forms/portfolio-form-dialog.tsx`, `forms/generate-report-dialog.tsx`, `forms/secret-input.tsx` | small shared dialogs and write-only secret input UI |
 | Platform authoring widgets | `platform-authoring/AGENTS.md` | schema composer, generated form, workflow builder, refs, inspectors |
 | Template-editor support UI | `templates/AGENTS.md` | placeholder reference and runtime-input surfaces used by template routes |
 | Portfolio feature UI | `portfolios/AGENTS.md` | sections, dialogs, trading form, feature-specific logic |
@@ -43,6 +44,7 @@ src/components/
 - `shared/AGENTS.md` — reusable inventory/workspace shells, resource chrome, evidence helpers, and schema rules
 - `shared/docs/README.md` — UI/UX standards, shared UI usage specs, page blueprints, and migration guidance
 - `platform-authoring/AGENTS.md` — schema composer, generated form, workflow builder, refs, and inspectors
+- `forms/AGENTS.md` — small cross-route dialogs, report-generation/upload forms, and write-only secret input UI
 - `templates/AGENTS.md` — template-editor support components such as placeholder reference and runtime-input sections
 - `portfolios/AGENTS.md` — portfolio feature sections, dialogs, and trades UI
 - `ui/AGENTS.md` — presentational shadcn/ui wrappers, sidebar context, and shared style helpers

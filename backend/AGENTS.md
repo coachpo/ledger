@@ -32,7 +32,7 @@ backend/
 ├── app/core/                   # config, errors, formatting, telemetry, constants
 ├── app/db/                     # engine/session/init + PostgreSQL upgrade helpers
 ├── app/api/                    # APIRouter modules + dependency wiring for /api/v1 and /api/*
-├── app/extensions/             # statically resident extension registry and signaldeck.finance private registrar ownership
+├── app/extensions/             # statically resident extension registry plus finance and Digital Oracle ownership
 ├── app/agents/                 # server-declared tools, native runtime tools, MCP boundaries
 ├── app/services/               # CRUD, extension state, manifests, schedules, execution, queueing, memory, templates, market data, trading rules
 ├── app/workers/                # long-lived scheduler worker entrypoints for queued package runs
@@ -111,4 +111,3 @@ uv run pytest
 - `tests/test_workflow_package_*.py`, `tests/test_workflow_package_runtime_api.py`, `tests/test_workflow_package_runtime_artifacts.py`, `tests/test_workflow_package_run_contracts.py`, `tests/test_workflow_package_preflight.py`, `tests/test_workflow_run_contract_schemas.py`, `tests/test_run_operation_invocations.py`, `tests/test_memory_domain_schemas.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, preflight/tool contracts, scheduled tasks, rerun/fork behavior, scheduler queues, trace, run-owned snapshot provenance, memory DTOs, and current-package persistence contracts.
 - `tests/test_runtime_db_upgrades.py` and `tests/test_legacy_backend_cutover.py` cover startup schema repair, schedule tables, retired-table cleanup, and removed-route guarantees.
 - There is no live Alembic migration path; schema changes stay in `app/db/upgrades.py`, even if a scaffold reappears.
- migration path; schema changes stay in `app/db/upgrades.py`, even if a scaffold reappears.

@@ -19,15 +19,20 @@ app/agents/
 `-- mcp/               # MCP config boundaries, security checks, snapshots, dispatch
 ```
 
+## CHILD DOCS
+- `tool_catalog/AGENTS.md` — server-declared tool metadata and package tool-key validation
+- `runtime_tools/AGENTS.md` — core native runtime tools and extension-aware runtime registry
+- `mcp/AGENTS.md` — saved MCP config safety, snapshots, adapter, and dispatch boundary
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Server-declared tools | `tool_catalog/server_declared.py`, `../extensions/signaldeck_finance/tool_specs.py`, `../extensions/signaldeck_digital_oracle/tool_specs.py` | canonical platform memory tool keys plus extension-contributed keys, names, and descriptions |
-| Capability tool-key validation | `tool_catalog/__init__.py` | validates `toolKeys` against known server tools after enabled-extension filtering |
-| Native registry | `runtime_tools/__init__.py`, `runtime_tools/registry.py`, `../extensions/signaldeck_finance/runtime_executors.py`, `../extensions/signaldeck_digital_oracle/runtime_executors.py` | core plus extension OpenAI tool definitions and grant-checked dispatch |
-| Core memory native tools | `runtime_tools/memory.py` | platform-owned `signaldeck.memory.write` and `signaldeck.memory.lookup` parsers, access rules, executors, and result models |
+| Server-declared tools | `tool_catalog/AGENTS.md`, `tool_catalog/server_declared.py`, `../extensions/signaldeck_finance/tool_specs.py`, `../extensions/signaldeck_digital_oracle/tool_specs.py` | canonical platform memory tool keys plus extension-contributed keys, names, and descriptions |
+| Capability tool-key validation | `tool_catalog/AGENTS.md`, `tool_catalog/__init__.py` | validates `toolKeys` against known server tools after enabled-extension filtering |
+| Native registry | `runtime_tools/AGENTS.md`, `runtime_tools/__init__.py`, `runtime_tools/registry.py`, `../extensions/signaldeck_finance/runtime_executors.py`, `../extensions/signaldeck_digital_oracle/runtime_executors.py` | core plus extension OpenAI tool definitions and grant-checked dispatch |
+| Core memory native tools | `runtime_tools/AGENTS.md`, `runtime_tools/memory.py` | platform-owned `signaldeck.memory.write` and `signaldeck.memory.lookup` parsers, access rules, executors, and result models |
 | Extension runtime tools | `../extensions/signaldeck_finance/runtime_*`, `../extensions/signaldeck_digital_oracle/runtime_*` | Finance Workspace quotes/history/OHLCV/indicators/fundamentals/news/social sentiment/insider data, positions, and report lookup plus Digital Oracle prediction markets, SEC filings, and market sentiment |
-| MCP runtime | `mcp/boundaries.py`, `mcp/security.py`, `mcp/runtime.py`, `mcp/tool_adapter.py` | saved config boundaries, URL/stdio safety, snapshots, dispatch |
+| MCP runtime | `mcp/AGENTS.md`, `mcp/boundaries.py`, `mcp/security.py`, `mcp/runtime.py`, `mcp/tool_adapter.py` | saved config boundaries, URL/stdio safety, snapshots, dispatch |
 | Integration points | `../services/extension_service.py`, `../services/agent_execution_service.py` | enabled-extension filtering, runtime dispatch, and execution wiring |
 | Coverage | `../../tests/test_runtime_tools.py`, `../../tests/test_mcp_runtime.py`, `../../tests/test_workflow_package_preflight.py` | tool keys, MCP safety, memory outputs, and package capability validation |
 
