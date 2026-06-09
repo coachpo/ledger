@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-06-08
-**Commit:** bae3782
+**Generated:** 2026-06-09
+**Commit:** 5171e0c
 **Branch:** main
 
 ## OVERVIEW
@@ -81,6 +81,7 @@ signaldeck/
 - Backend JSON is camelCase externally and snake_case internally; `CamelModel` owns aliasing and `extra="forbid"` request validation.
 - Backend error envelopes are `{code, message, details[]}`; frontend `ApiRequestError` parsing depends on that exact shape.
 - Money, quantities, and market values cross the API as strings; backend parsing lives in `backend/app/core/formatting.py`, while frontend conversion lives in shared formatting and analytics helpers.
+- Portfolio create/update/read payloads no longer carry `baseCurrency`/`base_currency`; finance cash, positions, trades, template available balance, and quote currency checks use backend `PORTFOLIO_CURRENCY` (`USD`) while row-level currency fields still cross the API as strings.
 - Query invalidation is centralized in `frontend/src/lib/query-keys.ts`; ids are normalized to strings, and portfolio, template, report, and agent-platform caches live under dedicated namespaces.
 - `frontend/src/routes.metadata.ts` is the contract for route archetype, shell mode, width mode, ownership, and visible state variants; `Layout` consumes it, while shared inventory/workspace/split-inspector shells stay prop-driven so pages do not rebuild route chrome or teach shared shells to re-read metadata.
 - Template placeholder paths are a cross-stack contract spanning backend services/schemas and frontend types/editor code; the live roots are `inputs`, `portfolios`, and `reports`.

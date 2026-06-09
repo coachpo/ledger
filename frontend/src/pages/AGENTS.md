@@ -76,10 +76,10 @@ src/pages/
 ## ROUTE ARCHETYPE RULES
 
 - Dashboard routes may use summary bands and singleton landing sections, but must keep the same semantic header across loading, ready, and error states.
-- Inventory routes use compact page stacks such as `space-y-4 p-4`. Header title and description stay left, primary actions stay right, and search/filter/view controls sit in a left-aligned toolbar below the header.
-- Inventory search inputs use the compact pattern from Templates and Reports: `relative max-w-sm flex-1`, a search icon at `absolute left-2.5 top-2 size-4`, and an input with `h-8 pl-8 text-xs`.
-- Inventory view switchers use `ToggleGroup type="single"`, `value={viewMode}`, guarded `onValueChange`, `ToggleGroupItem` controls sized `h-8 w-8 px-0`, and `LayoutGrid`/`List` icons sized `size-3.5`.
-- Resource inventories render directly after toolbar and state cards. Platform pages prefer `PlatformResourceList` plus `PlatformResourceCard density="compactPlus"`; finance inventories can use `ResourceRowCard`, grouped list cards, or existing table primitives when the route owns that pattern.
+- Inventory routes use compact page stacks such as `space-y-4 p-4`. Header title and description stay left, primary actions stay right, and search/filter/selection controls sit in a left-aligned toolbar below the header.
+- Inventory search inputs should flow through `ResourceToolbar.search` when the route uses `InventoryPageShell`; it provides the compact `h-8 pl-8 text-xs` input, hidden label, search icon, and `role="search"` wrapper.
+- Finance inventories are currently table-first. Render `ResourceTableFrame` directly after toolbar/state panels, keep row navigation as visible links or buttons, and put active filters or bulk-action bars in `ResourceFilterBar`.
+- Resource inventories render directly after toolbar and state cards. Platform pages can still use `PlatformResourceList` plus `PlatformResourceCard density="compactPlus"` when the route owns a card surface.
 - Detail routes keep route identity and back navigation explicit. Use `text-xl font-semibold tracking-tight` for the route title, keep secondary actions before destructive or primary save actions, and do not truncate the entity identity.
 - Editor routes use metadata-owned `fullHeight` shell mode when they need split panes or persistent action bars. They must expose a labeled route shell, labeled inputs, save/cancel hierarchy, and mobile containment.
 - Console routes such as package launch, Scheduled Task detail, and run detail use metadata-owned `fullHeight` shell mode. Preserve evidence, preflight, backend progress/queue/readiness payloads, scheduled input previews, trace, payload, and fork/rerun controls with internal scrolling for wide data.
@@ -104,7 +104,7 @@ src/pages/
 - Do not call `fetch` directly; use hooks from `src/hooks/` instead.
 - Do not create ad-hoc query keys in pages; use canonical keys from `src/lib/query-keys.ts`.
 - Do not bypass the layout shell, error boundary, or template-editor full-height layout rules when adding a new page.
-- Do not add nested `Package Inventory`/`Resource Inventory` card shells, route-local summary-card bands, or oversized search/view controls to new list pages unless the product requirement explicitly calls for that hierarchy.
+- Do not add nested `Package Inventory`/`Resource Inventory` card shells, route-local summary-card bands, or oversized search/filter controls to new list pages unless the product requirement explicitly calls for that hierarchy.
 - Do not duplicate report request logic in page components when `use-reports.ts` and the template editor already own the server-side workflow.
 - Do not add dead routes or stale route docs that are not wired into `src/routes.ts`.
 - Do not bypass extension route gates or duplicate Finance Workspace visibility rules in page components.

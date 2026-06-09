@@ -12,7 +12,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Portfolio list route | `../../pages/portfolios/list.tsx` | portfolio creation, navigation, overview cards |
+| Portfolio list route | `../../pages/portfolios/list.tsx` | portfolio creation, navigation, table inventory, search, and batch delete |
 | Portfolio workspace route | `../../pages/portfolios/detail.tsx` | orchestrates hooks, quotes, analytics, tabs, dialogs |
 | Balances section | `portfolio-balances-section.tsx`, `balance-form-dialog.tsx` | balance table + create/edit dialog |
 | Positions section | `portfolio-positions-section.tsx`, `position-form-dialog.tsx` | position table, quote warnings, create/edit dialog |

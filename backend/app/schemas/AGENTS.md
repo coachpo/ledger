@@ -33,7 +33,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Enums use string values such as `TradingSide.BUY.value == "BUY"` and `OperationType.DEPOSIT.value == "DEPOSIT"`.
 - Extra fields are forbidden to catch typos and unsupported payloads early.
 - Update schemas rely on `model_fields_set` to distinguish omitted fields from explicit null or empty updates.
-- Portfolio slugs are normalized to lowercase underscore identifiers on create and intentionally omitted from `PortfolioUpdate`.
+- Portfolio slugs are normalized to lowercase underscore identifiers on create and intentionally omitted from `PortfolioUpdate`; portfolio schemas do not expose `baseCurrency`/`base_currency`.
 - `extension.py` keeps statically resident extension state aligned with `/api/extensions` and frontend route/tool gating. Public reads expose only `key`, `label`, and `enabled`; toggles accept only `enabled`.
 - Agent-platform schemas keep current package artifacts, typed package-local wiring, schedule recurrence/fire payloads, secret-safe model bindings, run-owned snapshots, and persisted run detail aligned with live `/api/*` contracts and frontend callers.
 

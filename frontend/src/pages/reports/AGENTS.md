@@ -4,7 +4,7 @@
 
 ## OVERVIEW
 
-`src/pages/reports/` owns the report inventory and slug-addressed detail routes. The list page handles search, grouping, view mode, batch actions, upload, and template-driven generation, while the detail page handles markdown viewing, editing, and downloads for a single persisted report snapshot.
+`src/pages/reports/` owns the report inventory and slug-addressed detail routes. The list page handles search, grouping, table selection, batch actions, upload, and template-driven generation, while the detail page handles markdown viewing, editing, and downloads for a single persisted report snapshot.
 
 Extension model: statically resident Finance Workspace extension.
 
@@ -12,23 +12,23 @@ Extension model: statically resident Finance Workspace extension.
 
 | Task                    | Location                                            | Notes                                                                                    |
 | ----------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Report inventory        | `list.tsx`                                          | search, grouping, cards/table views, upload, generate, batch selection, and delete flows |
+| Report inventory        | `list.tsx`                                          | search, grouping, table selection, upload, generate, batch selection, and delete flows |
 | Report detail           | `detail.tsx`                                        | slug-based lookup, markdown rendering, inline edit/save, and download action             |
 | Query + mutation policy | `../../hooks/use-reports.ts`                        | list/detail invalidation, compile, upload, update, single delete, and batch delete       |
-| Grouping/search helpers | `../../lib/report-grouping.ts`                      | source labels, filter/group/sort behavior, and table/card consistency                    |
+| Grouping/search helpers | `../../lib/report-grouping.ts`                      | source labels plus filter/group/sort behavior for the table inventory                    |
 | Shared generation UI    | `../../components/forms/generate-report-dialog.tsx` | template-driven report creation with runtime inputs                                      |
 | Focused tests           | `source-label.test.tsx`                             | Agent/uploaded source labels, batch delete behavior, and slug-route detail checks        |
 
 ## CONVENTIONS
 
 - Reports stay slug-addressed end to end. Route params, download links, and hook invalidation should all key off `slug`, not numeric ids.
-- `list.tsx` owns search text, group/view state, collapsed groups, and selected slugs; request policy stays in `use-reports.ts`.
+- `list.tsx` owns search text, group/sort/collapse state, and selected slugs; request policy stays in `use-reports.ts`.
 - Use `downloadReportUrl()` for downloads and `getReportSourceLabel()` for source badges instead of rebuilding either concern in the route.
-- Upload, generate, single-delete, and batch-delete flows should all resolve back through list invalidation so cards and table views stay in sync.
+- Upload, generate, single-delete, and batch-delete flows should all resolve back through list invalidation so the grouped table and detail route stay in sync.
 - The detail page may edit only report content; immutable report identity stays in the route header and badges.
 - Keep source badges aligned with the shared grouping helpers so list and detail surfaces agree on labels such as Agent and Uploaded.
-- The report list is an extension-owned inventory route with `route-reports-list`, scroll shell, loading/ready/error/empty/filtered-empty/disabled-extension states, grouped cards/table views, labeled search, and explicit upload/generate actions.
-- Report card and table navigation must stay as visible links. Sorting, selection, menus, upload, generate, edit, save, and delete remain buttons or form controls.
+- The report list is an extension-owned inventory route with `route-reports-list`, scroll shell, loading/ready/error/empty/filtered-empty/disabled-extension states, grouped table view, labeled search, and explicit upload/generate actions.
+- Report table navigation must stay as visible links. Sorting, selection, menus, upload, generate, edit, save, and delete remain buttons or form controls.
 - Browser coverage must include a seeded report flow plus representative empty and API-error list states so finance inventory failures stay user-owned.
 
 ## ANTI-PATTERNS

@@ -16,13 +16,14 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Error envelope / helpers | `errors.py` | `ApiError`, `not_found_error`, `business_rule_error`, validation details |
 | Decimal / symbol / timezone helpers | `formatting.py` | decimal parsing/stringification, symbol/currency normalization, UTC helpers, `utcnow()` |
 | Logfire telemetry | `telemetry.py` | one-time configuration plus trace/span id formatting for run execution |
-| Shared constants | `constants.py` | CSV import mode, money zero, small shared constants |
+| Shared constants | `constants.py` | CSV import mode, portfolio USD source, money zero, small shared constants |
 
 ## CONVENTIONS
 - `get_settings()` is cached; tests reset it with `reset_settings_cache()` when env values change.
 - Runtime config uses env aliases such as `DATABASE_URL`, `QUOTE_PROVIDER_TIMEOUT`, `QUOTE_STALE_AFTER_MINUTES`, `CORS_ALLOWED_ORIGINS`, `AGENT_PLATFORM_ENCRYPTION_KEY`, `RUN_SCHEDULER_MAX_ACTIVE_RUNS`, `RUN_SCHEDULER_MAX_ACTIVE_PER_PACKAGE`, `RUN_SCHEDULER_POLL_INTERVAL_SECONDS`, `RUN_SCHEDULER_HEARTBEAT_SECONDS`, and `RUN_SCHEDULER_LEASE_TTL_SECONDS`.
 - `errors.py` is the single source for domain-level error envelopes and validation-detail shaping.
 - `formatting.py` is the single place for decimal parsing, decimal string serialization, symbol/currency normalization, UTC conversion, and `utcnow()`.
+- `constants.py` owns `PORTFOLIO_CURRENCY = "USD"`; finance services and template compilation use it instead of portfolio-level currency fields.
 - `telemetry.py` configures Logfire once with `send_to_logfire="if-token-present"` and formats trace/span ids for persisted run metadata.
 - `config.py` normalizes `public_base_url`.
 

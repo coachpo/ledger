@@ -20,7 +20,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Summary metrics | `metric-card.tsx` | consistent KPI card layout |
 | Shared field logic | `form-schemas.ts` | reusable Zod validation snippets for portfolio, balance, position, and trading forms |
 | Search/select UI | `searchable-select.tsx` | command-style picker used by feature forms |
-| Row-card inventory UI | `resource-row-card.tsx` | compact inventory cards used by portfolio, template, and run lists |
+| Row-card inventory UI | `resource-row-card.tsx` | compact resource cards used by platform and memory inventories when a card surface is still warranted |
 | UI/UX standards and examples | `docs/README.md` | shared UI standards, component specs, page blueprints, and migration guide |
 
 ## CONVENTIONS
