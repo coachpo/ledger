@@ -161,21 +161,23 @@ describe("PortfolioDetailPage", () => {
     const header = screen.getByTestId("portfolio-detail-header");
     const contextBar = header.querySelector('[data-slot="page-context-bar"]');
     const identity = screen.getByTestId("portfolio-detail-identity");
-    expect(contextBar).toHaveClass("rounded-xl", "border", "bg-card/95");
-    expect(identity).toHaveClass("min-w-0");
-    expect(within(identity).getByText("Portfolio workspace")).toHaveClass(
-      "uppercase",
-      "tracking-wide",
-    );
-    expect(screen.getByText(/Long-term allocation/)).toHaveClass(
-      "break-words",
-      "text-sm",
-    );
-    expect(within(header).getByText("Scope")).toBeVisible();
+    expect(contextBar).toHaveClass("border-b", "border-border", "pb-3");
+    expect(contextBar).not.toHaveClass("rounded-xl", "bg-card/95");
+    expect(identity).toHaveClass("min-w-0", "break-words", "text-sm");
+    expect(identity).toHaveTextContent(/Long-term allocation/);
+    expect(within(header).getByText("Workspace")).toBeVisible();
     expect(within(header).getByText("Finance Workspace")).toBeVisible();
+    expect(within(header).getByText("Base currency")).toBeVisible();
+    expect(within(header).getByText("USD")).toBeVisible();
+    expect(within(header).getByText("Portfolio ID")).toBeVisible();
+    expect(within(header).getByText("#42")).toBeVisible();
     expect(within(header).getByText("Last updated")).toBeVisible();
     expect(within(header).getByText("Quotes")).toBeVisible();
     expect(within(header).getByText("Ready")).toBeVisible();
+
+    const metrics = screen.getByLabelText("Portfolio metrics");
+    expect(metrics).toHaveClass("border-y", "divide-border");
+    expect(within(metrics).getByText("Total Value")).toBeVisible();
 
     const tabs = screen.getByTestId("portfolio-detail-tabs");
     expect(within(tabs).getByRole("tab", { name: "Positions" })).toBeVisible();

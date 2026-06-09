@@ -83,8 +83,9 @@ describe("ReportDetailPage", () => {
     const header = screen.getByTestId("report-detail-header");
     const contextBar = header.querySelector('[data-slot="page-context-bar"]');
     const identity = screen.getByTestId("report-detail-identity");
-    expect(contextBar).toHaveClass("rounded-xl", "border", "bg-card/95");
-    expect(identity).toHaveClass("uppercase", "tracking-wide");
+    expect(contextBar).toHaveClass("border-b", "border-border", "pb-3");
+    expect(contextBar).not.toHaveClass("rounded-xl", "bg-card/95");
+    expect(identity).toHaveClass("min-w-0", "break-words", "text-sm");
     const heading = screen.getAllByRole("heading", {
       name: /Memory Snapshot/,
     })[0];
@@ -98,7 +99,9 @@ describe("ReportDetailPage", () => {
       "tracking-tight",
     );
     expect(heading).not.toHaveClass("truncate", "text-lg");
-    expect(within(header).getAllByText("Agent")[0]).toBeVisible();
+    expect(within(header).getByText("Agent")).toBeVisible();
+    expect(within(header).getByText("Source")).toBeVisible();
+    expect(within(header).getByText("agent snapshot")).toBeVisible();
     expect(within(header).getByText("Slug")).toBeVisible();
     expect(within(header).getByText("agent_memory_snapshot")).toBeVisible();
 

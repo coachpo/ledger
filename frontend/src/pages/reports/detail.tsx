@@ -10,14 +10,10 @@ import { formatDateTime } from "@/lib/format";
 import { downloadReportUrl } from "@/lib/api/reports";
 import { getReportSourceLabel } from "@/lib/report-grouping";
 
-import { ConsoleSection } from "@/components/shared/console-section";
-import {
-  EvidenceCluster,
-  type EvidenceClusterItem,
-} from "@/components/shared/evidence-cluster";
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
 export function ReportDetailPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -74,16 +70,14 @@ export function ReportDetailPage() {
   const sourceLabel = getReportSourceLabel(report.source);
   const sourceBadgeVariant =
     report.source === "uploaded" ? "secondary" : "outline";
-  const reportEvidenceItems = [
+  const reportMetadataItems = [
     {
       label: "Source",
       value: `${report.source} snapshot`,
-      tone: report.source === "uploaded" ? "verified" : "neutral",
     },
     {
       label: "Slug",
       value: report.slug,
-      description: "Canonical route and download key",
     },
     {
       label: "Created",
@@ -92,12 +86,11 @@ export function ReportDetailPage() {
     {
       label: "Updated",
       value: formatDateTime(report.updatedAt),
-      tone: "verified",
     },
-  ] satisfies EvidenceClusterItem[];
+  ];
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="flex min-w-0 flex-col gap-4 p-4">
       <div
         aria-labelledby="report-detail-title"
         data-testid="report-detail-header"
@@ -164,16 +157,37 @@ export function ReportDetailPage() {
               )}
             </div>
           }
-          className="rounded-xl border border-border/80 bg-card/95 p-4 shadow-none"
+          className="border-b border-border pb-3"
           description={
             <span
-              className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+              className="block min-w-0 break-words text-sm text-muted-foreground"
               data-testid="report-detail-identity"
             >
               Immutable report snapshot
             </span>
           }
-          meta={<EvidenceCluster items={reportEvidenceItems} layout="inline" />}
+          meta={
+            <div
+              className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+              role="list"
+              aria-label="Report metadata"
+            >
+              {reportMetadataItems.map((item) => (
+                <span
+                  className="flex min-w-0 items-baseline gap-1.5 border-r border-border pr-3 last:border-r-0 last:pr-0"
+                  key={item.label}
+                  role="listitem"
+                >
+                  <span className="shrink-0 text-muted-foreground">
+                    {item.label}
+                  </span>
+                  <span className="min-w-0 break-words font-medium text-foreground">
+                    {item.value}
+                  </span>
+                </span>
+              ))}
+            </div>
+          }
           title={
             <span className="flex min-w-0 flex-wrap items-center gap-2">
               <span
@@ -190,10 +204,22 @@ export function ReportDetailPage() {
         />
       </div>
 
-      <ConsoleSection
-        description="Only markdown content is editable; report identity, source, and slug remain fixed."
-        title={isEditing ? "Edit report content" : "Report content"}
+      <section
+        className="flex min-w-0 flex-col gap-3 border-y border-border py-4"
+        aria-labelledby="report-content-title"
       >
+        <div className="flex min-w-0 flex-col gap-1">
+          <h2
+            id="report-content-title"
+            className="text-sm font-semibold tracking-tight text-foreground"
+          >
+            {isEditing ? "Edit report content" : "Report content"}
+          </h2>
+          <p className="text-xs leading-5 text-muted-foreground">
+            Only markdown content is editable; report identity, source, and slug remain fixed.
+          </p>
+        </div>
+        <Separator />
         {isEditing ? (
           <textarea
             aria-label="Report markdown content"
@@ -204,13 +230,15 @@ export function ReportDetailPage() {
           />
         ) : (
           <div
-            className="prose prose-sm dark:prose-invert max-w-none rounded-md border border-border bg-muted/30 px-6 py-4"
+            className="min-w-0 max-w-4xl break-words text-foreground"
             data-testid="report-content-pane"
           >
-            <Markdown remarkPlugins={[remarkGfm]}>{report.content}</Markdown>
+            <div className="prose prose-sm dark:prose-invert max-w-none [&_*]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto">
+              <Markdown remarkPlugins={[remarkGfm]}>{report.content}</Markdown>
+            </div>
           </div>
         )}
-      </ConsoleSection>
+      </section>
     </div>
   );
 }

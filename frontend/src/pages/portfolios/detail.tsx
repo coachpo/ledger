@@ -22,16 +22,7 @@ import {
 import type { PortfolioUpdateInput } from "@/lib/types/portfolio";
 
 import { ConsoleSection } from "@/components/shared/console-section";
-import {
-  EvidenceCluster,
-  type EvidenceClusterItem,
-} from "@/components/shared/evidence-cluster";
-import { MetricCard } from "@/components/shared/metric-card";
 import { PageContextBar } from "@/components/shared/page-context-bar";
-import {
-  ResourceStatusStrip,
-  type ResourceStatusStripItem,
-} from "@/components/shared/resource-status-strip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -108,7 +99,7 @@ export function PortfolioDetailPage() {
 
   if (portfolioQuery.isError || !portfolio) {
     return (
-      <div className="max-w-4xl space-y-4 p-4">
+      <div className="flex max-w-4xl flex-col gap-4 p-4">
         <Button
           size="sm"
           variant="outline"
@@ -127,40 +118,51 @@ export function PortfolioDetailPage() {
     );
   }
 
-  const portfolioEvidenceItems = [
-    {
-      label: "Scope",
-      value: "Finance Workspace",
-      description: "Portfolio detail route",
-    },
-    {
-      label: "Base currency",
-      value: portfolio.baseCurrency,
-    },
-    {
-      label: "Portfolio ID",
-      value: `#${portfolio.id}`,
-    },
-    {
-      label: "Last updated",
-      value: formatDateTime(portfolio.updatedAt),
-      tone: "verified",
-    },
-  ] satisfies EvidenceClusterItem[];
+  const portfolioMetadataItems = [
+    { label: "Workspace", value: "Finance Workspace" },
+    { label: "Base currency", value: portfolio.baseCurrency },
+    { label: "Portfolio ID", value: `#${portfolio.id}` },
+    { label: "Last updated", value: formatDateTime(portfolio.updatedAt) },
+  ];
   const portfolioStatusItems = [
-    { label: "Positions", value: positions.length },
-    { label: "Balances", value: balances.length },
-    { label: "Trades", value: operations.length },
+    { label: "Positions", value: positions.length.toLocaleString() },
+    { label: "Balances", value: balances.length.toLocaleString() },
+    { label: "Trades", value: operations.length.toLocaleString() },
     {
       label: "Quotes",
-      tone: quoteWarnings.length > 0 ? "warning" : "success",
       value:
-        quoteWarnings.length > 0 ? `${quoteWarnings.length} warnings` : "Ready",
+        quoteWarnings.length > 0
+          ? `${quoteWarnings.length.toLocaleString()} quote warnings`
+          : "Ready",
     },
-  ] satisfies ResourceStatusStripItem[];
+  ];
+  const portfolioMetricItems = [
+    {
+      label: "Total Value",
+      value: formatCurrency(totalValue, portfolio.baseCurrency),
+      note: "Balances plus marked positions",
+    },
+    {
+      label: "Cash Balances",
+      value: formatCurrency(cashValue, portfolio.baseCurrency),
+      note: `${balances.length.toLocaleString()} balance accounts`,
+    },
+    {
+      label: "Unrealized P&L",
+      value: formatCurrency(unrealizedPnl, portfolio.baseCurrency),
+      note: `${positions.length.toLocaleString()} tracked positions`,
+    },
+    {
+      label: "Latest Activity",
+      value: latestOperation ? latestOperation.side : "None",
+      note: latestOperation
+        ? formatDateTime(latestOperation.executedAt)
+        : "No operations yet",
+    },
+  ];
 
   return (
-    <div className="space-y-3 p-4">
+    <div className="flex min-w-0 flex-col gap-3 p-4">
       <div
         aria-labelledby="portfolio-detail-title"
         data-testid="portfolio-detail-header"
@@ -197,24 +199,59 @@ export function PortfolioDetailPage() {
               </Button>
             </div>
           }
-          className="rounded-xl border border-border/80 bg-card/95 p-4 shadow-none"
+          className="border-b border-border pb-3"
           description={
             <span
-              className="flex min-w-0 flex-col gap-1"
+              className="block min-w-0 break-words text-sm text-muted-foreground"
               data-testid="portfolio-detail-identity"
             >
-              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Portfolio workspace
-              </span>
-              <span className="max-w-4xl break-words text-sm text-muted-foreground">
-                {portfolio.description || "No description"}
-              </span>
+              {portfolio.description || "No description"}
             </span>
           }
           meta={
-            <EvidenceCluster items={portfolioEvidenceItems} layout="inline" />
+            <div
+              className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+              role="list"
+              aria-label="Portfolio metadata"
+            >
+              {portfolioMetadataItems.map((item) => (
+                <span
+                  className="flex min-w-0 items-baseline gap-1.5 border-r border-border pr-3 last:border-r-0 last:pr-0"
+                  key={item.label}
+                  role="listitem"
+                >
+                  <span className="shrink-0 text-muted-foreground">
+                    {item.label}
+                  </span>
+                  <span className="min-w-0 break-words font-medium text-foreground">
+                    {item.value}
+                  </span>
+                </span>
+              ))}
+            </div>
           }
-          status={<ResourceStatusStrip items={portfolioStatusItems} />}
+          status={
+            <div
+              className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+              role="list"
+              aria-label="Portfolio resource status"
+            >
+              {portfolioStatusItems.map((item) => (
+                <span
+                  className="flex min-w-0 items-baseline gap-1.5 border-r border-border pr-3 last:border-r-0 last:pr-0"
+                  key={item.label}
+                  role="listitem"
+                >
+                  <span className="shrink-0 text-muted-foreground">
+                    {item.label}
+                  </span>
+                  <span className="min-w-0 break-words font-medium text-foreground">
+                    {item.value}
+                  </span>
+                </span>
+              ))}
+            </div>
+          }
           title={
             <span
               id="portfolio-detail-title"
@@ -226,31 +263,26 @@ export function PortfolioDetailPage() {
         />
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          title="Total Value"
-          value={formatCurrency(totalValue, portfolio.baseCurrency)}
-          note="Balances plus marked positions"
-        />
-        <MetricCard
-          title="Cash Balances"
-          value={formatCurrency(cashValue, portfolio.baseCurrency)}
-          note={`${balances.length} balance accounts`}
-        />
-        <MetricCard
-          title="Unrealized P&L"
-          value={formatCurrency(unrealizedPnl, portfolio.baseCurrency)}
-          note={`${positions.length} tracked positions`}
-        />
-        <MetricCard
-          title="Latest Activity"
-          value={latestOperation ? latestOperation.side : "None"}
-          note={
-            latestOperation
-              ? formatDateTime(latestOperation.executedAt)
-              : "No operations yet"
-          }
-        />
+      <div
+        className="grid min-w-0 divide-y divide-border border-y border-border md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4"
+        aria-label="Portfolio metrics"
+      >
+        {portfolioMetricItems.map((metric) => (
+          <div
+            className="flex min-w-0 flex-col gap-1 bg-background px-3 py-2"
+            key={metric.label}
+          >
+            <p className="truncate text-xs font-medium text-muted-foreground">
+              {metric.label}
+            </p>
+            <p className="min-w-0 break-words text-lg font-semibold tracking-tight text-foreground">
+              {metric.value}
+            </p>
+            <p className="min-w-0 break-words text-xs text-muted-foreground">
+              {metric.note}
+            </p>
+          </div>
+        ))}
       </div>
 
       {positionsQuery.isError ||
