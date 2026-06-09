@@ -56,7 +56,6 @@ class PortfolioService:
             name=payload.name,
             slug=payload.slug,
             description=payload.description,
-            base_currency=payload.base_currency,
         )
         _ = self.repository.add(portfolio)
         try:
@@ -103,7 +102,6 @@ class PortfolioService:
                 "name": portfolio.name,
                 "slug": portfolio.slug,
                 "description": portfolio.description,
-                "base_currency": portfolio.base_currency,
                 "position_count": self.repository.count_positions(portfolio.id),
                 "balance_count": self.repository.count_balances(portfolio.id),
                 "created_at": portfolio.created_at,

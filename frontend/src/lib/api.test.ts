@@ -74,7 +74,6 @@ const portfolioFixture: PortfolioRead = {
   name: "Retirement",
   slug: "retirement",
   description: "Long-term holdings",
-  baseCurrency: "USD",
   positionCount: 3,
   balanceCount: 2,
   createdAt: "2024-03-15T12:00:00Z",
@@ -85,7 +84,6 @@ const portfolioInput: PortfolioWriteInput = {
   name: "Retirement",
   slug: "retirement",
   description: "Long-term holdings",
-  baseCurrency: "USD",
 };
 
 let fetchMock = createFetchMock();
@@ -165,7 +163,7 @@ describe("api client", () => {
           message: "Validation failed",
           details: [
             { field: "name", issue: "Required" },
-            { field: "baseCurrency", issue: "Unsupported currency" },
+            { field: "slug", issue: "Invalid slug" },
             {
               code: "extension_disabled",
               extensionKey: "signaldeck.finance",
@@ -204,7 +202,7 @@ describe("api client", () => {
       message: "Validation failed",
       details: [
         { field: "name", issue: "Required" },
-        { field: "baseCurrency", issue: "Unsupported currency" },
+        { field: "slug", issue: "Invalid slug" },
         {
           code: "extension_disabled",
           extensionKey: "signaldeck.finance",

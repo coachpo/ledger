@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.agents import get_default_tool_catalog
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.core.config import Settings, get_settings
+from app.core.constants import PORTFOLIO_CURRENCY
 from app.core.formatting import normalize_symbol, to_utc, utcnow
 from app.extensions.signaldeck_finance.service_gate import (
     MARKET_DATA_SERVICE_SURFACE,
@@ -148,7 +149,7 @@ class MarketDataService:
 
     def get_quotes(self, portfolio_id: int, symbols: list[str]) -> MarketQuoteListRead:
         self._require_enabled()
-        portfolio = self.portfolio_service.get_portfolio_model(portfolio_id)
+        _ = self.portfolio_service.get_portfolio_model(portfolio_id)
         quotes: list[MarketQuoteRead] = []
         warnings: list[str] = []
         updated_cache = False
@@ -160,7 +161,7 @@ class MarketDataService:
                 continue
             seen_symbols.add(symbol)
 
-            quote, warning, was_updated = self._resolve_quote(symbol, portfolio.base_currency)
+            quote, warning, was_updated = self._resolve_quote(symbol)
             if quote is not None:
                 quotes.append(quote)
             if warning is not None:
@@ -185,7 +186,6 @@ class MarketDataService:
         capability_references: Sequence[dict[str, object]],
         grant_policy: RuntimeToolGrantPolicy,
         symbol: str,
-        base_currency: str = "USD",
     ) -> tuple[MarketQuoteRead | None, list[str]]:
         self._require_enabled()
         CapabilityService(
@@ -195,7 +195,7 @@ class MarketDataService:
             capability_references=capability_references,
             grant_policy=grant_policy,
         )
-        return self.get_quote_snapshot(symbol, base_currency=base_currency)
+        return self.get_quote_snapshot(symbol)
 
     def lookup_history_snapshot(
         self,
@@ -215,14 +215,12 @@ class MarketDataService:
         )
         return self.get_history_snapshot(symbol, range_value)
 
-    def get_quote_snapshot(
-        self, symbol: str, *, base_currency: str = "USD"
-    ) -> tuple[MarketQuoteRead | None, list[str]]:
+    def get_quote_snapshot(self, symbol: str) -> tuple[MarketQuoteRead | None, list[str]]:
         self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             return None, ["Symbol is required"]
-        quote, warning, was_updated = self._resolve_quote(normalized_symbol, base_currency)
+        quote, warning, was_updated = self._resolve_quote(normalized_symbol)
         if was_updated:
             self.session.commit()
         return quote, ([warning] if warning is not None else [])
@@ -931,16 +929,14 @@ class MarketDataService:
             raise QuoteProviderError(f"OHLCV rowLimit must be at most {self.ohlcv_max_row_limit}")
         return row_limit
 
-    def _resolve_quote(
-        self, symbol: str, base_currency: str
-    ) -> tuple[MarketQuoteRead | None, str | None, bool]:
+    def _resolve_quote(self, symbol: str) -> tuple[MarketQuoteRead | None, str | None, bool]:
         try:
             provider_quote = self.quote_provider.fetch_quote(symbol)
         except QuoteProviderError:
             cached = self.repository.get_latest(symbol)
             if cached is None:
                 return None, f"No quote available for {symbol}", False
-            if cached.currency != base_currency:
+            if cached.currency != PORTFOLIO_CURRENCY:
                 return None, f"Cached quote currency mismatch for {symbol}", False
             is_stale = self._is_quote_stale(cached.as_of)
             was_updated = cached.is_stale != is_stale
@@ -952,7 +948,7 @@ class MarketDataService:
                 was_updated,
             )
 
-        if provider_quote.currency != base_currency:
+        if provider_quote.currency != PORTFOLIO_CURRENCY:
             return None, f"Quote currency mismatch for {symbol}", False
 
         is_stale = self._is_quote_stale(provider_quote.as_of)

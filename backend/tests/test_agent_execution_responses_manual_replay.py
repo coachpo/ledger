@@ -91,9 +91,8 @@ def _build_runtime_tool_registry(recorder: _DispatchRecorder) -> RuntimeToolRegi
                     "type": "object",
                     "properties": {
                         "symbols": {"type": "array", "items": {"type": "string"}},
-                        "baseCurrency": {"type": ["string", "null"]},
                     },
-                    "required": ["symbols", "baseCurrency"],
+                    "required": ["symbols"],
                     "additionalProperties": False,
                 },
                 sort_order=1,
@@ -132,7 +131,7 @@ class _ManualReplayClient:
                     {
                         "type": "function_call",
                         "name": "signaldeck_market_data_quote_lookup",
-                        "arguments": json.dumps({"symbols": ["AAPL"], "baseCurrency": None}),
+                        "arguments": json.dumps({"symbols": ["AAPL"]}),
                         "call_id": "call_quote",
                     },
                 ],
@@ -163,7 +162,7 @@ class _ManualReplayClient:
                 {
                     "type": "function_call",
                     "name": "signaldeck_market_data_quote_lookup",
-                    "arguments": json.dumps({"symbols": ["AAPL"], "baseCurrency": None}),
+                    "arguments": json.dumps({"symbols": ["AAPL"]}),
                     "call_id": "call_quote",
                 },
                 {
@@ -171,7 +170,7 @@ class _ManualReplayClient:
                     "call_id": "call_quote",
                     "output": json.dumps(
                         {
-                            "arguments": {"baseCurrency": None, "symbols": ["AAPL"]},
+                            "arguments": {"symbols": ["AAPL"]},
                             "tool": "signaldeck_market_data_quote_lookup",
                         },
                         ensure_ascii=False,
@@ -248,7 +247,7 @@ class _ContinuationProviderRetryClient:
                     {
                         "type": "function_call",
                         "name": "signaldeck_market_data_quote_lookup",
-                        "arguments": json.dumps({"symbols": ["AAPL"], "baseCurrency": None}),
+                        "arguments": json.dumps({"symbols": ["AAPL"]}),
                         "call_id": "call_quote",
                     }
                 ],
@@ -264,7 +263,7 @@ class _ContinuationProviderRetryClient:
                     "call_id": "call_quote",
                     "output": json.dumps(
                         {
-                            "arguments": {"baseCurrency": None, "symbols": ["AAPL"]},
+                            "arguments": {"symbols": ["AAPL"]},
                             "tool": "signaldeck_market_data_quote_lookup",
                         },
                         ensure_ascii=False,

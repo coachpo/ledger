@@ -6,9 +6,9 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, field_serializer
 
-from app.core.formatting import decimal_to_string, normalize_currency, parse_decimal_string, to_utc
+from app.core.formatting import decimal_to_string, parse_decimal_string, to_utc
 
 
 def to_camel(value: str) -> str:
@@ -93,18 +93,6 @@ class DecimalFieldMixin:
     @staticmethod
     def parse_decimal(value: object) -> Decimal:
         return parse_decimal_string(value)
-
-
-class CurrencyMixin(CamelModel):
-    base_currency: str
-
-    @field_validator("base_currency")
-    @classmethod
-    def validate_base_currency(cls, value: str) -> str:
-        normalized = normalize_currency(value)
-        if len(normalized) != 3 or not normalized.isalpha():
-            raise ValueError("Base currency must be a 3-letter ISO code")
-        return normalized
 
 
 def ensure_timezone(value: datetime) -> datetime:

@@ -30,7 +30,6 @@ def test_reset_and_seed_database_replaces_existing_data_with_a_clean_empty_works
                 name="Old Portfolio",
                 slug="old_portfolio",
                 description="Should be removed by reset.",
-                base_currency="USD",
             )
         )
 

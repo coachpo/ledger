@@ -66,7 +66,6 @@ vi.mock("@/hooks/use-templates", () => ({
         {
           slug: "growth",
           name: "Growth",
-          baseCurrency: "USD",
           positions: [{ symbol: "AAPL", name: "Apple Inc." }],
         },
       ],

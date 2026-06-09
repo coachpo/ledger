@@ -32,7 +32,6 @@ describe("Dashboard", () => {
       data: [
         {
           balanceCount: 2,
-          baseCurrency: "USD",
           id: 1,
           name: "Growth Fund",
           positionCount: 4,
@@ -40,7 +39,6 @@ describe("Dashboard", () => {
         },
         {
           balanceCount: 1,
-          baseCurrency: "EUR",
           id: 2,
           name: "Income Fund",
           positionCount: 2,

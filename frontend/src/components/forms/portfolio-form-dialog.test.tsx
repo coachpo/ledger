@@ -22,7 +22,7 @@ function expectSharedDialogShell(dialog: HTMLElement) {
 }
 
 describe("PortfolioFormDialog", () => {
-  it("submits the default base currency when creating a portfolio", async () => {
+  it("submits a USD-only create payload without currency fields", async () => {
     const onSave = vi.fn();
 
     render(
@@ -51,7 +51,6 @@ describe("PortfolioFormDialog", () => {
 
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
-        baseCurrency: "USD",
         description: null,
         name: "Global Growth",
         slug: "global_growth",

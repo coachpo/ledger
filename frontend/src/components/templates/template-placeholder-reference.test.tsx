@@ -18,7 +18,6 @@ describe("TemplatePlaceholderReference", () => {
             {
               slug: "growth",
               name: "Growth",
-              baseCurrency: "USD",
               positions: [{ symbol: "AAPL", name: "Apple Inc." }],
             },
           ],
@@ -42,6 +41,7 @@ describe("TemplatePlaceholderReference", () => {
       screen.getByRole("button", { name: /collapse placeholder reference/i }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /growth/i })).toBeInTheDocument();
+    expect(screen.queryByText("portfolios.<slug>.base_currency")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /latest_report/i }),
     ).toBeInTheDocument();

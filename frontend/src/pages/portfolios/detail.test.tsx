@@ -99,7 +99,6 @@ function buildPortfolio() {
     slug: "growth-fund",
     description:
       "Long-term allocation with enough strategy notes to require wrapping on small screens.",
-    baseCurrency: "USD",
     positionCount: 0,
     balanceCount: 0,
     createdAt: "2026-04-01T10:00:00Z",
@@ -171,8 +170,7 @@ describe("PortfolioDetailPage", () => {
     expect(contextBar).not.toHaveClass("rounded-xl", "bg-card/95");
     expect(identity).toHaveClass("min-w-0", "break-words", "text-sm");
     expect(identity).toHaveTextContent(/Long-term allocation/);
-    expect(within(header).getByText("Base currency")).toBeVisible();
-    expect(within(header).getByText("USD")).toBeVisible();
+    expect(within(header).queryByText("Base currency")).not.toBeInTheDocument();
     expect(within(header).getByText("Portfolio ID")).toBeVisible();
     expect(within(header).getByText("#42")).toBeVisible();
     expect(within(header).getByText("Last updated")).toBeVisible();

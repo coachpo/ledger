@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
+from app.core.constants import PORTFOLIO_CURRENCY
 from app.core.formatting import decimal_to_string, portfolio_cash_total, to_utc
 from app.extensions.signaldeck_finance.service_gate import (
     TEMPLATE_COMPILER_SURFACE,
@@ -44,7 +45,6 @@ _PORTFOLIO_SCALAR_FIELDS = frozenset(
         "name",
         "slug",
         "description",
-        "base_currency",
         "position_count",
         "balance_count",
         "created_at",
@@ -145,7 +145,6 @@ class TemplateCompilerService:
                 {
                     "slug": portfolio.slug,
                     "name": portfolio.name,
-                    "base_currency": portfolio.base_currency,
                     "positions": [{"symbol": p.symbol, "name": p.name} for p in positions],
                 }
             )
@@ -499,9 +498,7 @@ class TemplateCompilerService:
         position_count = self.portfolio_repo.count_positions(portfolio.id)
         balance_count = self.portfolio_repo.count_balances(portfolio.id)
         desc = portfolio.description or ""
-        lines = [
-            f"**{portfolio.name}** ({portfolio.base_currency})",
-        ]
+        lines = [f"**{portfolio.name}**"]
         if desc:
             lines.append(desc)
         lines.append(f"Positions: {position_count} | Balances: {balance_count}")
@@ -517,7 +514,7 @@ class TemplateCompilerService:
 
     def _resolve_balance(self, portfolio: Portfolio, remaining: list[str]) -> str:
         balances = self.balance_repo.list_for_portfolio(portfolio.id)
-        available = self._compute_available_balance(balances, portfolio.base_currency)
+        available = self._compute_available_balance(balances)
 
         if not remaining:
             return self._render_available_balance(available)
@@ -528,15 +525,13 @@ class TemplateCompilerService:
 
         return f"[Unknown balance field: {field}]"
 
-    def _compute_available_balance(
-        self, balances: list[Balance], currency: str
-    ) -> dict[str, object]:
+    def _compute_available_balance(self, balances: list[Balance]) -> dict[str, object]:
         total = self._compute_signed_balance_total(balances)
         return {
             "label": "Available Balance",
             "amount": total,
             "operation_type": "DEPOSIT" if total >= 0 else "WITHDRAWAL",
-            "currency": currency,
+            "currency": PORTFOLIO_CURRENCY,
         }
 
     def _render_available_balance(self, available: dict[str, object]) -> str:

@@ -3,7 +3,6 @@ export interface PortfolioRead {
   name: string;
   slug: string;
   description: string | null;
-  baseCurrency: string;
   positionCount: number;
   balanceCount: number;
   createdAt: string;
@@ -14,7 +13,6 @@ export interface PortfolioWriteInput {
   name: string;
   slug: string;
   description?: string | null;
-  baseCurrency: string;
 }
 
 export interface PortfolioUpdateInput {

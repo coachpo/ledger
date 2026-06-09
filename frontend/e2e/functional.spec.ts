@@ -34,7 +34,6 @@ test.describe("Portfolio CRUD", () => {
         name: portfolioName,
         slug: portfolioSlug,
         description: "Playwright Add Position lookup coverage",
-        baseCurrency: "USD",
       },
     });
 

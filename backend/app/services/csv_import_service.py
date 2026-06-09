@@ -8,7 +8,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.core.constants import CSV_IMPORT_MODE
+from app.core.constants import CSV_IMPORT_MODE, PORTFOLIO_CURRENCY
 from app.core.errors import malformed_file_error, validation_error
 from app.core.formatting import normalize_symbol, parse_decimal_string
 from app.extensions.signaldeck_finance.service_gate import (
@@ -86,7 +86,7 @@ class CsvImportService:
                         name=row.name,
                         quantity=row.quantity,
                         average_cost=row.average_cost,
-                        currency=portfolio.base_currency,
+                        currency=PORTFOLIO_CURRENCY,
                         last_source="csv",
                     )
                     self.position_repository.add(position)
@@ -100,13 +100,13 @@ class CsvImportService:
                 ):
                     unchanged += 1
                     existing.last_source = "csv"
-                    existing.currency = portfolio.base_currency
+                    existing.currency = PORTFOLIO_CURRENCY
                     continue
 
                 existing.name = row.name
                 existing.quantity = row.quantity
                 existing.average_cost = row.average_cost
-                existing.currency = portfolio.base_currency
+                existing.currency = PORTFOLIO_CURRENCY
                 existing.last_source = "csv"
                 updated += 1
 

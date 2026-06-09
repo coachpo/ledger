@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.core.constants import PORTFOLIO_CURRENCY
 from app.core.errors import business_rule_error, not_found_error
 from app.core.formatting import portfolio_cash_total, utcnow
 from app.extensions.signaldeck_finance.service_gate import (
@@ -74,7 +75,7 @@ class TradingOperationService:
                 balance = self._get_required_deposit_balance(portfolio_id, payload.balance_id)
                 updated_position = self._apply_buy(
                     portfolio_id=portfolio.id,
-                    currency=portfolio.base_currency,
+                    currency=PORTFOLIO_CURRENCY,
                     position=position,
                     balance_amount=balance.amount,
                     portfolio_cash_total=portfolio_cash_total,
@@ -122,7 +123,7 @@ class TradingOperationService:
                 portfolio_id=portfolio.id,
                 balance_id=balance.id if balance is not None else None,
                 balance_label=balance.label if balance is not None else "Not Applicable",
-                currency=portfolio.base_currency,
+                currency=PORTFOLIO_CURRENCY,
                 payload=payload,
             )
             self.repository.add(operation)

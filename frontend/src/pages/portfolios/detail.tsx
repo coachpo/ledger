@@ -19,7 +19,6 @@ import {
   computePositionPnl,
   enrichPositionsWithQuotes,
 } from "@/lib/portfolio-analytics";
-import type { PortfolioUpdateInput } from "@/lib/types/portfolio";
 
 import { ConsoleSection } from "@/components/shared/console-section";
 import { InlineStatePanel } from "@/components/shared/inline-state-panel";
@@ -121,7 +120,6 @@ export function PortfolioDetailPage() {
   }
 
   const portfolioMetadataItems = [
-    { label: "Base currency", value: portfolio.baseCurrency },
     { label: "Portfolio ID", value: `#${portfolio.id}` },
     { label: "Last updated", value: formatDateTime(portfolio.updatedAt) },
   ];
@@ -133,17 +131,17 @@ export function PortfolioDetailPage() {
   const portfolioMetricItems = [
     {
       label: "Total Value",
-      value: formatCurrency(totalValue, portfolio.baseCurrency),
+      value: formatCurrency(totalValue, "USD"),
       note: "Balances plus marked positions",
     },
     {
       label: "Cash Balances",
-      value: formatCurrency(cashValue, portfolio.baseCurrency),
+      value: formatCurrency(cashValue, "USD"),
       note: `${balances.length.toLocaleString()} balance accounts`,
     },
     {
       label: "Unrealized P&L",
-      value: formatCurrency(unrealizedPnl, portfolio.baseCurrency),
+      value: formatCurrency(unrealizedPnl, "USD"),
       note: `${positions.length.toLocaleString()} tracked positions`,
     },
     {
@@ -349,8 +347,13 @@ export function PortfolioDetailPage() {
         isPending={updateMutation.isPending}
         onOpenChange={setShowEditForm}
         onSave={(data) => {
+          const updateInput = {
+            description: data.description,
+            name: data.name,
+          };
+
           updateMutation.mutate(
-            { portfolioId: portfolio.id, data: data as PortfolioUpdateInput },
+            { portfolioId: portfolio.id, data: updateInput },
             {
               onError: (error) =>
                 toast.error(

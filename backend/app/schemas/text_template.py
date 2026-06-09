@@ -111,7 +111,6 @@ class PlaceholderPositionRead(CamelModel):
 class PlaceholderPortfolioRead(CamelModel):
     slug: str
     name: str
-    base_currency: str
     positions: list[PlaceholderPositionRead]
 
 

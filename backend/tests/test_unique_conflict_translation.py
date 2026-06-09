@@ -91,7 +91,6 @@ def test_portfolio_create_translates_commit_time_slug_conflict(
                         name="Winner Portfolio",
                         slug="race_portfolio",
                         description=None,
-                        base_currency="USD",
                     )
                 )
                 winner_session.commit()
@@ -104,7 +103,6 @@ def test_portfolio_create_translates_commit_time_slug_conflict(
                     name="Race Portfolio",
                     slug="race_portfolio",
                     description=None,
-                    base_currency="USD",
                 )
             )
 

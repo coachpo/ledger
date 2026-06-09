@@ -92,7 +92,6 @@ test.describe("Portfolio details", () => {
       const timestamp = Date.now();
       const portfolioResponse = await request.post(`${API_BASE}/portfolios`, {
         data: {
-          baseCurrency: "USD",
           description: "Detail surface browser fixture",
           name: `Detail Portfolio ${timestamp}`,
           slug: `detail_portfolio_${timestamp}`,
@@ -112,7 +111,13 @@ test.describe("Portfolio details", () => {
         "Detail surface browser fixture",
       );
       await expect(header.getByText("Finance Workspace")).toBeVisible();
-      await expect(header.getByText("Quotes")).toBeVisible();
+      const statusList = header.getByRole("list", {
+        name: "Portfolio resource status",
+      });
+      await expect(statusList.getByText("Positions")).toBeVisible();
+      await expect(statusList.getByText("Balances")).toBeVisible();
+      await expect(statusList.getByText("Trades")).toBeVisible();
+      await expect(statusList.getByText("Quotes")).toHaveCount(0);
       const actions = page.getByTestId("portfolio-detail-actions");
       await expect(
         actions.getByRole("button", { name: /edit/i }),

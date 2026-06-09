@@ -45,7 +45,6 @@ export interface PlaceholderPosition {
 export interface PlaceholderPortfolio {
   slug: string;
   name: string;
-  baseCurrency: string;
   positions: PlaceholderPosition[];
 }
 

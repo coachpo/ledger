@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.agents import get_default_tool_catalog
+from app.core.constants import PORTFOLIO_CURRENCY
 from app.core.errors import business_rule_error, not_found_error
 from app.core.formatting import normalize_symbol, utcnow
 from app.extensions.signaldeck_finance.service_gate import (
@@ -89,7 +90,7 @@ class PositionService:
             name=resolved_name,
             quantity=payload.quantity,
             average_cost=payload.average_cost,
-            currency=portfolio.base_currency,
+            currency=PORTFOLIO_CURRENCY,
             last_source="manual",
         )
         self.repository.add(position)

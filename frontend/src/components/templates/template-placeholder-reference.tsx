@@ -34,7 +34,6 @@ const STATIC_PLACEHOLDER_GROUPS: PlaceholderReferenceGroup[] = [
       { path: "portfolios.<slug>", type: "object" },
       { path: "portfolios.<slug>.name", type: "string" },
       { path: "portfolios.<slug>.description", type: "string" },
-      { path: "portfolios.<slug>.base_currency", type: "string" },
       { path: "portfolios.<slug>.position_count", type: "number" },
       { path: "portfolios.<slug>.balance_count", type: "number" },
       { path: "portfolios.<slug>.total_value", type: "number" },

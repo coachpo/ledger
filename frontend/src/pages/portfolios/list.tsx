@@ -9,7 +9,6 @@ import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -59,7 +58,6 @@ export function PortfolioListPage() {
       [
         portfolio.name,
         portfolio.description,
-        portfolio.baseCurrency,
         String(portfolio.positionCount),
         String(portfolio.balanceCount),
       ].join(" "),
@@ -160,7 +158,7 @@ export function PortfolioListPage() {
           id: "portfolio-search",
           label: "Search portfolios",
           name: "portfolioSearch",
-          placeholder: "Search portfolios by name, currency, or holdings...",
+          placeholder: "Search portfolios by name or holdings...",
           value: search,
           onChange: setSearch,
         },
@@ -245,7 +243,6 @@ export function PortfolioListPage() {
                     />
                   </TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Currency</TableHead>
                   <TableHead>Holdings</TableHead>
                   <TableHead>Updated</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -278,11 +275,6 @@ export function PortfolioListPage() {
                             {portfolio.description || "No description"}
                           </p>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {portfolio.baseCurrency}
-                        </Badge>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {portfolio.positionCount} positions ·{" "}

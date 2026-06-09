@@ -113,7 +113,6 @@ describe("PortfolioListPage", () => {
       data: [
         {
           balanceCount: 2,
-          baseCurrency: "USD",
           description: "Long-term allocation",
           id: 42,
           name: "Growth Fund",
@@ -162,7 +161,6 @@ describe("PortfolioListPage", () => {
       data: [
         {
           balanceCount: 2,
-          baseCurrency: "USD",
           description: "Long-term allocation",
           id: 42,
           name: "Growth Fund",
@@ -183,6 +181,9 @@ describe("PortfolioListPage", () => {
       name: "Portfolio inventory",
     });
     const table = within(inventory).getByRole("table");
+    expect(
+      within(table).queryByRole("columnheader", { name: "Currency" }),
+    ).not.toBeInTheDocument();
     expect(table.parentElement?.parentElement).toHaveClass(
       "min-w-0",
       "max-w-full",
@@ -213,7 +214,6 @@ describe("PortfolioListPage", () => {
       data: [
         {
           balanceCount: 2,
-          baseCurrency: "USD",
           description: "Long-term allocation",
           id: 42,
           name: "Growth Fund",
@@ -222,7 +222,6 @@ describe("PortfolioListPage", () => {
         },
         {
           balanceCount: 1,
-          baseCurrency: "EUR",
           description: "Income allocation",
           id: 84,
           name: "Income Fund",
@@ -279,7 +278,6 @@ describe("PortfolioListPage", () => {
       data: [
         {
           balanceCount: 2,
-          baseCurrency: "USD",
           description: "Long-term allocation",
           id: 42,
           name: "Growth Fund",

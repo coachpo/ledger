@@ -4370,7 +4370,7 @@ def test_market_data_quote_lookup_service_denies_missing_capability_reference_gr
     with pytest.raises(RuntimeToolGrantError) as exc_info:
         _ = registry.dispatch(
             name=MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
-            arguments_json='{"symbols":["NVDA"],"baseCurrency":null}',
+            arguments_json='{"symbols":["NVDA"]}',
             granted_tool_keys={MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY},
             context=_runtime_context(
                 capability_references=[{"capabilityKey": capability_key, "capabilityVersion": 1}],
@@ -4528,7 +4528,8 @@ def test_position_runtime_tool_parser_preserves_validation_messages(
         ),
         (
             '{"symbols":["NVDA"],"baseCurrency":"US"}',
-            "signaldeck_market_data_quote_lookup baseCurrency must be a 3-letter ISO code.",
+            "signaldeck_market_data_quote_lookup arguments contained unsupported "
+            "fields: baseCurrency",
         ),
     ],
 )
@@ -5232,7 +5233,7 @@ def test_market_data_quote_lookup_dispatches_to_service_with_injected_provider(
 
     payload = registry.dispatch(
         name=MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
-        arguments_json='{"symbols":[" nvda ","NVDA","bad"],"baseCurrency":null}',
+        arguments_json='{"symbols":[" nvda ","NVDA","bad"]}',
         granted_tool_keys={MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY},
         context=_runtime_context(
             session_factory_override=session_factory,

@@ -31,7 +31,6 @@ export const balanceFormSchema = z.object({
 });
 
 export const portfolioCreateFormSchema = z.object({
-  baseCurrency: z.string().trim().length(3, "Base currency must be a 3-letter code"),
   description: optionalText,
   name: requiredText("Name"),
   slug: portfolioSlugText,

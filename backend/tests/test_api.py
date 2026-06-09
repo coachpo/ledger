@@ -232,11 +232,12 @@ def create_portfolio(
             "name": name,
             "slug": slug or portfolio_slug_for_name(name),
             "description": f"{name} description",
-            "baseCurrency": "USD",
         },
     )
     assert response.status_code == 201, response.json()
-    return response.json()
+    payload = response.json()
+    assert "baseCurrency" not in payload
+    return payload
 
 
 def create_balance(
@@ -677,8 +678,10 @@ def test_portfolio_isolation_and_summary_counts(client: TestClient) -> None:
     assert portfolio_map[second["id"]]["slug"] == "sandbox"
     assert portfolio_map[first["id"]]["balanceCount"] == 1
     assert portfolio_map[first["id"]]["positionCount"] == 0
+    assert "baseCurrency" not in portfolio_map[first["id"]]
     assert portfolio_map[second["id"]]["balanceCount"] == 0
     assert portfolio_map[second["id"]]["positionCount"] == 1
+    assert "baseCurrency" not in portfolio_map[second["id"]]
 
 
 def test_portfolio_slug_validation_uniqueness_and_immutability(client: TestClient) -> None:
@@ -691,8 +694,7 @@ def test_portfolio_slug_validation_uniqueness_and_immutability(client: TestClien
             "name": "Retirement Copy",
             "slug": "retirement_account",
             "description": "Duplicate slug",
-            "baseCurrency": "USD",
-        },
+        }
     )
     assert duplicate_response.status_code == 400
     assert duplicate_response.json()["code"] == "duplicate_portfolio_slug"
@@ -703,12 +705,24 @@ def test_portfolio_slug_validation_uniqueness_and_immutability(client: TestClien
             "name": "Broken",
             "slug": "123-bad",
             "description": "Invalid slug",
-            "baseCurrency": "USD",
-        },
+        }
     )
     assert invalid_response.status_code == 422
     assert invalid_response.json()["code"] == "validation_error"
     assert invalid_response.json()["details"][0]["field"] == "slug"
+
+    unsupported_currency_response = client.post(
+        "/api/v1/portfolios",
+        json={
+            "name": "Global",
+            "slug": "global",
+            "description": "Unsupported base currency field",
+            "baseCurrency": "EUR",
+        },
+    )
+    assert unsupported_currency_response.status_code == 422
+    assert unsupported_currency_response.json()["code"] == "validation_error"
+    assert unsupported_currency_response.json()["details"][0]["field"] == "baseCurrency"
 
     immutable_response = client.patch(
         f"/api/v1/portfolios/{portfolio['id']}",
@@ -1973,6 +1987,7 @@ def test_init_db_backfills_legacy_portfolio_slugs_with_valid_unique_values(
         }
         assert "slug" in portfolio_columns
         assert portfolio_columns["slug"]["nullable"] is False
+        assert "base_currency" not in portfolio_columns
 
         with engine.connect() as connection:
             slugs = (
@@ -2970,6 +2985,7 @@ def test_report_placeholder_cycle_detection_indirect(
 
 
 def test_placeholder_tree_includes_reports(client: TestClient) -> None:
+    portfolio = create_portfolio(client, name="Tree Portfolio", slug="tree_portfolio")
     source_template = create_template(client, name="Tree Test", content="# Tree")
     report = client.post(f"/api/v1/reports/compile/{source_template['id']}").json()
 
@@ -2978,6 +2994,9 @@ def test_placeholder_tree_includes_reports(client: TestClient) -> None:
     tree = tree_response.json()
 
     assert "reports" in tree
+    portfolio_nodes = [node for node in tree["portfolios"] if node["slug"] == portfolio["slug"]]
+    assert len(portfolio_nodes) == 1
+    assert "baseCurrency" not in portfolio_nodes[0]
     report_names = [r["name"] for r in tree["reports"]]
     assert report["name"] in report_names
     assert "createdAt" in tree["reports"][0]

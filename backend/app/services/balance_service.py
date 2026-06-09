@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.core.constants import PORTFOLIO_CURRENCY
 from app.core.errors import business_rule_error, not_found_error
 from app.extensions.signaldeck_finance.service_gate import (
     BALANCE_SERVICE_SURFACE,
@@ -41,7 +42,7 @@ class BalanceService:
             label=payload.label,
             amount=payload.amount,
             operation_type=payload.operation_type,
-            currency=portfolio.base_currency,
+            currency=PORTFOLIO_CURRENCY,
         )
         self.repository.add(balance)
         self.session.commit()

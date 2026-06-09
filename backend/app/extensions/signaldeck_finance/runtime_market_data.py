@@ -10,7 +10,7 @@ from app.agents.runtime_tools.types import (
     RuntimeToolSpec,
     RuntimeToolWarning,
 )
-from app.core.formatting import normalize_currency, normalize_symbol, to_utc
+from app.core.formatting import normalize_symbol, to_utc
 from app.extensions.signaldeck_finance.execution_dependencies import (
     resolve_finance_quote_provider,
     resolve_social_sentiment_adapters,
@@ -122,9 +122,8 @@ _QUOTE_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
             "minItems": 1,
             "maxItems": _QUOTE_SYMBOL_LIMIT,
         },
-        "baseCurrency": {"type": ["string", "null"], "minLength": 3, "maxLength": 3},
     },
-    "required": ["symbols", "baseCurrency"],
+    "required": ["symbols"],
     "additionalProperties": False,
 }
 
@@ -346,7 +345,7 @@ def parse_quote_lookup_arguments(arguments_json: str) -> dict[str, object]:
     )
     _reject_unexpected_keys(
         raw_arguments,
-        allowed_keys={"symbols", "baseCurrency"},
+        allowed_keys={"symbols"},
         function_name=MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
     )
     return {
@@ -355,7 +354,6 @@ def parse_quote_lookup_arguments(arguments_json: str) -> dict[str, object]:
             function_name=MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
             maximum=_QUOTE_SYMBOL_LIMIT,
         ),
-        "base_currency": _parse_base_currency(raw_arguments.get("baseCurrency")),
     }
 
 
@@ -695,7 +693,6 @@ def execute_quote_lookup(
                 capability_references=context.capability_references,
                 grant_policy=MARKET_DATA_QUOTE_LOOKUP_GRANT_POLICY,
                 symbol=symbol,
-                base_currency=cast(str, arguments["base_currency"]),
             )
             if quote is not None:
                 quotes.append(quote)
@@ -1040,28 +1037,6 @@ def _parse_optional_string_argument(
         )
     normalized = value.strip()
     return normalized or None
-
-
-def _parse_base_currency(value: object) -> str:
-    if value is None:
-        return "USD"
-    if not isinstance(value, str):
-        raise RuntimeToolError(
-            code="agent_tool_call_invalid",
-            message=(
-                f"{MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME} baseCurrency must be a string."
-            ),
-        )
-    normalized = normalize_currency(value)
-    if len(normalized) != 3 or not normalized.isalpha():
-        raise RuntimeToolError(
-            code="agent_tool_call_invalid",
-            message=(
-                f"{MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME} "
-                "baseCurrency must be a 3-letter ISO code."
-            ),
-        )
-    return normalized
 
 
 def _parse_history_range(value: object) -> str:

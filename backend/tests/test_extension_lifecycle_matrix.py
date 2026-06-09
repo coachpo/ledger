@@ -454,7 +454,6 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
             "name": "Lifecycle Matrix Portfolio",
             "slug": "lifecycle_matrix_portfolio",
             "description": "Parity fixture",
-            "baseCurrency": "USD",
         },
     )
     assert portfolio.status_code == 201, portfolio.json()
@@ -673,7 +672,6 @@ def test_direct_market_data_positions_portfolio_template_services_block_when_dis
                 name="Direct Service Matrix",
                 slug="direct_service_matrix",
                 description="Direct service disabled-state fixture",
-                base_currency="USD",
             )
         )
         _ = PositionService(session).create_position(
@@ -722,7 +720,6 @@ def test_direct_market_data_positions_portfolio_template_services_work_when_enab
                 name="Enabled Direct Service Matrix",
                 slug="enabled_direct_service_matrix",
                 description="Direct service enabled-state fixture",
-                base_currency="USD",
             )
         )
         _ = PositionService(session).create_position(

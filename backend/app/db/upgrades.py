@@ -5188,6 +5188,10 @@ def upgrade_legacy_schema(engine: Engine) -> None:
                 connection.exec_driver_sql(
                     "ALTER TABLE portfolios ADD CONSTRAINT uq_portfolios_slug UNIQUE (slug)"
                 )
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE portfolios DROP COLUMN IF EXISTS base_currency CASCADE"
+            )
 
     if "balances" in table_names:
         balance_columns = {column["name"] for column in inspector.get_columns("balances")}

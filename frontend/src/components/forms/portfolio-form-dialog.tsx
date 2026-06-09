@@ -43,10 +43,8 @@ export function PortfolioFormDialog({
   onOpenChange,
   onSave,
 }: PortfolioFormDialogProps) {
-  const initialBaseCurrency = initial?.baseCurrency ?? "USD";
   const form = useForm<PortfolioCreateFormValues>({
     defaultValues: {
-      baseCurrency: initialBaseCurrency,
       description: initial?.description ?? "",
       name: initial?.name ?? "",
       slug: initial?.slug ?? "",
@@ -56,12 +54,11 @@ export function PortfolioFormDialog({
 
   useEffect(() => {
     form.reset({
-      baseCurrency: initialBaseCurrency,
       description: initial?.description ?? "",
       name: initial?.name ?? "",
       slug: initial?.slug ?? "",
     });
-  }, [form, initial, initialBaseCurrency, open]);
+  }, [form, initial, open]);
 
   const formId = "portfolio-form-dialog-form";
   const dialogTitle = initial ? "Edit Portfolio" : "Create Portfolio";
@@ -110,7 +107,6 @@ export function PortfolioFormDialog({
 
               onSave({
                 ...payload,
-                baseCurrency: initialBaseCurrency.trim().toUpperCase(),
                 slug: values.slug.trim().toLowerCase(),
               } satisfies PortfolioWriteInput);
             })}
