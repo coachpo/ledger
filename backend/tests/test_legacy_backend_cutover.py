@@ -10,14 +10,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.services.run_service import RunService
 
-REMOVED_GLOBAL_AUTHORING_ROUTE_PATHS = (
+REMOVED_BACKEND_ROUTE_PATHS = (
     "/api/agents",
     "/api/workflows",
     "/api/capabilities",
     "/api/mcp-servers",
     "/api/output-schemas",
-)
-LEGACY_ROUTE_PATHS = (
+    "/api/v1/templates/seed",
     "/api/v1/orchestration/roles",
     "/api/v1/orchestration/characters",
     "/api/v1/orchestration/mentions/catalog",
@@ -31,24 +30,93 @@ LEGACY_ROUTE_PATHS = (
     "/api/skills/1",
     "/api/skills/1/activate",
     "/api/v2/personas",
-    "/api/v1/templates/seed",
     "/api/workflows/{workflow_id}/runs",
 )
-LIVE_PLATFORM_ROUTE_PREFIXES = (
+S13_DEFERRED_REMOVED_BACKEND_ROUTE_PREFIXES = (
+    "/api/skills",
+    "/api/v2/",
+)
+LIVE_BACKEND_ROUTE_PREFIXES = (
     "/api/workflow-packages",
+    "/api/schedules",
     "/api/model-connections",
+    "/api/extensions",
+    "/api/memory",
     "/api/tools",
     "/api/runs",
+    "/api/v1/portfolios",
+    "/api/v1/templates",
+    "/api/v1/reports",
+)
+REMOVED_OPENAPI_TAGS = (
+    "agents",
+    "workflows",
+    "capabilities",
+    "mcp-servers",
+    "output-schemas",
+    "skills",
+    "orchestration",
+    "runtime-v2",
+    "studio",
+    "tryouts",
+    "agent-specs",
+    "workflow-specs",
+    "personas",
+)
+REMOVED_OPENAPI_OPERATION_ID_FRAGMENTS = (
+    "api_agents",
+    "api_workflows",
+    "api_capabilities",
+    "api_mcp_servers",
+    "api_output_schemas",
+    "api_skills",
+    "api_v1_templates_seed",
+    "api_v1_orchestration",
+    "api_v2_runtime",
+    "api_v2_studio",
+    "api_v2_tryouts",
+    "api_v2_agent_specs",
+    "api_v2_workflow_specs",
+    "api_v2_capabilities",
+    "api_v2_personas",
+)
+REMOVED_OPENAPI_SCHEMA_COMPONENT_NAMES = (
+    "AgentCreate",
+    "AgentListRead",
+    "AgentRead",
+    "AgentUpdate",
+    "AgentSpecCreate",
+    "AgentSpecRead",
+    "CapabilityCreate",
+    "CapabilityListRead",
+    "CapabilityRead",
+    "CapabilityUpdate",
+    "McpServerCreate",
+    "McpServerRead",
+    "OutputSchemaCreate",
+    "OutputSchemaRead",
+    "PersonaCreate",
+    "PersonaRead",
+    "SkillCreate",
+    "SkillRead",
+    "StudioRunRead",
+    "TryoutRead",
+    "WorkflowCreate",
+    "WorkflowListRead",
+    "WorkflowRead",
+    "WorkflowSpecCreate",
+    "WorkflowSpecRead",
+    "WorkflowUpdate",
 )
 
 
-@pytest.mark.parametrize("path", LEGACY_ROUTE_PATHS)
+@pytest.mark.parametrize("path", REMOVED_BACKEND_ROUTE_PATHS)
 def test_legacy_backend_routes_return_404(client: TestClient, path: str) -> None:
     response = client.get(path)
     assert response.status_code == 404
 
 
-@pytest.mark.parametrize("path", REMOVED_GLOBAL_AUTHORING_ROUTE_PATHS)
+@pytest.mark.parametrize("path", REMOVED_BACKEND_ROUTE_PATHS)
 def test_clean_break_removes_global_authoring_routes(client: TestClient, path: str) -> None:
     assert client.get(path).status_code == 404
     assert client.post(path, json={}).status_code == 404
@@ -56,7 +124,13 @@ def test_clean_break_removes_global_authoring_routes(client: TestClient, path: s
 
 def test_legacy_backend_routes_are_not_registered(app: FastAPI) -> None:
     route_paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
-    assert route_paths.isdisjoint((*LEGACY_ROUTE_PATHS, *REMOVED_GLOBAL_AUTHORING_ROUTE_PATHS))
+
+    for removed_path in REMOVED_BACKEND_ROUTE_PATHS:
+        assert removed_path not in route_paths
+        assert not any(path.startswith(f"{removed_path}/") for path in route_paths)
+
+    for prefix in S13_DEFERRED_REMOVED_BACKEND_ROUTE_PREFIXES:
+        assert not any(path.startswith(prefix) for path in route_paths)
 
 
 def test_live_platform_routes_match_openapi(app: FastAPI) -> None:
@@ -64,14 +138,45 @@ def test_live_platform_routes_match_openapi(app: FastAPI) -> None:
     openapi = cast(dict[str, object], app.openapi())
     openapi_paths = set(cast(dict[str, object], openapi["paths"]))
 
-    for prefix in LIVE_PLATFORM_ROUTE_PREFIXES:
+    for prefix in LIVE_BACKEND_ROUTE_PREFIXES:
         assert any(path.startswith(prefix) for path in route_paths)
         assert any(path.startswith(prefix) for path in openapi_paths)
 
-    for removed_path in REMOVED_GLOBAL_AUTHORING_ROUTE_PATHS:
-        assert removed_path not in route_paths
-        assert not any(path.startswith(f"{removed_path}/") for path in openapi_paths)
+
+def test_removed_backend_surfaces_are_absent_from_openapi_contract(
+    app: FastAPI,
+) -> None:
+    openapi = cast(dict[str, object], app.openapi())
+    openapi_paths = cast(dict[str, object], openapi["paths"])
+    components = cast(dict[str, object], openapi["components"])
+    schemas = cast(dict[str, object], components["schemas"])
+    openapi_tags: set[str] = set()
+    operation_ids: list[str] = []
+
+    for path_item in openapi_paths.values():
+        operations = cast(dict[str, dict[str, object]], path_item)
+        for operation in operations.values():
+            openapi_tags.update(cast(list[str], operation.get("tags", [])))
+            operation_id = operation.get("operationId")
+            if isinstance(operation_id, str):
+                operation_ids.append(operation_id.lower())
+
+    for removed_path in REMOVED_BACKEND_ROUTE_PATHS:
         assert removed_path not in openapi_paths
+        assert not any(path.startswith(f"{removed_path}/") for path in openapi_paths)
+
+    for prefix in S13_DEFERRED_REMOVED_BACKEND_ROUTE_PREFIXES:
+        assert not any(path.startswith(prefix) for path in openapi_paths)
+
+    assert openapi_tags.isdisjoint(REMOVED_OPENAPI_TAGS)
+
+    for operation_id in operation_ids:
+        assert not any(
+            fragment in operation_id
+            for fragment in REMOVED_OPENAPI_OPERATION_ID_FRAGMENTS
+        )
+
+    assert set(schemas).isdisjoint(REMOVED_OPENAPI_SCHEMA_COMPONENT_NAMES)
 
 
 def test_legacy_global_authoring_runtime_entrypoint_is_removed(

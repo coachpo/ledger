@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import re
 from pathlib import Path
 from typing import cast
@@ -18,7 +19,17 @@ _SQL_BASE64_DECODE_RE: re.Pattern[str] = re.compile(
     r"decode\('([^']+)'\s*,\s*'base64'\)",
     re.IGNORECASE | re.MULTILINE,
 )
-_OPENAPI_CONTRACT_SCHEMAS = (
+S13_DEFERRED_REMOVED_OPENAPI_TOKENS = (
+    "Budget USD",
+    "budgetUsd",
+    "budget_usd",
+    "aggregate_budget_usd",
+    "aggregateBudgetUsd",
+    "BudgetUsd",
+    "validation_summary",
+    "validationSummary",
+)
+LIVE_OPENAPI_CONTRACT_SCHEMAS = (
     "RunPackageProvenanceRead",
     "RunRead",
     "WorkflowPackageLaunchRead",
@@ -35,11 +46,20 @@ def test_openapi_workflow_package_contracts_exclude_removed_tokens(app: FastAPI)
     schemas = cast(dict[str, dict[str, object]], components["schemas"])
     checked_schemas = {
         schema_name: schemas[schema_name]
-        for schema_name in _OPENAPI_CONTRACT_SCHEMAS
+        for schema_name in LIVE_OPENAPI_CONTRACT_SCHEMAS
         if schema_name in schemas
     }
+    serialized_schemas = json.dumps(checked_schemas, default=str, sort_keys=True)
 
     assert {"RunRead", "WorkflowPackageRead"} <= checked_schemas.keys()
+    assert not any(
+        token in serialized_schemas for token in S13_DEFERRED_REMOVED_OPENAPI_TOKENS
+    )
+    assert not any(
+        token in schema_name
+        for schema_name in schemas
+        for token in S13_DEFERRED_REMOVED_OPENAPI_TOKENS
+    )
     assert_removed_contract_tokens_absent(
         checked_schemas,
         context="workflow package and run OpenAPI schemas",

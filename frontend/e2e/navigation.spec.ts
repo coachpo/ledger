@@ -50,9 +50,41 @@ const retiredNavTestIds = [
   "nav-mcp-servers",
   "nav-output-schemas",
   "nav-workflows",
+  "nav-skills",
   "nav-tryout",
   "nav-studio",
   "nav-orchestration",
+  "nav-runtime-v2",
+] as const;
+
+const removedBrowserRoutePaths = [
+  "/agents",
+  "/agents/new",
+  "/agents/123/edit",
+  "/capabilities",
+  "/capabilities/new",
+  "/capabilities/123/edit",
+  "/mcp-servers",
+  "/mcp-servers/new",
+  "/mcp-servers/123/edit",
+  "/output-schemas",
+  "/output-schemas/new",
+  "/output-schemas/123/edit",
+  "/workflows",
+  "/workflows/new",
+  "/workflows/123/edit",
+  "/workflows/123/run",
+  "/skills",
+  "/skills/new",
+  "/skills/123/edit",
+  "/studio",
+  "/studio/agents",
+  "/tryout",
+  "/orchestration",
+  "/orchestration/roles",
+  "/orchestration/characters",
+  "/runtime-v2",
+  "/runtime-v2/agents",
 ] as const;
 
 async function expectSingleRouteMain(
@@ -133,6 +165,23 @@ test.describe("Primary workspace navigation", () => {
     );
   });
 
+  test("removed browser route families route to the product-owned 404", async ({
+    page,
+  }) => {
+    for (const path of removedBrowserRoutePaths) {
+      await page.goto(path);
+
+      await expect(page.getByTestId("not-found-page")).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Page not found" }),
+      ).toBeVisible();
+      await expectSingleRouteMain(page, "route-unknown", "scroll");
+      await expect(page.locator("body")).not.toContainText(
+        "Unexpected Application Error!",
+      );
+    }
+  });
+
   test("renders a product-owned unknown-route shell", async ({ page }) => {
     await page.goto("/does-not-exist");
 
@@ -177,6 +226,9 @@ test.describe("Primary workspace navigation", () => {
     await expect(mobileSidebar).toBeVisible();
     for (const testId of primaryShellNavTestIds) {
       await expect(mobileSidebar.getByTestId(testId)).toBeVisible();
+    }
+    for (const testId of retiredNavTestIds) {
+      await expect(mobileSidebar.getByTestId(testId)).toHaveCount(0);
     }
     await expect(
       mobileSidebar.getByTestId("nav-workflow-packages"),

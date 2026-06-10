@@ -38,6 +38,8 @@ from app.services.workflow_package_service import WorkflowPackageService
 
 AGENT_PLATFORM_TABLE_NAMES = {
     "agents",
+    "agent_capability_refs",
+    "agent_mcp_server_refs",
     "mcp_servers",
     "model_connections",
     "output_schemas",
@@ -47,7 +49,10 @@ AGENT_PLATFORM_TABLE_NAMES = {
     "run_steps",
     "runs",
     "run_workflow_package_snapshots",
+    "workflow_agent_refs",
+    "workflow_packages",
     "workflow_package_runtime_input_entries",
+    "workflow_package_secret_bindings",
     "capabilities",
     "workflows",
 }
@@ -75,6 +80,24 @@ LEGACY_BACKEND_TABLE_NAMES = {
     "persona_projection_events",
     "orchestration_roles",
     "orchestration_characters",
+}
+LIVE_AGENT_PLATFORM_TABLE_NAMES = AGENT_PLATFORM_TABLE_NAMES
+LIVE_CORE_MEMORY_TABLE_NAMES = CORE_MEMORY_TABLE_NAMES
+LIVE_SCHEDULE_TABLE_NAMES = SCHEDULE_TABLE_NAMES
+S13_DEFERRED_LEGACY_BACKEND_TABLE_NAMES = LEGACY_BACKEND_TABLE_NAMES
+S13_DEFERRED_REMOVED_RUN_PROVENANCE_COLUMNS = {
+    "workflow_package_version_id",
+    "workflow_package_version",
+    "workflow_package_manifest_hash",
+    "workflow_package_compiled_hash",
+    "launch_snapshot",
+}
+S13_DEFERRED_GLOBAL_AUTHORING_ROW_CLEANUP_TABLE_NAMES = {
+    "agents",
+    "capabilities",
+    "mcp_servers",
+    "output_schemas",
+    "workflows",
 }
 _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
     "Run marked as failed during startup recovery because the previous process exited while "
@@ -177,13 +200,6 @@ _SCHEDULE_FIRE_COLUMNS = {
     "error_message",
     "created_at",
     "updated_at",
-}
-_REMOVED_RUN_PROVENANCE_COLUMNS = {
-    "workflow_package_version_id",
-    "workflow_package_version",
-    "workflow_package_manifest_hash",
-    "workflow_package_compiled_hash",
-    "launch_snapshot",
 }
 _RUN_SNAPSHOT_COLUMNS = {
     "run_id",
@@ -892,9 +908,9 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
     retired_portfolio_id = connection.execute(
         text(
             "INSERT INTO portfolios ("
-            "name, slug, description, base_currency, created_at, updated_at"
+            "name, slug, description, created_at, updated_at"
             ") VALUES ("
-            ":name, :slug, :description, 'USD', NOW(), NOW()"
+            ":name, :slug, :description, NOW(), NOW()"
             ") RETURNING id"
         ),
         {
@@ -906,9 +922,9 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
     live_portfolio_id = connection.execute(
         text(
             "INSERT INTO portfolios ("
-            "name, slug, description, base_currency, created_at, updated_at"
+            "name, slug, description, created_at, updated_at"
             ") VALUES ("
-            ":name, :slug, :description, 'USD', NOW(), NOW()"
+            ":name, :slug, :description, NOW(), NOW()"
             ") RETURNING id"
         ),
         {
@@ -1135,7 +1151,7 @@ def _foreign_key_signature(
 def _assert_schedule_table_shape(engine: Engine) -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
-    assert SCHEDULE_TABLE_NAMES <= table_names
+    assert LIVE_SCHEDULE_TABLE_NAMES <= table_names
 
     schedule_columns = {
         column["name"]: column for column in inspector.get_columns("workflow_package_schedules")
@@ -1276,7 +1292,7 @@ def _assert_schedule_table_shape(engine: Engine) -> None:
 def _assert_core_memory_table_shape(engine: Engine) -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
-    assert CORE_MEMORY_TABLE_NAMES <= table_names
+    assert LIVE_CORE_MEMORY_TABLE_NAMES <= table_names
 
     entry_columns = {
         column["name"]: column for column in inspector.get_columns("agent_memory_entries")
@@ -1972,7 +1988,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "workflow_key",
         "workflow_version",
         "per_step_outputs",
-        *_REMOVED_RUN_PROVENANCE_COLUMNS,
+        *S13_DEFERRED_REMOVED_RUN_PROVENANCE_COLUMNS,
         *_RUN_COST_COLUMNS,
     }.isdisjoint(run_columns)
     assert run_columns["schedule_id"]["nullable"] is True
@@ -2042,7 +2058,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert not any(
         foreign_key[0]
         for foreign_key in run_foreign_keys
-        if set(foreign_key[0]) & _REMOVED_RUN_PROVENANCE_COLUMNS
+        if set(foreign_key[0]) & S13_DEFERRED_REMOVED_RUN_PROVENANCE_COLUMNS
     )
 
     assert set(snapshot_columns) == _RUN_SNAPSHOT_COLUMNS
@@ -2251,6 +2267,43 @@ def _stock_analysis_sanitation_snapshot(
     }
 
 
+def _assert_s13_deferred_global_authoring_rows_deleted(
+    snapshot: Mapping[str, object],
+) -> None:
+    assert snapshot["output_schema_keys"] == []
+    assert snapshot["capability_keys"] == []
+    assert snapshot["mcp_server_keys"] == []
+    assert snapshot["agent_keys"] == []
+    assert snapshot["workflow_keys"] == []
+
+
+def test_s13_deferred_retired_ballast_guards_live_upgrade_tables(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        inspector = inspect(engine)
+        table_names = set(inspector.get_table_names())
+        run_columns = {column["name"] for column in inspector.get_columns("runs")}
+
+        assert LIVE_AGENT_PLATFORM_TABLE_NAMES <= table_names
+        assert LIVE_CORE_MEMORY_TABLE_NAMES <= table_names
+        assert LIVE_SCHEDULE_TABLE_NAMES <= table_names
+        assert S13_DEFERRED_GLOBAL_AUTHORING_ROW_CLEANUP_TABLE_NAMES <= table_names
+        assert S13_DEFERRED_GLOBAL_AUTHORING_ROW_CLEANUP_TABLE_NAMES <= (
+            LIVE_AGENT_PLATFORM_TABLE_NAMES
+        )
+        assert S13_DEFERRED_GLOBAL_AUTHORING_ROW_CLEANUP_TABLE_NAMES.isdisjoint(
+            S13_DEFERRED_LEGACY_BACKEND_TABLE_NAMES
+        )
+        assert S13_DEFERRED_LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
+        assert S13_DEFERRED_REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
+    finally:
+        engine.dispose()
+
+
 def test_init_db_creates_capability_tool_keys_and_drops_legacy_backend_tables(
     database_url: str,
 ) -> None:
@@ -2259,8 +2312,8 @@ def test_init_db_creates_capability_tool_keys_and_drops_legacy_backend_tables(
 
     try:
         table_names = set(inspect(engine).get_table_names())
-        assert AGENT_PLATFORM_TABLE_NAMES <= table_names
-        assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
+        assert LIVE_AGENT_PLATFORM_TABLE_NAMES <= table_names
+        assert S13_DEFERRED_LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
         capability_columns = {
             column["name"] for column in inspect(engine).get_columns("capabilities")
         }
@@ -3376,7 +3429,7 @@ def test_init_db_keeps_core_memory_available_without_pgvector(
     try:
         inspector = inspect(engine)
         table_names = set(inspector.get_table_names())
-        assert CORE_MEMORY_TABLE_NAMES <= table_names
+        assert LIVE_CORE_MEMORY_TABLE_NAMES <= table_names
         assert CORE_MEMORY_PGVECTOR_TABLE_NAMES.isdisjoint(table_names)
         _assert_core_memory_table_shape(engine)
     finally:
@@ -4993,6 +5046,7 @@ def test_init_db_hard_cutover_deletes_runtime_rows_and_preserves_config_product_
                 retired_portfolio_id=retired_portfolio_id,
             )
 
+        _assert_s13_deferred_global_authoring_rows_deleted(first_snapshot)
         assert first_snapshot == {
             "output_schema_keys": [],
             "capability_keys": [],
@@ -5836,7 +5890,7 @@ def test_upgrade_legacy_schema_drops_preexisting_legacy_backend_tables(session_f
     upgrade_legacy_schema(engine)
 
     table_names = set(inspect(engine).get_table_names())
-    assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
+    assert S13_DEFERRED_LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
 
 
 def test_init_db_hard_cutover_deletes_legacy_agent_rows_when_stale_runtime_schema_exists(
@@ -6558,7 +6612,7 @@ def test_upgrade_legacy_schema_normalizes_run_extension_snapshot_jsonb(
         run_columns = {column["name"] for column in inspector.get_columns("runs")}
         assert "extension_dependencies" in run_columns
         assert "extension_snapshots" not in run_columns
-        assert _REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
+        assert S13_DEFERRED_REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
 
         with engine.connect() as connection:
             row = (
