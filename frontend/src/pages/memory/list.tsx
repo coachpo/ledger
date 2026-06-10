@@ -13,7 +13,6 @@ import {
   type SplitInspectorLayoutTab,
 } from "@/components/shared/split-inspector-layout";
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -169,25 +168,22 @@ function TextField({
 function MemoryAccessState({ error }: { error: unknown }) {
   if (isAccessDenied(error)) {
     return (
-      <Alert data-testid="memory-access-denied" variant="destructive">
-        <TriangleAlert />
-        <AlertTitle>Memory access denied</AlertTitle>
-        <AlertDescription>
-          The backend denied this package context for the requested memory scope.
-          Browser-authored namespace declarations or grants cannot authorize access.
-        </AlertDescription>
-      </Alert>
+      <InventoryStatePanel
+        description="The backend denied this package context for the requested memory scope. Browser-authored namespace declarations or grants cannot authorize access."
+        testId="memory-access-denied"
+        title="Memory access denied"
+        tone="danger"
+      />
     );
   }
 
   return (
-    <Alert data-testid="memory-load-error" variant="destructive">
-      <TriangleAlert />
-      <AlertTitle>Unable to load canonical memory</AlertTitle>
-      <AlertDescription>
-        {error instanceof Error ? error.message : "The memory API request failed."}
-      </AlertDescription>
-    </Alert>
+    <InventoryStatePanel
+      description={error instanceof Error ? error.message : "The memory API request failed."}
+      testId="memory-load-error"
+      title="Unable to load canonical memory"
+      tone="danger"
+    />
   );
 }
 

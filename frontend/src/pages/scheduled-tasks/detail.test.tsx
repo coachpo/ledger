@@ -601,7 +601,7 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByText("No scheduled task exists for this route.")).toBeVisible();
   });
 
-  it("renders a cleaner management header, compact summaries, and isolated top-level tabs", async () => {
+  it("renders a cleaner shared context header, compact summaries, and isolated top-level tabs", async () => {
     renderDetailPage();
 
     const expectedUpdatedAt = expectedViewerLocalDateTime("2026-05-30T10:00:00Z");
@@ -616,32 +616,25 @@ describe("ScheduledTaskDetailPage", () => {
     const header = screen.getByTestId("scheduled-task-detail-header");
     expect(header).toBeVisible();
     expect(screen.getByRole("heading", { name: "Daily market brief" })).toBeVisible();
-
-    const headerTopRow = screen.getByTestId("scheduled-task-detail-header-top-row");
-    expect(headerTopRow).toContainElement(
-      screen.getByRole("heading", { name: "Daily market brief" }),
-    );
-    expect(within(headerTopRow).getByText("schedule:44")).toBeVisible();
-    expect(within(headerTopRow).getByTestId("scheduled-task-detail-status-enabled")).toHaveTextContent("enabled");
-    expect(within(headerTopRow).getByTestId("schedule-run-now")).toBeVisible();
-    expect(headerTopRow.textContent).toContain("Daily market briefschedule:44enabledRun now");
+    expect(within(header).getByText("schedule:44")).toBeVisible();
+    expect(within(header).getByTestId("scheduled-task-detail-status-enabled")).toHaveTextContent("enabled");
+    expect(within(header).getByTestId("schedule-run-now")).toBeVisible();
     expect(
       within(header).queryByRole("link", { name: "Scheduled Tasks" }),
     ).not.toBeInTheDocument();
 
     const headerDescription = screen.getByTestId("scheduled-task-detail-header-description");
     expect(headerDescription).toHaveTextContent("Runs before the opening bell");
-    expect(headerTopRow).not.toHaveTextContent("Runs before the opening bell");
 
     const headerMetaRow = screen.getByTestId("scheduled-task-detail-header-meta-row");
-    expect(headerMetaRow).toHaveTextContent("Pattern Weekly Mon, Tue, Wed, Thu, Fri at 09:00");
-    expect(headerMetaRow).toHaveTextContent("Timezone America/New_York");
-    expect(headerMetaRow).toHaveTextContent("Package Market Research Package");
-    expect(headerMetaRow).not.toHaveTextContent("Package market_research_package");
-    expect(headerMetaRow).toHaveTextContent("Workflow Daily research");
-    expect(headerMetaRow).toHaveTextContent(`Updated ${expectedUpdatedAt}`);
-    expect(headerMetaRow).toHaveTextContent("Last run #2104");
-    expect(headerMetaRow).toHaveTextContent(`Next run ${expectedNextRun}`);
+    expect(headerMetaRow).toHaveTextContent(/Pattern\s*Weekly Mon, Tue, Wed, Thu, Fri at 09:00/);
+    expect(headerMetaRow).toHaveTextContent(/Timezone\s*America\/New_York/);
+    expect(headerMetaRow).toHaveTextContent(/Package\s*Market Research Package/);
+    expect(headerMetaRow).not.toHaveTextContent(/Package\s*market_research_package/);
+    expect(headerMetaRow).toHaveTextContent(/Workflow\s*Daily research/);
+    expect(headerMetaRow).toHaveTextContent(new RegExp(`Updated\\s*${expectedUpdatedAt}`));
+    expect(headerMetaRow).toHaveTextContent(/Last run\s*#2104/);
+    expect(headerMetaRow).toHaveTextContent(new RegExp(`Next run\\s*${expectedNextRun}`));
 
     fireEvent.click(within(header).getByRole("button", { name: "Disable" }));
     expect(updateScheduleMock).toHaveBeenCalledWith({
@@ -1315,7 +1308,7 @@ describe("ScheduledTaskDetailPage", () => {
     renderDetailPage();
 
     expect(screen.getByTestId("scheduled-task-detail-header-meta-row")).toHaveTextContent(
-      "Package market_research_package",
+      /Package\s*market_research_package/,
     );
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent(
       "market_research_package",

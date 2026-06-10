@@ -167,14 +167,17 @@ describe("WorkflowPackageEditorPage", () => {
       screen.getByRole("heading", { name: "Market Review Package" }),
     );
     expect(within(headerTopRow).getByText("market_review_package")).toBeVisible();
+    expect(within(headerTopRow).queryByRole("button")).not.toBeInTheDocument();
+
+    const actionsRow = screen.getByTestId("workflow-package-editor-actions-row");
     expect(
-      within(headerTopRow).getByRole("button", { name: "Save package" }),
+      within(actionsRow).getByRole("button", { name: "Save package" }),
     ).toBeEnabled();
     expect(
-      within(headerTopRow).getByRole("button", { name: "Validate package" }),
+      within(actionsRow).getByRole("button", { name: "Validate package" }),
     ).toBeEnabled();
     expect(
-      within(headerTopRow).getByRole("button", {
+      within(actionsRow).getByRole("button", {
         name: "Launch workflow package",
       }),
     ).toBeEnabled();
@@ -201,6 +204,7 @@ describe("WorkflowPackageEditorPage", () => {
     expect(contextBar).toContainElement(headerTopRow);
     expect(contextBar).toContainElement(headerMetaRow);
     expect(contextBar).toContainElement(headerStatusRow);
+    expect(contextBar).toContainElement(actionsRow);
 
     for (const tabName of [
       "Overview",

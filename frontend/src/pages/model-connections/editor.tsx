@@ -673,69 +673,110 @@ export function ModelConnectionsEditorPage() {
     CAPABILITY_DEFINITIONS.map(({ key }) => key),
   );
   const runtimePolicyEvidenceItems = buildRuntimePolicyEvidenceItems(values);
+  const headerMetaItems = [
+    {
+      label: "Stable key",
+      value: values.key || "unsaved",
+      valueClassName: values.key ? "font-mono" : undefined,
+    },
+    {
+      label: "Model",
+      value: values.modelId || "not set",
+      valueClassName: values.modelId ? "font-mono" : undefined,
+    },
+    {
+      label: "Credential",
+      value: isEditing ? "write-only rotation" : "optional before save",
+    },
+  ];
 
   return (
     <WorkspacePageShell
       bodyAriaLabel="Model connection editor workspace"
       bodyClassName="gap-4"
       contextBar={
-        <PageContextBar
-          density="compact"
-          title={
-            <span id="model-connection-editor-title">
-              {isEditing ? "Edit Model Connection" : "Create Model Connection"}
-            </span>
-          }
-          description="Save endpoint settings and credentials."
-          status={
-            <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span>
-                Stable key: <span className="font-medium text-foreground">{values.key || "unsaved"}</span>
+        <div className="flex min-w-0 flex-col gap-3">
+          <PageContextBar
+            density="compact"
+            title={
+              <span id="model-connection-editor-title">
+                {isEditing ? "Edit Model Connection" : "Create Model Connection"}
               </span>
-              <span>
-                Model: <span className="font-medium text-foreground">{values.modelId || "not set"}</span>
-              </span>
-            </span>
-          }
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                data-testid="model-connection-test"
-                disabled={isBusy}
-                size="sm"
-                variant="outline"
-                onClick={() => void handleTestConnection()}
-              >
-                <PlugZap data-icon="inline-start" />
-                Test Connection
-              </Button>
-              <Button
-                data-testid="model-connection-probe"
-                disabled={isBusy}
-                size="sm"
-                variant="outline"
-                onClick={() => void handleProbeCapabilities()}
-              >
-                <Radar data-icon="inline-start" />
-                Probe Required Capabilities
-              </Button>
-              <Button
-                data-testid="model-connection-save"
-                disabled={isSaving}
-                size="sm"
-                onClick={handleSave}
-              >
-                <Save data-icon="inline-start" />
-                Save Model Connection
-              </Button>
-            </div>
-          }
-        />
+            }
+            description="Save endpoint settings and credentials."
+            meta={
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                {headerMetaItems.map((item) => (
+                  <span className="min-w-0" key={item.label}>
+                    <span className="font-medium text-foreground">
+                      {item.label}
+                    </span>{" "}
+                    <span
+                      className={cn(
+                        "min-w-0 break-all text-muted-foreground",
+                        item.valueClassName,
+                      )}
+                    >
+                      {item.value}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            }
+          />
+          <div
+            aria-label="Model connection editor actions"
+            className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end"
+          >
+            <Button
+              className="w-full justify-center lg:w-auto"
+              data-testid="model-connection-test"
+              disabled={isBusy}
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={() => void handleTestConnection()}
+            >
+              <PlugZap data-icon="inline-start" />
+              Test Connection
+            </Button>
+            <Button
+              className="w-full justify-center lg:w-auto"
+              data-testid="model-connection-probe"
+              disabled={isBusy}
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={() => void handleProbeCapabilities()}
+            >
+              <Radar data-icon="inline-start" />
+              Probe Required Capabilities
+            </Button>
+            <Button
+              className="w-full justify-center sm:col-span-2 lg:w-auto"
+              data-testid="model-connection-save"
+              disabled={isSaving}
+              size="sm"
+              type="button"
+              onClick={handleSave}
+            >
+              <Save data-icon="inline-start" />
+              Save Model Connection
+            </Button>
+          </div>
+        </div>
       }
       testId="model-connections-editor"
     >
-      <div className="grid min-h-0 min-w-0 gap-4 xl:grid-cols-2">
-        <div className="flex min-w-0 flex-col gap-4">
+      <div
+        aria-labelledby="model-connection-editor-title"
+        className="grid min-h-0 min-w-0 gap-4 lg:grid-cols-2"
+        data-testid="model-connection-editor-layout"
+      >
+        <section
+          aria-label="Model connection settings"
+          className="flex min-w-0 flex-col gap-4"
+        >
           <ConsoleSection
             title="Editable connection details"
             description="Keep the saved key stable, then edit the provider endpoint fields that feed create/update payloads."
@@ -926,9 +967,12 @@ export function ModelConnectionsEditorPage() {
               onValueChange={(value) => updateValue("apiKey", value)}
             />
           </ConsoleSection>
-        </div>
+        </section>
 
-        <div className="flex min-w-0 flex-col gap-4">
+        <aside
+          aria-label="Model connection evidence"
+          className="flex min-w-0 flex-col gap-4"
+        >
           {connectionFeedback || probeFeedback ? (
             <div className="flex flex-col gap-2">
               {connectionFeedback ? (
@@ -982,7 +1026,7 @@ export function ModelConnectionsEditorPage() {
               </EvidenceGroup>
             </div>
           </ConsoleSection>
-        </div>
+        </aside>
       </div>
     </WorkspacePageShell>
   );

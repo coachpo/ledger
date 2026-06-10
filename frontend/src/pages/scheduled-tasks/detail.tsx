@@ -17,18 +17,22 @@ import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { ConsoleSection } from "@/components/shared/console-section";
+import { PageContextBar } from "@/components/shared/page-context-bar";
+import {
+  ResourceStatusStrip,
+  type ResourceStatusStripItem,
+} from "@/components/shared/resource-status-strip";
 import {
   SavedRuntimeInputRegistryPanel,
   type SavedRuntimeInputRegistryEntry,
 } from "@/components/shared/saved-runtime-input-registry-panel";
-import { PageContextBar } from "@/components/shared/page-context-bar";
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -891,11 +895,7 @@ function ScheduleHeader({
 }) {
   const toggleLabel = schedule.status === "enabled" ? "Disable" : "Enable";
   const actionDisabled = mutationPending;
-  const headerMetaItems: Array<{
-    label: string;
-    value: ReactNode;
-    valueClassName?: string;
-  }> = [
+  const headerMetaItems: ResourceStatusStripItem[] = [
     { label: "Pattern", value: formatRecurrence(schedule.recurrence) },
     { label: "Timezone", value: schedule.timezone },
     { label: "Package", value: packageDisplayLabel },
@@ -906,8 +906,7 @@ function ScheduleHeader({
   if (schedule.latestRunId !== null) {
     headerMetaItems.push({
       label: "Last run",
-      value: `#${schedule.latestRunId}`,
-      valueClassName: "font-mono",
+      value: <span className="font-mono">#{schedule.latestRunId}</span>,
     });
   }
 
@@ -918,109 +917,109 @@ function ScheduleHeader({
     });
   }
 
-  return (
-    <div
-      className="flex min-w-0 flex-col gap-1.5"
-      data-testid="scheduled-task-detail-header"
-    >
-      <div
-        className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
-        data-testid="scheduled-task-detail-header-top-row"
+  const status = (
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">
+        schedule:{schedule.id}
+      </span>
+      <StatusBadge status={schedule.status} />
+    </div>
+  );
+
+  const actions = (
+    <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+      <Button
+        className="w-full sm:w-auto"
+        data-testid="schedule-run-now"
+        disabled={actionDisabled || runNowDisabled}
+        size="sm"
+        type="button"
+        onClick={onRunNow}
       >
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-          <h1 className="min-w-0 text-xl font-semibold tracking-tight">
-            {schedule.name}
-          </h1>
-          <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">
-            schedule:{schedule.id}
-          </span>
-          <StatusBadge status={schedule.status} />
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+        <PlayCircle data-icon="inline-start" />
+        Run now
+      </Button>
+      <Button
+        className="w-full sm:w-auto"
+        disabled={actionDisabled}
+        size="sm"
+        type="button"
+        variant="outline"
+        onClick={onToggleStatus}
+      >
+        {schedule.status === "enabled" ? (
+          <PauseCircle data-icon="inline-start" />
+        ) : (
+          <RotateCcw data-icon="inline-start" />
+        )}
+        {toggleLabel}
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
-            className="w-full sm:w-auto"
-            data-testid="schedule-run-now"
-            disabled={actionDisabled || runNowDisabled}
-            size="sm"
-            type="button"
-            onClick={onRunNow}
-          >
-            <PlayCircle data-icon="inline-start" />
-            Run now
-          </Button>
-          <Button
-            className="w-full sm:w-auto"
-            disabled={actionDisabled}
-            size="sm"
+            aria-label="More actions"
+            size="icon"
             type="button"
             variant="outline"
-            onClick={onToggleStatus}
           >
-            {schedule.status === "enabled" ? (
-              <PauseCircle data-icon="inline-start" />
-            ) : (
-              <RotateCcw data-icon="inline-start" />
-            )}
-            {toggleLabel}
+            <MoreHorizontal />
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                aria-label="More actions"
-                size="icon"
-                type="button"
-                variant="outline"
-              >
-                <MoreHorizontal />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuGroup>
-                <DropdownMenuItem asChild>
-                  <Link to={`/workflow-packages/${schedule.packageId}`}>
-                    <ExternalLink data-icon="inline-start" />
-                    Open package
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link
-                    to={`/scheduled-tasks/new?duplicateFrom=${schedule.id}`}
-                  >
-                    <CopyPlus data-icon="inline-start" />
-                    Duplicate
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                disabled={mutationPending}
-                variant="destructive"
-                onSelect={onDelete}
-              >
-                <Trash2 data-icon="inline-start" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-      <p
-        className="min-w-0 max-w-3xl text-sm leading-6 text-muted-foreground"
-        data-testid="scheduled-task-detail-header-description"
-      >
-        {schedule.description ?? "Manage this saved Workflow Package schedule."}
-      </p>
-      <div
-        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
-        data-testid="scheduled-task-detail-header-meta-row"
-      >
-        {headerMetaItems.map((item) => (
-          <span key={item.label}>
-            <span className="font-medium text-foreground">{item.label}</span>{" "}
-            <span className={item.valueClassName}>{item.value}</span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuGroup>
+            <DropdownMenuItem asChild>
+              <Link to={`/workflow-packages/${schedule.packageId}`}>
+                <ExternalLink data-icon="inline-start" />
+                Open package
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to={`/scheduled-tasks/new?duplicateFrom=${schedule.id}`}>
+                <CopyPlus data-icon="inline-start" />
+                Duplicate
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={mutationPending}
+            variant="destructive"
+            onSelect={onDelete}
+          >
+            <Trash2 data-icon="inline-start" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+
+  return (
+    <div className="min-w-0" data-testid="scheduled-task-detail-header">
+      <PageContextBar
+        actions={actions}
+        density="compact"
+        description={
+          <span data-testid="scheduled-task-detail-header-description">
+            {schedule.description ??
+              "Manage this saved Workflow Package schedule."}
           </span>
-        ))}
-      </div>
+        }
+        meta={
+          <div
+            className="min-w-0"
+            data-testid="scheduled-task-detail-header-meta-row"
+          >
+            <ResourceStatusStrip
+              className="border-0 bg-transparent p-0"
+              density="toolbar"
+              items={headerMetaItems}
+            />
+          </div>
+        }
+        status={status}
+        title={schedule.name}
+      />
     </div>
   );
 }
@@ -1039,22 +1038,16 @@ function SummaryCard({
   title: string;
 }) {
   return (
-    <Card className="min-w-0 gap-3" data-testid={testId}>
-      <CardHeader className="gap-1.5 px-4 pt-4 pb-0">
-        <div className="min-w-0">
-          <CardTitle className="text-sm font-semibold tracking-tight">
-            {title}
-          </CardTitle>
-          <CardDescription className="mt-1 text-xs leading-5">
-            {description}
-          </CardDescription>
-        </div>
-        {action ? <CardAction>{action}</CardAction> : null}
-      </CardHeader>
-      <CardContent className="min-w-0 px-4 pt-0 pb-4 text-sm">
-        {children}
-      </CardContent>
-    </Card>
+    <ConsoleSection
+      actions={action}
+      className="min-w-0"
+      contentClassName="min-w-0 text-sm"
+      description={description}
+      testId={testId}
+      title={title}
+    >
+      {children}
+    </ConsoleSection>
   );
 }
 

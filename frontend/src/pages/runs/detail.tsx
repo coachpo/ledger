@@ -392,7 +392,7 @@ export function RunsDetailPage() {
 
   const consoleWorkspace = (
     <section
-      className="flex h-full min-h-0 min-w-0 flex-col bg-background"
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card"
       data-run-mode={activeInspection.mode}
       data-testid="runs-mode-workspace"
     >
@@ -428,14 +428,13 @@ export function RunsDetailPage() {
     <>
       <WorkspacePageShell
         bodyAriaLabel="Run inspection workspace"
-        bodyClassName="overflow-hidden"
+        bodyClassName="overflow-hidden rounded-lg border bg-card shadow-xs"
         contextBar={
-          <div
-            className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start"
-            data-testid="runs-detail-header"
-          >
+          <div className="min-w-0" data-testid="runs-detail-header">
             <PageContextBar
+              actions={runActions}
               className="min-w-0 border-0 bg-transparent shadow-none"
+              layout="toolbar"
               title={
                 <span className="flex min-w-0 flex-col gap-1.5">
                   <span
@@ -500,7 +499,6 @@ export function RunsDetailPage() {
                 </span>
               }
             />
-            <div className="min-w-0 lg:pt-4">{runActions}</div>
           </div>
         }
         testId="runs-detail-page"
