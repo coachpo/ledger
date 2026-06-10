@@ -53,7 +53,7 @@ Object.defineProperty(globalThis, "localStorage", {
   },
 });
 
-const S13_DEFERRED_REMOVED_BROWSER_ROUTE_PATHS = [
+const REMOVED_BROWSER_ROUTE_PATHS = [
   "/agents",
   "/agents/new",
   "/agents/123/edit",
@@ -81,8 +81,14 @@ const S13_DEFERRED_REMOVED_BROWSER_ROUTE_PATHS = [
   "/orchestration/characters",
   "/runtime-v2",
   "/runtime-v2/agents",
+  "/simulations",
+  "/simulations/new",
+  "/simulations/123",
+  "/backtests",
+  "/backtests/new",
+  "/backtests/123",
 ];
-const S13_DEFERRED_REMOVED_BROWSER_ROUTE_PREFIXES = [
+const REMOVED_BROWSER_ROUTE_PREFIXES = [
   "/agents",
   "/capabilities",
   "/mcp-servers",
@@ -93,6 +99,8 @@ const S13_DEFERRED_REMOVED_BROWSER_ROUTE_PREFIXES = [
   "/tryout",
   "/orchestration",
   "/runtime-v2",
+  "/simulations",
+  "/backtests",
 ];
 const LIVE_BROWSER_ROUTE_PREFIXES = [
   "/workflow-packages",
@@ -102,7 +110,7 @@ const LIVE_BROWSER_ROUTE_PREFIXES = [
   "/runs",
   "/extensions",
 ];
-const S13_DEFERRED_REMOVED_NAV_ENTRIES = [
+const REMOVED_NAV_ENTRIES = [
   { label: "Agents", testId: "nav-agents", to: "/agents" },
   { label: "Capabilities", testId: "nav-capabilities", to: "/capabilities" },
   { label: "MCP Servers", testId: "nav-mcp-servers", to: "/mcp-servers" },
@@ -275,7 +283,7 @@ describe("router", () => {
     );
   });
 
-  it("keeps S13-deferred removed browser prefixes out of live route registration and metadata", () => {
+  it("keeps removed browser prefixes out of live route registration and metadata", () => {
     const registeredPatterns = routePatternsFromDefinitions(
       registeredChildRoutes(),
     );
@@ -298,7 +306,7 @@ describe("router", () => {
       ).toBe(true);
     }
 
-    for (const prefix of S13_DEFERRED_REMOVED_BROWSER_ROUTE_PREFIXES) {
+    for (const prefix of REMOVED_BROWSER_ROUTE_PREFIXES) {
       expect(
         registeredPatterns.filter((pattern) =>
           routePatternStartsWithPrefix(pattern, prefix),
@@ -573,14 +581,14 @@ describe("router", () => {
         );
       }
 
-      for (const removedEntry of S13_DEFERRED_REMOVED_NAV_ENTRIES) {
+      for (const removedEntry of REMOVED_NAV_ENTRIES) {
         expect(navItems).not.toContainEqual(removedEntry);
         expect(labels).not.toContain(removedEntry.label);
         expect(testIds).not.toContain(removedEntry.testId);
         expect(paths).not.toContain(removedEntry.to);
       }
 
-      for (const prefix of S13_DEFERRED_REMOVED_BROWSER_ROUTE_PREFIXES) {
+      for (const prefix of REMOVED_BROWSER_ROUTE_PREFIXES) {
         expect(
           paths.filter((path) => routePatternStartsWithPrefix(path, prefix)),
         ).toEqual([]);
@@ -657,7 +665,7 @@ describe("router", () => {
       ).toBe(true);
     }
 
-    for (const prefix of S13_DEFERRED_REMOVED_BROWSER_ROUTE_PREFIXES) {
+    for (const prefix of REMOVED_BROWSER_ROUTE_PREFIXES) {
       expect(
         registeredPatterns.some((pattern) =>
           routePatternStartsWithPrefix(pattern, prefix),
@@ -665,7 +673,7 @@ describe("router", () => {
       ).toBe(false);
     }
 
-    for (const retiredRoute of S13_DEFERRED_REMOVED_BROWSER_ROUTE_PATHS) {
+    for (const retiredRoute of REMOVED_BROWSER_ROUTE_PATHS) {
       expect(matchedRouteComponent(retiredRoute)).toBe(NotFoundPage);
       expect(getRouteMetadataForPathname(retiredRoute)).toBe(
         unknownRouteMetadata,
@@ -860,8 +868,20 @@ describe("router", () => {
     expect(digitalOracleExtension.label).toBe(DIGITAL_ORACLE_LABEL);
     expect(digitalOracleExtension.routeContributions).toEqual([]);
     expect(digitalOracleExtension.navContributions).toEqual([]);
-    expect(matchedRouteComponent("/digital-oracle")).toBe(NotFoundPage);
-    expect(matchedRouteComponent("/prediction-markets")).toBe(NotFoundPage);
+    for (const retiredDigitalOracleRoute of [
+      "/digital-oracle",
+      "/digital-oracle/prediction-markets",
+      "/digital-oracle/sec-filings",
+      "/digital-oracle/market-sentiment",
+      "/prediction-markets",
+      "/sec-filings",
+      "/market-sentiment",
+    ]) {
+      expect(matchedRouteComponent(retiredDigitalOracleRoute)).toBe(NotFoundPage);
+      expect(getRouteMetadataForPathname(retiredDigitalOracleRoute)).toBe(
+        unknownRouteMetadata,
+      );
+    }
 
     const financeRouteContracts = financeExtension.routeContributions.map(
       (contribution) => ({

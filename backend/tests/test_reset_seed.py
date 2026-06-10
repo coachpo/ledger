@@ -1,18 +1,14 @@
 from __future__ import annotations
 
+from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy import select
 
 from app.db.session import get_session_factory, init_db, reset_db_caches
-from app.models.agent import Agent
 from app.models.balance import Balance
-from app.models.capability import Capability
-from app.models.mcp_server import McpServer
-from app.models.output_schema import OutputSchema
 from app.models.portfolio import Portfolio
 from app.models.position import Position
 from app.models.report import Report
 from app.models.text_template import TextTemplate
-from app.models.workflow import Workflow
 from app.reset_seed import reset_and_seed_database
 from app.schemas.portfolio import PortfolioCreate
 from app.services.portfolio_service import PortfolioService
@@ -52,8 +48,11 @@ def test_reset_and_seed_database_replaces_existing_data_with_a_clean_empty_works
         assert session.scalars(select(Position)).all() == []
         assert session.scalars(select(TextTemplate)).all() == []
         assert session.scalars(select(Report)).all() == []
-        assert session.scalars(select(Workflow)).all() == []
-        assert session.scalars(select(OutputSchema)).all() == []
-        assert session.scalars(select(Capability)).all() == []
-        assert session.scalars(select(McpServer)).all() == []
-        assert session.scalars(select(Agent)).all() == []
+        table_names = set(sqlalchemy_inspect(session.get_bind()).get_table_names())
+        assert {
+            "agents",
+            "workflows",
+            "capabilities",
+            "mcp_servers",
+            "output_schemas",
+        }.isdisjoint(table_names)

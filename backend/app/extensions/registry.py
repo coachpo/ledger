@@ -7,11 +7,6 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 from app.extensions import BundledApiRouterContribution, BundledServerDeclaredToolContribution
-from app.extensions.signaldeck_finance.ownership import (
-    FINANCE_WORKSPACE_DEFAULT_ENABLED,
-    FINANCE_WORKSPACE_EXTENSION_KEY,
-    FINANCE_WORKSPACE_LABEL,
-)
 from app.services.execution_providers import (
     ExecutionProviderBundle,
     merge_execution_provider_bundles,
@@ -22,19 +17,12 @@ if TYPE_CHECKING:
     from app.agents.runtime_tools.types import RuntimeToolSpec
 
 
-class _DigitalOracleOwnershipModule(Protocol):
-    DIGITAL_ORACLE_DEFAULT_ENABLED: bool
-    DIGITAL_ORACLE_EXTENSION_KEY: str
-    DIGITAL_ORACLE_LABEL: str
-
-
-_digital_oracle_ownership = cast(
-    _DigitalOracleOwnershipModule,
-    cast(object, import_module("app.extensions.signaldeck_digital_oracle.ownership")),
-)
-DIGITAL_ORACLE_DEFAULT_ENABLED = _digital_oracle_ownership.DIGITAL_ORACLE_DEFAULT_ENABLED
-DIGITAL_ORACLE_EXTENSION_KEY = _digital_oracle_ownership.DIGITAL_ORACLE_EXTENSION_KEY
-DIGITAL_ORACLE_LABEL = _digital_oracle_ownership.DIGITAL_ORACLE_LABEL
+FINANCE_WORKSPACE_DEFAULT_ENABLED = True
+FINANCE_WORKSPACE_EXTENSION_KEY = "signaldeck.finance"
+FINANCE_WORKSPACE_LABEL = "Finance Workspace"
+DIGITAL_ORACLE_DEFAULT_ENABLED = True
+DIGITAL_ORACLE_EXTENSION_KEY = "signaldeck.digital_oracle"
+DIGITAL_ORACLE_LABEL = "Digital Oracle Runtime"
 
 
 @dataclass(frozen=True, slots=True)

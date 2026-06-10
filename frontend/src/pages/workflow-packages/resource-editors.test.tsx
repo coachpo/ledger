@@ -256,7 +256,7 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add Agent" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("Agent editor");
     expect(screen.getByLabelText("Agent local key")).toBeVisible();
-    expect(screen.getByText("Select global model connection")).toBeVisible();
+    expect(screen.getByText("Select model connection key")).toBeVisible();
     expect(screen.getByLabelText("System prompt")).toBeVisible();
     const removedBudgetLabel = "Budget " + "USD";
     expect(screen.queryByLabelText(removedBudgetLabel)).not.toBeInTheDocument();

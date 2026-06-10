@@ -561,7 +561,7 @@ function AgentSheet(props: {
                       >
                         <SearchableSelect
                           options={modelConnectionOptions}
-                          placeholder="Select global model connection"
+                          placeholder="Select model connection key"
                           searchPlaceholder="Search model connections..."
                           value={field.value}
                           onValueChange={(value) => {
@@ -1183,7 +1183,7 @@ export function CapabilityProfilesTab(props: {
               </Button>
             </div>
             <div className="space-y-2">
-              <Label>Global tool catalog</Label>
+              <Label>Server-declared tool catalog</Label>
               <div
                 data-field={`spec.capabilityProfiles[${index}].toolKeys[0]`}
                 tabIndex={-1}

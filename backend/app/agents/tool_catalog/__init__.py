@@ -4,13 +4,12 @@ import re
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any
+from typing import Any, Protocol
 
 from app.agents.tool_catalog.server_declared import (
-    SERVER_DECLARED_TOOL_REGISTRY,
     ServerDeclaredToolSpec,
+    get_server_declared_tool_registry,
 )
-from app.models.capability import Capability
 
 _SERVER_DECLARED_TOOL_KEY_PATTERN = re.compile(
     r"^[a-z][a-z0-9_]{0,119}(?:\.[a-z][a-z0-9_]{0,119})+$"
@@ -42,6 +41,15 @@ class ToolCatalogValidationError(ValueError):
         self.details: list[dict[str, object]] = [dict(detail) for detail in details]
 
 
+class CapabilityLike(Protocol):
+    id: int
+    key: str
+    version: int
+    name: str
+    description: str
+    tool_keys: Sequence[object]
+
+
 class ToolCatalog:
     def __init__(
         self,
@@ -50,7 +58,7 @@ class ToolCatalog:
         enabled_extension_keys: Collection[str] | None = None,
     ) -> None:
         self.tool_registry: dict[str, ServerDeclaredToolSpec] = dict(
-            tool_registry or SERVER_DECLARED_TOOL_REGISTRY
+            tool_registry if tool_registry is not None else get_server_declared_tool_registry()
         )
         self.enabled_extension_keys: frozenset[str] | None = (
             None if enabled_extension_keys is None else frozenset(enabled_extension_keys)
@@ -151,7 +159,7 @@ class ToolCatalog:
             raise ToolCatalogValidationError(details)
         return tuple(resolved_tools)
 
-    def resolve_capability(self, capability: Capability) -> ResolvedCapabilityToolset:
+    def resolve_capability(self, capability: CapabilityLike) -> ResolvedCapabilityToolset:
         resolved_tools = self.resolve_tool_keys(capability.tool_keys)
         return ResolvedCapabilityToolset(
             capability_id=capability.id,

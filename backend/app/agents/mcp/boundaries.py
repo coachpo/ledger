@@ -11,7 +11,6 @@ import httpx
 
 from app.agents.mcp.security import McpSecurityError, validate_http_sse_url, validate_stdio_command
 from app.core.config import get_settings
-from app.models.mcp_server import McpServer
 
 
 @dataclass(frozen=True)
@@ -34,6 +33,26 @@ class McpConnectionTestResult:
     ok: bool
     message: str
     status_code: int | None = None
+
+
+class McpServerConfigLike(Protocol):
+    @property
+    def id(self) -> int: ...
+
+    @property
+    def key(self) -> str: ...
+
+    @property
+    def version(self) -> int: ...
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def enabled(self) -> bool: ...
+
+    @property
+    def flat_config(self) -> Mapping[str, Any]: ...
 
 
 class McpConnectionTester(Protocol):
@@ -114,7 +133,7 @@ class DefaultMcpConnectionTester:
         return shutil.which(executable)
 
 
-def build_mcp_client_boundary(server: McpServer) -> McpClientBoundary:
+def build_mcp_client_boundary(server: McpServerConfigLike) -> McpClientBoundary:
     return build_mcp_client_boundary_from_config(
         server.flat_config,
         server_id=server.id,

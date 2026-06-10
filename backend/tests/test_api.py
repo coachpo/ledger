@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import cast
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 from pydantic import ValidationError
 from sqlalchemy import create_engine, inspect
+from sqlalchemy import text as sql_text
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -694,7 +696,7 @@ def test_portfolio_slug_validation_uniqueness_and_immutability(client: TestClien
             "name": "Retirement Copy",
             "slug": "retirement_account",
             "description": "Duplicate slug",
-        }
+        },
     )
     assert duplicate_response.status_code == 400
     assert duplicate_response.json()["code"] == "duplicate_portfolio_slug"
@@ -705,7 +707,7 @@ def test_portfolio_slug_validation_uniqueness_and_immutability(client: TestClien
             "name": "Broken",
             "slug": "123-bad",
             "description": "Invalid slug",
-        }
+        },
     )
     assert invalid_response.status_code == 422
     assert invalid_response.json()["code"] == "validation_error"
@@ -3235,6 +3237,92 @@ def test_init_db_upgrades_legacy_report_schema(database_url: str) -> None:
                 )
     finally:
         engine.dispose()
+
+
+def test_model_connection_secret_writes_are_explicit_encrypted_and_public_reads_safe(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    credential_value = uuid4().hex
+    rotated_value = uuid4().hex
+
+    create_response = client.post(
+        "/api/model-connections",
+        json={**_model_connection_create_payload(), "apiKey": credential_value},
+    )
+    assert create_response.status_code == 201, create_response.json()
+    create_body = cast(dict[str, object], create_response.json())
+    connection_id = cast(int, create_body["id"])
+    assert "apiKey" not in create_body
+    assert "secretPayload" not in create_body
+
+    list_response = client.get("/api/model-connections")
+    assert list_response.status_code == 200, list_response.json()
+    list_body = cast(dict[str, object], list_response.json())
+    assert "apiKey" not in str(list_body)
+    assert "secretPayload" not in str(list_body)
+
+    get_response = client.get(f"/api/model-connections/{connection_id}")
+    assert get_response.status_code == 200, get_response.json()
+    get_body = cast(dict[str, object], get_response.json())
+    assert "apiKey" not in get_body
+    assert "secretPayload" not in get_body
+
+    with session_factory() as session:
+        raw_secret_payload = session.execute(
+            sql_text("SELECT secret_payload::text FROM model_connections WHERE id = :id"),
+            {"id": connection_id},
+        ).scalar_one()
+        assert "__encrypted__" in str(raw_secret_payload)
+        assert credential_value not in str(raw_secret_payload)
+        connection = session.get(ModelConnection, connection_id)
+        assert connection is not None
+        assert connection.secret_payload == {"apiKey": credential_value}
+
+    omitted_secret_patch = client.patch(
+        f"/api/model-connections/{connection_id}",
+        json={"description": "Updated without credential rotation."},
+    )
+    assert omitted_secret_patch.status_code == 200, omitted_secret_patch.json()
+    assert "apiKey" not in cast(dict[str, object], omitted_secret_patch.json())
+    with session_factory() as session:
+        connection = session.get(ModelConnection, connection_id)
+        assert connection is not None
+        assert connection.secret_payload == {"apiKey": credential_value}
+
+    rejected_blank_patch = client.patch(
+        f"/api/model-connections/{connection_id}",
+        json={"apiKey": "   "},
+    )
+    assert rejected_blank_patch.status_code == 422, rejected_blank_patch.json()
+    rejected_null_patch = client.patch(
+        f"/api/model-connections/{connection_id}",
+        json={"apiKey": None},
+    )
+    assert rejected_null_patch.status_code == 422, rejected_null_patch.json()
+    with session_factory() as session:
+        connection = session.get(ModelConnection, connection_id)
+        assert connection is not None
+        assert connection.secret_payload == {"apiKey": credential_value}
+
+    rotated_patch = client.patch(
+        f"/api/model-connections/{connection_id}",
+        json={"apiKey": rotated_value},
+    )
+    assert rotated_patch.status_code == 200, rotated_patch.json()
+    assert "apiKey" not in cast(dict[str, object], rotated_patch.json())
+
+    with session_factory() as session:
+        raw_secret_payload = session.execute(
+            sql_text("SELECT secret_payload::text FROM model_connections WHERE id = :id"),
+            {"id": connection_id},
+        ).scalar_one()
+        assert "__encrypted__" in str(raw_secret_payload)
+        assert credential_value not in str(raw_secret_payload)
+        assert rotated_value not in str(raw_secret_payload)
+        connection = session.get(ModelConnection, connection_id)
+        assert connection is not None
+        assert connection.secret_payload == {"apiKey": rotated_value}
 
 
 def test_model_connection_rejects_removed_kind_fields(client: TestClient) -> None:

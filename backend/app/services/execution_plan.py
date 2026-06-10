@@ -1,7 +1,7 @@
 # pyright: reportExplicitAny=false
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.services.execution_ownership import PackageExecutionOwnership
@@ -10,6 +10,16 @@ ExecutionPlanInputMode = Literal["passthrough", "wired"]
 ExecutionPlanOperationKind = Literal["http"]
 ExecutionPlanTargetKind = Literal["workflow_package"]
 ExecutionPlanSourceKind = Literal["input", "step"]
+
+
+@dataclass(frozen=True)
+class ExecutionPlanBuilderError(Exception):
+    code: str
+    message: str
+    details: tuple[dict[str, object], ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        Exception.__init__(self, self.message)
 
 
 @dataclass(frozen=True)
@@ -218,6 +228,7 @@ class ExecutionPlan:
 
 __all__ = [
     "ExecutionPlan",
+    "ExecutionPlanBuilderError",
     "ExecutionPlanAgent",
     "ExecutionPlanFinalOutput",
     "ExecutionPlanGraphMetadata",

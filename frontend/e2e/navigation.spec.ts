@@ -85,6 +85,19 @@ const removedBrowserRoutePaths = [
   "/orchestration/characters",
   "/runtime-v2",
   "/runtime-v2/agents",
+  "/simulations",
+  "/simulations/new",
+  "/simulations/123",
+  "/backtests",
+  "/backtests/new",
+  "/backtests/123",
+  "/digital-oracle",
+  "/digital-oracle/prediction-markets",
+  "/digital-oracle/sec-filings",
+  "/digital-oracle/market-sentiment",
+  "/prediction-markets",
+  "/sec-filings",
+  "/market-sentiment",
 ] as const;
 
 async function expectSingleRouteMain(
@@ -122,6 +135,11 @@ test.describe("Primary workspace navigation", () => {
       "true",
     );
     await expectSingleRouteMain(page, "route-dashboard", "scroll");
+    const dashboardPage = page.getByTestId("dashboard-page");
+    await expect(dashboardPage.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(dashboardPage.getByText("Portfolio overview.")).toBeVisible();
+    await expect(dashboardPage.getByRole("button")).toHaveCount(0);
+    await expect(dashboardPage.getByRole("link")).toHaveCount(0);
 
     for (const route of platformRoutes) {
       await expect(page.getByTestId(route.testId)).toBeVisible();

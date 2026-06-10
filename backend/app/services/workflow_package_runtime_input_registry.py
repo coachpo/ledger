@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError, not_found_error, validation_error
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
-from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.services.output_schema_compiler import OutputSchemaCompiler
 from app.services.run_input_validation import validate_run_input_payload
@@ -92,9 +91,7 @@ class WorkflowPackageRuntimeInputRegistryService:
     def __init__(self, session: Session) -> None:
         self.session: Session = session
         self.repository: WorkflowPackageRepository = WorkflowPackageRepository(session)
-        self.schema_compiler: OutputSchemaCompiler = OutputSchemaCompiler(
-            OutputSchemaRepository(session)
-        )
+        self.schema_compiler: OutputSchemaCompiler = OutputSchemaCompiler()
 
     def list_registry(
         self,

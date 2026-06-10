@@ -7,53 +7,31 @@ from typing import TypedDict, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import exc as sqlalchemy_exc
 from sqlalchemy import inspect as sqlalchemy_inspect
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.agents import get_default_tool_catalog
-from app.agents.mcp import DefaultMcpConnectionTester
-from app.agents.runtime_tools.memory import MEMORY_WRITE_TOOL_KEY
 from app.core.errors import ApiError
-from app.models.agent import Agent
-from app.models.capability import Capability
-from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
-from app.models.output_schema import OutputSchema
-from app.models.platform_reference import AgentCapabilityRef, AgentMcpServerRef, WorkflowAgentRef
 from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_fork import RunFork
 from app.models.run_step import RunStep
-from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
 from app.models.workflow_package_schedule import WorkflowPackageSchedule
-from app.repositories.agent import AgentRepository
-from app.repositories.capability import CapabilityRepository
-from app.repositories.mcp_server import McpServerRepository
 from app.repositories.model_connection import ModelConnectionRepository
-from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run import RunRepository
 from app.repositories.run_fork import RunForkRepository
-from app.repositories.workflow import WorkflowRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.repositories.workflow_package_schedule import (
     WorkflowPackageScheduleFireRepository,
     WorkflowPackageScheduleRepository,
 )
-from app.schemas.capability import CapabilityDraftCreate, CapabilityDraftUpdate
-from app.schemas.mcp_server import McpServerCreate, McpServerTransport, McpServerUpdate
 from app.schemas.model_connection import default_model_connection_capabilities
-from app.schemas.output_schema import OutputSchemaDraftCreate, OutputSchemaDraftUpdate
 from app.schemas.run import RunAgentInvocationRead, RunRead, RunStatus
-from app.services.agent_service import AgentService
-from app.services.capability_service import CapabilityService
-from app.services.mcp_server_service import McpServerService
 from app.services.model_connection_service import ModelConnectionService
-from app.services.output_schema_service import OutputSchemaService
 from app.services.run_service import RunService
-from app.services.workflow_service import WorkflowService
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
@@ -71,58 +49,6 @@ class RuntimeInputMetadata(TypedDict):
     compiled_hash: str
     schema_fingerprint: str
     input_schema_snapshot: dict[str, object]
-
-
-def _build_skill(*, key: str, version: int, status: str) -> Capability:
-    return Capability(
-        key=key,
-        version=version,
-        status=status,
-        name=f"{key}-{version}",
-        description="Capability description",
-        tool_keys=[f"{key}.lookup"],
-    )
-
-
-def _build_output_schema(
-    *,
-    key: str,
-    version: int,
-    status: str,
-    kind: str = "standalone",
-    registry_refs: list[str] | None = None,
-) -> OutputSchema:
-    return OutputSchema(
-        key=key,
-        version=version,
-        status=status,
-        kind=kind,
-        name=f"{key}-{version}",
-        description="Output schema description",
-        json_schema={"type": "object", "properties": {"headline": {"type": "string"}}},
-        registry_refs=list(registry_refs or []),
-    )
-
-
-def _build_mcp_server(
-    *,
-    key: str,
-    version: int,
-    status: str,
-    transport: str,
-    enabled: bool = True,
-) -> McpServer:
-    return McpServer(
-        key=key,
-        version=version,
-        status=status,
-        name=f"{key}-{version}",
-        description="MCP server description",
-        transport=transport,
-        command="python -m market_data" if transport == "stdio" else None,
-        url="https://example.com/mcp" if transport == "http-sse" else None,
-        enabled=enabled,
-    )
 
 
 def _build_model_connection(
@@ -148,95 +74,11 @@ def _build_model_connection(
     )
 
 
-def _build_agent(
-    *,
-    key: str,
-    version: int,
-    status: str,
-    output_schema: OutputSchema,
-    capabilities: list[Capability],
-    mcp_servers: list[McpServer],
-    model_connection_id: int = 1,
-    model: str = "openai:gpt-5.4-mini",
-) -> Agent:
-    return Agent(
-        key=key,
-        version=version,
-        status=status,
-        name=f"{key}-{version}",
-        description="Agent description",
-        model_connection_id=model_connection_id,
-        model=model,
-        system_prompt="Assess the input and return a typed result.",
-        input_schema={"type": "object", "required": ["ticker"]},
-        output_schema_id=output_schema.id,
-        output_schema_version=output_schema.version,
-        capabilities=[
-            {
-                "capabilityId": capability.id,
-                "capabilityKey": capability.key,
-                "capabilityVersion": capability.version,
-            }
-            for capability in capabilities
-        ],
-        mcp_servers=[
-            {
-                "mcpServerId": server.id,
-                "mcpServerKey": server.key,
-                "mcpServerVersion": server.version,
-            }
-            for server in mcp_servers
-        ],
-    )
-
-
-def _build_workflow(
-    *,
-    key: str,
-    version: int,
-    status: str,
-    agent: Agent,
-) -> Workflow:
-    return Workflow(
-        key=key,
-        version=version,
-        status=status,
-        name=f"{key}-{version}",
-        description="Workflow description",
-        input_schema={"type": "object", "required": ["ticker"]},
-        steps=[
-            {
-                "index": 1,
-                "agents": [
-                    {
-                        "slot": "analysis",
-                        "agentId": agent.id,
-                        "agentKey": agent.key,
-                        "agentVersion": agent.version,
-                        "outputSchemaId": agent.output_schema_id,
-                        "outputSchemaVersion": agent.output_schema_version,
-                        "wiring": {"ticker": {"from": "input", "path": "ticker"}},
-                        "optional": False,
-                    }
-                ],
-            }
-        ],
-        output_spec={
-            "kind": "slot",
-            "stepIndex": 1,
-            "slot": "analysis",
-            "agentId": agent.id,
-            "agentKey": agent.key,
-            "agentVersion": agent.version,
-            "outputSchemaId": agent.output_schema_id,
-            "outputSchemaVersion": agent.output_schema_version,
-        },
-    )
-
-
 def _build_agent_platform_run(
     *,
-    workflow: Workflow,
+    package_id: int,
+    package_key: str,
+    workflow_key: str,
     status: str,
     total_tokens: int,
     started_at: datetime | None,
@@ -246,11 +88,11 @@ def _build_agent_platform_run(
 ) -> Run:
     run = Run(
         target_kind="workflowPackage",
-        target_id=workflow.id,
-        target_key=f"{workflow.key}_package",
+        target_id=package_id,
+        target_key=package_key,
         target_version=1,
-        workflow_package_key=f"{workflow.key}_package",
-        workflow_package_workflow_key=workflow.key,
+        workflow_package_key=package_key,
+        workflow_package_workflow_key=workflow_key,
         input={"ticker": "NVDA", "horizonDays": 30},
         final_output=final_output,
         status=status,
@@ -260,78 +102,27 @@ def _build_agent_platform_run(
         finished_at=finished_at,
     )
     run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
-        workflow_package_id=workflow.id,
-        workflow_package_key=f"{workflow.key}_package",
-        workflow_package_name=f"{workflow.key} package",
+        workflow_package_id=package_id,
+        workflow_package_key=package_key,
+        workflow_package_name=f"{package_key} package",
         workflow_package_description="",
         workflow_package_status="active",
-        workflow_key=workflow.key,
-        workflow_name=workflow.name,
-        workflow_description=workflow.description,
+        workflow_key=workflow_key,
+        workflow_name=workflow_key.replace("_", " ").title(),
+        workflow_description="Runtime workflow",
         manifest_hash="a" * 64,
         compiled_hash="b" * 64,
-        manifest_source=(
-            f"apiVersion: signaldeck.workflowPackage/v1\\nkey: {workflow.key}_package\\n"
-        ),
-        package_definition={"metadata": {"key": f"{workflow.key}_package"}},
-        compiled_plan={"workflows": [{"key": workflow.key, "name": workflow.name}]},
+        manifest_source=(f"apiVersion: signaldeck.workflowPackage/v1\\nkey: {package_key}\\n"),
+        package_definition={"metadata": {"key": package_key}},
+        compiled_plan={"workflows": [{"key": workflow_key}]},
         extension_dependencies=[],
-        local_resource_refs={"workflows": [workflow.key]},
+        local_resource_refs={"workflows": [workflow_key]},
         input_schema={},
         launch_parameters=run.input,
         resolved_model_connections=[],
         preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
     )
     return run
-
-
-def _seed_run_target_fk_targets(
-    session: Session,
-    *,
-    key_prefix: str,
-) -> tuple[Agent, Workflow]:
-    model_connection = _build_model_connection(
-        name=f"{key_prefix} model",
-        key=f"{key_prefix}_model",
-        status="active",
-        api_key="sk-target-fk",
-    )
-    output_schema = _build_output_schema(
-        key=f"{key_prefix}_schema",
-        version=1,
-        status="published",
-    )
-    capability = _build_skill(key=f"{key_prefix}_capability", version=1, status="published")
-    session.add_all([model_connection, output_schema, capability])
-    session.flush()
-    run_input_schema = {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {"ticker": {"type": "string"}},
-        "required": ["ticker"],
-    }
-    agent = _build_agent(
-        key=f"{key_prefix}_agent",
-        version=1,
-        status="published",
-        output_schema=output_schema,
-        capabilities=[capability],
-        mcp_servers=[],
-        model_connection_id=model_connection.id,
-    )
-    agent.input_schema = run_input_schema
-    session.add(agent)
-    session.flush()
-    workflow = _build_workflow(
-        key=f"{key_prefix}_workflow",
-        version=1,
-        status="published",
-        agent=agent,
-    )
-    workflow.input_schema = run_input_schema
-    session.add(workflow)
-    session.flush()
-    return agent, workflow
 
 
 def _seed_workflow_package_target(
@@ -456,7 +247,7 @@ def test_runtime_input_entry_invalid_slot_or_constraint_rejected(
             "input_schema_snapshot": {"type": "object"},
         }
         session.add(WorkflowPackageRuntimeInputEntry(slot="favorite", **base_entry))
-        with pytest.raises(IntegrityError):
+        with pytest.raises(sqlalchemy_exc.IntegrityError):
             session.commit()
         session.rollback()
 
@@ -467,7 +258,7 @@ def test_runtime_input_entry_invalid_slot_or_constraint_rejected(
                 **base_entry,
             )
         )
-        with pytest.raises(IntegrityError):
+        with pytest.raises(sqlalchemy_exc.IntegrityError):
             session.commit()
         session.rollback()
 
@@ -647,143 +438,6 @@ def test_runtime_input_cross_scope_lookup_update_delete_blocked(
         session.flush()
         assert session.get(WorkflowPackageRuntimeInputEntry, entry.id) is None
         assert session.get(WorkflowPackageRuntimeInputEntry, history_entry.id) is not None
-
-
-def _seed_agent_platform_versioned_rows(session: Session) -> None:
-    session.add_all(
-        [
-            _build_skill(key="research_skill", version=1, status="published"),
-            _build_skill(key="research_skill", version=2, status="draft"),
-            _build_skill(key="summarize_skill", version=1, status="published"),
-            _build_output_schema(
-                key="decision_schema",
-                version=1,
-                status="published",
-                registry_refs=["Action"],
-            ),
-            _build_output_schema(
-                key="decision_schema",
-                version=2,
-                status="draft",
-                registry_refs=["Action", "PriceTarget"],
-            ),
-            _build_output_schema(
-                key="action_type",
-                version=1,
-                status="published",
-                kind="shared",
-            ),
-            _build_output_schema(
-                key="action_type",
-                version=2,
-                status="draft",
-                kind="shared",
-                registry_refs=["PriceTarget"],
-            ),
-            _build_mcp_server(
-                key="market_data",
-                version=1,
-                status="published",
-                transport="http-sse",
-                enabled=True,
-            ),
-            _build_mcp_server(
-                key="market_data",
-                version=2,
-                status="draft",
-                transport="stdio",
-                enabled=False,
-            ),
-            _build_mcp_server(
-                key="filings",
-                version=1,
-                status="published",
-                transport="http-sse",
-                enabled=False,
-            ),
-        ]
-    )
-    session.commit()
-
-
-def test_agent_platform_capability_repository_resolves_published_versions_and_latest_rows(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        _seed_agent_platform_versioned_rows(session)
-
-        capability_repo = CapabilityRepository(session)
-
-        published_capability = capability_repo.resolve_version("research_skill", None)
-        draft_capability = capability_repo.resolve_version("research_skill", 2)
-        assert published_capability is not None
-        assert published_capability.version == 1
-        assert draft_capability is not None
-        assert draft_capability.status == "draft"
-        assert [item.version for item in capability_repo.list_versions("research_skill")] == [2, 1]
-        assert [(item.key, item.version) for item in capability_repo.list_latest_versions()] == [
-            ("research_skill", 2),
-            ("summarize_skill", 1),
-        ]
-        assert [
-            (item.key, item.version)
-            for item in capability_repo.list_latest_versions(status="published")
-        ] == [
-            ("research_skill", 1),
-            ("summarize_skill", 1),
-        ]
-
-
-def test_agent_platform_output_schema_repository_resolves_registry_refs_and_versions(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        _seed_agent_platform_versioned_rows(session)
-
-        output_schema_repo = OutputSchemaRepository(session)
-
-        published_schema = output_schema_repo.resolve_version("decision_schema", None)
-        draft_schema = output_schema_repo.get_draft_by_key("decision_schema")
-        published_registry_entry = output_schema_repo.resolve_registry_ref("action_type")
-        draft_registry_entry = output_schema_repo.resolve_registry_ref("action_type", 2)
-
-        assert published_schema is not None
-        assert published_schema.version == 1
-        assert draft_schema is not None
-        assert draft_schema.registry_refs == ["Action", "PriceTarget"]
-        assert published_registry_entry is not None
-        assert published_registry_entry.kind == "shared"
-        assert published_registry_entry.version == 1
-        assert draft_registry_entry is not None
-        assert draft_registry_entry.registry_refs == ["PriceTarget"]
-        assert [item.key for item in output_schema_repo.list_registry_entries()] == ["action_type"]
-
-
-def test_agent_platform_mcp_repository_filters_enabled_servers_and_versions(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        _seed_agent_platform_versioned_rows(session)
-
-        mcp_repo = McpServerRepository(session)
-
-        published_server = mcp_repo.resolve_version("market_data", None, enabled=True)
-        draft_server = mcp_repo.get_draft_by_key("market_data")
-        enabled_latest = mcp_repo.list_latest_versions(enabled=True)
-        published_enabled = mcp_repo.list_latest_versions(status="published", enabled=True)
-        http_sse_servers = mcp_repo.list_latest_versions(transport="http-sse")
-
-        assert published_server is not None
-        assert published_server.version == 1
-        assert draft_server is not None
-        assert draft_server.transport == "stdio"
-        assert draft_server.enabled is False
-        assert [(item.key, item.version) for item in enabled_latest] == [("market_data", 1)]
-        assert [(item.key, item.version) for item in published_enabled] == [("market_data", 1)]
-        assert [(item.key, item.version) for item in http_sse_servers] == [
-            ("filings", 1),
-            ("market_data", 1),
-        ]
 
 
 def test_agent_platform_model_connection_repository_lists_rows_without_status_filters(
@@ -1045,159 +699,6 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
         assert session.get(RunWorkflowPackageSnapshot, run_id) is not None
 
 
-def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_versions(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        published_skill = _build_skill(key="research_skill", version=1, status="published")
-        published_schema = _build_output_schema(
-            key="decision_schema",
-            version=1,
-            status="published",
-        )
-        published_server = _build_mcp_server(
-            key="market_data",
-            version=1,
-            status="published",
-            transport="http-sse",
-        )
-        model_connection = _build_model_connection(
-            name="Version Pinning Model",
-            key="version_pinning_model",
-            status="active",
-            api_key="sk-version-pinning",
-        )
-        session.add_all([published_skill, published_schema, published_server, model_connection])
-        session.flush()
-
-        published_agent = _build_agent(
-            key="research_agent",
-            version=1,
-            status="published",
-            output_schema=published_schema,
-            capabilities=[published_skill],
-            mcp_servers=[published_server],
-            model_connection_id=model_connection.id,
-        )
-        session.add(published_agent)
-        session.flush()
-        published_workflow = _build_workflow(
-            key="market_review",
-            version=1,
-            status="published",
-            agent=published_agent,
-        )
-        session.add(published_workflow)
-        session.flush()
-
-        draft_schema = _build_output_schema(
-            key="decision_schema",
-            version=2,
-            status="draft",
-        )
-        session.add(draft_schema)
-        session.flush()
-        draft_agent = _build_agent(
-            key="research_agent",
-            version=2,
-            status="draft",
-            output_schema=draft_schema,
-            capabilities=[published_skill],
-            mcp_servers=[published_server],
-            model_connection_id=model_connection.id,
-        )
-        session.add(draft_agent)
-        session.flush()
-        draft_workflow = _build_workflow(
-            key="market_review",
-            version=2,
-            status="draft",
-            agent=draft_agent,
-        )
-        session.add(draft_workflow)
-        session.commit()
-
-        agent_repo = AgentRepository(session)
-        workflow_repo = WorkflowRepository(session)
-
-        published_agent_row = agent_repo.resolve_version("research_agent", None)
-        draft_agent_row = agent_repo.resolve_version("research_agent", 2)
-        published_workflow_row = workflow_repo.resolve_version("market_review", 1)
-        draft_workflow_row = workflow_repo.resolve_version("market_review", 2)
-
-        assert published_agent_row is not None
-        assert published_agent_row.output_schema_version == 1
-        assert draft_agent_row is not None
-        assert draft_agent_row.output_schema_version == 2
-        assert published_workflow_row is not None
-        assert published_workflow_row.steps[0]["agents"][0]["agentVersion"] == 1
-        assert published_workflow_row.steps[0]["agents"][0]["outputSchemaVersion"] == 1
-        assert published_workflow_row.output_spec["agentVersion"] == 1
-        assert draft_workflow_row is not None
-        assert draft_workflow_row.steps[0]["agents"][0]["agentVersion"] == 2
-        assert draft_workflow_row.steps[0]["agents"][0]["outputSchemaVersion"] == 2
-        assert [(item.key, item.version) for item in workflow_repo.list_latest_versions()] == [
-            ("market_review", 2)
-        ]
-
-
-def test_agent_repository_model_filter_uses_saved_agent_model_value(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        published_skill = _build_skill(key="research_skill", version=1, status="published")
-        published_schema = _build_output_schema(
-            key="decision_schema",
-            version=1,
-            status="published",
-        )
-        published_server = _build_mcp_server(
-            key="market_data",
-            version=1,
-            status="published",
-            transport="http-sse",
-        )
-        model_connection = _build_model_connection(
-            name="Model Filter Model",
-            key="model_filter_model",
-            status="active",
-            api_key="sk-model-filter",
-        )
-        session.add_all([published_skill, published_schema, published_server, model_connection])
-        session.flush()
-        session.add_all(
-            [
-                _build_agent(
-                    key="snapshot_agent",
-                    version=1,
-                    status="published",
-                    output_schema=published_schema,
-                    capabilities=[published_skill],
-                    mcp_servers=[published_server],
-                    model_connection_id=model_connection.id,
-                    model="gpt-snapshot-v1",
-                ),
-                _build_agent(
-                    key="live_connection_agent",
-                    version=1,
-                    status="published",
-                    output_schema=published_schema,
-                    capabilities=[published_skill],
-                    mcp_servers=[published_server],
-                    model_connection_id=model_connection.id,
-                    model="gpt-live-v2",
-                ),
-            ]
-        )
-        session.commit()
-
-        agent_repo = AgentRepository(session)
-
-        assert [item.key for item in agent_repo.list_latest_versions(model="gpt-snapshot-v1")] == [
-            "snapshot_agent"
-        ]
-
-
 def test_legacy_agent_workflow_runtime_entrypoint_is_removed(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -1272,49 +773,18 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
-        published_skill = _build_skill(key="research_skill", version=1, status="published")
-        published_schema = _build_output_schema(
-            key="decision_schema",
-            version=1,
-            status="published",
-        )
-        published_server = _build_mcp_server(
-            key="market_data",
-            version=1,
-            status="published",
-            transport="http-sse",
-        )
-        model_connection = _build_model_connection(
-            name="Run Detail Model",
-            key="run_detail_model",
-            status="active",
-            api_key="sk-run-detail",
-        )
-        session.add_all([published_skill, published_schema, published_server, model_connection])
-        session.flush()
-
-        published_agent = _build_agent(
-            key="research_agent",
-            version=1,
-            status="published",
-            output_schema=published_schema,
-            capabilities=[published_skill],
-            mcp_servers=[published_server],
-            model_connection_id=model_connection.id,
-        )
-        session.add(published_agent)
-        session.flush()
-        workflow = _build_workflow(
-            key="market_review",
-            version=1,
-            status="published",
-            agent=published_agent,
-        )
-        session.add(workflow)
-        session.flush()
+        package = _seed_workflow_package_target(session, key_prefix="market_review")
+        workflow_key = "market_review"
+        agent_id = 1
+        agent_key = "research_agent"
+        agent_version = 1
+        output_schema_id = 1
+        output_schema_version = 1
 
         earlier_run = _build_agent_platform_run(
-            workflow=workflow,
+            package_id=package.id,
+            package_key=package.key,
+            workflow_key=workflow_key,
             status="failed",
             total_tokens=120,
             started_at=datetime(2026, 4, 19, 9, 0, tzinfo=UTC_TZ),
@@ -1324,7 +794,9 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         )
         earlier_run.queued_at = datetime(2026, 4, 19, 8, 59, tzinfo=UTC_TZ)
         queued_run = _build_agent_platform_run(
-            workflow=workflow,
+            package_id=package.id,
+            package_key=package.key,
+            workflow_key=workflow_key,
             status=RunStatus.QUEUED.value,
             total_tokens=0,
             started_at=None,
@@ -1334,7 +806,9 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         )
         queued_run.queued_at = datetime(2026, 4, 19, 11, 0, tzinfo=UTC_TZ)
         latest_run = _build_agent_platform_run(
-            workflow=workflow,
+            package_id=package.id,
+            package_key=package.key,
+            workflow_key=workflow_key,
             status="succeeded",
             total_tokens=321,
             started_at=datetime(2026, 4, 19, 10, 0, tzinfo=UTC_TZ),
@@ -1363,11 +837,11 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                 step_index=1,
                 slot="analysis",
                 position=0,
-                agent_id=published_agent.id,
-                agent_key=published_agent.key,
-                agent_version=published_agent.version,
-                output_schema_id=published_agent.output_schema_id,
-                output_schema_version=published_agent.output_schema_version,
+                agent_id=agent_id,
+                agent_key=agent_key,
+                agent_version=agent_version,
+                output_schema_id=output_schema_id,
+                output_schema_version=output_schema_version,
                 input_mode="passthrough",
                 wiring={},
                 optional=False,
@@ -1470,24 +944,22 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                         "scheduleDeletedAt": datetime(2026, 4, 20, 12, 0, tzinfo=UTC_TZ),
                     },
                     "packageProvenance": {
-                        "workflowPackageId": workflow.id,
-                        "workflowPackageKey": "market_review_package",
-                        "workflowPackageName": "market_review package",
-                        "workflowPackageDescription": workflow.description,
+                        "workflowPackageId": package.id,
+                        "workflowPackageKey": package.key,
+                        "workflowPackageName": package.name,
+                        "workflowPackageDescription": package.description,
                         "workflowPackageStatus": "active",
                         "workflowPackageManifestHash": "a" * 64,
                         "workflowPackageCompiledHash": "b" * 64,
-                        "workflowKey": workflow.key,
-                        "workflowName": workflow.name,
-                        "workflowDescription": workflow.description,
+                        "workflowKey": workflow_key,
+                        "workflowName": "Market Review",
+                        "workflowDescription": "Runtime workflow",
                         "manifestSource": (
                             "apiVersion: signaldeck.workflowPackage/v1\n"
                             "key: market_review_package\n"
                         ),
                         "packageDefinition": {"metadata": {"key": "market_review_package"}},
-                        "compiledPlan": {
-                            "workflows": [{"key": workflow.key, "name": workflow.name}]
-                        },
+                        "compiledPlan": {"workflows": [{"key": workflow_key}]},
                         "launchSnapshot": None,
                         "extensionDependencies": [],
                         "localResourceRefs": {
@@ -1495,7 +967,7 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                             "outputSchemas": [],
                             "capabilityProfiles": [],
                             "mcpServers": [],
-                            "workflows": [workflow.key],
+                            "workflows": [workflow_key],
                         },
                         "resolvedModelConnections": [],
                         "preflightSummary": None,
@@ -1603,14 +1075,14 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         }
         assert serialized_invocation["agentRef"] == {
             "scope": "global",
-            "id": published_agent.id,
-            "key": published_agent.key,
-            "version": 1,
+            "id": agent_id,
+            "key": agent_key,
+            "version": agent_version,
         }
         assert serialized_invocation["outputSchemaRef"] == {
             "scope": "global",
-            "id": published_agent.output_schema_id,
-            "version": 1,
+            "id": output_schema_id,
+            "version": output_schema_version,
         }
         assert serialized_invocation["traceSpanId"] == "span-latest"
         assert run_detail.total_tokens == 321
@@ -2067,7 +1539,7 @@ def test_run_serial_partial_index_allows_one_concurrent_running_claim_per_scope(
             run.status = RunStatus.RUNNING.value
             try:
                 session.commit()
-            except IntegrityError as exc:
+            except sqlalchemy_exc.IntegrityError as exc:
                 session.rollback()
                 return ("loser", exc.__class__.__name__)
             return ("winner", run_id)
@@ -2250,210 +1722,3 @@ def test_delete_run_route_returns_204_then_404(
 
     with session_factory() as session:
         assert session.query(Report).filter_by(slug="route_owned_memory").one_or_none() is None
-
-
-def _seed_delete_graph(session: Session) -> dict[str, int]:
-    connection = _build_model_connection(
-        name="Delete Graph OpenAI",
-        key="delete_graph_openai",
-        status="active",
-        api_key="sk-delete-graph",
-    )
-    output_schema = _build_output_schema(
-        key="delete_graph_schema",
-        version=1,
-        status="published",
-    )
-    capability = _build_skill(key="delete_graph_capability", version=1, status="published")
-    mcp_server = _build_mcp_server(
-        key="delete_graph_mcp",
-        version=1,
-        status="published",
-        transport="stdio",
-    )
-    session.add_all([connection, output_schema, capability, mcp_server])
-    session.flush()
-    agent = _build_agent(
-        key="delete_graph_agent",
-        version=1,
-        status="published",
-        output_schema=output_schema,
-        capabilities=[capability],
-        mcp_servers=[mcp_server],
-        model_connection_id=connection.id,
-    )
-    session.add(agent)
-    session.flush()
-    workflow = _build_workflow(
-        key="delete_graph_workflow",
-        version=1,
-        status="published",
-        agent=agent,
-    )
-    session.add(workflow)
-    session.flush()
-    session.add_all(
-        [
-            WorkflowAgentRef(workflow_id=workflow.id, agent_id=agent.id),
-            AgentCapabilityRef(
-                agent_id=agent.id,
-                capability_id=capability.id,
-                capability_key=capability.key,
-            ),
-            AgentMcpServerRef(
-                agent_id=agent.id,
-                mcp_server_id=mcp_server.id,
-                mcp_server_key=mcp_server.key,
-            ),
-        ]
-    )
-    session.commit()
-    return {
-        "connection_id": connection.id,
-        "schema_id": output_schema.id,
-        "capability_id": capability.id,
-        "mcp_server_id": mcp_server.id,
-        "agent_id": agent.id,
-        "workflow_id": workflow.id,
-    }
-
-
-def test_workflow_delete_removes_workflow_refs_but_keeps_agent(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        ids = _seed_delete_graph(session)
-
-        WorkflowService(session).delete_workflow(ids["workflow_id"])
-        session.expunge_all()
-
-        assert session.get(Workflow, ids["workflow_id"]) is None
-        assert session.get(Agent, ids["agent_id"]) is not None
-
-
-def test_agent_delete_blocked_by_workflow_refs_then_deletes_when_allowed(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        ids = _seed_delete_graph(session)
-
-        repository = AgentRepository(session)
-        service = AgentService(session, get_default_tool_catalog(), DefaultMcpConnectionTester())
-        assert repository.get(ids["agent_id"]) is not None
-        with pytest.raises(ApiError) as exc_info:
-            service.delete_agent(ids["agent_id"])  # pyright: ignore[reportAttributeAccessIssue]
-        assert exc_info.value.status_code == 409
-        assert exc_info.value.code == "agent_delete_blocked"
-
-        _ = session.query(WorkflowAgentRef).delete()
-        session.commit()
-        service.delete_agent(ids["agent_id"])  # pyright: ignore[reportAttributeAccessIssue]
-        session.expunge_all()
-
-        assert session.get(Agent, ids["agent_id"]) is None
-
-
-def test_shared_dependency_delete_blocked_by_agent_refs(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        ids = _seed_delete_graph(session)
-        with pytest.raises(ApiError) as schema_error:
-            OutputSchemaService(session).delete_schema(ids["schema_id"])
-        with pytest.raises(ApiError) as capability_error:
-            CapabilityService(session, get_default_tool_catalog()).delete_capability(
-                ids["capability_id"]
-            )
-        with pytest.raises(ApiError) as mcp_error:
-            McpServerService(session, DefaultMcpConnectionTester()).delete_server(
-                ids["mcp_server_id"]
-            )
-
-        assert schema_error.value.status_code == 409
-        assert schema_error.value.details[0]["agentId"] == ids["agent_id"]
-        assert capability_error.value.status_code == 409
-        assert capability_error.value.details[0]["agentId"] == ids["agent_id"]
-        assert mcp_error.value.status_code == 409
-        assert mcp_error.value.details[0]["agentId"] == ids["agent_id"]
-
-
-def test_draft_replacement_physically_deletes_superseded_global_drafts(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        output_schema = OutputSchemaService(session).create_draft(
-            OutputSchemaDraftCreate.model_validate(
-                {
-                    "key": "draft_replace_schema",
-                    "kind": "standalone",
-                    "name": "Draft Replace Schema",
-                    "description": "Before",
-                    "jsonSchema": {
-                        "type": "object",
-                        "properties": {"before": {"type": "string"}},
-                    },
-                }
-            )
-        )
-        capability = CapabilityService(session, get_default_tool_catalog()).create_draft(
-            CapabilityDraftCreate.model_validate(
-                {
-                    "key": "draft_replace_capability",
-                    "name": "Draft Replace Capability",
-                    "toolKeys": [MEMORY_WRITE_TOOL_KEY],
-                }
-            )
-        )
-        mcp_server = McpServerService(session, DefaultMcpConnectionTester()).create_draft(
-            McpServerCreate.model_validate(
-                {
-                    "key": "draft-replace-mcp",
-                    "name": "Draft Replace MCP",
-                    "transport": "stdio",
-                    "command": "python3",
-                    "args": ["-V"],
-                }
-            )
-        )
-        original_ids = {output_schema.id, capability.id, mcp_server.id}
-
-        updated_schema = OutputSchemaService(session).update_draft(
-            output_schema.id,
-            OutputSchemaDraftUpdate.model_validate(
-                {
-                    "name": "Updated Draft Replace Schema",
-                    "jsonSchema": {"type": "object", "properties": {"after": {"type": "string"}}},
-                }
-            ),
-        )
-        updated_capability = CapabilityService(session, get_default_tool_catalog()).update_draft(
-            capability.id,
-            CapabilityDraftUpdate.model_validate(
-                {
-                    "name": "Updated Draft Replace Capability",
-                    "toolKeys": [MEMORY_WRITE_TOOL_KEY],
-                }
-            ),
-        )
-        updated_mcp_server = McpServerService(session, DefaultMcpConnectionTester()).update_draft(
-            mcp_server.id,
-            McpServerUpdate.model_validate(
-                {
-                    "name": "Updated Draft Replace MCP",
-                    "transport": McpServerTransport.STDIO.value,
-                    "command": "python3",
-                    "args": ["-V"],
-                }
-            ),
-        )
-        session.expunge_all()
-
-        assert {updated_schema.id, updated_capability.id, updated_mcp_server.id}.isdisjoint(
-            original_ids
-        )
-        assert all(session.get(OutputSchema, row_id) is None for row_id in [output_schema.id])
-        assert all(session.get(Capability, row_id) is None for row_id in [capability.id])
-        assert all(session.get(McpServer, row_id) is None for row_id in [mcp_server.id])
-        assert session.get(OutputSchema, updated_schema.id) is not None
-        assert session.get(Capability, updated_capability.id) is not None
-        assert session.get(McpServer, updated_mcp_server.id) is not None

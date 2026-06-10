@@ -31,7 +31,7 @@ platform-authoring/
 | Package-local workflow authoring | `workflows/*.ts` | draft creation, wire bindings, path validation |
 | Package-local agent authoring | `agents/manifest.ts` | manifest parsing, formatting, outline extraction, and editor diagnostics |
 | Common helpers | `common/*.ts` | resource refs, field paths, issue text, safe serialization |
-| Local coverage | `agents/manifest.test.ts`, `workflow-packages/manifest.test.ts` | manifest round-trips, YAML restrictions, and inline private MCP preservation |
+| Local coverage | `agents/manifest.test.ts`, `workflow-packages/manifest.test.ts` | manifest round-trips, YAML restrictions, and private MCP authoring fields |
 
 ## CONVENTIONS
 - Keep this layer pure: no React state, hooks, routing, toasts, or network requests.
@@ -39,7 +39,7 @@ platform-authoring/
 - Factories own default draft/node/value creation so editors start from consistent state.
 - Validation returns structured issue lists that pages/components render; do not throw for normal authoring mistakes.
 - Local manifest helpers are allowed to reject unsupported YAML features up front. Keep aliases, anchors, merge keys, and unsupported tags out of package/agent authoring flows.
-- Private MCP authoring stays package-local: stdio drafts keep command/args text, HTTP drafts keep `url`, `headers`, and `query`, and import/export preserves inline `env`, `headers`, and `query` maps.
+- Private MCP authoring stays package-local: stdio drafts keep command/args text and HTTP drafts keep `url`, `headers`, and `query`; browser-visible manifest reads and exports omit secret-bearing `env`, `headers`, and `query` maps.
 - Resource-ref parsing and formatting stay centralized in `common/resource-ref.ts`.
 
 ## ANTI-PATTERNS

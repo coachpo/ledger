@@ -11,6 +11,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import ToolCatalogValidationError, get_default_tool_catalog
 from app.agents.runtime_tools import get_default_runtime_tool_registry
+from app.agents.runtime_tools.memory import (
+    MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
+    MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+)
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
 from app.extensions.signaldeck_digital_oracle.ownership import (
@@ -464,6 +468,40 @@ def test_digital_oracle_api_tools_follow_extension_state_in_catalog_and_runtime(
     assert _REQUIRED_FINANCE_TOOL_KEYS <= disabled_runtime_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= disabled_runtime_keys
     assert disabled_descriptor_keys == _REQUIRED_FINANCE_TOOL_KEYS | _REQUIRED_CORE_TOOL_KEYS
+
+
+def test_api_tools_keep_core_memory_visible_when_bundled_extensions_are_disabled(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    for extension_key in (FINANCE_WORKSPACE_EXTENSION_KEY, DIGITAL_ORACLE_EXTENSION_KEY):
+        response = client.patch(f"/api/extensions/{extension_key}", json={"enabled": False})
+        assert response.status_code == 200, response.json()
+
+    tools_response = client.get("/api/tools")
+    assert tools_response.status_code == 200, tools_response.json()
+    body = cast(dict[str, object], tools_response.json())
+    items = cast(list[dict[str, object]], body["items"])
+    visible_keys = {str(item["key"]) for item in items}
+    assert visible_keys == _REQUIRED_CORE_TOOL_KEYS
+    assert all(set(item) == {"key", "displayName", "description"} for item in items)
+
+    with session_factory() as session:
+        service = ExtensionService(session)
+        catalog_keys = {tool.key for tool in service.get_tool_catalog().list_registered_tools()}
+        runtime_registry = service.get_runtime_tool_registry()
+        runtime_keys = {spec.key for spec in runtime_registry.list_enabled_specs()}
+        runtime_function_names = {
+            str(tool["name"])
+            for tool in runtime_registry.get_openai_tools(_REQUIRED_CORE_TOOL_KEYS)
+        }
+
+    assert catalog_keys == _REQUIRED_CORE_TOOL_KEYS
+    assert runtime_keys == _REQUIRED_CORE_TOOL_KEYS
+    assert runtime_function_names == {
+        MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+        MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
+    }
 
 
 def test_tools_catalog_route_is_get_only(client: TestClient) -> None:

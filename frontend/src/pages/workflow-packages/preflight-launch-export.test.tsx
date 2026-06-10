@@ -106,7 +106,7 @@ describe("WorkflowPackageEditorPage import and export flows", () => {
     validatePackageMock.mockReset();
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      text: () => Promise.resolve("apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\nmetadata:\n  key: market_review_package\nspec:\n  mcpServers:\n    - key: market_stdio\n      transport: stdio\n      command: market-mcp\n      env:\n        MARKET_DATA_API_KEY: sk-live-env-secret\n    - key: market_http\n      transport: http-sse\n      url: https://example.com/mcp\n      headers:\n        Authorization: Bearer sk-live-header-secret\n      query:\n        apiKey: sk-live-query-secret\n"),
+      text: () => Promise.resolve("apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\nmetadata:\n  key: market_review_package\nspec:\n  mcpServers:\n    - key: market_stdio\n      transport: stdio\n      command: market-mcp\n    - key: market_http\n      transport: http-sse\n      url: https://example.com/mcp\n"),
     }) as unknown as typeof fetch;
     global.fetch = fetchMock;
     window.fetch = fetchMock;
@@ -128,9 +128,15 @@ describe("WorkflowPackageEditorPage import and export flows", () => {
     const preview = await screen.findByLabelText("Package YAML preview");
     expect(preview).toHaveClass("min-h-96", "font-mono", "text-xs");
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    await waitFor(() => expect((preview as HTMLTextAreaElement).value).toContain("sk-live-env-secret"));
-    expect((preview as HTMLTextAreaElement).value).toContain("Authorization: Bearer sk-live-header-secret");
-    expect((preview as HTMLTextAreaElement).value).toContain("apiKey: sk-live-query-secret");
+    await waitFor(() => expect((preview as HTMLTextAreaElement).value).toContain("command: market-mcp"));
+    const previewValue = (preview as HTMLTextAreaElement).value;
+    expect(previewValue).toContain("url: https://example.com/mcp");
+    expect(previewValue).not.toContain("env:");
+    expect(previewValue).not.toContain("headers:");
+    expect(previewValue).not.toContain("query:");
+    expect(previewValue).not.toContain("sk-live-env-secret");
+    expect(previewValue).not.toContain("sk-live-header-secret");
+    expect(previewValue).not.toContain("sk-live-query-secret");
 
     fireEvent.click(screen.getByRole("button", { name: "Import Package" }));
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/import");

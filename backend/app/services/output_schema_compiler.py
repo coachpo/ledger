@@ -4,12 +4,10 @@ import re
 from copy import deepcopy
 from dataclasses import dataclass
 from math import isfinite
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, create_model
 
-from app.models.output_schema import OutputSchema
-from app.repositories.output_schema import OutputSchemaRepository
 from app.schemas.output_schema import (
     JsonPrimitive,
     JsonValue,
@@ -31,6 +29,71 @@ _REGISTRY_REF_RE = re.compile(
     r"^registry://(?P<key>[a-z][a-z0-9_]{0,119})(?:@(?P<version>[1-9][0-9]*))?$"
 )
 _PRIMITIVE_TYPES = {"string", "integer", "number", "boolean"}
+
+
+class OutputSchemaLike(Protocol):
+    @property
+    def key(self) -> str: ...
+
+    @property
+    def version(self) -> int: ...
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def kind(self) -> str: ...
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def description(self) -> str | None: ...
+
+    @property
+    def json_schema(self) -> dict[str, Any]: ...
+
+    @property
+    def registry_refs(self) -> list[str]: ...
+
+
+class OutputSchemaRegistryResolver(Protocol):
+    def resolve_registry_ref(
+        self,
+        key: str,
+        version: int | None = None,
+    ) -> OutputSchemaLike | None: ...
+
+
+@dataclass
+class PackageOutputSchemaCandidate:
+    key: str
+    version: int
+    status: str
+    kind: str
+    name: str
+    description: str | None
+    json_schema: dict[str, Any]
+    registry_refs: list[str]
+
+
+def package_output_schema_candidate(
+    *,
+    key: str,
+    name: str,
+    description: str | None,
+    json_schema: dict[str, Any],
+) -> PackageOutputSchemaCandidate:
+    return PackageOutputSchemaCandidate(
+        key=key,
+        version=1,
+        status="published",
+        kind="standalone",
+        name=name,
+        description=description,
+        json_schema=json_schema,
+        registry_refs=[],
+    )
 
 
 def _join_path(path: str, segment: str) -> str:
@@ -146,8 +209,8 @@ class PreparedOutputSchema:
 
 
 class OutputSchemaCompiler:
-    def __init__(self, repository: OutputSchemaRepository) -> None:
-        self.repository = repository
+    def __init__(self, registry_resolver: OutputSchemaRegistryResolver | None = None) -> None:
+        self.registry_resolver = registry_resolver
         self._parsed_registry_cache: dict[RegistryTarget, SchemaNode] = {}
         self._runtime_model_cache: dict[tuple[str, int], type[BaseModel]] = {}
 
@@ -194,7 +257,7 @@ class OutputSchemaCompiler:
             registry_refs=self._collect_direct_registry_refs(selected_node),
         )
 
-    def render_stored_schema(self, schema: OutputSchema) -> PreparedOutputSchema:
+    def render_stored_schema(self, schema: OutputSchemaLike) -> PreparedOutputSchema:
         issues: list[dict[str, str]] = []
         node = self._node_from_json_schema(
             schema.json_schema,
@@ -229,7 +292,7 @@ class OutputSchemaCompiler:
             raise OutputSchemaCompilerError(issues[0]["issue"])
         return node
 
-    def parse_stored_schema_node(self, schema: OutputSchema) -> SchemaNode:
+    def parse_stored_schema_node(self, schema: OutputSchemaLike) -> SchemaNode:
         issues: list[dict[str, str]] = []
         node = self._node_from_json_schema(
             schema.json_schema,
@@ -243,7 +306,7 @@ class OutputSchemaCompiler:
             raise OutputSchemaCompilerError(issues[0]["issue"])
         return node
 
-    def build_runtime_model(self, schema: OutputSchema) -> type[BaseModel]:
+    def build_runtime_model(self, schema: OutputSchemaLike) -> type[BaseModel]:
         cache_key = (schema.key, schema.version)
         cached_model = self._runtime_model_cache.get(cache_key)
         if cached_model is not None:
@@ -1145,7 +1208,14 @@ class OutputSchemaCompiler:
         path: str,
         issues: list[dict[str, str]],
     ) -> RegistryTarget | None:
-        row = self.repository.resolve_registry_ref(key, version)
+        if self.registry_resolver is None:
+            self._add_issue(
+                issues,
+                path,
+                "Shared registry refs are not supported in package-local schemas",
+            )
+            return None
+        row = self.registry_resolver.resolve_registry_ref(key, version)
         if row is None:
             issue = (
                 f"Shared registry ref {key!r} v{version} was not found"
@@ -1174,7 +1244,14 @@ class OutputSchemaCompiler:
         cached_node = self._parsed_registry_cache.get(target)
         if cached_node is not None:
             return cached_node
-        row = self.repository.resolve_registry_ref(target.key, target.version)
+        if self.registry_resolver is None:
+            self._add_issue(
+                issues,
+                _join_path(path, "$ref"),
+                "Shared registry refs are not supported in package-local schemas",
+            )
+            return self._placeholder_node()
+        row = self.registry_resolver.resolve_registry_ref(target.key, target.version)
         if row is None:
             self._add_issue(
                 issues,
@@ -1449,7 +1526,11 @@ class OutputSchemaCompiler:
             )
             annotation = cast(Any, list)[item_annotation]
         elif isinstance(node, SchemaRef):
-            row = self.repository.resolve_registry_ref(node.key, node.version)
+            if self.registry_resolver is None:
+                raise OutputSchemaCompilerError(
+                    "Shared registry refs are not supported in package-local schemas"
+                )
+            row = self.registry_resolver.resolve_registry_ref(node.key, node.version)
             if row is None:
                 raise OutputSchemaCompilerError(
                     f"Shared registry ref {node.key!r} v{node.version} was not found"
@@ -1551,7 +1632,10 @@ class OutputSchemaCompiler:
 
 __all__ = [
     "OutputSchemaCompiler",
+    "OutputSchemaLike",
+    "PackageOutputSchemaCandidate",
     "OutputSchemaCompilerError",
     "OutputSchemaValidationFailure",
     "PreparedOutputSchema",
+    "package_output_schema_candidate",
 ]

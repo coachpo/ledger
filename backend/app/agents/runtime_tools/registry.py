@@ -44,6 +44,7 @@ class RuntimeToolRegistry:
         return tuple(
             self._descriptors_by_openai_function_name[spec.openai_function_name]
             for spec in self._specs
+            if self._is_enabled_spec(spec)
         )
 
     def get_execution_descriptors(

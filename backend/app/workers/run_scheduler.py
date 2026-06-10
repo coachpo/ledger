@@ -191,7 +191,10 @@ class RunSchedulerWorker:
         heartbeat.start()
         try:
             with self.session_factory() as session:
-                self._run_executor(session).execute_claimed_run(scheduled_run.run_id)
+                self._run_executor(session).execute_claimed_run(
+                    scheduled_run.run_id,
+                    lease_owner=scheduled_run.lease_owner,
+                )
         finally:
             stop_heartbeat.set()
             heartbeat.join(timeout=self.settings.run_scheduler_heartbeat_seconds)

@@ -22,7 +22,6 @@ from app.core.telemetry import (
     format_current_trace_id,
 )
 from app.db.engine import get_session_factory
-from app.models.output_schema import OutputSchema
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
@@ -32,7 +31,6 @@ from app.models.workflow_package_schedule import (
     WorkflowPackageSchedule,
     WorkflowPackageScheduleFire,
 )
-from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.report import ReportRepository
 from app.repositories.run import RunRepository
 from app.repositories.run_agent_invocation import RunAgentInvocationRepository
@@ -95,10 +93,12 @@ from app.services.model_gateway_openai import DEFAULT_OPENAI_CLIENT_FACTORY as O
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     OutputSchemaCompilerError,
+    PackageOutputSchemaCandidate,
     SchemaField,
     SchemaNode,
     SchemaObject,
     SchemaRef,
+    package_output_schema_candidate,
 )
 from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
@@ -215,7 +215,6 @@ class RunService:
             session
         )
         self.queue_service_factory: RunQueueServiceFactory = queue_service_factory
-        self.output_schema_repository = OutputSchemaRepository(session)
         self.report_repository = ReportRepository(session)
         self.run_repository = RunRepository(session)
         self.workflow_package_repository = WorkflowPackageRepository(session)
@@ -236,7 +235,7 @@ class RunService:
         )
         self.http_operation_execution_service = HttpOperationExecutionService(session)
         self.compatibility_resolution_service = CompatibilityResolutionService()
-        self.schema_compiler = OutputSchemaCompiler(self.output_schema_repository)
+        self.schema_compiler = OutputSchemaCompiler()
         self._stored_schema_node_cache: dict[tuple[str, int], SchemaNode] = {}
         self._run_rerun_fork_preparation = RunRerunForkPreparation(
             session=session,
@@ -1330,9 +1329,9 @@ class RunService:
             self.provider_bundle,
         ).drain_once(run_id=run_id)
 
-    def execute_claimed_run(self, run_id: int) -> None:
+    def execute_claimed_run(self, run_id: int, *, lease_owner: str | None = None) -> None:
         try:
-            asyncio.run(self._execute_claimed_run_async(run_id))
+            asyncio.run(self._execute_claimed_run_async(run_id, lease_owner=lease_owner))
         except Exception as exc:
             logger.exception("Agent platform run %d failed", run_id)
             self.session.rollback()
@@ -1341,11 +1340,17 @@ class RunService:
                 run_id,
                 code=failure.code,
                 message=failure.message,
+                lease_owner=lease_owner,
             )
 
-    async def _execute_claimed_run_async(self, run_id: int) -> None:
+    async def _execute_claimed_run_async(
+        self,
+        run_id: int,
+        *,
+        lease_owner: str | None = None,
+    ) -> None:
         run = self.run_repository.get_detail(run_id)
-        if run is None or run.status != _RUN_STATUS_RUNNING:
+        if run is None or not self._run_claim_is_active(run, lease_owner=lease_owner):
             return
         self._assert_run_extension_dependencies_enabled(run)
         if run.started_at is None:
@@ -1357,12 +1362,22 @@ class RunService:
         try:
             trace_session = self._start_trace_session(run=run, plan=plan)
         except Exception:
-            await self._execute_run_with_trace(run=run, plan=plan, trace_id=None)
+            await self._execute_run_with_trace(
+                run=run,
+                plan=plan,
+                trace_id=None,
+                lease_owner=lease_owner,
+            )
             return
 
         with trace_session as run_span:
             trace_id = format_current_trace_id(run_span)
-            await self._execute_run_with_trace(run=run, plan=plan, trace_id=trace_id)
+            await self._execute_run_with_trace(
+                run=run,
+                plan=plan,
+                trace_id=trace_id,
+                lease_owner=lease_owner,
+            )
 
     async def _execute_run_with_trace(
         self,
@@ -1370,6 +1385,7 @@ class RunService:
         run: Run,
         plan: ExecutionPlan,
         trace_id: str | None,
+        lease_owner: str | None,
     ) -> None:
         total_tokens = int(run.inherited_tokens or 0)
         executed_tokens = 0
@@ -1377,6 +1393,8 @@ class RunService:
         for step in plan.steps:
             if step.index < run.resume_step_index:
                 continue
+            if not self._run_claim_is_active(run, lease_owner=lease_owner):
+                return
             slot_outputs = self._hydrate_slot_outputs(run.id, before_step_index=step.index)
             run_step = self._get_planned_step_or_raise(run_id=run.id, step_index=step.index)
             self._assert_planned_invocations_exist(run_id=run.id, step=step)
@@ -1389,7 +1407,10 @@ class RunService:
                 initial_input=run.input,
                 slot_outputs=slot_outputs,
                 trace_id=trace_id,
+                lease_owner=lease_owner,
             )
+            if not self._run_claim_is_active(run, lease_owner=lease_owner):
+                return
             if fatal_error is None:
                 _ = self.run_step_repository.persist_success(run_step)
             else:
@@ -1404,10 +1425,11 @@ class RunService:
             self.session.commit()
             if fatal_error is not None:
                 self._skip_pending_steps_after_failure(run_id=run.id, after_step_index=step.index)
-                run.status = _RUN_STATUS_FAILED
-                run.error = fatal_error
-                run.finished_at = utcnow()
-                self.session.commit()
+                _ = self._finalize_run_failed(
+                    run,
+                    error=fatal_error,
+                    lease_owner=lease_owner,
+                )
                 return
             for slot, value in step_slot_outputs.items():
                 slot_outputs[(step.index, slot)] = value
@@ -1423,18 +1445,89 @@ class RunService:
             executed_tokens=executed_tokens,
         )
         if final_error is not None:
-            run.status = _RUN_STATUS_FAILED
-            run.error = final_error
-            run.finished_at = utcnow()
-            self.session.commit()
+            _ = self._finalize_run_failed(
+                run,
+                error=final_error,
+                lease_owner=lease_owner,
+            )
             return
 
-        run.final_output = final_output
-        run.status = _RUN_STATUS_SUCCEEDED
-        run.trace_id = trace_id
-        run.error = None
-        run.finished_at = utcnow()
+        _ = self._finalize_run_succeeded(
+            run,
+            final_output=final_output,
+            trace_id=trace_id,
+            lease_owner=lease_owner,
+        )
+
+    def _run_claim_is_active(self, run: Run, *, lease_owner: str | None) -> bool:
+        current = self._refresh_run_for_claim_check(run)
+        if current is None or current.status != _RUN_STATUS_RUNNING:
+            return False
+        return lease_owner is None or current.lease_owner == lease_owner
+
+    def _refresh_run_for_claim_check(self, run: Run) -> Run | None:
+        self.session.expire(run)
+        return self.session.scalar(
+            select(Run)
+            .where(Run.id == run.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+    def _finalize_run_failed(
+        self,
+        run: Run,
+        *,
+        error: str,
+        lease_owner: str | None,
+    ) -> bool:
+        total_tokens = int(run.total_tokens or 0)
+        inherited_tokens = int(run.inherited_tokens or 0)
+        executed_tokens = int(run.executed_tokens or 0)
+        current = self._refresh_run_for_claim_check(run)
+        if current is None or current.status != _RUN_STATUS_RUNNING:
+            self.session.rollback()
+            return False
+        if lease_owner is not None and current.lease_owner != lease_owner:
+            self.session.rollback()
+            return False
+        current.status = _RUN_STATUS_FAILED
+        current.error = error
+        current.total_tokens = total_tokens
+        current.inherited_tokens = inherited_tokens
+        current.executed_tokens = executed_tokens
+        current.finished_at = utcnow()
         self.session.commit()
+        return True
+
+    def _finalize_run_succeeded(
+        self,
+        run: Run,
+        *,
+        final_output: Any,
+        trace_id: str | None,
+        lease_owner: str | None,
+    ) -> bool:
+        total_tokens = int(run.total_tokens or 0)
+        inherited_tokens = int(run.inherited_tokens or 0)
+        executed_tokens = int(run.executed_tokens or 0)
+        current = self._refresh_run_for_claim_check(run)
+        if current is None or current.status != _RUN_STATUS_RUNNING:
+            self.session.rollback()
+            return False
+        if lease_owner is not None and current.lease_owner != lease_owner:
+            self.session.rollback()
+            return False
+        current.final_output = final_output
+        current.status = _RUN_STATUS_SUCCEEDED
+        current.trace_id = trace_id
+        current.error = None
+        current.total_tokens = total_tokens
+        current.inherited_tokens = inherited_tokens
+        current.executed_tokens = executed_tokens
+        current.finished_at = utcnow()
+        self.session.commit()
+        return True
 
     def _run_workflow_package_start_lifecycle(self, run: Run, *, now: datetime) -> None:
         if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
@@ -1666,6 +1759,7 @@ class RunService:
         initial_input: dict[str, Any],
         slot_outputs: dict[tuple[int, str], Any],
         trace_id: str | None,
+        lease_owner: str | None,
     ) -> tuple[dict[str, Any], int, str | None]:
         step_index = step.index
         prepared_invocations: list[_PreparedAgentInvocation] = []
@@ -1773,6 +1867,9 @@ class RunService:
             ),
             return_exceptions=True,
         )
+        if not self._run_claim_is_active(run, lease_owner=lease_owner):
+            self.session.rollback()
+            return {}, 0, None
 
         step_tokens = 0
         for index, prepared_agent in enumerate(prepared_invocations):
@@ -2397,7 +2494,7 @@ class RunService:
     def _resolve_runtime_agent_output_schema(
         self,
         agent: PackageRuntimeAgentSpec,
-    ) -> OutputSchema:
+    ) -> PackageOutputSchemaCandidate:
         return self._package_output_schema_candidate(agent.output_schema)
 
     def _resolve_runtime_operation_output_model(
@@ -2410,21 +2507,18 @@ class RunService:
     def _resolve_runtime_operation_output_schema(
         self,
         operation: ExecutionPlanOperation,
-    ) -> OutputSchema:
-        if operation.package_runtime_operation is not None:
-            return self._package_output_schema_candidate(
-                operation.package_runtime_operation.output_schema
-            )
-        output_schema = self.output_schema_repository.get(operation.output_schema_id)
-        if output_schema is None or output_schema.version != operation.output_schema_version:
+    ) -> PackageOutputSchemaCandidate:
+        if operation.package_runtime_operation is None:
             raise RunExecutionError(
                 code="run_operation_output_schema_missing",
                 message=(
-                    f"Operation {operation.operation_key!r} references a missing "
-                    "output schema version"
+                    f"Operation {operation.operation_key!r} is missing its package-local "
+                    "output schema snapshot"
                 ),
             )
-        return output_schema
+        return self._package_output_schema_candidate(
+            operation.package_runtime_operation.output_schema
+        )
 
     @staticmethod
     def _runtime_agent_input_schema(agent: PackageRuntimeAgentSpec) -> dict[str, Any]:
@@ -2433,16 +2527,12 @@ class RunService:
     @staticmethod
     def _package_output_schema_candidate(
         output_schema: PackageLocalOutputSchemaSpec,
-    ) -> OutputSchema:
-        return OutputSchema(
+    ) -> PackageOutputSchemaCandidate:
+        return package_output_schema_candidate(
             key=output_schema.key,
-            version=1,
-            status="published",
-            kind="standalone",
             name=output_schema.name,
             description=output_schema.description,
             json_schema=output_schema.json_schema,
-            registry_refs=[],
         )
 
     def _validate_fork_invocation_input(
@@ -2493,15 +2583,11 @@ class RunService:
         *,
         candidate_key: str,
     ) -> type[BaseModel]:
-        candidate = OutputSchema(
+        candidate = package_output_schema_candidate(
             key=candidate_key,
-            version=1,
-            status="published",
-            kind="standalone",
             name="Run Input Schema",
             description="Run input schema validation candidate",
             json_schema=input_schema,
-            registry_refs=[],
         )
         return self.schema_compiler.build_runtime_model(candidate)
 
@@ -2523,27 +2609,37 @@ class RunService:
             cache_key = (current.key, current.version)
             cached = self._stored_schema_node_cache.get(cache_key)
             if cached is None:
-                row = self.output_schema_repository.resolve_registry_ref(
-                    current.key,
-                    current.version,
+                raise RunExecutionError(
+                    code="run_registry_ref_unsupported",
+                    message=(
+                        f"Shared registry ref {current.key!r} v{current.version} is not "
+                        "supported in package-local run schemas"
+                    ),
                 )
-                if row is None:
-                    raise RunExecutionError(
-                        code="run_registry_ref_missing",
-                        message=(
-                            f"Shared registry ref {current.key!r} v{current.version} was not found"
-                        ),
-                    )
-                cached = self.schema_compiler.parse_stored_schema_node(row)
-                self._stored_schema_node_cache[cache_key] = cached
             current = cached
         return current
 
-    def _mark_run_failed_in_fresh_session(self, run_id: int, *, code: str, message: str) -> None:
+    def _mark_run_failed_in_fresh_session(
+        self,
+        run_id: int,
+        *,
+        code: str,
+        message: str,
+        lease_owner: str | None,
+    ) -> None:
         _ = code
         with self.session_factory() as session:
-            run = session.get(Run, run_id)
-            if run is None or run.status not in {_RUN_STATUS_QUEUED, _RUN_STATUS_RUNNING}:
+            run = session.scalar(
+                select(Run)
+                .where(Run.id == run_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if run is None or run.status != _RUN_STATUS_RUNNING:
+                session.rollback()
+                return
+            if lease_owner is not None and run.lease_owner != lease_owner:
+                session.rollback()
                 return
             run.status = _RUN_STATUS_FAILED
             run.error = message

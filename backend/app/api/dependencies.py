@@ -30,6 +30,8 @@ def get_session() -> Iterator[Session]:
 def get_extension_service(
     session: Annotated[Session, Depends(get_session)],
 ) -> ExtensionService:
+    from app.services.extension_service import ExtensionService
+
     return ExtensionService(session)
 
 
@@ -42,6 +44,8 @@ def get_tool_catalog(
 def get_memory_service(
     session: Annotated[Session, Depends(get_session)],
 ) -> MemoryService:
+    from app.services.memory_service import MemoryService
+
     return MemoryService(session)
 
 
@@ -67,6 +71,8 @@ def get_execution_provider_bundle(
 def get_model_connection_service(
     session: Annotated[Session, Depends(get_session)],
 ) -> ModelConnectionService:
+    from app.services.model_connection_service import ModelConnectionService
+
     return ModelConnectionService(session)
 
 
@@ -80,6 +86,8 @@ def get_workflow_package_preflight_service(
     session: Annotated[Session, Depends(get_session)],
     extension_service: Annotated[ExtensionService, Depends(get_extension_service)],
 ) -> WorkflowPackagePreflightService:
+    from app.services.workflow_package_preflight import WorkflowPackagePreflightService
+
     return WorkflowPackagePreflightService(session, extension_service=extension_service)
 
 
@@ -92,6 +100,8 @@ def get_run_service(
     ],
     extension_service: Annotated[ExtensionService, Depends(get_extension_service)],
 ) -> RunService:
+    from app.services.run_service import RunService
+
     return RunService(
         session,
         get_session_factory(),
@@ -124,6 +134,10 @@ def get_workflow_package_service(
 def get_workflow_package_runtime_input_registry_service(
     session: Annotated[Session, Depends(get_session)],
 ) -> WorkflowPackageRuntimeInputRegistryService:
+    from app.services.workflow_package_runtime_input_registry import (
+        WorkflowPackageRuntimeInputRegistryService,
+    )
+
     return WorkflowPackageRuntimeInputRegistryService(session)
 
 
@@ -132,6 +146,8 @@ def get_workflow_package_schedule_service(
     provider_bundle: Annotated[ExecutionProviderBundle, Depends(get_execution_provider_bundle)],
     run_service: Annotated[RunService, Depends(get_run_service)],
 ) -> WorkflowPackageScheduleService:
+    from app.services.workflow_package_schedule_service import WorkflowPackageScheduleService
+
     return WorkflowPackageScheduleService(
         session,
         get_session_factory(),

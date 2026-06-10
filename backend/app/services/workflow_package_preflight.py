@@ -12,10 +12,8 @@ from sqlalchemy.orm import Session
 from app.agents import ToolCatalogValidationError
 from app.agents.mcp.tool_adapter import SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS
 from app.core.errors import ApiError
-from app.models.output_schema import OutputSchema
 from app.models.workflow_package import WorkflowPackage
 from app.repositories.model_connection import ModelConnectionRepository
-from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
 from app.schemas.workflow_package_manifest import WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS
 from app.services.execution_plan import (
@@ -30,6 +28,7 @@ from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     OutputSchemaCompilerError,
     OutputSchemaValidationFailure,
+    package_output_schema_candidate,
 )
 from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
@@ -120,7 +119,7 @@ class WorkflowPackagePreflightService:
         self.model_connection_service = ModelConnectionService(session)
         self.model_connection_repository = ModelConnectionRepository(session)
         self.secret_binding_repository = WorkflowPackageSecretBindingRepository(session)
-        self.schema_compiler = OutputSchemaCompiler(OutputSchemaRepository(session))
+        self.schema_compiler = OutputSchemaCompiler()
 
     def validation_warnings(self, package_definition: dict[str, Any]) -> list[dict[str, Any]]:
         warnings = self._project_validation_warning_facts(
@@ -653,15 +652,11 @@ class WorkflowPackagePreflightService:
                 builder=None,
                 json_schema=cast(dict[str, Any], raw_schema),
             )
-            candidate = OutputSchema(
+            candidate = package_output_schema_candidate(
                 key=candidate_key,
-                version=1,
-                status="published",
-                kind="standalone",
                 name=candidate_key,
                 description="Workflow package preflight schema candidate",
                 json_schema=prepared.json_schema,
-                registry_refs=[],
             )
             _ = self.schema_compiler.build_runtime_model(candidate)
         except OutputSchemaValidationFailure as exc:

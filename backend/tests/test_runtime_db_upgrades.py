@@ -14,47 +14,25 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db import upgrades
 from app.db.session import init_db
-from app.db.upgrades import _ensure_agent_model_connection_snapshot_support, upgrade_legacy_schema
+from app.db.upgrades import upgrade_legacy_schema
 from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-from app.models.mcp_server import McpServer
 from app.models.report import REPORT_SOURCE_CHECK_CONSTRAINT
-from app.reset_seed import (
-    MAG7_COMPANIES,
-    STARTER_PORTFOLIO_SLUG,
-    STARTER_TEMPLATE_NAMES,
-    STARTER_WORKFLOW_KEY,
-    STOCK_ANALYSIS_CAPABILITY_KEY,
-    STOCK_ANALYSIS_MCP_SERVER_KEY,
-    STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
-    STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS,
-    STOCK_ANALYSIS_SYNTHESIZER_KEY,
-    TRADING_DECISION_SCHEMA_KEY,
-)
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_service import WorkflowPackageService
 
 AGENT_PLATFORM_TABLE_NAMES = {
-    "agents",
-    "agent_capability_refs",
-    "agent_mcp_server_refs",
-    "mcp_servers",
     "model_connections",
-    "output_schemas",
     "run_agent_invocations",
     "run_forks",
     "run_operation_invocations",
     "run_steps",
     "runs",
     "run_workflow_package_snapshots",
-    "workflow_agent_refs",
     "workflow_packages",
     "workflow_package_runtime_input_entries",
     "workflow_package_secret_bindings",
-    "capabilities",
-    "workflows",
 }
 CORE_MEMORY_TABLE_NAMES = {
     "agent_memory_entries",
@@ -66,6 +44,16 @@ CORE_MEMORY_PGVECTOR_TABLE_NAMES = {"agent_memory_embeddings"}
 SCHEDULE_TABLE_NAMES = {
     "workflow_package_schedules",
     "workflow_package_schedule_fires",
+}
+RETIRED_GLOBAL_AUTHORING_TABLE_NAMES = {
+    "agents",
+    "workflows",
+    "capabilities",
+    "mcp_servers",
+    "output_schemas",
+    "workflow_agent_refs",
+    "agent_capability_refs",
+    "agent_mcp_server_refs",
 }
 LEGACY_BACKEND_TABLE_NAMES = {
     "agent_specs",
@@ -84,20 +72,12 @@ LEGACY_BACKEND_TABLE_NAMES = {
 LIVE_AGENT_PLATFORM_TABLE_NAMES = AGENT_PLATFORM_TABLE_NAMES
 LIVE_CORE_MEMORY_TABLE_NAMES = CORE_MEMORY_TABLE_NAMES
 LIVE_SCHEDULE_TABLE_NAMES = SCHEDULE_TABLE_NAMES
-S13_DEFERRED_LEGACY_BACKEND_TABLE_NAMES = LEGACY_BACKEND_TABLE_NAMES
-S13_DEFERRED_REMOVED_RUN_PROVENANCE_COLUMNS = {
+REMOVED_RUN_PROVENANCE_COLUMNS = {
     "workflow_package_version_id",
     "workflow_package_version",
     "workflow_package_manifest_hash",
     "workflow_package_compiled_hash",
     "launch_snapshot",
-}
-S13_DEFERRED_GLOBAL_AUTHORING_ROW_CLEANUP_TABLE_NAMES = {
-    "agents",
-    "capabilities",
-    "mcp_servers",
-    "output_schemas",
-    "workflows",
 }
 _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
     "Run marked as failed during startup recovery because the previous process exited while "
@@ -106,19 +86,6 @@ _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
 _AGENT_PLATFORM_PENDING_SKIP_MESSAGE = (
     "Runtime row skipped during startup recovery because the parent run failed before it started."
 )
-RETIRED_STOCK_ANALYSIS_AGENT_KEYS = STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS + (
-    STOCK_ANALYSIS_SYNTHESIZER_KEY,
-)
-RETIRED_STOCK_ANALYSIS_REPORT_SLUGS = tuple(company["reportSlug"] for company in MAG7_COMPANIES)
-_LIVE_OUTPUT_SCHEMA_KEY = "market_review_note"
-_LIVE_CAPABILITY_KEY = "market_review_tools"
-_LIVE_MCP_SERVER_KEY = "market_review_data"
-_LIVE_AGENT_KEY = "market_review_agent"
-_LIVE_WORKFLOW_KEY = "market_review"
-_LIVE_TEMPLATE_NAME = "Quarterly Review"
-_LIVE_REPORT_SLUG = "market_review_report"
-_LIVE_PORTFOLIO_SLUG = "income_core"
-_CUSTOM_STALE_SKILL_KEY = "stock_analysis_ws1_verify"
 _LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS = (
     "_".join(("has", "api", "key")),
     "_".join(("api", "key", "last4")),
@@ -651,395 +618,6 @@ def _tradingagents_preset_schedule_rows(connection: Connection) -> list[Mapping[
         .mappings()
         .all(),
     )
-
-
-def _seed_stock_analysis_upgrade_rows(connection) -> int:
-    model_connection_id = connection.execute(
-        text(
-            "INSERT INTO model_connections ("
-            "key, status, name, description, base_url, model_id, reasoning_effort, "
-            "timeout_seconds, secret_payload, created_at, updated_at"
-            ") VALUES ("
-            ":key, 'active', :name, :description, 'https://api.openai.com/v1', "
-            ":model_id, 'medium', 60, '{}'::jsonb, NOW(), NOW()"
-            ") RETURNING id"
-        ),
-        {
-            "key": "upgrade_test_connection",
-            "name": "Upgrade test connection",
-            "description": "Shared connection for stock-analysis sanitation upgrade tests.",
-            "model_id": "openai:gpt-5.4-mini",
-        },
-    ).scalar_one()
-    live_output_schema_id = connection.execute(
-        text(
-            "INSERT INTO output_schemas ("
-            "key, version, status, kind, name, description, json_schema, "
-            "registry_refs, created_at, updated_at"
-            ") VALUES ("
-            ":key, 1, 'published', 'standalone', :name, :description, "
-            "CAST(:json_schema AS jsonb), '[]'::jsonb, NOW(), NOW()"
-            ") RETURNING id"
-        ),
-        {
-            "key": _LIVE_OUTPUT_SCHEMA_KEY,
-            "name": "Market Review Note",
-            "description": "Live output schema that must survive startup sanitation.",
-            "json_schema": json.dumps({"type": "object", "additionalProperties": False}),
-        },
-    ).scalar_one()
-    retired_note_schema_id = connection.execute(
-        text(
-            "INSERT INTO output_schemas ("
-            "key, version, status, kind, name, description, json_schema, "
-            "registry_refs, created_at, updated_at"
-            ") VALUES ("
-            ":key, 1, 'published', 'standalone', :name, :description, "
-            "CAST(:json_schema AS jsonb), '[]'::jsonb, NOW(), NOW()"
-            ") RETURNING id"
-        ),
-        {
-            "key": STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
-            "name": "Stock Analysis Note",
-            "description": "Retired stock-analysis output schema persisted before upgrade.",
-            "json_schema": json.dumps({"type": "object", "additionalProperties": False}),
-        },
-    ).scalar_one()
-    retired_decision_schema_id = connection.execute(
-        text(
-            "INSERT INTO output_schemas ("
-            "key, version, status, kind, name, description, json_schema, "
-            "registry_refs, created_at, updated_at"
-            ") VALUES ("
-            ":key, 1, 'published', 'standalone', :name, :description, "
-            "CAST(:json_schema AS jsonb), '[]'::jsonb, NOW(), NOW()"
-            ") RETURNING id"
-        ),
-        {
-            "key": TRADING_DECISION_SCHEMA_KEY,
-            "name": "Trading Decision",
-            "description": "Retired stock-analysis decision schema persisted before upgrade.",
-            "json_schema": json.dumps({"type": "object", "additionalProperties": False}),
-        },
-    ).scalar_one()
-    connection.execute(
-        text(
-            "INSERT INTO capabilities ("
-            "key, version, status, name, description, tool_keys, created_at, updated_at"
-            ") VALUES ("
-            ":key, 1, 'published', :name, :description, "
-            "CAST(:tool_keys AS jsonb), NOW(), NOW()"
-            ")"
-        ),
-        [
-            {
-                "key": _LIVE_CAPABILITY_KEY,
-                "name": "Market Review Tools",
-                "description": "Live capability that must remain after startup sanitation.",
-                "tool_keys": json.dumps(["signaldeck.reports.lookup"]),
-            },
-            {
-                "key": STOCK_ANALYSIS_CAPABILITY_KEY,
-                "name": "Stock Analysis Tools",
-                "description": "Retired stock-analysis capability persisted before upgrade.",
-                "tool_keys": json.dumps(["signaldeck.reports.lookup"]),
-            },
-        ],
-    )
-    connection.execute(
-        text(
-            "INSERT INTO mcp_servers ("
-            "key, version, status, config, created_at, updated_at"
-            ") VALUES ("
-            ":key, 1, 'published', CAST(:config AS jsonb), NOW(), NOW()"
-            ")"
-        ),
-        [
-            {
-                "key": _LIVE_MCP_SERVER_KEY,
-                "config": json.dumps(
-                    {
-                        "name": "Market Review Data",
-                        "enabled": True,
-                        "transport": "http-sse",
-                        "url": "https://example.com/live-mcp",
-                    }
-                ),
-            },
-            {
-                "key": STOCK_ANALYSIS_MCP_SERVER_KEY,
-                "config": json.dumps(
-                    {
-                        "name": "Stock Analysis Data",
-                        "enabled": True,
-                        "transport": "stdio",
-                        "command": "python3",
-                        "args": ["-V"],
-                    }
-                ),
-            },
-        ],
-    )
-    connection.execute(
-        text(
-            "INSERT INTO agents ("
-            "key, version, status, name, description, model_connection_id, model, "
-            "system_prompt, input_schema, output_schema_id, output_schema_version, capabilities, "
-            "mcp_servers, created_at, updated_at"
-            ") VALUES ("
-            ":key, 1, 'published', :name, :description, :model_connection_id, :model, "
-            ":system_prompt, CAST(:input_schema AS jsonb), :output_schema_id, 1, "
-            "CAST(:capabilities AS jsonb), CAST(:mcp_servers AS jsonb), NOW(), NOW()"
-            ")"
-        ),
-        [
-            {
-                "key": _LIVE_AGENT_KEY,
-                "name": "Market Review Agent",
-                "description": "Live agent that must remain after startup sanitation.",
-                "model_connection_id": model_connection_id,
-                "model": "openai:gpt-5.4-mini",
-                "system_prompt": "Summarize the market review context.",
-                "input_schema": json.dumps({"type": "object", "additionalProperties": False}),
-                "output_schema_id": live_output_schema_id,
-                "capabilities": json.dumps(
-                    [{"capabilityKey": _LIVE_CAPABILITY_KEY, "capabilityVersion": 1}]
-                ),
-                "mcp_servers": json.dumps(
-                    [{"mcpServerKey": _LIVE_MCP_SERVER_KEY, "mcpServerVersion": 1}]
-                ),
-            },
-            *[
-                {
-                    "key": agent_key,
-                    "name": agent_key.replace("_", " ").title(),
-                    "description": f"Retired stock-analysis agent for {agent_key}.",
-                    "model_connection_id": model_connection_id,
-                    "model": "openai:gpt-5.4-mini",
-                    "system_prompt": f"Retired stock-analysis agent prompt for {agent_key}.",
-                    "input_schema": json.dumps({"type": "object", "additionalProperties": False}),
-                    "output_schema_id": (
-                        retired_decision_schema_id
-                        if agent_key == STOCK_ANALYSIS_SYNTHESIZER_KEY
-                        else retired_note_schema_id
-                    ),
-                    "capabilities": json.dumps(
-                        [
-                            {
-                                "capabilityKey": STOCK_ANALYSIS_CAPABILITY_KEY,
-                                "capabilityVersion": 1,
-                            }
-                        ]
-                    ),
-                    "mcp_servers": json.dumps(
-                        [
-                            {
-                                "mcpServerKey": STOCK_ANALYSIS_MCP_SERVER_KEY,
-                                "mcpServerVersion": 1,
-                            }
-                        ]
-                    ),
-                }
-                for agent_key in RETIRED_STOCK_ANALYSIS_AGENT_KEYS
-            ],
-        ],
-    )
-    connection.execute(
-        text(
-            "INSERT INTO workflows ("
-            "key, version, status, name, description, input_schema, steps, output_spec, "
-            "created_at, updated_at"
-            ") VALUES ("
-            ":key, 1, 'published', :name, :description, CAST(:input_schema AS jsonb), "
-            "CAST(:steps AS jsonb), CAST(:output_spec AS jsonb), NOW(), NOW()"
-            ")"
-        ),
-        [
-            {
-                "key": _LIVE_WORKFLOW_KEY,
-                "name": "Market Review",
-                "description": "Live workflow that must remain after startup sanitation.",
-                "input_schema": json.dumps({"type": "object", "additionalProperties": False}),
-                "steps": json.dumps(
-                    [
-                        {
-                            "index": 1,
-                            "agents": [
-                                {
-                                    "agentKey": _LIVE_AGENT_KEY,
-                                    "slot": "review",
-                                    "wiring": {},
-                                }
-                            ],
-                        }
-                    ]
-                ),
-                "output_spec": json.dumps({"kind": "slot", "stepIndex": 1, "slot": "review"}),
-            },
-            {
-                "key": STARTER_WORKFLOW_KEY,
-                "name": "Stock Analysis",
-                "description": "Retired stock-analysis workflow persisted before upgrade.",
-                "input_schema": json.dumps({"type": "object", "additionalProperties": False}),
-                "steps": json.dumps(
-                    [
-                        {
-                            "index": 1,
-                            "agents": [
-                                {
-                                    "agentKey": RETIRED_STOCK_ANALYSIS_AGENT_KEYS[0],
-                                    "slot": RETIRED_STOCK_ANALYSIS_AGENT_KEYS[0],
-                                    "wiring": {},
-                                }
-                            ],
-                        }
-                    ]
-                ),
-                "output_spec": json.dumps(
-                    {
-                        "kind": "slot",
-                        "stepIndex": 1,
-                        "slot": RETIRED_STOCK_ANALYSIS_AGENT_KEYS[0],
-                    }
-                ),
-            },
-        ],
-    )
-    retired_portfolio_id = connection.execute(
-        text(
-            "INSERT INTO portfolios ("
-            "name, slug, description, created_at, updated_at"
-            ") VALUES ("
-            ":name, :slug, :description, NOW(), NOW()"
-            ") RETURNING id"
-        ),
-        {
-            "name": "Mag7 Core Portfolio",
-            "slug": STARTER_PORTFOLIO_SLUG,
-            "description": "Retired starter portfolio persisted before upgrade.",
-        },
-    ).scalar_one()
-    live_portfolio_id = connection.execute(
-        text(
-            "INSERT INTO portfolios ("
-            "name, slug, description, created_at, updated_at"
-            ") VALUES ("
-            ":name, :slug, :description, NOW(), NOW()"
-            ") RETURNING id"
-        ),
-        {
-            "name": "Income Core",
-            "slug": _LIVE_PORTFOLIO_SLUG,
-            "description": "Live portfolio that must remain after startup sanitation.",
-        },
-    ).scalar_one()
-    connection.execute(
-        text(
-            "INSERT INTO balances ("
-            "portfolio_id, label, operation_type, amount, currency, created_at, updated_at"
-            ") VALUES ("
-            ":portfolio_id, :label, :operation_type, :amount, 'USD', NOW(), NOW()"
-            ")"
-        ),
-        [
-            {
-                "portfolio_id": retired_portfolio_id,
-                "label": "Core Cash",
-                "operation_type": "DEPOSIT",
-                "amount": "250000.00",
-            },
-            {
-                "portfolio_id": live_portfolio_id,
-                "label": "Income Cash",
-                "operation_type": "DEPOSIT",
-                "amount": "80000.00",
-            },
-        ],
-    )
-    connection.execute(
-        text(
-            "INSERT INTO positions ("
-            "portfolio_id, symbol, name, quantity, average_cost, currency, last_source, "
-            "created_at, updated_at"
-            ") VALUES ("
-            ":portfolio_id, :symbol, :name, :quantity, :average_cost, 'USD', 'manual', "
-            "NOW(), NOW()"
-            ")"
-        ),
-        [
-            {
-                "portfolio_id": retired_portfolio_id,
-                "symbol": "AAPL",
-                "name": "Apple Inc.",
-                "quantity": "40.00000000",
-                "average_cost": "185.50000000",
-            },
-            {
-                "portfolio_id": live_portfolio_id,
-                "symbol": "BND",
-                "name": "Vanguard Total Bond Market ETF",
-                "quantity": "12.00000000",
-                "average_cost": "72.10000000",
-            },
-        ],
-    )
-    connection.execute(
-        text(
-            "INSERT INTO text_templates (name, content, created_at, updated_at) VALUES ("
-            ":name, :content, NOW(), NOW()"
-            ")"
-        ),
-        [
-            {
-                "name": STARTER_TEMPLATE_NAMES[0],
-                "content": "Retired Mag7 portfolio snapshot template.",
-            },
-            {
-                "name": STARTER_TEMPLATE_NAMES[1],
-                "content": "Retired Mag7 ticker review template.",
-            },
-            {
-                "name": _LIVE_TEMPLATE_NAME,
-                "content": "Live template that must remain after startup sanitation.",
-            },
-        ],
-    )
-    connection.execute(
-        text(
-            "INSERT INTO reports ("
-            "name, slug, source, content, metadata, created_at, updated_at"
-            ") VALUES ("
-            ":name, :slug, 'uploaded', :content, CAST(:metadata AS jsonb), NOW(), NOW()"
-            ")"
-        ),
-        [
-            *[
-                {
-                    "name": f"{company['symbol']} Seed Analysis",
-                    "slug": company["reportSlug"],
-                    "content": f"Retired stock-analysis seed report for {company['symbol']}.",
-                    "metadata": json.dumps(
-                        {
-                            "author": "Seeded Mag7 Workspace",
-                            "tags": ["mag7", "seed", company["reportTag"]],
-                            "analysis": {
-                                "ticker": company["symbol"],
-                                "portfolioSlug": STARTER_PORTFOLIO_SLUG,
-                            },
-                        }
-                    ),
-                }
-                for company in MAG7_COMPANIES
-            ],
-            {
-                "name": "Market Review Report",
-                "slug": _LIVE_REPORT_SLUG,
-                "content": "Live report that must remain after startup sanitation.",
-                "metadata": json.dumps({"tags": ["live"]}),
-            },
-        ],
-    )
-    return retired_portfolio_id
 
 
 def _agent_memory_report_metadata(**analysis_overrides: object) -> dict[str, object]:
@@ -1657,194 +1235,6 @@ def _insert_model_connection_reasoning_effort_row(
     return model_connection_id
 
 
-def _insert_agent_model_connection_snapshot_row(
-    connection: Connection,
-    *,
-    key: str,
-    model_connection_id: int,
-    model_id: str,
-    model_connection_snapshot: dict[str, object],
-) -> None:
-    _ = connection.execute(
-        text(
-            """
-            INSERT INTO output_schemas (
-                key, version, status, kind, name, description, json_schema,
-                registry_refs, created_at, updated_at
-            ) VALUES (
-                'agent_snapshot_output', 1, 'published', 'standalone',
-                'Agent Snapshot Output', '', '{"type":"object"}'::jsonb,
-                '[]'::jsonb, NOW(), NOW()
-            ) ON CONFLICT (key, version) DO NOTHING
-            """
-        )
-    )
-    _ = connection.execute(
-        text(
-            """
-            INSERT INTO agents (
-                key, version, status, name, description, model_connection_id, model,
-                system_prompt, input_schema, output_schema_id, output_schema_version,
-                capabilities, mcp_servers, model_connection_snapshot
-            ) VALUES (
-                :key, 1, 'published', :name, '', :model_connection_id, :model_id,
-                :system_prompt, '{"type":"object"}'::jsonb, 1, 1,
-                '[]'::jsonb, '[]'::jsonb, CAST(:model_connection_snapshot AS jsonb)
-            )
-            """
-        ),
-        {
-            "key": key,
-            "model_connection_id": model_connection_id,
-            "model_connection_snapshot": json.dumps(model_connection_snapshot),
-            "model_id": model_id,
-            "name": key.replace("_", " ").title(),
-            "system_prompt": "Analyze the ticker.",
-        },
-    )
-
-
-def test_agent_model_connection_snapshot_upgrade_drops_legacy_org_project_keys(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO output_schemas (
-                        key, version, status, kind, name, description, json_schema,
-                        registry_refs, created_at, updated_at
-                    ) VALUES (
-                        'snapshot_cleanup_output', 1, 'published', 'standalone',
-                        'Snapshot Cleanup Output', '', '{"type":"object"}'::jsonb,
-                        '[]'::jsonb, NOW(), NOW()
-                    )
-                    """
-                )
-            )
-            model_connection_id = _insert_model_connection_reasoning_effort_row(
-                connection,
-                key="snapshot_cleanup_connection",
-                reasoning_effort="medium",
-            )
-            _insert_agent_model_connection_snapshot_row(
-                connection,
-                key="snapshot_cleanup_agent",
-                model_connection_id=model_connection_id,
-                model_id="openai:snapshot_cleanup_connection",
-                model_connection_snapshot={
-                    "base_url": "https://api.openai.com/v1",
-                    "model_id": "openai:snapshot_cleanup_connection",
-                    "reasoning_effort": "medium",
-                    "api_style": "responses",
-                    "timeout_seconds": 60,
-                    "organization": "legacy-org",
-                    "project": "legacy-project",
-                },
-            )
-
-        _ensure_agent_model_connection_snapshot_support(
-            engine,
-            set(inspect(engine).get_table_names()),
-        )
-
-        with engine.connect() as connection:
-            snapshot = connection.execute(
-                text(
-                    "SELECT model_connection_snapshot FROM agents "
-                    "WHERE key = 'snapshot_cleanup_agent'"
-                )
-            ).scalar_one()
-
-        assert snapshot == {
-            "base_url": "https://api.openai.com/v1",
-            "model_id": "openai:snapshot_cleanup_connection",
-            "reasoning_effort": "medium",
-            "api_style": "responses",
-            "timeout_seconds": 60,
-        }
-    finally:
-        engine.dispose()
-
-
-def test_model_connection_kind_cleanup_scrubs_agent_snapshot_aliases_and_drops_column(  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE model_connections "
-                "ADD COLUMN connection_kind VARCHAR(40) NOT NULL DEFAULT 'provider'"  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE model_connections ADD CONSTRAINT ck_model_connections_connection_kind "  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-                "CHECK (connection_kind IN ('provider', 'deterministic_smoke'))"  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-            )
-            model_connection_id = _insert_model_connection_reasoning_effort_row(
-                connection,
-                key="agent_snapshot_kind_cleanup_connection",
-                reasoning_effort="medium",
-            )
-            _insert_agent_model_connection_snapshot_row(
-                connection,
-                key="agent_snapshot_kind_cleanup_agent",
-                model_connection_id=model_connection_id,
-                model_id="openai:agent_snapshot_kind_cleanup_connection",
-                model_connection_snapshot={
-                    "base_url": "https://api.openai.com/v1",
-                    "connectionKind": "provider",  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-                    "connection_kind": "provider",  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-                    "model_id": "openai:agent_snapshot_kind_cleanup_connection",
-                    "reasoning_effort": "medium",
-                    "api_style": "responses",
-                    "timeout_seconds": 60,
-                },
-            )
-
-        upgrades._remove_legacy_model_connection_kind_support(  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-            engine,
-            set(inspect(engine).get_table_names()),
-        )
-
-        with engine.connect() as connection:
-            snapshot = connection.execute(
-                text(
-                    "SELECT model_connection_snapshot FROM agents "
-                    "WHERE key = 'agent_snapshot_kind_cleanup_agent'"
-                )
-            ).scalar_one()
-        model_connection_columns = {
-            column["name"]: column for column in inspect(engine).get_columns("model_connections")
-        }
-        model_connection_check_sql = {
-            constraint["name"]: str(constraint["sqltext"])
-            for constraint in inspect(engine).get_check_constraints("model_connections")
-        }
-
-        assert snapshot == {
-            "base_url": "https://api.openai.com/v1",
-            "model_id": "openai:agent_snapshot_kind_cleanup_connection",
-            "reasoning_effort": "medium",
-            "api_style": "responses",
-            "timeout_seconds": 60,
-        }
-        assert (
-            "connection_kind" not in model_connection_columns
-        )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-        assert (
-            "ck_model_connections_connection_kind" not in model_connection_check_sql
-        )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-    finally:
-        engine.dispose()
-
-
 def _assert_model_connection_reasoning_effort_direct_sql_contract(
     engine: Engine,
     *,
@@ -1988,7 +1378,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "workflow_key",
         "workflow_version",
         "per_step_outputs",
-        *S13_DEFERRED_REMOVED_RUN_PROVENANCE_COLUMNS,
+        *REMOVED_RUN_PROVENANCE_COLUMNS,
         *_RUN_COST_COLUMNS,
     }.isdisjoint(run_columns)
     assert run_columns["schedule_id"]["nullable"] is True
@@ -2058,7 +1448,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert not any(
         foreign_key[0]
         for foreign_key in run_foreign_keys
-        if set(foreign_key[0]) & S13_DEFERRED_REMOVED_RUN_PROVENANCE_COLUMNS
+        if set(foreign_key[0]) & REMOVED_RUN_PROVENANCE_COLUMNS
     )
 
     assert set(snapshot_columns) == _RUN_SNAPSHOT_COLUMNS
@@ -2195,89 +1585,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert (("source_run_step_id",), "run_steps", "SET NULL") in operation_foreign_keys
 
 
-def _stock_analysis_sanitation_snapshot(
-    connection,
-    *,
-    retired_portfolio_id: int,
-) -> dict[str, object]:
-    output_schema_keys = (
-        connection.execute(text("SELECT key FROM output_schemas ORDER BY key")).scalars().all()
-    )
-    capability_keys = (
-        connection.execute(text("SELECT key FROM capabilities ORDER BY key")).scalars().all()
-    )
-    mcp_server_keys = (
-        connection.execute(text("SELECT key FROM mcp_servers ORDER BY key")).scalars().all()
-    )
-    model_connection_keys = (
-        connection.execute(text("SELECT key FROM model_connections ORDER BY key")).scalars().all()
-    )
-    agent_keys = connection.execute(text("SELECT key FROM agents ORDER BY key")).scalars().all()
-    workflow_keys = (
-        connection.execute(text("SELECT key FROM workflows ORDER BY key")).scalars().all()
-    )
-    template_names = (
-        connection.execute(text("SELECT name FROM text_templates ORDER BY name")).scalars().all()
-    )
-    report_slugs = (
-        connection.execute(text("SELECT slug FROM reports ORDER BY slug")).scalars().all()
-    )
-    portfolio_slugs = (
-        connection.execute(text("SELECT slug FROM portfolios ORDER BY slug")).scalars().all()
-    )
-    retired_balance_count = connection.execute(
-        text("SELECT COUNT(*) FROM balances WHERE portfolio_id = :portfolio_id"),
-        {"portfolio_id": retired_portfolio_id},
-    ).scalar_one()
-    retired_position_count = connection.execute(
-        text("SELECT COUNT(*) FROM positions WHERE portfolio_id = :portfolio_id"),
-        {"portfolio_id": retired_portfolio_id},
-    ).scalar_one()
-    live_balance_count = connection.execute(
-        text(
-            "SELECT COUNT(*) FROM balances WHERE portfolio_id = ("
-            "SELECT id FROM portfolios WHERE slug = :slug"
-            ")"
-        ),
-        {"slug": _LIVE_PORTFOLIO_SLUG},
-    ).scalar_one()
-    live_position_count = connection.execute(
-        text(
-            "SELECT COUNT(*) FROM positions WHERE portfolio_id = ("
-            "SELECT id FROM portfolios WHERE slug = :slug"
-            ")"
-        ),
-        {"slug": _LIVE_PORTFOLIO_SLUG},
-    ).scalar_one()
-
-    return {
-        "output_schema_keys": output_schema_keys,
-        "capability_keys": capability_keys,
-        "mcp_server_keys": mcp_server_keys,
-        "model_connection_keys": model_connection_keys,
-        "agent_keys": agent_keys,
-        "workflow_keys": workflow_keys,
-        "template_names": template_names,
-        "report_slugs": report_slugs,
-        "portfolio_slugs": portfolio_slugs,
-        "retired_balance_count": retired_balance_count,
-        "retired_position_count": retired_position_count,
-        "live_balance_count": live_balance_count,
-        "live_position_count": live_position_count,
-    }
-
-
-def _assert_s13_deferred_global_authoring_rows_deleted(
-    snapshot: Mapping[str, object],
-) -> None:
-    assert snapshot["output_schema_keys"] == []
-    assert snapshot["capability_keys"] == []
-    assert snapshot["mcp_server_keys"] == []
-    assert snapshot["agent_keys"] == []
-    assert snapshot["workflow_keys"] == []
-
-
-def test_s13_deferred_retired_ballast_guards_live_upgrade_tables(
+def test_s13_current_contract_bootstrap_excludes_retired_global_authoring_tables(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -2291,20 +1599,30 @@ def test_s13_deferred_retired_ballast_guards_live_upgrade_tables(
         assert LIVE_AGENT_PLATFORM_TABLE_NAMES <= table_names
         assert LIVE_CORE_MEMORY_TABLE_NAMES <= table_names
         assert LIVE_SCHEDULE_TABLE_NAMES <= table_names
-        assert S13_DEFERRED_GLOBAL_AUTHORING_ROW_CLEANUP_TABLE_NAMES <= table_names
-        assert S13_DEFERRED_GLOBAL_AUTHORING_ROW_CLEANUP_TABLE_NAMES <= (
-            LIVE_AGENT_PLATFORM_TABLE_NAMES
-        )
-        assert S13_DEFERRED_GLOBAL_AUTHORING_ROW_CLEANUP_TABLE_NAMES.isdisjoint(
-            S13_DEFERRED_LEGACY_BACKEND_TABLE_NAMES
-        )
-        assert S13_DEFERRED_LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
-        assert S13_DEFERRED_REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
+        assert RETIRED_GLOBAL_AUTHORING_TABLE_NAMES.isdisjoint(table_names)
+        assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
+        assert REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
     finally:
         engine.dispose()
 
 
-def test_init_db_creates_capability_tool_keys_and_drops_legacy_backend_tables(
+def test_s13_retired_global_authoring_tables_are_drop_only_upgrade_targets() -> None:
+    upgrades_source = (Path(__file__).parents[1] / "app" / "db" / "upgrades.py").read_text()
+
+    for table_name in RETIRED_GLOBAL_AUTHORING_TABLE_NAMES | {"skills"}:
+        assert not re.search(rf"\bUPDATE\s+{table_name}\b", upgrades_source, re.I)
+        assert not re.search(rf"\bINSERT\s+INTO\s+{table_name}\b", upgrades_source, re.I)
+        assert not re.search(rf"\bALTER\s+TABLE\s+{table_name}\b", upgrades_source, re.I)
+        assert not re.search(
+            rf"\bSELECT\b[^;]*\bFROM\s+{table_name}\b", upgrades_source, re.I | re.S
+        )
+
+    assert "model_connection_snapshot" not in upgrades_source
+    assert "UPDATE run_workflow_package_snapshots" in upgrades_source
+    assert "DELETE FROM model_connections" in upgrades_source
+
+
+def test_init_db_creates_current_runtime_tables_and_drops_legacy_backend_tables(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -2313,16 +1631,8 @@ def test_init_db_creates_capability_tool_keys_and_drops_legacy_backend_tables(
     try:
         table_names = set(inspect(engine).get_table_names())
         assert LIVE_AGENT_PLATFORM_TABLE_NAMES <= table_names
-        assert S13_DEFERRED_LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
-        capability_columns = {
-            column["name"] for column in inspect(engine).get_columns("capabilities")
-        }
-        agent_columns = {column["name"] for column in inspect(engine).get_columns("agents")}
-        assert "tool_keys" in capability_columns
-        assert "tool_grants" not in capability_columns
-        assert "tool_definitions" not in capability_columns
-        assert "capabilities" in agent_columns
-        assert "skills" not in agent_columns
+        assert RETIRED_GLOBAL_AUTHORING_TABLE_NAMES.isdisjoint(table_names)
+        assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
         _assert_runtime_execution_table_shape(engine)
     finally:
         engine.dispose()
@@ -3386,8 +2696,9 @@ def test_init_db_repairs_jsonb_and_text_indexes_on_existing_persistence_tables(
         _assert_runtime_execution_table_shape(engine)
 
         with engine.connect() as connection:
-            index_definitions = dict(
-                connection.execute(
+            index_definitions = {
+                str(row.indexname): str(row.indexdef)
+                for row in connection.execute(
                     text(
                         """
                         SELECT indexname, indexdef
@@ -3396,8 +2707,8 @@ def test_init_db_repairs_jsonb_and_text_indexes_on_existing_persistence_tables(
                         """
                     ).bindparams(bindparam("index_names", expanding=True)),
                     {"index_names": index_names},
-                ).all()
-            )
+                )
+            }
 
         assert set(index_definitions) == set(index_names)
         assert "jsonb_path_ops" in index_definitions["ix_agent_memory_entries_subject_refs_gin"]
@@ -4426,201 +3737,6 @@ def test_init_db_repairs_reports_columns_before_non_package_run_report_cleanup(
         engine.dispose()
 
 
-def test_init_db_deletes_legacy_skill_storage_and_global_agents_idempotently(
-    database_url: str,
-) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE skills (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    key VARCHAR(120) NOT NULL,
-                    version INTEGER NOT NULL,
-                    status VARCHAR(20) NOT NULL DEFAULT 'draft',
-                    name VARCHAR(200) NOT NULL,
-                    description TEXT NOT NULL DEFAULT '',
-                    tool_definitions JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-                """
-            )
-            legacy_capability_id = connection.execute(
-                text(
-                    "INSERT INTO skills ("
-                    "key, version, status, name, description, tool_definitions"
-                    ") VALUES ("
-                    ":key, 1, 'published', :name, :description, "
-                    "CAST(:tool_definitions AS jsonb)"
-                    ") RETURNING id"
-                ),
-                {
-                    "key": "legacy_report_lookup",
-                    "name": "Legacy Report Lookup",
-                    "description": "Migrated from legacy Skill storage.",
-                    "tool_definitions": json.dumps([{"tool": "signaldeck.reports.lookup"}]),
-                },
-            ).scalar_one()
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE agents (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    key VARCHAR(120) NOT NULL,
-                    version INTEGER NOT NULL,
-                    status VARCHAR(20) NOT NULL DEFAULT 'draft',
-                    name VARCHAR(200) NOT NULL,
-                    description TEXT NOT NULL DEFAULT '',
-                    model VARCHAR(200) NOT NULL,
-                    system_prompt TEXT NOT NULL,
-                    input_schema JSONB NOT NULL,
-                    output_schema_id INTEGER NOT NULL,
-                    output_schema_version INTEGER NOT NULL,
-                    skills JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    mcp_servers JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-                """
-            )
-            connection.execute(
-                text(
-                    "INSERT INTO agents ("
-                    "key, version, status, name, model, system_prompt, input_schema, "
-                    "output_schema_id, output_schema_version, skills, mcp_servers"
-                    ") VALUES ("
-                    ":key, 1, 'published', :name, 'gpt-5.4-mini', :system_prompt, "
-                    "CAST(:input_schema AS jsonb), 1, 1, CAST(:skills AS jsonb), '[]'::jsonb"
-                    ")"
-                ),
-                {
-                    "key": "legacy_agent",
-                    "name": "Legacy Agent",
-                    "system_prompt": "Use reports.",
-                    "input_schema": json.dumps({"type": "object", "additionalProperties": False}),
-                    "skills": json.dumps(
-                        [
-                            {
-                                "skillId": legacy_capability_id,
-                                "skillKey": "legacy_report_lookup",
-                                "skillVersion": 1,
-                            }
-                        ]
-                    ),
-                },
-            )
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            inspector = inspect(connection)
-            table_names = set(inspector.get_table_names())
-            capability_columns = {
-                column["name"] for column in inspector.get_columns("capabilities")
-            }
-            agent_columns = {column["name"] for column in inspector.get_columns("agents")}
-            first_snapshot = connection.execute(
-                text(
-                    "SELECT "
-                    "(SELECT COUNT(*) FROM capabilities), "
-                    "(SELECT COUNT(*) FROM agents WHERE key = :key)"
-                ),
-                {"key": "legacy_agent"},
-            ).one()
-
-        assert "skills" not in table_names
-        assert "tool_keys" in capability_columns
-        assert "tool_grants" not in capability_columns
-        assert "tool_definitions" not in capability_columns
-        assert "skills" not in agent_columns
-        assert first_snapshot == (0, 0)
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            second_snapshot = connection.execute(
-                text(
-                    "SELECT "
-                    "(SELECT COUNT(*) FROM capabilities), "
-                    "(SELECT COUNT(*) FROM agents WHERE key = :key)"
-                ),
-                {"key": "legacy_agent"},
-            ).one()
-        assert second_snapshot == first_snapshot
-    finally:
-        engine.dispose()
-
-
-def test_init_db_deletes_mixed_legacy_and_canonical_capability_storage(
-    database_url: str,
-) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE skills (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    key VARCHAR(120) NOT NULL,
-                    version INTEGER NOT NULL,
-                    status VARCHAR(20) NOT NULL DEFAULT 'draft',
-                    name VARCHAR(200) NOT NULL,
-                    description TEXT NOT NULL DEFAULT '',
-                    tool_definitions JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE capabilities (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    key VARCHAR(120) NOT NULL,
-                    version INTEGER NOT NULL,
-                    status VARCHAR(20) NOT NULL DEFAULT 'draft',
-                    name VARCHAR(200) NOT NULL,
-                    description TEXT NOT NULL DEFAULT '',
-                    tool_grants JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    tool_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                "INSERT INTO skills (key, version, status, name, tool_definitions) "
-                "VALUES ('legacy_capability', 1, 'published', 'Legacy', '[]'::jsonb)"
-            )
-            connection.exec_driver_sql(
-                "INSERT INTO capabilities (key, version, status, name, tool_grants) "
-                "VALUES ('canonical_capability', 1, 'published', 'Canonical', '[]'::jsonb)"
-            )
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            inspector = inspect(connection)
-            table_names = set(inspector.get_table_names())
-            capability_columns = {
-                column["name"] for column in inspector.get_columns("capabilities")
-            }
-            capability_count = connection.execute(
-                text("SELECT COUNT(*) FROM capabilities")
-            ).scalar_one()
-
-        assert "skills" not in table_names
-        assert "tool_keys" in capability_columns
-        assert "tool_grants" not in capability_columns
-        assert "tool_definitions" not in capability_columns
-        assert capability_count == 0
-    finally:
-        engine.dispose()
-
-
 def test_init_db_adds_nullable_run_graph_metadata_columns(database_url: str) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
@@ -5011,305 +4127,6 @@ def test_init_db_running_run_recovery_marks_new_platform_rows_terminal(
         engine.dispose()
 
 
-def test_init_db_hard_cutover_deletes_runtime_rows_and_preserves_config_product_tables(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            retired_portfolio_id = _seed_stock_analysis_upgrade_rows(connection)
-            connection.exec_driver_sql(
-                "ALTER TABLE runs ADD COLUMN per_step_outputs JSONB NOT NULL DEFAULT '{}'::jsonb"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE runs ADD CONSTRAINT ck_runs_target_kind "
-                "CHECK (target_kind IN ('agent', 'workflow', 'workflowPackage'))"
-            )
-            connection.exec_driver_sql(
-                "INSERT INTO runs ("
-                "target_kind, target_id, target_key, target_version, status, input, "
-                "per_step_outputs"
-                ") VALUES ('workflow', 99, 'legacy_runtime', 1, 'succeeded', "
-                "'{}'::jsonb, '{}'::jsonb)"
-            )
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            first_snapshot = _stock_analysis_sanitation_snapshot(
-                connection,
-                retired_portfolio_id=retired_portfolio_id,
-            )
-
-        _assert_s13_deferred_global_authoring_rows_deleted(first_snapshot)
-        assert first_snapshot == {
-            "output_schema_keys": [],
-            "capability_keys": [],
-            "mcp_server_keys": [],
-            "model_connection_keys": ["upgrade_test_connection"],
-            "agent_keys": [],
-            "workflow_keys": [],
-            "template_names": sorted([_LIVE_TEMPLATE_NAME, *STARTER_TEMPLATE_NAMES]),
-            "report_slugs": sorted([*RETIRED_STOCK_ANALYSIS_REPORT_SLUGS, _LIVE_REPORT_SLUG]),
-            "portfolio_slugs": sorted([STARTER_PORTFOLIO_SLUG, _LIVE_PORTFOLIO_SLUG]),
-            "retired_balance_count": 1,
-            "retired_position_count": 1,
-            "live_balance_count": 1,
-            "live_position_count": 1,
-        }
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            second_snapshot = _stock_analysis_sanitation_snapshot(
-                connection,
-                retired_portfolio_id=retired_portfolio_id,
-            )
-
-        assert second_snapshot == first_snapshot
-        _assert_runtime_execution_table_shape(engine)
-
-        with engine.begin() as connection:
-            next_output_schema_id = connection.execute(
-                text(
-                    "INSERT INTO output_schemas ("
-                    "key, version, status, kind, name, description, json_schema, registry_refs"
-                    ") VALUES ("
-                    "'post_cutover_schema', 1, 'draft', 'standalone', 'Post Cutover', '', "
-                    "'{\"type\": \"object\"}'::jsonb, '[]'::jsonb"
-                    ") RETURNING id"
-                )
-            ).scalar_one()
-            next_agent_id = connection.execute(
-                text(
-                    "INSERT INTO agents ("
-                    "key, version, status, name, description, model_connection_id, "
-                    "model_connection_snapshot, model, system_prompt, input_schema, "
-                    "output_schema_id, output_schema_version, capabilities, mcp_servers"
-                    ") VALUES ("
-                    "'post_cutover_agent', 1, 'draft', 'Post Cutover Agent', '', 1, "
-                    "'{}'::jsonb, 'openai:gpt-5.4-mini', 'Prompt', '{}'::jsonb, "
-                    ":output_schema_id, 1, '[]'::jsonb, '[]'::jsonb"
-                    ") RETURNING id"
-                ),
-                {"output_schema_id": next_output_schema_id},
-            ).scalar_one()
-            next_workflow_id = connection.execute(
-                text(
-                    "INSERT INTO workflows ("
-                    "key, version, status, name, description, input_schema, steps, output_spec"
-                    ") VALUES ("
-                    "'post_cutover_workflow', 1, 'draft', 'Post Cutover Workflow', '', "
-                    "'{}'::jsonb, '[]'::jsonb, '{}'::jsonb"
-                    ") RETURNING id"
-                )
-            ).scalar_one()
-            connection.exec_driver_sql(
-                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE runs ADD CONSTRAINT ck_runs_target_kind "
-                "CHECK (target_kind IN ('agent', 'workflow', 'workflowPackage'))"
-            )
-            next_run_id = connection.execute(
-                text(
-                    "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, status, input"
-                    ") VALUES ("
-                    "'workflow', :workflow_id, 'post_cutover_workflow', 1, "
-                    "'succeeded', '{}'::jsonb"
-                    ") RETURNING id"
-                ),
-                {"workflow_id": next_workflow_id},
-            ).scalar_one()
-            next_capability_id = connection.execute(
-                text(
-                    "INSERT INTO capabilities ("
-                    "key, version, status, name, tool_keys, created_at, updated_at"
-                    ") VALUES ("
-                    "'post_cutover_capability', 1, 'draft', 'Post Cutover', '[]'::jsonb, "
-                    "NOW(), NOW()"
-                    ") RETURNING id"
-                )
-            ).scalar_one()
-            next_mcp_server_id = connection.execute(
-                text(
-                    "INSERT INTO mcp_servers ("
-                    "key, version, status, config, created_at, updated_at"
-                    ") VALUES ('post_cutover_mcp', 1, 'draft', '{}'::jsonb, NOW(), NOW()) "
-                    "RETURNING id"
-                )
-            ).scalar_one()
-            next_model_connection_id = connection.execute(
-                text(
-                    "INSERT INTO model_connections ("
-                    "key, status, name, description, base_url, model_id, reasoning_effort, "
-                    "protocol_profile, timeout_seconds, secret_payload, created_at, updated_at"
-                    ") VALUES ("
-                    "'post_cutover_model', 'active', 'Post Cutover Model', '', "
-                    "'https://api.openai.com/v1', 'openai:gpt-5.4-mini', 'medium', "
-                    "'openai_responses', 60, '{}'::jsonb, NOW(), NOW()"
-                    ") RETURNING id"
-                )
-            ).scalar_one()
-
-        assert (
-            next_output_schema_id,
-            next_agent_id,
-            next_workflow_id,
-            next_run_id,
-        ) == (1, 1, 1, 1)
-        assert (next_capability_id, next_mcp_server_id, next_model_connection_id) == (3, 3, 2)
-    finally:
-        engine.dispose()
-
-
-def test_workflow_package_clean_break_removes_legacy_authoring_rows_preserves_model_connections(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO model_connections (
-                        key, status, name, description, base_url, model_id, reasoning_effort,
-                        protocol_profile, timeout_seconds, secret_payload, created_at, updated_at
-                    ) VALUES (
-                        'clean_break_model', 'active', 'Clean Break Model', '',
-                        'https://api.openai.com/v1', 'openai:gpt-5.4-mini', 'medium',
-                        'openai_responses', 60, '{}'::jsonb, NOW(), NOW()
-                    )
-                    """
-                )
-            )
-            stale_capability_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO capabilities (
-                        key, version, status, name, description, tool_keys, created_at, updated_at
-                    ) VALUES (
-                        :key, 1, 'draft', :name, :description, CAST(:tool_keys AS jsonb),
-                        NOW(), NOW()
-                    ) RETURNING id
-                    """
-                ),
-                {
-                    "description": "Custom-key stale tool key deleted during startup.",
-                    "key": _CUSTOM_STALE_SKILL_KEY,
-                    "name": "Stock Analysis Workspace Verify",
-                    "tool_keys": json.dumps(
-                        ["signaldeck.reports.lookup", "signaldeck.stale.lookup"]
-                    ),
-                },
-            ).scalar_one()
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO output_schemas (
-                        key, version, status, kind, name, description, json_schema,
-                        registry_refs, created_at, updated_at
-                    ) VALUES (
-                        'stale_output_schema', 1, 'draft', 'standalone', 'Stale Output', '',
-                        '{"type": "object"}'::jsonb, '[]'::jsonb, NOW(), NOW()
-                    )
-                    """
-                )
-            )
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO mcp_servers (key, version, status, config, created_at, updated_at)
-                    VALUES ('stale_mcp_server', 1, 'draft', '{}'::jsonb, NOW(), NOW())
-                    """
-                )
-            )
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO workflows (
-                        key, version, status, name, input_schema, steps, output_spec
-                    )
-                    VALUES (
-                        'stale_workflow', 1, 'draft', 'Stale Workflow', '{}'::jsonb,
-                        '[]'::jsonb, '{}'::jsonb
-                    )
-                    """
-                )
-            )
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO agents (
-                        key, version, status, name, description, model_connection_id,
-                        model_connection_snapshot, model, system_prompt, input_schema,
-                        output_schema_id, output_schema_version, capabilities, mcp_servers
-                    ) VALUES (
-                        :key, 1, 'draft', :name, '', 1, '{}'::jsonb, 'openai:gpt-5.4-mini',
-                        'Prompt', '{}'::jsonb, 1, 1, CAST(:capabilities AS jsonb), '[]'::jsonb
-                    )
-                    """
-                ),
-                {
-                    "capabilities": json.dumps(
-                        [
-                            {
-                                "capabilityId": stale_capability_id,
-                                "capabilityKey": _CUSTOM_STALE_SKILL_KEY,
-                                "capabilityVersion": 1,
-                            }
-                        ]
-                    ),
-                    "key": "stale_capability_agent",
-                    "name": "Stale Capability Agent",
-                },
-            )
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            first_snapshot = connection.execute(
-                text(
-                    "SELECT "
-                    "(SELECT COUNT(*) FROM capabilities), "
-                    "(SELECT COUNT(*) FROM agents), "
-                    "(SELECT COUNT(*) FROM workflows), "
-                    "(SELECT COUNT(*) FROM mcp_servers), "
-                    "(SELECT COUNT(*) FROM output_schemas), "
-                    "(SELECT COUNT(*) FROM model_connections WHERE key = 'clean_break_model')"
-                )
-            ).one()
-
-        assert first_snapshot == (0, 0, 0, 0, 0, 1)
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            second_snapshot = connection.execute(
-                text(
-                    "SELECT "
-                    "(SELECT COUNT(*) FROM capabilities), "
-                    "(SELECT COUNT(*) FROM agents), "
-                    "(SELECT COUNT(*) FROM workflows), "
-                    "(SELECT COUNT(*) FROM mcp_servers), "
-                    "(SELECT COUNT(*) FROM output_schemas), "
-                    "(SELECT COUNT(*) FROM model_connections WHERE key = 'clean_break_model')"
-                )
-            ).one()
-
-        assert second_snapshot == first_snapshot
-    finally:
-        engine.dispose()
-
-
 def test_init_db_hard_cutover_recreates_legacy_runs_and_partial_runtime_tables(
     database_url: str,
 ) -> None:
@@ -5408,18 +4225,6 @@ def test_init_db_hard_cutover_recreates_legacy_runs_and_partial_runtime_tables(
 
         assert runtime_counts == (0, 0, 0)
         _assert_runtime_execution_table_shape(engine)
-    finally:
-        engine.dispose()
-
-
-def test_init_db_fresh_schema_makes_agent_model_connection_id_non_null(database_url: str) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        agent_columns = {column["name"]: column for column in inspect(engine).get_columns("agents")}
-        assert agent_columns["model_connection_id"]["nullable"] is False
-        assert agent_columns["model_connection_snapshot"]["nullable"] is False
     finally:
         engine.dispose()
 
@@ -5890,436 +4695,7 @@ def test_upgrade_legacy_schema_drops_preexisting_legacy_backend_tables(session_f
     upgrade_legacy_schema(engine)
 
     table_names = set(inspect(engine).get_table_names())
-    assert S13_DEFERRED_LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
-
-
-def test_init_db_hard_cutover_deletes_legacy_agent_rows_when_stale_runtime_schema_exists(
-    database_url: str,
-) -> None:
-    engine = create_engine(database_url, future=True)
-    removed_archive_status = "arch" + "ived"
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                f"""
-                CREATE TABLE agents (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    key VARCHAR(120) NOT NULL,
-                    version INTEGER NOT NULL,
-                    status VARCHAR(20) NOT NULL DEFAULT 'draft',
-                    name VARCHAR(200) NOT NULL,
-                    description TEXT NOT NULL DEFAULT '',
-                    model VARCHAR(200) NOT NULL,
-                    system_prompt TEXT NOT NULL,
-                    input_schema JSONB NOT NULL,
-                    output_schema_id INTEGER NOT NULL,
-                    output_schema_version INTEGER NOT NULL,
-                    skills JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    mcp_servers JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    CONSTRAINT ck_agents_status CHECK (
-                        status IN ('draft', 'published', 'deprecated', '{removed_archive_status}')
-                    ),
-                    CONSTRAINT ck_agents_version_positive CHECK (version > 0),
-                    CONSTRAINT ck_agents_output_schema_version_positive CHECK (
-                        output_schema_version > 0
-                    ),
-                    CONSTRAINT uq_agents_key_version UNIQUE (key, version)
-                )
-                """
-            )
-            connection.execute(
-                text(
-                    "INSERT INTO agents ("
-                    "key, version, status, name, description, model, system_prompt, input_schema, "
-                    "output_schema_id, output_schema_version, skills, mcp_servers"
-                    ") VALUES ("
-                    ":key, 1, 'published', :name, '', :model, 'Analyze the ticker.', "
-                    "'{\"type\":\"object\"}'::jsonb, 1, 1, '[]'::jsonb, '[]'::jsonb"
-                    ")"
-                ),
-                [
-                    {"key": "research_agent_alpha", "model": "openai:gpt-5.4-mini", "name": "A"},
-                    {"key": "research_agent_beta", "model": "openai:gpt-5.4-mini", "name": "B"},
-                    {"key": "research_agent_gamma", "model": "openai:gpt-5.4", "name": "C"},
-                ],
-            )
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE runs (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    target_kind VARCHAR(20) NOT NULL,
-                    target_id INTEGER NOT NULL,
-                    target_key VARCHAR(120) NOT NULL,
-                    target_version INTEGER NOT NULL,
-                    input JSONB NOT NULL,
-                    status VARCHAR(20) NOT NULL DEFAULT 'running',
-                    per_step_outputs JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                """
-                INSERT INTO runs (
-                    target_kind, target_id, target_key, target_version, input, status,
-                    per_step_outputs
-                ) VALUES (
-                    'agent', 1, 'research_agent_alpha', 1, '{}'::jsonb, 'succeeded', '{}'::jsonb
-                )
-                """
-            )
-
-        init_db(database_url)
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            agent_count = connection.execute(text("SELECT COUNT(*) FROM agents")).scalar_one()
-            model_connection_count = connection.execute(
-                text("SELECT COUNT(*) FROM model_connections")
-            ).scalar_one()
-
-        repaired_agent_columns = {
-            column["name"]: column for column in inspect(engine).get_columns("agents")
-        }
-        assert agent_count == 0
-        assert model_connection_count == 0
-        assert repaired_agent_columns["model_connection_id"]["nullable"] is False
-        assert repaired_agent_columns["model_connection_snapshot"]["nullable"] is False
-        assert {"skills", "temperature", "max_tool_rounds", "streaming"}.isdisjoint(
-            repaired_agent_columns
-        )
-    finally:
-        engine.dispose()
-
-
-def test_upgrade_legacy_schema_repairs_existing_nullable_model_connection_column(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE agents ALTER COLUMN model_connection_id DROP NOT NULL"
-            )
-            connection.exec_driver_sql(
-                """
-                INSERT INTO output_schemas (
-                    key, version, status, kind, name, description, json_schema, registry_refs,
-                    created_at, updated_at
-                ) VALUES (
-                    'repair_schema', 1, 'published', 'standalone', 'Repair Schema', '',
-                    '{"type":"object"}'::jsonb, '[]'::jsonb, NOW(), NOW()
-                )
-                """
-            )
-            connection.execute(
-                text(
-                    "INSERT INTO agents ("
-                    "key, version, status, name, description, model_connection_id, model, "
-                    "system_prompt, input_schema, output_schema_id, "
-                    "output_schema_version, capabilities, mcp_servers"
-                    ") VALUES ("
-                    ":key, :version, :status, :name, :description, NULL, :model, "
-                    ":system_prompt, CAST(:input_schema AS jsonb), :output_schema_id, "
-                    ":output_schema_version, CAST(:capabilities AS jsonb), "
-                    "CAST(:mcp_servers AS jsonb)"
-                    ")"
-                ),
-                {
-                    "key": "repair_nullable_agent",
-                    "version": 1,
-                    "status": "published",
-                    "name": "Repair Nullable Agent",
-                    "description": "Partial-upgrade agent row",
-                    "model": "openai:gpt-5.4-mini",
-                    "system_prompt": "Analyze the ticker.",
-                    "input_schema": '{"type":"object"}',
-                    "output_schema_id": 1,
-                    "output_schema_version": 1,
-                    "capabilities": "[]",
-                    "mcp_servers": "[]",
-                },
-            )
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            clean_break_counts = connection.execute(
-                text(
-                    "SELECT "
-                    "(SELECT COUNT(*) FROM agents WHERE key = :agent_key), "
-                    "(SELECT COUNT(*) FROM model_connections WHERE model_id = :model_id)"
-                ),
-                {
-                    "agent_key": "repair_nullable_agent",
-                    "model_id": "openai:gpt-5.4-mini",
-                },
-            ).one()
-
-        agent_columns = {column["name"]: column for column in inspect(engine).get_columns("agents")}
-        assert clean_break_counts == (0, 0)
-        assert agent_columns["model_connection_id"]["nullable"] is False
-        assert agent_columns["model_connection_snapshot"]["nullable"] is False
-    finally:
-        engine.dispose()
-
-
-def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_already_linked(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                INSERT INTO output_schemas (
-                    key, version, status, kind, name, description, json_schema, registry_refs,
-                    created_at, updated_at
-                ) VALUES (
-                    'prelinked_schema', 1, 'published', 'standalone', 'Prelinked Schema', '',
-                    '{"type":"object"}'::jsonb, '[]'::jsonb, NOW(), NOW()
-                )
-                """
-            )
-            linked_model_connection_id = connection.execute(
-                text(
-                    "INSERT INTO model_connections ("
-                    "key, status, name, description, base_url, model_id, reasoning_effort, "
-                    "protocol_profile, timeout_seconds, secret_payload, created_at, updated_at"
-                    ") VALUES ("
-                    ":key, 'active', :name, '', 'https://api.openai.com/v1', :model_id, "
-                    "'medium', 'openai_chat_completions', 60, '{}'::jsonb, NOW(), NOW()"
-                    ") RETURNING id"
-                ),
-                {
-                    "key": "prelinked_connection",
-                    "name": "prelinked-connection",
-                    "model_id": "openai:gpt-5.4-mini",
-                },
-            ).scalar_one()
-            connection.execute(
-                text(
-                    "INSERT INTO agents ("
-                    "key, version, status, name, description, model_connection_id, model, "
-                    "system_prompt, input_schema, output_schema_id, "
-                    "output_schema_version, capabilities, mcp_servers, model_connection_snapshot"
-                    ") VALUES ("
-                    ":key, :version, :status, :name, :description, :model_connection_id, :model, "
-                    ":system_prompt, CAST(:input_schema AS jsonb), :output_schema_id, "
-                    ":output_schema_version, CAST(:capabilities AS jsonb), "
-                    "CAST(:mcp_servers AS jsonb), CAST(:model_connection_snapshot AS jsonb)"
-                    ")"
-                ),
-                {
-                    "key": "already_linked_agent",
-                    "version": 1,
-                    "status": "published",
-                    "name": "Already Linked Agent",
-                    "description": "Nullable-column no-backfill row",
-                    "model_connection_id": linked_model_connection_id,
-                    "model": "openai:gpt-5.4-mini",
-                    "system_prompt": "Analyze the ticker.",
-                    "input_schema": '{"type":"object"}',
-                    "output_schema_id": 1,
-                    "output_schema_version": 1,
-                    "capabilities": "[]",
-                    "mcp_servers": "[]",
-                    "model_connection_snapshot": json.dumps(
-                        {
-                            "base_url": "https://api.openai.com/v1",
-                            "model_id": "openai:gpt-5.4-mini",
-                            "reasoning_effort": "medium",
-                            "api_style": "chat_completions",
-                            "timeout_seconds": 60,
-                        }
-                    ),
-                },
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE agents ALTER COLUMN model_connection_id DROP NOT NULL"
-            )
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            clean_break_counts = connection.execute(
-                text(
-                    "SELECT "
-                    "(SELECT COUNT(*) FROM agents WHERE key = :agent_key), "
-                    "(SELECT COUNT(*) AS row_count FROM model_connections "
-                    "WHERE id = :connection_id), "
-                    "(SELECT MIN(protocol_profile) FROM model_connections WHERE id = :connection_id)"
-                ),
-                {
-                    "agent_key": "already_linked_agent",
-                    "connection_id": linked_model_connection_id,
-                },
-            ).one()
-
-        agent_columns = {column["name"]: column for column in inspect(engine).get_columns("agents")}
-        assert clean_break_counts == (0, 1, "openai_chat_completions")
-        assert agent_columns["model_connection_id"]["nullable"] is False
-        assert agent_columns["model_connection_snapshot"]["nullable"] is False
-    finally:
-        engine.dispose()
-
-
-def test_upgrade_legacy_schema_backfills_snapshot_reasoning_effort_null_and_custom(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            null_connection_id = _insert_model_connection_reasoning_effort_row(
-                connection,
-                key="snapshot_null_connection",
-                reasoning_effort=None,
-            )
-            custom_connection_id = _insert_model_connection_reasoning_effort_row(
-                connection,
-                key="snapshot_custom_connection",
-                reasoning_effort="XHigh",
-            )
-            missing_field_connection_id = _insert_model_connection_reasoning_effort_row(
-                connection,
-                key="snapshot_missing_field_connection",
-                reasoning_effort="custom-exact",
-                protocol_profile="openai_chat_completions",
-            )
-            _insert_agent_model_connection_snapshot_row(
-                connection,
-                key="snapshot_null_agent",
-                model_connection_id=null_connection_id,
-                model_id="openai:snapshot_null_connection",
-                model_connection_snapshot={},
-            )
-            _insert_agent_model_connection_snapshot_row(
-                connection,
-                key="snapshot_custom_agent",
-                model_connection_id=custom_connection_id,
-                model_id="openai:snapshot_custom_connection",
-                model_connection_snapshot={
-                    "base_url": "https://api.openai.com/v1",
-                    "model_id": "openai:snapshot_custom_connection",
-                    "reasoning_effort": "   ",
-                    "api_style": "responses",
-                    "timeout_seconds": 60,
-                },
-            )
-            _insert_agent_model_connection_snapshot_row(
-                connection,
-                key="snapshot_missing_reasoning_agent",
-                model_connection_id=missing_field_connection_id,
-                model_id="openai:snapshot_missing_field_connection",
-                model_connection_snapshot={
-                    "base_url": "https://api.openai.com/v1",
-                    "model_id": "openai:snapshot_missing_field_connection",
-                    "api_style": "responses",
-                    "timeout_seconds": 60,
-                },
-            )
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            clean_break_counts = connection.execute(
-                text(
-                    "SELECT "
-                    "(SELECT COUNT(*) FROM agents WHERE key LIKE 'snapshot_%_agent'), "
-                    "(SELECT COUNT(*) FROM model_connections "
-                    "WHERE key LIKE 'snapshot_%_connection')"
-                )
-            ).one()
-
-        assert clean_break_counts == (0, 3)
-    finally:
-        engine.dispose()
-
-
-def test_upgrade_legacy_schema_deletes_wrapped_mcp_authoring_rows(session_factory) -> None:
-    flat_config = {
-        "name": "Market Data",
-        "description": "Published MCP server",
-        "enabled": True,
-        "transport": "http-sse",
-        "url": "https://example.com/mcp",
-        "headers": {"Authorization": "Bearer secret-token"},
-    }
-
-    with session_factory() as session:
-        engine = session.get_bind()
-        session.add(
-            McpServer(
-                key="market_data",
-                version=1,
-                status="draft",
-                config={"mcpServers": {"market_data": flat_config}},
-            )
-        )
-        session.commit()
-
-    upgrade_legacy_schema(engine)
-
-    with session_factory() as session:
-        stored_count = session.query(McpServer).filter_by(key="market_data", version=1).count()
-        assert stored_count == 0
-
-
-def test_upgrade_legacy_schema_deletes_mismatched_wrapped_mcp_authoring_rows(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-    legacy_payload = {
-        "mcpServers": {
-            "other_key": {
-                "name": "Market Data",
-                "description": "Mismatched wrapper key",
-                "enabled": True,
-                "transport": "http-sse",
-                "url": "https://example.com/mcp",
-                "headers": {"Authorization": "Bearer secret-token"},
-            }
-        }
-    }
-
-    try:
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    "INSERT INTO mcp_servers (key, version, status, config, created_at, "
-                    "updated_at) "
-                    "VALUES (:key, :version, :status, CAST(:config AS jsonb), NOW(), NOW())"
-                ),
-                {
-                    "key": "market_data",
-                    "version": 1,
-                    "status": "draft",
-                    "config": json.dumps(legacy_payload, sort_keys=True, separators=(",", ":")),
-                },
-            )
-
-        upgrade_legacy_schema(engine)
-
-        with engine.connect() as connection:
-            stored_count = connection.execute(
-                text("SELECT COUNT(*) FROM mcp_servers WHERE key = :key AND version = :version"),
-                {"key": "market_data", "version": 1},
-            ).scalar_one()
-
-        assert stored_count == 0
-    finally:
-        engine.dispose()
+    assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
 
 
 def test_init_db_creates_extension_state_table_and_default_row(database_url: str) -> None:
@@ -6612,7 +4988,7 @@ def test_upgrade_legacy_schema_normalizes_run_extension_snapshot_jsonb(
         run_columns = {column["name"] for column in inspector.get_columns("runs")}
         assert "extension_dependencies" in run_columns
         assert "extension_snapshots" not in run_columns
-        assert S13_DEFERRED_REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
+        assert REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
 
         with engine.connect() as connection:
             row = (
@@ -6796,44 +5172,5 @@ def test_upgrade_legacy_schema_purges_pre_cutover_package_runs_snapshots_and_mem
 
         assert surviving_row["launch_parameters"] == {"ticker": "AAPL"}
         assert surviving_memory_count == 1
-    finally:
-        engine.dispose()
-
-
-def test_upgrade_legacy_schema_drops_global_authoring_allocation_columns(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-    agent_column = "_".join(("budget", "usd"))
-    workflow_column = "_".join(("aggregate", "budget", "usd"))
-    agent_constraint = "_".join(("ck", "agents", "budget", "usd", "non", "negative"))
-    workflow_constraint = "_".join(("ck", "workflows", "aggregate", "budget", "non", "negative"))
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                f"ALTER TABLE agents ADD COLUMN {agent_column} NUMERIC(20, 8) NOT NULL DEFAULT 0"
-            )
-            connection.exec_driver_sql(
-                f"ALTER TABLE agents ADD CONSTRAINT {agent_constraint} CHECK ({agent_column} >= 0)"
-            )
-            connection.exec_driver_sql(
-                f"ALTER TABLE workflows ADD COLUMN {workflow_column} "
-                "NUMERIC(20, 8) NOT NULL DEFAULT 0"
-            )
-            connection.exec_driver_sql(
-                f"ALTER TABLE workflows ADD CONSTRAINT {workflow_constraint} "
-                f"CHECK ({workflow_column} >= 0)"
-            )
-
-        upgrade_legacy_schema(engine)
-
-        columns = {
-            "agents": {column["name"] for column in inspect(engine).get_columns("agents")},
-            "workflows": {column["name"] for column in inspect(engine).get_columns("workflows")},
-        }
-        assert agent_column not in columns["agents"]
-        assert workflow_column not in columns["workflows"]
     finally:
         engine.dispose()

@@ -11,10 +11,10 @@
 
 ## Required Changes Before Implementation
 
-- Keep `S01` green throughout all later slices; do not weaken removed-route or retired-surface absence assertions to make deletions easier.
-- Treat `S04A` as a contract decision slice, not a compatibility-preservation slice. Choose one export rule and delete the losing path immediately.
-- In `S06`, do not change terminal-write ownership until targeted lease/finalization tests prove a real defect or ambiguity that needs consolidation.
-- In `S13`, do not delete startup-repair ballast before `S01`, `S02`, `S03`, and `S11` have already removed route, import, and extension dependencies on retired surfaces.
+- Completed slices must keep removed-route and retired-surface absence assertions green through S15.
+- The export rule is settled: private MCP `env`, `headers`, and `query` are secret-bearing and omitted from exports/browser-visible reads.
+- S6 resolved terminal-write ownership with active lease-owner checks before terminal persistence.
+- S13 resolved startup-repair ballast by keeping live-table repair and making retired global authoring tables drop-only cleanup targets.
 
 ## Anti-Patterns To Avoid
 

@@ -1,6 +1,6 @@
 # Product Requirements Document
 
-> Status: Live product-scope reference for branch `feature/ui` at `a6aeea0`.
+> Status: Live product-scope reference for branch `main` at `f4f487f`.
 
 ## Product Summary
 

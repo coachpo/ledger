@@ -31,6 +31,10 @@ spec:
     properties:
       ticker:
         type: string
+      notes:
+        type: array
+        items:
+          type: string
     required: [ticker]
   capabilityProfiles: []
   outputSchemas:
@@ -63,6 +67,10 @@ spec:
         properties:
           ticker:
             type: string
+          notes:
+            type: array
+            items:
+              type: string
         required: [ticker]
       flow:
         kind: step

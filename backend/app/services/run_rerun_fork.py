@@ -30,12 +30,12 @@ from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import (
     ExecutionPlan,
     ExecutionPlanAgent,
+    ExecutionPlanBuilderError,
     ExecutionPlanStep,
     ExecutionPlanTarget,
     PackageResolvedModelBinding,
     PackageRuntimeAgentSpec,
 )
-from app.services.execution_plan_builder import ExecutionPlanBuilderError
 from app.services.legacy_authoring import raise_legacy_global_authoring_runtime_blocked
 from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.output_schema_compiler import OutputSchemaCompiler

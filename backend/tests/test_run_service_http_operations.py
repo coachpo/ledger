@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, cast
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -176,6 +178,94 @@ def test_final_output_resolves_from_http_operation_slot(
         assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() == 0
         persisted_operation = session.query(RunOperationInvocation).filter_by(run_id=run_id).one()
         assert persisted_operation.output == {"ok": True, "message": "queued"}
+
+
+def test_http_operation_resolves_package_secrets_at_execution_time(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    create_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _package_source("execution_time_secret_http_callbacks")},
+    )
+    assert create_response.status_code == 201, create_response.json()
+    package = cast(dict[str, Any], create_response.json())
+    package_id = int(package["id"])
+
+    initial_header_value = uuid4().hex
+    initial_body_value = uuid4().hex
+    rotated_header_value = uuid4().hex
+    rotated_body_value = uuid4().hex
+    for key, value in {
+        "slack_webhook_token": initial_header_value,
+        "body_token": initial_body_value,
+    }.items():
+        secret_response = client.put(
+            f"/api/workflow-packages/{package_id}/secret-bindings/{key}",
+            json={"value": value},
+        )
+        assert secret_response.status_code == 200, secret_response.json()
+
+    launch_response = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={
+            "workflowKey": "notify",
+            "parameters": {
+                "webhookUrl": "https://api.example.test/hooks",
+                "ticker": "MSFT",
+            },
+        },
+    )
+    assert launch_response.status_code == 201, launch_response.json()
+    run_id = int(launch_response.json()["id"])
+
+    for key, value in {
+        "slack_webhook_token": rotated_header_value,
+        "body_token": rotated_body_value,
+    }.items():
+        secret_response = client.put(
+            f"/api/workflow-packages/{package_id}/secret-bindings/{key}",
+            json={"value": value},
+        )
+        assert secret_response.status_code == 200, secret_response.json()
+
+    transport = _CapturingTransport(
+        httpx.Response(
+            200,
+            json={"ok": True, "message": "queued"},
+            headers={"content-type": "application/json"},
+        )
+    )
+
+    _claim_run(session_factory, run_id)
+    _execute_claimed_run_with_http_service(
+        session_factory,
+        run_id=run_id,
+        transport=transport,
+    )
+
+    request = transport.requests[0]
+    assert request.headers["Authorization"] == rotated_header_value
+    assert json.loads(request.content.decode("utf-8"))["token"] == rotated_body_value
+    assert request.headers["Authorization"] != initial_header_value
+    assert json.loads(request.content.decode("utf-8"))["token"] != initial_body_value
+
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    detail = cast(dict[str, Any], detail_response.json())
+    operation = cast(dict[str, Any], detail["steps"][0]["operationInvocations"][0])
+    assert operation["requestMetadata"]["headers"]["Authorization"] == {
+        "from": "secret",
+        "key": "slack_webhook_token",
+        "redacted": True,
+    }
+    assert operation["requestMetadata"]["body"]["token"] == {
+        "from": "secret",
+        "key": "body_token",
+        "redacted": True,
+    }
+    assert rotated_header_value not in str(operation)
+    assert rotated_body_value not in str(operation)
 
 
 def test_package_delete_removes_http_operation_run_and_snapshot(
@@ -613,7 +703,14 @@ def test_mixed_execution_runs_agent_and_http_operation_families(
         )
         session.commit()
 
-        asyncio.run(service._execute_run_with_trace(run=run, plan=plan, trace_id=None))
+        asyncio.run(
+            service._execute_run_with_trace(
+                run=run,
+                plan=plan,
+                trace_id=None,
+                lease_owner=None,
+            )
+        )
         session.refresh(run)
         invocation = session.query(RunAgentInvocation).filter_by(run_id=run.id).one()
         operation = session.query(RunOperationInvocation).filter_by(run_id=run.id).one()

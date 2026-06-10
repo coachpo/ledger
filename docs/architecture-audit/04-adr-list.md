@@ -30,7 +30,7 @@ Primary evidence:
 | Status | Proposed |
 | Decision | Launch, rerun, fork, and schedule-fire flows create queued `Run` records only. Execution starts after `RunSchedulerWorker` claims a lease and passes the claimed run to runtime execution. |
 | Rationale | `00-contract-baseline.md:15-16`, `00-contract-baseline.md:40-42`, `02-current-architecture.md:38-49`, and `03-gap-register.md:63-70` define queue-only launch and worker-owned execution. |
-| Consequences | API handlers and application use cases may validate, snapshot, enqueue, and return run metadata, but they must not execute package workflows inline. Terminal status ownership needs targeted review before hardening. |
+| Consequences | API handlers and application use cases may validate, snapshot, enqueue, and return run metadata, but they must not execute package workflows inline. Terminal status ownership is guarded by the S6 active lease-owner finalization contract. |
 | Acceptance checks | Launch, rerun, fork, and schedule run-now tests assert queued status and no inline execution; runtime code has no imports from `backend/app/api/*`; stale lease and terminal status behavior is covered or explicitly reviewed. |
 
 ## ADR-003: Clean Architecture Dependency Rule

@@ -109,9 +109,9 @@ Finance behavior should not silently redefine platform-core contracts. If a port
 
 ## Workflow Package Export Boundary
 
-Workflow Package export is a trust boundary. The target must decide whether MCP `env`, `headers`, and `query` entries are public package configuration or secret-bearing material. Until that decision is made, export code remains a rewrite target rather than a stable compatibility surface.
+Workflow Package export is a trust boundary. Private MCP `env`, `headers`, and `query` entries are secret-bearing authoring/runtime config, not public export material.
 
-The export target remains intentionally current-contract only. It must omit database ids, run history, package secret raw values, model connection secrets, and any field classified as secret-bearing. It must not preserve older draft export shapes through adapters or long-term compatibility paths.
+The export target remains intentionally current-contract only. It must omit database ids, run history, package secret raw values, model connection secrets, private MCP request config, and any field classified as secret-bearing. It must not preserve older draft export shapes through adapters or long-term compatibility paths.
 
 ## Acceptance Criteria
 

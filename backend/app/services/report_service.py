@@ -21,7 +21,7 @@ from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.repositories.report import ReportRepository
 from app.schemas.report import ReportMetadata, ReportRead, ReportReadMetadata, ReportUpdate
-from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
+from app.services.runtime_tool_grants import RuntimeToolGrantPolicy, RuntimeToolGrantService
 
 _MAX_NAME_LENGTH = 200
 _DATETIME_SUFFIX_LENGTH = 16
@@ -76,7 +76,7 @@ class ReportService:
         offset: int = 0,
     ) -> list[ReportRead]:
         self._require_enabled()
-        CapabilityService(self.session, get_default_tool_catalog()).require_runtime_tool_grant(
+        RuntimeToolGrantService(get_default_tool_catalog()).require_runtime_tool_grant(
             capability_references=capability_references,
             grant_policy=grant_policy,
         )

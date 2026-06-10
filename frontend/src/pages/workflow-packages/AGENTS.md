@@ -32,7 +32,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Import belongs to `import-page.tsx`, not the editor. The import workspace owns pasted manifest YAML, unsaved/active-import navigation blocking, and detailed backend rejection messages.
 - Launch belongs to `launch.tsx`, not the editor. Phase 1 keeps `/workflow-packages/:packageId/run` as the live browser route and uses `Launch Workflow Package` as the route label; a `/launch` browser rename is deferred follow-up only.
 - The launch page owns preflight gating, workflow selection, runtime parameter JSON, saved-input registry helpers, and create-run navigation.
-- Exports and imports must preserve private MCP `env`, `headers`, and `query` values inline while still omitting database ids and run history.
+- Browser-visible manifest reads and exports must omit private MCP `env`, `headers`, and `query` values while still omitting database ids and run history; imports may accept those fields as secret-bearing package-private authoring/runtime config.
 - Route metadata owns shell mode for this family: list is `inventory` and scroll, import/new/detail are `editor` and full height, and `/workflow-packages/:packageId/run` is `console` and full height.
 - Inventory cards and tables use explicit package open, launch, delete, selection, and bulk-action controls. Do not make the whole row or card a pointer-only target.
 - Browser coverage for this family must keep package-first authoring, import/export, dedicated launch, snapshot provenance, and wide run payload overflow checks.

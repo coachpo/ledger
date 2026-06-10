@@ -243,6 +243,28 @@ describe("ModelConnectionsEditorPage", () => {
     expect(navigateMock).toHaveBeenCalledWith("/model-connections/9/edit");
   });
 
+  it("submits apiKey only when a create user enters a credential", async () => {
+    const enteredCredential = globalThis.crypto.randomUUID();
+    createModelConnectionMock.mockResolvedValue({ id: 14 });
+
+    render(<ModelConnectionsEditorPage />);
+    fillRequiredCreateFields();
+    fireEvent.change(screen.getByLabelText(/^API Key$/i), {
+      target: { value: enteredCredential },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /save model connection/i }),
+    );
+
+    await waitFor(() =>
+      expect(createModelConnectionMock).toHaveBeenCalledTimes(1),
+    );
+    expect(createModelConnectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: enteredCredential }),
+    );
+  });
+
   it("offers omit, preset, and custom reasoning effort options", async () => {
     render(<ModelConnectionsEditorPage />);
 

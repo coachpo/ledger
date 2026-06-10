@@ -32,10 +32,7 @@ _MCP_EXPORT_KEYS = {
     "transport",
     "command",
     "args",
-    "env",
     "url",
-    "headers",
-    "query",
     "toolKeys",
 }
 

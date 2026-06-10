@@ -21,7 +21,6 @@ from app.models.workflow_package_schedule import (
     WorkflowPackageSchedule,
     WorkflowPackageScheduleFire,
 )
-from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.repositories.workflow_package_schedule import (
     WorkflowPackageScheduleFireRepository,
@@ -151,9 +150,7 @@ class WorkflowPackageScheduleService:
         self.workflow_package_repository: WorkflowPackageRepository = WorkflowPackageRepository(
             session
         )
-        self.schema_compiler: OutputSchemaCompiler = OutputSchemaCompiler(
-            OutputSchemaRepository(session)
-        )
+        self.schema_compiler: OutputSchemaCompiler = OutputSchemaCompiler()
 
     def _run_service(self) -> RunService:
         if self.run_service is not None:

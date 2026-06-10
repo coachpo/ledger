@@ -7,11 +7,7 @@ from typing import Protocol, cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.agents.mcp.boundaries import (
-    McpClientBoundary,
-    build_mcp_client_boundary,
-    build_mcp_client_boundary_from_config,
-)
+from app.agents.mcp.boundaries import McpClientBoundary, build_mcp_client_boundary_from_config
 from app.agents.mcp.security import redact_mcp_text
 from app.agents.mcp.tool_adapter import (
     PACKAGE_PRIVATE_MCP_VERSION,
@@ -21,7 +17,6 @@ from app.agents.mcp.tool_adapter import (
     execution_tool_descriptor_from_payload,
     execution_tool_descriptor_to_openai_tool,
     execution_tool_descriptor_to_signaldeck_tool_declaration,
-    mcp_snapshot_to_execution_descriptor,
     mcp_tool_snapshot_from_descriptor,
     package_private_mcp_tool_input_schema,
 )
@@ -33,12 +28,9 @@ from app.agents.runtime_tools.failure_taxonomy import (
 )
 from app.agents.runtime_tools.types import RuntimeToolError
 from app.core.errors import ApiError
-from app.models.mcp_server import McpServer
-from app.repositories.mcp_server import McpServerRepository
 from app.schemas.mcp_server import McpToolSnapshot
 from app.services.extension_service import ExtensionService
 
-_ALLOWED_RUNTIME_STATUSES = {"published", "deprecated"}
 _MAX_MCP_OUTPUT_LENGTH = 16_384
 
 
@@ -172,32 +164,22 @@ class McpRuntimeResolver:
         if not enabled or not mcp_server_refs:
             return McpRuntimeDispatcher(tools=[], client=client, timeout_seconds=timeout_seconds)
         with self.session_factory() as session:
-            repository = McpServerRepository(session)
             extension_service = ExtensionService(session)
             tools: list[McpRuntimeTool] = []
             seen_functions: set[str] = set(reserved_function_names or ())
             for ref in mcp_server_refs:
-                if _is_package_private_ref(ref):
-                    tools.extend(
-                        _package_private_tools_from_ref(
-                            ref,
-                            seen_functions=seen_functions,
-                            extension_service=extension_service,
-                        )
+                if not _is_package_private_ref(ref):
+                    raise RuntimeToolError(
+                        code="mcp_global_server_ref_removed",
+                        message="Global MCP server references are not supported at runtime.",
                     )
-                    continue
-                server = _resolve_exact_runtime_server(repository, ref)
-                boundary = build_mcp_client_boundary(server)
-                for snapshot in _snapshots_from_server(server):
-                    descriptor = _descriptor_from_saved_snapshot(snapshot)
-                    _remember_openai_function(descriptor.openai_function_name, seen_functions)
-                    tools.append(
-                        McpRuntimeTool(
-                            boundary=boundary,
-                            snapshot=snapshot,
-                            descriptor=descriptor,
-                        )
+                tools.extend(
+                    _package_private_tools_from_ref(
+                        ref,
+                        seen_functions=seen_functions,
+                        extension_service=extension_service,
                     )
+                )
         return McpRuntimeDispatcher(tools=tools, client=client, timeout_seconds=timeout_seconds)
 
 
@@ -391,231 +373,33 @@ def _remember_openai_function(function_name: str, seen_functions: set[str]) -> N
     seen_functions.add(function_name)
 
 
-def _resolve_exact_runtime_server(
-    repository: McpServerRepository,
-    ref: Mapping[str, object],
-) -> McpServer:
-    key = str(ref.get("mcpServerKey") or "").strip().lower()
-    version = ref.get("mcpServerVersion")
-    if not key or not isinstance(version, int):
-        raise RuntimeToolError(
-            code="mcp_server_pin_invalid",
-            message="MCP runtime requires exact numeric server version pins.",
-        )
-    server = repository.get_by_key_version(key, version)
-    if server is None:
-        raise RuntimeToolError(
-            code="mcp_server_missing",
-            message=f"MCP server {key!r} version {version} was not found.",
-        )
-    if server.status not in _ALLOWED_RUNTIME_STATUSES:
-        raise RuntimeToolError(
-            code="mcp_server_status_invalid",
-            message="MCP runtime only permits published or deprecated server versions.",
-        )
-    if not server.enabled:
-        raise RuntimeToolError(
-            code="mcp_server_disabled",
-            message="MCP runtime only permits enabled server versions.",
-        )
-    return server
-
-
-def _snapshots_from_server(server: McpServer) -> tuple[McpToolSnapshot, ...]:
-    raw_snapshots = server.flat_config.get("toolSnapshots", [])
-    if not isinstance(raw_snapshots, list):
-        raise RuntimeToolError(
-            code="mcp_tool_snapshots_invalid",
-            message="MCP server tool snapshots must be a list.",
-        )
-    snapshots = tuple(McpToolSnapshot.model_validate(item) for item in raw_snapshots)
-    if not snapshots:
-        raise RuntimeToolError(
-            code="mcp_tool_snapshots_missing",
-            message="MCP runtime requires frozen publish-time tool snapshots.",
-        )
-    for snapshot in snapshots:
-        if snapshot.mcp_server_key != server.key or snapshot.mcp_server_version != server.version:
-            raise RuntimeToolError(
-                code="mcp_tool_snapshot_drift",
-                message="MCP tool snapshot identity does not match the pinned server version.",
-            )
-        _ = _descriptor_from_saved_snapshot(snapshot)
-    return snapshots
-
-
-def _descriptor_from_saved_snapshot(snapshot: McpToolSnapshot) -> ExecutionToolDescriptor:
-    try:
-        return mcp_snapshot_to_execution_descriptor(snapshot, owner_extension_key=None)
-    except McpToolAdapterError as exc:
-        raise RuntimeToolError(
-            code="mcp_tool_snapshot_drift",
-            message=str(exc),
-        ) from exc
-
-
 def _validate_mcp_arguments_schema(
     tool: McpRuntimeTool,
-    arguments: Mapping[str, object],
+    arguments: dict[str, object],
 ) -> None:
     schema = tool.descriptor.strict_schema
-    if not schema:
-        return
-    details: list[dict[str, object]] = []
-    _collect_schema_validation_details(arguments, schema, path="$", details=details)
-    if details:
-        raise RuntimeToolError(
-            code="mcp_tool_arguments_invalid",
-            message="MCP tool arguments failed schema validation.",
-            details=details,
-            failure_classification=MCP_TOOL_ARGUMENT_SCHEMA_INVALID,
-        )
-
-
-def _collect_schema_validation_details(
-    value: object,
-    schema: Mapping[str, object],
-    *,
-    path: str,
-    details: list[dict[str, object]],
-) -> None:
-    if len(details) >= 5:
-        return
-    type_values = _schema_type_values(schema.get("type"))
-    if type_values and not any(_matches_schema_type(value, item) for item in type_values):
-        expected = ", ".join(sorted(type_values))
-        _add_schema_detail(details, path, f"Expected {expected} value")
-        return
-    if "const" in schema and value != schema["const"]:
-        _add_schema_detail(details, path, "Value does not match required constant")
-        return
-    enum_values = schema.get("enum")
-    if isinstance(enum_values, Sequence) and not isinstance(enum_values, (str, bytes, bytearray)):
-        if value not in enum_values:
-            _add_schema_detail(details, path, "Value is not in the allowed enum")
-            return
-    if isinstance(value, Mapping) and "object" in type_values:
-        _collect_object_schema_details(value, schema, path=path, details=details)
-    if isinstance(value, list) and "array" in type_values:
-        items_schema = schema.get("items")
-        if isinstance(items_schema, Mapping):
-            for index, item in enumerate(value):
-                _collect_schema_validation_details(
-                    item,
-                    items_schema,
-                    path=f"{path}[{index}]",
-                    details=details,
-                )
-                if len(details) >= 5:
-                    return
-    _collect_scalar_schema_details(value, schema, path=path, details=details)
-
-
-def _collect_object_schema_details(
-    value: Mapping[object, object],
-    schema: Mapping[str, object],
-    *,
-    path: str,
-    details: list[dict[str, object]],
-) -> None:
-    raw_properties = schema.get("properties")
-    properties = raw_properties if isinstance(raw_properties, Mapping) else {}
-    required = _string_sequence(schema.get("required"))
-    for field_name in required:
-        if field_name not in value:
-            _add_schema_detail(details, f"{path}.{field_name}", "Required field is missing")
-    if schema.get("additionalProperties") is False:
-        unexpected = sorted(str(key) for key in set(value) - set(properties))
-        for field_name in unexpected:
-            _add_schema_detail(details, f"{path}.{field_name}", "Field is not allowed")
-    for field_name, field_schema in properties.items():
-        if field_name in value and isinstance(field_schema, Mapping):
-            _collect_schema_validation_details(
-                value[field_name],
-                field_schema,
-                path=f"{path}.{field_name}",
-                details=details,
+    required = schema.get("required")
+    if isinstance(required, list):
+        missing = [item for item in required if isinstance(item, str) and item not in arguments]
+        if missing:
+            raise RuntimeToolError(
+                code="mcp_tool_arguments_invalid",
+                message="MCP tool arguments are missing required fields.",
+                details=[
+                    {"field": field, "issue": "Required field is missing"} for field in missing
+                ],
+                failure_classification=MCP_TOOL_ARGUMENT_SCHEMA_INVALID,
             )
-            if len(details) >= 5:
-                return
-
-
-def _collect_scalar_schema_details(
-    value: object,
-    schema: Mapping[str, object],
-    *,
-    path: str,
-    details: list[dict[str, object]],
-) -> None:
-    if isinstance(value, str):
-        min_length = _numeric_constraint(schema.get("minLength"))
-        max_length = _numeric_constraint(schema.get("maxLength"))
-        if min_length is not None and len(value) < min_length:
-            _add_schema_detail(details, path, f"String length must be at least {int(min_length)}")
-        if max_length is not None and len(value) > max_length:
-            _add_schema_detail(details, path, f"String length must be at most {int(max_length)}")
-    if _is_json_number(value):
-        minimum = _numeric_constraint(schema.get("minimum"))
-        maximum = _numeric_constraint(schema.get("maximum"))
-        number_value = cast(int | float, value)
-        if minimum is not None and number_value < minimum:
-            _add_schema_detail(details, path, f"Value must be at least {minimum:g}")
-        if maximum is not None and number_value > maximum:
-            _add_schema_detail(details, path, f"Value must be at most {maximum:g}")
-
-
-def _schema_type_values(raw_type: object) -> set[str]:
-    if isinstance(raw_type, str):
-        return {raw_type}
-    if isinstance(raw_type, Sequence) and not isinstance(raw_type, (str, bytes, bytearray)):
-        return {str(item) for item in raw_type}
-    return set()
-
-
-def _matches_schema_type(value: object, schema_type: str) -> bool:
-    if schema_type == "object":
-        return isinstance(value, Mapping)
-    if schema_type == "array":
-        return isinstance(value, list)
-    if schema_type == "string":
-        return isinstance(value, str)
-    if schema_type == "integer":
-        return isinstance(value, int) and not isinstance(value, bool)
-    if schema_type == "number":
-        return _is_json_number(value)
-    if schema_type == "boolean":
-        return isinstance(value, bool)
-    if schema_type == "null":
-        return value is None
-    return True
-
-
-def _is_json_number(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
-def _numeric_constraint(value: object) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    return float(value)
-
-
-def _string_sequence(value: object) -> tuple[str, ...]:
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
-        return ()
-    return tuple(str(item) for item in value if isinstance(item, str))
-
-
-def _add_schema_detail(details: list[dict[str, object]], path: str, issue: str) -> None:
-    if len(details) >= 5:
-        return
-    details.append({"field": _schema_detail_field(path), "issue": issue})
-
-
-def _schema_detail_field(path: str) -> str:
-    if path == "$":
-        return "arguments"
-    return "arguments" + path.removeprefix("$")
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        unknown = sorted(set(arguments) - {str(key) for key in properties})
+        if unknown:
+            raise RuntimeToolError(
+                code="mcp_tool_arguments_invalid",
+                message="MCP tool arguments include unsupported fields.",
+                details=[{"field": field, "issue": "Unsupported field"} for field in unknown],
+                failure_classification=MCP_TOOL_ARGUMENT_SCHEMA_INVALID,
+            )
 
 
 def _safe_mcp_tool_output(tool: McpRuntimeTool, result: object) -> dict[str, object]:

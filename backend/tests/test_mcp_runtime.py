@@ -23,7 +23,6 @@ from app.agents.mcp.security import (
 )
 from app.agents.mcp.tool_adapter import (
     McpToolAdapterError,
-    build_mcp_tool_snapshot,
     build_package_private_mcp_tool_descriptor,
     convert_mcp_input_schema,
     execution_tool_descriptor_to_payload,
@@ -31,7 +30,6 @@ from app.agents.mcp.tool_adapter import (
 )
 from app.agents.runtime_tools.types import RuntimeToolError
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-from app.models.mcp_server import McpServer
 from app.schemas.extension import ExtensionToggleRequest
 from app.services.extension_service import ExtensionService
 
@@ -43,16 +41,6 @@ def _input_schema() -> dict[str, object]:
         "required": ["ticker"],
         "additionalProperties": False,
     }
-
-
-def _snapshot(*, server_key: str = "external_data", version: int = 1) -> dict[str, object]:
-    snapshot = build_mcp_tool_snapshot(
-        server_key=server_key,
-        server_version=version,
-        original_tool_name="vendor.lookup",
-        input_schema=_input_schema(),
-    )
-    return snapshot.model_dump(by_alias=True, mode="json")
 
 
 def _package_private_exa_ref(**overrides: object) -> dict[str, object]:
@@ -72,33 +60,6 @@ def _package_private_exa_ref(**overrides: object) -> dict[str, object]:
     }
     ref.update(overrides)
     return ref
-
-
-def _server(
-    *,
-    key: str = "external_data",
-    version: int = 1,
-    status: str = "published",
-    enabled: bool = True,
-    snapshots: list[dict[str, object]] | None = None,
-) -> McpServer:
-    return McpServer(
-        key=key,
-        version=version,
-        status=status,
-        config={
-            "name": f"{key}-{version}",
-            "description": "External MCP server",
-            "enabled": enabled,
-            "transport": "stdio",
-            "command": "npx",
-            "args": ["-y", "@vendor/server"],
-            "env": {"API_TOKEN": "secret-token"},
-            "toolSnapshots": (
-                snapshots if snapshots is not None else [_snapshot(server_key=key, version=version)]
-            ),
-        },
-    )
 
 
 class _FakeMcpToolClient:
@@ -125,41 +86,16 @@ class _FakeMcpToolClient:
         return self.result
 
 
-def test_mcp_runtime_resolves_exact_published_pin_and_redacts_output(
+def test_mcp_runtime_rejects_global_server_refs(
     session_factory: sessionmaker[Session],
 ) -> None:
-    with session_factory() as session:
-        server = _server()
-        session.add(server)
-        session.commit()
+    with pytest.raises(RuntimeToolError) as exc_info:
+        McpRuntimeResolver(session_factory).build_dispatcher(
+            mcp_server_refs=[{"mcpServerKey": "external_data", "mcpServerVersion": 1}],
+            enabled=True,
+        )
 
-    client = _FakeMcpToolClient(
-        {
-            "content": "Bearer secret-token sk-live-secret-123456",
-            "metadata": {"exaApiKey": "json-secret-value-123456"},
-        }
-    )
-    dispatcher = McpRuntimeResolver(session_factory).build_dispatcher(
-        mcp_server_refs=[{"mcpServerKey": "external_data", "mcpServerVersion": 1}],
-        client=cast(McpToolClient, client),
-        timeout_seconds=1.25,
-        enabled=True,
-    )
-
-    tools = dispatcher.get_openai_tools()
-    assert [tool["name"] for tool in tools] == ["mcp_external_data_vendor_lookup"]
-    output = dispatcher.dispatch(
-        name="mcp_external_data_vendor_lookup",
-        arguments_json=json.dumps({"ticker": "NVDA"}),
-    )
-
-    assert output["originalToolName"] == "vendor.lookup"
-    assert "secret-token" not in json.dumps(output)
-    assert "sk-live-secret" not in json.dumps(output)
-    assert "json-secret-value" not in json.dumps(output)
-    assert "[REDACTED]" in json.dumps(output)
-    assert client.calls[0]["tool_name"] == "vendor.lookup"
-    assert client.calls[0]["timeout_seconds"] == 1.25
+    assert exc_info.value.code == "mcp_global_server_ref_removed"
 
 
 def test_mcp_runtime_resolves_package_private_exa_tool(
@@ -382,81 +318,6 @@ def test_mcp_runtime_rejects_invalid_package_private_refs(
         )
 
     assert exc_info.value.code == expected_code
-
-
-@pytest.mark.parametrize("status", ["draft"])
-def test_mcp_runtime_rejects_non_runtime_statuses(
-    session_factory: sessionmaker[Session],
-    status: str,
-) -> None:
-    with session_factory() as session:
-        session.add(_server(status=status))
-        session.commit()
-
-    with pytest.raises(RuntimeToolError) as exc_info:
-        McpRuntimeResolver(session_factory).build_dispatcher(
-            mcp_server_refs=[{"mcpServerKey": "external_data", "mcpServerVersion": 1}],
-            enabled=True,
-        )
-
-    assert exc_info.value.code == "mcp_server_status_invalid"
-
-
-def test_mcp_runtime_permits_pinned_deprecated_enabled_version(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        session.add(_server(status="deprecated"))
-        session.commit()
-
-    dispatcher = McpRuntimeResolver(session_factory).build_dispatcher(
-        mcp_server_refs=[{"mcpServerKey": "external_data", "mcpServerVersion": 1}],
-        enabled=True,
-    )
-
-    assert [tool["name"] for tool in dispatcher.get_openai_tools()] == [
-        "mcp_external_data_vendor_lookup"
-    ]
-
-
-def test_mcp_runtime_rejects_disabled_and_implicit_pins(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        session.add(_server(enabled=False))
-        session.commit()
-
-    with pytest.raises(RuntimeToolError) as exc_info:
-        McpRuntimeResolver(session_factory).build_dispatcher(
-            mcp_server_refs=[{"mcpServerKey": "external_data"}],
-            enabled=True,
-        )
-    assert exc_info.value.code == "mcp_server_pin_invalid"
-
-    with pytest.raises(RuntimeToolError) as disabled_exc:
-        McpRuntimeResolver(session_factory).build_dispatcher(
-            mcp_server_refs=[{"mcpServerKey": "external_data", "mcpServerVersion": 1}],
-            enabled=True,
-        )
-    assert disabled_exc.value.code == "mcp_server_disabled"
-
-
-def test_mcp_runtime_rejects_drifted_snapshot_hash(
-    session_factory: sessionmaker[Session],
-) -> None:
-    drifted = _snapshot()
-    drifted["schemaHash"] = "sha256:" + "a" * 64
-    with session_factory() as session:
-        session.add(_server(snapshots=[drifted]))
-        session.commit()
-
-    with pytest.raises(RuntimeToolError) as exc_info:
-        McpRuntimeResolver(session_factory).build_dispatcher(
-            mcp_server_refs=[{"mcpServerKey": "external_data", "mcpServerVersion": 1}],
-            enabled=True,
-        )
-
-    assert exc_info.value.code == "mcp_tool_snapshot_drift"
 
 
 def test_mcp_tool_adapter_rejects_function_collisions_and_unsupported_schema() -> None:

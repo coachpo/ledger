@@ -52,9 +52,7 @@ def test_openapi_workflow_package_contracts_exclude_removed_tokens(app: FastAPI)
     serialized_schemas = json.dumps(checked_schemas, default=str, sort_keys=True)
 
     assert {"RunRead", "WorkflowPackageRead"} <= checked_schemas.keys()
-    assert not any(
-        token in serialized_schemas for token in S13_DEFERRED_REMOVED_OPENAPI_TOKENS
-    )
+    assert not any(token in serialized_schemas for token in S13_DEFERRED_REMOVED_OPENAPI_TOKENS)
     assert not any(
         token in schema_name
         for schema_name in schemas

@@ -9,8 +9,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.formatting import utcnow
-from app.models.base import Base, IdMixin, TimestampMixin
-from app.models.mcp_server import EncryptedJSONB
+from app.models.base import Base, EncryptedJSONB, IdMixin, TimestampMixin
 
 
 class WorkflowPackage(IdMixin, Base):

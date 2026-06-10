@@ -9,7 +9,7 @@ from app.services.workflow_package_manifest_compiler import compile_workflow_pac
 from tests.test_workflow_package_manifest_parser import _valid_http_sse_package_manifest_source
 
 
-def test_export_preserves_inline_http_sse_values_without_synthesizing_secret_metadata() -> None:
+def test_export_omits_secret_bearing_mcp_request_config() -> None:
     compiled = compile_workflow_package_manifest(_valid_http_sse_package_manifest_source())
     package_definition = deepcopy(cast(dict[str, Any], compiled["packageDefinition"]))
     compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
@@ -30,6 +30,7 @@ def test_export_preserves_inline_http_sse_values_without_synthesizing_secret_met
         {
             "id": 321,
             "mcpServerId": 654,
+            "env": {"EXA_TOKEN": "raw-env-token"},
             "headers": {
                 "Authorization": "Bearer raw-header-token",
                 "X-Api-Key": "raw-api-key",
@@ -47,11 +48,11 @@ def test_export_preserves_inline_http_sse_values_without_synthesizing_secret_met
 
     assert "apiVersion: signaldeck.workflowPackage/v1" in exported
     assert "modelConnection: tradingagents_primary_model" in exported
-    assert "headers:" in exported
-    assert "query:" in exported
-    assert "Authorization: Bearer raw-header-token" in exported
-    assert "X-Api-Key: raw-api-key" in exported
-    assert "api_key: raw-query-token" in exported
+    assert "transport: http-sse" in exported
+    assert "url: https://mcp.example.test/sse" in exported
+    assert "env:" not in exported
+    assert "headers:" not in exported
+    assert "query:" not in exported
     assert "secretRefs:" not in exported
     assert "requiredBindings:" not in exported
     for forbidden in (
@@ -60,6 +61,10 @@ def test_export_preserves_inline_http_sse_values_without_synthesizing_secret_met
         b"secretPayload",
         b"encrypted",
         b"password",
+        b"raw-env-token",
+        b"raw-header-token",
+        b"raw-api-key",
+        b"raw-query-token",
         b"raw-auth-token",
         b"modelConnectionId",
         b"mcpServerId",
@@ -74,10 +79,8 @@ def test_export_preserves_inline_http_sse_values_without_synthesizing_secret_met
     safe_mcp_server = cast(
         list[dict[str, Any]], cast(dict[str, Any], safe_definition["spec"])["mcpServers"]
     )[0]
-    assert safe_mcp_server["headers"] == {
-        "Authorization": "Bearer raw-header-token",
-        "X-Api-Key": "raw-api-key",
-    }
-    assert safe_mcp_server["query"] == {"api_key": "raw-query-token"}
+    assert "env" not in safe_mcp_server
+    assert "headers" not in safe_mcp_server
+    assert "query" not in safe_mcp_server
     assert "secretRefs" not in safe_mcp_server
     assert "requiredBindings" not in safe_mcp_server

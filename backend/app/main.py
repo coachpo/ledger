@@ -19,8 +19,10 @@ from app.core.errors import ApiError, browser_safe_error_details, request_valida
 from app.core.telemetry import configure_logfire
 from app.db.engine import get_engine
 from app.db.session import init_db
+from app.models.base import prune_retired_global_authoring_metadata
 
 READINESS_UNAVAILABLE_STATUS = status.HTTP_503_SERVICE_UNAVAILABLE
+prune_retired_global_authoring_metadata()
 
 
 @asynccontextmanager

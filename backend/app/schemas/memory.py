@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import math
 import re
 from datetime import UTC, datetime
 from enum import Enum
@@ -34,7 +33,6 @@ MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS: Final = 4_000
 MEMORY_LOOKUP_MAX_CHARACTERS: Final = 8_000
 MEMORY_API_MAX_REVISIONS: Final = 50
 MEMORY_API_MAX_EVENTS: Final = 100
-MEMORY_QUERY_EMBEDDING_MAX_DIMENSIONS: Final = 4_096
 MEMORY_LOOKUP_CURRENT_CONTEXT_FALLBACK: Final = "current-run-package-agent"
 MEMORY_REVISION_WRITE_MODE: Final = "immutable-revision-per-content-change"
 MEMORY_DUPLICATE_REVISION_BEHAVIOR: Final = "reuse-existing-active-revision"
@@ -244,7 +242,6 @@ def _content_hash(content: str) -> str:
 
 
 class MemoryScopeType(str, Enum):  # noqa: UP042
-    WORKSPACE = "workspace"
     PACKAGE = "package"
     WORKFLOW = "workflow"
     RUN = "run"
@@ -749,36 +746,13 @@ class MemoryWriteRequest(CamelModel):
     content: str = Field(default="Memory entry", min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
     attributes: MemoryAttributes = Field(default_factory=dict)
-    scope: MemoryScope = Field(default_factory=_default_memory_scope)
+    scope: MemoryScope
     provenance: MemoryProvenance
     revision: MemoryRevisionPolicy = Field(default_factory=MemoryRevisionPolicy)
     idempotency_key: str | None = Field(default=None, max_length=160)
     idempotency_fallback_fields: tuple[str, ...] = Field(
         default=MEMORY_IDEMPOTENCY_FALLBACK_FIELDS,
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def populate_neutral_write(cls, data: object) -> object:
-        if not isinstance(data, dict):
-            return data
-        payload = dict(data)
-        if "kind" not in payload:
-            payload["kind"] = "memory"
-        if "summary" not in payload:
-            payload["summary"] = "Memory entry"
-        if "content" not in payload:
-            payload["content"] = payload["summary"]
-        if "scope" not in payload:
-            provenance = payload.get("provenance")
-            if isinstance(provenance, MemoryProvenance):
-                run_id: object = provenance.run_id
-            elif isinstance(provenance, dict):
-                run_id = provenance.get("runId") or provenance.get("run_id") or "run"
-            else:
-                run_id = "run"
-            payload["scope"] = {"scopeType": "run", "scopeKey": str(run_id)}
-        return payload
 
     @field_validator("kind", mode="before")
     @classmethod
@@ -903,9 +877,6 @@ class MemoryQuery(CamelModel):
     agent_key: str | None = Field(default=None, max_length=120)
     workflow_key: str | None = Field(default=None, max_length=120)
     tags: list[str] = Field(default_factory=list)
-    query_embedding: tuple[float, ...] | None = Field(default=None, exclude=True)
-    query_embedding_provider: str | None = Field(default=None, exclude=True, max_length=80)
-    query_embedding_model: str | None = Field(default=None, exclude=True, max_length=200)
     limit: int = Field(default=MEMORY_LOOKUP_DEFAULT_LIMIT, ge=1, le=MEMORY_LOOKUP_MAX_LIMIT)
     offset: int = Field(default=0, ge=0)
     max_characters: int = Field(
@@ -947,33 +918,6 @@ class MemoryQuery(CamelModel):
             return []
         return value
 
-    @field_validator("query_embedding", mode="before")
-    @classmethod
-    def normalize_query_embedding(cls, value: object) -> tuple[float, ...] | None:
-        if value is None:
-            return None
-        if not isinstance(value, (list, tuple)):
-            raise ValueError("queryEmbedding must be a list of numbers")
-        raw_values = cast(list[object] | tuple[object, ...], value)
-        if not raw_values:
-            raise ValueError("queryEmbedding must not be empty")
-        if len(raw_values) > MEMORY_QUERY_EMBEDDING_MAX_DIMENSIONS:
-            raise ValueError("queryEmbedding exceeds the maximum supported dimensions")
-        normalized: list[float] = []
-        for item in raw_values:
-            if isinstance(item, bool) or not isinstance(item, (int, float)):
-                raise ValueError("queryEmbedding values must be finite numbers")
-            number = float(item)
-            if not math.isfinite(number):
-                raise ValueError("queryEmbedding values must be finite numbers")
-            normalized.append(number)
-        return tuple(normalized)
-
-    @field_validator("query_embedding_provider", "query_embedding_model", mode="before")
-    @classmethod
-    def normalize_embedding_provenance(cls, value: object) -> str | None:
-        return _normalize_optional_text(value, field_name="Embedding provenance", max_length=200)
-
     @model_validator(mode="after")
     def set_scope_mode(self) -> Self:
         has_explicit_selector = (
@@ -986,16 +930,13 @@ class MemoryQuery(CamelModel):
 
 
 class MemoryRetrievalScore(CamelModel):
-    retrieval_mode: Literal["lexical", "vector", "hybrid"] = "lexical"
+    retrieval_mode: Literal["lexical"] = "lexical"
     rank: int = Field(ge=1)
     score: float = 0.0
     scope_specificity: int = Field(default=0, ge=0)
     lexical_rank: int | None = Field(default=None, ge=1)
     lexical_score: float | None = None
-    vector_rank: int | None = Field(default=None, ge=1)
-    vector_similarity: float | None = None
-    vector_distance: float | None = None
-    sources: list[Literal["lexical", "vector"]] = Field(default_factory=list)
+    sources: list[Literal["lexical"]] = Field(default_factory=list)
 
     @field_validator("sources", mode="before")
     @classmethod
@@ -1373,7 +1314,6 @@ __all__ = [
     "MEMORY_NAMESPACE_SCOPE_SEPARATOR",
     "MEMORY_NOT_FOUND_CODE",
     "MEMORY_PROJECTION_MATRIX",
-    "MEMORY_QUERY_EMBEDDING_MAX_DIMENSIONS",
     "MEMORY_REVISION_WRITE_MODE",
     "MemoryApiAccessContext",
     "MemoryApiAccessRequest",

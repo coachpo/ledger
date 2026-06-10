@@ -359,7 +359,7 @@ def test_concurrent_shared_scope_revision_update_conflicts_then_retries_without_
     ]
 
 
-def test_query_with_embedding_falls_back_to_lexical_when_vectors_are_absent(
+def test_query_uses_lexical_retrieval_with_no_embedding_contract(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
@@ -374,8 +374,6 @@ def test_query_with_embedding_falls_back_to_lexical_when_vectors_are_absent(
                     scope_key="pkg-advisory",
                 ),
                 query="drawdown",
-                query_embedding=(0.1, 0.2, 0.3),
-                query_embedding_model="text-embedding-3-small",
                 limit=5,
             )
         )

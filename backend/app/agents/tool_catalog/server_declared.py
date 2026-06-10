@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import ItemsView, Iterator, ValuesView
+from functools import lru_cache
+
 from app.extensions import BundledServerDeclaredToolContribution as ServerDeclaredToolSpec
 from app.extensions.registry import get_bundled_extension_registry
 
@@ -38,21 +41,60 @@ def _registry_by_key(
     return registry
 
 
+@lru_cache(maxsize=1)
+def get_server_declared_tool_specs() -> tuple[ServerDeclaredToolSpec, ...]:
+    return _load_server_declared_tool_specs()
+
+
+@lru_cache(maxsize=1)
+def get_server_declared_tool_registry() -> dict[str, ServerDeclaredToolSpec]:
+    return _registry_by_key(get_server_declared_tool_specs())
+
+
 def enabled_server_declared_tool_registry(
     *,
     enabled_extension_keys: set[str],
 ) -> dict[str, ServerDeclaredToolSpec]:
     return {
         key: spec
-        for key, spec in SERVER_DECLARED_TOOL_REGISTRY.items()
+        for key, spec in get_server_declared_tool_registry().items()
         if spec.owner_extension_key is None or spec.owner_extension_key in enabled_extension_keys
     }
 
 
-SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = _load_server_declared_tool_specs()
-SERVER_DECLARED_TOOL_REGISTRY: dict[str, ServerDeclaredToolSpec] = _registry_by_key(
-    SERVER_DECLARED_TOOL_SPECS
-)
+class _LazyServerDeclaredToolSpecs:
+    def __iter__(self) -> Iterator[ServerDeclaredToolSpec]:
+        return iter(get_server_declared_tool_specs())
+
+    def __len__(self) -> int:
+        return len(get_server_declared_tool_specs())
+
+    def __getitem__(self, index: int) -> ServerDeclaredToolSpec:
+        return get_server_declared_tool_specs()[index]
+
+
+class _LazyServerDeclaredToolRegistry:
+    def items(self) -> ItemsView[str, ServerDeclaredToolSpec]:
+        return get_server_declared_tool_registry().items()
+
+    def values(self) -> ValuesView[ServerDeclaredToolSpec]:
+        return get_server_declared_tool_registry().values()
+
+    def get(self, key: str) -> ServerDeclaredToolSpec | None:
+        return get_server_declared_tool_registry().get(key)
+
+    def __getitem__(self, key: str) -> ServerDeclaredToolSpec:
+        return get_server_declared_tool_registry()[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(get_server_declared_tool_registry())
+
+    def __len__(self) -> int:
+        return len(get_server_declared_tool_registry())
+
+
+SERVER_DECLARED_TOOL_SPECS = _LazyServerDeclaredToolSpecs()
+SERVER_DECLARED_TOOL_REGISTRY = _LazyServerDeclaredToolRegistry()
 
 __all__ = [
     "CORE_SERVER_DECLARED_TOOL_SPECS",
@@ -60,4 +102,6 @@ __all__ = [
     "SERVER_DECLARED_TOOL_SPECS",
     "ServerDeclaredToolSpec",
     "enabled_server_declared_tool_registry",
+    "get_server_declared_tool_registry",
+    "get_server_declared_tool_specs",
 ]

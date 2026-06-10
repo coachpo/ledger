@@ -6,12 +6,12 @@ from typing import Any, cast
 from pydantic import BaseModel, RootModel, ValidationError
 
 from app.core.errors import business_rule_error
-from app.models.output_schema import OutputSchema
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     SchemaArray,
     SchemaNode,
     SchemaObject,
+    package_output_schema_candidate,
 )
 
 
@@ -21,15 +21,11 @@ def build_run_input_model(
     *,
     candidate_key: str,
 ) -> type[BaseModel]:
-    candidate = OutputSchema(
+    candidate = package_output_schema_candidate(
         key=candidate_key,
-        version=1,
-        status="published",
-        kind="standalone",
         name="Run Input Schema",
         description="Run input schema validation candidate",
         json_schema=input_schema,
-        registry_refs=[],
     )
     return schema_compiler.build_runtime_model(candidate)
 

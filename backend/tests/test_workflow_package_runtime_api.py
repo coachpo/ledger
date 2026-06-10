@@ -7,12 +7,13 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event, Lock
-from typing import Any, cast
+from typing import Any, cast, override
 
 import httpx
 import openai
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
@@ -20,13 +21,10 @@ from app.core.errors import ApiError, validation_error
 from app.core.formatting import utcnow
 from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-from app.models.agent import Agent
-from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_fork import RunFork
-from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
 from app.models.workflow_package_schedule import (
     WorkflowPackageSchedule,
@@ -1020,9 +1018,8 @@ def test_seeded_digital_oracle_launch_persists_question_input(
         assert snapshot.workflow_package_key == _DIGITAL_ORACLE_PRESET_KEY
         assert snapshot.workflow_key == "research"
         assert snapshot.launch_parameters == parameters
-        assert session.query(McpServer).count() == 0
-        assert session.query(Agent).count() == 0
-        assert session.query(Workflow).count() == 0
+        table_names = set(sqlalchemy_inspect(session.get_bind()).get_table_names())
+        assert {"mcp_servers", "agents", "workflows"}.isdisjoint(table_names)
 
 
 def test_seeded_digital_oracle_run_omits_null_optional_inputs_before_agent_validation(
@@ -1152,6 +1149,80 @@ def test_run_queue_stale_lease_recovery_frees_serial_worker_lane(
         assert recovered_run.status == "failed"
         assert recovered_run.lease_owner is None
         assert "scheduler lease expired" in str(recovered_run.error)
+
+
+def test_stale_recovered_run_cannot_be_finalized_by_expired_executor(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    started = Event()
+    resume = Event()
+
+    class _BlockingRuntimeOpenAIClient(_RuntimeRecordingOpenAIClient):
+        @override
+        def create(self, **kwargs: Any) -> _RuntimeOpenAIResponse:
+            type(self).create_calls.append(kwargs)
+            started.set()
+            assert resume.wait(timeout=3.0)
+            return _RuntimeOpenAIResponse(
+                output_text='{"summary": "expired executor output"}',
+                total_tokens=type(self).total_tokens,
+            )
+
+    _BlockingRuntimeOpenAIClient.reset()
+    monkeypatch.setattr("app.services.run_service.OpenAI", _BlockingRuntimeOpenAIClient)
+    _seed_model_connection(session_factory)
+    created = _create_package(client, package_key="stale_terminal_write_package")
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+    worker = scheduler_lease_owner(hostname="test-host", pid=101, slot=1)
+    recovery_worker = scheduler_lease_owner(hostname="test-host", pid=102, slot=1)
+
+    with session_factory() as session:
+        claimed_id = RunQueueService(
+            session,
+            session_factory,
+            lease_owner=worker,
+            lease_ttl_seconds=0.1,
+        ).claim_next_run()
+        assert claimed_id == run_id
+
+    def execute_stale_worker() -> None:
+        with session_factory() as session:
+            RunService(session, session_factory).execute_claimed_run(run_id, lease_owner=worker)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(execute_stale_worker)
+        assert started.wait(timeout=3.0)
+        expired_at = utcnow() - timedelta(seconds=5)
+        with session_factory() as session:
+            run = session.get(Run, run_id)
+            assert run is not None
+            run.lease_expires_at = expired_at
+            run.heartbeat_at = expired_at
+            session.commit()
+        with session_factory() as session:
+            recovered = RunQueueService(
+                session,
+                session_factory,
+                lease_owner=recovery_worker,
+            ).recover_stale_leases(now=utcnow())
+            assert recovered == 1
+        resume.set()
+        future.result(timeout=3.0)
+
+    with session_factory() as session:
+        run = session.get(Run, run_id)
+        assert run is not None
+        assert run.status == "failed"
+        assert run.final_output is None
+        assert run.lease_owner is None
+        assert "scheduler lease expired" in str(run.error)
 
 
 def test_runtime_input_payload_validation_accepts_schema_agnostic_object_and_launch_still_validates(
@@ -2337,8 +2408,8 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         assert snapshot.workflow_key == "runtime_workflow"
         assert snapshot.launch_parameters == {"ticker": "MSFT"}
         assert snapshot.resolved_model_connections[0]["modelId"] == "gpt-package-v2"
-        assert session.query(Agent).count() == 0
-        assert session.query(Workflow).count() == 0
+        table_names = set(sqlalchemy_inspect(session.get_bind()).get_table_names())
+        assert {"agents", "workflows"}.isdisjoint(table_names)
         invocation = session.query(RunAgentInvocation).filter_by(run_id=run_id).one()
         assert invocation.agent_id == 1
         assert invocation.agent_key == "package_analyst"
@@ -3890,7 +3961,7 @@ def test_workflow_package_runtime_without_finance_dependencies_succeeds_when_fin
     assert detail["extensionDependencies"] == []
 
 
-def test_workflow_package_validation_redacts_inline_private_mcp_values_but_authoring_preserves_them(
+def test_workflow_package_validation_redacts_and_reads_omit_inline_private_mcp_values(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -3930,14 +4001,19 @@ def test_workflow_package_validation_redacts_inline_private_mcp_values_but_autho
     package_id = int(created.json()["id"])
     manifest = client.get(f"/api/workflow-packages/{package_id}/manifest")
     assert manifest.status_code == 200, manifest.json()
+    manifest_payload = json.dumps(manifest.json(), sort_keys=True)
     assert_removed_contract_tokens_absent(manifest.json(), context="manifest hydration")
-    assert "inline-header-secret" in json.dumps(manifest.json(), sort_keys=True)
-    assert "inline-query-secret" in json.dumps(manifest.json(), sort_keys=True)
+    assert "headers" not in manifest_payload
+    assert "query" not in manifest_payload
+    assert "inline-header-secret" not in manifest_payload
+    assert "inline-query-secret" not in manifest_payload
     exported = client.get(f"/api/workflow-packages/{package_id}/export")
     assert exported.status_code == 200, exported.text
     assert_removed_contract_tokens_absent(exported.text, context="manifest export")
-    assert "Authorization: Bearer inline-header-secret" in exported.text
-    assert "exaApiKey: inline-query-secret" in exported.text
+    assert "headers:" not in exported.text
+    assert "query:" not in exported.text
+    assert "Authorization: Bearer inline-header-secret" not in exported.text
+    assert "exaApiKey: inline-query-secret" not in exported.text
 
 
 def test_workflow_package_runtime_uses_fake_provider_endpoint(

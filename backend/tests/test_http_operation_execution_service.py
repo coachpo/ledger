@@ -145,6 +145,112 @@ def test_successful_post_builds_request_and_redacts_audit_metadata() -> None:
     assert result.request_metadata["body"] == {"message": {"from": "input", "path": "message"}}
 
 
+def test_unsupported_method_is_rejected_before_request() -> None:
+    transport = _CapturingTransport(httpx.Response(200, json={"ok": True, "id": "evt_123"}))
+    service = _service(transport)
+
+    with pytest.raises(HttpOperationExecutionError) as exc_info:
+        _execute(service, _operation(method="DELETE"))
+
+    assert exc_info.value.code == "http_operation_method_not_allowed"
+    assert transport.requests == []
+
+
+def test_insecure_public_http_url_is_rejected_before_request() -> None:
+    transport = _CapturingTransport(httpx.Response(200, json={"ok": True, "id": "evt_123"}))
+    service = _service(transport)
+
+    with pytest.raises(HttpOperationExecutionError) as exc_info:
+        _execute(
+            service,
+            initial_input={
+                "url": "http://api.example.test/hooks",
+                "ticker": "AAPL",
+                "message": "hello",
+            },
+        )
+
+    assert exc_info.value.code == "http_operation_insecure_http_blocked"
+    assert transport.requests == []
+
+
+def test_oversize_request_body_is_rejected_before_request() -> None:
+    transport = _CapturingTransport(httpx.Response(200, json={"ok": True, "id": "evt_123"}))
+    service = _service(
+        transport,
+        settings=_settings(
+            http_operation_allow_insecure_http=False,
+            http_operation_block_private_networks=True,
+            http_operation_request_max_bytes=8,
+        ),
+    )
+
+    with pytest.raises(HttpOperationExecutionError) as exc_info:
+        _execute(
+            service,
+            initial_input={
+                "url": "https://api.example.test/hooks",
+                "ticker": "AAPL",
+                "message": "payload larger than limit",
+            },
+        )
+
+    assert exc_info.value.code == "http_operation_request_body_too_large"
+    assert transport.requests == []
+
+
+def test_unsupported_response_content_type_is_rejected() -> None:
+    transport = _CapturingTransport(
+        httpx.Response(200, content=b"<ok />", headers={"content-type": "application/xml"})
+    )
+    service = _service(transport)
+
+    with pytest.raises(HttpOperationExecutionError) as exc_info:
+        _execute(service)
+
+    assert exc_info.value.code == "http_operation_content_type_unsupported"
+    assert exc_info.value.status_code == 200
+
+
+def test_invalid_json_response_is_rejected() -> None:
+    transport = _CapturingTransport(
+        httpx.Response(200, content=b'{"ok":', headers={"content-type": "application/json"})
+    )
+    service = _service(transport)
+
+    with pytest.raises(HttpOperationExecutionError) as exc_info:
+        _execute(service)
+
+    assert exc_info.value.code == "http_operation_response_parse_failed"
+    assert exc_info.value.status_code == 200
+
+
+def test_redirect_is_blocked_even_when_redirect_limit_is_configured() -> None:
+    transport = _CapturingTransport(
+        httpx.Response(
+            301, headers={"location": "https://api.example.test/next", "content-type": "text/plain"}
+        )
+    )
+    service = _service(
+        transport,
+        settings=_settings(
+            http_operation_allow_insecure_http=False,
+            http_operation_block_private_networks=True,
+            http_operation_max_redirects=3,
+        ),
+    )
+
+    with pytest.raises(HttpOperationExecutionError) as exc_info:
+        _execute(service)
+
+    assert exc_info.value.code == "http_operation_redirect_blocked"
+    assert exc_info.value.status_code == 301
+    assert len(transport.requests) == 1
+    assert str(transport.requests[0].url) == (
+        "https://api.example.test/hooks?api_key=visible-secret&ticker=AAPL"
+    )
+
+
 def test_ssrf_blocks_private_resolved_address() -> None:
     transport = _CapturingTransport(httpx.Response(200, json={"ok": True, "id": "evt_123"}))
     service = _service(transport, resolved_hosts={"metadata.example.test": ("169.254.169.254",)})

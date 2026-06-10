@@ -20,7 +20,7 @@ SignalDeck is a monorepo for a portfolio-tracking stack with a FastAPI backend, 
 
 Workflow Packages are the only live platform authoring root. Package manifests use `signaldeck.workflowPackage/v1` YAML and keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
 
-Model Connections remain global live bindings for provider credentials. Global Tools are read-only server-declared metadata from `/api/tools`; packages reference tool keys through local capability profiles. Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history. Runs store immutable executable snapshots with copied package id, key, hashes, workflow identity, launch evidence, rerun metadata, and fork artifacts.
+Model Connections remain global live bindings for provider credentials. Global Tools are read-only server-declared metadata from `/api/tools`; packages reference tool keys through local capability profiles. Package exports omit secret-bearing private MCP `env`, `headers`, and `query` values along with database ids and run history. Runs store immutable executable snapshots with copied package id, key, hashes, workflow identity, launch evidence, rerun metadata, and fork artifacts.
 
 Scheduled Tasks is the package-first automation surface for recurring Workflow Package runs. The browser route `/scheduled-tasks` and `/api/schedules` create schedules for one package and workflow, use structured interval, daily, weekly, or monthly recurrence instead of raw cron, require an IANA timezone, and materialize due fires into ordinary queued runs with schedule provenance. Scheduled inputs are JSON templates that may use allowlisted `schedule`, `fire`, `window`, `lastRun`, and `vars` placeholders; preview validates rendered parameters without creating fires or runs. Run now creates an idempotent manual fire, then sends the operator to the linked run detail for queue and execution evidence. Delete removes the schedule and its fire rows, stops future automation, preserves existing run history, and keeps direct run artifacts readable through run-owned `scheduleProvenance`. Workflow Package deletion semantics are unchanged: deleting a package still deletes its owned runs.
 
@@ -217,7 +217,7 @@ Visit `http://127.0.0.1:25173/`.
 ## Runtime Notes
 
 - The normal browser-facing execution surfaces are Workflow Packages, Scheduled Tasks, Model Connections, and Runs, plus the preserved portfolio, template, and report routes. In Runs, rerun is for root parameters and fork is for one agent invocation input.
-- Workflow package manifests use `signaldeck.workflowPackage/v1`; package-private agents, output schemas, capability profiles, and workflow graphs are authored inside one package. Private MCP configs use inline `env`, `headers`, and `query` fields, and the export/import contract is intentionally breaking.
+- Workflow package manifests use `signaldeck.workflowPackage/v1`; package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs are authored inside one package. Private MCP `env`, `headers`, and `query` fields are secret-bearing authoring/runtime config and are omitted from browser-visible manifest reads and exports.
 - Backend startup schema repair detaches legacy schedule rows from linked runs, backfills `scheduleProvenance` when resolvable, deletes obsolete schedule and fire rows, and no longer routes schedule cleanup through a destructive schedule cleanup path.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright E2E uses Chromium only with dedicated startup helpers: backend `8001`, frontend preview `4173`, deterministic quote provider, and frontend API base `http://127.0.0.1:8001/api/v1` by default.
@@ -255,7 +255,5 @@ The VERSION files are lightweight mirrors used for repository-level checks; this
 
 - `backend/README.md` covers backend-specific development details
 - `AGENTS.md` maps the repo's live surfaces and nested documentation hierarchy
-- `docs/prd.md`, `docs/requirements.md`, `docs/spec.md`, `docs/api-design.md`, and `docs/data-model.md` are current product, requirements, API, and data references
-- `docs/test-plan.md` and `docs/run-input-schema-helptext.md` cover validation and generated run-input form metadata
-- `docs/signaldeck-agent-platform.md` is the canonical package-first platform reference
-- `docs/signaldeck-memory-layer-design.md` records the live phase 1 platform-core memory boundary
+- `docs/prd.md`, `docs/requirements.md`, `docs/spec.md`, `docs/data-model.md`, `docs/test-plan.md`, and `docs/AGENTS.md` are the canonical live owner docs for product scope, requirements, technical behavior, persistence, validation, and docs governance
+- `docs/run-input-schema-helptext.md` supports generated run-input form metadata

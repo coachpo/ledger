@@ -4,13 +4,7 @@ export type MemoryLifecycleStatus = "pending" | "resolved" | "expired";
 
 export type MemoryRevisionAction = "created" | "reused" | "superseded";
 
-export type MemoryScopeType =
-  | "workspace"
-  | "package"
-  | "workflow"
-  | "run"
-  | "agent"
-  | "namespace";
+export type MemoryScopeType = "package" | "workflow" | "run" | "agent" | "namespace";
 
 export type MemoryApiVisibility = "explicit-scope";
 
@@ -40,7 +34,7 @@ export interface MemoryProvenance {
 export interface MemoryRetrievalScore {
   rank?: number | null;
   score?: number | null;
-  sources?: string[];
+  sources?: "lexical"[];
 }
 
 export interface MemoryApiAccessContext {

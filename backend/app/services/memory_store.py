@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Final, Literal, Protocol, cast
+from typing import Any, Final, Protocol, cast
 from uuid import uuid4
 
 from fastapi import status
@@ -16,7 +16,6 @@ from app.core.formatting import to_utc, utcnow
 from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
 from app.repositories.agent_memory import (
     AgentMemoryEntryRepository,
-    AgentMemoryLookupCandidate,
     AgentMemoryRevisionRepository,
     RunMemoryEventRepository,
 )
@@ -60,7 +59,6 @@ _SCOPE_SPECIFICITY: Final[dict[str, int]] = {
     "workflow": 3,
     "namespace": 2,
     "package": 2,
-    "workspace": 1,
 }
 
 
@@ -94,16 +92,12 @@ class MemoryEventContext:
 
 
 @dataclass(slots=True)
-class _FusedLookupCandidate:
+class _RankedLookupCandidate:
     entry: AgentMemoryEntry
     revision: AgentMemoryRevision
-    lexical_rank: int | None = None
+    lexical_rank: int
     lexical_score: float | None = None
-    vector_rank: int | None = None
-    vector_distance: float | None = None
-    vector_similarity: float | None = None
-    fused_score: float = 0.0
-    rank: int = 0
+    score: float = 0.0
 
 
 class MemoryStore(Protocol):
@@ -455,7 +449,7 @@ class PostgresMemoryStore:
         _ = self._entry_by_memory_id(memory_id)
         return MemoryAuditLinks()
 
-    def _rank_lookup_candidates(self, query: MemoryQuery) -> list[_FusedLookupCandidate]:
+    def _rank_lookup_candidates(self, query: MemoryQuery) -> list[_RankedLookupCandidate]:
         candidate_limit = self._lookup_candidate_limit(query)
         lookup_kwargs = self._lookup_filter_kwargs(query)
         lexical_candidates = self.entries.list_lexical_lookup_candidates(
@@ -464,14 +458,16 @@ class PostgresMemoryStore:
             offset=0,
             **lookup_kwargs,
         )
-        vector_candidates = self.entries.list_vector_lookup_candidates(
-            query_embedding=query.query_embedding,
-            query_embedding_provider=query.query_embedding_provider,
-            query_embedding_model=query.query_embedding_model,
-            limit=candidate_limit,
-            **lookup_kwargs,
-        )
-        return self._fuse_lookup_candidates(lexical_candidates, vector_candidates)
+        return [
+            _RankedLookupCandidate(
+                entry=candidate.entry,
+                revision=candidate.revision,
+                lexical_rank=rank,
+                lexical_score=candidate.lexical_score,
+                score=self._reciprocal_rank_score(rank),
+            )
+            for rank, candidate in enumerate(lexical_candidates, start=1)
+        ]
 
     def _lookup_filter_kwargs(self, query: MemoryQuery) -> dict[str, Any]:
         return {
@@ -490,88 +486,24 @@ class PostgresMemoryStore:
         requested_window = max(query.limit, query.limit + query.offset)
         return min(requested_window * _LOOKUP_CANDIDATE_MULTIPLIER, _LOOKUP_MAX_CANDIDATES)
 
-    def _fuse_lookup_candidates(
-        self,
-        lexical_candidates: list[AgentMemoryLookupCandidate],
-        vector_candidates: list[AgentMemoryLookupCandidate],
-    ) -> list[_FusedLookupCandidate]:
-        states: dict[str, _FusedLookupCandidate] = {}
-        for rank, candidate in enumerate(lexical_candidates, start=1):
-            state = self._candidate_state(states, candidate)
-            state.lexical_rank = rank
-            state.lexical_score = candidate.lexical_score
-        for rank, candidate in enumerate(vector_candidates, start=1):
-            state = self._candidate_state(states, candidate)
-            state.vector_rank = rank
-            state.vector_distance = candidate.vector_distance
-            state.vector_similarity = candidate.vector_similarity
-        for state in states.values():
-            state.fused_score = self._fused_score(state)
-        ranked = sorted(states.values(), key=self._fused_sort_key)
-        for rank, state in enumerate(ranked, start=1):
-            state.rank = rank
-        return ranked
-
-    @staticmethod
-    def _candidate_state(
-        states: dict[str, _FusedLookupCandidate],
-        candidate: AgentMemoryLookupCandidate,
-    ) -> _FusedLookupCandidate:
-        state = states.get(candidate.entry.memory_id)
-        if state is None:
-            state = _FusedLookupCandidate(entry=candidate.entry, revision=candidate.revision)
-            states[candidate.entry.memory_id] = state
-        return state
-
-    @staticmethod
-    def _fused_score(candidate: _FusedLookupCandidate) -> float:
-        score = 0.0
-        if candidate.lexical_rank is not None:
-            score += 1.0 / (_RRF_K + candidate.lexical_rank)
-        if candidate.vector_rank is not None:
-            score += 1.0 / (_RRF_K + candidate.vector_rank)
-        return score
-
-    @classmethod
-    def _fused_sort_key(cls, candidate: _FusedLookupCandidate) -> tuple[object, ...]:
-        lexical_score = candidate.lexical_score or 0.0
-        vector_distance = candidate.vector_distance
-        return (
-            -cls._scope_specificity(candidate.entry),
-            -candidate.fused_score,
-            -lexical_score,
-            float("inf") if vector_distance is None else vector_distance,
-            -to_utc(candidate.revision.created_at).timestamp(),
-            candidate.entry.memory_id,
-        )
-
     @staticmethod
     def _scope_specificity(entry: AgentMemoryEntry) -> int:
         return _SCOPE_SPECIFICITY.get(entry.scope_type, 0)
 
-    def _retrieval_score(self, candidate: _FusedLookupCandidate) -> MemoryRetrievalScore:
-        sources: list[Literal["lexical", "vector"]] = []
-        if candidate.lexical_rank is not None:
-            sources.append("lexical")
-        if candidate.vector_rank is not None:
-            sources.append("vector")
-        retrieval_mode: Literal["lexical", "vector", "hybrid"] = "lexical"
-        if sources == ["vector"]:
-            retrieval_mode = "vector"
-        elif len(sources) == 2:
-            retrieval_mode = "hybrid"
+    def _retrieval_score(self, candidate: _RankedLookupCandidate) -> MemoryRetrievalScore:
         return MemoryRetrievalScore(
-            retrieval_mode=retrieval_mode,
-            rank=candidate.rank,
-            score=self._rounded_score(candidate.fused_score),
+            retrieval_mode="lexical",
+            rank=candidate.lexical_rank,
+            score=self._rounded_score(candidate.score),
             scope_specificity=self._scope_specificity(candidate.entry),
             lexical_rank=candidate.lexical_rank,
             lexical_score=self._rounded_optional_score(candidate.lexical_score),
-            vector_rank=candidate.vector_rank,
-            vector_similarity=self._rounded_optional_score(candidate.vector_similarity),
-            vector_distance=self._rounded_optional_score(candidate.vector_distance),
-            sources=sources,
+            sources=["lexical"],
         )
+
+    @staticmethod
+    def _reciprocal_rank_score(rank: int) -> float:
+        return 1.0 / (_RRF_K + rank)
 
     @staticmethod
     def _rounded_score(value: float) -> float:

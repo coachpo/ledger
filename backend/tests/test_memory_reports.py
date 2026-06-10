@@ -19,6 +19,8 @@ from app.schemas.memory import (
     MemoryOutcome,
     MemoryProvenance,
     MemoryQuery,
+    MemoryScope,
+    MemoryScopeType,
     MemorySubjectRef,
     MemoryWriteRequest,
 )
@@ -138,6 +140,7 @@ def _core_memory_write_request(run_id: int) -> MemoryWriteRequest:
         content="Core memory is table backed; report rows must not participate.",
         subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
         attributes={"confidence": "high"},
+        scope=MemoryScope(scope_type=MemoryScopeType.RUN, scope_key=str(run_id)),
         provenance=MemoryProvenance(
             run_id=run_id,
             agent_key="analyst",

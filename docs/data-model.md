@@ -1,6 +1,6 @@
 # Data Model Design
 
-> Status: Live data-model reference for branch `main` at `1e43bf7`.
+> Status: Live data-model reference for branch `main` at `f4f487f`.
 
 ## Overview
 
@@ -50,7 +50,7 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 - Trading operations are append-only; full sell-down may delete the current aggregate position row.
 - Reports keep immutable `name`, `slug`, `source`, and metadata after creation; only content updates are allowed. `source` values are `compiled`, `uploaded`, `external`, and `agent`; `external` is for true external user/API-created reports, not agent-created reports.
 - Workflow packages are mutable current definitions without a live status lifecycle. They store dependency keys as artifact references; current readiness is evaluated separately against live model connections, extension state, and package secret bindings.
-- Package exports keep private MCP `env`, `headers`, and `query` values inline while omitting database ids, run history, package secret binding rows, and raw package secret binding values.
+- Package exports and browser-visible manifest reads omit secret-bearing private MCP `env`, `headers`, and `query` values while omitting database ids, run history, package secret binding rows, and raw package secret binding values.
 - Package secret binding values remain encrypted at rest, are never exported, and are never echoed in reads, diagnostics, compiled graph refs, run details, or logs.
 - Model-connection secrets remain encrypted at rest and masked in reads/errors. Workflow package manifests store model connection keys as live bindings, not provider credentials.
 - `protocol_profile` is constrained to `openai_chat_completions` or `openai_responses` and remains the canonical persisted runtime selector. `compatibilityProfile` is not a persisted compatibility authority.

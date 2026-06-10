@@ -1,6 +1,6 @@
 # Requirements Document
 
-> Status: Live requirements reference for branch `main` at `1e43bf7`.
+> Status: Live requirements reference for branch `main` at `f4f487f`.
 
 ## Purpose
 
@@ -56,8 +56,8 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Workflow Packages must be YAML-manifest based and reject aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate local refs, raw model connection ids, and unsupported `spec.skills` fields.
 - Package-private agents, output schemas, capability profiles, private MCP configs, HTTP operation nodes, and workflow graphs must stay inside package artifacts.
 - Package-specific methodology, including Digital Oracle research policy, must live in package-local agent `systemPrompt` text and must not be modeled as `spec.skills`, `/api/skills`, or a global skill surface.
-- Private MCP configs must stay inline as `env`, `headers`, and `query` manifest text.
-- Package exports must keep private MCP `env`, `headers`, and `query` values inline while omitting database ids, run history, package secret binding rows, and raw package secret binding values.
+- Private MCP configs may use inline `env`, `headers`, and `query` manifest text for authoring/runtime, but those fields are secret-bearing request config.
+- Package exports and browser-visible manifest reads must omit private MCP `env`, `headers`, and `query` values while also omitting database ids, run history, package secret binding rows, and raw package secret binding values.
 - Package secret binding reads must expose only key, package id, presence, and timestamps; writes must store encrypted values; deletes must remove live bindings without rewriting package artifacts.
 - Secret references must be valid only inside HTTP request fields: `url`, `headers`, `query`, and `body`.
 - HTTP operation nodes must use `kind: http`, support only allowed methods, apply strict timeout/size/redirect/private-network defaults, redact secret-backed metadata, validate JSON/text responses against `response.outputSchema`, and persist operation invocation evidence separately from agent invocations.

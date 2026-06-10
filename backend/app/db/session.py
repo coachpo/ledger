@@ -8,7 +8,7 @@ from app.db.validation import (
     validate_supported_database_engine,
     validate_supported_id_schema,
 )
-from app.models.base import Base
+from app.models.base import Base, prune_retired_global_authoring_metadata
 
 _OPTIONAL_PGVECTOR_TABLE_NAMES = frozenset({"agent_memory_embeddings"})
 
@@ -17,6 +17,7 @@ def init_db(database_url: str | None = None) -> None:
     """Initialize the startup-owned schema and compatibility repairs."""
 
     __import__("app.models")
+    prune_retired_global_authoring_metadata()
     engine = get_engine(database_url)
     validate_supported_database_engine(engine)
     validate_supported_id_schema(engine)

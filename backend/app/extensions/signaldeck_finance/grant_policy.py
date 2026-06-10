@@ -15,7 +15,7 @@ from app.extensions.signaldeck_finance.runtime_types import (
     POSITION_LOOKUP_TOOL_KEY,
     REPORT_LOOKUP_TOOL_KEY,
 )
-from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
+from app.services.runtime_tool_grants import RuntimeToolGrantPolicy, RuntimeToolGrantService
 
 REPORT_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
 POSITION_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
@@ -59,7 +59,7 @@ def require_finance_runtime_tool_grant(
     capability_references: Sequence[dict[str, object]],
     grant_policy: RuntimeToolGrantPolicy,
 ) -> None:
-    CapabilityService(session, get_default_tool_catalog()).require_runtime_tool_grant(
+    RuntimeToolGrantService(get_default_tool_catalog()).require_runtime_tool_grant(
         capability_references=capability_references,
         grant_policy=grant_policy,
     )

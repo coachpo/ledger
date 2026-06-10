@@ -38,16 +38,16 @@ from app.schemas.memory import (
     MemoryWriteRequest,
     MemoryWriteResult,
 )
-from app.services.capability_service import (
-    CapabilityService,
-    RuntimeToolGrantError,
-    RuntimeToolGrantPolicy,
-)
 from app.services.memory_store import (
     MemoryEventContext,
     MemoryStore,
     PostgresMemoryStore,
     canonical_package_qualified_scope_key,
+)
+from app.services.runtime_tool_grants import (
+    RuntimeToolGrantError,
+    RuntimeToolGrantPolicy,
+    RuntimeToolGrantService,
 )
 
 _EVENT_TEXT_SNAPSHOT_MAX_CHARACTERS = 8_000
@@ -210,8 +210,7 @@ class MemoryService:
         self.store: MemoryStore = store if store is not None else PostgresMemoryStore(session)
         self.current_context: MemoryLookupContext | None = current_context
         self.event_repository: RunMemoryEventRepository = RunMemoryEventRepository(session)
-        self.capability_service: CapabilityService = CapabilityService(
-            session,
+        self.runtime_tool_grant_service: RuntimeToolGrantService = RuntimeToolGrantService(
             get_default_tool_catalog(),
         )
 
@@ -224,7 +223,7 @@ class MemoryService:
         commit: bool = True,
     ) -> MemoryWriteResult:
         if grant_policy is not None:
-            self.capability_service.require_runtime_tool_grant(
+            self.runtime_tool_grant_service.require_runtime_tool_grant(
                 capability_references=capability_references,
                 grant_policy=grant_policy,
             )
@@ -634,12 +633,10 @@ class MemoryService:
     @staticmethod
     def _lookup_snippet_sort_key(snippet: MemoryPromptSnippet) -> tuple[object, ...]:
         score = snippet.retrieval_score
-        vector_distance = None if score is None else score.vector_distance
         return (
             0 if score is None else -score.scope_specificity,
             0.0 if score is None else -score.score,
             0.0 if score is None or score.lexical_score is None else -score.lexical_score,
-            float("inf") if vector_distance is None else vector_distance,
             -snippet.created_at.timestamp(),
             snippet.memory_id,
         )
@@ -745,10 +742,7 @@ class MemoryService:
 
     @staticmethod
     def _snippet_retrieval_mode(snippets: Sequence[MemoryPromptSnippet]) -> str:
-        for snippet in snippets:
-            score = snippet.retrieval_score
-            if score is not None and "vector" in score.sources:
-                return "hybrid"
+        del snippets
         return "lexical"
 
     @staticmethod
@@ -804,11 +798,15 @@ class MemoryService:
             namespace = MemoryNamespaceSelector.from_scope(scope)
             self._authorize_namespace(namespace, action=action, current_context=current_context)
             return scope
-        if scope.scope_type == MemoryScopeType.WORKSPACE:
-            raise self._namespace_access_denied(
-                "Ownerless workspace memory scope is not supported."
-            )
         if current_context is None:
+            if scope.scope_type in {
+                MemoryScopeType.PACKAGE,
+                MemoryScopeType.WORKFLOW,
+                MemoryScopeType.AGENT,
+            }:
+                raise self._namespace_access_denied(
+                    "Package-private memory access requires package runtime context."
+                )
             return scope
         self._reject_cross_context_private_scope(scope, current_context=current_context)
         canonical_scope = current_context.canonicalize_scope(scope)
@@ -857,6 +855,15 @@ class MemoryService:
                     "Cross-run private memory access is not allowed."
                 )
         if package_key is None:
+            package_private_scope = {
+                MemoryScopeType.PACKAGE,
+                MemoryScopeType.WORKFLOW,
+                MemoryScopeType.AGENT,
+            }
+            if scope.scope_type in package_private_scope:
+                raise cls._namespace_access_denied(
+                    "Package-private memory access requires package runtime context."
+                )
             return
         if scope.scope_type == MemoryScopeType.PACKAGE and scope.scope_key != package_key:
             raise cls._namespace_access_denied(

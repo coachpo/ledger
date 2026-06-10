@@ -5,14 +5,9 @@ import re
 from pathlib import Path
 from typing import cast
 
-from sqlalchemy import func, select
+from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models.agent import Agent
-from app.models.capability import Capability
-from app.models.mcp_server import McpServer
-from app.models.output_schema import OutputSchema
-from app.models.workflow import Workflow
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_manifest_decompiler import decompile_workflow_package_manifest
 from app.services.workflow_package_manifest_parser import parse_workflow_package_manifest
@@ -88,10 +83,6 @@ def _fixture_source() -> str:
 
 def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
-
-
-def _table_count(session: Session, model: type[object]) -> int:
-    return session.scalar(select(func.count()).select_from(model)) or 0
 
 
 def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() -> None:
@@ -183,16 +174,23 @@ def test_fixture_compile_does_not_create_global_authoring_rows(
     session_factory: sessionmaker[Session],
 ) -> None:
     source = _fixture_source()
-    global_models = [Agent, Workflow, Capability, McpServer, OutputSchema]
+    retired_tables = {
+        "agents",
+        "workflows",
+        "capabilities",
+        "mcp_servers",
+        "output_schemas",
+    }
 
     with session_factory() as session:
-        before_counts = {model: _table_count(session, model) for model in global_models}
+        before_tables = set(sqlalchemy_inspect(session.get_bind()).get_table_names())
         compiled = compile_workflow_package_manifest(source)
         roundtrip = decompile_workflow_package_manifest(compiled)
         _ = compile_workflow_package_manifest(roundtrip.source)
-        after_counts = {model: _table_count(session, model) for model in global_models}
+        after_tables = set(sqlalchemy_inspect(session.get_bind()).get_table_names())
 
-    assert before_counts == after_counts == {model: 0 for model in global_models}
+    assert retired_tables.isdisjoint(before_tables)
+    assert retired_tables.isdisjoint(after_tables)
 
 
 def test_backend_implementation_does_not_special_case_tradingagents_or_old_workflow_id() -> None:

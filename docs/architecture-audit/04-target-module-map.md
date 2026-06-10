@@ -42,7 +42,7 @@ Primary evidence:
 | `backend/app/services/workflow_package_schedule_materializer.py` | `backend/app/application/schedules/materialize.py` | move | Due-fire materialization is an application use case over schedule/run repositories and clock ports. |
 | `backend/app/services/workflow_package_schedule_inputs.py` | `backend/app/domain/schedules/input_templates.py` | move | Placeholder rendering rules are package-first schedule domain rules. |
 | `backend/app/services/workflow_package_manifest_parser.py` | `backend/app/domain/workflow_packages/manifest_parser.py` | move | Manifest validation is package-domain behavior independent of FastAPI and SQLAlchemy. |
-| `backend/app/services/workflow_package_export.py` | `backend/app/application/workflow_packages/export.py` | rewrite | Export is a trust boundary and must decide MCP `env`, `headers`, and `query` handling before target carry-forward. |
+| `backend/app/services/workflow_package_export.py` | `backend/app/application/workflow_packages/export.py` | split | Export is a trust boundary with a settled rule: private MCP `env`, `headers`, and `query` are secret-bearing and omitted from exported/browser-visible package material. |
 | `backend/app/models/workflow_package.py` | `backend/app/infrastructure/persistence/models/workflow_package.py` | move | SQLAlchemy models are infrastructure details for package persistence. |
 | `backend/app/models/run.py` | `backend/app/infrastructure/persistence/models/run.py` | move | Run storage remains PostgreSQL-backed infrastructure. |
 | `backend/app/models/workflow_package_schedule.py` | `backend/app/infrastructure/persistence/models/workflow_package_schedule.py` | move | Schedule and fire rows are persistence details behind schedule/run repositories. |

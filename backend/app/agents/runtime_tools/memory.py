@@ -28,8 +28,8 @@ from app.schemas.memory import (
     MemoryWriteRequest,
     MemoryWriteResult,
 )
-from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
 from app.services.memory_service import MemoryLookupContext, MemoryService
+from app.services.runtime_tool_grants import RuntimeToolGrantPolicy, RuntimeToolGrantService
 
 MEMORY_WRITE_TOOL_KEY = "signaldeck.memory.write"
 MEMORY_LOOKUP_TOOL_KEY = "signaldeck.memory.lookup"
@@ -56,16 +56,20 @@ _FORBIDDEN_TEXT_RE = re.compile(r"https?://\S+|/reports/\S*|\bdownload(?:url)?\b
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)]\([^)]+\)")
 _MARKDOWN_PREFIX_RE = re.compile(r"^\s{0,3}(?:#{1,6}|[-*+>])\s+", re.MULTILINE)
 _MEMORY_SCOPE_SCHEMA: dict[str, object] = {
-    "type": ["object", "null"],
+    "type": "object",
     "properties": {
         "scopeType": {
             "type": "string",
-            "enum": ["workspace", "package", "workflow", "run", "agent", "namespace"],
+            "enum": ["package", "workflow", "run", "agent", "namespace"],
         },
         "scopeKey": {"type": "string", "minLength": 1, "maxLength": 160},
     },
     "required": ["scopeType", "scopeKey"],
     "additionalProperties": False,
+}
+_MEMORY_OPTIONAL_SCOPE_SCHEMA: dict[str, object] = {
+    **_MEMORY_SCOPE_SCHEMA,
+    "type": ["object", "null"],
 }
 _MEMORY_SUBJECT_REF_INPUT_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -106,7 +110,7 @@ _MEMORY_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
         "query": {"type": ["string", "null"], "maxLength": 1000},
-        "scope": _MEMORY_SCOPE_SCHEMA,
+        "scope": _MEMORY_OPTIONAL_SCOPE_SCHEMA,
         "subjectRefs": {
             "type": ["array", "null"],
             "items": _MEMORY_SUBJECT_REF_INPUT_SCHEMA,
@@ -178,7 +182,7 @@ class RuntimeMemoryWriteArguments(CamelModel):
     summary: str = Field(min_length=1)
     content: str = Field(min_length=1)
     subject_refs: list[RuntimeMemorySubjectRefArguments] = Field(default_factory=list)
-    scope: MemoryScope | None = None
+    scope: MemoryScope
     idempotency_key: str | None = Field(default=None, max_length=160)
     supersedes_revision_id: str | None = Field(default=None, max_length=160)
 
@@ -377,13 +381,14 @@ def execute_memory_write(
         context,
         function_name=MEMORY_WRITE_OPENAI_FUNCTION_NAME,
     )
+    lookup_context = _lookup_context(context)
     write_request = MemoryWriteRequest(
         kind=payload.kind or "memory",
         summary=payload.summary,
         content=payload.content,
         subject_refs=[ref.to_memory_subject_ref() for ref in payload.subject_refs],
         attributes={},
-        scope=_selected_write_scope(payload, provenance),
+        scope=_selected_write_scope(payload, lookup_context),
         provenance=provenance,
         revision=MemoryRevisionPolicy(
             supersedes_revision_id=payload.supersedes_revision_id,
@@ -393,7 +398,7 @@ def execute_memory_write(
     with context.session_factory() as session:
         result = MemoryService(
             session,
-            current_context=_lookup_context(context),
+            current_context=lookup_context,
         ).write_memory(
             capability_references=context.capability_references,
             payload=write_request,
@@ -455,7 +460,7 @@ def execute_memory_lookup(
             ),
         )
     with context.session_factory() as session:
-        CapabilityService(session, get_default_tool_catalog()).require_runtime_tool_grant(
+        RuntimeToolGrantService(get_default_tool_catalog()).require_runtime_tool_grant(
             capability_references=context.capability_references,
             grant_policy=MEMORY_LOOKUP_GRANT_POLICY,
         )
@@ -575,15 +580,33 @@ def _trusted_memory_provenance(
     )
 
 
-def _default_run_scope(provenance: MemoryProvenance) -> MemoryScope:
-    return MemoryScope(scope_type=MemoryScopeType.RUN, scope_key=str(provenance.run_id))
-
-
 def _selected_write_scope(
     payload: RuntimeMemoryWriteArguments,
-    provenance: MemoryProvenance,
+    lookup_context: MemoryLookupContext,
 ) -> MemoryScope:
-    return payload.scope or _default_run_scope(provenance)
+    scope = payload.scope
+    if scope.scope_type == MemoryScopeType.RUN and lookup_context.run_id is None:
+        raise RuntimeToolError(
+            code="agent_tool_dependency_missing",
+            message="signaldeck_memory_write requires run runtime context for run memory scope.",
+        )
+    if (
+        scope.scope_type
+        in {
+            MemoryScopeType.PACKAGE,
+            MemoryScopeType.WORKFLOW,
+            MemoryScopeType.AGENT,
+        }
+        and lookup_context.package_key is None
+    ):
+        raise RuntimeToolError(
+            code="agent_tool_dependency_missing",
+            message=(
+                "signaldeck_memory_write requires package runtime ownership for "
+                "package, workflow, or agent memory scopes."
+            ),
+        )
+    return scope
 
 
 def _lookup_context(context: RuntimeToolContext) -> MemoryLookupContext:

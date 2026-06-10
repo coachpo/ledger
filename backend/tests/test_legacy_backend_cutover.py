@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -9,6 +11,55 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.services.run_service import RunService
+
+RETIRED_GLOBAL_AUTHORING_IMPORT_MODULES = frozenset(
+    {
+        "app.models.agent",
+        "app.models.workflow",
+        "app.models.capability",
+        "app.models.mcp_server",
+        "app.models.output_schema",
+        "app.models.platform_reference",
+        "app.repositories.agent",
+        "app.repositories.workflow",
+        "app.repositories.capability",
+        "app.repositories.mcp_server",
+        "app.repositories.output_schema",
+        "app.services.agent_service",
+        "app.services.workflow_service",
+        "app.services.capability_service",
+        "app.services.mcp_server_service",
+        "app.services.output_schema_service",
+        "app.services.agent_manifest_compiler",
+        "app.services.agent_manifest_decompiler",
+        "app.services.agent_manifest_backfill",
+        "app.services.workflow_manifest_compiler",
+        "app.services.workflow_manifest_decompiler",
+        "app.services.workflow_manifest_backfill",
+        "app.services.execution_plan_builder",
+    }
+)
+RETIRED_GLOBAL_AUTHORING_QUARANTINE_MODULES = frozenset(
+    {
+        "repositories.agent",
+        "repositories.workflow",
+        "repositories.capability",
+        "repositories.mcp_server",
+        "repositories.output_schema",
+        "services.agent_service",
+        "services.workflow_service",
+        "services.capability_service",
+        "services.mcp_server_service",
+        "services.output_schema_service",
+        "services.agent_manifest_compiler",
+        "services.agent_manifest_decompiler",
+        "services.agent_manifest_backfill",
+        "services.workflow_manifest_compiler",
+        "services.workflow_manifest_decompiler",
+        "services.workflow_manifest_backfill",
+        "services.execution_plan_builder",
+    }
+)
 
 REMOVED_BACKEND_ROUTE_PATHS = (
     "/api/agents",
@@ -32,7 +83,7 @@ REMOVED_BACKEND_ROUTE_PATHS = (
     "/api/v2/personas",
     "/api/workflows/{workflow_id}/runs",
 )
-S13_DEFERRED_REMOVED_BACKEND_ROUTE_PREFIXES = (
+REMOVED_BACKEND_ROUTE_PREFIXES = (
     "/api/skills",
     "/api/v2/",
 )
@@ -129,7 +180,7 @@ def test_legacy_backend_routes_are_not_registered(app: FastAPI) -> None:
         assert removed_path not in route_paths
         assert not any(path.startswith(f"{removed_path}/") for path in route_paths)
 
-    for prefix in S13_DEFERRED_REMOVED_BACKEND_ROUTE_PREFIXES:
+    for prefix in REMOVED_BACKEND_ROUTE_PREFIXES:
         assert not any(path.startswith(prefix) for path in route_paths)
 
 
@@ -165,15 +216,14 @@ def test_removed_backend_surfaces_are_absent_from_openapi_contract(
         assert removed_path not in openapi_paths
         assert not any(path.startswith(f"{removed_path}/") for path in openapi_paths)
 
-    for prefix in S13_DEFERRED_REMOVED_BACKEND_ROUTE_PREFIXES:
+    for prefix in REMOVED_BACKEND_ROUTE_PREFIXES:
         assert not any(path.startswith(prefix) for path in openapi_paths)
 
     assert openapi_tags.isdisjoint(REMOVED_OPENAPI_TAGS)
 
     for operation_id in operation_ids:
         assert not any(
-            fragment in operation_id
-            for fragment in REMOVED_OPENAPI_OPERATION_ID_FRAGMENTS
+            fragment in operation_id for fragment in REMOVED_OPENAPI_OPERATION_ID_FRAGMENTS
         )
 
     assert set(schemas).isdisjoint(REMOVED_OPENAPI_SCHEMA_COMPONENT_NAMES)
@@ -186,3 +236,27 @@ def test_legacy_global_authoring_runtime_entrypoint_is_removed(
         service = RunService(session, session_factory)
 
     assert not hasattr(service, "create_target_run")
+
+
+def test_current_backend_app_modules_do_not_import_retired_global_authoring_modules() -> None:
+    app_root = Path(__file__).resolve().parents[1] / "app"
+    violations: list[str] = []
+
+    for path in sorted(app_root.rglob("*.py")):
+        module_name = path.relative_to(app_root).with_suffix("").as_posix().replace("/", ".")
+        if module_name in RETIRED_GLOBAL_AUTHORING_QUARANTINE_MODULES:
+            continue
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            relative_path = path.relative_to(app_root)
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module in RETIRED_GLOBAL_AUTHORING_IMPORT_MODULES
+            ):
+                violations.append(f"{relative_path}:{node.lineno}: from {node.module} import ...")
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name in RETIRED_GLOBAL_AUTHORING_IMPORT_MODULES:
+                        violations.append(f"{relative_path}:{node.lineno}: import {alias.name}")
+
+    assert violations == []

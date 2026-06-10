@@ -13,7 +13,6 @@ from app.agents import ToolCatalog
 from app.core.db_errors import is_unique_constraint_violation
 from app.core.errors import ApiError, not_found_error, validation_error
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageSecretBinding
-from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
 from app.schemas.workflow_package import (
@@ -79,7 +78,7 @@ class WorkflowPackageService:
         self.tool_catalog = self._artifact_tool_catalog(tool_catalog)
         self.repository = WorkflowPackageRepository(session)
         self.secret_binding_repository = WorkflowPackageSecretBindingRepository(session)
-        self.schema_compiler = OutputSchemaCompiler(OutputSchemaRepository(session))
+        self.schema_compiler = OutputSchemaCompiler()
         self.run_service = run_service
         self.preflight_service = preflight_service or preflight_service_factory(session)
 

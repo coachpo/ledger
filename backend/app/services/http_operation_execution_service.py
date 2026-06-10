@@ -17,13 +17,16 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.models.output_schema import OutputSchema
-from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run_operation_invocation import redact_operation_request_metadata
 from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
 from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import ExecutionPlanOperation, PackageLocalOutputSchemaSpec
-from app.services.output_schema_compiler import OutputSchemaCompiler, OutputSchemaCompilerError
+from app.services.output_schema_compiler import (
+    OutputSchemaCompiler,
+    OutputSchemaCompilerError,
+    PackageOutputSchemaCandidate,
+    package_output_schema_candidate,
+)
 
 _HTTP_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 _HTTP_JSON_CONTENT_TYPES = ("application/json", "+json")
@@ -116,14 +119,7 @@ class HttpOperationExecutionService:
             str(key): tuple(str(item) for item in value)
             for key, value in (resolved_hosts or {}).items()
         }
-        self._output_schema_repository = (
-            OutputSchemaRepository(session) if session is not None else None
-        )
-        self._output_schema_compiler = (
-            OutputSchemaCompiler(self._output_schema_repository)
-            if self._output_schema_repository is not None
-            else None
-        )
+        self._output_schema_compiler = OutputSchemaCompiler() if session is not None else None
         self._secret_binding_repository = (
             WorkflowPackageSecretBindingRepository(session) if session is not None else None
         )
@@ -345,52 +341,26 @@ class HttpOperationExecutionService:
                 with client.stream(current_method, current_url, **request_kwargs) as response:
                     if response.status_code in _HTTP_REDIRECT_STATUSES:
                         location = response.headers.get("location")
-                        if not location:
-                            self._raise_error(
-                                code="http_operation_redirect_missing_location",
-                                message="HTTP redirect response did not include a Location header",
-                                request_metadata={
-                                    "method": current_method,
-                                    "url": self._redact_url(current_url),
-                                },
-                                response_metadata={
-                                    "statusCode": response.status_code,
-                                    "headers": self._response_headers_metadata(response.headers),
-                                    "redirects": deepcopy(redirects),
-                                },
-                                status_code=response.status_code,
-                                started_at=started_at,
+                        response_metadata: dict[str, Any] = {
+                            "statusCode": response.status_code,
+                            "headers": self._response_headers_metadata(response.headers),
+                            "redirects": deepcopy(redirects),
+                        }
+                        if location:
+                            response_metadata["location"] = self._redact_url(
+                                urljoin(current_url, location)
                             )
-                        if len(redirects) >= self.settings.http_operation_max_redirects:
-                            self._raise_error(
-                                code="http_operation_redirect_blocked",
-                                message="HTTP redirect limit was exceeded",
-                                request_metadata={
-                                    "method": current_method,
-                                    "url": self._redact_url(current_url),
-                                },
-                                response_metadata={
-                                    "statusCode": response.status_code,
-                                    "headers": self._response_headers_metadata(response.headers),
-                                    "location": self._redact_url(urljoin(current_url, location)),
-                                    "redirects": deepcopy(redirects),
-                                },
-                                status_code=response.status_code,
-                                started_at=started_at,
-                            )
-                        redirect_url = urljoin(current_url, location)
-                        self._validate_request_url(redirect_url, started_at=started_at)
-                        redirects.append(
-                            {
-                                "statusCode": response.status_code,
-                                "location": self._redact_url(redirect_url),
-                            }
+                        self._raise_error(
+                            code="http_operation_redirect_blocked",
+                            message="HTTP redirects are not followed",
+                            request_metadata={
+                                "method": current_method,
+                                "url": self._redact_url(current_url),
+                            },
+                            response_metadata=response_metadata,
+                            status_code=response.status_code,
+                            started_at=started_at,
                         )
-                        current_url = redirect_url
-                        if response.status_code == 303:
-                            current_method = "GET"
-                            current_body = None
-                        continue
                     body_bytes = self._read_response_bytes(response, started_at=started_at)
                     return _HttpResponseContext(
                         status_code=response.status_code,
@@ -990,16 +960,14 @@ class HttpOperationExecutionService:
             )
 
     @staticmethod
-    def _output_schema_candidate(output_schema: PackageLocalOutputSchemaSpec) -> OutputSchema:
-        return OutputSchema(
+    def _output_schema_candidate(
+        output_schema: PackageLocalOutputSchemaSpec,
+    ) -> PackageOutputSchemaCandidate:
+        return package_output_schema_candidate(
             key=output_schema.key,
-            version=1,
-            status="published",
-            kind="standalone",
             name=output_schema.name,
             description=output_schema.description,
             json_schema=output_schema.json_schema,
-            registry_refs=[],
         )
 
     def _merge_query_params(self, url: str, query: Mapping[str, str]) -> str:

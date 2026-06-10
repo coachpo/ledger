@@ -743,6 +743,66 @@ def test_parse_package_workflow_graph_preserves_duplicate_diagnostics(
         ),
         (
             _valid_package_manifest_source().replace(
+                "outputSchema: trading_decision",
+                "outputSchemaId: 42",
+                1,
+            ),
+            "spec.agents[0].outputSchemaId",
+            "outputSchemaId is not allowed",
+            True,
+        ),
+        (
+            _valid_package_manifest_source().replace(
+                "      capabilityProfiles: [market_research_tools]",
+                "      capabilityId: 42",
+                1,
+            ),
+            "spec.agents[0].capabilityId",
+            "capabilityId is not allowed",
+            True,
+        ),
+        (
+            _valid_package_manifest_source().replace(
+                "      mcpServers: [research_context]",
+                "      mcpServerId: 42",
+                1,
+            ),
+            "spec.agents[0].mcpServerId",
+            "mcpServerId is not allowed",
+            True,
+        ),
+        (
+            _valid_package_manifest_source().replace(
+                "modelConnection: tradingagents_primary_model",
+                "apiKey: sk-raw-manifest-secret",
+                1,
+            ),
+            "spec.agents[0].apiKey",
+            "apiKey is not allowed",
+            True,
+        ),
+        (
+            _valid_package_manifest_source().replace(
+                "modelConnection: tradingagents_primary_model",
+                "secretPayload: {apiKey: sk-raw-manifest-secret}",
+                1,
+            ),
+            "spec.agents[0].secretPayload",
+            "secretPayload is not allowed",
+            True,
+        ),
+        (
+            _valid_package_manifest_source().replace(
+                "modelConnection: tradingagents_primary_model",
+                "password: raw-password",
+                1,
+            ),
+            "spec.agents[0].password",
+            "password is not allowed",
+            True,
+        ),
+        (
+            _valid_package_manifest_source().replace(
                 "  capabilityProfiles:\n",
                 "  skills:\n    - old_skill@1\n  capabilityProfiles:\n",
                 1,

@@ -28,7 +28,6 @@ from app.schemas.market_data import (
     MarketQuoteListRead,
     MarketQuoteRead,
 )
-from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
 from app.services.market_data_snapshots import (
     MarketDataFinancialStatement as RuntimeFinancialStatement,
 )
@@ -77,6 +76,7 @@ from app.services.quote_provider import (
     QuoteProviderError,
     QuoteProviderRateLimitError,
 )
+from app.services.runtime_tool_grants import RuntimeToolGrantPolicy, RuntimeToolGrantService
 
 _ProviderResultT = TypeVar("_ProviderResultT")
 
@@ -188,10 +188,7 @@ class MarketDataService:
         symbol: str,
     ) -> tuple[MarketQuoteRead | None, list[str]]:
         self._require_enabled()
-        CapabilityService(
-            self.session,
-            get_default_tool_catalog(),
-        ).require_runtime_tool_grant(
+        RuntimeToolGrantService(get_default_tool_catalog()).require_runtime_tool_grant(
             capability_references=capability_references,
             grant_policy=grant_policy,
         )
@@ -206,10 +203,7 @@ class MarketDataService:
         range_value: str,
     ) -> MarketHistoryRead:
         self._require_enabled()
-        CapabilityService(
-            self.session,
-            get_default_tool_catalog(),
-        ).require_runtime_tool_grant(
+        RuntimeToolGrantService(get_default_tool_catalog()).require_runtime_tool_grant(
             capability_references=capability_references,
             grant_policy=grant_policy,
         )

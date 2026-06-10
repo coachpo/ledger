@@ -220,7 +220,6 @@ from app.extensions.signaldeck_finance.runtime_types import (
 )
 from app.main import create_app
 from app.models.agent_memory import AgentMemoryEntry, RunMemoryEvent
-from app.models.capability import Capability
 from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
@@ -231,11 +230,6 @@ from app.schemas.memory import MemoryLifecycleStatus, MemoryProvenance, MemoryRe
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
 from app.services.agent_execution_service import AgentExecutionService
-from app.services.capability_service import (
-    CapabilityService,
-    RuntimeToolGrantError,
-    RuntimeToolGrantPolicy,
-)
 from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.market_data_service import MarketDataService
@@ -264,6 +258,11 @@ from app.services.quote_provider import (
     QuoteProviderTimeoutError,
 )
 from app.services.report_service import ReportService
+from app.services.runtime_tool_grants import (
+    RuntimeToolGrantError,
+    RuntimeToolGrantPolicy,
+    RuntimeToolGrantService,
+)
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 
 _NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
@@ -690,8 +689,14 @@ def _runtime_context(
             capability_references
             or [
                 {
-                    "capabilityKey": "runtime_tool_test_capability",
-                    "capabilityVersion": 1,
+                    "toolKeys": [
+                        REPORT_LOOKUP_TOOL_KEY,
+                        POSITION_LOOKUP_TOOL_KEY,
+                        MEMORY_WRITE_TOOL_KEY,
+                        MEMORY_LOOKUP_TOOL_KEY,
+                        MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
+                        MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
+                    ],
                 }
             ]
         ),
@@ -714,24 +719,8 @@ def _runtime_context(
     )
 
 
-def _seed_runtime_tool_capability(
-    session_factory: sessionmaker[Session],
-    *,
-    tools: Sequence[str],
-    key: str = "runtime_tool_test_capability",
-) -> None:
-    with session_factory() as session:
-        session.add(
-            Capability(
-                key=key,
-                version=1,
-                status="published",
-                name=f"{key} v1",
-                description="Runtime tool test capability.",
-                tool_keys=list(tools),
-            )
-        )
-        session.commit()
+def _capability_reference(*, tools: Sequence[str]) -> dict[str, object]:
+    return {"toolKeys": list(tools)}
 
 
 def _seed_runtime_run(
@@ -853,7 +842,7 @@ def _memory_write_arguments_json(
         "summary": "Durable model-safe memory.",
         "content": "Prior run found durable evidence.",
         "subjectRefs": [{"kind": "instrument", "id": "NVDA", "label": None}],
-        "scope": None,
+        "scope": {"scopeType": "run", "scopeKey": str(_RUNTIME_RUN_ID)},
         "idempotencyKey": "runtime-core-memory-write",
         "supersedesRevisionId": None,
     }
@@ -875,11 +864,11 @@ def _runtime_package_ownership(*, package_key: str) -> PackageExecutionOwnership
 def _memory_runtime_context(
     session_factory: sessionmaker[Session],
     *,
-    capability_key: str = "runtime_tool_test_capability",
+    granted_tools: Sequence[str] = (MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY),
     package_ownership: PackageExecutionOwnership | None = None,
 ) -> RuntimeToolContext:
     return _runtime_context(
-        capability_references=[{"capabilityKey": capability_key, "capabilityVersion": 1}],
+        capability_references=[_capability_reference(tools=granted_tools)],
         session_factory_override=session_factory,
         run_id=_RUNTIME_RUN_ID,
         run_step_id=_RUNTIME_RUN_STEP_ID,
@@ -3548,6 +3537,18 @@ def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typ
         ]
 
 
+def test_runtime_tool_registry_descriptor_listing_respects_extension_state() -> None:
+    registry = RuntimeToolRegistry(
+        cast(Sequence[RuntimeToolSpec], RUNTIME_TOOL_SPECS),
+        enabled_extension_keys=set(),
+    )
+    descriptor_keys = {descriptor.tool_key for descriptor in registry.list_execution_descriptors()}
+
+    assert descriptor_keys == {MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY}
+    assert not descriptor_keys & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
+    assert not descriptor_keys & set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS)
+
+
 def test_digital_oracle_runtime_registry_denies_ungranted_tools_before_parsing() -> None:
     registry = get_default_runtime_tool_registry()
     context = _runtime_context(fail_on_session=True)
@@ -3652,44 +3653,30 @@ def test_generic_platform_runtime_guidance_discloses_provider_limitations() -> N
     assert "do not present unsupported provider coverage" in guidance
 
 
-def test_runtime_capability_service_resolves_stored_tool_keys_and_fails_closed(
-    session_factory: sessionmaker[Session],
-) -> None:
-    capability_key = "runtime_resolve_tool_keys"
-    _seed_runtime_tool_capability(
-        session_factory,
-        key=capability_key,
-        tools=[REPORT_LOOKUP_TOOL_KEY, POSITION_LOOKUP_TOOL_KEY],
-    )
-    capability_references: list[dict[str, object]] = [
-        {"capabilityKey": capability_key, "capabilityVersion": 1}
+def test_runtime_tool_grant_service_resolves_package_tool_keys_and_fails_closed() -> None:
+    service = RuntimeToolGrantService(get_default_tool_catalog())
+    capability_references = [
+        _capability_reference(tools=[REPORT_LOOKUP_TOOL_KEY, POSITION_LOOKUP_TOOL_KEY])
     ]
 
-    with session_factory() as session:
-        service = CapabilityService(session, get_default_tool_catalog())
-        assert service.resolve_granted_tool_keys(capability_references) == {
-            REPORT_LOOKUP_TOOL_KEY,
-            POSITION_LOOKUP_TOOL_KEY,
-        }
+    assert service.resolve_granted_tool_keys(capability_references) == {
+        REPORT_LOOKUP_TOOL_KEY,
+        POSITION_LOOKUP_TOOL_KEY,
+    }
+    service.require_runtime_tool_grant(
+        capability_references=capability_references,
+        grant_policy=REPORT_LOOKUP_GRANT_POLICY,
+    )
+    service.require_runtime_tool_grant(
+        capability_references=capability_references,
+        grant_policy=POSITION_LOOKUP_GRANT_POLICY,
+    )
+
+    with pytest.raises(RuntimeToolGrantError) as exc_info:
         service.require_runtime_tool_grant(
-            capability_references=capability_references,
+            capability_references=[_capability_reference(tools=["signaldeck.stale.lookup"])],
             grant_policy=REPORT_LOOKUP_GRANT_POLICY,
         )
-        service.require_runtime_tool_grant(
-            capability_references=capability_references,
-            grant_policy=POSITION_LOOKUP_GRANT_POLICY,
-        )
-
-        capability = session.scalar(select(Capability).where(Capability.key == capability_key))
-        assert capability is not None
-        capability.tool_keys = ["signaldeck.stale.lookup"]
-        session.commit()
-
-        with pytest.raises(RuntimeToolGrantError) as exc_info:
-            service.require_runtime_tool_grant(
-                capability_references=capability_references,
-                grant_policy=REPORT_LOOKUP_GRANT_POLICY,
-            )
 
     assert exc_info.value.code == "capability_tool_keys_invalid"
     assert "stale or invalid tool keys" in exc_info.value.message
@@ -3902,8 +3889,7 @@ def test_failure_taxonomy_marks_mcp_invalid_json_and_schema_retryable_before_tra
     )
     assert schema_error.value.retryable is True
     assert schema_error.value.details == [
-        {"field": "arguments.extra", "issue": "Field is not allowed"},
-        {"field": "arguments.ticker", "issue": "Expected string value"},
+        {"field": "extra", "issue": "Unsupported field"},
     ]
     retry_state = ModelToolCallRetryState()
     assert retry_state.can_retry(schema_error.value) is True
@@ -3923,8 +3909,7 @@ def test_failure_taxonomy_marks_mcp_invalid_json_and_schema_retryable_before_tra
                     "source": "mcp_tool",
                 },
                 "details": [
-                    {"field": "arguments.extra", "issue": "Field is not allowed"},
-                    {"field": "arguments.ticker", "issue": "Expected string value"},
+                    {"field": "extra", "issue": "Unsupported field"},
                 ],
             }
         ],
@@ -4059,7 +4044,8 @@ def test_memory_write_runtime_tool_parser_normalizes_happy_path() -> None:
     assert payload.summary == "Durable model-safe memory."
     assert payload.content == "Prior run found durable evidence."
     assert payload.subject_refs[0].kind == "instrument"
-    assert payload.scope is None
+    assert payload.scope.scope_type.value == "run"
+    assert payload.scope.scope_key == str(_RUNTIME_RUN_ID)
     assert payload.idempotency_key == "runtime-core-memory-write"
 
 
@@ -4079,7 +4065,7 @@ def test_memory_write_runtime_tool_parser_rejects_subject_ref_attributes() -> No
                             "attributes": {"confidence": "high"},
                         }
                     ],
-                    "scope": None,
+                    "scope": {"scopeType": "run", "scopeKey": str(_RUNTIME_RUN_ID)},
                     "idempotencyKey": "runtime-core-memory-write",
                     "supersedesRevisionId": None,
                 }
@@ -4130,7 +4116,6 @@ def test_memory_lookup_runtime_tool_parser_defaults_to_current_context_fallback(
 def test_memory_write_runtime_tool_creates_core_memory_without_reports(
     session_factory: sessionmaker[Session],
 ) -> None:
-    _seed_runtime_tool_capability(session_factory, tools=[MEMORY_WRITE_TOOL_KEY])
     _seed_runtime_run(session_factory)
     registry = RuntimeToolRegistry([MEMORY_WRITE_TOOL_SPEC], enabled_extension_keys=set())
     context = _memory_runtime_context(session_factory)
@@ -4182,10 +4167,6 @@ def test_memory_write_runtime_tool_creates_core_memory_without_reports(
 def test_memory_lookup_runtime_tool_uses_current_context_with_finance_disabled(
     session_factory: sessionmaker[Session],
 ) -> None:
-    _seed_runtime_tool_capability(
-        session_factory,
-        tools=[MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY],
-    )
     _seed_runtime_run(session_factory)
     registry = RuntimeToolRegistry(RUNTIME_TOOL_SPECS, enabled_extension_keys=set())
     context = _memory_runtime_context(session_factory)
@@ -4331,12 +4312,6 @@ def test_memory_lookup_runtime_tool_rejects_unscoped_call_without_context() -> N
 def test_memory_lookup_runtime_tool_service_denies_missing_lookup_grant(
     session_factory: sessionmaker[Session],
 ) -> None:
-    capability_key = "runtime_memory_lookup_without_service_grant"
-    _seed_runtime_tool_capability(
-        session_factory,
-        key=capability_key,
-        tools=[MEMORY_WRITE_TOOL_KEY],
-    )
     _seed_runtime_run(session_factory)
     registry = RuntimeToolRegistry([MEMORY_LOOKUP_TOOL_SPEC])
 
@@ -4347,7 +4322,7 @@ def test_memory_lookup_runtime_tool_service_denies_missing_lookup_grant(
             granted_tool_keys={MEMORY_LOOKUP_TOOL_KEY},
             context=_memory_runtime_context(
                 session_factory,
-                capability_key=capability_key,
+                granted_tools=(MEMORY_WRITE_TOOL_KEY,),
             ),
         )
 
@@ -4358,12 +4333,6 @@ def test_memory_lookup_runtime_tool_service_denies_missing_lookup_grant(
 def test_market_data_quote_lookup_service_denies_missing_capability_reference_grant(
     session_factory: sessionmaker[Session],
 ) -> None:
-    capability_key = "runtime_market_data_quote_without_grant"
-    _seed_runtime_tool_capability(
-        session_factory,
-        key=capability_key,
-        tools=[MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY],
-    )
     registry = RuntimeToolRegistry([MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC])
     quote_provider = _RecordingQuoteProvider()
 
@@ -4373,7 +4342,9 @@ def test_market_data_quote_lookup_service_denies_missing_capability_reference_gr
             arguments_json='{"symbols":["NVDA"]}',
             granted_tool_keys={MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY},
             context=_runtime_context(
-                capability_references=[{"capabilityKey": capability_key, "capabilityVersion": 1}],
+                capability_references=[
+                    _capability_reference(tools=[MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY])
+                ],
                 session_factory_override=session_factory,
                 quote_provider=quote_provider,
             ),
@@ -4387,12 +4358,6 @@ def test_market_data_quote_lookup_service_denies_missing_capability_reference_gr
 def test_market_data_history_lookup_service_denies_missing_capability_reference_grant(
     session_factory: sessionmaker[Session],
 ) -> None:
-    capability_key = "runtime_market_data_history_without_grant"
-    _seed_runtime_tool_capability(
-        session_factory,
-        key=capability_key,
-        tools=[MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY],
-    )
     registry = RuntimeToolRegistry([MARKET_DATA_HISTORY_LOOKUP_TOOL_SPEC])
     quote_provider = _RecordingQuoteProvider()
 
@@ -4402,7 +4367,9 @@ def test_market_data_history_lookup_service_denies_missing_capability_reference_
             arguments_json='{"symbols":["NVDA"],"range":"3mo","pointLimit":2}',
             granted_tool_keys={MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY},
             context=_runtime_context(
-                capability_references=[{"capabilityKey": capability_key, "capabilityVersion": 1}],
+                capability_references=[
+                    _capability_reference(tools=[MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY])
+                ],
                 session_factory_override=session_factory,
                 quote_provider=quote_provider,
             ),
@@ -5097,8 +5064,14 @@ def test_reports_lookup_runtime_tool_dispatches_to_report_service_with_defaults_
         {
             "capability_references": [
                 {
-                    "capabilityKey": "runtime_tool_test_capability",
-                    "capabilityVersion": 1,
+                    "toolKeys": [
+                        REPORT_LOOKUP_TOOL_KEY,
+                        POSITION_LOOKUP_TOOL_KEY,
+                        MEMORY_WRITE_TOOL_KEY,
+                        MEMORY_LOOKUP_TOOL_KEY,
+                        MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
+                        MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
+                    ]
                 }
             ],
             "grant_policy": REPORT_LOOKUP_GRANT_POLICY,
@@ -5181,7 +5154,16 @@ def test_position_runtime_tool_dispatches_to_position_service_with_defaults_and_
 
     assert captured_calls[0] == {
         "capability_references": [
-            {"capabilityKey": "runtime_tool_test_capability", "capabilityVersion": 1}
+            {
+                "toolKeys": [
+                    REPORT_LOOKUP_TOOL_KEY,
+                    POSITION_LOOKUP_TOOL_KEY,
+                    MEMORY_WRITE_TOOL_KEY,
+                    MEMORY_LOOKUP_TOOL_KEY,
+                    MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
+                    MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
+                ]
+            }
         ],
         "grant_policy": POSITION_LOOKUP_GRANT_POLICY,
         "portfolio_slug": "position_lookup_reference",
@@ -5224,10 +5206,6 @@ def test_position_runtime_tool_dispatches_to_position_service_with_defaults_and_
 def test_market_data_quote_lookup_dispatches_to_service_with_injected_provider(
     session_factory: sessionmaker[Session],
 ) -> None:
-    _seed_runtime_tool_capability(
-        session_factory,
-        tools=[MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY],
-    )
     registry = RuntimeToolRegistry([MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC])
     quote_provider = _RecordingQuoteProvider(failing_symbols={"BAD"})
 
@@ -5263,10 +5241,6 @@ def test_market_data_quote_lookup_dispatches_to_service_with_injected_provider(
 def test_market_data_history_lookup_dispatches_to_service_with_injected_provider(
     session_factory: sessionmaker[Session],
 ) -> None:
-    _seed_runtime_tool_capability(
-        session_factory,
-        tools=[MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY],
-    )
     registry = RuntimeToolRegistry([MARKET_DATA_HISTORY_LOOKUP_TOOL_SPEC])
     quote_provider = _RecordingQuoteProvider(failing_symbols={"BAD"})
 

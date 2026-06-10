@@ -9,8 +9,7 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, IdMixin, TimestampMixin
-from app.models.mcp_server import EncryptedJSONB
+from app.models.base import Base, EncryptedJSONB, IdMixin, TimestampMixin
 
 _MODEL_CONNECTION_DEFAULT_CAPABILITIES = {
     "textGeneration": {"status": "supported", "detail": None, "lastProbedAt": None},

@@ -29,7 +29,7 @@ _PENDING_LEASE_SKIP_MESSAGE = (
 
 
 class RunExecutor(Protocol):
-    def execute_claimed_run(self, run_id: int) -> None: ...
+    def execute_claimed_run(self, run_id: int, *, lease_owner: str | None = None) -> None: ...
 
 
 def default_run_executor_factory(
@@ -172,7 +172,10 @@ class RunQueueService:
 
         try:
             with self.session_factory() as session:
-                self._build_executor(session).execute_claimed_run(run_id)
+                self._build_executor(session).execute_claimed_run(
+                    run_id,
+                    lease_owner=self.lease_owner,
+                )
         finally:
             with self.session_factory() as session:
                 _ = type(self)(

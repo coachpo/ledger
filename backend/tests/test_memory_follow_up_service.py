@@ -24,7 +24,7 @@ from app.schemas.memory import MemoryProvenance, MemoryScope, MemoryScopeType, M
 from app.schemas.memory_report import AGENT_MEMORY_REVIEW_TYPE, AGENT_MEMORY_VERSION_GROUP
 from app.services.extension_service import ExtensionService
 from app.services.memory_follow_up_service import MemoryFollowUpService
-from app.services.memory_service import MemoryService
+from app.services.memory_service import MemoryLookupContext, MemoryService
 from app.services.quote_provider import (
     ProviderFundamentals,
     ProviderHistorySeries,
@@ -234,7 +234,7 @@ def _neutral_memory_request(run_id: int) -> MemoryWriteRequest:
         kind="research.note",
         summary="Core follow-up note.",
         content="Core follow-up scheduling should not require finance metadata.",
-        scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key="pkg-core"),
+        scope=MemoryScope(scope_type=MemoryScopeType.RUN, scope_key=str(run_id)),
         provenance=_provenance(run_id),
     )
 
@@ -332,7 +332,15 @@ def test_finance_evaluator_contribution_resolves_and_reflects_when_enabled(
     reviewed_at = datetime(2026, 1, 6, tzinfo=UTC)
     with session_factory() as session:
         run = _seed_run(session)
-        memory_service = MemoryService(session)
+        memory_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=run.id,
+                package_key="pkg-finance",
+                workflow_key="memory_follow_up_workflow",
+                agent_key="analyst",
+            ),
+        )
         created = memory_service.write_memory(
             capability_references=[],
             payload=_finance_memory_request(run.id),

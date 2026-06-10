@@ -19,9 +19,9 @@ from app.schemas.position import (
     PositionSymbolLookupRead,
     PositionUpdate,
 )
-from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
 from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import QuoteProvider, QuoteProviderError
+from app.services.runtime_tool_grants import RuntimeToolGrantPolicy, RuntimeToolGrantService
 
 
 class PositionService:
@@ -46,7 +46,7 @@ class PositionService:
         offset: int = 0,
     ) -> list[PositionRead]:
         self._require_enabled()
-        CapabilityService(self.session, get_default_tool_catalog()).require_runtime_tool_grant(
+        RuntimeToolGrantService(get_default_tool_catalog()).require_runtime_tool_grant(
             capability_references=capability_references,
             grant_policy=grant_policy,
         )

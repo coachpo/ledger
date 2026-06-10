@@ -20,7 +20,13 @@ _REMOVED_PACKAGE_HISTORY_TABLES = {
     "workflow_package_versions",
     "workflow_package_version_model_connections",
 }
-_REFERENCE_TABLES = {
+_RETIRED_GLOBAL_AUTHORING_TABLES = {
+    "agents",
+    "workflows",
+    "capabilities",
+    "mcp_servers",
+    "output_schemas",
+    "skills",
     "workflow_agent_refs",
     "agent_capability_refs",
     "agent_mcp_server_refs",
@@ -196,8 +202,9 @@ def _assert_workflow_package_live_status_artifacts_removed(
 def _assert_workflow_package_schema(engine: Engine) -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
-    assert _WORKFLOW_PACKAGE_TABLES | _REFERENCE_TABLES <= table_names
+    assert _WORKFLOW_PACKAGE_TABLES <= table_names
     assert _REMOVED_PACKAGE_HISTORY_TABLES.isdisjoint(table_names)
+    assert _RETIRED_GLOBAL_AUTHORING_TABLES.isdisjoint(table_names)
 
     package_columns = {
         column["name"]: column for column in inspector.get_columns("workflow_packages")
@@ -226,14 +233,6 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         constraint["name"]: str(constraint["sqltext"])
         for constraint in inspector.get_check_constraints("workflow_packages")
     }
-    workflow_agent_columns = {
-        column["name"] for column in inspector.get_columns("workflow_agent_refs")
-    }
-    workflow_agent_foreign_keys = {
-        _foreign_key_signature(foreign_key)
-        for foreign_key in inspector.get_foreign_keys("workflow_agent_refs")
-    }
-
     assert {
         "id",
         "key",
@@ -297,10 +296,6 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         package_check_sql=package_check_sql,
         package_indexes=package_indexes,
     )
-    assert {"id", "workflow_id", "agent_id"} <= workflow_agent_columns
-    assert "workflow_package_version_id" not in workflow_agent_columns
-    assert (("workflow_id",), "workflows", "CASCADE") in workflow_agent_foreign_keys
-    assert (("agent_id",), "agents", "RESTRICT") in workflow_agent_foreign_keys
     assert package_columns["key"]["nullable"] is False
     assert package_columns["manifest_source"]["nullable"] is False
     assert package_columns["package_definition"]["nullable"] is False
@@ -804,13 +799,10 @@ def test_workflow_package_upgrade_drops_package_history_tables_and_keeps_current
                     """
                 )
             ).all()
-            workflow_agent_refs = connection.execute(
-                text("SELECT workflow_id, agent_id FROM workflow_agent_refs")
-            ).all()
 
         assert _REMOVED_PACKAGE_HISTORY_TABLES.isdisjoint(table_names)
+        assert _RETIRED_GLOBAL_AUTHORING_TABLES.isdisjoint(table_names)
         assert rows == [("dangling_refs",), ("live_refs",)]
-        assert workflow_agent_refs == []
     finally:
         engine.dispose()
 
