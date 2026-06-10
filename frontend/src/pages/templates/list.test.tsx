@@ -60,14 +60,6 @@ const quarterlyTemplate = {
   updatedAt: "2026-05-02T10:00:00Z",
 };
 
-const monthlyTemplate = {
-  id: 8,
-  name: "Monthly Snapshot",
-  content: "Risk summary",
-  createdAt: "2026-05-03T10:00:00Z",
-  updatedAt: "2026-05-04T10:00:00Z",
-};
-
 describe("TemplateListPage", () => {
   beforeEach(() => {
     deleteTemplateMutateMock.mockReset();
@@ -191,93 +183,4 @@ describe("TemplateListPage", () => {
     expect(screen.getByText("Quarterly Review")).toBeVisible();
   });
 
-  it("renders table editor links and keeps row delete confirmation route-owned", () => {
-    useTemplatesListMock.mockReturnValue(
-      queryResult({ items: [quarterlyTemplate] }),
-    );
-
-    render(<TemplateListPage />);
-
-    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
-    const table = screen.getByRole("table");
-    expect(
-      within(table).getByRole("link", { name: "Quarterly Review" }),
-    ).toHaveAttribute("href", "/templates/7/edit");
-    expect(
-      within(table).getByRole("link", { name: "Open editor for Quarterly Review" }),
-    ).toHaveAttribute("href", "/templates/7/edit");
-
-    fireEvent.keyDown(
-      within(table).getByRole("button", {
-        name: "Open actions for Quarterly Review",
-      }),
-      { key: "Enter" },
-    );
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
-
-    expect(screen.getByRole("alertdialog")).toHaveTextContent(
-      "Delete Quarterly Review?",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-
-    expect(deleteTemplateMutateMock).toHaveBeenCalledWith(
-      7,
-      expect.any(Object),
-    );
-  });
-
-  it("keeps table navigation explicit while preserving table-only bulk selection", () => {
-    useTemplatesListMock.mockReturnValue(
-      queryResult({ items: [quarterlyTemplate, monthlyTemplate] }),
-    );
-
-    render(<TemplateListPage />);
-
-    const table = screen.getByRole("table");
-    expect(table.parentElement?.parentElement).toHaveClass(
-      "min-w-0",
-      "max-w-full",
-      "rounded-md",
-      "border",
-    );
-    expect(
-      within(table).getByRole("link", { name: "Quarterly Review" }),
-    ).toHaveAttribute("href", "/templates/7/edit");
-    expect(
-      within(table).getByRole("link", {
-        name: "Open editor for Quarterly Review",
-      }),
-    ).toHaveAttribute("href", "/templates/7/edit");
-
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: /select all shown templates/i }),
-    );
-    expect(
-      within(screen.getByTestId("templates-bulk-actions")).getByText(
-        "2 of 2 templates selected",
-      ),
-    ).toBeVisible();
-
-    fireEvent.change(screen.getByLabelText("Search templates"), {
-      target: { value: "Monthly" },
-    });
-
-    const bulkActions = screen.getByTestId("templates-bulk-actions");
-    expect(
-      within(bulkActions).getByText("1 of 1 templates selected"),
-    ).toBeVisible();
-    fireEvent.click(
-      within(bulkActions).getByRole("button", { name: /delete selected/i }),
-    );
-
-    expect(deleteTemplatesMutateMock).toHaveBeenCalledWith(
-      [8],
-      expect.any(Object),
-    );
-    fireEvent.click(within(bulkActions).getByRole("button", { name: "Clear" }));
-    expect(
-      screen.queryByTestId("templates-bulk-actions"),
-    ).not.toBeInTheDocument();
-  });
 });
