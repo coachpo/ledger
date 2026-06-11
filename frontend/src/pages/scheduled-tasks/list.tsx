@@ -220,35 +220,6 @@ function formatRelativeUpdatedAt(value: string): string {
   return difference >= 0 ? `updated in ${duration}` : `updated ${duration} ago`;
 }
 
-function filterSchedules(
-  schedules: readonly ScheduleRead[],
-  search: string,
-): ScheduleRead[] {
-  const query = search.trim().toLowerCase();
-
-  return schedules.filter((schedule) => {
-    if (!query) {
-      return true;
-    }
-
-    return [
-      schedule.name,
-      schedule.description ?? "",
-      schedule.packageKey,
-      schedule.workflowKey,
-      schedule.status,
-      schedule.latestStatus ?? "",
-      formatRecurrence(schedule.recurrence),
-      schedule.timezone,
-      schedule.latestFireId ? `fire ${schedule.latestFireId}` : "",
-      schedule.latestRunId ? `run ${schedule.latestRunId}` : "",
-    ]
-      .join(" ")
-      .toLowerCase()
-      .includes(query);
-  });
-}
-
 function defaultSortDirectionForField(
   field: ScheduleSortField,
 ): ScheduleSortDirection {
@@ -1142,7 +1113,7 @@ function ScheduledTasksEmptyState({ hasFilters }: { hasFilters: boolean }) {
     <InventoryStatePanel
       description={
         hasFilters
-          ? "Refine the search, package, or workflow filters to widen the schedule inventory."
+          ? "Refine the package or workflow filters to widen the schedule inventory."
           : "Create a scheduled task to materialize Workflow Package runs on a durable recurrence."
       }
       testId={
@@ -1152,7 +1123,7 @@ function ScheduledTasksEmptyState({ hasFilters }: { hasFilters: boolean }) {
       }
       title={
         hasFilters
-          ? "No scheduled tasks match this search or filters."
+          ? "No scheduled tasks match these filters."
           : "No scheduled tasks yet."
       }
     />
@@ -1160,7 +1131,6 @@ function ScheduledTasksEmptyState({ hasFilters }: { hasFilters: boolean }) {
 }
 
 export function ScheduledTasksListPage() {
-  const [search, setSearch] = useState("");
   const [packageKey, setPackageKey] = useState("");
   const [workflowKey, setWorkflowKey] = useState("");
   const [deleting, setDeleting] = useState<ScheduleRead | null>(null);
@@ -1215,13 +1185,9 @@ export function ScheduledTasksListPage() {
     () => schedulesQuery.data?.items ?? [],
     [schedulesQuery.data?.items],
   );
-  const filteredSchedules = useMemo(
-    () => filterSchedules(schedules, search),
-    [schedules, search],
-  );
   const visibleSchedules = useMemo(
-    () => sortSchedules(filteredSchedules, sortState),
-    [filteredSchedules, sortState],
+    () => sortSchedules(schedules, sortState),
+    [schedules, sortState],
   );
   const workflowOptions = useMemo(
     () =>
@@ -1256,15 +1222,14 @@ export function ScheduledTasksListPage() {
   );
   const workflowFilterDisabled = !resolvedPackageKey;
   const selectedSchedules = useMemo(
-    () =>
-      filteredSchedules.filter((schedule) => selectedScheduleIds.has(schedule.id)),
-    [filteredSchedules, selectedScheduleIds],
+    () => schedules.filter((schedule) => selectedScheduleIds.has(schedule.id)),
+    [schedules, selectedScheduleIds],
   );
   const selectedCount = selectedSchedules.length;
   const allFilteredSelected =
-    filteredSchedules.length > 0 &&
-    filteredSchedules.every((schedule) => selectedScheduleIds.has(schedule.id));
-  const someFilteredSelected = filteredSchedules.some((schedule) =>
+    schedules.length > 0 &&
+    schedules.every((schedule) => selectedScheduleIds.has(schedule.id));
+  const someFilteredSelected = schedules.some((schedule) =>
     selectedScheduleIds.has(schedule.id),
   );
   const mutationPending =
@@ -1276,10 +1241,7 @@ export function ScheduledTasksListPage() {
     !schedulesQuery.isPending &&
     !schedulesQuery.isError &&
     visibleSchedules.length > 0;
-  const hasFilters = Boolean(
-    search.trim() || packageKey.trim() || workflowKey.trim(),
-  );
-  const activeSearch = search.trim();
+  const hasFilters = Boolean(packageKey.trim() || workflowKey.trim());
   const activePackageLabel = resolvedPackageKey
     ? packageItems.find((item) => item.value === resolvedPackageKey)?.label ??
       resolvedPackageKey
@@ -1289,16 +1251,6 @@ export function ScheduledTasksListPage() {
       resolvedWorkflowKey
     : null;
   const activeFilterItems = [
-    activeSearch
-      ? {
-          active: true,
-          clearLabel: "Clear scheduled task search",
-          id: "search",
-          label: "Search",
-          value: activeSearch,
-          onClear: () => setSearch(""),
-        }
-      : null,
     activePackageLabel
       ? {
           active: true,
@@ -1481,7 +1433,6 @@ export function ScheduledTasksListPage() {
           ? {
               items: activeFilterItems,
               onClearAll: () => {
-                setSearch("");
                 setPackageKey("");
                 setWorkflowKey("");
               },
@@ -1510,15 +1461,6 @@ export function ScheduledTasksListPage() {
         resultSummary: `${visibleSchedules.length} of ${
           schedulesQuery.data?.totalCount ?? schedules.length
         } scheduled tasks shown`,
-        search: {
-          id: "scheduled-tasks-search",
-          label: "Search scheduled tasks",
-          name: "scheduledTasksSearch",
-          placeholder: "Search schedules by name, package, workflow, status, or run...",
-          testId: "scheduled-tasks-search",
-          value: search,
-          onChange: setSearch,
-        },
       }}
     >
       {schedulesQuery.isPending ? (
