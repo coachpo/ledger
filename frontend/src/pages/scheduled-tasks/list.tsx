@@ -52,7 +52,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/components/ui/utils";
 import {
   useDeleteScheduledTask,
@@ -80,18 +79,8 @@ import {
 } from "@/lib/workflow-options";
 
 const ALL_PACKAGES_FILTER = "__all_packages__";
-const ALL_STATUS_FILTER = "__all_status__";
 const ALL_WORKFLOWS_FILTER = "__all_workflows__";
 
-const STATUS_FILTER_OPTIONS = [
-  { label: "All", value: ALL_STATUS_FILTER },
-  { label: "Running", value: "running" },
-  { label: "Failed", value: "failed" },
-  { label: "Succeeded", value: "succeeded" },
-  { label: "Paused", value: "paused" },
-] as const;
-
-type LocalStatusFilter = (typeof STATUS_FILTER_OPTIONS)[number]["value"];
 type StatusTone = ResourceStatusTone;
 type ScheduleSortField = "workflow" | "nextRun" | "latestActivity";
 type ScheduleSortDirection = "asc" | "desc";
@@ -231,46 +220,13 @@ function formatRelativeUpdatedAt(value: string): string {
   return difference >= 0 ? `updated in ${duration}` : `updated ${duration} ago`;
 }
 
-function matchesStatusFilter(
-  schedule: ScheduleRead,
-  statusFilter: LocalStatusFilter,
-): boolean {
-  const latestStatus = getLatestStatus(schedule);
-
-  if (statusFilter === ALL_STATUS_FILTER) {
-    return true;
-  }
-  if (statusFilter === "paused") {
-    return schedule.status === "paused";
-  }
-  if (statusFilter === "running") {
-    return (
-      latestStatus === "pending" ||
-      latestStatus === "queued" ||
-      latestStatus === "running"
-    );
-  }
-  if (statusFilter === "failed") {
-    return latestStatus === "failed";
-  }
-  if (statusFilter === "succeeded") {
-    return latestStatus === "succeeded";
-  }
-  return false;
-}
-
 function filterSchedules(
   schedules: readonly ScheduleRead[],
   search: string,
-  statusFilter: LocalStatusFilter,
 ): ScheduleRead[] {
   const query = search.trim().toLowerCase();
 
   return schedules.filter((schedule) => {
-    if (!matchesStatusFilter(schedule, statusFilter)) {
-      return false;
-    }
-
     if (!query) {
       return true;
     }
@@ -422,38 +378,6 @@ function buildWorkflowFilterOptions({
   return [...manifestOptions, ...staleOptions];
 }
 
-function ScheduleStatusFilters({
-  status,
-  onStatusChange,
-}: {
-  status: LocalStatusFilter;
-  onStatusChange: (status: LocalStatusFilter) => void;
-}) {
-  return (
-    <ToggleGroup
-      aria-label="Scheduled task status filter"
-      type="single"
-      value={status}
-      onValueChange={(value) => {
-        if (value) {
-          onStatusChange(value as LocalStatusFilter);
-        }
-      }}
-    >
-      {STATUS_FILTER_OPTIONS.map((option) => (
-        <ToggleGroupItem
-          className="h-8 px-3 text-xs"
-          data-testid={`scheduled-tasks-filter-${option.label.toLowerCase()}`}
-          key={option.value}
-          value={option.value}
-        >
-          {option.label}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-  );
-}
-
 function SelectFilter({
   disabled = false,
   id,
@@ -503,27 +427,22 @@ function SelectFilter({
 function ScheduleFilters({
   packageItems,
   packageKey,
-  status,
   workflowDisabled,
   workflowItems,
   workflowKey,
   onPackageKeyChange,
-  onStatusChange,
   onWorkflowKeyChange,
 }: {
   packageItems: ReadonlyArray<{ label: string; value: string }>;
   packageKey: string;
-  status: LocalStatusFilter;
   workflowDisabled: boolean;
   workflowItems: ReadonlyArray<{ label: string; value: string }>;
   workflowKey: string;
   onPackageKeyChange: (value: string) => void;
-  onStatusChange: (status: LocalStatusFilter) => void;
   onWorkflowKeyChange: (value: string) => void;
 }) {
   return (
     <div className="flex flex-wrap items-start gap-2">
-      <ScheduleStatusFilters status={status} onStatusChange={onStatusChange} />
       <SelectFilter
         id="scheduled-tasks-package-filter"
         items={packageItems}
@@ -1223,7 +1142,7 @@ function ScheduledTasksEmptyState({ hasFilters }: { hasFilters: boolean }) {
     <InventoryStatePanel
       description={
         hasFilters
-          ? "Refine the search, status, package, or workflow filters to widen the schedule inventory."
+          ? "Refine the search, package, or workflow filters to widen the schedule inventory."
           : "Create a scheduled task to materialize Workflow Package runs on a durable recurrence."
       }
       testId={
@@ -1242,7 +1161,6 @@ function ScheduledTasksEmptyState({ hasFilters }: { hasFilters: boolean }) {
 
 export function ScheduledTasksListPage() {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<LocalStatusFilter>(ALL_STATUS_FILTER);
   const [packageKey, setPackageKey] = useState("");
   const [workflowKey, setWorkflowKey] = useState("");
   const [deleting, setDeleting] = useState<ScheduleRead | null>(null);
@@ -1298,8 +1216,8 @@ export function ScheduledTasksListPage() {
     [schedulesQuery.data?.items],
   );
   const filteredSchedules = useMemo(
-    () => filterSchedules(schedules, search, statusFilter),
-    [schedules, search, statusFilter],
+    () => filterSchedules(schedules, search),
+    [schedules, search],
   );
   const visibleSchedules = useMemo(
     () => sortSchedules(filteredSchedules, sortState),
@@ -1359,17 +1277,9 @@ export function ScheduledTasksListPage() {
     !schedulesQuery.isError &&
     visibleSchedules.length > 0;
   const hasFilters = Boolean(
-    search.trim() ||
-      packageKey.trim() ||
-      workflowKey.trim() ||
-      statusFilter !== ALL_STATUS_FILTER,
+    search.trim() || packageKey.trim() || workflowKey.trim(),
   );
   const activeSearch = search.trim();
-  const activeStatusLabel =
-    statusFilter !== ALL_STATUS_FILTER
-      ? STATUS_FILTER_OPTIONS.find((option) => option.value === statusFilter)?.label ??
-        statusFilter
-      : null;
   const activePackageLabel = resolvedPackageKey
     ? packageItems.find((item) => item.value === resolvedPackageKey)?.label ??
       resolvedPackageKey
@@ -1387,16 +1297,6 @@ export function ScheduledTasksListPage() {
           label: "Search",
           value: activeSearch,
           onClear: () => setSearch(""),
-        }
-      : null,
-    activeStatusLabel
-      ? {
-          active: true,
-          clearLabel: "Clear scheduled task status filter",
-          id: "status",
-          label: "Status",
-          value: activeStatusLabel,
-          onClear: () => setStatusFilter(ALL_STATUS_FILTER),
         }
       : null,
     activePackageLabel
@@ -1582,7 +1482,6 @@ export function ScheduledTasksListPage() {
               items: activeFilterItems,
               onClearAll: () => {
                 setSearch("");
-                setStatusFilter(ALL_STATUS_FILTER);
                 setPackageKey("");
                 setWorkflowKey("");
               },
@@ -1601,12 +1500,10 @@ export function ScheduledTasksListPage() {
           <ScheduleFilters
             packageItems={packageItems}
             packageKey={resolvedPackageKey}
-            status={statusFilter}
             workflowDisabled={workflowFilterDisabled}
             workflowItems={workflowItems}
             workflowKey={resolvedWorkflowKey}
             onPackageKeyChange={updatePackageFilter}
-            onStatusChange={setStatusFilter}
             onWorkflowKeyChange={updateWorkflowFilter}
           />
         ),
