@@ -3626,6 +3626,9 @@ describe("RunsDetailPage", () => {
   });
 
   it("shows current rerun readiness blockers from top-level draft fields", async () => {
+    const strictJsonSchemaWarning =
+      "spec.outputSchemas.risk_debate_transition.jsonSchema: This workflow requires structured JSON output, but strict JSON-schema output has not been proven yet.";
+
     searchParamsMock = new URLSearchParams("rerun=1");
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
     useRunRerunDraftMock.mockReturnValue(
@@ -3646,6 +3649,11 @@ describe("RunsDetailPage", () => {
               field: "extensions.signaldeck.finance",
               issue: "Historical package used Finance Workspace tools.",
             },
+            {
+              field: "spec.outputSchemas.risk_debate_transition.jsonSchema",
+              issue:
+                "This workflow requires structured JSON output, but strict JSON-schema output has not been proven yet.",
+            },
           ],
         }),
       ),
@@ -3659,6 +3667,7 @@ describe("RunsDetailPage", () => {
     expect(readiness).toHaveTextContent(
       /historical package used finance workspace tools/i,
     );
+    expect(readiness).toHaveTextContent(strictJsonSchemaWarning);
     expect(screen.getByTestId("run-rerun-submit")).toBeDisabled();
     fireEvent.click(screen.getByTestId("run-rerun-submit"));
     expect(createRunRerunMutateAsyncMock).not.toHaveBeenCalled();

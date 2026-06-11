@@ -123,16 +123,18 @@ function RunDraftReadinessPanel({
         <p>{description}</p>
         {diagnostics.length > 0 ? (
           <div className="space-y-2">
-            {diagnostics.map((diagnostic) => (
+            {diagnostics.map((diagnostic, diagnosticIndex) => (
               <div
-                className="grid min-w-0 gap-2 rounded-md border bg-background/60 p-3 text-sm md:grid-cols-[auto_minmax(0,10rem)_minmax(0,1fr)] md:items-center"
-                key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}`}
+                className="flex min-w-0 flex-wrap items-start gap-2 rounded-md border bg-background/60 p-3 text-sm"
+                key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}-${diagnosticIndex}`}
               >
-                <div>{draftDiagnosticBadge(diagnostic)}</div>
-                <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">
-                  {diagnostic.field}
-                </code>
-                <span className="min-w-0 break-words">{diagnostic.issue}</span>
+                {draftDiagnosticBadge(diagnostic)}
+                <span className="min-w-0 flex-1 basis-60 break-words">
+                  <code className="break-all rounded bg-muted/40 px-2 py-1 text-xs">
+                    {diagnostic.field}
+                  </code>
+                  {`: ${diagnostic.issue}`}
+                </span>
               </div>
             ))}
           </div>

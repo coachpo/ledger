@@ -314,6 +314,9 @@ describe("WorkflowPackageLaunchPage", () => {
   });
 
   it("separates capability blockers from warnings before run creation", async () => {
+    const strictJsonSchemaWarning =
+      "spec.outputSchemas.risk_debate_transition.jsonSchema: This workflow requires structured JSON output, but strict JSON-schema output has not been proven yet.";
+
     useWorkflowPackageLaunchMock.mockReturnValue({
       data: {
         ...launchRead,
@@ -327,8 +330,9 @@ describe("WorkflowPackageLaunchPage", () => {
         ready: false,
         warnings: [
           {
-            field: "spec.agents[1].modelConnection",
-            issue: "This connection will degrade to plain text output",
+            field: "spec.outputSchemas.risk_debate_transition.jsonSchema",
+            issue:
+              "This workflow requires structured JSON output, but strict JSON-schema output has not been proven yet.",
             severity: "warning",
           },
           {
@@ -355,8 +359,10 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(blockers).toHaveTextContent(/Blocking diagnostics/i);
     expect(blockers).toHaveTextContent(/This workflow requires native tool calls/i);
     expect(warnings).toHaveTextContent(/Warnings/i);
-    expect(warnings).toHaveTextContent(/This connection will degrade to plain text output/i);
+    expect(warnings).toHaveTextContent(strictJsonSchemaWarning);
     expect(warnings).toHaveTextContent(/omits usage metadata/i);
+    expect(within(warnings).getByRole("list")).toBeVisible();
+    expect(within(warnings).getAllByRole("listitem")).toHaveLength(2);
     expect(within(warnings).getAllByText("Warning").length).toBeGreaterThan(0);
   });
 

@@ -339,18 +339,16 @@ function DiagnosticList({
       >
         {diagnostics.map((diagnostic, diagnosticIndex) => (
           <div
-            className="grid min-w-0 gap-2 p-3 text-sm md:grid-cols-[auto_minmax(0,11rem)_minmax(0,1fr)] md:items-center"
+            className="flex min-w-0 flex-wrap items-start gap-2 p-3 text-sm"
             key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}-${diagnosticIndex}`}
             role="listitem"
           >
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              {diagnosticBadge(diagnostic)}
-            </div>
-            <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">
-              {diagnostic.field}
-            </code>
-            <span className="min-w-0 break-words text-muted-foreground">
-              {diagnostic.issue}
+            {diagnosticBadge(diagnostic)}
+            <span className="min-w-0 flex-1 basis-60 break-words text-muted-foreground">
+              <code className="break-all rounded bg-muted/40 px-1 py-0.5 text-xs text-foreground">
+                {diagnostic.field}
+              </code>
+              {`: ${diagnostic.issue}`}
             </span>
           </div>
         ))}
