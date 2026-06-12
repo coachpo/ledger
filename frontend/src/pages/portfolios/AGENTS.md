@@ -8,6 +8,12 @@
 
 Extension model: statically resident Finance Workspace extension.
 
+## Compatibility, Upgrades, and Removal Policy
+
+- This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
+- During upgrade work, favor the best current implementation and clean internal boundaries. Preserve legacy shapes, migration bridges, fallback behavior, or compatibility shims only when the task explicitly requests them.
+- For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
+
 ## WHERE TO LOOK
 
 | Task                    | Location                                                                                                                                | Notes                                                                                                                           |

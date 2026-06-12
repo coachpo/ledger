@@ -26,6 +26,12 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 This parent guide now delegates the contract-heavy Extensions, Model Connections, Memory, Scheduled Tasks, Portfolios, Reports, Templates, Workflow Packages, and Runs route families to child AGENTS files. Dashboard and shared route helpers stay here.
 
+## Compatibility, Upgrades, and Removal Policy
+
+- This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
+- During upgrade work, favor the best current implementation and clean internal boundaries. Preserve legacy shapes, migration bridges, fallback behavior, or compatibility shims only when the task explicitly requests them.
+- For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
+
 ## STRUCTURE
 
 ```text

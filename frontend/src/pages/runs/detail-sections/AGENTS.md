@@ -5,6 +5,12 @@
 ## OVERVIEW
 `detail-sections/` owns the heavy run-detail presentation stack: tab workspaces, lineage diagrams, memory evidence groups, runtime capability/usage panes, JSON payload panes, and the invocation-specific fork dialog. The parent `runs/detail.tsx` should orchestrate data, URL state, and layout; this folder renders the detailed evidence surfaces.
 
+## Compatibility, Upgrades, and Removal Policy
+
+- This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
+- During upgrade work, favor the best current implementation and clean internal boundaries. Preserve legacy shapes, migration bridges, fallback behavior, or compatibility shims only when the task explicitly requests them.
+- For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
