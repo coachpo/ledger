@@ -13,6 +13,8 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 Future frontend upgrade work must keep platform-core route, query, and authoring behavior separate from extension-owned route/nav/tool contributions. Do not let Finance Workspace assumptions leak into generic frontend contracts without an explicit shared-contract change.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -105,6 +107,7 @@ frontend/
 - Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and portfolio, template, report, Memory, and agent-platform caches under dedicated namespaces.
 
 ## ANTI-PATTERNS
+- Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not hard-code API URLs or call `fetch` directly from routed screens.
 - Do not invent ad-hoc query keys or parse decimal strings in pages when shared helpers already exist.
 - Do not put feature-heavy routed screens in `src/components/ui/`.

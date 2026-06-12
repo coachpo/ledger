@@ -17,6 +17,8 @@ The repo has no users yet, so prefer clean architecture and current best practic
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -53,6 +55,7 @@ src/extensions/
 - The `/extensions` route renders only the slim backend contract. Page/layout code must not recreate scaffold or registry logic that belongs here.
 
 ## ANTI-PATTERNS
+- Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not hard-code Finance Workspace visibility in `routes.ts`, `layout.tsx`, or page components.
 - Do not add marketplace/install/remove behavior to frontend extension scaffolds in phase 1.
 - Do not add plugin-manifest fields to frontend extension state, run types, route gates, or docs.
