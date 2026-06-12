@@ -26,6 +26,8 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 This parent guide now delegates the contract-heavy Extensions, Model Connections, Memory, Scheduled Tasks, Portfolios, Reports, Templates, Workflow Packages, and Runs route families to child AGENTS files. Dashboard and shared route helpers stay here.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -105,6 +107,7 @@ src/pages/
 
 ## ANTI-PATTERNS
 
+- Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not put business rules or complex state management directly in page components.
 - Do not duplicate feature-specific logic here when a feature folder or hook already owns it.
 - Do not call `fetch` directly; use hooks from `src/hooks/` instead.
