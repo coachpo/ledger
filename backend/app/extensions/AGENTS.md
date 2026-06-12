@@ -17,6 +17,12 @@ The repo has no users yet, so prefer clean architecture and current best practic
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
 
+## Compatibility, Upgrades, and Removal Policy
+
+- This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
+- During upgrade work, favor the best current implementation and clean internal boundaries. Preserve legacy shapes, migration bridges, fallback behavior, or compatibility shims only when the task explicitly requests them.
+- For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
+
 ## CHILD DOCS
 - `signaldeck_finance/AGENTS.md` — statically resident `signaldeck.finance` ownership, route registrations, provider factories, tool specs, report lookup, and historical agent-memory report readers
 - `signaldeck_digital_oracle/AGENTS.md` — statically resident `signaldeck.digital_oracle` tool-only runtime ownership
