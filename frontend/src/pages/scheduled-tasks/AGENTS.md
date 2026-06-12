@@ -10,17 +10,17 @@ Scheduled Tasks are platform-owned. They are not a Finance Workspace extension r
 ## STRUCTURE
 ```text
 scheduled-tasks/
-|-- list.tsx         # inventory, filters, status actions, run-now entry
+|-- list.tsx         # inventory, package/workflow filters, status actions, run-now entry
 |-- editor.tsx       # create flow, package/workflow target, preview, save
 |-- detail.tsx       # full-height console for edit, preview, fire history, delete
-|-- list.test.tsx    # inventory states, filters, links, actions
+|-- list.test.tsx    # inventory states, package/workflow filters, links, actions
 `-- detail.test.tsx  # detail tabs, preview, run-now, delete, redirect states
 ```
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Schedule inventory | `list.tsx` | active/paused filters, local search/sort, explicit open/delete/run-now actions |
+| Schedule inventory | `list.tsx` | package/workflow filters, sortable table, selection, explicit open/delete/run-now/pause-resume actions |
 | Schedule creation | `editor.tsx` | creates one schedule for a saved package id and workflow key, with preview before save |
 | Schedule console | `detail.tsx` | recurrence editor, JSON template/vars editor, preview, run-now, delete, fire history, latest run links |
 | Schedule hooks | `../../hooks/use-scheduled-tasks.ts` | list/detail/fire queries, create/update/delete/preview/run-now mutations, linked run invalidation |
@@ -44,7 +44,7 @@ scheduled-tasks/
 - Do not fetch schedules directly from pages; use `use-scheduled-tasks.ts`.
 - Do not store schedule query keys outside `queryKeys.platform.schedules`.
 - Do not treat Scheduled Tasks as extension-gated finance UI.
-- Do not reintroduce removed-status filters, soft-delete mutations, or read-only deleted branches.
+- Do not reintroduce removed search/status filters, soft-delete mutations, or read-only deleted branches.
 - Do not derive run execution state from fire status when the linked run payload is available.
 
 ## VALIDATION

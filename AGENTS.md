@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-06-09
-**Commit:** 5171e0c
+**Generated:** 2026-06-12
+**Commit:** 154e3d8
 **Branch:** main
 
 ## OVERVIEW
@@ -34,8 +34,8 @@ Future upgrade work must keep the platform-core versus extension-owned boundary 
 signaldeck/
 ├── backend/              # FastAPI app, SQLAlchemy models, services, pytest suite
 ├── frontend/             # React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
-├── docs/                 # six canonical owner docs plus historical pending-design notes
-├── demo/                 # grounded example Workflow Package YAML
+├── docs/                 # canonical owner docs plus requirements and architecture-audit evidence
+├── demo/                 # grounded Workflow Package YAML examples
 ├── .github/workflows/    # CI quality gates, Docker image publish, cleanup
 └── start.sh              # local orchestrator for db/backend/scheduler/frontend with fallback ports
 ```
@@ -46,7 +46,7 @@ signaldeck/
 |---|---|---|
 | Bootstrap a fresh clone | `backend/pyproject.toml`, `frontend/package.json`, `README.md`, `start.sh` | install with `uv sync` and `pnpm install`, then prefer `./start.sh` |
 | Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`; starts `python -m app.workers.run_scheduler`; stops prior SignalDeck instances before restart and may fall back to `25433/25434`, `28001/28002`, or `25174` |
-| Sample Workflow Package YAML | `demo/tradingagents_advisory_research.yaml` | grounded example package input for manual import/testing |
+| Demo Workflow Package YAML | `demo/tradingagents_advisory_research.yaml`, `demo/digital_oracle_researcher.yaml` | grounded package inputs for manual import/testing across TradingAgents and Digital Oracle flows |
 | Cross-app E2E startup | `frontend/e2e/AGENTS.md`, `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with dedicated startup helpers |
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory plus extension-gated `/api/v1` and current `/api/*` composition |
 | Backend agent-platform flow | `backend/app/api/workflow_packages.py`, `backend/app/api/schedules.py`, `backend/app/api/model_connections.py`, `backend/app/api/extensions.py`, `backend/app/api/memory.py`, `backend/app/api/tools.py`, `backend/app/api/runs.py` | Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools metadata, and Runs |
@@ -60,6 +60,7 @@ signaldeck/
 | Frontend preserved product UI | `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md` | preserved portfolio, template, and report routes |
 | Frontend reports and templates | `frontend/src/components/templates/AGENTS.md`, `frontend/src/components/forms/AGENTS.md`, `frontend/src/lib/runtime-inputs.ts`, `frontend/src/lib/report-grouping.ts` | runtime inputs, placeholder browsing, grouping, upload, and report generation UI |
 | Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_workflow_package_preflight.py`, `backend/tests/test_workflow_package_runtime_api.py`, `backend/tests/test_workflow_package_run_contracts.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_mcp_runtime.py`, `backend/tests/test_runtime_db_upgrades.py`, `backend/tests/test_legacy_backend_cutover.py` | preserved v1 CRUD plus package validation, Scheduled Tasks, runtime, MCP, rerun/fork, DB-upgrade, and cutover regression coverage |
+| Docs ownership and audit evidence | `docs/AGENTS.md`, `docs/requirements/*.md`, `docs/architecture-audit/README.md` | six canonical owner docs stay live; requirements companions and architecture-audit files are evidence/context, not new product scope |
 | CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml`, `.github/workflows/cleanup.yml` | version sync, frozen backend/frontend installs, quality gates, frontend E2E, arm64 GHCR images, cleanup |
 
 ## CODE MAP
@@ -93,8 +94,10 @@ signaldeck/
 - Public `/api/extensions` state is only `key`, `label`, and `enabled`; registry and scaffold details stay private wiring.
 - When planning upgrades, decide explicitly whether behavior belongs in platform core or in extension-owned seams, then update registries, route gates, runtime tools, docs, and tests together instead of letting finance-specific behavior silently redefine shared contracts.
 - Workflow Packages are the canonical platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside package artifacts; persistence is artifact-only, while launch/preflight/rerun/fork readiness is evaluated late against live Model Connections, extension state, and package secret bindings.
+- Package-private HTTP operation nodes and MCP configs are artifact/runtime data, not fake agents or global authoring surfaces. Browser-visible manifest reads and exports omit database ids, run history, package secret bindings, and private MCP `env`, `headers`, and `query` values.
 - Scheduled Tasks are the package-first automation surface for recurring Workflow Package runs. They live at `/api/schedules` and `/scheduled-tasks`, use structured recurrence plus IANA timezones instead of raw cron, and materialize fires into ordinary queued runs through the scheduler worker.
 - Global Tools are read-only server-declared metadata at `/api/tools`; packages reference tool keys through local capability profiles. Finance Workspace native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, and report lookup, and are filtered by enabled extension state. Digital Oracle tools cover prediction markets, SEC filings, and market sentiment, and keep their existing tool keys and OpenAI function names. Platform-core memory tools use `signaldeck.memory.write` / `signaldeck.memory.lookup` and stay visible when bundled extensions are disabled.
+- Tool-call recovery and provider retries are typed runtime contracts: bounded model-feedback correction is only for pre-dispatch argument/schema failures, while transient provider retries are recorded as provider retry metadata and never overload tool-call retry metadata.
 - Workflow package authoring is YAML-manifest based; backend parsers reject legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite numbers, duplicate refs, and raw global ids.
 - Test-writing rule: skip dedicated “proves not” tests for ordinary removal-only checks when manual confirmation already verifies the outcome. Keep absence assertions only when the absence itself is the shipped contract, such as removed-route or slim-contract guarantees.
 - Application LLM calls must use official SDKs rather than raw HTTP requests; the current backend path uses the official `OpenAI` Python client.
@@ -137,10 +140,10 @@ signaldeck/
 ## NOTES
 
 - `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, stops prior SignalDeck instances before restart, may start PostgreSQL on `25432`, `25433`, or `25434`, starts the scheduler worker beside Uvicorn, and injects `DATABASE_URL` plus `VITE_API_BASE_URL`.
-- Supported schema repair is code-based in `backend/app/db/`; do not create migration instructions around a reappearing Alembic scaffold.
+- Supported schema repair is code-based in `backend/app/db/`; startup repair targets live tables and treats retired global authoring tables as drop-only cleanup targets, not compatibility backfill surfaces. Do not create migration instructions around a reappearing Alembic scaffold.
 - Playwright runs against backend `8001` and frontend `4173`; the backend startup helper starts both Uvicorn and the scheduler worker, while the frontend helper serves the built preview.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
 - Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing and cleanup live in separate workflows.
 - Root CI uses `uv sync --frozen` for backend jobs and `pnpm install --frozen-lockfile` for frontend jobs; `version-sync` checks `backend/VERSION` against `backend/pyproject.toml` and `frontend/VERSION` against `frontend/package.json`.
 - Docker image publishing builds backend and frontend linux/arm64 images for GHCR; cleanup keeps at least 3 recent workflow runs and deletes untagged backend/frontend container package versions.
-- `docs/AGENTS.md` governs the six canonical owner docs: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and `docs/AGENTS.md`. Pending design notes under `docs/pending-design/` are historical context only. Live code remains source of truth for docs updates.
+- `docs/AGENTS.md` governs the six canonical owner docs: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and `docs/AGENTS.md`. Requirements companions and architecture-audit files are evidence/context, pending design notes are historical context only, and live code remains source of truth for docs updates.
