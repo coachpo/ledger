@@ -5,6 +5,8 @@
 ## OVERVIEW
 `app/agents/tool_catalog/` owns read-only server-declared tool metadata and package capability-profile validation. It resolves known tool keys after enabled-extension filtering and exposes the slim `/api/tools` contract through backend services/routes.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -28,6 +30,7 @@
 - Keep schema/output formatting in `app/schemas/tool.py`; the catalog should not hand-build camelCase API payloads.
 
 ## ANTI-PATTERNS
+- Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
 - Do not expose module names, owner extension keys, registrar paths, scaffold metadata, or plugin-manifest fields through `/api/tools`.
 - Do not validate package `toolKeys` against an unfiltered catalog when enabled-extension state matters.
 - Do not duplicate tool-key normalization in route handlers or frontend code.
