@@ -6,6 +6,8 @@
 
 `src/pages/model-connections/` owns the global model endpoint inventory/editor route family. It manages stable connection keys, write-only secrets, runtime defaults, reasoning-effort settings, and persisted backend connection tests for Workflow Package reuse.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -37,6 +39,7 @@
 
 ## ANTI-PATTERNS
 
+- Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not render saved secrets, blocked secret payloads, or hidden backend error details back into the UI.
 - Do not hand-roll cache invalidation in the page; keep it in `use-model-connections.ts`.
 - Do not move provider request logic into these routes; keep endpoint calls in `src/lib/api/model-connections.ts`.

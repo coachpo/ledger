@@ -8,6 +8,8 @@
 
 Extension model: statically resident Finance Workspace extension.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -38,6 +40,7 @@ Extension model: statically resident Finance Workspace extension.
 
 ## ANTI-PATTERNS
 
+- Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not spread decimal parsing or quote math across the route body when shared analytics helpers already own it.
 - Do not treat quote warnings as fatal errors that block the rest of the workspace.
 - Do not push section-specific mutation logic down into generic table helpers.
