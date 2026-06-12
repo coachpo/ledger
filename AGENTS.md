@@ -16,6 +16,8 @@ SignalDeck is a dual-stack universal agents workflow/pipeline platform with a Fa
 
 Future upgrade work must keep the platform-core versus extension-owned boundary explicit. Decide intentionally whether a capability belongs in generic platform contracts or in statically resident extension ownership, then keep routes, tools, registries, docs, and tests aligned to that choice.
 
+Trusted single-user scope: SignalDeck is a trusted single-user app. Auth, authorization, RBAC, login/session flows, user/account lifecycle, organizations, and multi-tenant account management are non-goals unless explicitly re-scoped.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -110,6 +112,7 @@ signaldeck/
 
 ## ANTI-PATTERNS
 
+- Do not present auth, authorization, RBAC, login/session flows, user/account lifecycle, organizations, or multi-tenant account management as live scope or backlog scope unless the product is explicitly re-scoped.
 - Do not bypass backend services, extension state gates, or private extension registrars from routes or frontend code.
 - Do not reintroduce plugin-manifest metadata into public extension contracts, run dependency payloads, frontend extension state, OpenAPI, or live docs.
 - Do not invent snake_case API fields, ad-hoc query keys, duplicate placeholder/type contracts, or hard-coded extension visibility rules.

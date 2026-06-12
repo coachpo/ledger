@@ -14,6 +14,8 @@ The repo has no users yet, so prefer clean architecture and current best practic
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
 
+Trusted single-user scope: Owner docs must frame auth, authorization, RBAC, login/session flows, user/account lifecycle, organizations, and multi-tenant account management as non-goals, not backlog items, unless the product scope is explicitly re-scoped.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -66,6 +68,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 ## ANTI-PATTERNS
 
+- Do not frame auth, authorization, RBAC, login/session flows, user/account lifecycle, organizations, or multi-tenant account management as backlog items unless the product scope is explicitly re-scoped.
 - Do not add new docs for dead surfaces.
 - Do not duplicate route tables across owner and reference docs without making `spec.md` the authoritative summary.
 - Do not treat docs, old plans, or Alembic scaffolds as source of truth over live code.

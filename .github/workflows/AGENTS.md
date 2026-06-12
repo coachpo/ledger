@@ -5,6 +5,8 @@
 ## OVERVIEW
 `.github/workflows/` owns repository automation for version sync, backend/frontend quality gates, browser E2E, container image publishing, and cleanup. These workflows are operational guardrails for the current package-first platform and must stay aligned with the live backend/frontend toolchains and startup assumptions.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add CI tracks for auth, RBAC, tenant isolation, login/session flows, or account-management work unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -27,6 +29,7 @@
 - Cleanup must preserve a minimum recent-run history and only remove untagged package versions.
 
 ## ANTI-PATTERNS
+- Do not add auth, RBAC, tenant-isolation, login/session, or account-management CI gates unless the product scope changes.
 - Do not weaken frozen-install, lint, typecheck, build, or test gates without updating the documented validation contract.
 - Do not add CI assumptions that diverge from the live toolchain versions in backend/frontend manifests.
 - Do not turn cleanup workflows into destructive tagged-release deletion paths.
