@@ -7,6 +7,8 @@
 
 The worker is platform-core runtime infrastructure. It is not a finance route surface and it is not a browser-facing scheduler product.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -33,6 +35,7 @@ The worker is platform-core runtime infrastructure. It is not a finance route su
 - Scheduler threads execute claimed runs concurrently up to `run_scheduler_max_active_runs`; heartbeat threads must stop and release leases even on failure.
 
 ## ANTI-PATTERNS
+- Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
 - Do not execute queued runs from API request handlers.
 - Do not bypass the advisory lock, lease heartbeat, or stale-lease recovery rules.
 - Do not hard-code concurrency, poll, heartbeat, or TTL values outside settings.
