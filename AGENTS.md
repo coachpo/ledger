@@ -16,6 +16,12 @@ SignalDeck is a dual-stack universal agents workflow/pipeline platform with a Fa
 
 Future upgrade work must keep the platform-core versus extension-owned boundary explicit. Decide intentionally whether a capability belongs in generic platform contracts or in statically resident extension ownership, then keep routes, tools, registries, docs, and tests aligned to that choice.
 
+## Compatibility, Upgrades, and Removal Policy
+
+- This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
+- During upgrade work, favor the best current implementation and clean internal boundaries. Preserve legacy shapes, migration bridges, fallback behavior, or compatibility shims only when the task explicitly requests them.
+- For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
+
 ## CHILD DOCS
 
 - `backend/AGENTS.md`, `backend/app/*/AGENTS.md`, `backend/tests/AGENTS.md` — backend layer, runtime, persistence, schema, worker, and test rules
