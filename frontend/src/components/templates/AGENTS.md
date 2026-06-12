@@ -9,6 +9,8 @@ The repo has no users yet, so prefer clean architecture and current best practic
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -30,6 +32,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - `template-runtime-inputs-section.tsx` uses `RuntimeInputRow` from `src/lib/runtime-inputs.ts`; keep row ids and trim rules centralized there.
 
 ## ANTI-PATTERNS
+- Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not hard-code backend placeholder responses into these components; only the static guidance groups belong here.
 - Do not move compile/network logic into this folder.
 - Do not repurpose these widgets as generic shared inputs unless another feature truly reuses the same placeholder/runtime-input contract.

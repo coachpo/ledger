@@ -9,6 +9,8 @@ The repo has no users yet, so prefer clean architecture and current best practic
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -35,6 +37,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - `ConfirmDeleteDialog` stays presentation-oriented so template pages can reuse it without importing portfolio-specific data logic.
 
 ## ANTI-PATTERNS
+- Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not scatter decimal parsing across portfolio components; prefer shared analytics/format helpers and keep any current page-level aggregate parsing localized.
 - Do not bypass section/dialog components by stuffing every portfolio action into the detail page.
 - Do not treat quote-warning states as fatal for balances, positions, or trade history.
