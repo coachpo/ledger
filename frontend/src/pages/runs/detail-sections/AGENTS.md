@@ -5,6 +5,8 @@
 ## OVERVIEW
 `detail-sections/` owns the heavy run-detail presentation stack: tab workspaces, lineage diagrams, memory evidence groups, runtime capability/usage panes, JSON payload panes, and the invocation-specific fork dialog. The parent `runs/detail.tsx` should orchestrate data, URL state, and layout; this folder renders the detailed evidence surfaces.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -30,6 +32,7 @@
 - Shared helpers in this folder are route-detail helpers, not global UI primitives.
 
 ## ANTI-PATTERNS
+- Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not flatten memory events, lineage evidence, runtime profiles, and payload JSON into one monolithic section.
 - Do not use `resumeStepIndex` alone as an editable fork target; invocation id is required.
 - Do not expose operation/tool invocation forks as live actions in phase 1.
