@@ -7,6 +7,8 @@
 
 Scheduled Tasks are platform-owned. They are not a Finance Workspace extension route and they are not raw cron authoring.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -47,6 +49,7 @@ scheduled-tasks/
 - Keep wide JSON templates, fire metadata, and run links mobile-contained with wrapping or internal scroll.
 
 ## ANTI-PATTERNS
+- Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not fetch schedules directly from pages; use `use-scheduled-tasks.ts`.
 - Do not store schedule query keys outside `queryKeys.platform.schedules`.
 - Do not treat Scheduled Tasks as extension-gated finance UI.
