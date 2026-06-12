@@ -164,11 +164,11 @@ describe("MemoryListPage", () => {
     expect(contractNotice).not.toHaveTextContent("Package key required");
     expect(contractNotice).not.toHaveTextContent("Private scope required");
     expect(contractNotice).not.toHaveTextContent("Namespace grants server-owned only");
-    expect(contractNotice).toHaveTextContent("/api/memory");
-    expect(contractNotice).toHaveTextContent("package access context");
-    expect(contractNotice).toHaveTextContent("concrete private scope");
+    expect(contractNotice).toHaveTextContent("Review memory entries");
+    expect(contractNotice).toHaveTextContent("package context");
+    expect(contractNotice).toHaveTextContent("private scope");
     expect(contractNotice).toHaveTextContent(
-      "Inspect /api/memory with package access context and a concrete private scope.",
+      "Review memory entries for a package context and private scope.",
     );
     const shellBody = screen.getByTestId("workspace-page-shell-body");
     expect(shellBody.children[0]).toBe(screen.getByTestId("memory-access-filter-controls"));

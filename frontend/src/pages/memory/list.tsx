@@ -130,7 +130,7 @@ function MemoryContextContract() {
   return (
     <div data-testid="memory-contract-notice">
       <PageContextBar
-        description={"Inspect /api/memory with package access context and a concrete private scope."}
+        description={"Review memory entries for a package context and private scope."}
         layout="toolbar"
         title="Memory"
       />
