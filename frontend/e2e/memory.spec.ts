@@ -184,7 +184,7 @@ test.describe("canonical memory workspace", () => {
       page.getByRole("heading", { name: "Memory" }),
     ).toBeVisible();
     await expect(page.getByTestId("memory-contract-notice")).toContainText(
-      "concrete private scope",
+      "private scope",
     );
     await expect(page.getByTestId("memory-access-required")).toContainText(
       "Access context required",
