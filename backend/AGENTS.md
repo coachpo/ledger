@@ -13,6 +13,12 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 Future backend upgrade work must keep generic platform behavior separate from extension-owned behavior. Promote extension-owned routes, providers, runtime tools, or hooks into core layers only when a shared contract is intentional and the registries, docs, and tests move with it.
 
+## Compatibility, Upgrades, and Removal Policy
+
+- This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
+- During upgrade work, favor the best current implementation and clean internal boundaries. Preserve legacy shapes, migration bridges, fallback behavior, or compatibility shims only when the task explicitly requests them.
+- For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
+
 ## CHILD DOCS
 - `app/core/AGENTS.md` — settings, error envelope, telemetry, normalization helpers
 - `app/db/AGENTS.md` — engine/session lifecycle and PostgreSQL-only upgrade rules
