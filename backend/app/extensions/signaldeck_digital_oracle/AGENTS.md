@@ -5,6 +5,8 @@
 ## OVERVIEW
 `signaldeck_digital_oracle/` owns the bundled `signaldeck.digital_oracle` backend extension. It is tool-only in this upgrade: three server-declared/runtime tools, provider wrappers, normalization mappers, warning models, and extension-owned access-denied messages. It adds no API router, frontend route, nav group, provider bundle, lifecycle hook, or finance behavior.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -32,6 +34,7 @@
 - Keep provider DTOs and model-visible results free of raw upstream payloads.
 
 ## ANTI-PATTERNS
+- Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
 - Do not add API routers, frontend routes, nav entries, provider bundles, or lifecycle hooks here in this upgrade.
 - Do not move Digital Oracle tool implementations into platform-core runtime modules.
 - Do not reuse Finance Workspace report/memory ownership for Digital Oracle outputs.
