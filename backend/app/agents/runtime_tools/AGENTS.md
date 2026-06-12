@@ -5,6 +5,8 @@
 ## OVERVIEW
 `app/agents/runtime_tools/` owns platform-owned native runtime tool contracts plus the registry that combines core tools with extension-contributed specs. Core memory tools live here; finance and Digital Oracle tool implementations stay in their extension folders and register through private extension registrars.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -29,6 +31,7 @@
 - Runtime outputs shown to models must stay narrow; memory write output may expose memory/revision ids, status, provenance, and warnings only.
 
 ## ANTI-PATTERNS
+- Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
 - Do not hard-code tool visibility outside enabled-extension filtering.
 - Do not move finance or Digital Oracle executors into this core folder.
 - Do not add raw provider payloads, report markdown, report slugs, or audit URLs to model-visible runtime output.

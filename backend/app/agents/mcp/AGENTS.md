@@ -5,6 +5,8 @@
 ## OVERVIEW
 `app/agents/mcp/` owns the safe boundary between Workflow Package private MCP configs and runtime tool execution. It validates saved client boundaries, checks URL/stdio safety, snapshots available MCP tools, adapts tool schemas to execution descriptors, dispatches calls, and redacts unsafe output for model-visible results.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -29,6 +31,7 @@
 - Failed MCP calls should surface typed runtime errors/warnings; do not swallow transport failures or return raw exception objects.
 
 ## ANTI-PATTERNS
+- Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
 - Do not bypass boundary/security helpers when testing or dispatching saved MCP configs.
 - Do not expose package-private MCP secrets, env values, headers, or query values in model-visible output.
 - Do not add marketplace/global MCP server behavior under this package.
