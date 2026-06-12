@@ -5,6 +5,12 @@
 ## OVERVIEW
 `src/components/forms/` owns small cross-route dialog/form helpers: portfolio identity edits, report generation/upload dialogs, and write-only secret input UI. These components are reusable surfaces supplied with data and callbacks by their parent routes; they do not own navigation, toasts, query hooks, or direct API calls.
 
+## Compatibility, Upgrades, and Removal Policy
+
+- This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
+- During upgrade work, favor the best current implementation and clean internal boundaries. Preserve legacy shapes, migration bridges, fallback behavior, or compatibility shims only when the task explicitly requests them.
+- For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

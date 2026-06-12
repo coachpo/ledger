@@ -13,6 +13,12 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 Future frontend upgrade work must keep platform-core route, query, and authoring behavior separate from extension-owned route/nav/tool contributions. Do not let Finance Workspace assumptions leak into generic frontend contracts without an explicit shared-contract change.
 
+## Compatibility, Upgrades, and Removal Policy
+
+- This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
+- During upgrade work, favor the best current implementation and clean internal boundaries. Preserve legacy shapes, migration bridges, fallback behavior, or compatibility shims only when the task explicitly requests them.
+- For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
+
 ## CHILD DOCS
 - `e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions
 - `src/extensions/AGENTS.md` — frontend extension registry, route/nav/tool filtering, Finance Workspace scaffold, and Digital Oracle tool-only scaffold
