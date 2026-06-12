@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/components/forms/` owns small cross-route dialog/form helpers: portfolio identity edits, report generation/upload dialogs, and write-only secret input UI. These components are reusable surfaces supplied with data and callbacks by their parent routes; they do not own navigation, toasts, query hooks, or direct API calls.
 
+Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
+
 ## Compatibility, Upgrades, and Removal Policy
 
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
@@ -28,6 +30,7 @@
 - Keep validation schemas close to the small form surface unless they become shared route contracts.
 
 ## ANTI-PATTERNS
+- Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not call `fetch`, `useQuery`, `useMutation`, `toast`, or router navigation from these helpers.
 - Do not move feature-specific portfolio sections, trading flows, or template-editor panels into this folder.
 - Do not expose saved model-connection secrets for convenience in tests or placeholders.
