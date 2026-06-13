@@ -1,3 +1,4 @@
+# pyright: reportExplicitAny=false
 from __future__ import annotations
 
 from typing import Any, ClassVar
@@ -56,13 +57,11 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
             setattr(package, field_name, value)
         return self.add(package)
 
-    def list_runtime_input_personal_entries(
+    def list_runtime_input_preset_entries(
         self,
         *,
         package_id: int,
         workflow_key: str,
-        owner_type: str,
-        owner_id: str,
     ) -> list[WorkflowPackageRuntimeInputEntry]:
         entry_model = self.runtime_input_model
         statement = (
@@ -71,9 +70,7 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
                 *self._runtime_input_scope_filters(
                     package_id=package_id,
                     workflow_key=workflow_key,
-                    owner_type=owner_type,
-                    owner_id=owner_id,
-                    slot="personal",
+                    slot="preset",
                 )
             )
             .order_by(entry_model.updated_at.desc(), entry_model.id.desc())
@@ -85,8 +82,6 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         *,
         package_id: int,
         workflow_key: str,
-        owner_type: str,
-        owner_id: str,
     ) -> list[WorkflowPackageRuntimeInputEntry]:
         entry_model = self.runtime_input_model
         statement = (
@@ -95,8 +90,6 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
                 *self._runtime_input_scope_filters(
                     package_id=package_id,
                     workflow_key=workflow_key,
-                    owner_type=owner_type,
-                    owner_id=owner_id,
                     slot="history",
                 )
             )
@@ -104,33 +97,27 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         )
         return list(self.session.scalars(statement))
 
-    def count_runtime_input_personal_entries(
+    def count_runtime_input_preset_entries(
         self,
         *,
         package_id: int,
         workflow_key: str,
-        owner_type: str,
-        owner_id: str,
     ) -> int:
         entry_model = self.runtime_input_model
         statement = select(func.count(entry_model.id)).where(
             *self._runtime_input_scope_filters(
                 package_id=package_id,
                 workflow_key=workflow_key,
-                owner_type=owner_type,
-                owner_id=owner_id,
-                slot="personal",
+                slot="preset",
             )
         )
         return int(self.session.scalar(statement) or 0)
 
-    def create_runtime_input_personal_entry(
+    def create_runtime_input_preset_entry(
         self,
         *,
         package_id: int,
         workflow_key: str,
-        owner_type: str,
-        owner_id: str,
         name: str | None,
         payload: dict[str, object],
         source_kind: str,
@@ -143,9 +130,7 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         entry = self.runtime_input_model(
             package_id=package_id,
             workflow_key=workflow_key,
-            owner_type=owner_type,
-            owner_id=owner_id,
-            slot="personal",
+            slot="preset",
             name=name,
             payload=payload,
             source_kind=source_kind,
@@ -163,8 +148,6 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         *,
         package_id: int,
         workflow_key: str,
-        owner_type: str,
-        owner_id: str,
         payload: dict[str, object],
         source_kind: str,
         manifest_hash: str,
@@ -176,8 +159,6 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         entry = self.runtime_input_model(
             package_id=package_id,
             workflow_key=workflow_key,
-            owner_type=owner_type,
-            owner_id=owner_id,
             slot="history",
             name=None,
             payload=payload,
@@ -196,15 +177,11 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         *,
         package_id: int,
         workflow_key: str,
-        owner_type: str,
-        owner_id: str,
     ) -> int:
         entry_model = self.runtime_input_model
         scope_filters = self._runtime_input_scope_filters(
             package_id=package_id,
             workflow_key=workflow_key,
-            owner_type=owner_type,
-            owner_id=owner_id,
             slot="history",
         )
         overflow_ids = list(
@@ -225,13 +202,11 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         )
         return len(list(self.session.scalars(statement)))
 
-    def get_runtime_input_personal_entry(
+    def get_runtime_input_preset_entry(
         self,
         *,
         package_id: int,
         workflow_key: str,
-        owner_type: str,
-        owner_id: str,
         entry_id: int,
     ) -> WorkflowPackageRuntimeInputEntry | None:
         entry_model = self.runtime_input_model
@@ -240,28 +215,22 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
             *self._runtime_input_scope_filters(
                 package_id=package_id,
                 workflow_key=workflow_key,
-                owner_type=owner_type,
-                owner_id=owner_id,
-                slot="personal",
+                slot="preset",
             ),
         )
         return self.session.scalar(statement)
 
-    def update_runtime_input_personal_entry(
+    def update_runtime_input_preset_entry(
         self,
         *,
         package_id: int,
         workflow_key: str,
-        owner_type: str,
-        owner_id: str,
         entry_id: int,
         **fields: object,
     ) -> WorkflowPackageRuntimeInputEntry | None:
-        entry = self.get_runtime_input_personal_entry(
+        entry = self.get_runtime_input_preset_entry(
             package_id=package_id,
             workflow_key=workflow_key,
-            owner_type=owner_type,
-            owner_id=owner_id,
             entry_id=entry_id,
         )
         if entry is None:
@@ -287,20 +256,16 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         self.session.add(entry)
         return entry
 
-    def delete_runtime_input_personal_entry(
+    def delete_runtime_input_preset_entry(
         self,
         *,
         package_id: int,
         workflow_key: str,
-        owner_type: str,
-        owner_id: str,
         entry_id: int,
     ) -> bool:
-        entry = self.get_runtime_input_personal_entry(
+        entry = self.get_runtime_input_preset_entry(
             package_id=package_id,
             workflow_key=workflow_key,
-            owner_type=owner_type,
-            owner_id=owner_id,
             entry_id=entry_id,
         )
         if entry is None:
@@ -314,15 +279,11 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         *,
         package_id: int,
         workflow_key: str,
-        owner_type: str,
-        owner_id: str,
         slot: str,
     ) -> tuple[ColumnElement[bool], ...]:
         entry_model = cls.runtime_input_model
         return (
             entry_model.package_id == package_id,
             entry_model.workflow_key == workflow_key,
-            entry_model.owner_type == owner_type,
-            entry_model.owner_id == owner_id,
             entry_model.slot == slot,
         )

@@ -25,21 +25,17 @@ from app.services.workflow_package_runtime_inputs import (
     validate_runtime_input_payload_safety,
 )
 
-LOCAL_RUNTIME_INPUT_OWNER_TYPE: Final = "local_user"
-LOCAL_RUNTIME_INPUT_OWNER_ID: Final = "default"
-RUNTIME_INPUT_PERSONAL_ENTRY_LIMIT: Final = 20
+RUNTIME_INPUT_PRESET_ENTRY_LIMIT: Final = 20
 _RUNTIME_INPUT_ENTRY_VALIDATION_MESSAGE: Final = (
     "Workflow package runtime input entry validation failed"
 )
 
-WorkflowPackageRuntimeInputSlot = Literal["history", "personal"]
+WorkflowPackageRuntimeInputSlot = Literal["history", "preset"]
 
 
 class _RuntimeInputScope(TypedDict):
     package_id: int
     workflow_key: str
-    owner_type: str
-    owner_id: str
 
 
 class _RuntimeInputMetadataFields(TypedDict):
@@ -80,10 +76,8 @@ class WorkflowPackageRuntimeInputRegistryRead:
     package_id: int
     package_key: str
     workflow_key: str
-    owner_type: str
-    owner_id: str
     current_metadata: RuntimeInputWorkflowMetadata | None
-    personal: list[WorkflowPackageRuntimeInputEntryRead]
+    presets: list[WorkflowPackageRuntimeInputEntryRead]
     history: list[WorkflowPackageRuntimeInputEntryRead]
 
 
@@ -97,32 +91,22 @@ class WorkflowPackageRuntimeInputRegistryService:
         self,
         package_id: int,
         workflow_key: str,
-        *,
-        owner_type: str = LOCAL_RUNTIME_INPUT_OWNER_TYPE,
-        owner_id: str = LOCAL_RUNTIME_INPUT_OWNER_ID,
     ) -> WorkflowPackageRuntimeInputRegistryRead:
         package = self._get_package(package_id)
-        scope = self._scope(
-            package_id=package.id,
-            workflow_key=workflow_key,
-            owner_type=owner_type,
-            owner_id=owner_id,
-        )
+        scope = self._scope(package_id=package.id, workflow_key=workflow_key)
         current_metadata = self._current_metadata(package, scope["workflow_key"])
-        personal = self.repository.list_runtime_input_personal_entries(**scope)
+        presets = self.repository.list_runtime_input_preset_entries(**scope)
         history = self.repository.list_runtime_input_history_entries(**scope)
         return WorkflowPackageRuntimeInputRegistryRead(
             package_id=package.id,
             package_key=package.key,
             workflow_key=scope["workflow_key"],
-            owner_type=scope["owner_type"],
-            owner_id=scope["owner_id"],
             current_metadata=current_metadata,
-            personal=[self._to_entry_read(entry, current_metadata) for entry in personal],
+            presets=[self._to_entry_read(entry, current_metadata) for entry in presets],
             history=[self._to_entry_read(entry, current_metadata) for entry in history],
         )
 
-    def create_personal_entry(
+    def create_preset_entry(
         self,
         package_id: int,
         workflow_key: str,
@@ -130,24 +114,17 @@ class WorkflowPackageRuntimeInputRegistryService:
         payload: object,
         name: str | None = None,
         source_kind: str = "manual",
-        owner_type: str = LOCAL_RUNTIME_INPUT_OWNER_TYPE,
-        owner_id: str = LOCAL_RUNTIME_INPUT_OWNER_ID,
         source_run_id: int | None = None,
     ) -> WorkflowPackageRuntimeInputEntryRead:
         package = self._get_package(package_id)
-        scope = self._scope(
-            package_id=package.id,
-            workflow_key=workflow_key,
-            owner_type=owner_type,
-            owner_id=owner_id,
-        )
+        scope = self._scope(package_id=package.id, workflow_key=workflow_key)
         current_metadata = self._require_current_metadata(package, scope["workflow_key"])
         safe_payload = validate_runtime_input_payload_safety(payload)
-        canonical_payload = self._canonical_personal_payload(current_metadata, safe_payload)
+        canonical_payload = self._canonical_preset_payload(current_metadata, safe_payload)
         try:
-            self._acquire_scope_lock(scope, slot="personal")
-            self._enforce_personal_limit(scope)
-            entry = self.repository.create_runtime_input_personal_entry(
+            self._acquire_scope_lock(scope, slot="preset")
+            self._enforce_preset_limit(scope)
+            entry = self.repository.create_runtime_input_preset_entry(
                 **scope,
                 name=self._normalize_name(name),
                 payload=deepcopy(canonical_payload),
@@ -162,7 +139,7 @@ class WorkflowPackageRuntimeInputRegistryService:
             raise
         return self._to_entry_read(entry, current_metadata)
 
-    def update_personal_entry(
+    def update_preset_entry(
         self,
         package_id: int,
         workflow_key: str,
@@ -171,21 +148,14 @@ class WorkflowPackageRuntimeInputRegistryService:
         name: str | None | _UnsetType = _UNSET,
         payload: object | _UnsetType = _UNSET,
         source_kind: str | _UnsetType = _UNSET,
-        owner_type: str = LOCAL_RUNTIME_INPUT_OWNER_TYPE,
-        owner_id: str = LOCAL_RUNTIME_INPUT_OWNER_ID,
         source_run_id: int | None | _UnsetType = _UNSET,
     ) -> WorkflowPackageRuntimeInputEntryRead:
         package = self._get_package(package_id)
-        scope = self._scope(
-            package_id=package.id,
-            workflow_key=workflow_key,
-            owner_type=owner_type,
-            owner_id=owner_id,
-        )
+        scope = self._scope(package_id=package.id, workflow_key=workflow_key)
         current_metadata = self._current_metadata(package, scope["workflow_key"])
-        entry = self.repository.get_runtime_input_personal_entry(**scope, entry_id=entry_id)
+        entry = self.repository.get_runtime_input_preset_entry(**scope, entry_id=entry_id)
         if entry is None:
-            raise not_found_error("Workflow package runtime input personal entry")
+            raise not_found_error("Workflow package runtime input preset entry")
 
         fields: dict[str, object] = {}
         if not isinstance(name, _UnsetType):
@@ -198,20 +168,20 @@ class WorkflowPackageRuntimeInputRegistryService:
             current_metadata = self._require_current_metadata(package, scope["workflow_key"])
             safe_payload = validate_runtime_input_payload_safety(payload)
             fields["payload"] = deepcopy(
-                self._canonical_personal_payload(current_metadata, safe_payload)
+                self._canonical_preset_payload(current_metadata, safe_payload)
             )
             fields.update(self._metadata_fields(current_metadata))
         if not fields:
             return self._to_entry_read(entry, current_metadata)
 
         try:
-            updated = self.repository.update_runtime_input_personal_entry(
+            updated = self.repository.update_runtime_input_preset_entry(
                 **scope,
                 entry_id=entry_id,
                 **fields,
             )
             if updated is None:
-                raise not_found_error("Workflow package runtime input personal entry")
+                raise not_found_error("Workflow package runtime input preset entry")
             self.session.commit()
             self.session.refresh(updated)
         except Exception:
@@ -219,29 +189,21 @@ class WorkflowPackageRuntimeInputRegistryService:
             raise
         return self._to_entry_read(updated, current_metadata)
 
-    def delete_personal_entry(
+    def delete_preset_entry(
         self,
         package_id: int,
         workflow_key: str,
         entry_id: int,
-        *,
-        owner_type: str = LOCAL_RUNTIME_INPUT_OWNER_TYPE,
-        owner_id: str = LOCAL_RUNTIME_INPUT_OWNER_ID,
     ) -> None:
         package = self._get_package(package_id)
-        scope = self._scope(
-            package_id=package.id,
-            workflow_key=workflow_key,
-            owner_type=owner_type,
-            owner_id=owner_id,
-        )
+        scope = self._scope(package_id=package.id, workflow_key=workflow_key)
         try:
-            deleted = self.repository.delete_runtime_input_personal_entry(
+            deleted = self.repository.delete_runtime_input_preset_entry(
                 **scope,
                 entry_id=entry_id,
             )
             if not deleted:
-                raise not_found_error("Workflow package runtime input personal entry")
+                raise not_found_error("Workflow package runtime input preset entry")
             self.session.commit()
         except Exception:
             self.session.rollback()
@@ -256,12 +218,7 @@ class WorkflowPackageRuntimeInputRegistryService:
         source_run_id: int,
     ) -> WorkflowPackageRuntimeInputEntry:
         package = self._get_package(package_id)
-        scope = self._scope(
-            package_id=package.id,
-            workflow_key=workflow_key,
-            owner_type=LOCAL_RUNTIME_INPUT_OWNER_TYPE,
-            owner_id=LOCAL_RUNTIME_INPUT_OWNER_ID,
-        )
+        scope = self._scope(package_id=package.id, workflow_key=workflow_key)
         current_metadata = self._require_current_metadata(package, scope["workflow_key"])
         return self._append_history_entry_in_current_transaction(
             scope=scope,
@@ -328,8 +285,6 @@ class WorkflowPackageRuntimeInputRegistryService:
                 "workflow_package_runtime_input_registry",
                 str(scope["package_id"]),
                 scope["workflow_key"],
-                scope["owner_type"],
-                scope["owner_id"],
                 slot,
             )
         )
@@ -339,19 +294,19 @@ class WorkflowPackageRuntimeInputRegistryService:
             int.from_bytes(digest[4:8], byteorder="big", signed=True),
         )
 
-    def _enforce_personal_limit(self, scope: _RuntimeInputScope) -> None:
-        current_count = self.repository.count_runtime_input_personal_entries(**scope)
-        if current_count < RUNTIME_INPUT_PERSONAL_ENTRY_LIMIT:
+    def _enforce_preset_limit(self, scope: _RuntimeInputScope) -> None:
+        current_count = self.repository.count_runtime_input_preset_entries(**scope)
+        if current_count < RUNTIME_INPUT_PRESET_ENTRY_LIMIT:
             return
         raise ApiError(
             status_code=status.HTTP_409_CONFLICT,
-            code="workflow_package_runtime_input_personal_limit_reached",
-            message="Workflow package runtime input personal limit reached",
+            code="workflow_package_runtime_input_preset_limit_reached",
+            message="Workflow package runtime input preset limit reached",
             details=[
                 {
-                    "field": "personal",
-                    "issue": "Personal runtime input entries are limited to 20 per scope",
-                    "limit": RUNTIME_INPUT_PERSONAL_ENTRY_LIMIT,
+                    "field": "presets",
+                    "issue": "Runtime input presets are limited to 20 per workflow",
+                    "limit": RUNTIME_INPUT_PRESET_ENTRY_LIMIT,
                     "actual": current_count,
                 }
             ],
@@ -362,24 +317,12 @@ class WorkflowPackageRuntimeInputRegistryService:
         *,
         package_id: int,
         workflow_key: str,
-        owner_type: str,
-        owner_id: str,
     ) -> _RuntimeInputScope:
         return {
             "package_id": package_id,
             "workflow_key": self._normalize_text(
                 workflow_key,
                 field="workflowKey",
-                max_length=120,
-            ),
-            "owner_type": self._normalize_text(
-                owner_type,
-                field="ownerType",
-                max_length=40,
-            ),
-            "owner_id": self._normalize_text(
-                owner_id,
-                field="ownerId",
                 max_length=120,
             ),
         }
@@ -448,7 +391,7 @@ class WorkflowPackageRuntimeInputRegistryService:
             )
         return value
 
-    def _canonical_personal_payload(
+    def _canonical_preset_payload(
         self,
         current_metadata: RuntimeInputWorkflowMetadata,
         payload: dict[str, Any],
@@ -530,9 +473,7 @@ class WorkflowPackageRuntimeInputRegistryService:
 
 
 __all__ = [
-    "LOCAL_RUNTIME_INPUT_OWNER_ID",
-    "LOCAL_RUNTIME_INPUT_OWNER_TYPE",
-    "RUNTIME_INPUT_PERSONAL_ENTRY_LIMIT",
+    "RUNTIME_INPUT_PRESET_ENTRY_LIMIT",
     "WorkflowPackageRuntimeInputEntryRead",
     "WorkflowPackageRuntimeInputRegistryRead",
     "WorkflowPackageRuntimeInputRegistryService",

@@ -3,7 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from threading import Event
-from typing import TypedDict, cast
+from typing import Protocol, TypedDict, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -39,8 +39,6 @@ UTC_TZ = timezone.utc  # noqa: UP017
 class RuntimeInputScope(TypedDict):
     package_id: int
     workflow_key: str
-    owner_type: str
-    owner_id: str
 
 
 class RuntimeInputMetadata(TypedDict):
@@ -49,6 +47,92 @@ class RuntimeInputMetadata(TypedDict):
     compiled_hash: str
     schema_fingerprint: str
     input_schema_snapshot: dict[str, object]
+
+
+class RuntimeInputRegistryRepository(Protocol):
+    runtime_input_history_limit: int
+
+    def list_runtime_input_preset_entries(
+        self,
+        *,
+        package_id: int,
+        workflow_key: str,
+    ) -> list[WorkflowPackageRuntimeInputEntry]: ...
+
+    def list_runtime_input_history_entries(
+        self,
+        *,
+        package_id: int,
+        workflow_key: str,
+    ) -> list[WorkflowPackageRuntimeInputEntry]: ...
+
+    def count_runtime_input_preset_entries(
+        self,
+        *,
+        package_id: int,
+        workflow_key: str,
+    ) -> int: ...
+
+    def create_runtime_input_preset_entry(
+        self,
+        *,
+        package_id: int,
+        workflow_key: str,
+        name: str | None,
+        payload: dict[str, object],
+        source_kind: str,
+        manifest_hash: str,
+        compiled_hash: str,
+        schema_fingerprint: str,
+        input_schema_snapshot: dict[str, object] | None,
+        source_run_id: int | None = None,
+    ) -> WorkflowPackageRuntimeInputEntry: ...
+
+    def append_runtime_input_history_entry(
+        self,
+        *,
+        package_id: int,
+        workflow_key: str,
+        payload: dict[str, object],
+        source_kind: str,
+        manifest_hash: str,
+        compiled_hash: str,
+        schema_fingerprint: str,
+        input_schema_snapshot: dict[str, object] | None,
+        source_run_id: int | None = None,
+    ) -> WorkflowPackageRuntimeInputEntry: ...
+
+    def trim_runtime_input_history_overflow(
+        self,
+        *,
+        package_id: int,
+        workflow_key: str,
+    ) -> int: ...
+
+    def get_runtime_input_preset_entry(
+        self,
+        *,
+        package_id: int,
+        workflow_key: str,
+        entry_id: int,
+    ) -> WorkflowPackageRuntimeInputEntry | None: ...
+
+    def update_runtime_input_preset_entry(
+        self,
+        *,
+        package_id: int,
+        workflow_key: str,
+        entry_id: int,
+        **fields: object,
+    ) -> WorkflowPackageRuntimeInputEntry | None: ...
+
+    def delete_runtime_input_preset_entry(
+        self,
+        *,
+        package_id: int,
+        workflow_key: str,
+        entry_id: int,
+    ) -> bool: ...
 
 
 def _build_model_connection(
@@ -199,14 +283,10 @@ def _runtime_input_scope(
     package: WorkflowPackage,
     *,
     workflow_key: str = "runtime_workflow",
-    owner_type: str = "local_user",
-    owner_id: str = "default",
 ) -> RuntimeInputScope:
     return {
         "package_id": package.id,
         "workflow_key": workflow_key,
-        "owner_type": owner_type,
-        "owner_id": owner_id,
     }
 
 
@@ -237,8 +317,6 @@ def test_runtime_input_entry_invalid_slot_or_constraint_rejected(
         base_entry = {
             "package_id": package_id,
             "workflow_key": "runtime_workflow",
-            "owner_type": "local_user",
-            "owner_id": "default",
             "payload": {"ticker": "AAPL"},
             "source_kind": "manual",
             "manifest_hash": manifest_hash,
@@ -272,38 +350,34 @@ def test_workflow_package_runtime_input_repository_scopes_orders_and_trims_histo
             session,
             key_prefix="runtime_input_repo_other",
         )
-        repo = WorkflowPackageRepository(session)
+        repo = cast(
+            RuntimeInputRegistryRepository,
+            cast(object, WorkflowPackageRepository(session)),
+        )
         scope = _runtime_input_scope(package)
         other_workflow_scope = _runtime_input_scope(package, workflow_key="other_workflow")
-        other_owner_scope = _runtime_input_scope(package, owner_id="other_user")
         other_package_scope = _runtime_input_scope(other_package)
         metadata = _runtime_input_metadata(package)
 
-        first_personal = repo.create_runtime_input_personal_entry(
+        first_preset = repo.create_runtime_input_preset_entry(
             **scope,
             name="First preset",
             payload={"ticker": "AAPL"},
             **metadata,
         )
-        second_personal = repo.create_runtime_input_personal_entry(
+        second_preset = repo.create_runtime_input_preset_entry(
             **scope,
             name="Second preset",
             payload={"ticker": "MSFT"},
             **metadata,
         )
-        _ = repo.create_runtime_input_personal_entry(
+        _ = repo.create_runtime_input_preset_entry(
             **other_workflow_scope,
             name="Other workflow preset",
             payload={"ticker": "GOOG"},
             **metadata,
         )
-        _ = repo.create_runtime_input_personal_entry(
-            **other_owner_scope,
-            name="Other owner preset",
-            payload={"ticker": "TSLA"},
-            **metadata,
-        )
-        _ = repo.create_runtime_input_personal_entry(
+        _ = repo.create_runtime_input_preset_entry(
             **other_package_scope,
             name="Other package preset",
             payload={"ticker": "AMZN"},
@@ -312,17 +386,17 @@ def test_workflow_package_runtime_input_repository_scopes_orders_and_trims_histo
         session.flush()
 
         shared_updated_at = datetime(2026, 5, 19, 12, 0, tzinfo=UTC_TZ)
-        first_personal.updated_at = shared_updated_at
-        second_personal.updated_at = shared_updated_at
+        first_preset.updated_at = shared_updated_at
+        second_preset.updated_at = shared_updated_at
         session.flush()
 
-        personal_entries = repo.list_runtime_input_personal_entries(**scope)
-        assert repo.count_runtime_input_personal_entries(**scope) == 2
-        assert [entry.id for entry in personal_entries] == [
-            second_personal.id,
-            first_personal.id,
+        preset_entries = repo.list_runtime_input_preset_entries(**scope)
+        assert repo.count_runtime_input_preset_entries(**scope) == 2
+        assert [entry.id for entry in preset_entries] == [
+            second_preset.id,
+            first_preset.id,
         ]
-        assert [entry.name for entry in personal_entries] == [
+        assert [entry.name for entry in preset_entries] == [
             "Second preset",
             "First preset",
         ]
@@ -343,7 +417,7 @@ def test_workflow_package_runtime_input_repository_scopes_orders_and_trims_histo
         session.flush()
 
         shared_created_at = datetime(2026, 5, 19, 13, 0, tzinfo=UTC_TZ)
-        for entry in [*history_entries, other_history]:
+        for entry in [first_preset, second_preset, *history_entries, other_history]:
             entry.created_at = shared_created_at
             entry.updated_at = shared_created_at
         session.flush()
@@ -357,6 +431,8 @@ def test_workflow_package_runtime_input_repository_scopes_orders_and_trims_histo
         ]
         assert all(entry.payload == {"ticker": "NVDA"} for entry in scoped_history)
         assert session.get(WorkflowPackageRuntimeInputEntry, history_entries[0].id) is None
+        assert session.get(WorkflowPackageRuntimeInputEntry, first_preset.id) is not None
+        assert session.get(WorkflowPackageRuntimeInputEntry, second_preset.id) is not None
         assert session.get(WorkflowPackageRuntimeInputEntry, other_history.id) is not None
         assert [
             entry.id for entry in repo.list_runtime_input_history_entries(**other_workflow_scope)
@@ -372,10 +448,13 @@ def test_runtime_input_cross_scope_lookup_update_delete_blocked(
             session,
             key_prefix="runtime_input_cross_scope_other",
         )
-        repo = WorkflowPackageRepository(session)
+        repo = cast(
+            RuntimeInputRegistryRepository,
+            cast(object, WorkflowPackageRepository(session)),
+        )
         scope = _runtime_input_scope(package)
         metadata = _runtime_input_metadata(package)
-        entry = repo.create_runtime_input_personal_entry(
+        entry = repo.create_runtime_input_preset_entry(
             **scope,
             name="Scoped preset",
             payload={"ticker": "AAPL"},
@@ -388,15 +467,17 @@ def test_runtime_input_cross_scope_lookup_update_delete_blocked(
         )
         session.flush()
 
-        wrong_scopes = [
-            _runtime_input_scope(other_package),
-            _runtime_input_scope(package, workflow_key="other_workflow"),
-            _runtime_input_scope(package, owner_id="other_user"),
+        wrong_scope_cases = [
+            (
+                "same package/different workflow",
+                _runtime_input_scope(package, workflow_key="other_workflow"),
+            ),
+            ("different package/same workflow", _runtime_input_scope(other_package)),
         ]
-        for wrong_scope in wrong_scopes:
-            assert repo.get_runtime_input_personal_entry(**wrong_scope, entry_id=entry.id) is None
+        for _, wrong_scope in wrong_scope_cases:
+            assert repo.get_runtime_input_preset_entry(**wrong_scope, entry_id=entry.id) is None
             assert (
-                repo.update_runtime_input_personal_entry(
+                repo.update_runtime_input_preset_entry(
                     **wrong_scope,
                     entry_id=entry.id,
                     name="Leaked preset",
@@ -404,20 +485,18 @@ def test_runtime_input_cross_scope_lookup_update_delete_blocked(
                 )
                 is None
             )
-            assert (
-                repo.delete_runtime_input_personal_entry(**wrong_scope, entry_id=entry.id) is False
-            )
+            assert repo.delete_runtime_input_preset_entry(**wrong_scope, entry_id=entry.id) is False
 
-        assert repo.get_runtime_input_personal_entry(**scope, entry_id=history_entry.id) is None
+        assert repo.get_runtime_input_preset_entry(**scope, entry_id=history_entry.id) is None
         assert (
-            repo.update_runtime_input_personal_entry(
+            repo.update_runtime_input_preset_entry(
                 **scope,
                 entry_id=history_entry.id,
                 name="Mutated history",
             )
             is None
         )
-        assert repo.delete_runtime_input_personal_entry(**scope, entry_id=history_entry.id) is False
+        assert repo.delete_runtime_input_preset_entry(**scope, entry_id=history_entry.id) is False
         session.flush()
         session.refresh(entry)
         session.refresh(history_entry)
@@ -425,7 +504,7 @@ def test_runtime_input_cross_scope_lookup_update_delete_blocked(
         assert entry.payload == {"ticker": "AAPL"}
         assert history_entry.name is None
 
-        updated_entry = repo.update_runtime_input_personal_entry(
+        updated_entry = repo.update_runtime_input_preset_entry(
             **scope,
             entry_id=entry.id,
             name="Updated preset",
@@ -434,7 +513,7 @@ def test_runtime_input_cross_scope_lookup_update_delete_blocked(
         assert updated_entry is not None
         assert updated_entry.name == "Updated preset"
         assert updated_entry.payload == {"ticker": "MSFT"}
-        assert repo.delete_runtime_input_personal_entry(**scope, entry_id=entry.id) is True
+        assert repo.delete_runtime_input_preset_entry(**scope, entry_id=entry.id) is True
         session.flush()
         assert session.get(WorkflowPackageRuntimeInputEntry, entry.id) is None
         assert session.get(WorkflowPackageRuntimeInputEntry, history_entry.id) is not None
