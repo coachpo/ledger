@@ -1,8 +1,22 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { GetMarketHistoryParams, GetMarketQuotesParams } from "./types/market-data";
+import type {
+  GetMarketHistoryParams,
+  GetMarketQuotesParams,
+} from "./types/market-data";
+import type {
+  MemoryAdminHistoryParams,
+  MemoryAdminListParams,
+  MemoryApiAccessRequest,
+  MemoryApiListRequest,
+  MemoryScope,
+  MemorySubjectRef,
+} from "./types/memory";
 import type { ModelConnectionListParams } from "./types/model-connection";
 import type { RunListParams } from "./types/run";
-import type { ScheduleFireListParams, ScheduleListParams } from "./types/schedule";
+import type {
+  ScheduleFireListParams,
+  ScheduleListParams,
+} from "./types/schedule";
 
 const apiRoot = ["api"] as const;
 const platformApiRoot = [...apiRoot, "platform"] as const;
@@ -17,7 +31,9 @@ function portfolioRoot(portfolioId: IdParam) {
 }
 
 function normalizeSymbols(symbols: readonly string[]) {
-  return [...new Set(symbols.map((symbol) => symbol.trim()).filter(Boolean))].sort();
+  return [
+    ...new Set(symbols.map((symbol) => symbol.trim()).filter(Boolean)),
+  ].sort();
 }
 
 function normalizePositionSymbol(symbol: string) {
@@ -28,10 +44,86 @@ function normalizeOptionalText(value: string | null | undefined) {
   return normalized ? normalized : undefined;
 }
 
+function normalizeOptionalKind(value: string | null | undefined) {
+  return normalizeOptionalText(value)?.toLowerCase();
+}
+
 function omitUndefined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
   ) as Partial<T>;
+}
+
+function normalizeMemoryScope(scope: MemoryScope) {
+  return {
+    scopeKey: scope.scopeKey.trim(),
+    scopeType: scope.scopeType,
+  };
+}
+
+function normalizeMemorySubjectRefs(
+  subjectRefs: readonly MemorySubjectRef[] = [],
+) {
+  return subjectRefs.map((subjectRef) =>
+    omitUndefined({
+      attributes: subjectRef.attributes,
+      id: subjectRef.id.trim(),
+      kind: subjectRef.kind.trim().toLowerCase(),
+      label: normalizeOptionalText(subjectRef.label),
+    }),
+  );
+}
+
+function normalizeMemoryAccessRequest(payload: MemoryApiAccessRequest) {
+  return {
+    accessContext: omitUndefined({
+      agentKey: normalizeOptionalText(payload.accessContext.agentKey),
+      packageKey: payload.accessContext.packageKey.trim(),
+      runId: payload.accessContext.runId ?? undefined,
+      workflowKey: normalizeOptionalText(payload.accessContext.workflowKey),
+    }),
+  };
+}
+
+function normalizeMemoryListRequest(payload: MemoryApiListRequest) {
+  return omitUndefined({
+    ...normalizeMemoryAccessRequest(payload),
+    kind: normalizeOptionalKind(payload.kind),
+    limit: payload.limit ?? 5,
+    maxCharacters: payload.maxCharacters ?? 4_000,
+    offset: payload.offset ?? 0,
+    query: normalizeOptionalText(payload.query),
+    scope: normalizeMemoryScope(payload.scope),
+    status: payload.status ?? undefined,
+    subjectRefs: normalizeMemorySubjectRefs(payload.subjectRefs),
+    tags: normalizeSymbols(payload.tags ?? []),
+    visibility: payload.visibility ?? "explicit-scope",
+  });
+}
+
+function normalizeMemoryAdminListParams(params: MemoryAdminListParams = {}) {
+  return omitUndefined({
+    agentKey: normalizeOptionalText(params.agentKey),
+    kind: normalizeOptionalKind(params.kind),
+    limit: params.limit ?? 50,
+    offset: params.offset ?? 0,
+    packageKey: normalizeOptionalText(params.packageKey),
+    query: normalizeOptionalText(params.query),
+    runId: params.runId ?? undefined,
+    scopeType: params.scopeType ?? undefined,
+    sort: params.sort ?? "updatedAtDesc",
+    status: params.status ?? undefined,
+    workflowKey: normalizeOptionalText(params.workflowKey),
+  });
+}
+
+function normalizeMemoryAdminHistoryParams(
+  params: MemoryAdminHistoryParams = {},
+) {
+  return omitUndefined({
+    limit: params.limit,
+    offset: params.offset ?? 0,
+  });
 }
 
 function normalizeHistoryParams(params: GetMarketHistoryParams) {
@@ -40,7 +132,9 @@ function normalizeHistoryParams(params: GetMarketHistoryParams) {
     symbols: normalizeSymbols(params.symbols),
   };
 }
-function normalizeModelConnectionListParams(_params: ModelConnectionListParams = {}) {
+function normalizeModelConnectionListParams(
+  _params: ModelConnectionListParams = {},
+) {
   return {};
 }
 
@@ -83,37 +177,75 @@ const portfoliosQueryKeys = {
 } as const;
 
 const balancesQueryKeys = {
-  all: (portfolioId: IdParam) => [...portfolioRoot(portfolioId), "balances"] as const,
+  all: (portfolioId: IdParam) =>
+    [...portfolioRoot(portfolioId), "balances"] as const,
   detail: (portfolioId: IdParam, balanceId: IdParam) =>
-    [...portfolioRoot(portfolioId), "balances", "detail", normalizeId(balanceId)] as const,
-  list: (portfolioId: IdParam) => [...portfolioRoot(portfolioId), "balances", "list"] as const,
+    [
+      ...portfolioRoot(portfolioId),
+      "balances",
+      "detail",
+      normalizeId(balanceId),
+    ] as const,
+  list: (portfolioId: IdParam) =>
+    [...portfolioRoot(portfolioId), "balances", "list"] as const,
 } as const;
 
 const positionsQueryKeys = {
-  all: (portfolioId: IdParam) => [...portfolioRoot(portfolioId), "positions"] as const,
+  all: (portfolioId: IdParam) =>
+    [...portfolioRoot(portfolioId), "positions"] as const,
   detail: (portfolioId: IdParam, positionId: IdParam) =>
-    [...portfolioRoot(portfolioId), "positions", "detail", normalizeId(positionId)] as const,
-  list: (portfolioId: IdParam) => [...portfolioRoot(portfolioId), "positions", "list"] as const,
+    [
+      ...portfolioRoot(portfolioId),
+      "positions",
+      "detail",
+      normalizeId(positionId),
+    ] as const,
+  list: (portfolioId: IdParam) =>
+    [...portfolioRoot(portfolioId), "positions", "list"] as const,
   lookup: (portfolioId: IdParam, symbol: string) =>
-    [...portfolioRoot(portfolioId), "positions", "lookup", normalizePositionSymbol(symbol)] as const,
+    [
+      ...portfolioRoot(portfolioId),
+      "positions",
+      "lookup",
+      normalizePositionSymbol(symbol),
+    ] as const,
 } as const;
 
 const tradesQueryKeys = {
-  all: (portfolioId: IdParam) => [...portfolioRoot(portfolioId), "trades"] as const,
+  all: (portfolioId: IdParam) =>
+    [...portfolioRoot(portfolioId), "trades"] as const,
   detail: (portfolioId: IdParam, tradeId: IdParam) =>
-    [...portfolioRoot(portfolioId), "trades", "detail", normalizeId(tradeId)] as const,
-  list: (portfolioId: IdParam) => [...portfolioRoot(portfolioId), "trades", "list"] as const,
+    [
+      ...portfolioRoot(portfolioId),
+      "trades",
+      "detail",
+      normalizeId(tradeId),
+    ] as const,
+  list: (portfolioId: IdParam) =>
+    [...portfolioRoot(portfolioId), "trades", "list"] as const,
 } as const;
 
 const marketDataQueryKeys = {
-  all: (portfolioId: IdParam) => [...portfolioRoot(portfolioId), "marketData"] as const,
+  all: (portfolioId: IdParam) =>
+    [...portfolioRoot(portfolioId), "marketData"] as const,
   quotes: (portfolioId: IdParam, params: GetMarketQuotesParams) =>
-    [...portfolioRoot(portfolioId), "marketData", "quotes", normalizeSymbols(params.symbols)] as const,
+    [
+      ...portfolioRoot(portfolioId),
+      "marketData",
+      "quotes",
+      normalizeSymbols(params.symbols),
+    ] as const,
 } as const;
 const marketHistoryQueryKeys = {
-  all: (portfolioId: IdParam) => [...portfolioRoot(portfolioId), "marketHistory"] as const,
+  all: (portfolioId: IdParam) =>
+    [...portfolioRoot(portfolioId), "marketHistory"] as const,
   series: (portfolioId: IdParam, params: GetMarketHistoryParams) =>
-    [...portfolioRoot(portfolioId), "marketHistory", "series", normalizeHistoryParams(params)] as const,
+    [
+      ...portfolioRoot(portfolioId),
+      "marketHistory",
+      "series",
+      normalizeHistoryParams(params),
+    ] as const,
 } as const;
 
 const templatesQueryKeys = {
@@ -127,13 +259,18 @@ const templatesQueryKeys = {
 
 const reportsQueryKeys = {
   all: [...apiRoot, "reports"] as const,
-  detail: (reportId: IdParam) => [...apiRoot, "reports", "detail", normalizeId(reportId)] as const,
+  detail: (reportId: IdParam) =>
+    [...apiRoot, "reports", "detail", normalizeId(reportId)] as const,
   list: () => [...apiRoot, "reports", "list"] as const,
 } as const;
 const workflowPackagesRoot = [...platformApiRoot, "workflowPackages"] as const;
 
 function workflowPackageRuntimeInputRegistryRoot(packageId: IdParam) {
-  return [...workflowPackagesRoot, "runtimeInputRegistry", normalizeId(packageId)] as const;
+  return [
+    ...workflowPackagesRoot,
+    "runtimeInputRegistry",
+    normalizeId(packageId),
+  ] as const;
 }
 
 function normalizeWorkflowKey(workflowKey: string | null | undefined) {
@@ -171,7 +308,11 @@ const workflowPackagesQueryKeys = {
   launch: (packageId: IdParam, workflowKey?: string | null) => {
     const normalizedWorkflowKey = normalizeOptionalText(workflowKey);
     if (normalizedWorkflowKey === undefined) {
-      return [...workflowPackagesRoot, "launch", normalizeId(packageId)] as const;
+      return [
+        ...workflowPackagesRoot,
+        "launch",
+        normalizeId(packageId),
+      ] as const;
     }
     return [
       ...workflowPackagesRoot,
@@ -185,7 +326,11 @@ const workflowPackagesQueryKeys = {
   preflight: (packageId: IdParam, workflowKey?: string | null) => {
     const normalizedWorkflowKey = normalizeOptionalText(workflowKey);
     if (normalizedWorkflowKey === undefined) {
-      return [...workflowPackagesRoot, "preflight", normalizeId(packageId)] as const;
+      return [
+        ...workflowPackagesRoot,
+        "preflight",
+        normalizeId(packageId),
+      ] as const;
     }
     return [
       ...workflowPackagesRoot,
@@ -195,7 +340,10 @@ const workflowPackagesQueryKeys = {
     ] as const;
   },
   preflights: () => [...workflowPackagesRoot, "preflight"] as const,
-  runtimeInputRegistry: (packageId: IdParam, workflowKey: string | null | undefined) =>
+  runtimeInputRegistry: (
+    packageId: IdParam,
+    workflowKey: string | null | undefined,
+  ) =>
     [
       ...workflowPackageRuntimeInputRegistryRoot(packageId),
       { workflowKey: normalizeWorkflowKey(workflowKey) },
@@ -203,19 +351,72 @@ const workflowPackagesQueryKeys = {
   runtimeInputRegistryScope: (packageId: IdParam) =>
     workflowPackageRuntimeInputRegistryRoot(packageId),
   secretBindings: (packageId: IdParam) =>
-    [...workflowPackagesRoot, "secretBindings", normalizeId(packageId)] as const,
+    [
+      ...workflowPackagesRoot,
+      "secretBindings",
+      normalizeId(packageId),
+    ] as const,
   validation: () => [...workflowPackagesRoot, "validation"] as const,
 } as const;
+const memoryRoot = [...platformApiRoot, "memory"] as const;
+const memoryAdminEntriesRoot = [...memoryRoot, "admin", "entries"] as const;
+
 const memoryQueryKeys = {
-  all: [...platformApiRoot, "memory"] as const,
-  detail: (memoryId: IdParam) =>
-    [...platformApiRoot, "memory", "detail", normalizeId(memoryId)] as const,
-  events: (memoryId: IdParam) =>
-    [...platformApiRoot, "memory", "events", normalizeId(memoryId)] as const,
-  list: (params: object = {}) =>
-    [...platformApiRoot, "memory", "list", params] as const,
-  revisions: (memoryId: IdParam) =>
-    [...platformApiRoot, "memory", "revisions", normalizeId(memoryId)] as const,
+  admin: {
+    all: memoryAdminEntriesRoot,
+    detail: (memoryId: IdParam) =>
+      [...memoryAdminEntriesRoot, "detail", normalizeId(memoryId)] as const,
+    details: () => [...memoryAdminEntriesRoot, "detail"] as const,
+    events: (memoryId: IdParam, params: MemoryAdminHistoryParams = {}) =>
+      [
+        ...memoryAdminEntriesRoot,
+        "events",
+        normalizeId(memoryId),
+        normalizeMemoryAdminHistoryParams(params),
+      ] as const,
+    eventsScope: (memoryId: IdParam) =>
+      [...memoryAdminEntriesRoot, "events", normalizeId(memoryId)] as const,
+    list: (params: MemoryAdminListParams = {}) =>
+      [
+        ...memoryAdminEntriesRoot,
+        "list",
+        normalizeMemoryAdminListParams(params),
+      ] as const,
+    lists: () => [...memoryAdminEntriesRoot, "list"] as const,
+    revisions: (memoryId: IdParam, params: MemoryAdminHistoryParams = {}) =>
+      [
+        ...memoryAdminEntriesRoot,
+        "revisions",
+        normalizeId(memoryId),
+        normalizeMemoryAdminHistoryParams(params),
+      ] as const,
+    revisionsScope: (memoryId: IdParam) =>
+      [...memoryAdminEntriesRoot, "revisions", normalizeId(memoryId)] as const,
+  },
+  all: memoryRoot,
+  detail: (memoryId: IdParam, payload?: MemoryApiAccessRequest) => {
+    const base = [...memoryRoot, "detail", normalizeId(memoryId)] as const;
+    if (!payload) {
+      return base;
+    }
+    return [...base, normalizeMemoryAccessRequest(payload)] as const;
+  },
+  events: (memoryId: IdParam, payload?: MemoryApiAccessRequest) => {
+    const base = [...memoryRoot, "events", normalizeId(memoryId)] as const;
+    if (!payload) {
+      return base;
+    }
+    return [...base, normalizeMemoryAccessRequest(payload)] as const;
+  },
+  list: (params: MemoryApiListRequest) =>
+    [...memoryRoot, "list", normalizeMemoryListRequest(params)] as const,
+  revisions: (memoryId: IdParam, payload?: MemoryApiAccessRequest) => {
+    const base = [...memoryRoot, "revisions", normalizeId(memoryId)] as const;
+    if (!payload) {
+      return base;
+    }
+    return [...base, normalizeMemoryAccessRequest(payload)] as const;
+  },
 } as const;
 
 const platformQueryKeys = {
@@ -224,14 +425,29 @@ const platformQueryKeys = {
   modelConnections: {
     all: [...platformApiRoot, "modelConnections"] as const,
     detail: (modelConnectionId: IdParam) =>
-      [...platformApiRoot, "modelConnections", "detail", normalizeId(modelConnectionId)] as const,
+      [
+        ...platformApiRoot,
+        "modelConnections",
+        "detail",
+        normalizeId(modelConnectionId),
+      ] as const,
     list: (params: ModelConnectionListParams = {}) =>
-      [...platformApiRoot, "modelConnections", "list", normalizeModelConnectionListParams(params)] as const,
+      [
+        ...platformApiRoot,
+        "modelConnections",
+        "list",
+        normalizeModelConnectionListParams(params),
+      ] as const,
   },
   extensions: {
     all: [...platformApiRoot, "extensions"] as const,
     detail: (extensionKey: IdParam) =>
-      [...platformApiRoot, "extensions", "detail", normalizeId(extensionKey)] as const,
+      [
+        ...platformApiRoot,
+        "extensions",
+        "detail",
+        normalizeId(extensionKey),
+      ] as const,
     list: () => [...platformApiRoot, "extensions", "list"] as const,
   },
   tools: {
@@ -248,10 +464,21 @@ const platformQueryKeys = {
       [...platformApiRoot, "runs", "rerunDraft", normalizeId(runId)] as const,
     rerunDrafts: () => [...platformApiRoot, "runs", "rerunDraft"] as const,
     forkDraft: (runId: IdParam, sourceInvocationId: number) =>
-      [...platformApiRoot, "runs", "forkDraft", normalizeId(runId), { sourceInvocationId }] as const,
+      [
+        ...platformApiRoot,
+        "runs",
+        "forkDraft",
+        normalizeId(runId),
+        { sourceInvocationId },
+      ] as const,
     forkDrafts: () => [...platformApiRoot, "runs", "forkDraft"] as const,
     list: (params: RunListParams = {}) =>
-      [...platformApiRoot, "runs", "list", normalizeRunListParams(params)] as const,
+      [
+        ...platformApiRoot,
+        "runs",
+        "list",
+        normalizeRunListParams(params),
+      ] as const,
   },
   workflowPackages: workflowPackagesQueryKeys,
 } as const;

@@ -4,7 +4,9 @@ import { queryKeys } from "./query-keys";
 
 describe("query keys", () => {
   it("normalizes string and numeric ids to the same key", () => {
-    expect(queryKeys.portfolios.detail("1")).toEqual(queryKeys.portfolios.detail(1));
+    expect(queryKeys.portfolios.detail("1")).toEqual(
+      queryKeys.portfolios.detail(1),
+    );
     expect(queryKeys.balances.list("1")).toEqual(queryKeys.balances.list(1));
     expect(queryKeys.positions.detail("1", "7")).toEqual(
       queryKeys.positions.detail(1, 7),
@@ -79,10 +81,14 @@ describe("query keys", () => {
       "workflowPackages",
       "preflight",
     ]);
-    expect(queryKeys.platform.workflowPackages.runtimeInputRegistry("9", " review ")).toEqual(
+    expect(
+      queryKeys.platform.workflowPackages.runtimeInputRegistry("9", " review "),
+    ).toEqual(
       queryKeys.platform.workflowPackages.runtimeInputRegistry(9, "review"),
     );
-    expect(queryKeys.platform.workflowPackages.runtimeInputRegistry(9, "review")).toEqual([
+    expect(
+      queryKeys.platform.workflowPackages.runtimeInputRegistry(9, "review"),
+    ).toEqual([
       "api",
       "platform",
       "workflowPackages",
@@ -90,7 +96,9 @@ describe("query keys", () => {
       "9",
       { workflowKey: "review" },
     ]);
-    expect(queryKeys.platform.workflowPackages.runtimeInputRegistryScope(9)).toEqual([
+    expect(
+      queryKeys.platform.workflowPackages.runtimeInputRegistryScope(9),
+    ).toEqual([
       "api",
       "platform",
       "workflowPackages",
@@ -103,8 +111,12 @@ describe("query keys", () => {
     expect(queryKeys.platform.modelConnections.detail("7")).toEqual(
       queryKeys.platform.modelConnections.detail(7),
     );
-    expect(queryKeys.platform.runs.detail(42)).not.toEqual(queryKeys.reports.detail(42));
-    expect(queryKeys.platform.workflowPackages.all).not.toEqual(queryKeys.portfolios.all);
+    expect(queryKeys.platform.runs.detail(42)).not.toEqual(
+      queryKeys.reports.detail(42),
+    );
+    expect(queryKeys.platform.workflowPackages.all).not.toEqual(
+      queryKeys.portfolios.all,
+    );
     expect(queryKeys.platform.extensions.detail("signaldeck.finance")).toEqual([
       "api",
       "platform",
@@ -122,6 +134,10 @@ describe("query keys", () => {
     ]);
     expect(
       queryKeys.platform.memory.list({
+        accessContext: {
+          packageKey: " research_package ",
+          workflowKey: " daily ",
+        },
         scope: { scopeKey: "42", scopeType: "run" },
         visibility: "explicit-scope",
       }),
@@ -130,7 +146,16 @@ describe("query keys", () => {
       "platform",
       "memory",
       "list",
-      { scope: { scopeKey: "42", scopeType: "run" }, visibility: "explicit-scope" },
+      {
+        accessContext: { packageKey: "research_package", workflowKey: "daily" },
+        limit: 5,
+        maxCharacters: 4000,
+        offset: 0,
+        scope: { scopeKey: "42", scopeType: "run" },
+        subjectRefs: [],
+        tags: [],
+        visibility: "explicit-scope",
+      },
     ]);
 
     expect(Object.keys(queryKeys.platform)).toEqual([
@@ -143,6 +168,93 @@ describe("query keys", () => {
       "runs",
       "workflowPackages",
     ]);
+  });
+
+  it("normalizes admin memory keys separately from scoped runtime memory keys", () => {
+    expect(queryKeys.platform.memory.admin.list()).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "admin",
+      "entries",
+      "list",
+      { limit: 50, offset: 0, sort: "updatedAtDesc" },
+    ]);
+    expect(
+      queryKeys.platform.memory.admin.list({
+        agentKey: " analyst ",
+        kind: " Insight ",
+        packageKey: " research_package ",
+        query: " earnings ",
+        runId: 41,
+        scopeType: "package",
+        status: "expired",
+        workflowKey: " daily ",
+      }),
+    ).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "admin",
+      "entries",
+      "list",
+      {
+        agentKey: "analyst",
+        kind: "insight",
+        limit: 50,
+        offset: 0,
+        packageKey: "research_package",
+        query: "earnings",
+        runId: 41,
+        scopeType: "package",
+        sort: "updatedAtDesc",
+        status: "expired",
+        workflowKey: "daily",
+      },
+    ]);
+    expect(queryKeys.platform.memory.admin.detail(7)).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "admin",
+      "entries",
+      "detail",
+      "7",
+    ]);
+    expect(
+      queryKeys.platform.memory.admin.revisions("7", { limit: 10 }),
+    ).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "admin",
+      "entries",
+      "revisions",
+      "7",
+      { limit: 10, offset: 0 },
+    ]);
+    expect(queryKeys.platform.memory.admin.events("7")).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "admin",
+      "entries",
+      "events",
+      "7",
+      { offset: 0 },
+    ]);
+    const adminListKey = JSON.stringify(
+      queryKeys.platform.memory.admin.list({ packageKey: "research_package" }),
+    );
+    expect(adminListKey).not.toContain(["access", "Context"].join(""));
+    expect(adminListKey).not.toContain(["max", "Characters"].join(""));
+    expect(adminListKey).not.toContain("visibility");
+    expect(queryKeys.platform.memory.admin.lists()).not.toEqual(
+      queryKeys.platform.memory.list({
+        accessContext: { packageKey: "research_package" },
+        scope: { scopeKey: "research_package", scopeType: "package" },
+      }),
+    );
   });
 
   it("normalizes schedule list and fire-history filters", () => {
