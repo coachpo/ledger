@@ -1,5 +1,19 @@
-import { requestPlatform, toPathSegment, type IdParam } from "../api-client";
+import {
+  requestPlatform,
+  toPathSegment,
+  toQueryRecord,
+  type IdParam,
+} from "../api-client";
 import type {
+  MemoryAdminCreateRequest,
+  MemoryAdminEntryRead,
+  MemoryAdminEventListRead,
+  MemoryAdminHistoryParams,
+  MemoryAdminListParams,
+  MemoryAdminListRead,
+  MemoryAdminRevisionCreateRequest,
+  MemoryAdminRevisionListRead,
+  MemoryAdminStatusUpdateRequest,
   MemoryApiAccessRequest,
   MemoryApiEntryRead,
   MemoryApiEventListRead,
@@ -12,6 +26,50 @@ function memoryPath(memoryId: IdParam): string {
   return `/memory/${toPathSegment(memoryId)}`;
 }
 
+function adminMemoryPath(memoryId: IdParam): string {
+  return `/memory/admin/entries/${toPathSegment(memoryId)}`;
+}
+
+function normalizeOptionalText(
+  value: string | null | undefined,
+): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function normalizeOptionalKind(
+  value: string | null | undefined,
+): string | undefined {
+  return normalizeOptionalText(value)?.toLowerCase();
+}
+
+export function normalizeMemoryAdminListParams(
+  params: MemoryAdminListParams = {},
+): MemoryAdminListParams {
+  return {
+    agentKey: normalizeOptionalText(params.agentKey),
+    kind: normalizeOptionalKind(params.kind),
+    limit: params.limit ?? 50,
+    offset: params.offset ?? 0,
+    packageKey: normalizeOptionalText(params.packageKey),
+    query: normalizeOptionalText(params.query),
+    runId: params.runId ?? undefined,
+    scopeType: params.scopeType ?? undefined,
+    sort: params.sort ?? "updatedAtDesc",
+    status: params.status ?? undefined,
+    workflowKey: normalizeOptionalText(params.workflowKey),
+  };
+}
+
+export function normalizeMemoryAdminHistoryParams(
+  params: MemoryAdminHistoryParams = {},
+): MemoryAdminHistoryParams {
+  return {
+    limit: params.limit,
+    offset: params.offset ?? 0,
+  };
+}
+
 export function listMemory(
   payload: MemoryApiListRequest,
   signal?: AbortSignal,
@@ -22,7 +80,6 @@ export function listMemory(
     signal,
   });
 }
-
 export function getMemoryDetail(
   memoryId: IdParam,
   payload: MemoryApiAccessRequest,
@@ -51,14 +108,103 @@ export function listMemoryEvents(
   payload: MemoryApiAccessRequest,
   signal?: AbortSignal,
 ): Promise<MemoryApiEventListRead> {
-  return requestPlatform<MemoryApiEventListRead>(`${memoryPath(memoryId)}/events`, {
+  return requestPlatform<MemoryApiEventListRead>(
+    `${memoryPath(memoryId)}/events`,
+    {
+      body: payload,
+      method: "POST",
+      signal,
+    },
+  );
+}
+export function listAdminMemoryEntries(
+  params: MemoryAdminListParams = {},
+  signal?: AbortSignal,
+): Promise<MemoryAdminListRead> {
+  return requestPlatform<MemoryAdminListRead>("/memory/admin/entries", {
+    query: toQueryRecord(normalizeMemoryAdminListParams(params)),
+    signal,
+  });
+}
+
+export function createAdminMemoryEntry(
+  payload: MemoryAdminCreateRequest,
+  signal?: AbortSignal,
+): Promise<MemoryAdminEntryRead> {
+  return requestPlatform<MemoryAdminEntryRead>("/memory/admin/entries", {
     body: payload,
     method: "POST",
     signal,
   });
 }
 
+export function getAdminMemoryEntry(
+  memoryId: IdParam,
+  signal?: AbortSignal,
+): Promise<MemoryAdminEntryRead> {
+  return requestPlatform<MemoryAdminEntryRead>(adminMemoryPath(memoryId), {
+    signal,
+  });
+}
+
+export function listAdminMemoryRevisions(
+  memoryId: IdParam,
+  params: MemoryAdminHistoryParams = {},
+  signal?: AbortSignal,
+): Promise<MemoryAdminRevisionListRead> {
+  return requestPlatform<MemoryAdminRevisionListRead>(
+    `${adminMemoryPath(memoryId)}/revisions`,
+    { query: toQueryRecord(normalizeMemoryAdminHistoryParams(params)), signal },
+  );
+}
+export function listAdminMemoryEvents(
+  memoryId: IdParam,
+  params: MemoryAdminHistoryParams = {},
+  signal?: AbortSignal,
+): Promise<MemoryAdminEventListRead> {
+  return requestPlatform<MemoryAdminEventListRead>(
+    `${adminMemoryPath(memoryId)}/events`,
+    { query: toQueryRecord(normalizeMemoryAdminHistoryParams(params)), signal },
+  );
+}
+
+export function createAdminMemoryRevision(
+  memoryId: IdParam,
+  payload: MemoryAdminRevisionCreateRequest,
+  signal?: AbortSignal,
+): Promise<MemoryAdminEntryRead> {
+  return requestPlatform<MemoryAdminEntryRead>(
+    `${adminMemoryPath(memoryId)}/revisions`,
+    { body: payload, method: "POST", signal },
+  );
+}
+
+export function updateAdminMemoryStatus(
+  memoryId: IdParam,
+  payload: MemoryAdminStatusUpdateRequest,
+  signal?: AbortSignal,
+): Promise<MemoryAdminEntryRead> {
+  return requestPlatform<MemoryAdminEntryRead>(
+    `${adminMemoryPath(memoryId)}/status`,
+    {
+      body: payload,
+      method: "PATCH",
+      signal,
+    },
+  );
+}
 export const memoryApi = {
+  admin: {
+    create: createAdminMemoryEntry,
+    createRevision: createAdminMemoryRevision,
+    detail: getAdminMemoryEntry,
+    events: listAdminMemoryEvents,
+    list: listAdminMemoryEntries,
+    normalizeHistoryParams: normalizeMemoryAdminHistoryParams,
+    normalizeListParams: normalizeMemoryAdminListParams,
+    revisions: listAdminMemoryRevisions,
+    updateStatus: updateAdminMemoryStatus,
+  },
   detail: getMemoryDetail,
   events: listMemoryEvents,
   list: listMemory,

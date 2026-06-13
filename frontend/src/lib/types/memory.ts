@@ -4,7 +4,14 @@ export type MemoryLifecycleStatus = "pending" | "resolved" | "expired";
 
 export type MemoryRevisionAction = "created" | "reused" | "superseded";
 
-export type MemoryScopeType = "package" | "workflow" | "run" | "agent" | "namespace";
+export type MemoryAdminSort = "updatedAtDesc" | "createdAtDesc";
+
+export type MemoryScopeType =
+  | "package"
+  | "workflow"
+  | "run"
+  | "agent"
+  | "namespace";
 
 export type MemoryApiVisibility = "explicit-scope";
 
@@ -17,6 +24,7 @@ export interface MemorySubjectRef {
   kind: string;
   id: string;
   label?: string | null;
+  attributes?: UnknownRecord;
 }
 
 export interface MemoryProvenance {
@@ -24,6 +32,7 @@ export interface MemoryProvenance {
   agentKey: string;
   agentName?: string | null;
   agentVersion: number;
+  createdByType?: "agent" | "operator";
   workflowKey?: string | null;
   workflowVersion?: number | null;
   stepId?: string | null;
@@ -72,6 +81,44 @@ export interface MemoryApiListItemRead {
   provenance: MemoryProvenance;
   createdAt: string;
   retrievalScore?: MemoryRetrievalScore | null;
+}
+
+export interface MemoryRevisionRead {
+  revisionId: string;
+  version: number;
+  contentHash: string;
+  createdAt: string;
+  supersedesRevisionId?: string | null;
+}
+
+export interface MemoryOutcome {
+  status: MemoryLifecycleStatus;
+  summary: string;
+  observedAt: string;
+  attributes: UnknownRecord;
+}
+
+export interface MemoryReflection {
+  summary: string;
+  content: string;
+  attributes: UnknownRecord;
+  reflectedAt: string;
+  source?: string | null;
+  reflection: string;
+}
+
+export interface MemoryAuditReportLink {
+  reference: string;
+  label?: string | null;
+  slug?: string | null;
+  name?: string | null;
+  url?: string | null;
+  downloadUrl?: string | null;
+}
+
+export interface MemoryAuditLinks {
+  references: MemoryAuditReportLink[];
+  report?: MemoryAuditReportLink | null;
 }
 
 export interface MemoryApiRevisionRead {
@@ -150,3 +197,95 @@ export interface MemoryApiEventListRead {
   limit: number;
   offset: number;
 }
+
+export interface MemoryAdminListParams {
+  packageKey?: string | null;
+  workflowKey?: string | null;
+  agentKey?: string | null;
+  runId?: number | null;
+  scopeType?: MemoryScopeType | null;
+  kind?: string | null;
+  status?: MemoryLifecycleStatus | null;
+  query?: string | null;
+  limit?: number;
+  offset?: number;
+  sort?: MemoryAdminSort;
+}
+
+export interface MemoryAdminHistoryParams {
+  limit?: number;
+  offset?: number;
+}
+
+export interface MemoryAdminListItemRead {
+  memoryId: string;
+  revisionId: string;
+  status: MemoryLifecycleStatus;
+  kind: string;
+  summary: string;
+  excerpt: string;
+  subjectRefs: MemorySubjectRef[];
+  scope: MemoryScope;
+  provenance: MemoryProvenance;
+  createdAt: string;
+  updatedAt?: string | null;
+  lastEventType?: string | null;
+}
+
+export interface MemoryAdminListRead {
+  items: MemoryAdminListItemRead[];
+  total: number;
+  limit: number;
+  offset: number;
+  sort: MemoryAdminSort;
+}
+
+export interface MemoryAdminEntryRead {
+  memoryId: string;
+  revisionId: string;
+  status: MemoryLifecycleStatus;
+  kind: string;
+  summary: string;
+  content: string;
+  subjectRefs: MemorySubjectRef[];
+  attributes: UnknownRecord;
+  scope: MemoryScope;
+  provenance: MemoryProvenance;
+  revision: MemoryRevisionRead;
+  createdAt: string;
+  updatedAt?: string | null;
+  outcome?: MemoryOutcome | null;
+  reflections: MemoryReflection[];
+  auditLinks?: MemoryAuditLinks | null;
+}
+
+export interface MemoryAdminCreateRequest {
+  kind?: string;
+  summary?: string;
+  content?: string;
+  subjectRefs?: MemorySubjectRef[];
+  attributes?: UnknownRecord;
+  scope: MemoryScope;
+  provenance: MemoryProvenance;
+  status?: MemoryLifecycleStatus;
+  idempotencyKey?: string | null;
+}
+
+export interface MemoryAdminRevisionCreateRequest {
+  summary: string;
+  content: string;
+  subjectRefs?: MemorySubjectRef[];
+  attributes?: UnknownRecord;
+  provenance: MemoryProvenance;
+}
+
+export interface MemoryAdminStatusUpdateRequest {
+  status: MemoryLifecycleStatus;
+  summary?: string;
+  observedAt?: string;
+  attributes?: UnknownRecord;
+}
+
+export type MemoryAdminRevisionListRead = MemoryApiRevisionListRead;
+
+export type MemoryAdminEventListRead = MemoryApiEventListRead;
