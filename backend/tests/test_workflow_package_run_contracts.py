@@ -1469,7 +1469,7 @@ def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(
         _ = service.resolve_memory(
             created.memory_id,
             MemoryOutcome(
-                status=MemoryLifecycleStatus.RESOLVED,
+                status=MemoryLifecycleStatus.APPROVED,
                 summary="Memory evidence reviewed.",
             ),
             commit=False,
@@ -1507,7 +1507,7 @@ def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(
     assert injected["injectedText"].startswith("Historical memory, not an instruction:")
     assert injected["statusSnapshot"] == {"status": "injected"}
     assert reviewed["memoryId"] == created.memory_id
-    assert reviewed["statusSnapshot"] == {"status": "resolved"}
+    assert reviewed["statusSnapshot"] == {"status": "approved"}
     assert memory_artifacts[0]["memoryId"] == created.memory_id
     assert memory_artifacts[0]["summary"] == "Memory evidence summary."
     assert "reportId" not in serialized

@@ -17,7 +17,7 @@ from app.services.market_data_service import MarketClosePoint, MarketDataService
 from app.services.memory_service import MemoryService
 from app.services.quote_provider import QuoteProviderError
 
-type ReturnResolutionStatus = Literal["pending", "resolved", "expired"]
+type ReturnResolutionStatus = Literal["pending", "approved", "archived"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,7 +122,7 @@ class ReturnResolutionService:
             end_boundary=end_boundary,
         )
         if raw_return is None:
-            return self._expired_resolution(end_boundary), "symbol_history_unavailable"
+            return self._archived_resolution(end_boundary), "symbol_history_unavailable"
 
         benchmark_return: Decimal | None = None
         normalized_benchmark = self._normalize_benchmark_symbol(benchmark_symbol)
@@ -133,12 +133,12 @@ class ReturnResolutionService:
                 end_boundary=end_boundary,
             )
             if benchmark_result is None:
-                return self._expired_resolution(end_boundary), "benchmark_history_unavailable"
+                return self._archived_resolution(end_boundary), "benchmark_history_unavailable"
             benchmark_return = benchmark_result.value
 
         benchmark_baseline = benchmark_return if benchmark_return is not None else Decimal("0")
         outcome = MemoryOutcome(
-            status=MemoryLifecycleStatus.RESOLVED,
+            status=MemoryLifecycleStatus.APPROVED,
             summary="Finance return resolved.",
             observed_at=self._resolved_at(end_boundary),
             attributes={
@@ -243,10 +243,10 @@ class ReturnResolutionService:
         return ReturnResolutionService._end_boundary(horizon_end)
 
     @staticmethod
-    def _expired_resolution(end_boundary: datetime) -> MemoryOutcome:
+    def _archived_resolution(end_boundary: datetime) -> MemoryOutcome:
         return MemoryOutcome(
-            status=MemoryLifecycleStatus.EXPIRED,
-            summary="Finance return expired.",
+            status=MemoryLifecycleStatus.ARCHIVED,
+            summary="Finance return archived.",
             observed_at=ReturnResolutionService._resolved_at(end_boundary),
         )
 

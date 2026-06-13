@@ -139,7 +139,7 @@ def _admin_create_payload(run_id: int, *, include_scope: bool = True) -> dict[st
     payload: dict[str, object] = {
         "kind": "research.note",
         "summary": "Admin-created memory.",
-        "content": "Admin route creates resolved memory without access context.",
+        "content": "Admin route creates approved memory without access context.",
         "subjectRefs": [{"kind": "instrument", "id": "MSFT"}],
         "attributes": {"source": "admin-route-test"},
         "provenance": {
@@ -194,8 +194,8 @@ def test_api_memory_authorized_private_scope_list_detail_history_and_actions(
         json={
             "accessContext": access,
             "outcome": {
-                "status": "resolved",
-                "summary": "Owner resolved memory.",
+                "status": "approved",
+                "summary": "Owner approved memory.",
                 "observedAt": "2026-01-17T10:30:00Z",
                 "attributes": {"verdict": "useful"},
             },
@@ -218,7 +218,7 @@ def test_api_memory_authorized_private_scope_list_detail_history_and_actions(
             "accessContext": access,
             "scope": {"scopeType": "run", "scopeKey": str(run_id)},
             "query": "canonical memory",
-            "status": "resolved",
+            "status": "approved",
             "limit": 10,
         },
     )
@@ -290,7 +290,7 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
         )
         _ = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Resolved"),
         )
         memory_id = created.memory_id
         other_run_id = other_run.id
@@ -326,19 +326,19 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
             "accessContext": forged_reader_access,
             "scope": namespace.to_scope().model_dump(mode="json", by_alias=True),
             "query": "shared namespace",
-            "status": "resolved",
+            "status": "approved",
         },
         {
             "accessContext": forged_owner_access,
             "scope": namespace.to_scope().model_dump(mode="json", by_alias=True),
             "query": "shared namespace",
-            "status": "resolved",
+            "status": "approved",
         },
         {
             "accessContext": forged_reader_access,
             "visibility": "grant-visible-namespaces",
             "query": "shared namespace",
-            "status": "resolved",
+            "status": "approved",
         },
     ]
     for payload in forged_payloads:
@@ -364,7 +364,7 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
             f"/api/memory/{memory_id}/actions/resolve",
             json={
                 "accessContext": forged_reader_access,
-                "outcome": {"status": "resolved", "summary": "Forged resolve"},
+                "outcome": {"status": "approved", "summary": "Forged resolve"},
             },
         ),
         client.post(
@@ -388,7 +388,7 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
                 "accessContext": denied_access,
                 "scope": namespace.to_scope().model_dump(mode="json", by_alias=True),
                 "query": "shared namespace",
-                "status": "resolved",
+                "status": "approved",
             },
         ),
         client.post(f"/api/memory/{memory_id}/detail", json={"accessContext": denied_access}),
@@ -404,7 +404,7 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
             f"/api/memory/{memory_id}/actions/resolve",
             json={
                 "accessContext": denied_access,
-                "outcome": {"status": "resolved", "summary": "Unauthorized resolve"},
+                "outcome": {"status": "approved", "summary": "Unauthorized resolve"},
             },
         ),
     ]
@@ -444,7 +444,7 @@ def test_admin_list_without_access_context(
         )
         _ = service.resolve_memory(
             created_a.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Admin-visible"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Admin-visible"),
         )
         created_b = service.write_memory(
             capability_references=[],
@@ -535,7 +535,7 @@ def test_admin_filters_narrow_and_clearing_filters_restores_full_corpus(
         )
         _ = alpha_service.resolve_memory(
             alpha.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Alpha resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Alpha resolved"),
         )
 
         beta_service = MemoryService(
@@ -573,7 +573,7 @@ def test_admin_filters_narrow_and_clearing_filters_restores_full_corpus(
         )
         _ = beta_service.resolve_memory(
             beta.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.EXPIRED, summary="Beta expired"),
+            MemoryOutcome(status=MemoryLifecycleStatus.ARCHIVED, summary="Beta expired"),
         )
 
         gamma_service = MemoryService(
@@ -676,17 +676,17 @@ def test_admin_create_requires_scope(
     events = client.get(f"/api/memory/admin/entries/{memory_id}/events")
     status_update = client.patch(
         f"/api/memory/admin/entries/{memory_id}/status",
-        json={"status": "expired", "summary": "Admin expired memory."},
+        json={"status": "archived", "summary": "Admin archived memory."},
     )
 
-    assert created_payload["status"] == "resolved"
+    assert created_payload["status"] == "approved"
     assert created_payload["scope"] == {"scopeType": "run", "scopeKey": str(run_id)}
     assert "accessContext" not in str(created_payload)
     assert detail.status_code == 200, detail.json()
     assert revisions.status_code == 200, revisions.json()
     assert events.status_code == 200, events.json()
     assert status_update.status_code == 200, status_update.json()
-    assert status_update.json()["status"] == "expired"
+    assert status_update.json()["status"] == "archived"
 
 
 def test_admin_write_payload_validation_and_scope_mutation_attempts(
@@ -722,7 +722,7 @@ def test_admin_write_payload_validation_and_scope_mutation_attempts(
     status_scope_mutation = client.patch(
         f"/api/memory/admin/entries/{memory_id}/status",
         json={
-            "status": "resolved",
+            "status": "approved",
             "summary": "Mutating scope should fail.",
             "scope": {"scopeType": "package", "scopeKey": "other_package"},
         },

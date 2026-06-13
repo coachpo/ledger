@@ -150,11 +150,11 @@ class MemoryContextService:
                 subject_refs=subject_refs,
                 kind=kind,
                 agent_key=agent_key,
-                status=MemoryLifecycleStatus.RESOLVED,
+                status=MemoryLifecycleStatus.APPROVED,
             )
         ]
         if query is not None or subject_refs or kind is not None:
-            groups.append(MemoryQuery(agent_key=agent_key, status=MemoryLifecycleStatus.RESOLVED))
+            groups.append(MemoryQuery(agent_key=agent_key, status=MemoryLifecycleStatus.APPROVED))
         return groups
 
     def _query_all(

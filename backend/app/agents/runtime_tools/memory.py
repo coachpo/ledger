@@ -118,7 +118,7 @@ _MEMORY_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
         "kind": {"type": ["string", "null"], "maxLength": 80},
         "status": {
             "type": ["string", "null"],
-            "enum": ["pending", "resolved", "expired", None],
+            "enum": ["pending", "approved", "archived", None],
         },
         "tags": {"type": ["array", "null"], "items": {"type": "string"}},
         "limit": {

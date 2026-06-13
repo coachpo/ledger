@@ -14,7 +14,7 @@ from app.models.agent_memory import AgentMemoryEntry
 from app.schemas.memory import MemoryEntryRead, MemoryLifecycleStatus
 from app.services.memory_service import MemoryService
 
-type MemoryFollowUpStatus = Literal["pending", "resolved", "expired"]
+type MemoryFollowUpStatus = Literal["pending", "approved", "archived"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,8 +50,8 @@ class MemoryFollowUpItem:
 @dataclass(frozen=True, slots=True)
 class MemoryFollowUpRunResult:
     checked: int
-    resolved: int
-    expired: int
+    approved: int
+    archived: int
     pending: int
     reflected: int
     items: tuple[MemoryFollowUpItem, ...]
@@ -186,8 +186,8 @@ class MemoryFollowUpService:
     def _result(items: list[MemoryFollowUpItem]) -> MemoryFollowUpRunResult:
         return MemoryFollowUpRunResult(
             checked=len(items),
-            resolved=sum(item.status == "resolved" for item in items),
-            expired=sum(item.status == "expired" for item in items),
+            approved=sum(item.status == "approved" for item in items),
+            archived=sum(item.status == "archived" for item in items),
             pending=sum(item.status == "pending" for item in items),
             reflected=sum(item.reflected for item in items),
             items=tuple(items),

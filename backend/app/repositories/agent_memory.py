@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 from typing import cast as type_cast
 
+# isort: off
 from sqlalchemy import (
     String,
     bindparam,
@@ -21,6 +22,8 @@ from sqlalchemy import (
 from sqlalchemy import or_ as sql_or
 from sqlalchemy.sql.elements import ColumnElement
 
+# isort: on
+
 from app.models.agent_memory import (
     AgentMemoryChunk,
     AgentMemoryEmbedding,
@@ -33,7 +36,7 @@ from app.models.run import Run
 from app.repositories.base import BaseRepository
 
 _ARTIFACT_EVENT_TYPES = ("written", "reused", "superseded", "reviewed")
-_ADMIN_STATUSES = ("pending", "resolved", "expired")
+_ADMIN_STATUSES = ("pending", "approved", "archived")
 _ADMIN_EXCERPT_MAX_CHARACTERS = 500
 
 

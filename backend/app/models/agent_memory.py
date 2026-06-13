@@ -35,7 +35,7 @@ class AgentMemoryEntry(IdMixin, Base):
             name="ck_agent_memory_entries_scope_type",
         ),
         CheckConstraint(
-            "status IN ('pending', 'resolved', 'expired')",
+            "status IN ('pending', 'approved', 'archived')",
             name="ck_agent_memory_entries_status",
         ),
         CheckConstraint(
@@ -179,7 +179,7 @@ class AgentMemoryRevision(IdMixin, Base):
         ),
         CheckConstraint("version > 0", name="ck_agent_memory_revisions_version_positive"),
         CheckConstraint(
-            "status IN ('pending', 'resolved', 'expired')",
+            "status IN ('pending', 'approved', 'archived')",
             name="ck_agent_memory_revisions_status",
         ),
         CheckConstraint(

@@ -307,7 +307,7 @@ def test_admin_memory_dtos_serialize_canonical_memory_without_report_payloads() 
     entry = MemoryAdminEntryRead(
         memory_id="memory_admin_1001",
         revision_id="revision_admin_1001",
-        status=MemoryLifecycleStatus.RESOLVED,
+        status=MemoryLifecycleStatus.APPROVED,
         kind="research.note",
         summary="Admin canonical memory.",
         content="Operator managed canonical memory without report history.",

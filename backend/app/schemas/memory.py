@@ -355,8 +355,8 @@ class MemoryNamespaceGrant(CamelModel):
 
 class MemoryLifecycleStatus(str, Enum):  # noqa: UP042
     PENDING = "pending"
-    RESOLVED = "resolved"
-    EXPIRED = "expired"
+    APPROVED = "approved"
+    ARCHIVED = "archived"
 
 
 class MemoryRevisionAction(str, Enum):  # noqa: UP042
@@ -501,8 +501,8 @@ class MemoryContent(CamelModel):
 
 
 class MemoryOutcome(CamelModel):
-    status: MemoryLifecycleStatus = MemoryLifecycleStatus.RESOLVED
-    summary: str = Field(default="Memory resolved", min_length=1)
+    status: MemoryLifecycleStatus = MemoryLifecycleStatus.APPROVED
+    summary: str = Field(default="Memory approved", min_length=1)
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     attributes: MemoryAttributes = Field(default_factory=dict)
 
@@ -565,7 +565,7 @@ def _default_memory_revision() -> MemoryRevisionRead:
 
 
 def _default_memory_outcome() -> MemoryOutcome:
-    return MemoryOutcome(summary="Memory resolved")
+    return MemoryOutcome(summary="Memory approved")
 
 
 class MemoryAuditReportLink(CamelModel):
@@ -1403,7 +1403,7 @@ class MemoryAdminCreateRequest(CamelModel):
     attributes: MemoryAttributes = Field(default_factory=dict)
     scope: MemoryScope
     provenance: MemoryProvenance
-    status: MemoryLifecycleStatus = MemoryLifecycleStatus.RESOLVED
+    status: MemoryLifecycleStatus = MemoryLifecycleStatus.APPROVED
     idempotency_key: str | None = Field(default=None, max_length=160)
 
     @field_validator("kind", mode="before")

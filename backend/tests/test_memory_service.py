@@ -156,7 +156,7 @@ def _admin_create_request(
     run_id: int,
     *,
     scope: MemoryScope,
-    status: MemoryLifecycleStatus = MemoryLifecycleStatus.RESOLVED,
+    status: MemoryLifecycleStatus = MemoryLifecycleStatus.APPROVED,
     summary: str = "Admin package memory.",
     content: str = "admin managed package alpha lookup signal.",
 ) -> MemoryAdminCreateRequest:
@@ -281,11 +281,11 @@ def test_admin_operator_lists_all_packages(
         )
         _ = service.resolve_memory(
             package_a.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Package A resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Package A resolved"),
         )
         _ = service.resolve_memory(
             package_b.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Package B resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Package B resolved"),
         )
 
         all_memory = service.list_admin_memory(MemoryAdminListQuery())
@@ -327,7 +327,7 @@ def test_admin_create_resolved_affects_matching_runtime_lookup(
             _admin_create_request(
                 run_a.id,
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_a_key),
-                content="admin scoped alpha resolved memory should match alpha only.",
+                content="admin scoped alpha approved memory should match alpha only.",
             )
         )
         alpha_snippets = MemoryService(
@@ -341,7 +341,7 @@ def test_admin_create_resolved_affects_matching_runtime_lookup(
         ).query_memory(
             MemoryQuery(
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_a_key),
-                query="alpha resolved",
+                query="alpha approved",
                 limit=10,
             ),
             record_event=False,
@@ -357,7 +357,7 @@ def test_admin_create_resolved_affects_matching_runtime_lookup(
         ).query_memory(
             MemoryQuery(
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_b_key),
-                query="alpha resolved",
+                query="alpha approved",
                 limit=10,
             ),
             record_event=False,
@@ -365,7 +365,7 @@ def test_admin_create_resolved_affects_matching_runtime_lookup(
         admin_list = service.list_admin_memory(MemoryAdminListQuery())
         events = service.list_admin_memory_events(created.memory_id, limit=10, offset=0)
 
-    assert created.status == MemoryLifecycleStatus.RESOLVED
+    assert created.status == MemoryLifecycleStatus.APPROVED
     assert created.scope == MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_a_key)
     assert created.provenance.created_by_type == "operator"
     assert created.provenance.agent_key == "local-instance-operator"
@@ -410,11 +410,11 @@ def test_admin_pending_resolve_expire_revision_lookup(
             ),
             record_event=False,
         )
-        resolved = service.update_admin_memory_status(
+        approved = service.update_admin_memory_status(
             created.memory_id,
-            MemoryAdminStatusUpdateRequest(status=MemoryLifecycleStatus.RESOLVED),
+            MemoryAdminStatusUpdateRequest(status=MemoryLifecycleStatus.APPROVED),
         )
-        resolved_snippets = runtime_service.query_memory(
+        approved_snippets = runtime_service.query_memory(
             MemoryQuery(
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
                 query="admin memory",
@@ -449,11 +449,11 @@ def test_admin_pending_resolve_expire_revision_lookup(
             ),
             record_event=False,
         )
-        expired = service.update_admin_memory_status(
+        archived = service.update_admin_memory_status(
             created.memory_id,
-            MemoryAdminStatusUpdateRequest(status=MemoryLifecycleStatus.EXPIRED),
+            MemoryAdminStatusUpdateRequest(status=MemoryLifecycleStatus.ARCHIVED),
         )
-        expired_snippets = runtime_service.query_memory(
+        archived_snippets = runtime_service.query_memory(
             MemoryQuery(
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
                 query="latest admin revision",
@@ -466,13 +466,13 @@ def test_admin_pending_resolve_expire_revision_lookup(
         revisions = service.list_admin_memory_revisions(created.memory_id, limit=10, offset=0)
 
     assert pending_snippets == []
-    assert resolved.status == MemoryLifecycleStatus.RESOLVED
-    assert [snippet.memory_id for snippet in resolved_snippets] == [created.memory_id]
+    assert approved.status == MemoryLifecycleStatus.APPROVED
+    assert [snippet.memory_id for snippet in approved_snippets] == [created.memory_id]
     assert revised.content == "latest admin revision controls future lookup content."
     assert [snippet.content for snippet in latest_snippets] == [revised.content]
-    assert expired.status == MemoryLifecycleStatus.EXPIRED
-    assert expired_snippets == []
-    assert admin_detail.status == MemoryLifecycleStatus.EXPIRED
+    assert archived.status == MemoryLifecycleStatus.ARCHIVED
+    assert archived_snippets == []
+    assert admin_detail.status == MemoryLifecycleStatus.ARCHIVED
     assert admin_detail.content == revised.content
     assert [event.event_type for event in events.items] == [
         "operator_created",
@@ -500,22 +500,22 @@ def test_admin_list_status_sort(session_factory: sessionmaker[Session]) -> None:
                 content="pending admin sort memory " + ("x" * 700),
             )
         )
-        resolved = service.create_admin_memory(
+        approved = service.create_admin_memory(
             _admin_create_request(
                 run.id,
                 scope=package_scope,
-                status=MemoryLifecycleStatus.RESOLVED,
-                summary="Resolved admin sort memory.",
-                content="resolved admin sort memory.",
+                status=MemoryLifecycleStatus.APPROVED,
+                summary="Approved admin sort memory.",
+                content="approved admin sort memory.",
             )
         )
-        expired = service.create_admin_memory(
+        archived = service.create_admin_memory(
             _admin_create_request(
                 run.id,
                 scope=package_scope,
-                status=MemoryLifecycleStatus.EXPIRED,
-                summary="Expired admin sort memory.",
-                content="expired admin sort memory.",
+                status=MemoryLifecycleStatus.ARCHIVED,
+                summary="Archived admin sort memory.",
+                content="archived admin sort memory.",
             )
         )
         base_time = datetime(2026, 6, 13, 12, tzinfo=UTC)
@@ -524,17 +524,17 @@ def test_admin_list_status_sort(session_factory: sessionmaker[Session]) -> None:
             for entry in session.scalars(
                 select(AgentMemoryEntry).where(
                     AgentMemoryEntry.memory_id.in_(
-                        [pending.memory_id, resolved.memory_id, expired.memory_id]
+                        [pending.memory_id, approved.memory_id, archived.memory_id]
                     )
                 )
             )
         }
         entries[pending.memory_id].created_at = base_time
         entries[pending.memory_id].updated_at = base_time + timedelta(minutes=2)
-        entries[resolved.memory_id].created_at = base_time + timedelta(minutes=1)
-        entries[resolved.memory_id].updated_at = base_time + timedelta(minutes=2)
-        entries[expired.memory_id].created_at = base_time + timedelta(minutes=3)
-        entries[expired.memory_id].updated_at = base_time + timedelta(minutes=1)
+        entries[approved.memory_id].created_at = base_time + timedelta(minutes=1)
+        entries[approved.memory_id].updated_at = base_time + timedelta(minutes=2)
+        entries[archived.memory_id].created_at = base_time + timedelta(minutes=3)
+        entries[archived.memory_id].updated_at = base_time + timedelta(minutes=1)
         session.commit()
 
         default_list = service.list_admin_memory(MemoryAdminListQuery())
@@ -545,18 +545,18 @@ def test_admin_list_status_sort(session_factory: sessionmaker[Session]) -> None:
 
     assert default_list.total == 3
     assert [item.memory_id for item in default_list.items] == [
-        resolved.memory_id,
+        approved.memory_id,
         pending.memory_id,
-        expired.memory_id,
+        archived.memory_id,
     ]
     assert {item.status for item in default_list.items} == {
         MemoryLifecycleStatus.PENDING,
-        MemoryLifecycleStatus.RESOLVED,
-        MemoryLifecycleStatus.EXPIRED,
+        MemoryLifecycleStatus.APPROVED,
+        MemoryLifecycleStatus.ARCHIVED,
     }
     assert [item.memory_id for item in created_sort.items] == [
-        expired.memory_id,
-        resolved.memory_id,
+        archived.memory_id,
+        approved.memory_id,
         pending.memory_id,
     ]
     assert [item.memory_id for item in pending_only.items] == [pending.memory_id]
@@ -685,11 +685,11 @@ def test_package_runtime_broader_scopes_are_package_isolated(
         )
         _ = alpha_service.resolve_memory(
             alpha_created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Alpha resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Alpha resolved"),
         )
         _ = beta_service.resolve_memory(
             beta_created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Beta resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Beta resolved"),
         )
         alpha_snippets = alpha_service.query_memory(
             MemoryQuery(query="package isolation", limit=10),
@@ -819,7 +819,7 @@ def test_admin_created_namespace_memory_still_requires_runtime_namespace_rules(
             MemoryQuery(
                 scope=namespace.to_scope(),
                 query="runtime grant marker",
-                status=MemoryLifecycleStatus.RESOLVED,
+                status=MemoryLifecycleStatus.APPROVED,
                 limit=5,
             ),
             record_event=False,
@@ -828,7 +828,7 @@ def test_admin_created_namespace_memory_still_requires_runtime_namespace_rules(
             MemoryQuery(
                 scope=namespace.to_scope(),
                 query="runtime grant marker",
-                status=MemoryLifecycleStatus.RESOLVED,
+                status=MemoryLifecycleStatus.APPROVED,
                 limit=5,
             ),
             record_event=False,
@@ -888,7 +888,7 @@ def test_shared_namespace_owner_and_grant_read_write_semantics(
         )
         _ = owner_service.resolve_memory(
             owner_created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Owner resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Owner resolved"),
         )
         reader_service = MemoryService(
             session,
@@ -904,7 +904,7 @@ def test_shared_namespace_owner_and_grant_read_write_semantics(
             MemoryQuery(
                 scope=namespace.to_scope(),
                 query="shared namespace",
-                status=MemoryLifecycleStatus.RESOLVED,
+                status=MemoryLifecycleStatus.APPROVED,
                 limit=5,
             ),
             record_event=False,
@@ -1095,7 +1095,7 @@ def test_package_runtime_run_scope_default_remains_run_scoped(
         )
         _ = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Run resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Run resolved"),
         )
         snippets = service.query_memory(
             MemoryQuery(query="compounding", limit=5),
@@ -1141,7 +1141,7 @@ def test_package_runtime_current_context_lookup_uses_canonical_scope_keys(
         )
         _ = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Workflow resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Workflow resolved"),
         )
         snippets = service.query_memory(MemoryQuery(query="canonical fallback", limit=5))
         retrieval_event = session.scalar(
@@ -1249,9 +1249,9 @@ def test_core_memory_service_query_binds_current_context_with_finance_disabled(
             capability_references=[],
             payload=_write_request(run.id),
         )
-        resolved = service.resolve_memory(
+        approved = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Memory resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Memory resolved"),
         )
         snippets = service.query_memory(
             MemoryQuery(query="compounding"),
@@ -1263,7 +1263,7 @@ def test_core_memory_service_query_binds_current_context_with_finance_disabled(
         )
         reports = _reports(session)
 
-    assert resolved.status == MemoryLifecycleStatus.RESOLVED
+    assert approved.status == MemoryLifecycleStatus.APPROVED
     assert [snippet.memory_id for snippet in snippets] == [created.memory_id]
     assert "Long-term compounding memory" in snippets[0].text
     assert reports == []
@@ -1309,11 +1309,11 @@ def test_current_context_fallback_globally_reranks_before_limit(
         )
         _ = service.resolve_memory(
             run_scoped.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Run resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Run resolved"),
         )
         _ = service.resolve_memory(
             agent_scoped.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Agent resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Agent resolved"),
         )
 
         snippets = service.query_memory(MemoryQuery(query="shared ranking", limit=1))
@@ -1362,11 +1362,11 @@ def test_core_memory_query_uses_lexical_candidates_and_records_score_provenance(
         )
         _ = service.resolve_memory(
             first_created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="First resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="First resolved"),
         )
         _ = service.resolve_memory(
             second_created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Second resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Second resolved"),
         )
 
         snippets = MemoryService(
@@ -1435,7 +1435,7 @@ def test_memory_context_service_uses_core_store_current_context_without_reports(
         )
         _ = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Memory resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Memory resolved"),
         )
         context_service = MemoryContextService(
             session,
@@ -1483,7 +1483,7 @@ def test_memory_context_service_persists_retrieval_and_injection_events_without_
         created = service.write_memory(capability_references=[], payload=write_request)
         _ = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Memory resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Memory resolved"),
         )
         prompt = MemoryContextService(
             session,
@@ -1642,7 +1642,7 @@ def test_core_memory_revision_update_rolls_back_when_event_persistence_fails(
             _ = service.resolve_memory(
                 created.memory_id,
                 MemoryOutcome(
-                    status=MemoryLifecycleStatus.RESOLVED,
+                    status=MemoryLifecycleStatus.APPROVED,
                     summary="Resolution should roll back",
                 ),
             )

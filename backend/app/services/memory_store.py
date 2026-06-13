@@ -143,7 +143,7 @@ class MemoryStore(Protocol):
         ...
 
     def append_reflection(self, memory_id: str, reflection: MemoryReflection) -> MemoryEntryRead:
-        """Stage a reflection append for an existing resolved memory."""
+        """Stage a reflection append for an existing approved memory."""
         ...
 
     def record_review(
@@ -475,7 +475,7 @@ class PostgresMemoryStore:
             "scope_key": query.scope.scope_key if query.scope is not None else None,
             "subject_refs": self._query_subject_refs(query.subject_refs),
             "kind": query.kind,
-            "status": (query.status or MemoryLifecycleStatus.RESOLVED).value,
+            "status": (query.status or MemoryLifecycleStatus.APPROVED).value,
             "agent_key": query.agent_key,
             "workflow_key": query.workflow_key,
             "tags": query.tags,

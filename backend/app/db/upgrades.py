@@ -997,7 +997,7 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
             scope_type IN ('workspace', 'package', 'workflow', 'run', 'agent', 'namespace')
         ),
         CONSTRAINT ck_agent_memory_entries_status CHECK (
-            status IN ('pending', 'resolved', 'expired')
+            status IN ('pending', 'approved', 'archived')
         ),
         CONSTRAINT ck_agent_memory_entries_content_hash CHECK (
             content_hash ~ '^[a-f0-9]{64}$'
@@ -1041,7 +1041,7 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
         CONSTRAINT uq_agent_memory_revisions_entry_version UNIQUE (memory_entry_id, version),
         CONSTRAINT ck_agent_memory_revisions_version_positive CHECK (version > 0),
         CONSTRAINT ck_agent_memory_revisions_status CHECK (
-            status IN ('pending', 'resolved', 'expired')
+            status IN ('pending', 'approved', 'archived')
         ),
         CONSTRAINT ck_agent_memory_revisions_action CHECK (
             revision_action IN ('created', 'reused', 'superseded')
@@ -2989,6 +2989,42 @@ def _ensure_core_memory_tables(engine: Engine, table_names: set[str]) -> None:
     with engine.begin() as connection:
         for statement in _CORE_MEMORY_TABLE_STATEMENTS:
             connection.exec_driver_sql(statement)
+        _drop_constraint_if_exists(
+            connection,
+            "agent_memory_entries",
+            "ck_agent_memory_entries_status",
+        )
+        _drop_constraint_if_exists(
+            connection,
+            "agent_memory_revisions",
+            "ck_agent_memory_revisions_status",
+        )
+        connection.exec_driver_sql(
+            "UPDATE agent_memory_entries "
+            "SET status = CASE status "
+            "WHEN 'resolved' THEN 'approved' "
+            "WHEN 'expired' THEN 'archived' "
+            "ELSE status END "
+            "WHERE status IN ('resolved', 'expired')"
+        )
+        connection.exec_driver_sql(
+            "UPDATE agent_memory_revisions "
+            "SET status = CASE status "
+            "WHEN 'resolved' THEN 'approved' "
+            "WHEN 'expired' THEN 'archived' "
+            "ELSE status END "
+            "WHERE status IN ('resolved', 'expired')"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE agent_memory_entries "
+            "ADD CONSTRAINT ck_agent_memory_entries_status "
+            "CHECK (status IN ('pending', 'approved', 'archived'))"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE agent_memory_revisions "
+            "ADD CONSTRAINT ck_agent_memory_revisions_status "
+            "CHECK (status IN ('pending', 'approved', 'archived'))"
+        )
         _drop_constraint_if_exists(
             connection,
             "agent_memory_entries",

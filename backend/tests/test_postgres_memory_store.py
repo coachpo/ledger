@@ -119,7 +119,7 @@ def _write_request(
 
 def _outcome() -> MemoryOutcome:
     return MemoryOutcome(
-        status=MemoryLifecycleStatus.RESOLVED,
+        status=MemoryLifecycleStatus.APPROVED,
         summary="Sizing check completed.",
         observed_at=datetime(2026, 1, 17, 10, 30, tzinfo=UTC),
         attributes={"verdict": "useful"},
@@ -268,7 +268,7 @@ def test_resolve_append_and_query_use_canonical_revisions_without_leaks(
             )
             == []
         )
-        resolved = store.resolve(created.memory_id, _outcome())
+        approved = store.resolve(created.memory_id, _outcome())
         reflected = store.append_reflection(created.memory_id, _reflection())
         snippets = store.query(
             MemoryQuery(
@@ -285,9 +285,9 @@ def test_resolve_append_and_query_use_canonical_revisions_without_leaks(
         )
         events = list(session.scalars(select(RunMemoryEvent).order_by(RunMemoryEvent.id)))
 
-    assert resolved.status == MemoryLifecycleStatus.RESOLVED
-    assert resolved.outcome is not None
-    assert resolved.outcome.summary == "Sizing check completed."
+    assert approved.status == MemoryLifecycleStatus.APPROVED
+    assert approved.outcome is not None
+    assert approved.outcome.summary == "Sizing check completed."
     assert reflected.reflections[0].reflection == "Outcome confirmed the liquidity gate."
     assert [revision.version for revision in revisions] == [1, 2, 3]
     assert revisions[1].supersedes_revision_id == revisions[0].revision_id
@@ -347,7 +347,7 @@ def test_concurrent_shared_scope_revision_update_conflicts_then_retries_without_
     assert retried.revision.version == 3
     assert retried.reflections[0].reflection == _reflection().reflection
     assert entry is not None
-    assert entry.status == "resolved"
+    assert entry.status == "approved"
     assert [revision.version for revision in revisions] == [1, 2, 3]
     assert revisions[1].supersedes_revision_id == revisions[0].revision_id
     assert revisions[2].supersedes_revision_id == revisions[1].revision_id
@@ -436,7 +436,7 @@ def test_repositories_expose_canonical_lookup_helpers(
             scope_key="pkg-advisory",
             subject_refs=[{"kind": "instrument", "id": "nvda"}],
             kind="research.note",
-            status=MemoryLifecycleStatus.RESOLVED.value,
+            status=MemoryLifecycleStatus.APPROVED.value,
             agent_key="memory_curator",
             workflow_key="daily_review",
             tags=[],

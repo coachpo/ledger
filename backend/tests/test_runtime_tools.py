@@ -945,7 +945,7 @@ def _admin_memory_create_request(
             slot="memory",
             trace_id="trace-admin-runtime-guardrail",
         ),
-        status=MemoryLifecycleStatus.RESOLVED,
+        status=MemoryLifecycleStatus.APPROVED,
     )
 
 
@@ -4266,7 +4266,7 @@ def test_memory_lookup_runtime_tool_stays_package_scoped_when_admin_lists_all_me
         service = MemoryService(session)
         _ = service.resolve_memory(
             str(alpha_payload["memoryId"]),
-            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Alpha resolved"),
+            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Alpha approved"),
         )
         beta = service.create_admin_memory(
             _admin_memory_create_request(
