@@ -176,7 +176,7 @@ Model-visible memory outputs may include memory/revision ids, status, kind, summ
 
 ## Runtime Input Semantics
 
-Workflow Package runtime inputs are workflow-scoped JSON object payloads. The launch page, Scheduled Tasks, reruns, forks, and personal saved inputs all converge on the same canonical validation rules before a payload is persisted or used to queue work.
+Workflow Package runtime inputs are workflow-scoped JSON object payloads. The launch page, Scheduled Tasks, reruns, forks, and saved runtime input presets all converge on the same canonical validation rules before a payload is persisted or used to queue work.
 
 For supported object schemas, the Web UI uses the generated schema form as the primary editing surface. Required fields and fields with schema defaults are active immediately. Optional inputs without defaults stay visible as Add Field rows, so operators can discover them without adding keys to the payload. They are omitted until the operator explicitly includes them. JSON Schema `title` supplies generated form labels, and `description` supplies generated help text. These are display metadata only and do not change runtime input JSON, validation, workflow wiring, or package-local agent invocation.
 
@@ -184,9 +184,9 @@ Absent, `JSON null`, and `empty string` are distinct values. An absent optional 
 
 Advanced JSON is a secondary editing mode for supported schemas and the fallback for unsupported schemas. It lets operators inspect or edit the raw object payload, but it never bypasses validation. Before preflight, launch, save, or overwrite, the UI parses Advanced JSON and validates it into the canonical form state. Invalid JSON, non-object payloads, or local schema mismatches block those actions before any API call is made.
 
-Personal saved inputs persist named canonical payload presets for one package workflow. Creating or updating a saved input validates the payload against the current workflow input schema and stores the canonical result. Name-only updates preserve the existing payload. When a saved input is stale or incompatible with the current schema, the UI keeps it visible for review instead of silently mutating or dropping fields.
+Saved runtime input presets persist named canonical payload presets for one package workflow. Creating or updating a saved runtime input preset validates the payload against the current workflow input schema and stores the canonical result. Name-only updates preserve the existing payload. When a saved runtime input preset is stale or incompatible with the current schema, the UI keeps it visible for review instead of silently mutating or dropping fields.
 
-The backend is the canonical persistence boundary. Launches, scheduled preview and materialization, reruns, forks, and saved input create/update paths share canonical workflow input validation: absent optional no-default fields stay absent, defaults materialize, explicit nullable nulls are preserved only for declared nullable fields, non-nullable nulls fail validation, and empty strings remain strings. Run snapshots and saved presets persist the canonical payload rather than raw editor text.
+The backend is the canonical persistence boundary. Launches, scheduled preview and materialization, reruns, forks, and saved runtime input preset create/update paths share canonical workflow input validation: absent optional no-default fields stay absent, defaults materialize, explicit nullable nulls are preserved only for declared nullable fields, non-nullable nulls fail validation, and empty strings remain strings. Run snapshots and saved presets persist the canonical payload rather than raw editor text.
 
 Unsupported help and schema mechanisms include YAML comments, `comment`, `x-signaldeck-*` metadata, `patternProperties`, `oneOf`, `allOf`, `if`, `then`, `else`, `not`, and schema-valued `additionalProperties`.
 

@@ -69,7 +69,7 @@ const runtimeInputRegistry = {
   history: [],
   packageId: 42,
   packageKey: "market_review_package",
-  personal: [],
+  presets: [],
   workflowKey: "market_review",
 };
 

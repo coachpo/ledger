@@ -347,14 +347,14 @@ Confirmed
 Acceptance Criteria:
 - Given a package and workflow, when the client requests launch metadata, then the API returns readiness, warnings, and the workflow input schema.
 - Given launch parameters, when the client preflights or launches, then the payload is validated against the workflow input schema.
-- Given personal saved inputs, when the client creates, updates, lists, or deletes them for one package workflow, then the registry behavior stays workflow-scoped.
+- Given saved runtime input presets, when the client creates, updates, lists, or deletes them for one package workflow, then the registry behavior stays workflow-scoped.
 - Given saved inputs whose manifest, compiled plan, or schema fingerprint no longer matches the current workflow, when the registry is read, then stale status is exposed rather than silently rewriting the payload.
 
 Edge Cases:
 - Unsupported or non-object raw JSON is rejected before launch.
 - Structured generated-form support applies only to the currently supported object-schema subset; unsupported schemas remain on raw JSON fallback instead of implying broader structured-editor support.
 - Optional fields without defaults may remain absent rather than materializing as null.
-- Personal saved inputs are bounded per package/workflow/owner scope and history entries are trimmed rather than growing without limit.
+- Saved runtime input presets are bounded per package/workflow scope and history entries are trimmed rather than growing without limit.
 
 ### FR-011: Scheduled Tasks
 
@@ -650,7 +650,7 @@ Edge Cases:
 - Goal: Create a package-local workflow artifact without using deprecated global authoring.
 - Preconditions: Platform routes available.
 - Main flow: edit manifest/resources -> validate -> save/import -> review package detail/export.
-- Alternative flows: manage package-local secret bindings and personal runtime input presets.
+- Alternative flows: manage package-local secret bindings and saved runtime input presets.
 - Failure flows: malformed YAML, unsupported manifest features, unresolved dependencies, disabled extension/tool references.
 - Evidence: `backend/app/api/workflow_packages.py`, `backend/app/services/workflow_package_manifest_parser.py`, `frontend/src/pages/workflow-packages/*.test.tsx`.
 
@@ -659,7 +659,7 @@ Edge Cases:
 - Goal: Queue a run from a saved package workflow.
 - Preconditions: Package exists; selected workflow is launchable.
 - Main flow: read launch metadata -> preflight with parameters -> create queued run -> navigate to run detail.
-- Alternative flows: use saved personal inputs or raw JSON entry mode.
+- Alternative flows: use saved runtime input presets or raw JSON entry mode.
 - Failure flows: non-object JSON, readiness blockers, missing secret bindings, failed or missing model connection.
 - Evidence: `backend/app/api/workflow_packages.py`, `frontend/src/pages/workflow-packages/launch.test.tsx`.
 
@@ -707,7 +707,7 @@ The table below summarizes the public contract surfaces that are evidence-backed
 | Reports | `GET/POST /api/v1/reports`, `POST /api/v1/reports/compile/{templateId}`, `POST /api/v1/reports/upload`, `GET/PATCH/DELETE /api/v1/reports/{slug}`, `GET /api/v1/reports/{slug}/download` | source-specific DTOs and multipart upload | report persistence, filtering, download | finance extension gate | `backend/app/api/reports.py` |
 | Workflow packages | `GET/POST /api/workflow-packages`, `POST /api/workflow-packages/validate-manifest`, `POST /api/workflow-packages/import`, `GET/PATCH/DELETE /api/workflow-packages/{packageId}`, `GET /manifest`, `GET /export` | manifest source, import payloads, removed query guards | mutable current package artifact, validation diagnostics, export response | platform core | `backend/app/api/workflow_packages.py` |
 | Package secret bindings | `GET /api/workflow-packages/{packageId}/secret-bindings`, `PUT/DELETE /api/workflow-packages/{packageId}/secret-bindings/{key}` | key plus write-only secret value | encrypted binding persistence | platform core | `backend/app/api/workflow_packages.py`, `backend/app/schemas/workflow_package.py` |
-| Runtime input registry | `GET /api/workflow-packages/{packageId}/runtime-input-registry?workflowKey=...`, `POST/PATCH/DELETE .../personal/...` | workflow-scoped payloads | personal/history registry entries | platform core | `backend/app/api/workflow_packages.py` |
+| Runtime input registry | `GET /api/workflow-packages/{packageId}/runtime-input-registry?workflowKey=...`, `POST/PATCH/DELETE .../presets/...` | workflow-scoped payloads | preset/history registry entries | platform core | `backend/app/api/workflow_packages.py` |
 | Launch and preflight | `POST /api/workflow-packages/{packageId}/preflight`, `GET /api/workflow-packages/{packageId}/launch`, `POST /api/workflow-packages/{packageId}/launches` | workflow key and parameters | readiness summary or queued run | platform core | `backend/app/api/workflow_packages.py`, `backend/app/schemas/workflow_package.py` |
 | Schedules | `GET/POST /api/schedules`, `POST /api/schedules/preview`, `GET/PATCH/DELETE /api/schedules/{scheduleId}`, `POST /api/schedules/{scheduleId}/preview`, `POST /api/schedules/{scheduleId}/run-now`, `GET /api/schedules/{scheduleId}/fires` | structured recurrence, IANA timezone, JSON templates, idempotency key | schedule records, previews, manual fire/run, fire history | platform core | `backend/app/api/schedules.py`, `backend/app/schemas/schedule.py` |
 | Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /connection-test`, `POST /capability-probe` | validated key/baseUrl/modelId/protocolProfile/apiKey | CRUD plus connection test and capability metadata | platform core | `backend/app/api/model_connections.py`, `backend/app/schemas/model_connection.py` |
@@ -733,7 +733,7 @@ The table below summarizes the public contract surfaces that are evidence-backed
 | `reports` | `name`, `slug`, `source`, `content`, `metadata` | unique name and slug; source constrained to `compiled`, `uploaded`, `external`, `agent` |
 | `workflow_packages` | current mutable package artifact with `manifest_source`, hashes, compiled plan, dependency keys | no live status lifecycle is evidenced |
 | `workflow_package_secret_bindings` | package-local encrypted `key` + `secret_payload` | unique per package+key; never exported in raw form |
-| `workflow_package_runtime_input_entries` | workflow-scoped personal/history payload presets | slot constrained to `history` or `personal`; tied to schema fingerprint and hashes |
+| `workflow_package_runtime_input_entries` | workflow-scoped preset/history payloads | slot constrained to `history` or `preset`; tied to schema fingerprint and hashes |
 | `workflow_package_schedules` | package/workflow target, recurrence, timezone, next fire, input template | status `enabled`/`paused`; overlap/misfire policies constrained |
 | `workflow_package_schedule_fires` | schedule-owned fire rows with status, reason, scheduled fields, rendered parameters, linked run ids | deleted with owning schedule; not a preserved live surface after deletion |
 | `model_connections` | global endpoint/model settings plus encrypted secret payload and compatibility metadata | protocol profile constrained; positive TTL/timeout; backend-owned capability/policy columns |
@@ -764,7 +764,7 @@ The table below summarizes the public contract surfaces that are evidence-backed
 - **BR-010**: Secret refs are valid only in HTTP request `url`, `headers`, `query`, and `body` fields. Evidence: `backend/app/services/workflow_package_manifest_parser.py`, `backend/tests/test_workflow_package_manifest_http_node.py`. Confidence: High.
 - **BR-011**: Scheduled input placeholders are allowlisted to `schedule`, `fire`, `window`, `lastRun`, and `vars`. Evidence: `backend/app/services/workflow_package_schedule_inputs.py`, `frontend/src/pages/scheduled-tasks/detail.tsx`. Confidence: High.
 - **BR-012**: Memory lookup is scoped; omitted runtime selectors fall back to current context instead of global search. Evidence: `backend/app/schemas/memory.py`, `backend/tests/test_memory_domain_schemas.py::test_memory_query_defaults_to_current_context_fallback_and_budgets`. Confidence: High.
-- **BR-013**: Saved personal runtime-input entries are workflow-scoped, bounded per owner scope, and marked stale when manifest, compiled-plan, or schema fingerprints drift. Evidence: `backend/app/services/workflow_package_runtime_input_registry.py`, frontend launch/runtime-input tests. Confidence: High.
+- **BR-013**: Saved runtime-input preset entries are workflow-scoped, bounded per package/workflow scope, and marked stale when manifest, compiled-plan, or schema fingerprints drift. Evidence: `backend/app/services/workflow_package_runtime_input_registry.py`, frontend launch/runtime-input tests. Confidence: High.
 - **BR-014**: Schedule detail reads intentionally omit editable input-template fields, while run-now remains idempotent and allowed for paused schedules. Evidence: `backend/app/schemas/schedule.py`, `backend/tests/test_workflow_package_runtime_api.py`. Confidence: High.
 - **BR-015**: Deleting a model connection removes the live saved row but does not cascade current packages or historical run snapshots that still reference its key. Evidence: `backend/app/services/model_connection_service.py`, `backend/tests/test_runtime_repositories.py`. Confidence: High.
 - **BR-016**: Reports are listed newest-first and have no automatic expiration or cleanup contract; removal happens only through explicit delete paths, including report deletion by slug and run deletion for run-owned agent-memory report rows. Evidence: `backend/app/repositories/report.py`, `backend/app/api/reports.py`, `backend/app/services/run_service.py`, `backend/tests/test_api.py::test_report_external_non_memory_update_and_delete_remains_allowed`, `backend/tests/test_runtime_repositories.py::test_delete_run_route_returns_204_then_404`. Confidence: High.
