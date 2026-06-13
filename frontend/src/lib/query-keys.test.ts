@@ -188,7 +188,7 @@ describe("query keys", () => {
         query: " earnings ",
         runId: 41,
         scopeType: "package",
-        status: "expired",
+        status: "archived",
         workflowKey: " daily ",
       }),
     ).toEqual([
@@ -208,7 +208,7 @@ describe("query keys", () => {
         runId: 41,
         scopeType: "package",
         sort: "updatedAtDesc",
-        status: "expired",
+        status: "archived",
         workflowKey: "daily",
       },
     ]);

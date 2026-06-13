@@ -10,7 +10,12 @@ const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
 const FAKE_PROVIDER_BASE_URL =
   process.env.SIGNALDECK_FAKE_PROVIDER_BASE_URL ?? "http://127.0.0.1:18081/v1";
 
-function packageManifest(packageKey: string, modelKey: string, agentKey: string, workflowKey: string) {
+function packageManifest(
+  packageKey: string,
+  modelKey: string,
+  agentKey: string,
+  workflowKey: string,
+) {
   return [
     "apiVersion: signaldeck.workflowPackage/v1",
     "kind: WorkflowPackage",
@@ -81,9 +86,12 @@ async function seedModelConnection(request: APIRequestContext, key: string) {
     apiKey: "sk-e2e-memory-fake-provider",
   };
 
-  const response = await request.post(`${PLATFORM_API_BASE}/model-connections`, {
-    data: payload,
-  });
+  const response = await request.post(
+    `${PLATFORM_API_BASE}/model-connections`,
+    {
+      data: payload,
+    },
+  );
   expect(response.status()).toBe(201);
 }
 
@@ -95,9 +103,19 @@ async function seedRun(
 ) {
   const modelKey = `${packageKey}_model`;
   await seedModelConnection(request, modelKey);
-  const createResponse = await request.post(`${PLATFORM_API_BASE}/workflow-packages`, {
-    data: { manifestSource: packageManifest(packageKey, modelKey, agentKey, workflowKey) },
-  });
+  const createResponse = await request.post(
+    `${PLATFORM_API_BASE}/workflow-packages`,
+    {
+      data: {
+        manifestSource: packageManifest(
+          packageKey,
+          modelKey,
+          agentKey,
+          workflowKey,
+        ),
+      },
+    },
+  );
   expect(createResponse.status()).toBe(201);
   const workflowPackage = await createResponse.json();
 
@@ -119,28 +137,37 @@ async function createAdminMemory(
     kind?: string;
     packageKey: string;
     runId: number;
-    status?: "pending" | "resolved" | "expired";
+    status?: "pending" | "approved" | "archived";
     summary: string;
     workflowKey: string;
   },
 ) {
-  const response = await request.post(`${PLATFORM_API_BASE}/memory/admin/entries`, {
-    data: {
-      content: options.content,
-      kind: options.kind ?? "note",
-      provenance: {
-        agentKey: options.agentKey,
-        agentVersion: 1,
-        createdByType: "operator",
-        runId: options.runId,
-        workflowKey: options.workflowKey,
+  const response = await request.post(
+    `${PLATFORM_API_BASE}/memory/admin/entries`,
+    {
+      data: {
+        content: options.content,
+        kind: options.kind ?? "note",
+        provenance: {
+          agentKey: options.agentKey,
+          agentVersion: 1,
+          createdByType: "operator",
+          runId: options.runId,
+          workflowKey: options.workflowKey,
+        },
+        scope: { scopeKey: options.packageKey, scopeType: "package" },
+        status: options.status ?? "approved",
+        subjectRefs: [
+          {
+            id: options.packageKey,
+            kind: "package",
+            label: options.packageKey,
+          },
+        ],
+        summary: options.summary,
       },
-      scope: { scopeKey: options.packageKey, scopeType: "package" },
-      status: options.status ?? "resolved",
-      subjectRefs: [{ id: options.packageKey, kind: "package", label: options.packageKey }],
-      summary: options.summary,
     },
-  });
+  );
   expect(response.ok()).toBeTruthy();
   return response.json();
 }
@@ -167,39 +194,12 @@ async function expectNoDocumentOverflow(page: Page) {
   expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
 }
 
-async function expectMemoryInspectorStartsInViewport(page: Page) {
-  const metrics = await page
-    .getByTestId("memory-split-inspector")
-    .evaluate((node) => {
-      const rect = node.getBoundingClientRect();
-      return {
-        bottom: rect.bottom,
-        height: rect.height,
-        top: rect.top,
-        viewportHeight: window.innerHeight,
-      };
-    });
-
-  expect(metrics.top).toBeGreaterThanOrEqual(0);
-  expect(metrics.top).toBeLessThan(metrics.viewportHeight);
-  expect(metrics.bottom).toBeGreaterThan(metrics.top);
-  expect(metrics.height).toBeGreaterThan(200);
-}
-
-function collectPanelLayoutWarnings(page: Page) {
-  const warnings: string[] = [];
-  page.on("console", (message) => {
-    if (
-      message.type() === "warning" &&
-      message.text().includes("Invalid layout total size")
-    ) {
-      warnings.push(message.text());
-    }
-  });
-  return warnings;
-}
-
-async function chooseSelectOption(page: Page, owner: Locator, label: string, option: string) {
+async function chooseSelectOption(
+  page: Page,
+  owner: Locator,
+  label: string,
+  option: string,
+) {
   const combobox = owner.getByRole("combobox", { name: label });
   await combobox.click();
   await page.getByRole("option", { name: option }).click();
@@ -218,8 +218,12 @@ async function expectNoRetiredMemoryGates(page: Page) {
   ]) {
     expect(text).not.toContain(pieces.join(" "));
   }
-  await expect(page.getByTestId(["memory", "access", "required"].join("-"))).toHaveCount(0);
-  await expect(page.getByTestId(["memory", "explicit", "scope", "required"].join("-"))).toHaveCount(0);
+  await expect(
+    page.getByTestId(["memory", "access", "required"].join("-")),
+  ).toHaveCount(0);
+  await expect(
+    page.getByTestId(["memory", "explicit", "scope", "required"].join("-")),
+  ).toHaveCount(0);
 }
 
 test.describe("memory admin workspace", () => {
@@ -234,18 +238,31 @@ test.describe("memory admin workspace", () => {
     const betaWorkflowKey = `beta_memory_flow_${suffix}`;
     const alphaAgentKey = `alpha_memory_agent_${suffix}`;
     const betaAgentKey = `beta_memory_agent_${suffix}`;
-    const panelLayoutWarnings = collectPanelLayoutWarnings(page);
     const memoryRequests: string[] = [];
 
     page.on("request", (browserRequest) => {
       const url = new URL(browserRequest.url());
-      if (url.hostname === "127.0.0.1" && url.port === "8001" && url.pathname.startsWith("/api/memory")) {
+      if (
+        url.hostname === "127.0.0.1" &&
+        url.port === "8001" &&
+        url.pathname.startsWith("/api/memory")
+      ) {
         memoryRequests.push(`${browserRequest.method()} ${url.pathname}`);
       }
     });
 
-    const alphaRun = await seedRun(request, alphaPackageKey, alphaWorkflowKey, alphaAgentKey);
-    const betaRun = await seedRun(request, betaPackageKey, betaWorkflowKey, betaAgentKey);
+    const alphaRun = await seedRun(
+      request,
+      alphaPackageKey,
+      alphaWorkflowKey,
+      alphaAgentKey,
+    );
+    const betaRun = await seedRun(
+      request,
+      betaPackageKey,
+      betaWorkflowKey,
+      betaAgentKey,
+    );
     const betaMemory = await createAdminMemory(request, {
       agentKey: betaAgentKey,
       content: "Beta cross-package operator memory remains visible by default.",
@@ -260,40 +277,56 @@ test.describe("memory admin workspace", () => {
     await page.setViewportSize({ width: 1280, height: 760 });
     await page.goto("/memory");
 
-    await expectSingleRouteMain(page, "route-memory-list", "fullHeight");
+    await expectSingleRouteMain(page, "route-memory-list", "scroll", "wide");
     await expect(page.getByTestId("memory-list-page")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Memory" })).toBeVisible();
     await expect(page.getByTestId("memory-admin-notice")).toContainText(
       "trusted local operator console",
     );
-    await expect(page.getByTestId("memory-admin-notice")).toContainText(
+    await expect(page.getByTestId("memory-admin-notice")).not.toContainText(
       "Mixed package rows are intentional",
     );
-    await expect(page.getByTestId(`memory-row-${betaMemory.memoryId}`)).toContainText(
-      "Beta admin memory",
-    );
-    await expect(page.getByTestId(`memory-row-${betaMemory.memoryId}`)).toContainText(
-      "pending",
-    );
+    await expect(
+      page.getByTestId("workspace-page-shell-context").getByRole("button", {
+        name: "Create memory",
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId(`memory-row-${betaMemory.memoryId}`),
+    ).toContainText("Beta admin memory");
+    await expect(
+      page.getByTestId(`memory-row-${betaMemory.memoryId}`),
+    ).toContainText("pending");
     await expectNoRetiredMemoryGates(page);
     expect(memoryRequests).toContain("GET /api/memory/admin/entries");
     expect(memoryRequests).not.toContain("POST /api/memory");
 
     const filters = page.getByTestId("memory-admin-filter-controls");
     await filters.getByLabel("Package key").fill(betaPackageKey);
-    await expect(page.getByTestId(`memory-row-${betaMemory.memoryId}`)).toBeVisible();
-    await expect(page.getByText("No memory entries match these filters")).toHaveCount(0);
+    await expect(
+      page.getByTestId(`memory-row-${betaMemory.memoryId}`),
+    ).toBeVisible();
+    await expect(
+      page.getByText("No memory entries match these filters"),
+    ).toHaveCount(0);
     await page.getByRole("button", { name: "Reset filters" }).click();
     await expect(filters.getByLabel("Package key")).toHaveValue("");
-    await expect(page.getByTestId(`memory-row-${betaMemory.memoryId}`)).toBeVisible();
+    await expect(
+      page.getByTestId(`memory-row-${betaMemory.memoryId}`),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Create memory" }).click();
     const createDialog = page.getByRole("dialog");
-    await expect(createDialog).toContainText("Resolved memory in a matching scope");
-    await expect(createDialog.getByRole("combobox", { name: "Initial status" })).toContainText(
-      "Resolved",
+    await expect(createDialog).not.toContainText("Create operator memory");
+    await expect(createDialog).not.toContainText(
+      "Approved memory in a matching scope",
     );
-    await createDialog.getByLabel("Summary").fill("Alpha resolved operator memory");
+    await expect(
+      createDialog.getByRole("combobox", { name: "Initial status" }),
+    ).toContainText("Approved");
+    await createDialog
+      .getByLabel("Summary")
+      .fill("Alpha approved operator memory");
     await createDialog.getByLabel("Kind", { exact: true }).fill("insight");
     await createDialog.getByLabel("Package key").fill(alphaPackageKey);
     await createDialog.getByLabel("Workflow key").fill(alphaWorkflowKey);
@@ -305,65 +338,97 @@ test.describe("memory admin workspace", () => {
     await createDialog.getByLabel("Subject label").fill("Apple");
     await createDialog
       .getByLabel("Content")
-      .fill("Alpha resolved memory created from the admin browser flow.");
+      .fill("Alpha approved memory created from the admin browser flow.");
     await createDialog.getByRole("button", { name: "Create memory" }).click();
 
-    await expect(page).toHaveURL(/\/memory\?memoryId=/);
-    const createdMemoryId = new URL(page.url()).searchParams.get("memoryId");
+    await expect(page).toHaveURL(/\/memory\/[^/?]+$/);
+    const createdUrlParts = page.url().split("/");
+    const createdMemoryId = createdUrlParts[createdUrlParts.length - 1];
     expect(createdMemoryId).toBeTruthy();
-    const createdRow = page.getByTestId(`memory-row-${createdMemoryId}`);
-    await expect(createdRow).toContainText("Alpha resolved operator memory");
-    await expect(createdRow).toContainText("resolved");
-    await expect(createdRow).toContainText(`Package ${alphaPackageKey}`);
-    await expect(page.getByTestId("memory-split-inspector")).toHaveAttribute(
-      "data-inspector-state",
-      "open",
-    );
-    await expectMemoryInspectorStartsInViewport(page);
+    await expectSingleRouteMain(page, "route-memory-detail", "scroll", "wide");
+    await expect(page.getByTestId("memory-detail-page")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Alpha approved operator memory" }),
+    ).toBeVisible();
     await expect(page.getByTestId("memory-detail-panel")).toContainText(
-      "Alpha resolved memory created from the admin browser flow.",
+      "Alpha approved memory created from the admin browser flow.",
     );
     await expect(page.getByTestId("memory-detail-panel")).toContainText(
-      `operator · local-instance-operator@1 · ${alphaWorkflowKey} · run #${alphaRun.runId}`,
+      `operator · ${alphaAgentKey}@1 · ${alphaWorkflowKey} · run #${alphaRun.runId}`,
     );
+    await expect(
+      page
+        .getByTestId("memory-detail-page")
+        .getByRole("link", { name: "Memory Admin" }),
+    ).toHaveAttribute("href", "/memory");
 
     await page.getByRole("button", { name: "Revise" }).click();
     const revisionDialog = page.getByRole("dialog");
-    await revisionDialog.getByLabel("Revision summary").fill("Alpha revised operator memory");
+    await revisionDialog
+      .getByLabel("Revision summary")
+      .fill("Alpha revised operator memory");
     await revisionDialog
       .getByLabel("Revision content")
       .fill("Alpha revised memory body with history evidence.");
-    await revisionDialog.getByRole("button", { name: "Create revision" }).click();
+    await revisionDialog
+      .getByRole("button", { name: "Create revision" })
+      .click();
     await expect(revisionDialog).toHaveCount(0);
     await page.getByRole("tab", { name: "Revisions" }).click();
-    await expect(page.getByTestId("memory-revisions-panel")).toContainText("v2");
+    await expect(page.getByTestId("memory-revisions-panel")).toContainText(
+      "v2",
+    );
     await expect(page.getByTestId("memory-revisions-panel")).toContainText(
       "Alpha revised operator memory",
     );
 
     await page.getByRole("tab", { name: "Audit events" }).click();
-    await expect(page.getByTestId("memory-events-panel")).toContainText("operator_created");
-    await expect(page.getByTestId("memory-events-panel")).toContainText("operator_revised");
+    await expect(page.getByTestId("memory-events-panel")).toContainText(
+      "operator_created",
+    );
+    await expect(page.getByTestId("memory-events-panel")).toContainText(
+      "operator_revised",
+    );
 
     await page.getByRole("tab", { name: "Detail" }).click();
     const detailPanel = page.getByTestId("memory-detail-panel");
-    await chooseSelectOption(page, detailPanel, "New status", "Expired");
-    await detailPanel.getByLabel("Status summary").fill("No longer current for runtime lookup");
+    await chooseSelectOption(page, detailPanel, "New status", "Archived");
+    await detailPanel
+      .getByLabel("Status summary")
+      .fill("No longer current for runtime lookup");
     await detailPanel.getByRole("button", { name: "Update status" }).click();
-    await expect(detailPanel).toContainText("expired");
+    await expect(detailPanel).toContainText("archived");
+    await expectNoDocumentOverflow(page);
 
+    await page
+      .getByTestId("memory-detail-page")
+      .getByRole("link", { name: "Memory Admin" })
+      .click();
+    await expect(page).toHaveURL(/\/memory$/);
+    await expectSingleRouteMain(page, "route-memory-list", "scroll", "wide");
+    await expect(
+      page.getByTestId(`memory-row-${createdMemoryId}`),
+    ).toContainText("archived");
+    await expect(
+      page.getByTestId(`memory-row-${createdMemoryId}`),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId(`memory-row-${betaMemory.memoryId}`),
+    ).toBeVisible();
+    const refreshedFilters = page.getByTestId("memory-admin-filter-controls");
+    await refreshedFilters
+      .getByLabel("Search canonical memory")
+      .fill("history evidence");
+    await expect(
+      page.getByTestId(`memory-row-${createdMemoryId}`),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Reset filters" }).click();
-    await expect(page.getByTestId(`memory-row-${createdMemoryId}`)).toContainText("expired");
-    await expect(page.getByTestId(`memory-row-${createdMemoryId}`)).toBeVisible();
-    await expect(page.getByTestId(`memory-row-${betaMemory.memoryId}`)).toBeVisible();
-    await filters.getByLabel("Search canonical memory").fill("history evidence");
-    await expect(page.getByTestId(`memory-row-${createdMemoryId}`)).toBeVisible();
-    await page.getByRole("button", { name: "Reset filters" }).click();
-    await expect(filters.getByLabel("Search canonical memory")).toHaveValue("");
+    await expect(
+      refreshedFilters.getByLabel("Search canonical memory"),
+    ).toHaveValue("");
 
     await expectNoRetiredMemoryGates(page);
     await expect(page.getByTestId("nav-memory")).toContainText("Memory Admin");
     await expectNoDocumentOverflow(page);
-    expect(panelLayoutWarnings).toEqual([]);
   });
 });

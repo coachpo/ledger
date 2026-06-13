@@ -4,6 +4,7 @@ import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/layout";
 import { assembleFinanceWorkspaceRoutes } from "./extensions/runtime-helpers";
 import { ExtensionsListPage } from "./pages/extensions/list";
+import { MemoryDetailPage } from "./pages/memory/detail";
 import { MemoryListPage } from "./pages/memory/list";
 import { ModelConnectionsEditorPage } from "./pages/model-connections/editor";
 import { ModelConnectionsListPage } from "./pages/model-connections/list";
@@ -26,14 +27,21 @@ type AppRouteDefinition = {
   path?: string;
 };
 
-const financeWorkspaceRoutes: AppRouteDefinition[] = assembleFinanceWorkspaceRoutes();
+const financeWorkspaceRoutes: AppRouteDefinition[] =
+  assembleFinanceWorkspaceRoutes();
 const platformRoutes: AppRouteDefinition[] = [
   { path: "extensions", Component: ExtensionsListPage },
   { path: "workflow-packages", Component: WorkflowPackagesListPage },
   { path: "workflow-packages/import", Component: WorkflowPackageImportPage },
   { path: "workflow-packages/new", Component: WorkflowPackageEditorPage },
-  { path: "workflow-packages/:packageId", Component: WorkflowPackageEditorPage },
-  { path: "workflow-packages/:packageId/run", Component: WorkflowPackageLaunchPage },
+  {
+    path: "workflow-packages/:packageId",
+    Component: WorkflowPackageEditorPage,
+  },
+  {
+    path: "workflow-packages/:packageId/run",
+    Component: WorkflowPackageLaunchPage,
+  },
   { path: "model-connections", Component: ModelConnectionsListPage },
   { path: "model-connections/new", Component: ModelConnectionsEditorPage },
   {
@@ -41,6 +49,7 @@ const platformRoutes: AppRouteDefinition[] = [
     Component: ModelConnectionsEditorPage,
   },
   { path: "memory", Component: MemoryListPage },
+  { path: "memory/:memoryId", Component: MemoryDetailPage },
   { path: "scheduled-tasks", Component: ScheduledTasksListPage },
   { path: "scheduled-tasks/new", Component: ScheduledTaskEditorPage },
   { path: "scheduled-tasks/:scheduleId", Component: ScheduledTaskDetailPage },

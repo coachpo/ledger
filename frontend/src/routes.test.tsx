@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryRouter, matchRoutes, RouterProvider } from "react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -37,6 +37,7 @@ import type { ExtensionListRead } from "./lib/types/extension";
 import type { MemoryAdminListParams } from "./lib/types/memory";
 import { NotFoundPage } from "./pages/not-found";
 import { RouteErrorPage } from "./pages/route-error";
+import { MemoryDetailPage } from "./pages/memory/detail";
 import { MemoryListPage } from "./pages/memory/list";
 import { ScheduledTaskDetailPage } from "./pages/scheduled-tasks/detail";
 import { ScheduledTaskEditorPage } from "./pages/scheduled-tasks/editor";
@@ -266,9 +267,7 @@ function routePatternStartsWithPrefix(pattern: string, prefix: string) {
   return pattern === prefix || pattern.startsWith(`${prefix}/`);
 }
 
-function navItemsFromGroups(
-  groups: ReturnType<typeof assembleNavGroups>,
-) {
+function navItemsFromGroups(groups: ReturnType<typeof assembleNavGroups>) {
   return groups.flatMap((group) => group.items);
 }
 
@@ -338,7 +337,9 @@ describe("router", () => {
         ),
       ).toBe(true);
       expect(
-        livePatterns.some((pattern) => routePatternStartsWithPrefix(pattern, prefix)),
+        livePatterns.some((pattern) =>
+          routePatternStartsWithPrefix(pattern, prefix),
+        ),
       ).toBe(true);
       expect(
         sidebarPaths.some((path) => routePatternStartsWithPrefix(path, prefix)),
@@ -352,10 +353,14 @@ describe("router", () => {
         ),
       ).toEqual([]);
       expect(
-        livePatterns.filter((pattern) => routePatternStartsWithPrefix(pattern, prefix)),
+        livePatterns.filter((pattern) =>
+          routePatternStartsWithPrefix(pattern, prefix),
+        ),
       ).toEqual([]);
       expect(
-        sidebarPaths.filter((path) => routePatternStartsWithPrefix(path, prefix)),
+        sidebarPaths.filter((path) =>
+          routePatternStartsWithPrefix(path, prefix),
+        ),
       ).toEqual([]);
       expect(getRouteMetadataForPathname(prefix)).toBe(unknownRouteMetadata);
     }
@@ -394,10 +399,29 @@ describe("router", () => {
         testId: "nav-memory",
       },
       owner: { kind: "platform" },
-      shellMode: "fullHeight",
-      widthMode: "full",
-      stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
+      shellMode: "scroll",
+      widthMode: "wide",
+      stateVariants: [
+        "loading",
+        "ready",
+        "error",
+        "empty",
+        "filteredEmpty",
+        "creating",
+      ],
       testId: "route-memory-list",
+    });
+    expect(getRouteMetadataByPattern("/memory/:memoryId")).toMatchObject({
+      archetype: "detail",
+      breadcrumb: {
+        parent: { href: "/memory", title: "Memory Admin" },
+        title: "Memory Detail",
+      },
+      owner: { kind: "platform" },
+      shellMode: "scroll",
+      widthMode: "wide",
+      stateVariants: ["loading", "ready", "error", "notFound", "saving"],
+      testId: "route-memory-detail",
     });
     expect(getRouteMetadataByPattern("/scheduled-tasks")).toMatchObject({
       archetype: "inventory",
@@ -657,7 +681,6 @@ describe("router", () => {
       "/workflow-packages/:packageId/run",
       "/model-connections/new",
       "/model-connections/:modelConnectionId/edit",
-      "/memory",
       "/scheduled-tasks/new",
       "/scheduled-tasks/:scheduleId",
       "/runs/:runId",
@@ -735,8 +758,12 @@ describe("router", () => {
       matchRoutes(router.routes, "/model-connections/123/edit"),
     ).not.toBeNull();
     expect(matchedRouteComponent("/memory")).toBe(MemoryListPage);
+    expect(matchedRouteComponent("/memory/mem-risk-1")).toBe(MemoryDetailPage);
     expect(getRouteMetadataForPathname("/memory")?.testId).toBe(
       "route-memory-list",
+    );
+    expect(getRouteMetadataForPathname("/memory/mem-risk-1")?.testId).toBe(
+      "route-memory-detail",
     );
     expect(matchedRouteComponent("/api/memory")).toBe(NotFoundPage);
     expect(getRouteMetadataForPathname("/api/memory")).toBe(
@@ -770,26 +797,33 @@ describe("router", () => {
 
     expect(await screen.findByTestId("route-memory-list")).toHaveAttribute(
       "data-route-shell-mode",
-      "fullHeight",
+      "scroll",
     );
     expect(screen.getByTestId("route-memory-list")).toHaveAttribute(
       "data-route-width-mode",
-      "full",
+      "wide",
     );
     expect(screen.getByTestId("memory-list-page")).toBeVisible();
     const adminNotice = screen.getByTestId("memory-admin-notice");
     expect(adminNotice).toHaveTextContent(/trusted local operator console/);
-    expect(adminNotice).toHaveTextContent(/Mixed package rows are intentional/);
-    expect(screen.getByTestId("memory-admin-filter-controls")).toHaveTextContent(
-      /Operator filters/,
-    );
+    expect(adminNotice).not.toHaveTextContent(/Mixed package rows are intentional/);
+    expect(
+      within(screen.getByTestId("workspace-page-shell-context")).getByRole(
+        "button",
+        { name: "Create memory" },
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByTestId("memory-admin-filter-controls"),
+    ).toHaveTextContent(/Operator filters/);
     expect(screen.getByTestId("memory-empty-state-panel")).toHaveTextContent(
       /No canonical memory exists yet/,
     );
-    expect(screen.getByTestId("memory-empty-state-panel")).not.toHaveTextContent(
-      /admin filters narrowed/,
-    );
-    const memoryPageText = screen.getByTestId("memory-list-page").textContent ?? "";
+    expect(
+      screen.getByTestId("memory-empty-state-panel"),
+    ).not.toHaveTextContent(/admin filters narrowed/);
+    const memoryPageText =
+      screen.getByTestId("memory-list-page").textContent ?? "";
     expect(memoryPageText).not.toContain(["package", "context"].join(" "));
     expect(memoryPageText).not.toContain(["private", "scope"].join(" "));
     expect(memoryPageText).not.toContain(["explicit", "scope"].join("-"));
@@ -801,13 +835,13 @@ describe("router", () => {
 
   it("renders memory filtered-empty state from optional admin URL filters", async () => {
     renderMemoryRoute(
-      "/memory?packageKey=pkg_alpha&status=resolved&query=risk",
-      { packageKey: "pkg_alpha", query: "risk", status: "resolved" },
+      "/memory?packageKey=pkg_alpha&status=approved&query=risk",
+      { packageKey: "pkg_alpha", query: "risk", status: "approved" },
     );
 
-    expect(await screen.findByTestId("memory-empty-state-panel")).toHaveTextContent(
-      /No memory entries match these filters/,
-    );
+    expect(
+      await screen.findByTestId("memory-empty-state-panel"),
+    ).toHaveTextContent(/No memory entries match these filters/);
     expect(screen.getByTestId("memory-empty-state-panel")).toHaveTextContent(
       /current admin filters narrowed the operator corpus to zero/,
     );
@@ -932,7 +966,9 @@ describe("router", () => {
       "/sec-filings",
       "/market-sentiment",
     ]) {
-      expect(matchedRouteComponent(retiredDigitalOracleRoute)).toBe(NotFoundPage);
+      expect(matchedRouteComponent(retiredDigitalOracleRoute)).toBe(
+        NotFoundPage,
+      );
       expect(getRouteMetadataForPathname(retiredDigitalOracleRoute)).toBe(
         unknownRouteMetadata,
       );
@@ -982,7 +1018,9 @@ describe("router", () => {
           const { nav } = contribution.routeMetadata;
 
           if (!nav.path) {
-            throw new Error("Expected sidebar finance route to own a nav path.");
+            throw new Error(
+              "Expected sidebar finance route to own a nav path.",
+            );
           }
 
           return {

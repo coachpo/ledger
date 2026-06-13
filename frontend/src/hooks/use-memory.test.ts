@@ -126,7 +126,7 @@ function adminEntry(
     },
     revisionId: "rev-admin-1",
     scope: { scopeKey: "research_package", scopeType: "package" },
-    status: "resolved",
+    status: "approved",
     subjectRefs: [],
     summary: "Admin memory",
     updatedAt: "2026-06-13T12:05:00Z",
@@ -192,7 +192,7 @@ describe("admin memory hooks", () => {
       query: " operator note ",
       runId: 41,
       scopeType: "package" as const,
-      status: "expired" as const,
+      status: "archived" as const,
       workflowKey: " daily_research ",
     };
     fetchMock.mockResolvedValueOnce(jsonResponse(response));
@@ -223,7 +223,7 @@ describe("admin memory hooks", () => {
       runId: "41",
       scopeType: "package",
       sort: "updatedAtDesc",
-      status: "expired",
+      status: "archived",
       workflowKey: "daily_research",
     });
     expect(url.searchParams.has("accessContext")).toBe(false);
@@ -319,7 +319,7 @@ describe("admin memory hooks", () => {
       summary: "Updated admin memory",
     };
     const statusPayload: MemoryAdminStatusUpdateRequest = {
-      status: "expired",
+      status: "archived",
       summary: "No longer current",
     };
     fetchMock.mockResolvedValueOnce(jsonResponse(response, 201));
@@ -354,8 +354,8 @@ describe("admin memory hooks", () => {
     });
 
     reactQueryState.invalidateQueriesMock.mockClear();
-    const expiredResponse = { ...response, status: "expired" as const };
-    fetchMock.mockResolvedValueOnce(jsonResponse(expiredResponse));
+    const archivedResponse = { ...response, status: "archived" as const };
+    fetchMock.mockResolvedValueOnce(jsonResponse(archivedResponse));
     useUpdateAdminMemoryStatus();
     const statusOptions = lastMutationOptions<
       MemoryAdminEntryRead,
@@ -372,7 +372,7 @@ describe("admin memory hooks", () => {
     expect(lastCall.init?.method).toBe("PATCH");
     expect(lastCall.init?.body).toBe(JSON.stringify(statusPayload));
 
-    await statusOptions.onSuccess?.(expiredResponse, {
+    await statusOptions.onSuccess?.(archivedResponse, {
       memoryId: "mem-admin-1",
       payload: statusPayload,
     });
@@ -383,7 +383,7 @@ describe("admin memory hooks", () => {
       queryKey: queryKeys.platform.memory.admin.detail("mem-admin-1"),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.memory.admin.detail(expiredResponse.memoryId),
+      queryKey: queryKeys.platform.memory.admin.detail(archivedResponse.memoryId),
     });
   });
 });

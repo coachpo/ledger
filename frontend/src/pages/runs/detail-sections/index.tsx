@@ -153,7 +153,7 @@ const MEMORY_EVENT_GROUP_DEFERRED_SECTION_CLASS_NAME =
   "[content-visibility:auto] [contain-intrinsic-size:auto_720px]";
 const MEMORY_COMPACT_ARTIFACT_DEFERRED_CLASS_NAME =
   "[content-visibility:auto] [contain-intrinsic-size:auto_220px]";
-const MEMORY_ADMIN_STATUS_FILTERS = new Set(["pending", "resolved", "expired"]);
+const MEMORY_ADMIN_STATUS_FILTERS = new Set(["pending", "approved", "archived"]);
 
 const MEMORY_EVENT_GROUPS: MemoryEventGroupDefinition[] = [
   {

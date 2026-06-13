@@ -1,34 +1,28 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router";
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   MemoryAdminEntryRead,
-  MemoryAdminEventListRead,
   MemoryAdminListItemRead,
   MemoryAdminListRead,
-  MemoryAdminRevisionListRead,
 } from "@/lib/types/memory";
 
 import { MemoryListPage } from "./list";
 
-const {
-  createAdminMemoryEntryMock,
-  createAdminMemoryRevisionMock,
-  updateAdminMemoryStatusMock,
-  useAdminMemoryEntryMock,
-  useAdminMemoryEntriesMock,
-  useAdminMemoryEventsMock,
-  useAdminMemoryRevisionsMock,
-} = vi.hoisted(() => ({
-  createAdminMemoryEntryMock: vi.fn(),
-  createAdminMemoryRevisionMock: vi.fn(),
-  updateAdminMemoryStatusMock: vi.fn(),
-  useAdminMemoryEntryMock: vi.fn(),
-  useAdminMemoryEntriesMock: vi.fn(),
-  useAdminMemoryEventsMock: vi.fn(),
-  useAdminMemoryRevisionsMock: vi.fn(),
-}));
+const { createAdminMemoryEntryMock, useAdminMemoryEntriesMock } = vi.hoisted(
+  () => ({
+    createAdminMemoryEntryMock: vi.fn(),
+    useAdminMemoryEntriesMock: vi.fn(),
+  }),
+);
 
 vi.mock("sonner", () => ({
   toast: {
@@ -38,16 +32,17 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/hooks/use-memory", () => ({
-  useAdminMemoryEntries: (...args: unknown[]) => useAdminMemoryEntriesMock(...args),
-  useAdminMemoryEntry: (...args: unknown[]) => useAdminMemoryEntryMock(...args),
-  useAdminMemoryEvents: (...args: unknown[]) => useAdminMemoryEventsMock(...args),
-  useAdminMemoryRevisions: (...args: unknown[]) => useAdminMemoryRevisionsMock(...args),
-  useCreateAdminMemoryEntry: () => ({ isPending: false, mutateAsync: createAdminMemoryEntryMock }),
-  useCreateAdminMemoryRevision: () => ({ isPending: false, mutateAsync: createAdminMemoryRevisionMock }),
-  useUpdateAdminMemoryStatus: () => ({ isPending: false, mutateAsync: updateAdminMemoryStatusMock }),
+  useAdminMemoryEntries: (...args: unknown[]) =>
+    useAdminMemoryEntriesMock(...args),
+  useCreateAdminMemoryEntry: () => ({
+    isPending: false,
+    mutateAsync: createAdminMemoryEntryMock,
+  }),
 }));
 
-function adminListItem(overrides: Partial<MemoryAdminListItemRead> = {}): MemoryAdminListItemRead {
+function adminListItem(
+  overrides: Partial<MemoryAdminListItemRead> = {},
+): MemoryAdminListItemRead {
   return {
     createdAt: "2026-05-20T10:00:00Z",
     excerpt: "Risk memo content with operator visibility.",
@@ -63,7 +58,7 @@ function adminListItem(overrides: Partial<MemoryAdminListItemRead> = {}): Memory
     },
     revisionId: "rev-risk-1",
     scope: { scopeKey: "pkg_alpha", scopeType: "package" },
-    status: "resolved",
+    status: "approved",
     subjectRefs: [{ id: "AAPL", kind: "symbol", label: "Apple" }],
     summary: "Risk review memory",
     updatedAt: "2026-05-20T10:05:00Z",
@@ -79,8 +74,8 @@ const detailFixture: MemoryAdminEntryRead = {
   outcome: {
     attributes: { source: "operator" },
     observedAt: "2026-05-20T10:05:00Z",
-    status: "resolved",
-    summary: "Resolved operator memory",
+    status: "approved",
+    summary: "Approved operator memory",
   },
   reflections: [],
   revision: {
@@ -89,49 +84,6 @@ const detailFixture: MemoryAdminEntryRead = {
     revisionId: "rev-risk-1",
     version: 1,
   },
-};
-
-const revisionsFixture: MemoryAdminRevisionListRead = {
-  count: 1,
-  items: [
-    {
-      attributes: { confidence: "high" },
-      content: "Risk memo content with operator visibility.",
-      contentHash: "hash-risk-1",
-      createdAt: "2026-05-20T10:00:00Z",
-      revisionAction: "created",
-      revisionId: "rev-risk-1",
-      sourceAgentKey: "local-instance-operator",
-      sourceRunId: 41,
-      status: "resolved",
-      subjectRefs: [{ id: "AAPL", kind: "symbol", label: "Apple" }],
-      summary: "Risk review memory",
-      version: 1,
-    },
-  ],
-  limit: 50,
-  offset: 0,
-};
-
-const eventsFixture: MemoryAdminEventListRead = {
-  count: 1,
-  items: [
-    {
-      budget: { max: 3 },
-      createdAt: "2026-05-20T10:06:00Z",
-      eventId: 99,
-      eventType: "operator_created",
-      excerpt: "Risk memo content",
-      filters: { kind: "insight" },
-      memoryId: "mem-risk-1",
-      resultSnapshot: { count: 1 },
-      revisionId: "rev-risk-1",
-      runId: 41,
-      statusSnapshot: { status: "resolved" },
-    },
-  ],
-  limit: 50,
-  offset: 0,
 };
 
 function listResponse(items: MemoryAdminListItemRead[]): MemoryAdminListRead {
@@ -153,9 +105,19 @@ function idleQuery(data?: unknown) {
   };
 }
 
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <div data-testid="location-probe">
+      {location.pathname + location.search}
+    </div>
+  );
+}
+
 function renderPage(initialEntry = "/memory") {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
+      <LocationProbe />
       <MemoryListPage />
     </MemoryRouter>,
   );
@@ -163,30 +125,12 @@ function renderPage(initialEntry = "/memory") {
 
 describe("MemoryListPage", () => {
   beforeEach(() => {
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      value: 1024,
-    });
     createAdminMemoryEntryMock.mockReset();
-    createAdminMemoryRevisionMock.mockReset();
-    updateAdminMemoryStatusMock.mockReset();
-    useAdminMemoryEntryMock.mockReset();
     useAdminMemoryEntriesMock.mockReset();
-    useAdminMemoryEventsMock.mockReset();
-    useAdminMemoryRevisionsMock.mockReset();
+    vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.success).mockClear();
     useAdminMemoryEntriesMock.mockReturnValue(idleQuery(listResponse([])));
-    useAdminMemoryEntryMock.mockImplementation((memoryId: string | undefined) =>
-      idleQuery(memoryId ? detailFixture : undefined),
-    );
-    useAdminMemoryRevisionsMock.mockImplementation((memoryId: string | undefined) =>
-      idleQuery(memoryId ? revisionsFixture : undefined),
-    );
-    useAdminMemoryEventsMock.mockImplementation((memoryId: string | undefined) =>
-      idleQuery(memoryId ? eventsFixture : undefined),
-    );
     createAdminMemoryEntryMock.mockResolvedValue(detailFixture);
-    createAdminMemoryRevisionMock.mockResolvedValue(detailFixture);
-    updateAdminMemoryStatusMock.mockResolvedValue(detailFixture);
   });
 
   it("requests the admin list immediately with default params and no old gates", () => {
@@ -196,12 +140,63 @@ describe("MemoryListPage", () => {
     expect(screen.getByTestId("workspace-page-shell-context")).toContainElement(
       screen.getByTestId("memory-admin-notice"),
     );
-    expect(screen.getByRole("heading", { level: 1, name: "Memory" })).toBeVisible();
-    expect(screen.getByTestId("memory-admin-notice")).toHaveTextContent("trusted local operator console");
-    expect(screen.getByTestId("memory-split-inspector")).toHaveAttribute("data-inspector-state", "closed");
-    expect(useAdminMemoryEntriesMock).toHaveBeenLastCalledWith({}, { enabled: true });
-    expect(screen.queryByTestId(["memory", "access", "required"].join("-"))).not.toBeInTheDocument();
-    expect(screen.queryByTestId(["memory", "explicit", "scope", "required"].join("-"))).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Memory" }),
+    ).toBeVisible();
+    expect(screen.getByTestId("memory-admin-notice")).toHaveTextContent(
+      "trusted local operator console",
+    );
+    expect(
+      within(screen.getByTestId("workspace-page-shell-context")).getByRole(
+        "button",
+        { name: "Create memory" },
+      ),
+    ).toBeVisible();
+    expect(
+      within(screen.getByTestId("memory-admin-filter-controls")).queryByText(
+        "Loaded",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("memory-admin-filter-controls")).queryByText(
+        /memory entries/,
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("memory-admin-filter-controls")).queryByText(
+        "Mode",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("memory-admin-filter-controls")).queryByText(
+        "trusted operator",
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("memory-write-card")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("memory-runtime-impact-copy")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("memory-admin-filter-controls")).getByText(
+        "Search canonical memory",
+      ),
+    ).toBeVisible();
+    expect(useAdminMemoryEntriesMock).toHaveBeenLastCalledWith(
+      {},
+      { enabled: true },
+    );
+    expect(
+      screen.queryByTestId("memory-split-inspector"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("memory-sheet-inspector"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId(["memory", "access", "required"].join("-")),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId(
+        ["memory", "explicit", "scope", "required"].join("-"),
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("distinguishes the default empty corpus from filtered-empty results", () => {
@@ -210,9 +205,9 @@ describe("MemoryListPage", () => {
     expect(screen.getByTestId("memory-empty-state-panel")).toHaveTextContent(
       "No canonical memory exists yet",
     );
-    expect(screen.getByTestId("memory-empty-state-panel")).not.toHaveTextContent(
-      "filters narrowed",
-    );
+    expect(
+      screen.getByTestId("memory-empty-state-panel"),
+    ).not.toHaveTextContent("filters narrowed");
 
     unmount();
     renderPage("/memory?packageKey=pkg_alpha");
@@ -225,40 +220,66 @@ describe("MemoryListPage", () => {
     );
   });
 
-  it("renders rows from different packages, scopes, and statuses together as intended operator visibility", () => {
+  it("renders rows from different packages, scopes, and statuses with detail links", () => {
     useAdminMemoryEntriesMock.mockReturnValue(
-      idleQuery(listResponse([
-        adminListItem(),
-        adminListItem({
-          excerpt: "Beta workflow finding",
-          memoryId: "mem-beta-2",
-          scope: { scopeKey: "beta-agent", scopeType: "agent" },
-          status: "pending",
-          summary: "Beta package memory",
-        }),
-        adminListItem({
-          excerpt: "Expired gamma workflow finding",
-          memoryId: "mem-gamma-3",
-          scope: { scopeKey: "gamma-workflow", scopeType: "workflow" },
-          status: "expired",
-          summary: "Gamma expired memory",
-        }),
-      ])),
+      idleQuery(
+        listResponse([
+          adminListItem(),
+          adminListItem({
+            excerpt: "Beta workflow finding",
+            memoryId: "mem-beta-2",
+            scope: { scopeKey: "beta-agent", scopeType: "agent" },
+            status: "pending",
+            summary: "Beta package memory",
+          }),
+          adminListItem({
+            excerpt: "Archived gamma workflow finding",
+            memoryId: "mem-gamma-3",
+            scope: { scopeKey: "gamma-workflow", scopeType: "workflow" },
+            status: "archived",
+            summary: "Gamma archived memory",
+          }),
+        ]),
+      ),
     );
 
     renderPage();
 
-    expect(screen.getByText("Rows from different packages and scopes can appear together by design.")).toBeVisible();
-    expect(screen.getByTestId("memory-row-mem-risk-1")).toHaveTextContent("Package pkg_alpha");
-    expect(screen.getByTestId("memory-row-mem-beta-2")).toHaveTextContent("Agent beta-agent");
-    expect(screen.getByTestId("memory-row-mem-beta-2")).toHaveTextContent("pending");
-    expect(screen.getByTestId("memory-row-mem-gamma-3")).toHaveTextContent("Workflow gamma-workflow");
-    expect(screen.getByTestId("memory-row-mem-gamma-3")).toHaveTextContent("expired");
+    expect(
+      screen.queryByText(
+        "Rows from different packages and scopes can appear together by design.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("memory-row-mem-risk-1")).toHaveTextContent(
+      "Package pkg_alpha",
+    );
+    expect(screen.getByTestId("memory-row-mem-beta-2")).toHaveTextContent(
+      "Agent beta-agent",
+    );
+    expect(screen.getByTestId("memory-row-mem-beta-2")).toHaveTextContent(
+      "pending",
+    );
+    expect(screen.getByTestId("memory-row-mem-gamma-3")).toHaveTextContent(
+      "Workflow gamma-workflow",
+    );
+    expect(screen.getByTestId("memory-row-mem-gamma-3")).toHaveTextContent(
+      "archived",
+    );
+    expect(
+      within(screen.getByTestId("memory-row-mem-risk-1")).getByRole("link", {
+        name: "Open detail",
+      }),
+    ).toHaveAttribute("href", "/memory/mem-risk-1");
+    expect(
+      within(screen.getByTestId("memory-row-mem-risk-1")).getByRole("link", {
+        name: "Open memory mem-risk-1",
+      }),
+    ).toHaveAttribute("href", "/memory/mem-risk-1");
   });
 
   it("applies URL filters as optional admin params and reset restores the full corpus", async () => {
     renderPage(
-      "/memory?packageKey=pkg_alpha&workflowKey=risk-review&agentKey=analyst&runId=41&scopeType=agent&kind=insight&status=resolved&query=drawdown",
+      "/memory?packageKey=pkg_alpha&workflowKey=risk-review&agentKey=analyst&runId=41&scopeType=agent&kind=insight&status=approved&query=drawdown",
     );
 
     expect(useAdminMemoryEntriesMock).toHaveBeenLastCalledWith(
@@ -269,7 +290,7 @@ describe("MemoryListPage", () => {
         query: "drawdown",
         runId: 41,
         scopeType: "agent",
-        status: "resolved",
+        status: "approved",
         workflowKey: "risk-review",
       },
       { enabled: true },
@@ -277,18 +298,36 @@ describe("MemoryListPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
 
-    await waitFor(() => expect(useAdminMemoryEntriesMock).toHaveBeenLastCalledWith({}, { enabled: true }));
+    await waitFor(() =>
+      expect(useAdminMemoryEntriesMock).toHaveBeenLastCalledWith(
+        {},
+        { enabled: true },
+      ),
+    );
+    expect(screen.getByTestId("location-probe")).toHaveTextContent("/memory");
   });
 
   it("narrows the corpus when filter fields change", async () => {
     renderPage();
 
-    fireEvent.change(screen.getByLabelText("Package key"), { target: { value: "pkg_beta" } });
-    fireEvent.change(screen.getByLabelText("Workflow key"), { target: { value: "audit" } });
-    fireEvent.change(screen.getByLabelText("Agent key"), { target: { value: "reviewer" } });
-    fireEvent.change(screen.getByLabelText("Run id"), { target: { value: "77" } });
-    fireEvent.change(screen.getByLabelText("Kind"), { target: { value: "lesson" } });
-    fireEvent.change(screen.getByLabelText("Search canonical memory"), { target: { value: "liquidity" } });
+    fireEvent.change(screen.getByLabelText("Package key"), {
+      target: { value: "pkg_beta" },
+    });
+    fireEvent.change(screen.getByLabelText("Workflow key"), {
+      target: { value: "audit" },
+    });
+    fireEvent.change(screen.getByLabelText("Agent key"), {
+      target: { value: "reviewer" },
+    });
+    fireEvent.change(screen.getByLabelText("Run id"), {
+      target: { value: "77" },
+    });
+    fireEvent.change(screen.getByLabelText("Kind"), {
+      target: { value: "lesson" },
+    });
+    fireEvent.change(screen.getByLabelText("Search canonical memory"), {
+      target: { value: "liquidity" },
+    });
 
     await waitFor(() =>
       expect(useAdminMemoryEntriesMock).toHaveBeenLastCalledWith(
@@ -305,57 +344,36 @@ describe("MemoryListPage", () => {
     );
   });
 
-  it("opens admin detail, revision history, and audit history inline", async () => {
-    useAdminMemoryEntriesMock.mockReturnValue(idleQuery(listResponse([adminListItem()])));
-
-    renderPage();
-    const row = screen.getByTestId("memory-row-mem-risk-1");
-    fireEvent.click(within(row).getByRole("button", { name: "Open memory" }));
-
-    await waitFor(() =>
-      expect(screen.getByTestId("memory-split-inspector")).toHaveAttribute("data-inspector-state", "open"),
-    );
-    expect(useAdminMemoryEntryMock).toHaveBeenLastCalledWith("mem-risk-1", { enabled: true });
-    expect(screen.getByTestId("memory-detail-panel")).toHaveTextContent("operator · local-instance-operator@1");
-    expect(screen.getByTestId("memory-detail-panel")).toHaveTextContent("Latest revision");
-
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Revisions" }), { button: 0 });
-    expect(screen.getByTestId("memory-revisions-panel")).toHaveTextContent("v1");
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Audit events" }), { button: 0 });
-    expect(screen.getByTestId("memory-events-panel")).toHaveTextContent("operator_created");
-  });
-
-  it("opens selected memory in the mobile sheet", async () => {
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      value: 390,
-    });
-    useAdminMemoryEntriesMock.mockReturnValue(idleQuery(listResponse([adminListItem()])));
-
-    renderPage();
-    expect(screen.getByTestId("memory-sheet-inspector")).toHaveAttribute("data-inspector-mode", "sheet");
-    expect(screen.queryByTestId("memory-split-inspector")).not.toBeInTheDocument();
-
-    fireEvent.click(within(screen.getByTestId("memory-row-mem-risk-1")).getByRole("button", { name: "Open memory" }));
-
-    await waitFor(() =>
-      expect(screen.getByTestId("memory-sheet-inspector")).toHaveAttribute("data-inspector-state", "open"),
-    );
-    expect(screen.getByTestId("split-inspector-sheet-body")).toHaveTextContent("Risk memo content with operator visibility.");
-  });
-
-  it("creates admin memory with explicit scope, status, and runtime-impact copy", async () => {
+  it("creates admin memory and navigates to the routed detail page", async () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: "Create memory" }));
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByTestId("memory-runtime-impact-copy")).toHaveTextContent("Resolved memory in a matching scope");
-    fireEvent.change(within(dialog).getByLabelText("Summary"), { target: { value: "Operator note" } });
-    fireEvent.change(within(dialog).getByLabelText("Content"), { target: { value: "Operator-authored canonical memory." } });
-    fireEvent.change(within(dialog).getByLabelText("Package key"), { target: { value: "pkg_alpha" } });
-    fireEvent.change(within(dialog).getByLabelText("Run id"), { target: { value: "41" } });
-    fireEvent.change(within(dialog).getByLabelText("Scope key"), { target: { value: "pkg_alpha" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Create memory" }));
+    expect(within(dialog).queryByText("Create operator memory")).not.toBeInTheDocument();
+    expect(within(dialog).queryByTestId("memory-runtime-impact-copy")).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("Approved memory in a matching scope", {
+        exact: false,
+      }),
+    ).not.toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText("Summary"), {
+      target: { value: "Operator note" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Content"), {
+      target: { value: "Operator-authored canonical memory." },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Package key"), {
+      target: { value: "pkg_alpha" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Run id"), {
+      target: { value: "41" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Scope key"), {
+      target: { value: "pkg_alpha" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create memory" }),
+    );
 
     await waitFor(() =>
       expect(createAdminMemoryEntryMock).toHaveBeenCalledWith(
@@ -367,62 +385,75 @@ describe("MemoryListPage", () => {
             runId: 41,
           }),
           scope: { scopeKey: "pkg_alpha", scopeType: "package" },
-          status: "resolved",
+          status: "approved",
           summary: "Operator note",
         }),
       ),
     );
-    expect(createAdminMemoryEntryMock.mock.calls[0]?.[0].provenance).not.toHaveProperty(
-      "workflowKey",
+    expect(
+      createAdminMemoryEntryMock.mock.calls[0]?.[0].provenance,
+    ).not.toHaveProperty("workflowKey");
+    await waitFor(() =>
+      expect(screen.getByTestId("location-probe")).toHaveTextContent(
+        "/memory/mem-risk-1",
+      ),
     );
   });
 
-  it("supports revise and status update flows for the selected admin memory", async () => {
-    useAdminMemoryEntriesMock.mockReturnValue(idleQuery(listResponse([adminListItem()])));
+  it("surfaces create mutation failures without navigating", async () => {
+    createAdminMemoryEntryMock.mockRejectedValueOnce(new Error("create failed"));
+    renderPage();
 
-    renderPage("/memory?memoryId=mem-risk-1");
-
-    fireEvent.click(screen.getByRole("button", { name: "Revise" }));
-    const revisionDialog = screen.getByRole("dialog");
-    fireEvent.change(within(revisionDialog).getByLabelText("Revision summary"), { target: { value: "Updated summary" } });
-    fireEvent.change(within(revisionDialog).getByLabelText("Revision content"), { target: { value: "Updated memory body." } });
-    fireEvent.click(within(revisionDialog).getByRole("button", { name: "Create revision" }));
-
-    await waitFor(() =>
-      expect(createAdminMemoryRevisionMock).toHaveBeenCalledWith({
-        memoryId: "mem-risk-1",
-        payload: expect.objectContaining({
-          content: "Updated memory body.",
-          provenance: expect.objectContaining({ createdByType: "operator" }),
-          summary: "Updated summary",
-        }),
-      }),
+    fireEvent.click(screen.getByRole("button", { name: "Create memory" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Summary"), {
+      target: { value: "Operator note" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Content"), {
+      target: { value: "Operator-authored canonical memory." },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Package key"), {
+      target: { value: "pkg_alpha" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Run id"), {
+      target: { value: "41" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Scope key"), {
+      target: { value: "pkg_alpha" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create memory" }),
     );
 
-    fireEvent.change(screen.getByLabelText("Status summary"), { target: { value: "Ready for workflow lookup" } });
-    fireEvent.click(screen.getByRole("button", { name: "Update status" }));
-
-    await waitFor(() =>
-      expect(updateAdminMemoryStatusMock).toHaveBeenCalledWith({
-        memoryId: "mem-risk-1",
-        payload: expect.objectContaining({
-          status: "resolved",
-          summary: "Ready for workflow lookup",
-        }),
-      }),
-    );
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("create failed"));
+    expect(screen.getByTestId("location-probe")).toHaveTextContent("/memory");
+    expect(screen.getByRole("dialog")).toBeVisible();
   });
 
-  it("does not render old gate copy or removal controls", () => {
+  it("does not render removed inline inspector behavior or removal controls", () => {
     renderPage();
 
     const page = screen.getByTestId("memory-list-page");
     expect(page).not.toHaveTextContent(["package", "context"].join(" "));
     expect(page).not.toHaveTextContent(["private", "scope"].join(" "));
     expect(page).not.toHaveTextContent(["explicit", "scope"].join("-"));
-    expect(page).not.toHaveTextContent(["Access", "context", "required"].join(" "));
-    expect(page).not.toHaveTextContent(["Private", "scope", "required"].join(" "));
-    expect(screen.queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /bulk/i })).not.toBeInTheDocument();
+    expect(page).not.toHaveTextContent(
+      ["Access", "context", "required"].join(" "),
+    );
+    expect(page).not.toHaveTextContent(
+      ["Private", "scope", "required"].join(" "),
+    );
+    expect(
+      screen.queryByTestId("memory-split-inspector"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("memory-sheet-inspector"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /bulk/i }),
+    ).not.toBeInTheDocument();
   });
 });

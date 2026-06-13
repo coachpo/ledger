@@ -2985,7 +2985,7 @@ describe("RunsDetailPage", () => {
               id: 9105,
               eventType: "reviewed",
               memoryId: "memory_safe",
-              statusSnapshot: { status: "resolved" },
+              statusSnapshot: { status: "approved" },
             }),
             buildMemoryEvent({
               id: 9106,
@@ -3048,7 +3048,7 @@ describe("RunsDetailPage", () => {
     ).toHaveTextContent(/reused/i);
     expect(
       screen.getByTestId("runs-memory-event-9105-status"),
-    ).toHaveTextContent(/resolved/i);
+    ).toHaveTextContent(/approved/i);
     expect(
       screen.getByTestId("runs-memory-event-9106-status"),
     ).toHaveTextContent(/memory_write_failed/i);

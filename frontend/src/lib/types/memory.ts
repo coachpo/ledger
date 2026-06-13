@@ -1,6 +1,6 @@
 import type { UnknownRecord } from "./common";
 
-export type MemoryLifecycleStatus = "pending" | "resolved" | "expired";
+export type MemoryLifecycleStatus = "pending" | "approved" | "archived";
 
 export type MemoryRevisionAction = "created" | "reused" | "superseded";
 
