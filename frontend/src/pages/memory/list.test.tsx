@@ -202,12 +202,13 @@ describe("MemoryListPage", () => {
   it("distinguishes the default empty corpus from filtered-empty results", () => {
     const { unmount } = renderPage();
 
-    expect(screen.getByTestId("memory-empty-state-panel")).toHaveTextContent(
-      "No canonical memory exists yet",
-    );
-    expect(
-      screen.getByTestId("memory-empty-state-panel"),
-    ).not.toHaveTextContent("filters narrowed");
+    const emptyStatePanel = screen.getByTestId("memory-empty-state-panel");
+
+    expect(emptyStatePanel).toHaveTextContent("No canonical memory exists yet");
+    expect(emptyStatePanel).not.toHaveTextContent("filters narrowed");
+    expect(emptyStatePanel).not.toHaveTextContent("Create operator memory");
+    expect(emptyStatePanel).not.toHaveTextContent("durable fact");
+    expect(emptyStatePanel).not.toHaveTextContent("workflow lookup");
 
     unmount();
     renderPage("/memory?packageKey=pkg_alpha");

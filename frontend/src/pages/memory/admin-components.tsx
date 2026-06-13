@@ -1081,7 +1081,7 @@ export function MemoryListPane({
                 description={
                   hasActiveFilters
                     ? "The current admin filters narrowed the operator corpus to zero. Reset filters to review all canonical memory."
-                    : "No canonical memory exists yet. Create operator memory when there is a durable fact or decision worth carrying into matching workflow lookup."
+                    : "No canonical memory has been created yet."
                 }
                 testId="memory-empty-state-panel"
                 title={
