@@ -16,8 +16,8 @@ import type {
   WorkflowPackagePreflightRequest,
   WorkflowPackageRead,
   WorkflowPackageRuntimeInputEntryRead,
-  WorkflowPackageRuntimeInputPersonalEntryCreateRequest,
-  WorkflowPackageRuntimeInputPersonalEntryUpdateRequest,
+  WorkflowPackageRuntimeInputPresetEntryCreateRequest,
+  WorkflowPackageRuntimeInputPresetEntryUpdateRequest,
   WorkflowPackageRuntimeInputRegistryRead,
   WorkflowPackageSecretBindingListRead,
   WorkflowPackageSecretBindingRead,
@@ -38,11 +38,11 @@ function workflowPackageRuntimeInputRegistryPath(packageId: IdParam): string {
   return `${workflowPackagePath(packageId)}/runtime-input-registry`;
 }
 
-function workflowPackageRuntimeInputPersonalEntryPath(
+function workflowPackageRuntimeInputPresetEntryPath(
   packageId: IdParam,
   entryId: IdParam,
 ): string {
-  return `${workflowPackageRuntimeInputRegistryPath(packageId)}/personal/${toPathSegment(entryId)}`;
+  return `${workflowPackageRuntimeInputRegistryPath(packageId)}/presets/${toPathSegment(entryId)}`;
 }
 
 type WorkflowPackageWorkflowOptions = {
@@ -173,13 +173,13 @@ export function getWorkflowPackageRuntimeInputRegistry(
   );
 }
 
-export function createWorkflowPackageRuntimeInputPersonalEntry(
+export function createWorkflowPackageRuntimeInputPresetEntry(
   packageId: IdParam,
-  payload: WorkflowPackageRuntimeInputPersonalEntryCreateRequest,
+  payload: WorkflowPackageRuntimeInputPresetEntryCreateRequest,
   options: WorkflowPackageRuntimeInputRegistryOptions,
 ): Promise<WorkflowPackageRuntimeInputEntryRead> {
   return requestPlatform<WorkflowPackageRuntimeInputEntryRead>(
-    `${workflowPackageRuntimeInputRegistryPath(packageId)}/personal`,
+    `${workflowPackageRuntimeInputRegistryPath(packageId)}/presets`,
     {
       body: payload,
       method: "POST",
@@ -189,14 +189,14 @@ export function createWorkflowPackageRuntimeInputPersonalEntry(
   );
 }
 
-export function updateWorkflowPackageRuntimeInputPersonalEntry(
+export function updateWorkflowPackageRuntimeInputPresetEntry(
   packageId: IdParam,
   entryId: IdParam,
-  payload: WorkflowPackageRuntimeInputPersonalEntryUpdateRequest,
+  payload: WorkflowPackageRuntimeInputPresetEntryUpdateRequest,
   options: WorkflowPackageRuntimeInputRegistryOptions,
 ): Promise<WorkflowPackageRuntimeInputEntryRead> {
   return requestPlatform<WorkflowPackageRuntimeInputEntryRead>(
-    workflowPackageRuntimeInputPersonalEntryPath(packageId, entryId),
+    workflowPackageRuntimeInputPresetEntryPath(packageId, entryId),
     {
       body: payload,
       method: "PATCH",
@@ -206,12 +206,12 @@ export function updateWorkflowPackageRuntimeInputPersonalEntry(
   );
 }
 
-export function deleteWorkflowPackageRuntimeInputPersonalEntry(
+export function deleteWorkflowPackageRuntimeInputPresetEntry(
   packageId: IdParam,
   entryId: IdParam,
   options: WorkflowPackageRuntimeInputRegistryOptions,
 ): Promise<void> {
-  return requestPlatform<void>(workflowPackageRuntimeInputPersonalEntryPath(packageId, entryId), {
+  return requestPlatform<void>(workflowPackageRuntimeInputPresetEntryPath(packageId, entryId), {
     method: "DELETE",
     query: workflowKeyQuery(options),
     signal: options.signal,
@@ -269,11 +269,11 @@ export function createWorkflowPackageLaunch(
 
 export const workflowPackagesApi = {
   delete: deleteWorkflowPackage,
-  deleteRuntimeInputPersonalEntry: deleteWorkflowPackageRuntimeInputPersonalEntry,
+  deleteRuntimeInputPresetEntry: deleteWorkflowPackageRuntimeInputPresetEntry,
   deleteSecretBinding: deleteWorkflowPackageSecretBinding,
   create: createWorkflowPackage,
   createLaunch: createWorkflowPackageLaunch,
-  createRuntimeInputPersonalEntry: createWorkflowPackageRuntimeInputPersonalEntry,
+  createRuntimeInputPresetEntry: createWorkflowPackageRuntimeInputPresetEntry,
   exportUrl: exportWorkflowPackageUrl,
   get: getWorkflowPackage,
   getLaunch: getWorkflowPackageLaunch,
@@ -284,7 +284,7 @@ export const workflowPackagesApi = {
   listSecretBindings: listWorkflowPackageSecretBindings,
   preflight: preflightWorkflowPackage,
   update: updateWorkflowPackage,
-  updateRuntimeInputPersonalEntry: updateWorkflowPackageRuntimeInputPersonalEntry,
+  updateRuntimeInputPresetEntry: updateWorkflowPackageRuntimeInputPresetEntry,
   upsertSecretBinding: upsertWorkflowPackageSecretBinding,
   validateManifest: validateWorkflowPackageManifest,
 } as const;

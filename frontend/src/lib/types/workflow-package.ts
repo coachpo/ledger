@@ -100,7 +100,7 @@ export interface WorkflowPackageLaunchRead {
   warnings: WorkflowPackageLaunchDiagnostic[];
 }
 
-export type WorkflowPackageRuntimeInputSlot = "history" | "personal";
+export type WorkflowPackageRuntimeInputSlot = "history" | "preset";
 
 export interface WorkflowPackageRuntimeInputStaleReason {
   field: string;
@@ -145,16 +145,16 @@ export interface WorkflowPackageRuntimeInputRegistryRead {
   packageKey: string;
   workflowKey: string;
   currentMetadata: WorkflowPackageRuntimeInputCurrentMetadataRead | null;
-  personal: WorkflowPackageRuntimeInputEntryRead[];
+  presets: WorkflowPackageRuntimeInputEntryRead[];
   history: WorkflowPackageRuntimeInputEntryRead[];
 }
 
-export interface WorkflowPackageRuntimeInputPersonalEntryCreateRequest {
+export interface WorkflowPackageRuntimeInputPresetEntryCreateRequest {
   name?: string | null;
   payload: UnknownRecord;
 }
 
-export interface WorkflowPackageRuntimeInputPersonalEntryUpdateRequest {
+export interface WorkflowPackageRuntimeInputPresetEntryUpdateRequest {
   name?: string | null;
   payload?: UnknownRecord;
 }
