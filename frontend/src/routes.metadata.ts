@@ -307,11 +307,11 @@ const platformAndSystemRouteMetadata = [
   },
   {
     archetype: "inventory",
-    breadcrumb: { title: "Memory" },
+    breadcrumb: { title: "Memory Admin" },
     nav: {
       group: AGENT_PLATFORM_NAV_GROUP,
       iconName: "Database",
-      label: "Memory",
+      label: "Memory Admin",
       path: "/memory",
       sidebar: true,
       testId: "nav-memory",
@@ -320,7 +320,7 @@ const platformAndSystemRouteMetadata = [
     pattern: "/memory",
     shellMode: "fullHeight",
     widthMode: "full",
-    stateVariants: ["loading", "ready", "error", "empty", "unauthorized"],
+    stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
     testId: "route-memory-list",
   },
   {

@@ -34,6 +34,7 @@ import {
 } from "./routes.metadata";
 import { queryKeys } from "./lib/query-keys";
 import type { ExtensionListRead } from "./lib/types/extension";
+import type { MemoryAdminListParams } from "./lib/types/memory";
 import { NotFoundPage } from "./pages/not-found";
 import { RouteErrorPage } from "./pages/route-error";
 import { MemoryListPage } from "./pages/memory/list";
@@ -146,7 +147,7 @@ const LIVE_PLATFORM_NAV_ENTRIES = [
     testId: "nav-model-connections",
     to: "/model-connections",
   },
-  { label: "Memory", testId: "nav-memory", to: "/memory" },
+  { label: "Memory Admin", testId: "nav-memory", to: "/memory" },
   { label: "Extensions", testId: "nav-extensions", to: "/extensions" },
   { label: "Runs", testId: "nav-runs", to: "/runs" },
 ] as const;
@@ -176,6 +177,44 @@ function extensionList(
       },
     ],
   };
+}
+
+function emptyAdminMemoryResponse() {
+  return {
+    items: [],
+    limit: 50,
+    offset: 0,
+    sort: "updatedAtDesc" as const,
+    total: 0,
+  };
+}
+
+function renderMemoryRoute(
+  initialEntry: string,
+  listParams: MemoryAdminListParams = {},
+) {
+  const testRouter = createMemoryRouter(router.routes, {
+    initialEntries: [initialEntry],
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  queryClient.setQueryData(
+    queryKeys.platform.extensions.list(),
+    extensionList(true),
+  );
+  queryClient.setQueryData(
+    queryKeys.platform.memory.admin.list(listParams),
+    emptyAdminMemoryResponse(),
+  );
+
+  return render(
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={testRouter} />
+      </QueryClientProvider>
+    </ThemeProvider>,
+  );
 }
 
 function isMetadataVisibleForExtensions(
@@ -346,10 +385,18 @@ describe("router", () => {
     });
     expect(getRouteMetadataByPattern("/memory")).toMatchObject({
       archetype: "inventory",
+      breadcrumb: { title: "Memory Admin" },
+      nav: {
+        group: "Agent Platform",
+        label: "Memory Admin",
+        path: "/memory",
+        sidebar: true,
+        testId: "nav-memory",
+      },
       owner: { kind: "platform" },
       shellMode: "fullHeight",
       widthMode: "full",
-      stateVariants: ["loading", "ready", "error", "empty", "unauthorized"],
+      stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
       testId: "route-memory-list",
     });
     expect(getRouteMetadataByPattern("/scheduled-tasks")).toMatchObject({
@@ -718,25 +765,8 @@ describe("router", () => {
     expect(matchRoutes(router.routes, "/runs/123")).not.toBeNull();
   });
 
-  it("renders deterministic private-scope access state for /memory", async () => {
-    const testRouter = createMemoryRouter(router.routes, {
-      initialEntries: ["/memory"],
-    });
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    queryClient.setQueryData(
-      queryKeys.platform.extensions.list(),
-      extensionList(true),
-    );
-
-    render(
-      <ThemeProvider>
-        <QueryClientProvider client={queryClient}>
-          <RouterProvider router={testRouter} />
-        </QueryClientProvider>
-      </ThemeProvider>,
-    );
+  it("renders trusted local operator admin empty state for /memory", async () => {
+    renderMemoryRoute("/memory");
 
     expect(await screen.findByTestId("route-memory-list")).toHaveAttribute(
       "data-route-shell-mode",
@@ -747,17 +777,42 @@ describe("router", () => {
       "full",
     );
     expect(screen.getByTestId("memory-list-page")).toBeVisible();
-    expect(screen.getByTestId("memory-access-required")).toHaveTextContent(
-      "Access context required",
+    const adminNotice = screen.getByTestId("memory-admin-notice");
+    expect(adminNotice).toHaveTextContent(/trusted local operator console/);
+    expect(adminNotice).toHaveTextContent(/Mixed package rows are intentional/);
+    expect(screen.getByTestId("memory-admin-filter-controls")).toHaveTextContent(
+      /Operator filters/,
     );
-    const contractNotice = screen.getByTestId("memory-contract-notice");
-    expect(contractNotice).toHaveTextContent(/Review memory entries/);
-    expect(contractNotice).toHaveTextContent(/package context/);
-    expect(contractNotice).toHaveTextContent(/private scope/);
+    expect(screen.getByTestId("memory-empty-state-panel")).toHaveTextContent(
+      /No canonical memory exists yet/,
+    );
+    expect(screen.getByTestId("memory-empty-state-panel")).not.toHaveTextContent(
+      /admin filters narrowed/,
+    );
+    const memoryPageText = screen.getByTestId("memory-list-page").textContent ?? "";
+    expect(memoryPageText).not.toContain(["package", "context"].join(" "));
+    expect(memoryPageText).not.toContain(["private", "scope"].join(" "));
+    expect(memoryPageText).not.toContain(["explicit", "scope"].join("-"));
     expect(
       screen.queryByLabelText("Namespace declarations"),
     ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Namespace grants")).not.toBeInTheDocument();
+  });
+
+  it("renders memory filtered-empty state from optional admin URL filters", async () => {
+    renderMemoryRoute(
+      "/memory?packageKey=pkg_alpha&status=resolved&query=risk",
+      { packageKey: "pkg_alpha", query: "risk", status: "resolved" },
+    );
+
+    expect(await screen.findByTestId("memory-empty-state-panel")).toHaveTextContent(
+      /No memory entries match these filters/,
+    );
+    expect(screen.getByTestId("memory-empty-state-panel")).toHaveTextContent(
+      /current admin filters narrowed the operator corpus to zero/,
+    );
+    expect(screen.getByDisplayValue("pkg_alpha")).toBeVisible();
+    expect(screen.getByDisplayValue("risk")).toBeVisible();
   });
 
   it("renders a product-owned catch-all 404 inside the app shell", async () => {

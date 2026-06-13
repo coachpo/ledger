@@ -153,6 +153,8 @@ const MEMORY_EVENT_GROUP_DEFERRED_SECTION_CLASS_NAME =
   "[content-visibility:auto] [contain-intrinsic-size:auto_720px]";
 const MEMORY_COMPACT_ARTIFACT_DEFERRED_CLASS_NAME =
   "[content-visibility:auto] [contain-intrinsic-size:auto_220px]";
+const MEMORY_ADMIN_STATUS_FILTERS = new Set(["pending", "resolved", "expired"]);
+
 const MEMORY_EVENT_GROUPS: MemoryEventGroupDefinition[] = [
   {
     description: "Memory context used by this run.",
@@ -524,22 +526,23 @@ function SourceOperationInvocationLink({
 function memoryWorkspacePath(
   artifact: RunMemoryArtifactRead,
   run: RunRead,
-): string | null {
-  const packageKey = run.packageProvenance?.workflowPackageKey;
-  if (!packageKey) {
-    return null;
-  }
-
+): string {
   const params = new URLSearchParams({
     memoryId: artifact.memoryId,
-    packageKey,
-    runId: String(run.id),
+    runId: String(artifact.provenance.runId),
   });
+  const packageKey = run.packageProvenance?.workflowPackageKey;
+  if (packageKey) {
+    params.set("packageKey", packageKey);
+  }
   if (artifact.provenance.workflowKey) {
     params.set("workflowKey", artifact.provenance.workflowKey);
   }
   if (artifact.provenance.agentKey) {
     params.set("agentKey", artifact.provenance.agentKey);
+  }
+  if (MEMORY_ADMIN_STATUS_FILTERS.has(artifact.status)) {
+    params.set("status", artifact.status);
   }
   return `/memory?${params.toString()}`;
 }
