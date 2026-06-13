@@ -75,9 +75,9 @@ import {
   useUpdateScheduledTask,
 } from "@/hooks/use-scheduled-tasks";
 import {
-  useCreateWorkflowPackageRuntimeInputPersonalEntry,
-  useDeleteWorkflowPackageRuntimeInputPersonalEntry,
-  useUpdateWorkflowPackageRuntimeInputPersonalEntry,
+  useCreateWorkflowPackageRuntimeInputPresetEntry,
+  useDeleteWorkflowPackageRuntimeInputPresetEntry,
+  useUpdateWorkflowPackageRuntimeInputPresetEntry,
   useWorkflowPackageManifest,
   useWorkflowPackageRuntimeInputRegistry,
 } from "@/hooks/use-workflow-packages";
@@ -160,7 +160,7 @@ type ScheduleEditorDraft = {
   timezone: string;
 };
 
-type SavedInputEntryMode = "history" | "personal";
+type SavedInputEntryMode = "history" | "preset";
 
 type ScheduleInputDraft = {
   inputTemplate: UnknownRecord;
@@ -2042,12 +2042,12 @@ function ScheduledInputsEditor({
     schedule.packageId,
     activeWorkflowKey,
   );
-  const createPersonalEntry =
-    useCreateWorkflowPackageRuntimeInputPersonalEntry();
-  const updatePersonalEntry =
-    useUpdateWorkflowPackageRuntimeInputPersonalEntry();
-  const deletePersonalEntry =
-    useDeleteWorkflowPackageRuntimeInputPersonalEntry();
+  const createPresetEntry =
+    useCreateWorkflowPackageRuntimeInputPresetEntry();
+  const updatePresetEntry =
+    useUpdateWorkflowPackageRuntimeInputPresetEntry();
+  const deletePresetEntry =
+    useDeleteWorkflowPackageRuntimeInputPresetEntry();
   const previewScheduledInputs = usePreviewUnsavedScheduledTask();
   const [inputTemplateText, setInputTemplateText] = useState(() =>
     stringifyJson({}),
@@ -2055,7 +2055,7 @@ function ScheduledInputsEditor({
   const [templateVarRows, setTemplateVarRows] = useState<RuntimeInputRow[]>(
     () => createRuntimeInputRows("scheduled-template-vars"),
   );
-  const [personalPresetName, setPersonalPresetName] = useState("");
+  const [presetName, setPresetName] = useState("");
   const [previewRead, setPreviewRead] = useState<SchedulePreviewRead | null>(
     null,
   );
@@ -2082,13 +2082,13 @@ function ScheduledInputsEditor({
     () => scheduleInputDraftErrors(inputTemplateText),
     [inputTemplateText],
   );
-  const personalPanelEntries = useMemo(
+  const presetPanelEntries = useMemo(
     () =>
       newestRuntimeInputEntries(
-        runtimeInputRegistry.data?.personal ?? [],
+        runtimeInputRegistry.data?.presets ?? [],
         "updatedAt",
-      ).map((entry) => savedRuntimeInputRegistryEntry(entry, "personal")),
-    [runtimeInputRegistry.data?.personal],
+      ).map((entry) => savedRuntimeInputRegistryEntry(entry, "preset")),
+    [runtimeInputRegistry.data?.presets],
   );
   const historyPanelEntries = useMemo(
     () =>
@@ -2243,8 +2243,8 @@ function ScheduledInputsEditor({
     toast.success("Saved scheduled input loaded into the template editor");
   };
 
-  const savePersonalInput = async () => {
-    const name = personalPresetName.trim();
+  const savePresetInput = async () => {
+    const name = presetName.trim();
     if (!name) {
       toast.error("Name this scheduled input preset before saving it.");
       return;
@@ -2254,13 +2254,13 @@ function ScheduledInputsEditor({
       return;
     }
     try {
-      await createPersonalEntry.mutateAsync({
+      await createPresetEntry.mutateAsync({
         packageId: schedule.packageId,
         payload: { name, payload: draft.inputTemplate },
         workflowKey: activeWorkflowKey,
       });
-      setPersonalPresetName("");
-      toast.success("Saved scheduled input preset");
+      setPresetName("");
+      toast.success("Saved runtime input preset");
     } catch (error) {
       toast.error(
         errorMessage(error, "Failed to save scheduled input preset."),
@@ -2268,22 +2268,22 @@ function ScheduledInputsEditor({
     }
   };
 
-  const overwritePersonalInput = async (
+  const overwritePresetInput = async (
     entry: WorkflowPackageRuntimeInputEntryRead,
   ) => {
     const draft = buildDraft();
     if (!draft) {
       return;
     }
-    const name = personalPresetName.trim() || entry.name;
+    const name = presetName.trim() || entry.name;
     try {
-      await updatePersonalEntry.mutateAsync({
+      await updatePresetEntry.mutateAsync({
         entryId: entry.id,
         packageId: schedule.packageId,
         payload: { name: name || null, payload: draft.inputTemplate },
         workflowKey: activeWorkflowKey,
       });
-      setPersonalPresetName("");
+      setPresetName("");
       toast.success("Updated scheduled input preset");
     } catch (error) {
       toast.error(
@@ -2292,11 +2292,11 @@ function ScheduledInputsEditor({
     }
   };
 
-  const deletePersonalInput = async (
+  const deletePresetInput = async (
     entry: WorkflowPackageRuntimeInputEntryRead,
   ) => {
     try {
-      await deletePersonalEntry.mutateAsync({
+      await deletePresetEntry.mutateAsync({
         entryId: entry.id,
         packageId: schedule.packageId,
         workflowKey: activeWorkflowKey,
@@ -2428,21 +2428,21 @@ function ScheduledInputsEditor({
           onRowsChange={setTemplateVarRows}
         />
         <SavedRuntimeInputRegistryPanel
-          capMessage="Personal presets are capped at 20 per workflow. Delete one before saving another."
+          capMessage="Saved runtime input presets are capped at 20 per workflow. Delete one before saving another."
           createDisabled={
             runtimeInputRegistry.isPending ||
             runtimeInputRegistry.isFetching ||
-            !personalPresetName.trim() ||
+            !presetName.trim() ||
             draftErrors.length > 0
           }
-          createPending={createPersonalEntry.isPending}
-          deletePending={deletePersonalEntry.isPending}
+          createPending={createPresetEntry.isPending}
+          deletePending={deletePresetEntry.isPending}
           entryLabelNoun="scheduled input"
           error={
             runtimeInputRegistry.isError ? runtimeInputRegistry.error : null
           }
           errorTitle="Saved scheduled inputs unavailable"
-          helperCopy="Load personal presets or reuse previous run inputs as a starting point for this task."
+          helperCopy="Load saved runtime input presets or reuse previous run inputs as a starting point for this task."
           historyEmptyMessage="No runtime input history yet for this workflow."
           historyEntries={historyPanelEntries}
           historyListClassName="scheduled-input-history-list flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1"
@@ -2452,35 +2452,35 @@ function ScheduledInputsEditor({
             runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching
           }
           loadingMessage={`Loading saved inputs for ${activeWorkflowKey || "this workflow"}...`}
-          personalEntries={personalPanelEntries}
-          personalEmptyMessage="No personal presets saved for this workflow."
-          personalListClassName="flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1"
-          personalNameInputId="scheduled-input-preset-name"
-          personalNameInputName="scheduledInputPresetName"
-          personalNameLabel="Scheduled input preset name"
-          personalNamePlaceholder="Preset name"
-          personalNameValue={personalPresetName}
-          personalPresetLimit={SAVED_INPUT_ENTRY_LIMIT}
-          personalSectionLabel="Personal presets for this workflow"
+          presetEntries={presetPanelEntries}
+          presetEmptyMessage="No saved runtime input presets for this workflow."
+          presetListClassName="flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1"
+          presetNameInputId="scheduled-input-preset-name"
+          presetNameInputName="scheduledInputPresetName"
+          presetNameLabel="Scheduled input preset name"
+          presetNamePlaceholder="Preset name"
+          presetNameValue={presetName}
+          presetLimit={SAVED_INPUT_ENTRY_LIMIT}
+          presetSectionLabel="Saved runtime input presets for this workflow"
           rowTestIdPrefix="scheduled-input"
           saveLabel="Save current template"
-          showPersonalNameLabel
+          showPresetNameLabel
           staleNoticeTitle="Saved against older workflow metadata."
           tabContentClassName="data-[state=inactive]:hidden"
           tabsListClassName="h-auto w-full justify-start overflow-x-auto sm:w-fit"
           testId="scheduled-input-saved-inputs-helper"
           title="Schedule input presets"
-          updatePending={updatePersonalEntry.isPending}
+          updatePending={updatePresetEntry.isPending}
           workflowBadgeFallback="workflow"
           workflowEnabled
           workflowKey={activeWorkflowKey}
-          onCreate={() => void savePersonalInput()}
+          onCreate={() => void savePresetInput()}
           onDelete={(entry) => {
-            const savedEntry = (runtimeInputRegistry.data?.personal ?? []).find(
+            const savedEntry = (runtimeInputRegistry.data?.presets ?? []).find(
               (candidate) => candidate.id === entry.id,
             );
             if (savedEntry) {
-              void deletePersonalInput(savedEntry);
+              void deletePresetInput(savedEntry);
             }
           }}
           onLoad={(entry) => {
@@ -2489,7 +2489,7 @@ function ScheduledInputsEditor({
                 ? (runtimeInputRegistry.data?.history ?? []).find(
                     (candidate) => candidate.id === entry.id,
                   )
-                : (runtimeInputRegistry.data?.personal ?? []).find(
+                : (runtimeInputRegistry.data?.presets ?? []).find(
                     (candidate) => candidate.id === entry.id,
                   );
             if (savedEntry) {
@@ -2497,14 +2497,14 @@ function ScheduledInputsEditor({
             }
           }}
           onOverwrite={(entry) => {
-            const savedEntry = (runtimeInputRegistry.data?.personal ?? []).find(
+            const savedEntry = (runtimeInputRegistry.data?.presets ?? []).find(
               (candidate) => candidate.id === entry.id,
             );
             if (savedEntry) {
-              void overwritePersonalInput(savedEntry);
+              void overwritePresetInput(savedEntry);
             }
           }}
-          onPersonalNameChange={setPersonalPresetName}
+          onPresetNameChange={setPresetName}
         />
       </div>
     </div>

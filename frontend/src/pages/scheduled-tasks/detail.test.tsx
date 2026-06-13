@@ -25,45 +25,45 @@ const FIRE_HISTORY_ROW_SIZE_CLASS =
 
 const {
   deleteScheduleMock,
-  createRuntimeInputPersonalEntryMock,
-  deleteRuntimeInputPersonalEntryMock,
+  createRuntimeInputPresetEntryMock,
+  deleteRuntimeInputPresetEntryMock,
   previewScheduledInputsMock,
   runNowMock,
   toastErrorMock,
   toastSuccessMock,
   toastWarningMock,
-  updateRuntimeInputPersonalEntryMock,
+  updateRuntimeInputPresetEntryMock,
   updateScheduleMock,
-  useCreateRuntimeInputPersonalEntryMock,
-  useDeleteRuntimeInputPersonalEntryMock,
+  useCreateRuntimeInputPresetEntryMock,
+  useDeleteRuntimeInputPresetEntryMock,
   useDeleteScheduledTaskMock,
   usePreviewUnsavedScheduledTaskMock,
   useRunScheduledTaskNowMock,
   useScheduledTaskFiresMock,
   useScheduledTaskMock,
-  useUpdateRuntimeInputPersonalEntryMock,
+  useUpdateRuntimeInputPresetEntryMock,
   useUpdateScheduledTaskMock,
   useWorkflowPackageManifestMock,
   useWorkflowPackageRuntimeInputRegistryMock,
 } = vi.hoisted(() => ({
   deleteScheduleMock: vi.fn(),
-  createRuntimeInputPersonalEntryMock: vi.fn(),
-  deleteRuntimeInputPersonalEntryMock: vi.fn(),
+  createRuntimeInputPresetEntryMock: vi.fn(),
+  deleteRuntimeInputPresetEntryMock: vi.fn(),
   previewScheduledInputsMock: vi.fn(),
   runNowMock: vi.fn(),
   toastErrorMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   toastWarningMock: vi.fn(),
-  updateRuntimeInputPersonalEntryMock: vi.fn(),
+  updateRuntimeInputPresetEntryMock: vi.fn(),
   updateScheduleMock: vi.fn(),
-  useCreateRuntimeInputPersonalEntryMock: vi.fn(),
-  useDeleteRuntimeInputPersonalEntryMock: vi.fn(),
+  useCreateRuntimeInputPresetEntryMock: vi.fn(),
+  useDeleteRuntimeInputPresetEntryMock: vi.fn(),
   useDeleteScheduledTaskMock: vi.fn(),
   usePreviewUnsavedScheduledTaskMock: vi.fn(),
   useRunScheduledTaskNowMock: vi.fn(),
   useScheduledTaskFiresMock: vi.fn(),
   useScheduledTaskMock: vi.fn(),
-  useUpdateRuntimeInputPersonalEntryMock: vi.fn(),
+  useUpdateRuntimeInputPresetEntryMock: vi.fn(),
   useUpdateScheduledTaskMock: vi.fn(),
   useWorkflowPackageManifestMock: vi.fn(),
   useWorkflowPackageRuntimeInputRegistryMock: vi.fn(),
@@ -87,9 +87,9 @@ vi.mock("@/hooks/use-scheduled-tasks", () => ({
 }));
 
 vi.mock("@/hooks/use-workflow-packages", () => ({
-  useCreateWorkflowPackageRuntimeInputPersonalEntry: () => useCreateRuntimeInputPersonalEntryMock(),
-  useDeleteWorkflowPackageRuntimeInputPersonalEntry: () => useDeleteRuntimeInputPersonalEntryMock(),
-  useUpdateWorkflowPackageRuntimeInputPersonalEntry: () => useUpdateRuntimeInputPersonalEntryMock(),
+  useCreateWorkflowPackageRuntimeInputPresetEntry: () => useCreateRuntimeInputPresetEntryMock(),
+  useDeleteWorkflowPackageRuntimeInputPresetEntry: () => useDeleteRuntimeInputPresetEntryMock(),
+  useUpdateWorkflowPackageRuntimeInputPresetEntry: () => useUpdateRuntimeInputPresetEntryMock(),
   useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
   useWorkflowPackageRuntimeInputRegistry: (...args: unknown[]) => useWorkflowPackageRuntimeInputRegistryMock(...args),
 }));
@@ -315,7 +315,7 @@ function runtimeInputRegistry(
       history: [],
       packageId: 12,
       packageKey: "market_research_package",
-      personal: [],
+      presets: [],
       workflowKey: "daily_research",
       ...overrides,
     },
@@ -452,33 +452,33 @@ describe("ScheduledTaskDetailPage", () => {
   beforeEach(() => {
     mockBrowserTimeZone("UTC");
     deleteScheduleMock.mockReset();
-    createRuntimeInputPersonalEntryMock.mockReset();
-    deleteRuntimeInputPersonalEntryMock.mockReset();
+    createRuntimeInputPresetEntryMock.mockReset();
+    deleteRuntimeInputPresetEntryMock.mockReset();
     previewScheduledInputsMock.mockReset();
     runNowMock.mockReset();
     toastErrorMock.mockReset();
     toastSuccessMock.mockReset();
     toastWarningMock.mockReset();
-    updateRuntimeInputPersonalEntryMock.mockReset();
+    updateRuntimeInputPresetEntryMock.mockReset();
     updateScheduleMock.mockReset();
-    useCreateRuntimeInputPersonalEntryMock.mockReset();
-    useDeleteRuntimeInputPersonalEntryMock.mockReset();
+    useCreateRuntimeInputPresetEntryMock.mockReset();
+    useDeleteRuntimeInputPresetEntryMock.mockReset();
     useDeleteScheduledTaskMock.mockReset();
     usePreviewUnsavedScheduledTaskMock.mockReset();
     useRunScheduledTaskNowMock.mockReset();
     useScheduledTaskFiresMock.mockReset();
     useScheduledTaskMock.mockReset();
-    useUpdateRuntimeInputPersonalEntryMock.mockReset();
+    useUpdateRuntimeInputPresetEntryMock.mockReset();
     useUpdateScheduledTaskMock.mockReset();
     useWorkflowPackageManifestMock.mockReset();
     useWorkflowPackageRuntimeInputRegistryMock.mockReset();
 
     deleteScheduleMock.mockResolvedValue(undefined);
-    createRuntimeInputPersonalEntryMock.mockResolvedValue(runtimeInputEntry({ id: 30, name: "Saved preset", slot: "personal" }));
-    deleteRuntimeInputPersonalEntryMock.mockResolvedValue(undefined);
+    createRuntimeInputPresetEntryMock.mockResolvedValue(runtimeInputEntry({ id: 30, name: "Saved preset", slot: "preset" }));
+    deleteRuntimeInputPresetEntryMock.mockResolvedValue(undefined);
     previewScheduledInputsMock.mockResolvedValue(schedulePreviewResult());
     runNowMock.mockResolvedValue(runNowResult());
-    updateRuntimeInputPersonalEntryMock.mockResolvedValue(runtimeInputEntry({ id: 7, name: "Updated preset", slot: "personal" }));
+    updateRuntimeInputPresetEntryMock.mockResolvedValue(runtimeInputEntry({ id: 7, name: "Updated preset", slot: "preset" }));
     updateScheduleMock.mockResolvedValue(scheduleFixture({ status: "paused" }));
     useDeleteScheduledTaskMock.mockReturnValue({
       isPending: false,
@@ -496,17 +496,17 @@ describe("ScheduledTaskDetailPage", () => {
       isPending: false,
       mutateAsync: updateScheduleMock,
     });
-    useCreateRuntimeInputPersonalEntryMock.mockReturnValue({
+    useCreateRuntimeInputPresetEntryMock.mockReturnValue({
       isPending: false,
-      mutateAsync: createRuntimeInputPersonalEntryMock,
+      mutateAsync: createRuntimeInputPresetEntryMock,
     });
-    useUpdateRuntimeInputPersonalEntryMock.mockReturnValue({
+    useUpdateRuntimeInputPresetEntryMock.mockReturnValue({
       isPending: false,
-      mutateAsync: updateRuntimeInputPersonalEntryMock,
+      mutateAsync: updateRuntimeInputPresetEntryMock,
     });
-    useDeleteRuntimeInputPersonalEntryMock.mockReturnValue({
+    useDeleteRuntimeInputPresetEntryMock.mockReturnValue({
       isPending: false,
-      mutateAsync: deleteRuntimeInputPersonalEntryMock,
+      mutateAsync: deleteRuntimeInputPresetEntryMock,
     });
     useWorkflowPackageManifestMock.mockReturnValue({
       data: workflowPackageManifestFixture(),
@@ -1522,15 +1522,15 @@ describe("ScheduledTaskDetailPage", () => {
   });
 
   it("scheduled inputs reuse workflow runtime-input presets and history with schedule-specific copy", async () => {
-    const expectedPersonalUpdatedAt = expectedViewerLocalDateTime("2026-05-08T10:00:00Z");
+    const expectedPresetUpdatedAt = expectedViewerLocalDateTime("2026-05-08T10:00:00Z");
     const expectedNewestHistoryCreatedAt = expectedViewerLocalDateTime(
       "2026-05-08T11:00:00Z",
     );
-    const personal = runtimeInputEntry({
+    const preset = runtimeInputEntry({
       id: 7,
       name: "Morning schedule",
       payload: { asOfDate: "{{fire.scheduledLocalDate}}" },
-      slot: "personal",
+      slot: "preset",
       stale: {
         reasons: [{ current: "manifest-hash-123", field: "manifestHash", issue: "Manifest changed", stored: "old-manifest" }],
         stale: true,
@@ -1538,7 +1538,7 @@ describe("ScheduledTaskDetailPage", () => {
     });
     const olderHistory = runtimeInputEntry({ createdAt: "2026-05-08T08:00:00Z", id: 10, payload: { asOfDate: "2026-05-08" }, slot: "history", sourceRunId: 88 });
     const newerHistory = runtimeInputEntry({ createdAt: "2026-05-08T11:00:00Z", id: 11, payload: { asOfDate: "2026-05-09" }, slot: "history", sourceRunId: 99 });
-    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry({ history: [olderHistory, newerHistory], personal: [personal] }));
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry({ history: [olderHistory, newerHistory], presets: [preset] }));
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
@@ -1546,11 +1546,11 @@ describe("ScheduledTaskDetailPage", () => {
     expect(helper).toHaveTextContent("Schedule input presets");
     expect(helper).toHaveTextContent("1/20");
     expect(helper).toHaveTextContent("2/20");
-    const personalRow = screen.getByTestId("scheduled-input-personal-7");
-    expect(personalRow).toHaveTextContent(expectedPersonalUpdatedAt);
-    expect(within(personalRow).getByText("Stale")).toBeVisible();
-    expect(within(personalRow).getByText("Saved against older workflow metadata.")).toBeVisible();
-    expect(within(personalRow).getByText(/manifestHash: Manifest changed/i)).toBeVisible();
+    const presetRow = screen.getByTestId("scheduled-input-preset-7");
+    expect(presetRow).toHaveTextContent(expectedPresetUpdatedAt);
+    expect(within(presetRow).getByText("Stale")).toBeVisible();
+    expect(within(presetRow).getByText("Saved against older workflow metadata.")).toBeVisible();
+    expect(within(presetRow).getByText(/manifestHash: Manifest changed/i)).toBeVisible();
     const inputJson = screen.getByLabelText("Scheduled input template JSON") as HTMLTextAreaElement;
     const presetNameInput = screen.getByLabelText("Scheduled input preset name");
     expect(presetNameInput).toHaveAttribute("id", "scheduled-input-preset-name");
@@ -1559,24 +1559,25 @@ describe("ScheduledTaskDetailPage", () => {
     fireEvent.change(presetNameInput, { target: { value: "Reusable schedule" } });
     fireEvent.click(screen.getByRole("button", { name: "Save current template" }));
 
-    await waitFor(() => expect(createRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({
+    await waitFor(() => expect(createRuntimeInputPresetEntryMock).toHaveBeenCalledWith({
       packageId: 12,
       payload: { name: "Reusable schedule", payload: { asOfDate: "{{fire.scheduledLocalDate}}" } },
       workflowKey: "daily_research",
     }));
-    fireEvent.click(screen.getByRole("button", { name: "Load personal scheduled input Morning schedule" }));
+    expect(toastSuccessMock).toHaveBeenCalledWith("Saved runtime input preset");
+    fireEvent.click(screen.getByRole("button", { name: "Load saved runtime input preset Morning schedule" }));
     expect(inputJson.value).toBe(JSON.stringify({ asOfDate: "{{fire.scheduledLocalDate}}" }, null, 2));
 
     fireEvent.change(inputJson, { target: { value: '{"asOfDate":"{{window.endDate}}"}' } });
-    fireEvent.click(screen.getByRole("button", { name: "Overwrite personal scheduled input Morning schedule" }));
-    await waitFor(() => expect(updateRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({
+    fireEvent.click(screen.getByRole("button", { name: "Overwrite saved runtime input preset Morning schedule" }));
+    await waitFor(() => expect(updateRuntimeInputPresetEntryMock).toHaveBeenCalledWith({
       entryId: 7,
       packageId: 12,
       payload: { name: "Morning schedule", payload: { asOfDate: "{{window.endDate}}" } },
       workflowKey: "daily_research",
     }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete personal scheduled input Morning schedule" }));
-    await waitFor(() => expect(deleteRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({ entryId: 7, packageId: 12, workflowKey: "daily_research" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete saved runtime input preset Morning schedule" }));
+    await waitFor(() => expect(deleteRuntimeInputPresetEntryMock).toHaveBeenCalledWith({ entryId: 7, packageId: 12, workflowKey: "daily_research" }));
 
     fireEvent.mouseDown(within(helper).getByRole("tab", { name: /history/i }), { button: 0 });
     expect(screen.getByTestId("scheduled-input-history-11").compareDocumentPosition(screen.getByTestId("scheduled-input-history-10")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -1601,22 +1602,22 @@ describe("ScheduledTaskDetailPage", () => {
     expect(helper).toHaveTextContent("Loading saved inputs for daily_research...");
     expect(helper).toHaveTextContent("Saved scheduled inputs unavailable");
     expect(helper).toHaveTextContent("Saved inputs failed");
-    expect(helper).toHaveTextContent("No personal presets saved for this workflow.");
+    expect(helper).toHaveTextContent("No saved runtime input presets for this workflow.");
     fireEvent.mouseDown(within(helper).getByRole("tab", { name: /history/i }), { button: 0 });
     expect(screen.getByText("No runtime input history yet for this workflow.")).toBeVisible();
   });
 
-  it("scheduled inputs surface the personal preset cap before saving another entry", async () => {
-    const personalEntries = Array.from({ length: 20 }, (_, index) =>
+  it("scheduled inputs surface the saved runtime input preset cap before saving another entry", async () => {
+    const presetEntries = Array.from({ length: 20 }, (_, index) =>
       runtimeInputEntry({
         id: index + 1,
         name: `Preset ${index + 1}`,
-        slot: "personal",
+        slot: "preset",
         updatedAt: `2026-05-08T10:${String(index).padStart(2, "0")}:00Z`,
       }),
     );
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
-      runtimeInputRegistry({ personal: personalEntries }),
+      runtimeInputRegistry({ presets: presetEntries }),
     );
     renderDetailPage();
 
@@ -1626,7 +1627,7 @@ describe("ScheduledTaskDetailPage", () => {
     expect(helper).toHaveTextContent("0/20");
     expect(helper).toHaveTextContent("20 saved");
     expect(helper).toHaveTextContent(
-      "Personal presets are capped at 20 per workflow. Delete one before saving another.",
+      "Saved runtime input presets are capped at 20 per workflow. Delete one before saving another.",
     );
     fireEvent.change(screen.getByLabelText("Scheduled input preset name"), {
       target: { value: "Overflow preset" },
