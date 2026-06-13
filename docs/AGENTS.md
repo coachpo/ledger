@@ -2,7 +2,7 @@
 
 > Inherits `/AGENTS.md`. This file governs the live reference docs in `docs/`.
 >
-> Status: Docs consolidation reference for branch `main` at `154e3d8`.
+> Status: Docs consolidation reference for branch `main` at `d916433`.
 
 ## OVERVIEW
 
@@ -37,7 +37,7 @@ Trusted single-user scope: Owner docs must frame auth, authorization, RBAC, logi
 
 ## CONTEXT WORKSPACES
 
-`docs/requirements/` companion files and `docs/architecture-audit/` files may support audits, traceability, and reverse-engineered evidence. `docs/pending-design/` may keep research and upgrade-design notes that are not live contracts. Do not treat these workspaces, older root-doc references, or implementation sketches as canonical over the six owner docs or live code.
+`docs/requirements/` companion files and `docs/architecture-audit/` files may support audits, traceability, and reverse-engineered evidence. Do not treat these workspaces, older root-doc references, research notes, or implementation sketches as canonical over the six owner docs or live code.
 
 ## CONVENTIONS
 
@@ -76,4 +76,4 @@ Trusted single-user scope: Owner docs must frame auth, authorization, RBAC, logi
 - Do not add child `AGENTS.md` files under `docs/`; this file is the docs governance boundary.
 - Do not leave stale branch/SHA status markers after refreshing docs.
 - Do not re-expand research notes into duplicate route tables, data models, validation plans, or implementation checklists.
-- Do not promote pending-design files or removed root docs as live contract sources after the six owner docs have been refreshed.
+- Do not promote research notes or removed root docs as live contract sources after the six owner docs have been refreshed.
