@@ -465,7 +465,7 @@ class MemoryProvenance(CamelModel):
     run_id: int = Field(ge=1)
     agent_key: str = Field(min_length=1, max_length=120)
     agent_version: int = Field(ge=1)
-    created_by_type: Literal["agent"] = "agent"
+    created_by_type: Literal["agent", "operator"] = "agent"
     agent_name: str | None = Field(default=None, max_length=160)
     workflow_key: str | None = Field(default=None, max_length=120)
     workflow_version: int | None = Field(default=None, ge=1)
@@ -1295,9 +1295,230 @@ class MemoryApiEventListRead(CamelModel):
     offset: int = Field(ge=0)
 
 
+MEMORY_ADMIN_LIST_DEFAULT_LIMIT: Final = 50
+MEMORY_ADMIN_LIST_MAX_LIMIT: Final = 200
+MemoryAdminSort = Literal["updatedAtDesc", "createdAtDesc"]
+
+
+class MemoryAdminListQuery(CamelModel):
+    package_key: str | None = Field(default=None, max_length=120)
+    workflow_key: str | None = Field(default=None, max_length=120)
+    agent_key: str | None = Field(default=None, max_length=120)
+    run_id: int | None = Field(default=None, ge=1)
+    scope_type: MemoryScopeType | None = None
+    kind: str | None = Field(default=None, max_length=80)
+    status: MemoryLifecycleStatus | None = None
+    query: str | None = Field(default=None, max_length=1_000)
+    limit: int = Field(
+        default=MEMORY_ADMIN_LIST_DEFAULT_LIMIT,
+        ge=1,
+        le=MEMORY_ADMIN_LIST_MAX_LIMIT,
+    )
+    offset: int = Field(default=0, ge=0)
+    sort: MemoryAdminSort = "updatedAtDesc"
+
+    @field_validator("package_key", "workflow_key", "agent_key", mode="before")
+    @classmethod
+    def normalize_context_key(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="Memory admin filter", max_length=120)
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def normalize_kind(cls, value: object) -> str | None:
+        return _normalize_optional_kind(value)
+
+    @field_validator("query", mode="before")
+    @classmethod
+    def normalize_query(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="query", max_length=1_000)
+
+
+class MemoryAdminListItemRead(CamelModel):
+    memory_id: str = Field(min_length=1, max_length=160)
+    revision_id: str = Field(min_length=1, max_length=160)
+    status: MemoryLifecycleStatus
+    kind: str = Field(min_length=1, max_length=80)
+    summary: str = Field(min_length=1)
+    excerpt: str = Field(default="", min_length=1)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    scope: MemoryScope
+    provenance: MemoryProvenance
+    created_at: datetime
+    updated_at: datetime | None = None
+    last_event_type: str | None = Field(default=None, max_length=40)
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_timezone(value)
+
+
+class MemoryAdminListRead(CamelModel):
+    items: list[MemoryAdminListItemRead]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=MEMORY_ADMIN_LIST_MAX_LIMIT)
+    offset: int = Field(ge=0)
+    sort: MemoryAdminSort = "updatedAtDesc"
+
+
+class MemoryAdminEntryRead(CamelModel):
+    memory_id: str = Field(min_length=1, max_length=160)
+    revision_id: str = Field(min_length=1, max_length=160)
+    status: MemoryLifecycleStatus
+    kind: str = Field(min_length=1, max_length=80)
+    summary: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    attributes: MemoryAttributes = Field(default_factory=dict)
+    scope: MemoryScope
+    provenance: MemoryProvenance
+    revision: MemoryRevisionRead
+    created_at: datetime
+    updated_at: datetime | None = None
+    outcome: MemoryOutcome | None = None
+    reflections: list[MemoryReflection] = Field(default_factory=list)
+    audit_links: MemoryAuditLinks | None = None
+
+    @classmethod
+    def from_entry(cls, entry: MemoryEntryRead) -> Self:
+        return cls.model_validate(
+            entry.model_dump(mode="json", by_alias=True, exclude_none=True),
+        )
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_timezone(value)
+
+
+class MemoryAdminCreateRequest(CamelModel):
+    kind: str = Field(default="memory", min_length=1, max_length=80)
+    summary: str = Field(default="Memory entry", min_length=1)
+    content: str = Field(default="Memory entry", min_length=1)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    attributes: MemoryAttributes = Field(default_factory=dict)
+    scope: MemoryScope
+    provenance: MemoryProvenance
+    status: MemoryLifecycleStatus = MemoryLifecycleStatus.RESOLVED
+    idempotency_key: str | None = Field(default=None, max_length=160)
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def validate_kind(cls, value: object) -> str:
+        return _normalize_kind(value)
+
+    @field_validator("summary", "content", mode="before")
+    @classmethod
+    def validate_text(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Memory admin create field")
+
+    @field_validator("subject_refs", mode="before")
+    @classmethod
+    def coerce_subject_refs(cls, value: object) -> object:
+        return [] if value is None else value
+
+    @field_validator("attributes", mode="before")
+    @classmethod
+    def normalize_attributes(cls, value: object) -> MemoryAttributes:
+        return _normalize_attributes(value)
+
+    @field_validator("idempotency_key", mode="before")
+    @classmethod
+    def normalize_idempotency_key(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="idempotencyKey", max_length=160)
+
+    def to_write_request(self) -> MemoryWriteRequest:
+        return MemoryWriteRequest(
+            kind=self.kind,
+            summary=self.summary,
+            content=self.content,
+            subject_refs=self.subject_refs,
+            attributes=self.attributes,
+            scope=self.scope,
+            provenance=self.provenance,
+            idempotency_key=self.idempotency_key,
+        )
+
+    def to_outcome(self) -> MemoryOutcome:
+        return MemoryOutcome(status=self.status, summary=self.summary)
+
+
+class MemoryAdminRevisionCreateRequest(CamelModel):
+    summary: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    attributes: MemoryAttributes = Field(default_factory=dict)
+    provenance: MemoryProvenance
+
+    @field_validator("summary", "content", mode="before")
+    @classmethod
+    def validate_text(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Memory admin revision field")
+
+    @field_validator("subject_refs", mode="before")
+    @classmethod
+    def coerce_subject_refs(cls, value: object) -> object:
+        return [] if value is None else value
+
+    @field_validator("attributes", mode="before")
+    @classmethod
+    def normalize_attributes(cls, value: object) -> MemoryAttributes:
+        return _normalize_attributes(value)
+
+
+class MemoryAdminStatusUpdateRequest(CamelModel):
+    status: MemoryLifecycleStatus
+    summary: str = Field(default="Memory status updated", min_length=1)
+    observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    attributes: MemoryAttributes = Field(default_factory=dict)
+
+    @field_validator("summary", mode="before")
+    @classmethod
+    def validate_summary(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Memory admin status summary")
+
+    @field_validator("observed_at")
+    @classmethod
+    def validate_observed_at(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+    @field_validator("attributes", mode="before")
+    @classmethod
+    def normalize_attributes(cls, value: object) -> MemoryAttributes:
+        return _normalize_attributes(value)
+
+    def to_outcome(self) -> MemoryOutcome:
+        return MemoryOutcome(
+            status=self.status,
+            summary=self.summary,
+            observed_at=self.observed_at,
+            attributes=self.attributes,
+        )
+
+
+class MemoryAdminRevisionListRead(CamelModel):
+    items: list[MemoryApiRevisionRead]
+    count: int = Field(ge=0)
+    limit: int = Field(ge=1, le=MEMORY_API_MAX_REVISIONS)
+    offset: int = Field(ge=0)
+
+
+class MemoryAdminEventListRead(CamelModel):
+    items: list[MemoryApiEventRead]
+    count: int = Field(ge=0)
+    limit: int = Field(ge=1, le=MEMORY_API_MAX_EVENTS)
+    offset: int = Field(ge=0)
+
+
 __all__ = [
     "INVALID_MEMORY_ID_CODE",
     "MEMORY_API_MAX_EVENTS",
+    "MEMORY_ADMIN_LIST_DEFAULT_LIMIT",
+    "MEMORY_ADMIN_LIST_MAX_LIMIT",
     "MEMORY_API_MAX_REVISIONS",
     "MEMORY_CORE_RUNTIME_TOOL_KEYS",
     "MEMORY_DEFERRED_GET_DECISION",
@@ -1315,6 +1536,16 @@ __all__ = [
     "MEMORY_NOT_FOUND_CODE",
     "MEMORY_PROJECTION_MATRIX",
     "MEMORY_REVISION_WRITE_MODE",
+    "MemoryAdminCreateRequest",
+    "MemoryAdminEntryRead",
+    "MemoryAdminEventListRead",
+    "MemoryAdminListItemRead",
+    "MemoryAdminListQuery",
+    "MemoryAdminListRead",
+    "MemoryAdminRevisionCreateRequest",
+    "MemoryAdminRevisionListRead",
+    "MemoryAdminSort",
+    "MemoryAdminStatusUpdateRequest",
     "MemoryApiAccessContext",
     "MemoryApiAccessRequest",
     "MemoryApiEntryRead",

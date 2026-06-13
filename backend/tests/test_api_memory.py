@@ -135,6 +135,30 @@ def _assert_no_finance_report_payload(payload: object) -> None:
         assert forbidden not in serialized
 
 
+def _admin_create_payload(run_id: int, *, include_scope: bool = True) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "kind": "research.note",
+        "summary": "Admin-created memory.",
+        "content": "Admin route creates resolved memory without access context.",
+        "subjectRefs": [{"kind": "instrument", "id": "MSFT"}],
+        "attributes": {"source": "admin-route-test"},
+        "provenance": {
+            "runId": run_id,
+            "agentKey": "admin_operator",
+            "agentVersion": 1,
+            "agentName": "Admin Operator",
+            "workflowKey": "admin_review",
+            "workflowVersion": 1,
+            "stepId": "admin_create",
+            "slot": "memory",
+            "traceId": "trace-admin-memory",
+        },
+    }
+    if include_scope:
+        payload["scope"] = {"scopeType": "run", "scopeKey": str(run_id)}
+    return payload
+
+
 def test_api_memory_authorized_private_scope_list_detail_history_and_actions(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -401,3 +425,315 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
 
     assert no_scope.status_code == 422, no_scope.json()
     assert wildcard_scope.status_code == 422, wildcard_scope.json()
+
+
+def test_admin_list_without_access_context(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        run_a = _seed_run(session)
+        run_b = _seed_run(session)
+        service = MemoryService(session)
+        created_a = service.write_memory(
+            capability_references=[],
+            payload=_write_request(
+                run_a.id,
+                scope=MemoryScope(scope_type=MemoryScopeType.RUN, scope_key=str(run_a.id)),
+            ),
+        )
+        _ = service.resolve_memory(
+            created_a.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Admin-visible"),
+        )
+        created_b = service.write_memory(
+            capability_references=[],
+            payload=_write_request(
+                run_b.id,
+                scope=MemoryScope(scope_type=MemoryScopeType.RUN, scope_key=str(run_b.id)),
+            ),
+        )
+        memory_ids = {created_a.memory_id, created_b.memory_id}
+
+    response = client.get("/api/memory/admin/entries")
+    invalid_response = client.get("/api/memory/admin/entries", params={"limit": "201"})
+
+    assert response.status_code == 200, response.json()
+    payload = response.json()
+    assert {"items", "total", "limit", "offset", "sort"}.issubset(payload)
+    assert payload["total"] == 2
+    assert payload["limit"] == 50
+    assert payload["offset"] == 0
+    assert payload["sort"] == "updatedAtDesc"
+    assert {item["memoryId"] for item in payload["items"]} == memory_ids
+    for item in payload["items"]:
+        assert {
+            "memoryId",
+            "revisionId",
+            "status",
+            "kind",
+            "summary",
+            "excerpt",
+            "subjectRefs",
+            "scope",
+            "provenance",
+            "createdAt",
+            "updatedAt",
+            "lastEventType",
+        }.issubset(item)
+    assert "accessContext" not in str(payload)
+    assert "maxCharacters" not in str(payload)
+    assert invalid_response.status_code == 422, invalid_response.json()
+    assert invalid_response.json()["code"] == "validation_error"
+
+
+def test_admin_filters_narrow_and_clearing_filters_restores_full_corpus(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        alpha_run = _seed_run(session)
+        beta_run = _seed_run(session)
+        gamma_run = _seed_run(session)
+        alpha_run_id = alpha_run.id
+        alpha_package_key = alpha_run.workflow_package_key
+        beta_package_key = beta_run.workflow_package_key
+        gamma_package_key = gamma_run.workflow_package_key
+
+        alpha_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=alpha_run.id,
+                package_key=alpha_package_key,
+                workflow_key="alpha_workflow",
+                agent_key="alpha_agent",
+            ),
+        )
+        alpha = alpha_service.write_memory(
+            capability_references=[],
+            payload=_write_request(
+                alpha_run.id,
+                scope=MemoryScope(scope_type=MemoryScopeType.RUN, scope_key=str(alpha_run.id)),
+            ).model_copy(
+                update={
+                    "kind": "research.note",
+                    "summary": "Alpha admin filter memory.",
+                    "content": "alpha operator package filter needle.",
+                    "provenance": MemoryProvenance(
+                        run_id=alpha_run.id,
+                        agent_key="alpha_agent",
+                        agent_version=1,
+                        agent_name="Alpha Agent",
+                        workflow_key="alpha_workflow",
+                        workflow_version=1,
+                        step_id="alpha_step",
+                        slot="memory",
+                        trace_id="trace-alpha-admin-filter",
+                    ),
+                }
+            ),
+        )
+        _ = alpha_service.resolve_memory(
+            alpha.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Alpha resolved"),
+        )
+
+        beta_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=beta_run.id,
+                package_key=beta_package_key,
+                workflow_key="beta_workflow",
+                agent_key="beta_agent",
+            ),
+        )
+        beta = beta_service.write_memory(
+            capability_references=[],
+            payload=_write_request(
+                beta_run.id,
+                scope=MemoryScope(scope_type=MemoryScopeType.WORKFLOW, scope_key="beta_workflow"),
+            ).model_copy(
+                update={
+                    "kind": "decision.note",
+                    "summary": "Beta admin filter memory.",
+                    "content": "beta operator workflow filter needle.",
+                    "provenance": MemoryProvenance(
+                        run_id=beta_run.id,
+                        agent_key="beta_agent",
+                        agent_version=1,
+                        agent_name="Beta Agent",
+                        workflow_key="beta_workflow",
+                        workflow_version=1,
+                        step_id="beta_step",
+                        slot="memory",
+                        trace_id="trace-beta-admin-filter",
+                    ),
+                }
+            ),
+        )
+        _ = beta_service.resolve_memory(
+            beta.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.EXPIRED, summary="Beta expired"),
+        )
+
+        gamma_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=gamma_run.id,
+                package_key=gamma_package_key,
+                workflow_key="gamma_workflow",
+                agent_key="gamma_agent",
+            ),
+        )
+        gamma = gamma_service.write_memory(
+            capability_references=[],
+            payload=_write_request(
+                gamma_run.id,
+                scope=MemoryScope(scope_type=MemoryScopeType.AGENT, scope_key="gamma_agent"),
+            ).model_copy(
+                update={
+                    "kind": "risk.note",
+                    "summary": "Gamma admin filter memory.",
+                    "content": "gamma-query-needle operator agent filter memory.",
+                    "provenance": MemoryProvenance(
+                        run_id=gamma_run.id,
+                        agent_key="gamma_agent",
+                        agent_version=1,
+                        agent_name="Gamma Agent",
+                        workflow_key="gamma_workflow",
+                        workflow_version=1,
+                        step_id="gamma_step",
+                        slot="memory",
+                        trace_id="trace-gamma-admin-filter",
+                    ),
+                }
+            ),
+        )
+        memory_ids = {alpha.memory_id, beta.memory_id, gamma.memory_id}
+
+    filter_cases = [
+        ({"packageKey": alpha_package_key}, {alpha.memory_id}),
+        ({"workflowKey": "beta_workflow"}, {beta.memory_id}),
+        ({"agentKey": "gamma_agent"}, {gamma.memory_id}),
+        ({"runId": str(alpha_run_id)}, {alpha.memory_id}),
+        ({"scopeType": "workflow"}, {beta.memory_id}),
+        ({"kind": "decision.note"}, {beta.memory_id}),
+        ({"status": "pending"}, {gamma.memory_id}),
+        ({"query": "gamma-query-needle"}, {gamma.memory_id}),
+    ]
+
+    for params, expected_ids in filter_cases:
+        response = client.get("/api/memory/admin/entries", params=params)
+        assert response.status_code == 200, response.json()
+        payload = response.json()
+        assert payload["total"] == len(expected_ids)
+        assert {item["memoryId"] for item in payload["items"]} == expected_ids
+        assert "accessContext" not in str(payload)
+        assert "maxCharacters" not in str(payload)
+
+    cleared_response = client.get("/api/memory/admin/entries")
+    detail_response = client.get(f"/api/memory/admin/entries/{alpha.memory_id}")
+    revisions_response = client.get(f"/api/memory/admin/entries/{alpha.memory_id}/revisions")
+    events_response = client.get(f"/api/memory/admin/entries/{alpha.memory_id}/events")
+
+    assert cleared_response.status_code == 200, cleared_response.json()
+    cleared_payload = cleared_response.json()
+    assert cleared_payload["total"] == 3
+    assert {item["memoryId"] for item in cleared_payload["items"]} == memory_ids
+    assert detail_response.status_code == 200, detail_response.json()
+    assert revisions_response.status_code == 200, revisions_response.json()
+    assert events_response.status_code == 200, events_response.json()
+    assert detail_response.json()["memoryId"] == alpha.memory_id
+    assert [item["version"] for item in revisions_response.json()["items"]] == [1, 2]
+    assert [item["eventType"] for item in events_response.json()["items"]] == [
+        "written",
+        "reviewed",
+    ]
+
+
+def test_admin_create_requires_scope(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        run = _seed_run(session)
+        run_id = run.id
+        session.commit()
+
+    missing_scope = client.post(
+        "/api/memory/admin/entries",
+        json=_admin_create_payload(run_id, include_scope=False),
+    )
+    created = client.post("/api/memory/admin/entries", json=_admin_create_payload(run_id))
+
+    assert missing_scope.status_code == 422, missing_scope.json()
+    assert missing_scope.json()["code"] == "validation_error"
+    assert created.status_code == 200, created.json()
+    created_payload = created.json()
+    memory_id = created_payload["memoryId"]
+    detail = client.get(f"/api/memory/admin/entries/{memory_id}")
+    revisions = client.get(f"/api/memory/admin/entries/{memory_id}/revisions")
+    events = client.get(f"/api/memory/admin/entries/{memory_id}/events")
+    status_update = client.patch(
+        f"/api/memory/admin/entries/{memory_id}/status",
+        json={"status": "expired", "summary": "Admin expired memory."},
+    )
+
+    assert created_payload["status"] == "resolved"
+    assert created_payload["scope"] == {"scopeType": "run", "scopeKey": str(run_id)}
+    assert "accessContext" not in str(created_payload)
+    assert detail.status_code == 200, detail.json()
+    assert revisions.status_code == 200, revisions.json()
+    assert events.status_code == 200, events.json()
+    assert status_update.status_code == 200, status_update.json()
+    assert status_update.json()["status"] == "expired"
+
+
+def test_admin_write_payload_validation_and_scope_mutation_attempts(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        run = _seed_run(session)
+        run_id = run.id
+        session.commit()
+
+    invalid_create = client.post(
+        "/api/memory/admin/entries",
+        json={**_admin_create_payload(run_id), "status": "deleted"},
+    )
+    blank_content = client.post(
+        "/api/memory/admin/entries",
+        json={**_admin_create_payload(run_id), "content": ""},
+    )
+    created = client.post("/api/memory/admin/entries", json=_admin_create_payload(run_id))
+    assert created.status_code == 200, created.json()
+    memory_id = created.json()["memoryId"]
+
+    revision_scope_mutation = client.post(
+        f"/api/memory/admin/entries/{memory_id}/revisions",
+        json={
+            "summary": "Mutating scope should fail.",
+            "content": "Revision payload must not accept scope mutation.",
+            "provenance": _admin_create_payload(run_id)["provenance"],
+            "scope": {"scopeType": "package", "scopeKey": "other_package"},
+        },
+    )
+    status_scope_mutation = client.patch(
+        f"/api/memory/admin/entries/{memory_id}/status",
+        json={
+            "status": "resolved",
+            "summary": "Mutating scope should fail.",
+            "scope": {"scopeType": "package", "scopeKey": "other_package"},
+        },
+    )
+
+    invalid_responses = (
+        invalid_create,
+        blank_content,
+        revision_scope_mutation,
+        status_scope_mutation,
+    )
+    for response in invalid_responses:
+        assert response.status_code == 422, response.json()
+        assert response.json()["code"] == "validation_error"

@@ -20,6 +20,8 @@ from app.schemas.memory import (
     MEMORY_NOT_FOUND_CODE,
     MEMORY_PROJECTION_MATRIX,
     MEMORY_REVISION_WRITE_MODE,
+    MemoryAdminEntryRead,
+    MemoryAdminListItemRead,
     MemoryArtifactRead,
     MemoryEntryRead,
     MemoryId,
@@ -298,6 +300,55 @@ def test_memory_entry_read_uses_neutral_fields_and_camel_case() -> None:
 
     serialized = _serialized_text(payload)
     for fragment in _FORBIDDEN_CORE_FRAGMENTS:
+        assert fragment not in serialized
+
+
+def test_admin_memory_dtos_serialize_canonical_memory_without_report_payloads() -> None:
+    entry = MemoryAdminEntryRead(
+        memory_id="memory_admin_1001",
+        revision_id="revision_admin_1001",
+        status=MemoryLifecycleStatus.RESOLVED,
+        kind="research.note",
+        summary="Admin canonical memory.",
+        content="Operator managed canonical memory without report history.",
+        subject_refs=[_subject_ref()],
+        attributes={"confidence": "high"},
+        scope=_scope(),
+        provenance=_provenance().model_copy(update={"created_by_type": "operator"}),
+        revision=_revision("revision_admin_1001"),
+        created_at=_CREATED_AT,
+        updated_at=_UPDATED_AT,
+    )
+    item = MemoryAdminListItemRead(
+        memory_id=entry.memory_id,
+        revision_id=entry.revision_id,
+        status=entry.status,
+        kind=entry.kind,
+        summary=entry.summary,
+        excerpt="Operator managed canonical memory excerpt.",
+        subject_refs=entry.subject_refs,
+        scope=entry.scope,
+        provenance=entry.provenance,
+        created_at=entry.created_at,
+        updated_at=entry.updated_at,
+        last_event_type="operator_created",
+    )
+
+    payload = {
+        "entry": entry.model_dump(mode="json", by_alias=True, exclude_none=True),
+        "item": item.model_dump(mode="json", by_alias=True, exclude_none=True),
+    }
+    serialized = _serialized_text(payload)
+
+    assert payload["entry"]["memoryId"] == "memory_admin_1001"
+    assert payload["item"]["lastEventType"] == "operator_created"
+    forbidden_fragments = (
+        *_FORBIDDEN_CORE_FRAGMENTS,
+        "rawMarkdown",
+        "reportHistory",
+        "downloadUrl",
+    )
+    for fragment in forbidden_fragments:
         assert fragment not in serialized
 
 
