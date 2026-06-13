@@ -21,14 +21,14 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Dedicated Workflow Package launch console at `/workflow-packages/:packageId/run`, with preflight gating and run creation outside the editor.
 - Scheduled Tasks for recurring Workflow Package runs, including structured recurrence, scheduled input previews, run-now, fire history while the schedule exists, and deletion that preserves existing run history while stopping future automation.
 - Run list/detail, backend-owned progress/queue read models, package provenance, rerun drafts, reruns, fork drafts, invocation-input forks, operation invocation evidence, memory evidence, typed failure taxonomy, and bounded retry evidence.
-- Platform-core `/api/memory` and `/memory` surfaces for explicit-private-scope canonical memory list/detail, revisions, events, resolve, and reflect workflows.
+- Platform-core memory surfaces: scoped runtime `/api/memory` workflows plus trusted local operator `/api/memory/admin/entries*` and `/memory` admin management over canonical workflow memory across packages.
 
 ### Out Of Scope
 
 - Public multi-user auth, live broker execution, realtime market streaming, tax-lot accounting, and user-facing autonomous scheduling.
 - Removed `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, global Digital Oracle skill surfaces, and standalone global authoring routes.
 - TradingAgents-specific platform behavior, exact LangGraph graph parity, checkpoint/runtime semantics, or agent-initiated trading execution.
-- Unscoped global memory browsing, public memory CRUD, exact-id `signaldeck.memory.get`, vector search, embeddings, and chunk tables in phase 1.
+- Unscoped runtime memory search, public memory CRUD, exact-id `signaldeck.memory.get`, vector activation/search, embeddings, chunk tables, destructive memory deletion, and report-history promotion in phase 1.
 - Raw HTTP LLM calls in application code when an official provider SDK exists.
 
 ## Functional Requirements
@@ -90,12 +90,14 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Live Workflow Package execution may record `graphMetadata.modelGateway.providerRetries` for transient provider create-call retries only. The contract must use `policy="transientProviderRetry/v1"`, `maxAttempts=3`, failed-attempt-only `attempts[]`, and `terminalOutcome` only for `succeededAfterRetry` or `exhausted`. First-attempt success and first non-retryable failure must omit `providerRetries` entirely. Connection tests, capability probes, and Responses manual replay must stay outside provider retry metadata.
 - Rerun must be the root-parameter descendant flow.
 - Fork must be the invocation-input descendant flow, keyed by `sourceInvocationId`, persisted through `run_forks`, with `resumeStepIndex` used only as the execution boundary.
-- Core memory writes must use `signaldeck.memory.write`; core memory lookup must use `signaldeck.memory.lookup`; exact-id `signaldeck.memory.get` remains out of scope.
-- Memory lookup must never be unscoped global search; omitted runtime-tool selectors must fall back to the current run/package/agent context.
-- Memory writes must create immutable revisions, reuse exact duplicate active revisions, and return retryable `memory_revision_conflict` for competing shared-scope mutations.
+- Runtime memory writes must use `signaldeck.memory.write`; runtime memory lookup must use `signaldeck.memory.lookup`; exact-id `signaldeck.memory.get` remains out of scope.
+- Runtime memory lookup must never be unscoped global search; omitted runtime-tool selectors must fall back to the current run/package/agent context and runtime matching rules.
+- Runtime memory writes must create immutable revisions, reuse exact duplicate active revisions, and return retryable `memory_revision_conflict` for competing shared-scope mutations.
 - Shared memory namespaces must be package-owned as `{ownerPackageKey}/{namespaceKey}` and require explicit read/write grants for non-owner access. Wildcards, ownerless namespaces, global search, and cross-package private writes must fail closed.
-- `/api/memory` must be a platform-core route family, not `/api/v1` finance routing. It must require `accessContext` on list/detail/revision/event/action requests and return only explicit-private-scope canonical memory projections.
-- `/memory` must require a package context before calling `/api/memory`, support explicit private scope views only, and show canonical memory detail, revisions, and events only for authorized scopes.
+- `/api/memory` must remain a platform-core route family, not `/api/v1` finance routing. Its scoped list/detail/revision/event/action paths must not provide admin-style all-package reads.
+- `/api/memory/admin/entries*` and `/memory` must provide trusted local operator/admin management over canonical workflow memory across packages, with optional filters that narrow rather than authorize the corpus.
+- Admin create, revise, and status operations must write canonical memory through explicit scope, status, provenance, immutable revision, and append-only event semantics using operator provenance and `memory_admin` channel metadata.
+- Resolved admin entries whose scopes and namespace grants match future Workflow Package runs may affect later `signaldeck.memory.lookup`; pending and expired admin entries remain visible to the operator control plane only.
 - Model-visible memory outputs must not expose report identity, download URLs, raw markdown, or audit links. API/UI memory projections must not include finance report-history rows.
 
 ## Non-Functional Requirements
@@ -112,9 +114,9 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 ## Acceptance Criteria
 
 - A user can manage portfolio records, templates, and reports without provider availability.
-- A user can author Workflow Packages, configure Model Connections, select server-declared Tools metadata during package authoring, launch saved package runs from `/workflow-packages/:packageId/run`, schedule recurring package runs, hard-delete Scheduled Tasks, inspect Runs, and review explicit-private-scope canonical Memory from the browser.
+- A local operator can author Workflow Packages, configure Model Connections, select server-declared Tools metadata during package authoring, launch saved package runs from `/workflow-packages/:packageId/run`, schedule recurring package runs, hard-delete Scheduled Tasks, inspect Runs, and manage canonical Memory from the trusted `/memory` admin route.
 - The Digital Oracle researcher demo path is `demo/digital_oracle_researcher.yaml`; it must grant the three phase-1 `signaldeck.digital_oracle` tools through package-local capability profiles and keep methodology in `systemPrompt`, not a global skill.
 - Package HTTP operations can be authored, bound to package-local secrets, launched, and inspected without exposing raw secret values.
 - Run detail exposes backend-owned progress, queue state, agent invocations, operation invocations, package provenance, extension dependencies, memory artifacts, memory events, typed failure taxonomy, and bounded retry evidence.
-- `/api/memory` and `/memory` require package access context and explicit private scope selection, do not act as global memory search, and do not surface finance report history as platform memory.
+- Runtime `/api/memory` and `signaldeck.memory.lookup/write` stay scoped and do not act as global memory search; `/memory` uses trusted operator admin visibility over canonical memory and does not surface finance report history as platform memory.
 - Removed Studio, Tryout, orchestration, runtime-v2, simulation, backtest, `/api/skills`, `/skills*`, global Digital Oracle skill surfaces, and standalone global authoring routes are not presented as current product surfaces.
