@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -21,11 +22,15 @@ from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
-from app.repositories.agent_memory import RunMemoryEventRepository
+from app.repositories.agent_memory import AgentMemoryEntryRepository, RunMemoryEventRepository
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.memory import (
     MEMORY_NAMESPACE_ACCESS_DENIED_CODE,
     MEMORY_NAMESPACE_ACCESS_DENIED_MESSAGE,
+    MemoryAdminCreateRequest,
+    MemoryAdminListQuery,
+    MemoryAdminRevisionCreateRequest,
+    MemoryAdminStatusUpdateRequest,
     MemoryLifecycleStatus,
     MemoryNamespaceGrant,
     MemoryNamespaceSelector,
@@ -75,7 +80,7 @@ def _seed_run(session: Session, *, run_id: int | None = None) -> Run:
         workflow_description="",
         manifest_hash="a" * 64,
         compiled_hash="b" * 64,
-        manifest_source=("apiVersion: signaldeck.workflowPackage/v1\n" f"key: {package_key}\n"),
+        manifest_source=(f"apiVersion: signaldeck.workflowPackage/v1\nkey: {package_key}\n"),
         package_definition={"metadata": {"key": package_key}},
         compiled_plan={"workflows": [{"key": "platform_graph_daily_review"}]},
         extension_dependencies=[],
@@ -147,6 +152,36 @@ def _write_request(run_id: int = 42) -> MemoryWriteRequest:
     )
 
 
+def _admin_create_request(
+    run_id: int,
+    *,
+    scope: MemoryScope,
+    status: MemoryLifecycleStatus = MemoryLifecycleStatus.RESOLVED,
+    summary: str = "Admin package memory.",
+    content: str = "admin managed package alpha lookup signal.",
+) -> MemoryAdminCreateRequest:
+    return MemoryAdminCreateRequest(
+        kind="research.note",
+        summary=summary,
+        content=content,
+        subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
+        attributes={"adminFixture": "true"},
+        scope=scope,
+        provenance=MemoryProvenance(
+            run_id=run_id,
+            agent_key="ignored_payload_agent",
+            agent_version=7,
+            agent_name="Ignored Payload Agent",
+            workflow_key="admin_workflow",
+            workflow_version=1,
+            step_id="admin_write",
+            slot="memory",
+            trace_id="trace-admin-write",
+        ),
+        status=status,
+    )
+
+
 def _reports(session: Session) -> list[Report]:
     return list(session.scalars(select(Report).order_by(Report.id)))
 
@@ -214,6 +249,388 @@ def _namespace_grant(
             "actions": actions,
         }
     )
+
+
+def test_admin_operator_lists_all_packages(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        package_a_run = _seed_run(session)
+        package_b_run = _seed_run(session)
+        package_a_run_id = package_a_run.id
+        package_b_run_id = package_b_run.id
+        package_a_key = package_a_run.workflow_package_key
+        service = MemoryService(session)
+        package_a = service.write_memory(
+            capability_references=[],
+            payload=_write_request(package_a_run.id).model_copy(
+                update={
+                    "summary": "Package A operator memory.",
+                    "content": "trusted operator corpus includes package alpha memory.",
+                }
+            ),
+        )
+        package_b = service.write_memory(
+            capability_references=[],
+            payload=_write_request(package_b_run.id).model_copy(
+                update={
+                    "summary": "Package B operator memory.",
+                    "content": "trusted operator corpus includes package beta memory.",
+                }
+            ),
+        )
+        _ = service.resolve_memory(
+            package_a.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Package A resolved"),
+        )
+        _ = service.resolve_memory(
+            package_b.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Package B resolved"),
+        )
+
+        all_memory = service.list_admin_memory(MemoryAdminListQuery())
+        package_a_memory = service.list_admin_memory(
+            MemoryAdminListQuery(package_key=package_a_key)
+        )
+        detail = service.get_admin_memory(package_b.memory_id)
+        revisions = service.list_admin_memory_revisions(package_b.memory_id, limit=10, offset=0)
+        events = service.list_admin_memory_events(package_b.memory_id, limit=10, offset=0)
+        with pytest.raises(RuntimeToolGrantError) as runtime_global_denied:
+            _ = service.query_memory(MemoryQuery(query="trusted operator corpus"))
+
+    assert all_memory.total == 2
+    assert {item.memory_id for item in all_memory.items} == {
+        package_a.memory_id,
+        package_b.memory_id,
+    }
+    assert {item.provenance.run_id for item in all_memory.items} == {
+        package_a_run_id,
+        package_b_run_id,
+    }
+    assert [item.memory_id for item in package_a_memory.items] == [package_a.memory_id]
+    assert detail.memory_id == package_b.memory_id
+    assert [revision.version for revision in revisions.items] == [1, 2]
+    assert [event.event_type for event in events.items] == ["written", "reviewed"]
+    assert runtime_global_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
+
+
+def test_admin_create_resolved_affects_matching_runtime_lookup(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        run_a = _seed_run(session)
+        run_b = _seed_run(session)
+        package_a_key = "pkg_admin_alpha"
+        package_b_key = "pkg_admin_beta"
+        service = MemoryService(session)
+        created = service.create_admin_memory(
+            _admin_create_request(
+                run_a.id,
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_a_key),
+                content="admin scoped alpha resolved memory should match alpha only.",
+            )
+        )
+        alpha_snippets = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=run_a.id,
+                package_key=package_a_key,
+                workflow_key="admin_workflow",
+                agent_key="admin_agent",
+            ),
+        ).query_memory(
+            MemoryQuery(
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_a_key),
+                query="alpha resolved",
+                limit=10,
+            ),
+            record_event=False,
+        )
+        beta_snippets = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=run_b.id,
+                package_key=package_b_key,
+                workflow_key="admin_workflow",
+                agent_key="admin_agent",
+            ),
+        ).query_memory(
+            MemoryQuery(
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_b_key),
+                query="alpha resolved",
+                limit=10,
+            ),
+            record_event=False,
+        )
+        admin_list = service.list_admin_memory(MemoryAdminListQuery())
+        events = service.list_admin_memory_events(created.memory_id, limit=10, offset=0)
+
+    assert created.status == MemoryLifecycleStatus.RESOLVED
+    assert created.scope == MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_a_key)
+    assert created.provenance.created_by_type == "operator"
+    assert created.provenance.agent_key == "local-instance-operator"
+    assert [snippet.memory_id for snippet in alpha_snippets] == [created.memory_id]
+    assert beta_snippets == []
+    assert [item.memory_id for item in admin_list.items] == [created.memory_id]
+    assert [event.event_type for event in events.items] == ["operator_created"]
+    assert events.items[0].filters["source"] == "operator"
+    assert events.items[0].filters["actor"] == "local-instance-operator"
+    assert events.items[0].filters["channel"] == "memory_admin"
+
+
+def test_admin_pending_resolve_expire_revision_lookup(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        run = _seed_run(session)
+        package_key = "pkg_admin_lifecycle"
+        service = MemoryService(session)
+        created = service.create_admin_memory(
+            _admin_create_request(
+                run.id,
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
+                status=MemoryLifecycleStatus.PENDING,
+                content="pending admin memory is not in runtime lookup yet.",
+            )
+        )
+        runtime_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=run.id,
+                package_key=package_key,
+                workflow_key="admin_workflow",
+                agent_key="admin_agent",
+            ),
+        )
+        pending_snippets = runtime_service.query_memory(
+            MemoryQuery(
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
+                query="admin memory",
+                limit=10,
+            ),
+            record_event=False,
+        )
+        resolved = service.update_admin_memory_status(
+            created.memory_id,
+            MemoryAdminStatusUpdateRequest(status=MemoryLifecycleStatus.RESOLVED),
+        )
+        resolved_snippets = runtime_service.query_memory(
+            MemoryQuery(
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
+                query="admin memory",
+                limit=10,
+            ),
+            record_event=False,
+        )
+        revised = service.create_admin_memory_revision(
+            created.memory_id,
+            MemoryAdminRevisionCreateRequest(
+                summary="Revised admin memory.",
+                content="latest admin revision controls future lookup content.",
+                subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
+                attributes={"revision": "latest"},
+                provenance=MemoryProvenance(
+                    run_id=run.id,
+                    agent_key="ignored_reviser",
+                    agent_version=2,
+                    workflow_key="admin_workflow",
+                    workflow_version=1,
+                    step_id="admin_revision",
+                    slot="memory",
+                    trace_id="trace-admin-revision",
+                ),
+            ),
+        )
+        latest_snippets = runtime_service.query_memory(
+            MemoryQuery(
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
+                query="latest admin revision",
+                limit=10,
+            ),
+            record_event=False,
+        )
+        expired = service.update_admin_memory_status(
+            created.memory_id,
+            MemoryAdminStatusUpdateRequest(status=MemoryLifecycleStatus.EXPIRED),
+        )
+        expired_snippets = runtime_service.query_memory(
+            MemoryQuery(
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
+                query="latest admin revision",
+                limit=10,
+            ),
+            record_event=False,
+        )
+        admin_detail = service.get_admin_memory(created.memory_id)
+        events = service.list_admin_memory_events(created.memory_id, limit=10, offset=0)
+        revisions = service.list_admin_memory_revisions(created.memory_id, limit=10, offset=0)
+
+    assert pending_snippets == []
+    assert resolved.status == MemoryLifecycleStatus.RESOLVED
+    assert [snippet.memory_id for snippet in resolved_snippets] == [created.memory_id]
+    assert revised.content == "latest admin revision controls future lookup content."
+    assert [snippet.content for snippet in latest_snippets] == [revised.content]
+    assert expired.status == MemoryLifecycleStatus.EXPIRED
+    assert expired_snippets == []
+    assert admin_detail.status == MemoryLifecycleStatus.EXPIRED
+    assert admin_detail.content == revised.content
+    assert [event.event_type for event in events.items] == [
+        "operator_created",
+        "operator_status_changed",
+        "operator_revised",
+        "operator_status_changed",
+    ]
+    assert [revision.version for revision in revisions.items] == [1, 2, 3, 4]
+
+
+def test_admin_list_status_sort(session_factory: sessionmaker[Session]) -> None:
+    with session_factory() as session:
+        run = _seed_run(session)
+        service = MemoryService(session)
+        package_scope = MemoryScope(
+            scope_type=MemoryScopeType.PACKAGE,
+            scope_key="pkg_admin_sort",
+        )
+        pending = service.create_admin_memory(
+            _admin_create_request(
+                run.id,
+                scope=package_scope,
+                status=MemoryLifecycleStatus.PENDING,
+                summary="Pending admin sort memory.",
+                content="pending admin sort memory " + ("x" * 700),
+            )
+        )
+        resolved = service.create_admin_memory(
+            _admin_create_request(
+                run.id,
+                scope=package_scope,
+                status=MemoryLifecycleStatus.RESOLVED,
+                summary="Resolved admin sort memory.",
+                content="resolved admin sort memory.",
+            )
+        )
+        expired = service.create_admin_memory(
+            _admin_create_request(
+                run.id,
+                scope=package_scope,
+                status=MemoryLifecycleStatus.EXPIRED,
+                summary="Expired admin sort memory.",
+                content="expired admin sort memory.",
+            )
+        )
+        base_time = datetime(2026, 6, 13, 12, tzinfo=UTC)
+        entries = {
+            entry.memory_id: entry
+            for entry in session.scalars(
+                select(AgentMemoryEntry).where(
+                    AgentMemoryEntry.memory_id.in_(
+                        [pending.memory_id, resolved.memory_id, expired.memory_id]
+                    )
+                )
+            )
+        }
+        entries[pending.memory_id].created_at = base_time
+        entries[pending.memory_id].updated_at = base_time + timedelta(minutes=2)
+        entries[resolved.memory_id].created_at = base_time + timedelta(minutes=1)
+        entries[resolved.memory_id].updated_at = base_time + timedelta(minutes=2)
+        entries[expired.memory_id].created_at = base_time + timedelta(minutes=3)
+        entries[expired.memory_id].updated_at = base_time + timedelta(minutes=1)
+        session.commit()
+
+        default_list = service.list_admin_memory(MemoryAdminListQuery())
+        created_sort = service.list_admin_memory(MemoryAdminListQuery(sort="createdAtDesc"))
+        pending_only = service.list_admin_memory(
+            MemoryAdminListQuery(status=MemoryLifecycleStatus.PENDING)
+        )
+
+    assert default_list.total == 3
+    assert [item.memory_id for item in default_list.items] == [
+        resolved.memory_id,
+        pending.memory_id,
+        expired.memory_id,
+    ]
+    assert {item.status for item in default_list.items} == {
+        MemoryLifecycleStatus.PENDING,
+        MemoryLifecycleStatus.RESOLVED,
+        MemoryLifecycleStatus.EXPIRED,
+    }
+    assert [item.memory_id for item in created_sort.items] == [
+        expired.memory_id,
+        resolved.memory_id,
+        pending.memory_id,
+    ]
+    assert [item.memory_id for item in pending_only.items] == [pending.memory_id]
+    assert len(default_list.items[1].excerpt) <= 500
+
+
+def test_admin_lexical_search_no_vector(
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_vector_path(*args: object, **kwargs: object) -> object:
+        raise AssertionError("admin search must not use vector memory paths")
+
+    monkeypatch.setattr(
+        AgentMemoryEntryRepository,
+        "list_vector_lookup_candidates",
+        fail_vector_path,
+    )
+    monkeypatch.setattr(
+        AgentMemoryEntryRepository,
+        "_embedding_table_available",
+        fail_vector_path,
+    )
+    with session_factory() as session:
+        run = _seed_run(session)
+        service = MemoryService(session)
+        package_scope = MemoryScope(
+            scope_type=MemoryScopeType.PACKAGE,
+            scope_key="pkg_admin_search",
+        )
+        content_match = service.create_admin_memory(
+            _admin_create_request(
+                run.id,
+                scope=package_scope,
+                summary="Content matched memory.",
+                content="adminneedle appears in latest revision content.",
+            )
+        )
+        summary_match = service.create_admin_memory(
+            _admin_create_request(
+                run.id,
+                scope=package_scope,
+                summary="adminneedle appears in latest revision summary.",
+                content="summary matched memory body.",
+            )
+        )
+        subject_match = service.create_admin_memory(
+            _admin_create_request(
+                run.id,
+                scope=package_scope,
+                summary="Subject matched memory.",
+                content="subject matched memory body.",
+            ).model_copy(
+                update={"subject_refs": [MemorySubjectRef(kind="instrument", id="adminneedle")]}
+            )
+        )
+        _noise = service.create_admin_memory(
+            _admin_create_request(
+                run.id,
+                scope=package_scope,
+                summary="Unrelated memory.",
+                content="unrelated content stays out of lexical search.",
+            )
+        )
+
+        results = service.list_admin_memory(MemoryAdminListQuery(query="adminneedle"))
+
+    assert results.total == 3
+    assert {item.memory_id for item in results.items} == {
+        content_match.memory_id,
+        summary_match.memory_id,
+        subject_match.memory_id,
+    }
+    assert all(len(item.excerpt) <= 500 for item in results.items)
 
 
 def test_package_runtime_broader_scopes_are_package_isolated(
@@ -299,6 +716,145 @@ def test_package_runtime_broader_scopes_are_package_isolated(
     assert entries[beta_created.memory_id].scope_key == "pkg_beta:shared_agent"
     assert [snippet.memory_id for snippet in alpha_snippets] == [alpha_created.memory_id]
     assert [snippet.memory_id for snippet in beta_snippets] == [beta_created.memory_id]
+
+
+def test_admin_created_namespace_memory_still_requires_runtime_namespace_rules(
+    session_factory: sessionmaker[Session],
+) -> None:
+    namespace = _namespace_selector()
+    with session_factory() as session:
+        admin_run = _seed_run(session)
+        reader_run = _seed_run(session)
+        writer_run = _seed_run(session)
+        service = MemoryService(session)
+        created = service.create_admin_memory(
+            _admin_create_request(
+                admin_run.id,
+                scope=namespace.to_scope(),
+                summary="Admin namespace guardrail memory.",
+                content="admin namespace runtime grant marker stays scoped.",
+            )
+        )
+        owner_without_declaration = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=admin_run.id,
+                package_key="pkg_alpha",
+                workflow_key="shared_review",
+                agent_key="owner_agent",
+            ),
+        )
+        owner_with_declaration = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=admin_run.id,
+                package_key="pkg_alpha",
+                workflow_key="shared_review",
+                agent_key="owner_agent",
+                namespace_declarations=(namespace,),
+            ),
+        )
+        reader_without_grant = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=reader_run.id,
+                package_key="pkg_beta",
+                workflow_key="shared_review",
+                agent_key="reader_agent",
+            ),
+        )
+        reader_with_grant = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=reader_run.id,
+                package_key="pkg_beta",
+                workflow_key="shared_review",
+                agent_key="reader_agent",
+                namespace_grants=(_namespace_grant(package_key="pkg_beta", actions=["read"]),),
+            ),
+        )
+        writer_without_grant = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=writer_run.id,
+                package_key="pkg_gamma",
+                workflow_key="shared_review",
+                agent_key="writer_agent",
+            ),
+        )
+        writer_with_grant = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=writer_run.id,
+                package_key="pkg_gamma",
+                workflow_key="shared_review",
+                agent_key="writer_agent",
+                namespace_grants=(_namespace_grant(package_key="pkg_gamma", actions=["write"]),),
+            ),
+        )
+
+        with pytest.raises(RuntimeToolGrantError) as owner_denied:
+            _ = owner_without_declaration.query_memory(
+                MemoryQuery(scope=namespace.to_scope(), query="runtime grant marker"),
+                record_event=False,
+            )
+        with pytest.raises(RuntimeToolGrantError) as reader_denied:
+            _ = reader_without_grant.query_memory(
+                MemoryQuery(scope=namespace.to_scope(), query="runtime grant marker"),
+                record_event=False,
+            )
+        with pytest.raises(RuntimeToolGrantError) as writer_denied:
+            _ = writer_without_grant.write_memory(
+                capability_references=[],
+                payload=_write_request_for_context(
+                    writer_run.id,
+                    workflow_key="shared_review",
+                    agent_key="writer_agent",
+                    scope=namespace.to_scope(),
+                    summary="Denied namespace writer memory.",
+                    content="missing namespace write grant cannot add memory.",
+                ),
+            )
+        owner_snippets = owner_with_declaration.query_memory(
+            MemoryQuery(
+                scope=namespace.to_scope(),
+                query="runtime grant marker",
+                status=MemoryLifecycleStatus.RESOLVED,
+                limit=5,
+            ),
+            record_event=False,
+        )
+        reader_snippets = reader_with_grant.query_memory(
+            MemoryQuery(
+                scope=namespace.to_scope(),
+                query="runtime grant marker",
+                status=MemoryLifecycleStatus.RESOLVED,
+                limit=5,
+            ),
+            record_event=False,
+        )
+        writer_created = writer_with_grant.write_memory(
+            capability_references=[],
+            payload=_write_request_for_context(
+                writer_run.id,
+                workflow_key="shared_review",
+                agent_key="writer_agent",
+                scope=namespace.to_scope(),
+                summary="Granted namespace writer memory.",
+                content="write grant can add admin namespace guardrail memory.",
+            ),
+        )
+        entries = list(session.scalars(select(AgentMemoryEntry).order_by(AgentMemoryEntry.id)))
+
+    assert created.provenance.created_by_type == "operator"
+    assert owner_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
+    assert reader_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
+    assert writer_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
+    assert [snippet.memory_id for snippet in owner_snippets] == [created.memory_id]
+    assert [snippet.memory_id for snippet in reader_snippets] == [created.memory_id]
+    assert {entry.memory_id for entry in entries} == {created.memory_id, writer_created.memory_id}
+    assert {entry.scope_type for entry in entries} == {"namespace"}
+    assert {entry.scope_key for entry in entries} == {namespace.qualified_key}
 
 
 def test_shared_namespace_owner_and_grant_read_write_semantics(

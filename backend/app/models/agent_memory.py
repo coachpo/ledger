@@ -71,6 +71,13 @@ class AgentMemoryEntry(IdMixin, Base):
             "kind",
         ),
         Index("ix_agent_memory_entries_status_kind", "status", "kind"),
+        Index("ix_agent_memory_entries_updated_at_id", "updated_at", "id"),
+        Index(
+            "ix_agent_memory_entries_status_updated_at_id",
+            "status",
+            "updated_at",
+            "id",
+        ),
         Index("ix_agent_memory_entries_content_hash", "content_hash"),
         Index(
             "ix_agent_memory_entries_subject_refs_gin",
@@ -431,7 +438,8 @@ class RunMemoryEvent(IdMixin, Base):
         CheckConstraint(
             "event_type IN ("
             "'retrieved', 'injected', 'written', 'reused', "
-            "'superseded', 'reviewed', 'failed'"
+            "'superseded', 'reviewed', 'failed', "
+            "'operator_created', 'operator_revised', 'operator_status_changed'"
             ")",
             name="ck_run_memory_events_event_type",
         ),
@@ -484,7 +492,7 @@ class RunMemoryEvent(IdMixin, Base):
     )
     step_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     invocation_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
-    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
     memory_entry_id: Mapped[int | None] = mapped_column(
         ForeignKey("agent_memory_entries.id", ondelete="SET NULL"),
         nullable=True,

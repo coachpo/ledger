@@ -1,18 +1,37 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
+from typing import cast as type_cast
+from uuid import uuid4
 
 from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.agents import get_default_tool_catalog
 from app.core.errors import ApiError
-from app.repositories.agent_memory import RunMemoryEventRepository
+from app.core.formatting import utcnow
+from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
+from app.repositories.agent_memory import (
+    AgentMemoryAdminListRow,
+    AgentMemoryEntryRepository,
+    AgentMemoryRevisionRepository,
+    RunMemoryEventRepository,
+)
 from app.schemas.memory import (
     MEMORY_NAMESPACE_ACCESS_DENIED_CODE,
     MEMORY_NAMESPACE_ACCESS_DENIED_MESSAGE,
+    MemoryAdminCreateRequest,
+    MemoryAdminEntryRead,
+    MemoryAdminEventListRead,
+    MemoryAdminListItemRead,
+    MemoryAdminListQuery,
+    MemoryAdminListRead,
+    MemoryAdminRevisionCreateRequest,
+    MemoryAdminRevisionListRead,
+    MemoryAdminStatusUpdateRequest,
     MemoryApiAccessContext,
     MemoryApiAccessRequest,
     MemoryApiEntryRead,
@@ -26,17 +45,20 @@ from app.schemas.memory import (
     MemoryArtifactRead,
     MemoryAuditLinks,
     MemoryEntryRead,
+    MemoryLifecycleStatus,
     MemoryNamespaceAction,
     MemoryNamespaceGrant,
     MemoryNamespaceSelector,
     MemoryOutcome,
     MemoryPromptSnippet,
+    MemoryProvenance,
     MemoryQuery,
     MemoryReflection,
     MemoryScope,
     MemoryScopeType,
     MemoryWriteRequest,
     MemoryWriteResult,
+    memory_not_found_error,
 )
 from app.services.memory_store import (
     MemoryEventContext,
@@ -52,6 +74,10 @@ from app.services.runtime_tool_grants import (
 
 _EVENT_TEXT_SNAPSHOT_MAX_CHARACTERS = 8_000
 _EVENT_SNIPPET_EXCERPT_MAX_CHARACTERS = 1_000
+_OPERATOR_ACTOR = "local-instance-operator"
+_OPERATOR_AGENT_NAME = "Local Instance Operator"
+_OPERATOR_CHANNEL = "memory_admin"
+_OPERATOR_SOURCE = "operator"
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,6 +235,10 @@ class MemoryService:
         self.session: Session = session
         self.store: MemoryStore = store if store is not None else PostgresMemoryStore(session)
         self.current_context: MemoryLookupContext | None = current_context
+        self.entry_repository: AgentMemoryEntryRepository = AgentMemoryEntryRepository(session)
+        self.revision_repository: AgentMemoryRevisionRepository = AgentMemoryRevisionRepository(
+            session
+        )
         self.event_repository: RunMemoryEventRepository = RunMemoryEventRepository(session)
         self.runtime_tool_grant_service: RuntimeToolGrantService = RuntimeToolGrantService(
             get_default_tool_catalog(),
@@ -317,6 +347,443 @@ class MemoryService:
 
     def list_run_artifacts(self, run_id: int) -> list[MemoryArtifactRead]:
         return self.store.list_artifacts_for_run(run_id)
+
+    def list_admin_memory(self, payload: MemoryAdminListQuery) -> MemoryAdminListRead:
+        query_text = payload.query.strip() if payload.query is not None else None
+        rows = self.entry_repository.list_admin_latest_revisions(
+            package_key=payload.package_key,
+            workflow_key=payload.workflow_key,
+            agent_key=payload.agent_key,
+            run_id=payload.run_id,
+            scope_type=payload.scope_type.value if payload.scope_type is not None else None,
+            kind=payload.kind,
+            status=payload.status.value if payload.status is not None else None,
+            query_text=query_text,
+            sort=payload.sort,
+            limit=payload.limit,
+            offset=payload.offset,
+        )
+        total = self.entry_repository.count_admin_latest_revisions(
+            package_key=payload.package_key,
+            workflow_key=payload.workflow_key,
+            agent_key=payload.agent_key,
+            run_id=payload.run_id,
+            scope_type=payload.scope_type.value if payload.scope_type is not None else None,
+            kind=payload.kind,
+            status=payload.status.value if payload.status is not None else None,
+            query_text=query_text,
+        )
+        return MemoryAdminListRead(
+            items=[self._admin_list_item(row) for row in rows],
+            total=total,
+            limit=payload.limit,
+            offset=payload.offset,
+            sort=payload.sort,
+        )
+
+    def create_admin_memory(self, payload: MemoryAdminCreateRequest) -> MemoryAdminEntryRead:
+        try:
+            provenance = self._operator_provenance(payload.provenance)
+            entry = self.entry_repository.add_operator_entry(
+                memory_id=self._new_memory_id(),
+                scope_type=payload.scope.scope_type.value,
+                scope_key=payload.scope.scope_key,
+                kind=payload.kind,
+                status=payload.status.value,
+                summary=payload.summary,
+                subject_refs=self._subject_refs_payload(payload.subject_refs),
+                attributes=self._admin_attributes(payload.attributes),
+                content_hash=self._content_hash(payload.content),
+                idempotency_key=payload.idempotency_key,
+                created_by_type=provenance.created_by_type,
+                source_run_id=provenance.run_id,
+                source_agent_key=provenance.agent_key,
+                source_agent_version=provenance.agent_version,
+                source_agent_name=provenance.agent_name,
+                source_workflow_key=provenance.workflow_key,
+                source_workflow_version=provenance.workflow_version,
+                source_step_id=provenance.step_id,
+                source_slot=provenance.slot,
+                source_trace_id=provenance.trace_id,
+            )
+            self.session.flush()
+            self.session.refresh(entry)
+            attributes = self._admin_attributes(payload.attributes)
+            if payload.status != MemoryLifecycleStatus.PENDING:
+                attributes["outcome"] = self._outcome_payload(payload.to_outcome())
+                entry.attributes = attributes
+            revision = self._create_admin_revision_row(
+                entry,
+                summary=payload.summary,
+                content=payload.content,
+                subject_refs=self._subject_refs_payload(payload.subject_refs),
+                attributes=attributes,
+                supersedes_revision_id=None,
+                provenance=provenance,
+            )
+            self._record_operator_event(
+                event_type="operator_created",
+                entry=entry,
+                revision=revision,
+                provenance=provenance,
+                filters={
+                    "kind": payload.kind,
+                    "scope": payload.scope.model_dump(mode="json", by_alias=True),
+                    "status": payload.status.value,
+                    "subjectRefs": [
+                        subject_ref.model_dump(mode="json", by_alias=True, exclude_none=True)
+                        for subject_ref in payload.subject_refs
+                    ],
+                    "idempotencyKey": payload.idempotency_key,
+                    "contentHash": self._content_hash(payload.content),
+                },
+                result_snapshot=self._operator_result_snapshot(entry, revision),
+            )
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        return MemoryAdminEntryRead.from_entry(self.get_memory(entry.memory_id))
+
+    def get_admin_memory(self, memory_id: str) -> MemoryAdminEntryRead:
+        return MemoryAdminEntryRead.from_entry(self.get_memory(memory_id))
+
+    def list_admin_memory_revisions(
+        self,
+        memory_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> MemoryAdminRevisionListRead:
+        revisions = self.store.list_revisions(memory_id, limit=limit, offset=offset)
+        return MemoryAdminRevisionListRead(
+            items=revisions,
+            count=len(revisions),
+            limit=limit,
+            offset=offset,
+        )
+
+    def list_admin_memory_events(
+        self,
+        memory_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> MemoryAdminEventListRead:
+        events = self.store.list_events(memory_id, limit=limit, offset=offset)
+        return MemoryAdminEventListRead(items=events, count=len(events), limit=limit, offset=offset)
+
+    def create_admin_memory_revision(
+        self,
+        memory_id: str,
+        payload: MemoryAdminRevisionCreateRequest,
+    ) -> MemoryAdminEntryRead:
+        try:
+            entry = self.entry_repository.get_by_memory_id_for_update(memory_id)
+            if entry is None:
+                raise self._memory_not_found()
+            latest = self._latest_revision(entry)
+            provenance = self._operator_provenance(payload.provenance)
+            attributes = self._revision_attributes(latest.attributes, payload.attributes)
+            subject_refs = self._subject_refs_payload(payload.subject_refs)
+            self._apply_operator_entry_provenance(entry, provenance)
+            entry.summary = payload.summary
+            entry.subject_refs = subject_refs
+            entry.attributes = attributes
+            entry.content_hash = self._content_hash(payload.content)
+            entry.updated_at = utcnow()
+            revision = self._create_admin_revision_row(
+                entry,
+                summary=payload.summary,
+                content=payload.content,
+                subject_refs=subject_refs,
+                attributes=attributes,
+                supersedes_revision_id=latest.revision_id,
+                provenance=provenance,
+            )
+            self._record_operator_event(
+                event_type="operator_revised",
+                entry=entry,
+                revision=revision,
+                provenance=provenance,
+                filters={
+                    "scope": {
+                        "scopeType": entry.scope_type,
+                        "scopeKey": entry.scope_key,
+                    },
+                    "contentHash": revision.content_hash,
+                    "supersedesRevisionId": latest.revision_id,
+                },
+                result_snapshot=self._operator_result_snapshot(entry, revision),
+            )
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        return MemoryAdminEntryRead.from_entry(self.get_memory(entry.memory_id))
+
+    def update_admin_memory_status(
+        self,
+        memory_id: str,
+        payload: MemoryAdminStatusUpdateRequest,
+    ) -> MemoryAdminEntryRead:
+        try:
+            entry = self.entry_repository.get_by_memory_id_for_update(memory_id)
+            if entry is None:
+                raise self._memory_not_found()
+            latest = self._latest_revision(entry)
+            provenance = self._operator_provenance_from_entry(entry)
+            attributes = self._revision_attributes(latest.attributes, {})
+            attributes["outcome"] = self._outcome_payload(payload.to_outcome())
+            self._apply_operator_entry_provenance(entry, provenance)
+            entry.status = payload.status.value
+            entry.attributes = attributes
+            entry.updated_at = utcnow()
+            revision = self._create_admin_revision_row(
+                entry,
+                summary=latest.summary,
+                content=latest.content,
+                subject_refs=self._subject_refs_payload(latest.subject_refs),
+                attributes=attributes,
+                supersedes_revision_id=latest.revision_id,
+                provenance=provenance,
+            )
+            self._record_operator_event(
+                event_type="operator_status_changed",
+                entry=entry,
+                revision=revision,
+                provenance=provenance,
+                filters={
+                    "scope": {
+                        "scopeType": entry.scope_type,
+                        "scopeKey": entry.scope_key,
+                    },
+                    "status": payload.status.value,
+                },
+                result_snapshot=self._operator_result_snapshot(entry, revision),
+            )
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        return MemoryAdminEntryRead.from_entry(self.get_memory(entry.memory_id))
+
+    def _latest_revision(self, entry: AgentMemoryEntry) -> AgentMemoryRevision:
+        revision = self.revision_repository.get_latest_for_entry(entry.id)
+        if revision is None:
+            raise memory_not_found_error()
+        return revision
+
+    def _create_admin_revision_row(
+        self,
+        entry: AgentMemoryEntry,
+        *,
+        summary: str,
+        content: str,
+        subject_refs: list[dict[str, Any]],
+        attributes: dict[str, Any],
+        supersedes_revision_id: str | None,
+        provenance: MemoryProvenance,
+    ) -> AgentMemoryRevision:
+        latest = self.revision_repository.get_latest_for_entry(entry.id)
+        revision = self.revision_repository.add_operator_revision(
+            memory_entry_id=entry.id,
+            revision_id=self._new_revision_id(),
+            version=1 if latest is None else latest.version + 1,
+            status=entry.status,
+            revision_action="created" if supersedes_revision_id is None else "superseded",
+            summary=summary,
+            content=content,
+            content_hash=self._content_hash(content),
+            subject_refs=subject_refs,
+            attributes=attributes,
+            supersedes_revision_id=supersedes_revision_id,
+            source_run_id=provenance.run_id,
+            source_agent_key=provenance.agent_key,
+            source_step_id=provenance.step_id,
+            source_slot=provenance.slot,
+            trace_span_id=provenance.trace_id,
+        )
+        self.session.flush()
+        self.session.refresh(revision)
+        return revision
+
+    def _record_operator_event(
+        self,
+        *,
+        event_type: str,
+        entry: AgentMemoryEntry,
+        revision: AgentMemoryRevision,
+        provenance: MemoryProvenance,
+        filters: dict[str, Any],
+        result_snapshot: dict[str, Any],
+    ) -> RunMemoryEvent:
+        operator_snapshot = self._operator_snapshot()
+        event = self.event_repository.add_operator_event(
+            run_id=provenance.run_id,
+            event_type=event_type,
+            memory_entry_id=entry.id,
+            memory_revision_id=revision.id,
+            memory_id=entry.memory_id,
+            revision_id=revision.revision_id,
+            filters={**operator_snapshot, **filters},
+            result_snapshot={**operator_snapshot, **result_snapshot},
+            status_snapshot={**operator_snapshot, "status": entry.status},
+            step_id=provenance.step_id,
+            trace_span_id=provenance.trace_id,
+        )
+        self.session.flush()
+        return event
+
+    @staticmethod
+    def _operator_snapshot() -> dict[str, str]:
+        return {
+            "source": _OPERATOR_SOURCE,
+            "actor": _OPERATOR_ACTOR,
+            "channel": _OPERATOR_CHANNEL,
+        }
+
+    @staticmethod
+    def _operator_provenance(provenance: MemoryProvenance) -> MemoryProvenance:
+        return MemoryProvenance(
+            run_id=provenance.run_id,
+            agent_key=_OPERATOR_ACTOR,
+            agent_version=1,
+            created_by_type="operator",
+            agent_name=_OPERATOR_AGENT_NAME,
+            workflow_key=provenance.workflow_key or _OPERATOR_CHANNEL,
+            workflow_version=provenance.workflow_version,
+            step_id=provenance.step_id or _OPERATOR_CHANNEL,
+            slot=_OPERATOR_CHANNEL,
+            trace_id=provenance.trace_id,
+        )
+
+    @classmethod
+    def _operator_provenance_from_entry(cls, entry: AgentMemoryEntry) -> MemoryProvenance:
+        return cls._operator_provenance(
+            MemoryProvenance(
+                run_id=entry.source_run_id,
+                agent_key=entry.source_agent_key,
+                agent_version=entry.source_agent_version,
+                agent_name=entry.source_agent_name,
+                workflow_key=entry.source_workflow_key,
+                workflow_version=entry.source_workflow_version,
+                step_id=entry.source_step_id,
+                slot=entry.source_slot,
+                trace_id=entry.source_trace_id,
+            )
+        )
+
+    @staticmethod
+    def _apply_operator_entry_provenance(
+        entry: AgentMemoryEntry,
+        provenance: MemoryProvenance,
+    ) -> None:
+        entry.created_by_type = provenance.created_by_type
+        entry.source_run_id = provenance.run_id
+        entry.source_agent_key = provenance.agent_key
+        entry.source_agent_version = provenance.agent_version
+        entry.source_agent_name = provenance.agent_name
+        entry.source_workflow_key = provenance.workflow_key
+        entry.source_workflow_version = provenance.workflow_version
+        entry.source_step_id = provenance.step_id
+        entry.source_slot = provenance.slot
+        entry.source_trace_id = provenance.trace_id
+
+    @classmethod
+    def _revision_attributes(
+        cls,
+        current_attributes: object,
+        replacement_attributes: dict[str, Any],
+    ) -> dict[str, Any]:
+        attributes = cls._admin_attributes(replacement_attributes)
+        if isinstance(current_attributes, dict):
+            for key in ("outcome", "reflections"):
+                if key in current_attributes and key not in attributes:
+                    attributes[key] = current_attributes[key]
+        return attributes
+
+    @staticmethod
+    def _admin_attributes(attributes: dict[str, Any]) -> dict[str, Any]:
+        return {
+            **dict(attributes),
+            "_operatorProvenance": MemoryService._operator_snapshot(),
+        }
+
+    @staticmethod
+    def _subject_refs_payload(subject_refs: Sequence[Any]) -> list[dict[str, Any]]:
+        return [
+            (
+                subject_ref.model_dump(mode="json", by_alias=True, exclude_none=True)
+                if hasattr(subject_ref, "model_dump")
+                else dict(subject_ref)
+            )
+            for subject_ref in subject_refs
+        ]
+
+    @staticmethod
+    def _outcome_payload(outcome: MemoryOutcome) -> dict[str, Any]:
+        return outcome.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    @staticmethod
+    def _operator_result_snapshot(
+        entry: AgentMemoryEntry,
+        revision: AgentMemoryRevision,
+    ) -> dict[str, Any]:
+        return {
+            "memoryId": entry.memory_id,
+            "revisionId": revision.revision_id,
+            "status": entry.status,
+            "revisionAction": revision.revision_action,
+        }
+
+    @staticmethod
+    def _content_hash(content: str) -> str:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _new_memory_id() -> str:
+        return f"memory_{uuid4().hex}"
+
+    @staticmethod
+    def _new_revision_id() -> str:
+        return f"revision_{uuid4().hex}"
+
+    @staticmethod
+    def _memory_not_found() -> ApiError:
+        return memory_not_found_error()
+
+    def _admin_list_item(self, row: AgentMemoryAdminListRow) -> MemoryAdminListItemRead:
+        entry = row.entry
+        revision = row.revision
+        return MemoryAdminListItemRead(
+            memory_id=entry.memory_id,
+            revision_id=revision.revision_id,
+            status=MemoryLifecycleStatus(entry.status),
+            kind=entry.kind,
+            summary=revision.summary,
+            excerpt=row.excerpt or revision.summary,
+            subject_refs=PostgresMemoryStore._subject_ref_models(revision.subject_refs),
+            scope=MemoryScope(
+                scope_type=MemoryScopeType(entry.scope_type),
+                scope_key=entry.scope_key,
+            ),
+            provenance=MemoryProvenance(
+                run_id=entry.source_run_id,
+                agent_key=entry.source_agent_key,
+                agent_version=entry.source_agent_version,
+                created_by_type=type_cast(Any, entry.created_by_type),
+                agent_name=entry.source_agent_name,
+                workflow_key=entry.source_workflow_key,
+                workflow_version=entry.source_workflow_version,
+                step_id=entry.source_step_id,
+                slot=entry.source_slot,
+                trace_id=entry.source_trace_id,
+            ),
+            created_at=entry.created_at,
+            updated_at=entry.updated_at,
+            last_event_type=row.last_event_type,
+        )
 
     def list_api_memory(self, payload: MemoryApiListRequest) -> MemoryApiListRead:
         context = self._lookup_context_from_api_access(payload.access_context)

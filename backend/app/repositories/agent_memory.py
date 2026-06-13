@@ -6,7 +6,19 @@ from decimal import Decimal
 from typing import Any
 from typing import cast as type_cast
 
-from sqlalchemy import bindparam, case, cast, desc, func, inspect, literal, literal_column, select
+from sqlalchemy import (
+    String,
+    bindparam,
+    case,
+    cast,
+    desc,
+    func,
+    inspect,
+    literal,
+    literal_column,
+    select,
+)
+from sqlalchemy import or_ as sql_or
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.agent_memory import (
@@ -17,9 +29,12 @@ from app.models.agent_memory import (
     PgVector,
     RunMemoryEvent,
 )
+from app.models.run import Run
 from app.repositories.base import BaseRepository
 
 _ARTIFACT_EVENT_TYPES = ("written", "reused", "superseded", "reviewed")
+_ADMIN_STATUSES = ("pending", "resolved", "expired")
+_ADMIN_EXCERPT_MAX_CHARACTERS = 500
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +44,15 @@ class AgentMemoryLookupCandidate:
     lexical_score: float | None = None
     vector_distance: float | None = None
     vector_similarity: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AgentMemoryAdminListRow:
+    entry: AgentMemoryEntry
+    revision: AgentMemoryRevision
+    excerpt: str
+    last_event_type: str | None
+    lexical_score: float | None = None
 
 
 class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
@@ -94,6 +118,88 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             return []
         statement = select(self.model).where(self.model.memory_id.in_(list(memory_ids)))
         return self._list(statement)
+
+    def add_operator_entry(self, **fields: object) -> AgentMemoryEntry:
+        entry = self.model(**fields)
+        return self.add(entry)
+
+    def list_admin_latest_revisions(
+        self,
+        *,
+        package_key: str | None,
+        workflow_key: str | None,
+        agent_key: str | None,
+        run_id: int | None,
+        scope_type: str | None,
+        kind: str | None,
+        status: str | None,
+        query_text: str | None,
+        sort: str,
+        limit: int,
+        offset: int,
+        excerpt_max_characters: int = _ADMIN_EXCERPT_MAX_CHARACTERS,
+    ) -> list[AgentMemoryAdminListRow]:
+        statement, rank_expression = self._admin_latest_revision_statement(
+            package_key=package_key,
+            workflow_key=workflow_key,
+            agent_key=agent_key,
+            run_id=run_id,
+            scope_type=scope_type,
+            kind=kind,
+            status=status,
+            query_text=query_text,
+        )
+        last_event_type = self._admin_last_event_type_expression()
+        statement = statement.add_columns(
+            func.substr(AgentMemoryRevision.content, 1, excerpt_max_characters).label("excerpt"),
+            last_event_type.label("last_event_type"),
+            rank_expression.label("lexical_score"),
+        )
+        statement = self._order_admin_latest_revisions(
+            statement,
+            sort=sort,
+            rank_expression=rank_expression,
+            query_text=query_text,
+        )
+        if offset > 0:
+            statement = statement.offset(offset)
+        statement = statement.limit(limit)
+        rows = self.session.execute(statement).all()
+        return [
+            AgentMemoryAdminListRow(
+                entry=type_cast(AgentMemoryEntry, row[0]),
+                revision=type_cast(AgentMemoryRevision, row[1]),
+                excerpt=str(row[2] or ""),
+                last_event_type=type_cast(str | None, row[3]),
+                lexical_score=self._float_or_none(row[4]),
+            )
+            for row in rows
+        ]
+
+    def count_admin_latest_revisions(
+        self,
+        *,
+        package_key: str | None,
+        workflow_key: str | None,
+        agent_key: str | None,
+        run_id: int | None,
+        scope_type: str | None,
+        kind: str | None,
+        status: str | None,
+        query_text: str | None,
+    ) -> int:
+        statement, _rank_expression = self._admin_latest_revision_statement(
+            package_key=package_key,
+            workflow_key=workflow_key,
+            agent_key=agent_key,
+            run_id=run_id,
+            scope_type=scope_type,
+            kind=kind,
+            status=status,
+            query_text=query_text,
+        )
+        total = self.session.scalar(select(func.count()).select_from(statement.subquery()))
+        return int(total or 0)
 
     def list_latest_for_lookup(
         self,
@@ -187,6 +293,149 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             )
             for row in rows
         ]
+
+    def _admin_latest_revision_statement(
+        self,
+        *,
+        package_key: str | None,
+        workflow_key: str | None,
+        agent_key: str | None,
+        run_id: int | None,
+        scope_type: str | None,
+        kind: str | None,
+        status: str | None,
+        query_text: str | None,
+    ) -> tuple[Any, Any]:
+        latest_versions = self._latest_revision_versions().subquery()
+        statement = self._latest_revision_statement(latest_versions).outerjoin(
+            Run,
+            Run.id == self.model.source_run_id,
+        )
+        filters, rank_expression = self._admin_filters(
+            package_key=package_key,
+            workflow_key=workflow_key,
+            agent_key=agent_key,
+            run_id=run_id,
+            scope_type=scope_type,
+            kind=kind,
+            status=status,
+            query_text=query_text,
+        )
+        return statement.where(*filters), rank_expression
+
+    def _admin_filters(
+        self,
+        *,
+        package_key: str | None,
+        workflow_key: str | None,
+        agent_key: str | None,
+        run_id: int | None,
+        scope_type: str | None,
+        kind: str | None,
+        status: str | None,
+        query_text: str | None,
+    ) -> tuple[list[ColumnElement[bool]], Any]:
+        filters: list[ColumnElement[bool]] = []
+        if status is None:
+            filters.append(self.model.status.in_(_ADMIN_STATUSES))
+        else:
+            filters.append(self.model.status == status)
+        if package_key is not None:
+            filters.append(self._admin_package_filter(package_key))
+        if workflow_key is not None:
+            filters.append(self._admin_workflow_filter(workflow_key))
+        if agent_key is not None:
+            filters.append(self._admin_agent_filter(agent_key))
+        if run_id is not None:
+            filters.append(self.model.source_run_id == run_id)
+        if scope_type is not None:
+            filters.append(self.model.scope_type == scope_type)
+        if kind is not None:
+            filters.append(self.model.kind == kind)
+
+        rank_expression: Any = literal(0.0)
+        normalized_query = query_text.strip() if query_text is not None else None
+        if normalized_query:
+            search_config: Any = literal_column("'simple'::regconfig")
+            search_document = (
+                AgentMemoryRevision.summary + literal_column("' '") + AgentMemoryRevision.content
+            )
+            search_vector = func.to_tsvector(search_config, search_document)
+            search_query = func.plainto_tsquery(search_config, normalized_query)
+            subject_match = cast(AgentMemoryRevision.subject_refs, String).ilike(
+                f"%{normalized_query}%"
+            )
+            filters.append(sql_or(search_vector.op("@@")(search_query), subject_match))
+            rank_expression = func.ts_rank_cd(search_vector, search_query) + case(
+                (subject_match, 0.05),
+                else_=0.0,
+            )
+        return filters, rank_expression
+
+    @staticmethod
+    def _admin_package_filter(package_key: str) -> ColumnElement[bool]:
+        return sql_or(
+            Run.workflow_package_key == package_key,
+            AgentMemoryEntry.scope_key == package_key,
+            AgentMemoryEntry.scope_key.like(f"{package_key}:%"),
+            AgentMemoryEntry.scope_key.like(f"{package_key}/%"),
+        )
+
+    @staticmethod
+    def _admin_workflow_filter(workflow_key: str) -> ColumnElement[bool]:
+        return sql_or(
+            AgentMemoryEntry.source_workflow_key == workflow_key,
+            AgentMemoryEntry.scope_key == workflow_key,
+            AgentMemoryEntry.scope_key.like(f"%:{workflow_key}"),
+        )
+
+    @staticmethod
+    def _admin_agent_filter(agent_key: str) -> ColumnElement[bool]:
+        return sql_or(
+            AgentMemoryEntry.source_agent_key == agent_key,
+            AgentMemoryEntry.scope_key == agent_key,
+            AgentMemoryEntry.scope_key.like(f"%:{agent_key}"),
+        )
+
+    @staticmethod
+    def _order_admin_latest_revisions(
+        statement: Any,
+        *,
+        sort: str,
+        rank_expression: Any,
+        query_text: str | None,
+    ) -> Any:
+        if query_text is not None and query_text.strip():
+            return statement.order_by(
+                desc(rank_expression),
+                AgentMemoryEntry.updated_at.desc(),
+                AgentMemoryEntry.memory_id.asc(),
+            )
+        if sort == "createdAtDesc":
+            return statement.order_by(
+                AgentMemoryEntry.created_at.desc(),
+                AgentMemoryEntry.memory_id.asc(),
+            )
+        return statement.order_by(
+            AgentMemoryEntry.updated_at.desc(),
+            AgentMemoryEntry.created_at.desc(),
+            AgentMemoryEntry.memory_id.asc(),
+        )
+
+    @staticmethod
+    def _admin_last_event_type_expression() -> Any:
+        return (
+            select(RunMemoryEvent.event_type)
+            .where(
+                sql_or(
+                    RunMemoryEvent.memory_entry_id == AgentMemoryEntry.id,
+                    RunMemoryEvent.memory_id == AgentMemoryEntry.memory_id,
+                ),
+            )
+            .order_by(RunMemoryEvent.created_at.desc(), RunMemoryEvent.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
 
     def list_vector_lookup_candidates(
         self,
@@ -389,6 +638,13 @@ class AgentMemoryRevisionRepository(BaseRepository[AgentMemoryRevision]):
         )
         return self._get_by_statement(statement)
 
+    def add_revision(self, **fields: object) -> AgentMemoryRevision:
+        revision = self.model(**fields)
+        return self.add(revision)
+
+    def add_operator_revision(self, **fields: object) -> AgentMemoryRevision:
+        return self.add_revision(**fields)
+
     def list_latest_for_entry_ids(
         self,
         memory_entry_ids: Sequence[int],
@@ -439,9 +695,13 @@ class RunMemoryEventRepository(BaseRepository[RunMemoryEvent]):
         event = self.model(**fields)
         return self.add(event)
 
+    def add_operator_event(self, **fields: object) -> RunMemoryEvent:
+        return self.add_event(**fields)
+
 
 __all__ = [
     "AgentMemoryLookupCandidate",
+    "AgentMemoryAdminListRow",
     "AgentMemoryEntryRepository",
     "AgentMemoryRevisionRepository",
     "RunMemoryEventRepository",

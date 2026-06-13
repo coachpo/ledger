@@ -1105,7 +1105,7 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
             REFERENCES run_operation_invocations(id) ON DELETE SET NULL,
         step_id VARCHAR(120),
         invocation_id VARCHAR(160),
-        event_type VARCHAR(20) NOT NULL,
+        event_type VARCHAR(40) NOT NULL,
         memory_entry_id INTEGER REFERENCES agent_memory_entries(id) ON DELETE SET NULL,
         memory_revision_id INTEGER REFERENCES agent_memory_revisions(id) ON DELETE SET NULL,
         memory_id VARCHAR(160),
@@ -1122,7 +1122,8 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
         CONSTRAINT ck_run_memory_events_event_type CHECK (
             event_type IN (
                 'retrieved', 'injected', 'written', 'reused',
-                'superseded', 'reviewed', 'failed'
+                'superseded', 'reviewed', 'failed',
+                'operator_created', 'operator_revised', 'operator_status_changed'
             )
         ),
         CONSTRAINT ck_run_memory_events_filters CHECK (jsonb_typeof(filters) = 'object'),
@@ -1132,6 +1133,17 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
         ),
         CONSTRAINT ck_run_memory_events_status_snapshot CHECK (
             jsonb_typeof(status_snapshot) = 'object'
+        )
+    )
+    """,
+    "ALTER TABLE run_memory_events ALTER COLUMN event_type TYPE VARCHAR(40)",
+    "ALTER TABLE run_memory_events DROP CONSTRAINT IF EXISTS ck_run_memory_events_event_type",
+    """
+    ALTER TABLE run_memory_events ADD CONSTRAINT ck_run_memory_events_event_type CHECK (
+        event_type IN (
+            'retrieved', 'injected', 'written', 'reused',
+            'superseded', 'reviewed', 'failed',
+            'operator_created', 'operator_revised', 'operator_status_changed'
         )
     )
     """,
@@ -1146,6 +1158,14 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
     (
         "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_status_kind "
         "ON agent_memory_entries (status, kind)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_updated_at_id "
+        "ON agent_memory_entries (updated_at, id)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_status_updated_at_id "
+        "ON agent_memory_entries (status, updated_at, id)"
     ),
     (
         "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_content_hash "
@@ -2186,7 +2206,7 @@ def _delete_legacy_workflow_package_schedules_with_run_retention(
                 f"""
                 SELECT schedule.id
                 FROM workflow_package_schedules AS schedule
-                WHERE {' OR '.join(delete_predicates)}
+                WHERE {" OR ".join(delete_predicates)}
                 ORDER BY schedule.id
                 """
             )
