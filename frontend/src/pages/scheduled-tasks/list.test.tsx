@@ -331,7 +331,7 @@ describe("ScheduledTasksListPage", () => {
     vi.useRealTimers();
   });
 
-  it("renders loading, error, empty, and filtered-empty states", () => {
+  it("renders loading, error, empty, and filtered-empty states", async () => {
     useScheduledTasksMock.mockReturnValue({
       data: undefined,
       error: null,
@@ -381,25 +381,25 @@ describe("ScheduledTasksListPage", () => {
     );
     expect(screen.getByText("Daily market brief")).toBeVisible();
 
-    fireEvent.click(screen.getByTestId("scheduled-tasks-filter-succeeded"));
-    expect(
-      screen.getByText("No scheduled tasks match this search or filters."),
-    ).toBeVisible();
-    expect(screen.getByTestId("scheduled-tasks-filtered-empty-state")).toHaveTextContent(
-      "No scheduled tasks match this search or filters.",
-    );
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
-
     useScheduledTasksMock.mockReturnValue({
       data: { items: [], limit: 50, offset: 0, totalCount: 0 },
       error: null,
       isError: false,
       isPending: false,
     });
-    rerender(
-      <MemoryRouter>
-        <ScheduledTasksListPage />
-      </MemoryRouter>,
+    await chooseSelectOption(packageSelector(), "Allocation Package");
+    expect(
+      screen.getByText("No scheduled tasks match these filters."),
+    ).toBeVisible();
+    expect(screen.getByTestId("scheduled-tasks-filtered-empty-state")).toHaveTextContent(
+      "No scheduled tasks match these filters.",
+    );
+
+    fireEvent.click(
+      within(screen.getByTestId("scheduled-tasks-active-filters")).getByRole(
+        "button",
+        { name: "Clear filters" },
+      ),
     );
     expect(screen.getByText(/No scheduled tasks yet/i)).toBeVisible();
     expect(screen.getByTestId("scheduled-tasks-empty-state")).toHaveTextContent(
@@ -460,11 +460,11 @@ describe("ScheduledTasksListPage", () => {
     expect(
       screen.getByRole("link", { name: "Create scheduled task" }),
     ).toHaveAttribute("href", "/scheduled-tasks/new");
-    expect(screen.getByLabelText("Search scheduled tasks")).toBeVisible();
+    expect(screen.queryByLabelText("Search scheduled tasks")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     for (const filter of ["All", "Running", "Failed", "Succeeded", "Paused"]) {
-      expect(screen.getByRole("radio", { name: filter })).toBeVisible();
+      expect(screen.queryByRole("radio", { name: filter })).not.toBeInTheDocument();
     }
     expect(packageSelector()).toHaveTextContent("All packages");
     expect(workflowSelector()).toBeDisabled();
@@ -849,7 +849,7 @@ describe("ScheduledTasksListPage", () => {
     }
   });
 
-  it("keeps package and workflow hook params stable while status filters and search stay local", async () => {
+  it("keeps package and workflow hook params scoped to package/workflow filters", async () => {
     useScheduledTasksMock.mockReturnValue({
       data: {
         items: [scheduleFixture()],
@@ -871,13 +871,6 @@ describe("ScheduledTasksListPage", () => {
     });
     expect(workflowSelector()).toBeDisabled();
 
-    fireEvent.click(screen.getByTestId("scheduled-tasks-filter-failed"));
-    expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
-      limit: 50,
-      packageKey: undefined,
-      workflowKey: undefined,
-    });
-
     await chooseSelectOption(packageSelector(), "Market Research Package");
     expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
       limit: 50,
@@ -885,6 +878,9 @@ describe("ScheduledTasksListPage", () => {
       workflowKey: undefined,
     });
     expect(workflowSelector()).not.toBeDisabled();
+    expect(screen.getByTestId("scheduled-tasks-active-filters")).toHaveTextContent(
+      "Market Research Package",
+    );
 
     await chooseSelectOption(workflowSelector(), "Daily Research");
     expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
@@ -892,27 +888,9 @@ describe("ScheduledTasksListPage", () => {
       packageKey: "market_research_package",
       workflowKey: "daily_research",
     });
-
-    fireEvent.change(screen.getByLabelText("Search scheduled tasks"), {
-      target: { value: "no-match" },
-    });
-    expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
-      limit: 50,
-      packageKey: "market_research_package",
-      workflowKey: "daily_research",
-    });
-    expect(screen.getByTestId("scheduled-tasks-active-filters")).toHaveTextContent(
-      "no-match",
-    );
-    expect(screen.getByTestId("scheduled-tasks-active-filters")).toHaveTextContent(
-      "Market Research Package",
-    );
     expect(screen.getByTestId("scheduled-tasks-active-filters")).toHaveTextContent(
       "Daily Research",
     );
-    expect(
-      screen.getByText("No scheduled tasks match this search or filters."),
-    ).toBeVisible();
 
     fireEvent.click(
       within(screen.getByTestId("scheduled-tasks-active-filters")).getByRole(
@@ -983,7 +961,7 @@ describe("ScheduledTasksListPage", () => {
     });
   });
 
-  it("sorts rows locally and filters real runtime succeeded status", () => {
+  it("sorts rows locally and renders real runtime latest status", () => {
     useScheduledTasksMock.mockReturnValue({
       data: {
         items: [
@@ -1055,13 +1033,6 @@ describe("ScheduledTasksListPage", () => {
     expectRowBefore(zuluRow, betaRow);
 
     expect(gammaRow).toHaveTextContent("Succeeded");
-    fireEvent.click(screen.getByTestId("scheduled-tasks-filter-succeeded"));
-    expect(screen.getByTestId("scheduled-task-row-73")).toHaveTextContent(
-      "Gamma schedule",
-    );
-    expect(screen.queryByTestId("scheduled-task-row-70")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("scheduled-task-row-71")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("scheduled-task-row-72")).not.toBeInTheDocument();
     expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
       limit: 50,
       packageKey: undefined,
@@ -1069,7 +1040,7 @@ describe("ScheduledTasksListPage", () => {
     });
   });
 
-  it("selects visible schedules and bulk deletes the filtered selection", async () => {
+  it("selects visible schedules and bulk deletes the package-filtered selection", async () => {
     useScheduledTasksMock.mockReturnValue({
       data: {
         items: [
@@ -1110,15 +1081,64 @@ describe("ScheduledTasksListPage", () => {
     expect(dailyRow).toHaveAttribute("data-state", "selected");
     expect(screen.getByText("1 of 2 scheduled tasks selected")).toBeVisible();
 
-    fireEvent.change(screen.getByLabelText("Search scheduled tasks"), {
-      target: { value: "allocation" },
+    useScheduledTasksMock.mockReturnValue({
+      data: {
+        items: [
+          scheduleFixture({
+            description: null,
+            id: 55,
+            latestFireId: null,
+            latestRunId: null,
+            latestStatus: null,
+            name: "Paused allocation check",
+            nextFireAt: null,
+            packageId: 21,
+            packageKey: "allocation_package",
+            recurrence: { every: 4, type: "interval", unit: "hours" },
+            status: "paused",
+            workflowKey: "allocation_check",
+          }),
+        ],
+        limit: 50,
+        offset: 0,
+        totalCount: 1,
+      },
+      error: null,
+      isError: false,
+      isPending: false,
     });
+    await chooseSelectOption(packageSelector(), "Allocation Package");
     expect(screen.queryByTestId("scheduled-task-row-44")).not.toBeInTheDocument();
     expect(screen.queryByTestId("scheduled-tasks-bulk-actions")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Search scheduled tasks"), {
-      target: { value: "" },
+    useScheduledTasksMock.mockReturnValue({
+      data: {
+        items: [
+          scheduleFixture(),
+          scheduleFixture({
+            description: null,
+            id: 55,
+            latestFireId: null,
+            latestRunId: null,
+            latestStatus: null,
+            name: "Paused allocation check",
+            nextFireAt: null,
+            packageId: 21,
+            packageKey: "allocation_package",
+            recurrence: { every: 4, type: "interval", unit: "hours" },
+            status: "paused",
+            workflowKey: "allocation_check",
+          }),
+        ],
+        limit: 50,
+        offset: 0,
+        totalCount: 2,
+      },
+      error: null,
+      isError: false,
+      isPending: false,
     });
+    await chooseSelectOption(packageSelector(), "All packages");
     expect(screen.getByText("1 of 2 scheduled tasks selected")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
@@ -1127,9 +1147,33 @@ describe("ScheduledTasksListPage", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select all shown scheduled tasks" }));
     expect(screen.getByText("2 of 2 scheduled tasks selected")).toBeVisible();
 
-    fireEvent.change(screen.getByLabelText("Search scheduled tasks"), {
-      target: { value: "allocation" },
+    useScheduledTasksMock.mockReturnValue({
+      data: {
+        items: [
+          scheduleFixture({
+            description: null,
+            id: 55,
+            latestFireId: null,
+            latestRunId: null,
+            latestStatus: null,
+            name: "Paused allocation check",
+            nextFireAt: null,
+            packageId: 21,
+            packageKey: "allocation_package",
+            recurrence: { every: 4, type: "interval", unit: "hours" },
+            status: "paused",
+            workflowKey: "allocation_check",
+          }),
+        ],
+        limit: 50,
+        offset: 0,
+        totalCount: 1,
+      },
+      error: null,
+      isError: false,
+      isPending: false,
     });
+    await chooseSelectOption(packageSelector(), "Allocation Package");
     expect(screen.getByText("1 of 1 scheduled tasks selected")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete selected" }));
