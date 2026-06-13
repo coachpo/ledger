@@ -32,7 +32,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Workflow Package contracts | `workflow-package.ts` | package manifests, versions, diagnostics, preflight, launch, import, and export payloads |
 | Scheduled Task contracts | `schedule.ts` | recurrence, status, preview, fire history, run-now, and schedule-linked run payloads |
 | Platform catalog and binding contracts | `tool.ts`, `model-connection.ts` | read-only tool metadata and saved model connection payloads |
-| Platform memory contracts | `memory.ts` | explicit-scope access context, scopes, list/detail, revisions, and event payloads |
+| Platform memory contracts | `memory.ts` | admin entries, scopes, status, provenance, history, write payloads, and separate scoped runtime payloads |
 | Platform execution contracts | `run.ts` | run list/detail, monitor payloads, memory evidence, and package provenance |
 
 ## CONVENTIONS
@@ -45,7 +45,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Extension state types must stay slim. Do not add plugin-manifest fields, scaffold data, reason text, categories, version policy, or state counters to `extension.ts`.
 - Scheduled Task types use structured recurrence, IANA timezone strings, JSON object templates/vars, `scheduled` or `manual` fire reasons, and schedule-linked run metadata; do not introduce raw cron or finance-owned fields here.
 - Run memory evidence is phase-1 core memory shaped: `memoryEvents` carries the full event stream, `memoryArtifacts` is the compact artifact slice, and `memoryId` is an opaque string. Optional report actions live only under `auditLinks.report`; frontend types must not derive report slugs, report downloads, or route paths from `memoryId`.
-- `memory.ts` covers the public browser `/api/memory` read shapes for explicit private scopes only. There is no vector search, embeddings, chunk table, wildcard memory browser, or namespace-grant authoring shape.
+- `memory.ts` covers trusted admin `/api/memory/admin/entries*` shapes and separate scoped runtime `/api/memory` shapes. Admin entries carry scope, status, provenance, revision, and history semantics; runtime lookup/write must stay scoped and must not become admin-style all-package search.
+- There is no vector activation/search, embeddings, chunk table, wildcard memory browser, namespace-grant authoring shape, destructive deletion shape, or report-history promotion shape.
 
 ## ANTI-PATTERNS
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.

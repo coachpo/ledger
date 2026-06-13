@@ -33,7 +33,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Workflow Package flows | `use-workflow-packages.ts` | package list/detail, manifest CRUD, import, export, secret bindings, runtime-input registry, validation, preflight, launch, and extension-filtered tool reads |
 | Scheduled Task flows | `use-scheduled-tasks.ts` | schedule list/detail/fire queries plus create/update/delete/preview/run-now mutations and linked-run invalidation |
 | Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, delete, connection-test helpers |
-| Memory flows | `use-memory.ts` | explicit-scope memory list/detail/revision/event reads with caller-owned access-context gating |
+| Memory flows | `use-memory.ts` | trusted admin list/detail/history/create/revise/status hooks plus separate scoped runtime memory reads |
 | Run flows | `use-runs.ts` | run list/detail reads with package provenance, backend progress/queue payloads, active queued/running polling, plus rerun/fork drafts and create mutations |
 | Resource filter state | `use-resource-filter-state.ts` | labeled search/filter text and derived filter helpers for shared inventory shells |
 | Resource selection state | `use-resource-selection-state.ts` | table-only selection, select-all, clear, and scoped bulk-action state |
@@ -49,7 +49,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `useTools()` composes `/api/tools` with `useExtensions()` and returns extension-filtered read-only tool metadata for package capability-profile pickers.
 - Package-first platform hooks invalidate `queryKeys.platform.*` namespaces. Package mutations also refresh launch, preflight, manifest/detail, and runtime-input-registry scopes so saved-input and run-creation surfaces converge after edits/imports/deletes.
 - Scheduled Task hooks use `queryKeys.platform.schedules.*`; create/update/delete/run-now mutations refresh schedule lists/details/fire history and linked run keys so fire history and run detail converge after materialization or deletion.
-- Memory hooks read through `queryKeys.platform.memory.*`; pages must pass explicit access context payloads and use `enabled` to avoid calling `/api/memory` before a package context and private scope exist.
+- Memory hooks read through `queryKeys.platform.memory.*`; admin hooks use `/api/memory/admin/entries*` immediately for trusted local operator visibility, while scoped runtime hooks keep their own request payloads and `enabled` gates for Workflow Package paths.
 - Model-connection connection tests invalidate persisted last-test metadata after save/test flows.
 - `useToggleExtension()` invalidates extension state plus finance workspace caches so routes, nav, and package tool filters converge after enable/disable changes.
 - UI state hooks such as `useResourceFilterState()`, `useResourceSelectionState()`, and `useSplitInspectorState()` stay presentational and page-local; they coordinate shared shells but never fetch or invalidate server data.
@@ -82,5 +82,5 @@ pnpm test:run
 - Template and report hooks keep cache policy intentionally simple: list/detail invalidation in hooks, navigation and toasts in callers.
 - `invalidateWorkflowPackageScope()` and `invalidateWorkflowPackageRuntimeInputRegistryScope()` are the central package-side invalidation helpers; keep route surfaces aligned with them instead of inventing page-local refresh rules.
 - `use-scheduled-tasks.ts` owns schedule list/detail/fire invalidation plus linked run refresh after run-now; pages own recurrence/input-template draft UI, navigation, and toasts.
-- Package-first platform hooks follow the same split: cache policy, extension-state filtering, explicit Memory access payloads, and API wiring live here, while routed pages own draft UI, navigation, and feedback.
+- Package-first platform hooks follow the same split: cache policy, extension-state filtering, Memory admin/runtime API wiring, and invalidation live here, while routed pages own draft UI, navigation, and feedback.
 - The route-shell state hooks are reusable across finance inventories and platform workspace/console pages; current cross-route usage varies by hook, so keep filter/selection/inspector behavior aligned here instead of cloning page-local implementations.
