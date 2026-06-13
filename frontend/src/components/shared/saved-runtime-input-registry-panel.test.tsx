@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 type SavedRuntimeInputRegistryEntry = {
   id: number;
   label: string;
-  mode: "history" | "personal";
+  mode: "history" | "preset";
   sourceLabel: string;
   stale: boolean;
   staleReasonLines: string[];
@@ -22,12 +22,12 @@ type SavedRuntimeInputRegistryPanelProps = {
   historyEntries: readonly SavedRuntimeInputRegistryEntry[];
   loading: boolean;
   loadingMessage: string;
-  personalEntries: readonly SavedRuntimeInputRegistryEntry[];
-  personalEmptyMessage: string;
-  personalNameLabel: string;
-  personalNamePlaceholder: string;
-  personalNameValue: string;
-  personalPresetLimit: number;
+  presetEntries: readonly SavedRuntimeInputRegistryEntry[];
+  presetEmptyMessage: string;
+  presetNameLabel: string;
+  presetNamePlaceholder: string;
+  presetNameValue: string;
+  presetLimit: number;
   saveLabel: string;
   staleNoticeTitle: string;
   title: string;
@@ -37,7 +37,7 @@ type SavedRuntimeInputRegistryPanelProps = {
   onDelete: (entry: SavedRuntimeInputRegistryEntry) => void;
   onLoad: (entry: SavedRuntimeInputRegistryEntry) => void;
   onOverwrite: (entry: SavedRuntimeInputRegistryEntry) => void;
-  onPersonalNameChange: (value: string) => void;
+  onPresetNameChange: (value: string) => void;
 };
 
 async function loadSavedRuntimeInputRegistryPanel() {
@@ -68,22 +68,22 @@ function entry(
 
 function createProps(overrides: Partial<SavedRuntimeInputRegistryPanelProps> = {}): SavedRuntimeInputRegistryPanelProps {
   return {
-    capMessage: "Personal presets are capped at 20 per workflow. Delete one before saving another.",
+    capMessage: "Saved runtime input presets are capped at 20 per workflow. Delete one before saving another.",
     createDisabled: false,
     createPending: false,
     error: null,
     errorTitle: "Saved inputs unavailable",
-    helperCopy: "Choose a workflow to load saved personal presets or launch history.",
+    helperCopy: "Choose a workflow to load saved runtime input presets or launch history.",
     historyEmptyMessage: "No launch history yet.",
     historyEntries: [],
     loading: false,
     loadingMessage: "Loading saved inputs for this workflow...",
-    personalEntries: [],
-    personalEmptyMessage: "No personal presets saved for this workflow.",
-    personalNameLabel: "Personal preset name",
-    personalNamePlaceholder: "Preset name",
-    personalNameValue: "",
-    personalPresetLimit: 20,
+    presetEntries: [],
+    presetEmptyMessage: "No saved runtime input presets for this workflow.",
+    presetNameLabel: "Saved runtime input preset name",
+    presetNamePlaceholder: "Preset name",
+    presetNameValue: "",
+    presetLimit: 20,
     saveLabel: "Save current JSON",
     staleNoticeTitle: "Saved against older workflow metadata.",
     title: "Saved inputs",
@@ -93,7 +93,7 @@ function createProps(overrides: Partial<SavedRuntimeInputRegistryPanelProps> = {
     onDelete: vi.fn(),
     onLoad: vi.fn(),
     onOverwrite: vi.fn(),
-    onPersonalNameChange: vi.fn(),
+    onPresetNameChange: vi.fn(),
     ...overrides,
   };
 }
@@ -106,11 +106,11 @@ describe("SavedRuntimeInputRegistryPanel", () => {
 
     expect(screen.getByText("Saved inputs")).toBeVisible();
     expect(screen.getByText("workflow pending")).toBeVisible();
-    expect(screen.getByText("Choose a workflow to load saved personal presets or launch history.")).toBeVisible();
+    expect(screen.getByText("Choose a workflow to load saved runtime input presets or launch history.")).toBeVisible();
     expect(screen.getByRole("tab", { name: /presets/i })).toBeVisible();
     expect(screen.getByRole("tab", { name: /history/i })).toBeVisible();
     expect(screen.getAllByText("0/20")).toHaveLength(2);
-    expect(screen.queryByText("No personal presets saved for this workflow.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No saved runtime input presets for this workflow.")).not.toBeInTheDocument();
     expect(screen.queryByText("No launch history yet.")).not.toBeInTheDocument();
   });
 
@@ -122,7 +122,7 @@ describe("SavedRuntimeInputRegistryPanel", () => {
         {...createProps({
           error: new Error("Saved inputs failed"),
           errorTitle: "Saved scheduled inputs unavailable",
-          helperCopy: "Load personal presets or reuse previous run inputs as a starting point for this task.",
+          helperCopy: "Load saved runtime input presets or reuse previous run inputs as a starting point for this task.",
           loading: true,
           loadingMessage: "Loading saved inputs for daily_research...",
           title: "Schedule input presets",
@@ -133,21 +133,21 @@ describe("SavedRuntimeInputRegistryPanel", () => {
 
     expect(screen.getByText("Schedule input presets")).toBeVisible();
     expect(screen.getByText("daily_research")).toBeVisible();
-    expect(screen.getByText("Load personal presets or reuse previous run inputs as a starting point for this task.")).toBeVisible();
+    expect(screen.getByText("Load saved runtime input presets or reuse previous run inputs as a starting point for this task.")).toBeVisible();
     expect(screen.getByText("Loading saved inputs for daily_research...")).toBeVisible();
     expect(screen.getByText("Saved scheduled inputs unavailable")).toBeVisible();
     expect(screen.getByText("Saved inputs failed")).toBeVisible();
-    expect(screen.getByText("No personal presets saved for this workflow.")).toBeVisible();
+    expect(screen.getByText("No saved runtime input presets for this workflow.")).toBeVisible();
     fireEvent.mouseDown(screen.getByRole("tab", { name: /history/i }), { button: 0 });
     expect(screen.getByText("No launch history yet.")).toBeVisible();
   });
 
-  it("shows stale notices plus personal-only overwrite and delete actions while history stays load-only", async () => {
+  it("shows stale notices plus preset-only overwrite and delete actions while history stays load-only", async () => {
     const SavedRuntimeInputRegistryPanel = await loadSavedRuntimeInputRegistryPanel();
-    const personal = entry({
+    const preset = entry({
       id: 7,
       label: "Morning preset",
-      mode: "personal",
+      mode: "preset",
       stale: true,
       staleReasonLines: ["manifestHash: Manifest changed"],
     });
@@ -168,22 +168,22 @@ describe("SavedRuntimeInputRegistryPanel", () => {
           onDelete,
           onLoad,
           onOverwrite,
-          personalEntries: [personal],
+          presetEntries: [preset],
           workflowKey: "market_review",
         })}
       />,
     );
 
-    const personalRow = screen.getByTestId("saved-runtime-input-personal-7");
-    expect(within(personalRow).getByText("Stale")).toBeVisible();
-    expect(within(personalRow).getByText("Saved against older workflow metadata.")).toBeVisible();
-    expect(within(personalRow).getByText("manifestHash: Manifest changed")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Load personal input Morning preset" }));
-    fireEvent.click(screen.getByRole("button", { name: "Overwrite personal input Morning preset" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete personal input Morning preset" }));
-    expect(onLoad).toHaveBeenCalledWith(personal);
-    expect(onOverwrite).toHaveBeenCalledWith(personal);
-    expect(onDelete).toHaveBeenCalledWith(personal);
+    const presetRow = screen.getByTestId("saved-runtime-input-preset-7");
+    expect(within(presetRow).getByText("Stale")).toBeVisible();
+    expect(within(presetRow).getByText("Saved against older workflow metadata.")).toBeVisible();
+    expect(within(presetRow).getByText("manifestHash: Manifest changed")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Load saved runtime input preset Morning preset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Overwrite saved runtime input preset Morning preset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete saved runtime input preset Morning preset" }));
+    expect(onLoad).toHaveBeenCalledWith(preset);
+    expect(onOverwrite).toHaveBeenCalledWith(preset);
+    expect(onDelete).toHaveBeenCalledWith(preset);
 
     fireEvent.mouseDown(screen.getByRole("tab", { name: /history/i }), { button: 0 });
     const historyRow = screen.getByTestId("saved-runtime-input-history-11");

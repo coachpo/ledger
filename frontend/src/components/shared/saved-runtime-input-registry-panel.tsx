@@ -11,7 +11,7 @@ import { cn } from "@/components/ui/utils";
 export type SavedRuntimeInputRegistryEntry = {
   id: number;
   label: string;
-  mode: "history" | "personal";
+  mode: "history" | "preset";
   sourceLabel: string;
   stale: boolean;
   staleReasonLines: readonly string[];
@@ -34,19 +34,19 @@ type SavedRuntimeInputRegistryPanelProps = {
   historySectionLabel?: string;
   loading: boolean;
   loadingMessage: string;
-  personalEntries: readonly SavedRuntimeInputRegistryEntry[];
-  personalEmptyMessage: string;
-  personalListClassName?: string;
-  personalNameInputId?: string;
-  personalNameInputName?: string;
-  personalNameLabel: string;
-  personalNamePlaceholder: string;
-  personalNameValue: string;
-  personalPresetLimit: number;
-  personalSectionLabel?: string;
+  presetEntries: readonly SavedRuntimeInputRegistryEntry[];
+  presetEmptyMessage: string;
+  presetListClassName?: string;
+  presetNameInputId?: string;
+  presetNameInputName?: string;
+  presetNameLabel: string;
+  presetNamePlaceholder: string;
+  presetNameValue: string;
+  presetLimit: number;
+  presetSectionLabel?: string;
   rowTestIdPrefix?: string;
   saveLabel: string;
-  showPersonalNameLabel?: boolean;
+  showPresetNameLabel?: boolean;
   staleNoticeTitle: string;
   tabContentClassName?: string;
   tabsListClassName?: string;
@@ -60,7 +60,7 @@ type SavedRuntimeInputRegistryPanelProps = {
   onDelete: (entry: SavedRuntimeInputRegistryEntry) => void;
   onLoad: (entry: SavedRuntimeInputRegistryEntry) => void;
   onOverwrite: (entry: SavedRuntimeInputRegistryEntry) => void;
-  onPersonalNameChange: (value: string) => void;
+  onPresetNameChange: (value: string) => void;
 };
 
 type SavedRuntimeInputEntryRowProps = {
@@ -88,6 +88,11 @@ function SavedRuntimeInputEntryRow({
   onLoad,
   onOverwrite,
 }: SavedRuntimeInputEntryRowProps) {
+  const actionEntryDescription =
+    entry.mode === "preset"
+      ? `saved runtime input preset ${entry.label}`
+      : `${entry.mode} ${entryLabelNoun} ${entry.label}`;
+
   return (
     <div
       className="flex min-w-0 flex-col gap-2 rounded-lg border bg-background/60 p-3"
@@ -107,7 +112,7 @@ function SavedRuntimeInputEntryRow({
         </div>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
           <Button
-            aria-label={`Load ${entry.mode} ${entryLabelNoun} ${entry.label}`}
+            aria-label={`Load ${actionEntryDescription}`}
             className="h-7 px-2 text-xs"
             disabled={actionsDisabled}
             size="sm"
@@ -117,10 +122,10 @@ function SavedRuntimeInputEntryRow({
           >
             Load
           </Button>
-          {entry.mode === "personal" ? (
+          {entry.mode === "preset" ? (
             <>
               <Button
-                aria-label={`Overwrite personal ${entryLabelNoun} ${entry.label}`}
+                aria-label={`Overwrite ${actionEntryDescription}`}
                 className="h-7 px-2 text-xs"
                 disabled={actionsDisabled || updatePending}
                 size="sm"
@@ -132,7 +137,7 @@ function SavedRuntimeInputEntryRow({
                 Overwrite
               </Button>
               <Button
-                aria-label={`Delete personal ${entryLabelNoun} ${entry.label}`}
+                aria-label={`Delete ${actionEntryDescription}`}
                 className="h-7 px-2 text-xs"
                 disabled={actionsDisabled || deletePending}
                 size="sm"
@@ -189,20 +194,20 @@ export function SavedRuntimeInputRegistryPanel(props: SavedRuntimeInputRegistryP
     onDelete,
     onLoad,
     onOverwrite,
-    onPersonalNameChange,
-    personalEntries,
-    personalEmptyMessage,
-    personalListClassName,
-    personalNameInputId,
-    personalNameInputName,
-    personalNameLabel,
-    personalNamePlaceholder,
-    personalNameValue,
-    personalPresetLimit,
-    personalSectionLabel,
+    onPresetNameChange,
+    presetEntries,
+    presetEmptyMessage,
+    presetListClassName,
+    presetNameInputId,
+    presetNameInputName,
+    presetNameLabel,
+    presetNamePlaceholder,
+    presetNameValue,
+    presetLimit,
+    presetSectionLabel,
     rowTestIdPrefix = "saved-runtime-input",
     saveLabel,
-    showPersonalNameLabel = false,
+    showPresetNameLabel = false,
     staleNoticeTitle,
     tabContentClassName,
     tabsListClassName,
@@ -214,7 +219,7 @@ export function SavedRuntimeInputRegistryPanel(props: SavedRuntimeInputRegistryP
     workflowKey,
   } = props;
 
-  const personalLimitReached = personalEntries.length >= personalPresetLimit;
+  const presetLimitReached = presetEntries.length >= presetLimit;
   const badgeLabel = workflowKey || workflowBadgeFallback;
   const tabsDisabled = disableTabsWhenUnavailable && !workflowEnabled;
 
@@ -245,40 +250,40 @@ export function SavedRuntimeInputRegistryPanel(props: SavedRuntimeInputRegistryP
           <TabsTrigger disabled={tabsDisabled} value="presets">
             Presets
             <Badge className="ml-1" variant="secondary">
-              {personalEntries.length}/{personalPresetLimit}
+              {presetEntries.length}/{presetLimit}
             </Badge>
           </TabsTrigger>
           <TabsTrigger disabled={tabsDisabled} value="history">
             History
             <Badge className="ml-1" variant="secondary">
-              {historyEntries.length}/{personalPresetLimit}
+              {historyEntries.length}/{presetLimit}
             </Badge>
           </TabsTrigger>
         </TabsList>
         <TabsContent className={cn("min-w-0 space-y-3", tabContentClassName)} value="presets">
-          {personalSectionLabel ? (
+          {presetSectionLabel ? (
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/10 px-3 py-2">
-              <p className="text-xs font-medium text-muted-foreground">{personalSectionLabel}</p>
-              <Badge variant="outline">{personalEntries.length} saved</Badge>
+              <p className="text-xs font-medium text-muted-foreground">{presetSectionLabel}</p>
+              <Badge variant="outline">{presetEntries.length} saved</Badge>
             </div>
           ) : null}
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
             <div className="flex min-w-0 flex-1 flex-col gap-2">
-              {showPersonalNameLabel ? <Label htmlFor={personalNameInputId}>{personalNameLabel}</Label> : null}
+              {showPresetNameLabel ? <Label htmlFor={presetNameInputId}>{presetNameLabel}</Label> : null}
               <Input
-                aria-label={personalNameLabel}
+                aria-label={presetNameLabel}
                 className="h-8 min-w-0 text-xs"
                 disabled={!workflowEnabled}
-                id={personalNameInputId}
-                name={personalNameInputName}
-                placeholder={personalNamePlaceholder}
-                value={personalNameValue}
-                onChange={(event) => onPersonalNameChange(event.target.value)}
+                id={presetNameInputId}
+                name={presetNameInputName}
+                placeholder={presetNamePlaceholder}
+                value={presetNameValue}
+                onChange={(event) => onPresetNameChange(event.target.value)}
               />
             </div>
             <Button
               className="h-8 w-full text-xs sm:w-auto"
-              disabled={createDisabled || createPending || personalLimitReached}
+              disabled={createDisabled || createPending || presetLimitReached}
               size="sm"
               type="button"
               onClick={onCreate}
@@ -291,14 +296,14 @@ export function SavedRuntimeInputRegistryPanel(props: SavedRuntimeInputRegistryP
               {saveLabel}
             </Button>
           </div>
-          {workflowEnabled && personalLimitReached ? (
+          {workflowEnabled && presetLimitReached ? (
             <p className="text-xs text-destructive">{capMessage}</p>
           ) : null}
-          {workflowEnabled && personalEntries.length === 0 ? (
-            <p className="text-xs text-muted-foreground">{personalEmptyMessage}</p>
+          {workflowEnabled && presetEntries.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{presetEmptyMessage}</p>
           ) : null}
-          <div className={cn("flex min-w-0 flex-col gap-2", personalListClassName)}>
-            {personalEntries.map((entry) => (
+          <div className={cn("flex min-w-0 flex-col gap-2", presetListClassName)}>
+            {presetEntries.map((entry) => (
               <SavedRuntimeInputEntryRow
                 actionsDisabled={!workflowEnabled}
                 deletePending={deletePending}
