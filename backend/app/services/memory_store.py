@@ -843,6 +843,7 @@ class PostgresMemoryStore:
             run_id=entry.source_run_id,
             agent_key=entry.source_agent_key,
             agent_version=entry.source_agent_version,
+            created_by_type=cast(Any, entry.created_by_type),
             agent_name=entry.source_agent_name,
             workflow_key=entry.source_workflow_key,
             workflow_version=entry.source_workflow_version,

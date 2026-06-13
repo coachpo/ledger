@@ -226,13 +226,25 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.schemas.market_data import MarketHistoryPointRead, MarketHistorySeriesRead, MarketQuoteRead
-from app.schemas.memory import MemoryLifecycleStatus, MemoryProvenance, MemoryRevisionAction
+from app.schemas.memory import (
+    MEMORY_NAMESPACE_ACCESS_DENIED_CODE,
+    MemoryAdminCreateRequest,
+    MemoryAdminListQuery,
+    MemoryLifecycleStatus,
+    MemoryOutcome,
+    MemoryProvenance,
+    MemoryRevisionAction,
+    MemoryScope,
+    MemoryScopeType,
+    MemorySubjectRef,
+)
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
 from app.services.agent_execution_service import AgentExecutionService
 from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.market_data_service import MarketDataService
+from app.services.memory_service import MemoryService
 from app.services.model_gateway_dto import ModelGatewayError, ModelToolCall
 from app.services.model_gateway_tool_retry import ModelToolCallRetryState
 from app.services.model_gateway_tool_strategy import build_model_tool_call
@@ -727,26 +739,32 @@ def _seed_runtime_run(
     session_factory: sessionmaker[Session],
     *,
     run_id: int = _RUNTIME_RUN_ID,
+    run_step_id: int = _RUNTIME_RUN_STEP_ID,
+    run_agent_invocation_id: int = _RUNTIME_AGENT_INVOCATION_ID,
+    run_operation_invocation_id: int = _RUNTIME_OPERATION_INVOCATION_ID,
+    package_id: int = 1,
+    package_key: str = "runtime_tool_test_package",
+    workflow_key: str = "runtime_tool_test_workflow",
 ) -> None:
     with session_factory() as session:
         session.add(
             Run(
                 id=run_id,
                 target_kind="workflowPackage",
-                target_id=1,
-                target_key="runtime_tool_test_workflow",
+                target_id=package_id,
+                target_key=workflow_key,
                 target_version=1,
                 input={},
                 status="running",
                 workflow_package_snapshot=RunWorkflowPackageSnapshot(
-                    workflow_package_id=1,
-                    workflow_package_key="runtime_tool_test_package",
+                    workflow_package_id=package_id,
+                    workflow_package_key=package_key,
                     workflow_package_name="Runtime Tool Test Package",
                     workflow_package_status="published",
-                    workflow_key="runtime_tool_test_workflow",
+                    workflow_key=workflow_key,
                     workflow_name="Runtime Tool Test Workflow",
-                    manifest_hash="runtime-tool-test-manifest",
-                    compiled_hash="runtime-tool-test-compiled",
+                    manifest_hash=f"runtime-tool-test-manifest-{run_id}",
+                    compiled_hash=f"runtime-tool-test-compiled-{run_id}",
                     manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
                     package_definition={},
                     compiled_plan={},
@@ -755,7 +773,7 @@ def _seed_runtime_run(
         )
         session.add(
             RunStep(
-                id=_RUNTIME_RUN_STEP_ID,
+                id=run_step_id,
                 run_id=run_id,
                 step_index=1,
                 status="running",
@@ -763,8 +781,8 @@ def _seed_runtime_run(
         )
         session.add(
             RunAgentInvocation(
-                id=_RUNTIME_AGENT_INVOCATION_ID,
-                run_step_id=_RUNTIME_RUN_STEP_ID,
+                id=run_agent_invocation_id,
+                run_step_id=run_step_id,
                 run_id=run_id,
                 step_index=1,
                 slot="decision",
@@ -780,8 +798,8 @@ def _seed_runtime_run(
         )
         session.add(
             RunOperationInvocation(
-                id=_RUNTIME_OPERATION_INVOCATION_ID,
-                run_step_id=_RUNTIME_RUN_STEP_ID,
+                id=run_operation_invocation_id,
+                run_step_id=run_step_id,
                 run_id=run_id,
                 step_index=1,
                 slot="memory_dispatch",
@@ -899,6 +917,35 @@ def _memory_write_provenance() -> MemoryProvenance:
         step_id="portfolio_decision",
         slot="decision",
         trace_id="trace-runtime-tools",
+    )
+
+
+def _admin_memory_create_request(
+    run_id: int,
+    *,
+    scope: MemoryScope,
+    summary: str,
+    content: str,
+) -> MemoryAdminCreateRequest:
+    return MemoryAdminCreateRequest(
+        kind="research.note",
+        summary=summary,
+        content=content,
+        subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
+        attributes={"adminFixture": "true"},
+        scope=scope,
+        provenance=MemoryProvenance(
+            run_id=run_id,
+            agent_key="ignored_admin_agent",
+            agent_version=1,
+            agent_name="Ignored Admin Agent",
+            workflow_key="admin_memory_guardrail",
+            workflow_version=1,
+            step_id="admin_create",
+            slot="memory",
+            trace_id="trace-admin-runtime-guardrail",
+        ),
+        status=MemoryLifecycleStatus.RESOLVED,
     )
 
 
@@ -4151,7 +4198,12 @@ def test_memory_write_runtime_tool_creates_core_memory_without_reports(
 
     assert reports == []
     assert len(entries) == 1
-    assert entries[0].memory_id == first_payload["memoryId"]
+    entry = entries[0]
+    assert entry.memory_id == first_payload["memoryId"]
+    assert entry.created_by_type == "agent"
+    assert entry.source_agent_key == "portfolio_manager"
+    assert entry.source_slot == "decision"
+    assert entry.source_trace_id == "trace-runtime-tools"
     assert [event.event_type for event in events] == ["written", "reused"]
     for event in events:
         assert event.run_id == _RUNTIME_RUN_ID
@@ -4162,6 +4214,117 @@ def test_memory_write_runtime_tool_creates_core_memory_without_reports(
         assert event.invocation_id == _RUNTIME_TOOL_CALL_INVOCATION_ID
         assert event.trace_span_id == _RUNTIME_TRACE_SPAN_ID
         assert event.memory_id == first_payload["memoryId"]
+        assert not event.event_type.startswith("operator_")
+        assert event.filters.get("source") != "operator"
+        assert event.filters.get("channel") != "memory_admin"
+
+
+def test_memory_lookup_runtime_tool_stays_package_scoped_when_admin_lists_all_memory(
+    session_factory: sessionmaker[Session],
+) -> None:
+    package_alpha_key = "pkg_runtime_alpha"
+    package_beta_key = "pkg_runtime_beta"
+    beta_run_id = _RUNTIME_RUN_ID + 1
+    _seed_runtime_run(
+        session_factory,
+        package_id=9001,
+        package_key=package_alpha_key,
+        workflow_key="platform_graph_daily_review",
+    )
+    _seed_runtime_run(
+        session_factory,
+        run_id=beta_run_id,
+        run_step_id=_RUNTIME_RUN_STEP_ID + 1,
+        run_agent_invocation_id=_RUNTIME_AGENT_INVOCATION_ID + 1,
+        run_operation_invocation_id=_RUNTIME_OPERATION_INVOCATION_ID + 1,
+        package_id=9002,
+        package_key=package_beta_key,
+        workflow_key="platform_graph_beta_review",
+    )
+    registry = RuntimeToolRegistry(
+        [MEMORY_WRITE_TOOL_SPEC, MEMORY_LOOKUP_TOOL_SPEC],
+        enabled_extension_keys=set(),
+    )
+    alpha_context = _memory_runtime_context(
+        session_factory,
+        package_ownership=_runtime_package_ownership(package_key=package_alpha_key),
+    )
+    alpha_payload = registry.dispatch(
+        name=MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+        arguments_json=_memory_write_arguments_json(
+            {
+                "scope": {"scopeType": "package", "scopeKey": package_alpha_key},
+                "content": "runtime package guardrail memory belongs to alpha only.",
+                "idempotencyKey": "runtime-alpha-package-guardrail",
+            }
+        ),
+        granted_tool_keys={MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY},
+        context=alpha_context,
+    )
+
+    with session_factory() as session:
+        service = MemoryService(session)
+        _ = service.resolve_memory(
+            str(alpha_payload["memoryId"]),
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Alpha resolved"),
+        )
+        beta = service.create_admin_memory(
+            _admin_memory_create_request(
+                beta_run_id,
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_beta_key),
+                summary="Admin beta package memory.",
+                content="runtime package guardrail memory belongs to beta only.",
+            )
+        )
+        admin_list = service.list_admin_memory(MemoryAdminListQuery())
+
+    lookup_payload = registry.dispatch(
+        name=MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "query": "runtime package guardrail",
+                "scope": None,
+                "subjectRefs": None,
+                "kind": None,
+                "status": None,
+                "tags": None,
+                "limit": 10,
+                "offset": 0,
+                "maxCharacters": None,
+            }
+        ),
+        granted_tool_keys={MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY},
+        context=alpha_context,
+    )
+    with pytest.raises(RuntimeToolGrantError) as beta_scope_denied:
+        _ = registry.dispatch(
+            name=MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json=json.dumps(
+                {
+                    "query": "runtime package guardrail",
+                    "scope": {"scopeType": "package", "scopeKey": package_beta_key},
+                    "subjectRefs": None,
+                    "kind": None,
+                    "status": None,
+                    "tags": None,
+                    "limit": 10,
+                    "offset": 0,
+                    "maxCharacters": None,
+                }
+            ),
+            granted_tool_keys={MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY},
+            context=alpha_context,
+        )
+
+    memories = cast(list[dict[str, object]], lookup_payload["memories"])
+    assert {item.memory_id for item in admin_list.items} == {
+        alpha_payload["memoryId"],
+        beta.memory_id,
+    }
+    assert lookup_payload["toolKey"] == MEMORY_LOOKUP_TOOL_KEY
+    assert [memory["memoryId"] for memory in memories] == [alpha_payload["memoryId"]]
+    assert all(memory["memoryId"] != beta.memory_id for memory in memories)
+    assert beta_scope_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
 
 
 def test_memory_lookup_runtime_tool_uses_current_context_with_finance_disabled(

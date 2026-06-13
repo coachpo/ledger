@@ -174,6 +174,29 @@ def test_core_memory_contracts_do_not_define_finance_shaped_fields() -> None:
     _assert_fragments_absent("core memory schema", core_memory_source, ("MemoryDecision",))
 
 
+def test_admin_memory_dto_contracts_do_not_define_report_history_fields() -> None:
+    for node_name in ("MemoryAdminListItemRead", "MemoryAdminEntryRead"):
+        node_source = _python_node_source("backend/app/schemas/memory.py", node_name)
+        _assert_fragments_absent(
+            node_name,
+            node_source,
+            (
+                "report_id",
+                "reportId",
+                "report_slug",
+                "reportSlug",
+                "report_name",
+                "reportName",
+                "raw_markdown",
+                "rawMarkdown",
+                "download_url",
+                "downloadUrl",
+                "report_history",
+                "reportHistory",
+            ),
+        )
+
+
 def test_frontend_run_memory_artifacts_do_not_read_removed_report_fields() -> None:
     run_types = _read("frontend/src/lib/types/run.ts")
     artifact_body = _interface_body(run_types, "RunMemoryArtifactRead")
