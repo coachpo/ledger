@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/lib/AGENTS.md`.
 
 ## OVERVIEW
-`src/lib/api/` contains resource-specific request helpers layered on top of `api-client.ts`. These modules are the only frontend code that should know endpoint paths, the preserved `/api/v1` versus current `/api/*` split, multipart upload details, and download URL construction.
+`src/lib/api/` contains resource-specific request helpers layered on top of `../api-client.ts`. These modules are the only frontend code that should know endpoint paths, the preserved `/api/v1` versus current `/api/*` split, multipart upload details, and download URL construction.
 
 Extension model: statically resident extension state.
 
@@ -49,7 +49,7 @@ src/lib/api/
 
 ## CONVENTIONS
 - One module per backend resource family; keep path helpers and request bodies close to that resource.
-- Route network calls through `request()` or `requestPlatform()` from `api-client.ts`.
+- Route network calls through `request()` or `requestPlatform()` from `../api-client.ts`.
 - Keep upload/download specifics here: multipart report upload, CSV preview/commit, and markdown download URLs should not leak into hooks or pages.
 - Keep preserved `/api/v1` resource paths and current unversioned platform `/api/*` paths separate in the module layer.
 - `schedules.ts` owns `/api/schedules` path helpers for list/detail/create/update/delete, fire history, unsaved/saved preview, and run-now; do not split run-now into run helpers.
