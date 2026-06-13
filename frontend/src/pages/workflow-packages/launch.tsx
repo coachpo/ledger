@@ -48,10 +48,10 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/components/ui/utils";
 import {
   useCreateWorkflowPackageLaunch,
-  useCreateWorkflowPackageRuntimeInputPersonalEntry,
-  useDeleteWorkflowPackageRuntimeInputPersonalEntry,
+  useCreateWorkflowPackageRuntimeInputPresetEntry,
+  useDeleteWorkflowPackageRuntimeInputPresetEntry,
   usePreflightWorkflowPackage,
-  useUpdateWorkflowPackageRuntimeInputPersonalEntry,
+  useUpdateWorkflowPackageRuntimeInputPresetEntry,
   useWorkflowPackage,
   useWorkflowPackageLaunch,
   useWorkflowPackageManifest,
@@ -83,7 +83,7 @@ type PackageDiagnostic = {
   severity: "error" | "warning";
 };
 
-type SavedInputEntryMode = "history" | "personal";
+type SavedInputEntryMode = "history" | "preset";
 type LaunchInputMode = "form" | "json";
 
 const SAVED_INPUT_ENTRY_LIMIT = 20;
@@ -798,7 +798,7 @@ export function WorkflowPackageLaunchPage() {
   const [runtimeInputErrors, setRuntimeInputErrors] = useState<
     ApiErrorDetail[]
   >([]);
-  const [personalPresetName, setPersonalPresetName] = useState("");
+  const [presetName, setPresetName] = useState("");
   const parametersEditedRef = useRef(false);
   const lastTemplateIdentityRef = useRef<string | null>(null);
   const resolvedWorkflowKey = workflowKey.trim();
@@ -841,12 +841,12 @@ export function WorkflowPackageLaunchPage() {
     packageId,
     activeWorkflowKey,
   );
-  const createPersonalEntry =
-    useCreateWorkflowPackageRuntimeInputPersonalEntry();
-  const updatePersonalEntry =
-    useUpdateWorkflowPackageRuntimeInputPersonalEntry();
-  const deletePersonalEntry =
-    useDeleteWorkflowPackageRuntimeInputPersonalEntry();
+  const createPresetEntry =
+    useCreateWorkflowPackageRuntimeInputPresetEntry();
+  const updatePresetEntry =
+    useUpdateWorkflowPackageRuntimeInputPresetEntry();
+  const deletePresetEntry =
+    useDeleteWorkflowPackageRuntimeInputPresetEntry();
   const launchRead = workflowSelected ? launchQuery.data : undefined;
   const launchMetadataError =
     workflowSelected && launchQuery.isError ? launchQuery.error : null;
@@ -865,12 +865,12 @@ export function WorkflowPackageLaunchPage() {
         : EMPTY_RUNTIME_INPUT_ENTRIES,
     [runtimeInputRegistry.data?.history, workflowSelected],
   );
-  const savedPersonalEntries = useMemo(
+  const savedPresetEntries = useMemo(
     () =>
       workflowSelected
-        ? (runtimeInputRegistry.data?.personal ?? EMPTY_RUNTIME_INPUT_ENTRIES)
+        ? (runtimeInputRegistry.data?.presets ?? EMPTY_RUNTIME_INPUT_ENTRIES)
         : EMPTY_RUNTIME_INPUT_ENTRIES,
-    [runtimeInputRegistry.data?.personal, workflowSelected],
+    [runtimeInputRegistry.data?.presets, workflowSelected],
   );
   const savedHistoryPanelEntries = useMemo(
     () =>
@@ -879,12 +879,12 @@ export function WorkflowPackageLaunchPage() {
       ),
     [savedHistoryEntries],
   );
-  const savedPersonalPanelEntries = useMemo(
+  const savedPresetPanelEntries = useMemo(
     () =>
-      newestRuntimeInputEntries(savedPersonalEntries, "updatedAt").map(
-        (entry) => savedRuntimeInputRegistryEntry(entry, "personal"),
+      newestRuntimeInputEntries(savedPresetEntries, "updatedAt").map(
+        (entry) => savedRuntimeInputRegistryEntry(entry, "preset"),
       ),
-    [savedPersonalEntries],
+    [savedPresetEntries],
   );
   const readinessRead = preflightRead ?? launchRead;
   const diagnostics = useMemo(
@@ -1172,13 +1172,13 @@ export function WorkflowPackageLaunchPage() {
     }
   };
 
-  const savePersonalInput = async () => {
+  const savePresetInput = async () => {
     if (!activeWorkflowKey) {
       return;
     }
-    const name = personalPresetName.trim();
+    const name = presetName.trim();
     if (!name) {
-      toast.error("Name this personal preset before saving it.");
+      toast.error("Name this saved runtime input preset before saving it.");
       return;
     }
     const payload = parseCurrentRuntimeInputs();
@@ -1186,23 +1186,23 @@ export function WorkflowPackageLaunchPage() {
       return;
     }
     try {
-      await createPersonalEntry.mutateAsync({
+      await createPresetEntry.mutateAsync({
         packageId,
         payload: { name, payload },
         workflowKey: activeWorkflowKey,
       });
-      setPersonalPresetName("");
-      toast.success("Saved personal runtime input preset");
+      setPresetName("");
+      toast.success("Saved runtime input preset");
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Failed to save personal runtime input preset.",
+          : "Failed to save runtime input preset.",
       );
     }
   };
 
-  const overwritePersonalInput = async (
+  const overwritePresetInput = async (
     entry: WorkflowPackageRuntimeInputEntryRead,
   ) => {
     if (!activeWorkflowKey) {
@@ -1212,43 +1212,43 @@ export function WorkflowPackageLaunchPage() {
     if (!payload) {
       return;
     }
-    const name = personalPresetName.trim() || entry.name;
+    const name = presetName.trim() || entry.name;
     try {
-      await updatePersonalEntry.mutateAsync({
+      await updatePresetEntry.mutateAsync({
         entryId: entry.id,
         packageId,
         payload: { name: name || null, payload },
         workflowKey: activeWorkflowKey,
       });
-      setPersonalPresetName("");
-      toast.success("Updated personal runtime input preset");
+      setPresetName("");
+      toast.success("Updated saved runtime input preset");
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Failed to update personal runtime input preset.",
+          : "Failed to update saved runtime input preset.",
       );
     }
   };
 
-  const deletePersonalInput = async (
+  const deletePresetInput = async (
     entry: WorkflowPackageRuntimeInputEntryRead,
   ) => {
     if (!activeWorkflowKey) {
       return;
     }
     try {
-      await deletePersonalEntry.mutateAsync({
+      await deletePresetEntry.mutateAsync({
         entryId: entry.id,
         packageId,
         workflowKey: activeWorkflowKey,
       });
-      toast.success("Deleted personal runtime input preset");
+      toast.success("Deleted saved runtime input preset");
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Failed to delete personal runtime input preset.",
+          : "Failed to delete saved runtime input preset.",
       );
     }
   };
@@ -1676,48 +1676,48 @@ export function WorkflowPackageLaunchPage() {
                 )}
               </div>
               <SavedRuntimeInputRegistryPanel
-                capMessage="Personal presets are capped at 20 per workflow. Delete one before saving another."
+                capMessage="Saved runtime input presets are capped at 20 per workflow. Delete one before saving another."
                 createDisabled={
                   !workflowSelected ||
                   savedInputsLoading ||
-                  !personalPresetName.trim()
+                  !presetName.trim()
                 }
-                createPending={createPersonalEntry.isPending}
-                deletePending={deletePersonalEntry.isPending}
+                createPending={createPresetEntry.isPending}
+                deletePending={deletePresetEntry.isPending}
                 disableTabsWhenUnavailable
                 error={savedInputsError}
                 errorTitle="Saved inputs unavailable"
                 helperCopy={
                   workflowSelected
-                    ? "Load saved personal presets or reuse launch history for this workflow."
-                    : "Choose a workflow to load saved personal presets or launch history."
+                    ? "Load saved runtime input presets or reuse launch history for this workflow."
+                    : "Choose a workflow to load saved runtime input presets or launch history."
                 }
                 historyEmptyMessage="No launch history yet."
                 historyEntries={savedHistoryPanelEntries}
                 loading={savedInputsLoading}
                 loadingMessage={`Loading saved inputs for ${activeWorkflowKey}...`}
-                personalEntries={savedPersonalPanelEntries}
-                personalEmptyMessage="No personal presets saved for this workflow."
-                personalNameLabel="Personal preset name"
-                personalNamePlaceholder="Preset name"
-                personalNameValue={personalPresetName}
-                personalPresetLimit={SAVED_INPUT_ENTRY_LIMIT}
+                presetEntries={savedPresetPanelEntries}
+                presetEmptyMessage="No saved runtime input presets for this workflow."
+                presetNameLabel="Saved runtime input preset name"
+                presetNamePlaceholder="Preset name"
+                presetNameValue={presetName}
+                presetLimit={SAVED_INPUT_ENTRY_LIMIT}
                 rowTestIdPrefix="saved-input"
                 saveLabel="Save current JSON"
                 staleNoticeTitle="Saved against older workflow metadata."
                 testId="runtime-input-saved-inputs-helper"
                 title="Saved inputs"
-                updatePending={updatePersonalEntry.isPending}
+                updatePending={updatePresetEntry.isPending}
                 workflowBadgeFallback="workflow pending"
                 workflowEnabled={workflowSelected}
                 workflowKey={activeWorkflowKey}
-                onCreate={() => void savePersonalInput()}
+                onCreate={() => void savePresetInput()}
                 onDelete={(entry) => {
-                  const savedEntry = savedPersonalEntries.find(
+                  const savedEntry = savedPresetEntries.find(
                     (candidate) => candidate.id === entry.id,
                   );
                   if (savedEntry) {
-                    void deletePersonalInput(savedEntry);
+                    void deletePresetInput(savedEntry);
                   }
                 }}
                 onLoad={(entry) => {
@@ -1726,7 +1726,7 @@ export function WorkflowPackageLaunchPage() {
                       ? savedHistoryEntries.find(
                           (candidate) => candidate.id === entry.id,
                         )
-                      : savedPersonalEntries.find(
+                      : savedPresetEntries.find(
                           (candidate) => candidate.id === entry.id,
                         );
                   if (savedEntry) {
@@ -1734,14 +1734,14 @@ export function WorkflowPackageLaunchPage() {
                   }
                 }}
                 onOverwrite={(entry) => {
-                  const savedEntry = savedPersonalEntries.find(
+                  const savedEntry = savedPresetEntries.find(
                     (candidate) => candidate.id === entry.id,
                   );
                   if (savedEntry) {
-                    void overwritePersonalInput(savedEntry);
+                    void overwritePresetInput(savedEntry);
                   }
                 }}
-                onPersonalNameChange={setPersonalPresetName}
+                onPresetNameChange={setPresetName}
               />
             </div>
           </CardContent>

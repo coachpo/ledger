@@ -14,32 +14,38 @@ import { WorkflowPackageLaunchPage } from "./launch";
 
 const {
   createLaunchMock,
-  createRuntimeInputPersonalEntryMock,
-  deleteRuntimeInputPersonalEntryMock,
+  createRuntimeInputPresetEntryMock,
+  deleteRuntimeInputPresetEntryMock,
   navigateMock,
   preflightPackageMock,
-  updateRuntimeInputPersonalEntryMock,
+  toastErrorMock,
+  toastSuccessMock,
+  toastWarningMock,
+  updateRuntimeInputPresetEntryMock,
   useCreateLaunchMock,
-  useCreateRuntimeInputPersonalEntryMock,
-  useDeleteRuntimeInputPersonalEntryMock,
+  useCreateRuntimeInputPresetEntryMock,
+  useDeleteRuntimeInputPresetEntryMock,
   usePreflightPackageMock,
-  useUpdateRuntimeInputPersonalEntryMock,
+  useUpdateRuntimeInputPresetEntryMock,
   useWorkflowPackageLaunchMock,
   useWorkflowPackageManifestMock,
   useWorkflowPackageMock,
   useWorkflowPackageRuntimeInputRegistryMock,
 } = vi.hoisted(() => ({
   createLaunchMock: vi.fn(),
-  createRuntimeInputPersonalEntryMock: vi.fn(),
-  deleteRuntimeInputPersonalEntryMock: vi.fn(),
+  createRuntimeInputPresetEntryMock: vi.fn(),
+  deleteRuntimeInputPresetEntryMock: vi.fn(),
   navigateMock: vi.fn(),
   preflightPackageMock: vi.fn(),
-  updateRuntimeInputPersonalEntryMock: vi.fn(),
+  toastErrorMock: vi.fn(),
+  toastSuccessMock: vi.fn(),
+  toastWarningMock: vi.fn(),
+  updateRuntimeInputPresetEntryMock: vi.fn(),
   useCreateLaunchMock: vi.fn(),
-  useCreateRuntimeInputPersonalEntryMock: vi.fn(),
-  useDeleteRuntimeInputPersonalEntryMock: vi.fn(),
+  useCreateRuntimeInputPresetEntryMock: vi.fn(),
+  useDeleteRuntimeInputPresetEntryMock: vi.fn(),
   usePreflightPackageMock: vi.fn(),
-  useUpdateRuntimeInputPersonalEntryMock: vi.fn(),
+  useUpdateRuntimeInputPresetEntryMock: vi.fn(),
   useWorkflowPackageLaunchMock: vi.fn(),
   useWorkflowPackageManifestMock: vi.fn(),
   useWorkflowPackageMock: vi.fn(),
@@ -52,15 +58,19 @@ vi.mock("react-router", async (importOriginal) => {
 });
 
 vi.mock("sonner", () => ({
-  toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
+  toast: {
+    error: toastErrorMock,
+    success: toastSuccessMock,
+    warning: toastWarningMock,
+  },
 }));
 
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useCreateWorkflowPackageLaunch: () => useCreateLaunchMock(),
-  useCreateWorkflowPackageRuntimeInputPersonalEntry: () => useCreateRuntimeInputPersonalEntryMock(),
-  useDeleteWorkflowPackageRuntimeInputPersonalEntry: () => useDeleteRuntimeInputPersonalEntryMock(),
+  useCreateWorkflowPackageRuntimeInputPresetEntry: () => useCreateRuntimeInputPresetEntryMock(),
+  useDeleteWorkflowPackageRuntimeInputPresetEntry: () => useDeleteRuntimeInputPresetEntryMock(),
   usePreflightWorkflowPackage: () => usePreflightPackageMock(),
-  useUpdateWorkflowPackageRuntimeInputPersonalEntry: () => useUpdateRuntimeInputPersonalEntryMock(),
+  useUpdateWorkflowPackageRuntimeInputPresetEntry: () => useUpdateRuntimeInputPresetEntryMock(),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
   useWorkflowPackageLaunch: (...args: unknown[]) => useWorkflowPackageLaunchMock(...args),
   useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
@@ -163,7 +173,7 @@ function runtimeInputRegistry(overrides: {
   isError?: boolean;
   isFetching?: boolean;
   isPending?: boolean;
-  personal?: WorkflowPackageRuntimeInputEntryRead[];
+  presets?: WorkflowPackageRuntimeInputEntryRead[];
 } = {}) {
   return {
     data: {
@@ -171,7 +181,7 @@ function runtimeInputRegistry(overrides: {
       history: overrides.history ?? [],
       packageId: 42,
       packageKey: "market_review_package",
-      personal: overrides.personal ?? [],
+      presets: overrides.presets ?? [],
       workflowKey: "market_review",
     },
     error: overrides.isError ? new Error("Saved inputs failed") : null,
@@ -223,26 +233,29 @@ describe("WorkflowPackageLaunchPage", () => {
     navigateMock.mockReset();
     preflightPackageMock.mockReset();
     createLaunchMock.mockReset();
-    createRuntimeInputPersonalEntryMock.mockReset();
-    updateRuntimeInputPersonalEntryMock.mockReset();
-    deleteRuntimeInputPersonalEntryMock.mockReset();
+    createRuntimeInputPresetEntryMock.mockReset();
+    deleteRuntimeInputPresetEntryMock.mockReset();
+    toastErrorMock.mockReset();
+    toastSuccessMock.mockReset();
+    toastWarningMock.mockReset();
+    updateRuntimeInputPresetEntryMock.mockReset();
     useWorkflowPackageMock.mockReset();
     useWorkflowPackageLaunchMock.mockReset();
     useWorkflowPackageManifestMock.mockReset();
     useWorkflowPackageRuntimeInputRegistryMock.mockReset();
     preflightPackageMock.mockResolvedValue(launchRead);
     createLaunchMock.mockResolvedValue({ createdAt: "2026-05-08T10:00:00Z", id: 99, status: "queued", workflowKey: "market_review", workflowPackageId: 42, workflowPackageKey: "market_review_package" });
-    createRuntimeInputPersonalEntryMock.mockResolvedValue(runtimeInputEntry({ id: 30, name: "Saved preset", slot: "personal" }));
-    updateRuntimeInputPersonalEntryMock.mockResolvedValue(runtimeInputEntry({ id: 7, name: "Updated preset", slot: "personal" }));
-    deleteRuntimeInputPersonalEntryMock.mockResolvedValue(undefined);
+    createRuntimeInputPresetEntryMock.mockResolvedValue(runtimeInputEntry({ id: 30, name: "Saved preset", slot: "preset" }));
+    updateRuntimeInputPresetEntryMock.mockResolvedValue(runtimeInputEntry({ id: 7, name: "Updated preset", slot: "preset" }));
+    deleteRuntimeInputPresetEntryMock.mockResolvedValue(undefined);
     useWorkflowPackageMock.mockReturnValue({ data: packageRead, error: null, isError: false, isPending: false });
     useWorkflowPackageManifestMock.mockReturnValue({ data: singleWorkflowManifestRead, error: null, isError: false, isPending: false });
     useWorkflowPackageLaunchMock.mockReturnValue({ data: launchRead, error: null, isError: false, isPending: false });
     usePreflightPackageMock.mockReturnValue({ isPending: false, mutateAsync: preflightPackageMock });
     useCreateLaunchMock.mockReturnValue({ isPending: false, mutateAsync: createLaunchMock });
-    useCreateRuntimeInputPersonalEntryMock.mockReturnValue({ isPending: false, mutateAsync: createRuntimeInputPersonalEntryMock });
-    useUpdateRuntimeInputPersonalEntryMock.mockReturnValue({ isPending: false, mutateAsync: updateRuntimeInputPersonalEntryMock });
-    useDeleteRuntimeInputPersonalEntryMock.mockReturnValue({ isPending: false, mutateAsync: deleteRuntimeInputPersonalEntryMock });
+    useCreateRuntimeInputPresetEntryMock.mockReturnValue({ isPending: false, mutateAsync: createRuntimeInputPresetEntryMock });
+    useUpdateRuntimeInputPresetEntryMock.mockReturnValue({ isPending: false, mutateAsync: updateRuntimeInputPresetEntryMock });
+    useDeleteRuntimeInputPresetEntryMock.mockReturnValue({ isPending: false, mutateAsync: deleteRuntimeInputPresetEntryMock });
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry());
   });
 
@@ -457,11 +470,11 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByRole("button", { name: /launch run/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save current JSON" })).toBeDisabled();
     expect(screen.getByLabelText("Runtime inputs JSON")).toBeDisabled();
-    expect(screen.getByLabelText("Personal preset name")).toBeDisabled();
+    expect(screen.getByLabelText("Saved runtime input preset name")).toBeDisabled();
     const pendingHelper = screen.getByTestId("runtime-input-saved-inputs-helper");
     expect(pendingHelper).toHaveTextContent("workflow pending");
     expect(pendingHelper).not.toHaveTextContent(/loading saved inputs for this workflow/i);
-    expect(pendingHelper).not.toHaveTextContent("No personal presets saved for this workflow.");
+    expect(pendingHelper).not.toHaveTextContent("No saved runtime input presets for this workflow.");
     expect(pendingHelper).not.toHaveTextContent("No launch history yet.");
     expect(within(pendingHelper).getAllByText("0/20")).toHaveLength(2);
 
@@ -473,8 +486,8 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByRole("tab", { name: /presets/i })).not.toBeDisabled();
     expect(screen.getByRole("tab", { name: /history/i })).not.toBeDisabled();
     expect(screen.getByLabelText("Runtime inputs JSON")).not.toBeDisabled();
-    expect(screen.getByLabelText("Personal preset name")).not.toBeDisabled();
-    expect(screen.getByText("No personal presets saved for this workflow.")).toBeVisible();
+    expect(screen.getByLabelText("Saved runtime input preset name")).not.toBeDisabled();
+    expect(screen.getByText("No saved runtime input presets for this workflow.")).toBeVisible();
     fireEvent.mouseDown(screen.getByRole("tab", { name: /history/i }), { button: 0 });
     expect(screen.getByText("No launch history yet.")).toBeVisible();
     fireEvent.mouseDown(screen.getByRole("tab", { name: /presets/i }), { button: 0 });
@@ -641,12 +654,12 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(createLaunchMock).not.toHaveBeenCalled();
   });
 
-  it("manages saved personal inputs and load-only history without replacing the raw editor", async () => {
-    const personal = runtimeInputEntry({
+  it("manages saved runtime input presets and load-only history without replacing the raw editor", async () => {
+    const preset = runtimeInputEntry({
       id: 7,
       name: "Baseline preset",
       payload: { ticker: "MSFT" },
-      slot: "personal",
+      slot: "preset",
       stale: {
         reasons: [{ current: "manifest-hash-123", field: "manifestHash", issue: "Manifest changed", stored: "old-manifest" }],
         stale: true,
@@ -655,7 +668,7 @@ describe("WorkflowPackageLaunchPage", () => {
     });
     const olderHistory = runtimeInputEntry({ createdAt: "2026-05-08T08:00:00Z", id: 10, payload: { ticker: "TSLA" }, slot: "history", sourceRunId: 88 });
     const newerHistory = runtimeInputEntry({ createdAt: "2026-05-08T11:00:00Z", id: 11, payload: { ticker: "NVDA" }, slot: "history", sourceRunId: 99 });
-    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry({ history: [olderHistory, newerHistory], personal: [personal] }));
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry({ history: [olderHistory, newerHistory], presets: [preset] }));
     renderLaunchPage();
 
     await selectSingleWorkflow();
@@ -663,35 +676,35 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(within(helper).getByText("Saved inputs")).toBeVisible();
     expect(within(helper).getByText("1/20")).toBeVisible();
     expect(within(helper).getByText("2/20")).toBeVisible();
-    expect(within(screen.getByTestId("saved-input-personal-7")).getByText("Stale")).toBeVisible();
-    expect(within(screen.getByTestId("saved-input-personal-7")).getByText(/manifestHash: Manifest changed/i)).toBeVisible();
+    expect(within(screen.getByTestId("saved-input-preset-7")).getByText("Stale")).toBeVisible();
+    expect(within(screen.getByTestId("saved-input-preset-7")).getByText(/manifestHash: Manifest changed/i)).toBeVisible();
 
     const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
     fireEvent.change(runtimeJson, { target: { value: '{"ticker":"AAPL"}' } });
-    fireEvent.change(screen.getByLabelText("Personal preset name"), { target: { value: "Morning preset" } });
+    fireEvent.change(screen.getByLabelText("Saved runtime input preset name"), { target: { value: "Morning preset" } });
     fireEvent.click(screen.getByRole("button", { name: "Save current JSON" }));
 
-    await waitFor(() => expect(createRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({
+    await waitFor(() => expect(createRuntimeInputPresetEntryMock).toHaveBeenCalledWith({
       packageId: "42",
       payload: { name: "Morning preset", payload: { ticker: "AAPL" } },
       workflowKey: "market_review",
     }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Load personal input Baseline preset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load saved runtime input preset Baseline preset" }));
     expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "MSFT" }, null, 2));
     expect(createLaunchMock).not.toHaveBeenCalled();
 
     fireEvent.change(runtimeJson, { target: { value: '{"ticker":"GOOG"}' } });
-    fireEvent.click(screen.getByRole("button", { name: "Overwrite personal input Baseline preset" }));
-    await waitFor(() => expect(updateRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({
+    fireEvent.click(screen.getByRole("button", { name: "Overwrite saved runtime input preset Baseline preset" }));
+    await waitFor(() => expect(updateRuntimeInputPresetEntryMock).toHaveBeenCalledWith({
       entryId: 7,
       packageId: "42",
       payload: { name: "Baseline preset", payload: { ticker: "GOOG" } },
       workflowKey: "market_review",
     }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete personal input Baseline preset" }));
-    await waitFor(() => expect(deleteRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({ entryId: 7, packageId: "42", workflowKey: "market_review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete saved runtime input preset Baseline preset" }));
+    await waitFor(() => expect(deleteRuntimeInputPresetEntryMock).toHaveBeenCalledWith({ entryId: 7, packageId: "42", workflowKey: "market_review" }));
 
     fireEvent.mouseDown(screen.getByRole("tab", { name: /history/i }), {
       button: 0,
@@ -707,23 +720,23 @@ describe("WorkflowPackageLaunchPage", () => {
   });
 
   it("keeps stale extra saved inputs in advanced JSON with local validation details", async () => {
-    const personal = runtimeInputEntry({
+    const preset = runtimeInputEntry({
       id: 7,
       name: "Baseline preset",
       payload: { legacyWindow: "pre-upgrade", ticker: "MSFT" },
-      slot: "personal",
+      slot: "preset",
       stale: {
         reasons: [{ current: "compiled-hash-123", field: "compiledHash", issue: "Compiled package changed", stored: "old-compiled" }],
         stale: true,
       },
     });
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
-      runtimeInputRegistry({ personal: [personal] }),
+      runtimeInputRegistry({ presets: [preset] }),
     );
     renderLaunchPage();
 
     await selectSingleWorkflow();
-    fireEvent.click(screen.getByRole("button", { name: "Load personal input Baseline preset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load saved runtime input preset Baseline preset" }));
 
     const feedback = await screen.findByTestId("runtime-input-validation-feedback");
     expect(feedback).toHaveTextContent("parameters.legacyWindow");
@@ -790,7 +803,7 @@ describe("WorkflowPackageLaunchPage", () => {
     }, null, 2));
   });
 
-  it("saves the canonical form payload for personal presets", async () => {
+  it("saves the canonical form payload for saved runtime input presets", async () => {
     useWorkflowPackageLaunchMock.mockReturnValue({
       data: {
         ...launchRead,
@@ -815,12 +828,12 @@ describe("WorkflowPackageLaunchPage", () => {
     fireEvent.change(within(schemaForm).getByRole("textbox", { name: "Ticker" }), {
       target: { value: "NVDA" },
     });
-    fireEvent.change(screen.getByLabelText("Personal preset name"), {
+    fireEvent.change(screen.getByLabelText("Saved runtime input preset name"), {
       target: { value: "Canonical preset" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save current JSON" }));
 
-    await waitFor(() => expect(createRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({
+    await waitFor(() => expect(createRuntimeInputPresetEntryMock).toHaveBeenCalledWith({
       packageId: "42",
       payload: {
         name: "Canonical preset",
@@ -828,17 +841,18 @@ describe("WorkflowPackageLaunchPage", () => {
       },
       workflowKey: "market_review",
     }));
+    await waitFor(() => expect(toastSuccessMock).toHaveBeenCalledWith("Saved runtime input preset"));
   });
 
-  it("overwrites personal presets from validated advanced JSON payloads", async () => {
-    const personal = runtimeInputEntry({
+  it("overwrites saved runtime input presets from validated advanced JSON payloads", async () => {
+    const preset = runtimeInputEntry({
       id: 7,
       name: "Baseline preset",
       payload: { ticker: "MSFT" },
-      slot: "personal",
+      slot: "preset",
     });
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
-      runtimeInputRegistry({ personal: [personal] }),
+      runtimeInputRegistry({ presets: [preset] }),
     );
     renderLaunchPage();
 
@@ -847,9 +861,9 @@ describe("WorkflowPackageLaunchPage", () => {
     fireEvent.change(screen.getByLabelText("Runtime inputs JSON"), {
       target: { value: '{"ticker":"GOOG"}' },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Overwrite personal input Baseline preset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Overwrite saved runtime input preset Baseline preset" }));
 
-    await waitFor(() => expect(updateRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({
+    await waitFor(() => expect(updateRuntimeInputPresetEntryMock).toHaveBeenCalledWith({
       entryId: 7,
       packageId: "42",
       payload: {
@@ -861,23 +875,23 @@ describe("WorkflowPackageLaunchPage", () => {
   });
 
   it("keeps invalid stale saved inputs in advanced JSON with local validation details", async () => {
-    const personal = runtimeInputEntry({
+    const preset = runtimeInputEntry({
       id: 7,
       name: "Old nullable preset",
       payload: { legacyField: "visible", ticker: null },
-      slot: "personal",
+      slot: "preset",
       stale: {
         reasons: [{ current: "schema-fingerprint-123", field: "schemaFingerprint", issue: "Schema changed", stored: "old-schema" }],
         stale: true,
       },
     });
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
-      runtimeInputRegistry({ personal: [personal] }),
+      runtimeInputRegistry({ presets: [preset] }),
     );
     renderLaunchPage();
 
     await selectSingleWorkflow();
-    fireEvent.click(screen.getByRole("button", { name: "Load personal input Old nullable preset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load saved runtime input preset Old nullable preset" }));
 
     const feedback = await screen.findByTestId("runtime-input-validation-feedback");
     expect(feedback).toHaveTextContent("parameters.legacyField");
@@ -888,11 +902,11 @@ describe("WorkflowPackageLaunchPage", () => {
     expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
       JSON.stringify({ legacyField: "visible", ticker: null }, null, 2),
     );
-    fireEvent.change(screen.getByLabelText("Personal preset name"), {
+    fireEvent.change(screen.getByLabelText("Saved runtime input preset name"), {
       target: { value: "Still invalid" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save current JSON" }));
-    expect(createRuntimeInputPersonalEntryMock).not.toHaveBeenCalled();
+    expect(createRuntimeInputPresetEntryMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("radio", { name: "Form" }));
     expect(screen.getByTestId("runtime-input-json-mode-notice")).toBeVisible();
   });
@@ -913,19 +927,19 @@ describe("WorkflowPackageLaunchPage", () => {
       isError: false,
       isPending: false,
     });
-    const personal = runtimeInputEntry({
+    const preset = runtimeInputEntry({
       id: 7,
       name: "Nullable preset",
       payload: { ticker: null },
-      slot: "personal",
+      slot: "preset",
     });
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
-      runtimeInputRegistry({ personal: [personal] }),
+      runtimeInputRegistry({ presets: [preset] }),
     );
     renderLaunchPage();
 
     await selectSingleWorkflow();
-    fireEvent.click(screen.getByRole("button", { name: "Load personal input Nullable preset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load saved runtime input preset Nullable preset" }));
 
     expect(await screen.findByTestId("runtime-input-primary-form")).toBeVisible();
     expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
@@ -940,26 +954,26 @@ describe("WorkflowPackageLaunchPage", () => {
     }));
   });
 
-  it("shows workflow-scoped loading and personal cap messaging in the saved inputs helper", async () => {
-    const personalEntries = Array.from({ length: 20 }, (_, index) => runtimeInputEntry({
+  it("shows workflow-scoped loading and saved runtime input preset cap messaging in the saved inputs helper", async () => {
+    const presetEntries = Array.from({ length: 20 }, (_, index) => runtimeInputEntry({
       id: index + 1,
       name: `Preset ${index + 1}`,
-      slot: "personal",
+      slot: "preset",
       updatedAt: `2026-05-08T10:${String(index).padStart(2, "0")}:00Z`,
     }));
-    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry({ isFetching: true, personal: personalEntries }));
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry({ isFetching: true, presets: presetEntries }));
     renderLaunchPage();
 
     await selectSingleWorkflow();
     const helper = await screen.findByTestId("runtime-input-saved-inputs-helper");
     expect(within(helper).getByText(/loading saved inputs for market_review/i)).toBeVisible();
     expect(within(helper).getByText("20/20")).toBeVisible();
-    expect(within(helper).getByText(/personal presets are capped at 20 per workflow/i)).toBeVisible();
-    fireEvent.change(screen.getByLabelText("Personal preset name"), { target: { value: "Overflow preset" } });
+    expect(within(helper).getByText(/saved runtime input presets are capped at 20 per workflow/i)).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Saved runtime input preset name"), { target: { value: "Overflow preset" } });
     expect(screen.getByRole("button", { name: "Save current JSON" })).toBeDisabled();
   });
 
-  it("keeps saved personal inputs isolated by workflow key when switching workflows", async () => {
+  it("keeps saved runtime input presets isolated by workflow key when switching workflows", async () => {
     const advisorySchema = {
       properties: {
         ticker: { title: "Ticker", type: "string" },
@@ -995,12 +1009,12 @@ describe("WorkflowPackageLaunchPage", () => {
     useWorkflowPackageRuntimeInputRegistryMock.mockImplementation((_packageId, workflowKey) => {
       if (workflowKey === "news_research") {
         return runtimeInputRegistry({
-          personal: [
+          presets: [
             runtimeInputEntry({
               id: 19,
               name: "Breaking News",
               payload: { lookbackDays: 7, query: "AI earnings" },
-              slot: "personal",
+              slot: "preset",
               workflowKey: "news_research",
             }),
           ],
@@ -1008,12 +1022,12 @@ describe("WorkflowPackageLaunchPage", () => {
       }
       if (workflowKey === "advisory_research") {
         return runtimeInputRegistry({
-          personal: [
+          presets: [
             runtimeInputEntry({
               id: 7,
               name: "Baseline preset",
               payload: { ticker: "MSFT" },
-              slot: "personal",
+              slot: "preset",
               workflowKey: "advisory_research",
             }),
           ],
@@ -1027,8 +1041,8 @@ describe("WorkflowPackageLaunchPage", () => {
     await chooseWorkflow(/^Advisory Research$/);
     const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
     await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2)));
-    expect(screen.getByRole("button", { name: "Load personal input Baseline preset" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Load personal input Baseline preset" }));
+    expect(screen.getByRole("button", { name: "Load saved runtime input preset Baseline preset" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Load saved runtime input preset Baseline preset" }));
     expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "MSFT" }, null, 2));
 
     fireEvent.change(runtimeJson, { target: { value: '{"ticker":"AAPL"}' } });
@@ -1036,26 +1050,26 @@ describe("WorkflowPackageLaunchPage", () => {
 
     await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ query: "" }, null, 2)));
     expect(screen.getByTestId("runtime-input-saved-inputs-helper")).toHaveTextContent("news_research");
-    expect(screen.queryByRole("button", { name: "Load personal input Baseline preset" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Load personal input Breaking News" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Load personal input Breaking News" }));
+    expect(screen.queryByRole("button", { name: "Load saved runtime input preset Baseline preset" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Load saved runtime input preset Breaking News" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Load saved runtime input preset Breaking News" }));
     expect(runtimeJson.value).toBe(JSON.stringify({ lookbackDays: 7, query: "AI earnings" }, null, 2));
 
     await chooseWorkflow(/^Advisory Research$/);
 
     await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2)));
     expect(screen.getByTestId("runtime-input-saved-inputs-helper")).toHaveTextContent("advisory_research");
-    expect(screen.getByRole("button", { name: "Load personal input Baseline preset" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Load saved runtime input preset Baseline preset" })).toBeVisible();
   });
 
   it("blocks launch when advanced JSON is invalid", async () => {
-    const personal = runtimeInputEntry({
+    const preset = runtimeInputEntry({
       id: 7,
       name: "Baseline preset",
-      slot: "personal",
+      slot: "preset",
     });
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(
-      runtimeInputRegistry({ personal: [personal] }),
+      runtimeInputRegistry({ presets: [preset] }),
     );
     renderLaunchPage();
 
@@ -1078,17 +1092,17 @@ describe("WorkflowPackageLaunchPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
     expect(preflightPackageMock).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText("Personal preset name"), {
+    fireEvent.change(screen.getByLabelText("Saved runtime input preset name"), {
       target: { value: "Broken preset" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save current JSON" }));
-    expect(createRuntimeInputPersonalEntryMock).not.toHaveBeenCalled();
+    expect(createRuntimeInputPresetEntryMock).not.toHaveBeenCalled();
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Overwrite personal input Baseline preset",
+        name: "Overwrite saved runtime input preset Baseline preset",
       }),
     );
-    expect(updateRuntimeInputPersonalEntryMock).not.toHaveBeenCalled();
+    expect(updateRuntimeInputPresetEntryMock).not.toHaveBeenCalled();
   });
 
   it("rejects non-nullable advanced JSON null before preflight or launch API calls", async () => {
