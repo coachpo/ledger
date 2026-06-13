@@ -21,8 +21,8 @@ from app.schemas.workflow_package import (
     WorkflowPackagePreflightRequest,
     WorkflowPackageRead,
     WorkflowPackageRuntimeInputEntryRead,
-    WorkflowPackageRuntimeInputPersonalEntryCreateRequest,
-    WorkflowPackageRuntimeInputPersonalEntryUpdateRequest,
+    WorkflowPackageRuntimeInputPresetEntryCreateRequest,
+    WorkflowPackageRuntimeInputPresetEntryUpdateRequest,
     WorkflowPackageRuntimeInputRegistryRead,
     WorkflowPackageSecretBindingListRead,
     WorkflowPackageSecretBindingRead,
@@ -191,20 +191,20 @@ def list_workflow_package_runtime_input_registry(
 
 
 @router.post(
-    "/{package_id}/runtime-input-registry/personal",
+    "/{package_id}/runtime-input-registry/presets",
     response_model=WorkflowPackageRuntimeInputEntryRead,
     status_code=status.HTTP_201_CREATED,
 )
-def create_workflow_package_runtime_input_personal_entry(
+def create_workflow_package_runtime_input_preset_entry(
     package_id: int,
     workflow_key: Annotated[str, Query(alias="workflowKey")],
-    payload: WorkflowPackageRuntimeInputPersonalEntryCreateRequest,
+    payload: WorkflowPackageRuntimeInputPresetEntryCreateRequest,
     service: Annotated[
         WorkflowPackageRuntimeInputRegistryService,
         Depends(get_workflow_package_runtime_input_registry_service),
     ],
 ) -> WorkflowPackageRuntimeInputEntryRead:
-    entry = service.create_personal_entry(
+    entry = service.create_preset_entry(
         package_id,
         workflow_key,
         name=cast(str | None, payload.name),
@@ -214,21 +214,21 @@ def create_workflow_package_runtime_input_personal_entry(
 
 
 @router.patch(
-    "/{package_id}/runtime-input-registry/personal/{entry_id}",
+    "/{package_id}/runtime-input-registry/presets/{entry_id}",
     response_model=WorkflowPackageRuntimeInputEntryRead,
 )
-def update_workflow_package_runtime_input_personal_entry(
+def update_workflow_package_runtime_input_preset_entry(
     package_id: int,
     entry_id: int,
     workflow_key: Annotated[str, Query(alias="workflowKey")],
-    payload: WorkflowPackageRuntimeInputPersonalEntryUpdateRequest,
+    payload: WorkflowPackageRuntimeInputPresetEntryUpdateRequest,
     service: Annotated[
         WorkflowPackageRuntimeInputRegistryService,
         Depends(get_workflow_package_runtime_input_registry_service),
     ],
 ) -> WorkflowPackageRuntimeInputEntryRead:
     if "name" in payload.model_fields_set and "payload" in payload.model_fields_set:
-        entry = service.update_personal_entry(
+        entry = service.update_preset_entry(
             package_id,
             workflow_key,
             entry_id,
@@ -236,30 +236,30 @@ def update_workflow_package_runtime_input_personal_entry(
             payload=payload.payload,
         )
     elif "name" in payload.model_fields_set:
-        entry = service.update_personal_entry(
+        entry = service.update_preset_entry(
             package_id,
             workflow_key,
             entry_id,
             name=cast(str | None, payload.name),
         )
     elif "payload" in payload.model_fields_set:
-        entry = service.update_personal_entry(
+        entry = service.update_preset_entry(
             package_id,
             workflow_key,
             entry_id,
             payload=payload.payload,
         )
     else:
-        entry = service.update_personal_entry(package_id, workflow_key, entry_id)
+        entry = service.update_preset_entry(package_id, workflow_key, entry_id)
     return WorkflowPackageRuntimeInputEntryRead.model_validate(entry)
 
 
 @router.delete(
-    "/{package_id}/runtime-input-registry/personal/{entry_id}",
+    "/{package_id}/runtime-input-registry/presets/{entry_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_model=None,
 )
-def delete_workflow_package_runtime_input_personal_entry(
+def delete_workflow_package_runtime_input_preset_entry(
     package_id: int,
     entry_id: int,
     workflow_key: Annotated[str, Query(alias="workflowKey")],
@@ -268,7 +268,7 @@ def delete_workflow_package_runtime_input_personal_entry(
         Depends(get_workflow_package_runtime_input_registry_service),
     ],
 ) -> Response:
-    service.delete_personal_entry(package_id, workflow_key, entry_id)
+    service.delete_preset_entry(package_id, workflow_key, entry_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -334,15 +334,15 @@ def test_runtime_input_registry_boundary_does_not_mutate_manifest_export_import_
     assert create_response.status_code == 201, create_response.json()
     package_id = int(create_response.json()["id"])
 
-    personal_response = client.post(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/personal",
+    preset_response = client.post(
+        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets",
         params={"workflowKey": "runtime_workflow"},
         json={
             "name": "Registry-only preset",
             "payload": {"ticker": "MSFT", "notes": ["registry only"]},
         },
     )
-    assert personal_response.status_code == 201, personal_response.json()
+    assert preset_response.status_code == 201, preset_response.json()
 
     launch_response = client.post(
         f"/api/workflow-packages/{package_id}/launches",
@@ -357,7 +357,7 @@ def test_runtime_input_registry_boundary_does_not_mutate_manifest_export_import_
     )
     assert registry_response.status_code == 200, registry_response.json()
     registry_body = cast(dict[str, object], registry_response.json())
-    assert len(cast(list[object], registry_body["personal"])) == 1
+    assert len(cast(list[object], registry_body["presets"])) == 1
     history = cast(list[dict[str, object]], registry_body["history"])
     assert len(history) == 1
     assert history[0]["sourceRunId"] == run_id
@@ -405,7 +405,7 @@ def test_runtime_input_registry_boundary_does_not_mutate_manifest_export_import_
         params={"workflowKey": "runtime_workflow"},
     )
     assert imported_registry.status_code == 200, imported_registry.json()
-    assert imported_registry.json()["personal"] == []
+    assert imported_registry.json()["presets"] == []
     assert imported_registry.json()["history"] == []
 
     with session_factory() as session:
