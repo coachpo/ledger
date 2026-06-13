@@ -4,7 +4,7 @@
 
 ## OVERVIEW
 
-`src/pages/memory/` owns the single platform Memory route at `/memory`. The route is a trusted local operator/admin control plane for canonical workflow memory across packages, backed by admin hooks in `use-memory.ts`, `api/memory.ts`, and `types/memory.ts`.
+`src/pages/memory/` owns the platform Memory Admin browse/detail routes at `/memory` and `/memory/:memoryId`. The routes are a trusted local operator/admin control plane for canonical workflow memory across packages, backed by admin hooks in `use-memory.ts`, `api/memory.ts`, and `types/memory.ts`.
 
 Memory is platform-core ownership. It is not part of the Finance Workspace extension, and finance report history stays in Reports. Runtime `signaldeck.memory.lookup/write` remains scoped to Workflow Package execution and must not become an unscoped global browser search path.
 
@@ -22,24 +22,25 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## WHERE TO LOOK
 
-| Task | Location | Notes |
-|---|---|---|
-| Memory route | `list.tsx` | `/memory` admin inventory, optional filters, create/revise/status flows, list cards, and inline detail panes |
-| Memory hooks | `../../hooks/use-memory.ts` | admin list/detail/history/create/revise/status hooks plus separate scoped runtime memory hooks |
-| Memory API helpers | `../../lib/api/memory.ts` | admin `/api/memory/admin/entries*` helpers plus scoped runtime `/api/memory` helpers |
-| Memory wire types | `../../lib/types/memory.ts` | admin entries, scopes, status, provenance, history, write payloads, and separate runtime payloads |
-| Route metadata | `../../routes.metadata.ts` | platform-owned Memory Admin route, Agent Platform sidebar item, full-height shell, and admin state variants |
+| Task                | Location                    | Notes                                                                                                                     |
+| ------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Memory list route   | `list.tsx`                  | `/memory` admin inventory, optional filters, create flow, and dense linked list cards                                     |
+| Memory detail route | `detail.tsx`                | `/memory/:memoryId` detail, revisions, audit events, revise flow, and lifecycle status update                             |
+| Memory hooks        | `../../hooks/use-memory.ts` | admin list/detail/history/create/revise/status hooks plus separate scoped runtime memory hooks                            |
+| Memory API helpers  | `../../lib/api/memory.ts`   | admin `/api/memory/admin/entries*` helpers plus scoped runtime `/api/memory` helpers                                      |
+| Memory wire types   | `../../lib/types/memory.ts` | admin entries, scopes, status, provenance, history, write payloads, and separate runtime payloads                         |
+| Route metadata      | `../../routes.metadata.ts`  | platform-owned Memory Admin list/detail routes, Agent Platform sidebar item, scroll/wide shells, and admin state variants |
 
 ## CONVENTIONS
 
-- `/memory` is the only live browser route for this folder. There is no `/memory/:memoryId` route today.
-- Selected memory is opened inline through the `memoryId` search param, not by routing to a detail page.
+- `/memory` is the live browser list route and `/memory/:memoryId` is the live detail route for one memory entry.
+- Selected memory is opened through real links to `/memory/:memoryId`; do not restore inline inspector or `memoryId` query-param selection.
 - The page queries the trusted admin list immediately. Cross-package and mixed-scope rows are intended local operator visibility, not a package-private browser gate.
 - Filters such as package, workflow, agent, run, scope, kind, status, and query narrow the operator-managed corpus; they do not authorize the corpus.
-- Admin list default all-status visibility is intentional. Pending and expired rows stay admin-visible, while only resolved rows that match runtime scope and grant rules can affect future `signaldeck.memory.lookup`.
+- Admin list default all-status visibility is intentional. Pending and archived rows stay admin-visible, while only approved rows that match runtime scope and grant rules can affect future `signaldeck.memory.lookup`.
 - Create, revise, and status controls must preserve explicit scope, lifecycle status, operator provenance, immutable revision, and append-only history semantics.
 - Shared namespace declarations and grants are not browser-authored here. Do not accept namespace declarations or grants from route JSON.
-- The route can show list results plus inline detail, revisions, events, provenance, and write/status controls. It must not add destructive delete actions, browse report history, or promote report history into memory.
+- The list route shows browse/filter results plus create controls; the detail route shows detail, revisions, events, provenance, revise, and write/status controls. It must not add destructive delete actions, browse report history, or promote report history into memory.
 - Keep Memory Admin in the Agent Platform nav group with platform ownership. Do not move it under extension gates or Finance Workspace ownership.
 - Tool discovery stays API and hook support for Workflow Package capability authoring. Do not add or document a standalone Tools browser route from this folder.
 - Long ids, memory content, subject refs, and event payload fragments need wrapping or internal scrolling so the route does not create mobile overflow.
@@ -47,7 +48,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## ANTI-PATTERNS
 
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
-- Do not add `/memory/:memoryId`, `/memory/:memoryId/revisions`, or `/memory/:memoryId/events` routes unless `src/routes.ts` and route metadata are intentionally changed.
+- Do not add `/memory/:memoryId/revisions` or `/memory/:memoryId/events` child routes unless `src/routes.ts` and route metadata are intentionally changed.
 - Do not call `api/memory.ts` directly from `list.tsx`; use `use-memory.ts` so query keys and enabled gates stay centralized.
 - Do not wire `/memory` back to scoped runtime `/api/memory` gating; use the admin hooks for the route and keep runtime helpers separate for Workflow Package execution paths.
 - Do not treat opaque `memoryId` values as report slugs, download URLs, or routable finance identifiers.
@@ -65,6 +66,6 @@ pnpm test:run
 
 ## NOTES
 
-- `list.tsx` keeps admin filter and write-dialog draft state local to the page.
-- Admin detail, revision, and event reads use the selected memory id plus the admin API, while runtime memory helpers remain separate.
+- `list.tsx` keeps admin filter and create-dialog draft state local to the page.
+- `detail.tsx` reads the route memory id and owns detail, revision, event, revise, and status mutation wiring while runtime memory helpers remain separate.
 - The route is intentionally a trusted local operator control plane, not a runtime global search surface.

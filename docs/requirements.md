@@ -97,7 +97,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - `/api/memory` must remain a platform-core route family, not `/api/v1` finance routing. Its scoped list/detail/revision/event/action paths must not provide admin-style all-package reads.
 - `/api/memory/admin/entries*` and `/memory` must provide trusted local operator/admin management over canonical workflow memory across packages, with optional filters that narrow rather than authorize the corpus.
 - Admin create, revise, and status operations must write canonical memory through explicit scope, status, provenance, immutable revision, and append-only event semantics using operator provenance and `memory_admin` channel metadata.
-- Resolved admin entries whose scopes and namespace grants match future Workflow Package runs may affect later `signaldeck.memory.lookup`; pending and expired admin entries remain visible to the operator control plane only.
+- Approved admin entries whose scopes and namespace grants match future Workflow Package runs may affect later `signaldeck.memory.lookup`; pending and archived admin entries remain visible to the operator control plane only.
 - Model-visible memory outputs must not expose report identity, download URLs, raw markdown, or audit links. API/UI memory projections must not include finance report-history rows.
 
 ## Non-Functional Requirements

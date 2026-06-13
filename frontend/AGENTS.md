@@ -32,7 +32,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
 - `src/pages/extensions/AGENTS.md` — `/extensions` system state route, slim statically resident extension contract, and toggle behavior
 - `src/pages/model-connections/AGENTS.md` — global model endpoint inventory/editor, write-only secrets, and connection-test flows
-- `src/pages/memory/AGENTS.md` — `/memory` trusted local operator Memory Admin, optional filters, and inline detail/revision/event panes
+- `src/pages/memory/AGENTS.md` — `/memory` trusted local operator Memory Admin list and `/memory/:memoryId` detail, revision, and event route
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail workspace, metrics, balances, positions, and trades
 - `src/pages/reports/AGENTS.md` — report inventory/detail, upload, generation, grouping, batch actions, and markdown editing
 - `src/pages/templates/AGENTS.md` — stored-template inventory/editor, inline compile preview, runtime inputs, and saved-template report generation
