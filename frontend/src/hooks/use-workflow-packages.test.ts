@@ -35,9 +35,9 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("@/lib/api/workflow-packages", () => ({
   createWorkflowPackage: vi.fn(),
   createWorkflowPackageLaunch: vi.fn(),
-  createWorkflowPackageRuntimeInputPersonalEntry: vi.fn(),
+  createWorkflowPackageRuntimeInputPresetEntry: vi.fn(),
   deleteWorkflowPackage: vi.fn(),
-  deleteWorkflowPackageRuntimeInputPersonalEntry: vi.fn(),
+  deleteWorkflowPackageRuntimeInputPresetEntry: vi.fn(),
   deleteWorkflowPackageSecretBinding: vi.fn(),
   getWorkflowPackage: vi.fn(),
   getWorkflowPackageLaunch: vi.fn(),
@@ -48,7 +48,7 @@ vi.mock("@/lib/api/workflow-packages", () => ({
   listWorkflowPackages: vi.fn(),
   preflightWorkflowPackage: vi.fn(),
   updateWorkflowPackage: vi.fn(),
-  updateWorkflowPackageRuntimeInputPersonalEntry: vi.fn(),
+  updateWorkflowPackageRuntimeInputPresetEntry: vi.fn(),
   upsertWorkflowPackageSecretBinding: vi.fn(),
   validateWorkflowPackageManifest: vi.fn(),
 }));
@@ -66,24 +66,24 @@ import {
   FINANCE_WORKSPACE_EXTENSION_KEY,
 } from "@/extensions";
 import {
-  createWorkflowPackageRuntimeInputPersonalEntry,
+  createWorkflowPackageRuntimeInputPresetEntry,
   deleteWorkflowPackage,
-  deleteWorkflowPackageRuntimeInputPersonalEntry,
+  deleteWorkflowPackageRuntimeInputPresetEntry,
   preflightWorkflowPackage,
-  updateWorkflowPackageRuntimeInputPersonalEntry,
+  updateWorkflowPackageRuntimeInputPresetEntry,
   validateWorkflowPackageManifest,
 } from "@/lib/api/workflow-packages";
 import { queryKeys } from "@/lib/query-keys";
 import {
   useCreateWorkflowPackageLaunch,
-  useCreateWorkflowPackageRuntimeInputPersonalEntry,
+  useCreateWorkflowPackageRuntimeInputPresetEntry,
   useDeleteWorkflowPackage,
   useDeleteWorkflowPackages,
-  useDeleteWorkflowPackageRuntimeInputPersonalEntry,
+  useDeleteWorkflowPackageRuntimeInputPresetEntry,
   usePreflightWorkflowPackage,
   useTools,
   useUpdateWorkflowPackage,
-  useUpdateWorkflowPackageRuntimeInputPersonalEntry,
+  useUpdateWorkflowPackageRuntimeInputPresetEntry,
   useValidateWorkflowPackageManifest,
   useWorkflowPackage,
   useWorkflowPackageLaunch,
@@ -124,11 +124,11 @@ describe("useWorkflowPackages", () => {
       isError: false,
       isPending: false,
     });
-    vi.mocked(createWorkflowPackageRuntimeInputPersonalEntry).mockReset();
+    vi.mocked(createWorkflowPackageRuntimeInputPresetEntry).mockReset();
     vi.mocked(deleteWorkflowPackage).mockReset();
-    vi.mocked(deleteWorkflowPackageRuntimeInputPersonalEntry).mockReset();
+    vi.mocked(deleteWorkflowPackageRuntimeInputPresetEntry).mockReset();
     vi.mocked(preflightWorkflowPackage).mockReset();
-    vi.mocked(updateWorkflowPackageRuntimeInputPersonalEntry).mockReset();
+    vi.mocked(updateWorkflowPackageRuntimeInputPresetEntry).mockReset();
     vi.mocked(validateWorkflowPackageManifest).mockReset();
   });
 
@@ -384,17 +384,17 @@ describe("useWorkflowPackages", () => {
     });
   });
 
-  it("invalidates workflow-scoped registry entries after personal mutations", async () => {
-    useCreateWorkflowPackageRuntimeInputPersonalEntry();
+  it("invalidates workflow-scoped registry entries after preset mutations", async () => {
+    useCreateWorkflowPackageRuntimeInputPresetEntry();
     let mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
     await mutationOptions.mutationFn?.({
       packageId: 15,
       workflowKey: "summarize",
-      payload: { name: "Morning", payload: { ticker: "AVGO" } },
+      payload: { name: "Morning preset", payload: { ticker: "AVGO" } },
     });
-    expect(createWorkflowPackageRuntimeInputPersonalEntry).toHaveBeenCalledWith(
+    expect(createWorkflowPackageRuntimeInputPresetEntry).toHaveBeenCalledWith(
       15,
-      { name: "Morning", payload: { ticker: "AVGO" } },
+      { name: "Morning preset", payload: { ticker: "AVGO" } },
       { workflowKey: "summarize" },
     );
     await mutationOptions.onSuccess?.({}, { packageId: 15, workflowKey: "summarize" });
@@ -403,7 +403,7 @@ describe("useWorkflowPackages", () => {
     });
 
     reactQueryState.invalidateQueriesMock.mockClear();
-    useUpdateWorkflowPackageRuntimeInputPersonalEntry();
+    useUpdateWorkflowPackageRuntimeInputPresetEntry();
     mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
     await mutationOptions.mutationFn?.({
       entryId: 44,
@@ -411,7 +411,7 @@ describe("useWorkflowPackages", () => {
       workflowKey: "summarize",
       payload: { payload: { ticker: "MSFT" } },
     });
-    expect(updateWorkflowPackageRuntimeInputPersonalEntry).toHaveBeenCalledWith(
+    expect(updateWorkflowPackageRuntimeInputPresetEntry).toHaveBeenCalledWith(
       15,
       44,
       { payload: { ticker: "MSFT" } },
@@ -423,10 +423,10 @@ describe("useWorkflowPackages", () => {
     });
 
     reactQueryState.invalidateQueriesMock.mockClear();
-    useDeleteWorkflowPackageRuntimeInputPersonalEntry();
+    useDeleteWorkflowPackageRuntimeInputPresetEntry();
     mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
     await mutationOptions.mutationFn?.({ entryId: 44, packageId: 15, workflowKey: "summarize" });
-    expect(deleteWorkflowPackageRuntimeInputPersonalEntry).toHaveBeenCalledWith(15, 44, {
+    expect(deleteWorkflowPackageRuntimeInputPresetEntry).toHaveBeenCalledWith(15, 44, {
       workflowKey: "summarize",
     });
     await mutationOptions.onSuccess?.({}, { packageId: 15, workflowKey: "summarize" });

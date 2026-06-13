@@ -8,9 +8,9 @@ import {
 import {
   createWorkflowPackage,
   createWorkflowPackageLaunch,
-  createWorkflowPackageRuntimeInputPersonalEntry,
+  createWorkflowPackageRuntimeInputPresetEntry,
   deleteWorkflowPackage,
-  deleteWorkflowPackageRuntimeInputPersonalEntry,
+  deleteWorkflowPackageRuntimeInputPresetEntry,
   deleteWorkflowPackageSecretBinding,
   getWorkflowPackage,
   getWorkflowPackageLaunch,
@@ -21,7 +21,7 @@ import {
   listWorkflowPackages,
   preflightWorkflowPackage,
   updateWorkflowPackage,
-  updateWorkflowPackageRuntimeInputPersonalEntry,
+  updateWorkflowPackageRuntimeInputPresetEntry,
   upsertWorkflowPackageSecretBinding,
   validateWorkflowPackageManifest,
 } from "@/lib/api/workflow-packages";
@@ -38,8 +38,8 @@ import type {
   WorkflowPackageManifestRead,
   WorkflowPackageManifestRequest,
   WorkflowPackageRead,
-  WorkflowPackageRuntimeInputPersonalEntryCreateRequest,
-  WorkflowPackageRuntimeInputPersonalEntryUpdateRequest,
+  WorkflowPackageRuntimeInputPresetEntryCreateRequest,
+  WorkflowPackageRuntimeInputPresetEntryUpdateRequest,
   WorkflowPackageRuntimeInputRegistryRead,
   WorkflowPackageSecretBindingListRead,
   WorkflowPackageSecretBindingUpdateRequest,
@@ -61,18 +61,18 @@ type WorkflowPackageRuntimeInputRegistryVariables = {
   workflowKey: string;
 };
 
-type WorkflowPackageRuntimeInputPersonalEntryCreateVariables =
+type WorkflowPackageRuntimeInputPresetEntryCreateVariables =
   WorkflowPackageRuntimeInputRegistryVariables & {
-    payload: WorkflowPackageRuntimeInputPersonalEntryCreateRequest;
+    payload: WorkflowPackageRuntimeInputPresetEntryCreateRequest;
   };
 
-type WorkflowPackageRuntimeInputPersonalEntryUpdateVariables =
+type WorkflowPackageRuntimeInputPresetEntryUpdateVariables =
   WorkflowPackageRuntimeInputRegistryVariables & {
     entryId: IdParam;
-    payload: WorkflowPackageRuntimeInputPersonalEntryUpdateRequest;
+    payload: WorkflowPackageRuntimeInputPresetEntryUpdateRequest;
   };
 
-type WorkflowPackageRuntimeInputPersonalEntryDeleteVariables =
+type WorkflowPackageRuntimeInputPresetEntryDeleteVariables =
   WorkflowPackageRuntimeInputRegistryVariables & {
     entryId: IdParam;
   };
@@ -352,12 +352,12 @@ export function useDeleteWorkflowPackageSecretBinding() {
   });
 }
 
-export function useCreateWorkflowPackageRuntimeInputPersonalEntry() {
+export function useCreateWorkflowPackageRuntimeInputPresetEntry() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ packageId, payload, workflowKey }: WorkflowPackageRuntimeInputPersonalEntryCreateVariables) =>
-      createWorkflowPackageRuntimeInputPersonalEntry(packageId, payload, { workflowKey }),
+    mutationFn: ({ packageId, payload, workflowKey }: WorkflowPackageRuntimeInputPresetEntryCreateVariables) =>
+      createWorkflowPackageRuntimeInputPresetEntry(packageId, payload, { workflowKey }),
     onSuccess: async (_entry, variables) => {
       await invalidateWorkflowPackageRuntimeInputRegistryScope(
         queryClient,
@@ -368,12 +368,12 @@ export function useCreateWorkflowPackageRuntimeInputPersonalEntry() {
   });
 }
 
-export function useUpdateWorkflowPackageRuntimeInputPersonalEntry() {
+export function useUpdateWorkflowPackageRuntimeInputPresetEntry() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ entryId, packageId, payload, workflowKey }: WorkflowPackageRuntimeInputPersonalEntryUpdateVariables) =>
-      updateWorkflowPackageRuntimeInputPersonalEntry(packageId, entryId, payload, { workflowKey }),
+    mutationFn: ({ entryId, packageId, payload, workflowKey }: WorkflowPackageRuntimeInputPresetEntryUpdateVariables) =>
+      updateWorkflowPackageRuntimeInputPresetEntry(packageId, entryId, payload, { workflowKey }),
     onSuccess: async (_entry, variables) => {
       await invalidateWorkflowPackageRuntimeInputRegistryScope(
         queryClient,
@@ -384,12 +384,12 @@ export function useUpdateWorkflowPackageRuntimeInputPersonalEntry() {
   });
 }
 
-export function useDeleteWorkflowPackageRuntimeInputPersonalEntry() {
+export function useDeleteWorkflowPackageRuntimeInputPresetEntry() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ entryId, packageId, workflowKey }: WorkflowPackageRuntimeInputPersonalEntryDeleteVariables) =>
-      deleteWorkflowPackageRuntimeInputPersonalEntry(packageId, entryId, { workflowKey }),
+    mutationFn: ({ entryId, packageId, workflowKey }: WorkflowPackageRuntimeInputPresetEntryDeleteVariables) =>
+      deleteWorkflowPackageRuntimeInputPresetEntry(packageId, entryId, { workflowKey }),
     onSuccess: async (_result, variables) => {
       await invalidateWorkflowPackageRuntimeInputRegistryScope(
         queryClient,
