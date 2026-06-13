@@ -169,7 +169,7 @@ class WorkflowPackageRuntimeInputEntryRead(CamelModel):
     id: int
     package_id: int
     workflow_key: str
-    slot: Literal["history", "personal"]
+    slot: Literal["history", "preset"]
     name: str | None = None
     payload: dict[str, Any]
     source_kind: str
@@ -193,16 +193,16 @@ class WorkflowPackageRuntimeInputRegistryRead(CamelModel):
     package_key: str
     workflow_key: str
     current_metadata: WorkflowPackageRuntimeInputCurrentMetadataRead | None = None
-    personal: list[WorkflowPackageRuntimeInputEntryRead]
+    presets: list[WorkflowPackageRuntimeInputEntryRead]
     history: list[WorkflowPackageRuntimeInputEntryRead]
 
 
-class WorkflowPackageRuntimeInputPersonalEntryCreateRequest(CamelModel):
+class WorkflowPackageRuntimeInputPresetEntryCreateRequest(CamelModel):
     name: object | None = None
     payload: object
 
 
-class WorkflowPackageRuntimeInputPersonalEntryUpdateRequest(CamelModel):
+class WorkflowPackageRuntimeInputPresetEntryUpdateRequest(CamelModel):
     name: object | None = None
     payload: object | None = None
 
@@ -244,8 +244,8 @@ __all__ = [
     "WorkflowPackageRead",
     "WorkflowPackageRuntimeInputCurrentMetadataRead",
     "WorkflowPackageRuntimeInputEntryRead",
-    "WorkflowPackageRuntimeInputPersonalEntryCreateRequest",
-    "WorkflowPackageRuntimeInputPersonalEntryUpdateRequest",
+    "WorkflowPackageRuntimeInputPresetEntryCreateRequest",
+    "WorkflowPackageRuntimeInputPresetEntryUpdateRequest",
     "WorkflowPackageRuntimeInputRegistryRead",
     "WorkflowPackageRuntimeInputStaleRead",
     "WorkflowPackageSecretBindingListRead",

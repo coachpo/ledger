@@ -102,20 +102,18 @@ class WorkflowPackageRuntimeInputEntry(IdMixin, TimestampMixin, Base):
     __tablename__ = "workflow_package_runtime_input_entries"
     __table_args__ = (
         CheckConstraint(
-            "slot IN ('history', 'personal')",
+            "slot IN ('history', 'preset')",
             name="ck_workflow_package_runtime_input_entries_slot",
         ),
         CheckConstraint(
-            "slot = 'personal' OR name IS NULL",
-            name="ck_workflow_package_runtime_input_entries_name_personal_only",
+            "slot = 'preset' OR name IS NULL",
+            name="ck_workflow_package_runtime_input_entries_name_preset_only",
         ),
         Index("ix_workflow_package_runtime_input_entries_package", "package_id"),
         Index(
             "ix_workflow_package_runtime_input_entries_scope_slot_created",
             "package_id",
             "workflow_key",
-            "owner_type",
-            "owner_id",
             "slot",
             "created_at",
             "id",
@@ -124,8 +122,6 @@ class WorkflowPackageRuntimeInputEntry(IdMixin, TimestampMixin, Base):
             "ix_workflow_package_runtime_input_entries_scope_slot_updated",
             "package_id",
             "workflow_key",
-            "owner_type",
-            "owner_id",
             "slot",
             "updated_at",
             "id",
@@ -142,8 +138,6 @@ class WorkflowPackageRuntimeInputEntry(IdMixin, TimestampMixin, Base):
         nullable=False,
     )
     workflow_key: Mapped[str] = mapped_column(String(120), nullable=False)
-    owner_type: Mapped[str] = mapped_column(String(40), nullable=False)
-    owner_id: Mapped[str] = mapped_column(String(120), nullable=False)
     slot: Mapped[str] = mapped_column(String(20), nullable=False)
     name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     payload: Mapped[dict[str, Any]] = mapped_column(
