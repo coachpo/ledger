@@ -64,6 +64,7 @@ uv run pytest tests/test_api.py tests/test_runtime_models.py
 - `workflow_package.py` stores mutable package headers and immutable package version artifacts without database ids in exported manifests.
 - `model_connection.py` stores UI-managed provider endpoint defaults, encrypted API-key payload metadata, status, and last connection-test results.
 - `run.py` persists package version identity, package hash, workflow key, queued/running status, execution scope, concurrency policy, lease metadata, attempt counts, per-step outputs, final output, and run totals used by the run monitor.
+- `agent_memory.py` persists canonical platform memory rows with `visible_to_workflow` as the live runtime-eligibility field. Legacy lifecycle statuses are startup-repair history only.
 - `report.py` stores unique `name` and `slug`, tracks the canonical origin `source` values `compiled`, `uploaded`, `external`, and `agent`, and keeps optional metadata in JSONB under the `metadata` column. Historical agent-memory reports remain report-domain records; canonical memory rows live in `agent_memory.py`.
 - `symbol_name_cache.py` is intentionally `UNLOGGED` because the cache is reconstructible from provider lookups.
 - `extension.py` stores `extension_states` rows keyed by statically resident extension key; the initial enabled seed is declared in `app/extensions/registry.py` and applied by DB upgrades.

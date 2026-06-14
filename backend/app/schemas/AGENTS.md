@@ -30,7 +30,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Report schemas | `report.py` | read/update payloads plus metadata envelope |
 | Extension schemas | `extension.py` | statically resident extension list/read/toggle payloads with slim public state |
 | Agent-platform schemas | `workflow_package.py`, `workflow_package_manifest.py`, `schedule.py`, `model_connection.py`, `tool.py`, `run.py` | current `/api/*` request and response models |
-| Memory domain schemas | `memory.py`, `memory_report.py` | core memory DTO projections plus historical agent-memory report metadata |
+| Memory domain schemas | `memory.py`, `memory_report.py` | core memory visibility DTO projections plus historical agent-memory report metadata |
 | Base/shared schema helpers | `common.py` | `CamelModel`, `TradingSide`, `OperationType`, shared validators |
 
 ## CONVENTIONS
@@ -73,7 +73,7 @@ uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests
 - `model_connection.py` normalizes OpenAI-family base URLs, rejects empty/null API-key updates, and keeps read payloads secret-safe.
 - `extension.py` exposes statically resident extension state and enable/disable toggle payloads only.
 - `tool.py` exposes read-only server-declared tool metadata.
-- `memory.py` defines phase 1 projection boundaries. Model-visible payloads expose `memoryId`, status, summary, provenance, and warnings without report identity, raw markdown, URLs, downloads, or `auditLinks`; API/UI projections may include nested `auditLinks.report`; report routes stay report-shaped.
+- `memory.py` defines phase 1 projection boundaries. Runtime lookup payloads expose `memoryId`, summary, provenance, and warnings without workflow visibility, report identity, raw markdown, URLs, downloads, or `auditLinks`; runtime write payloads include `visibleToWorkflow`; API/UI projections may include nested `auditLinks.report`; report routes stay report-shaped.
 - `memoryId` is an opaque platform-core memory identifier. Do not parse it in schemas, services, runtime tools, routes, or frontend callers.
 - Phase 1 has Postgres memory entry/revision tables but no vector search, embeddings, chunk table, or public memory CRUD route, so schema contracts must not imply browser memory search/storage surfaces.
 - `run.py` carries global run list/detail, backend-owned `progress` and nullable `queue` read models, package provenance, rerun, invocation-input fork, historical replay lineage reads, memory-shaped artifacts, and per-step execution payloads.
