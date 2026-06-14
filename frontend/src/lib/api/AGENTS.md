@@ -34,7 +34,7 @@ src/lib/api/
 ├── schedules.ts           # Scheduled Task CRUD, preview, fire history, and run-now requests
 ├── tools.ts               # read-only server-declared tool catalog
 ├── model-connections.ts   # saved model endpoint CRUD and connection testing
-├── memory.ts              # scoped runtime memory helpers plus trusted admin list/detail/history/write/status helpers
+├── memory.ts              # scoped runtime memory helpers plus trusted admin list/detail/history/write/workflow-visibility/delete helpers
 └── runs.ts                # run list/detail reads with package provenance, progress, queue, rerun/fork contracts
 ```
 
@@ -53,7 +53,7 @@ src/lib/api/
 - Keep upload/download specifics here: multipart report upload, CSV preview/commit, and markdown download URLs should not leak into hooks or pages.
 - Keep preserved `/api/v1` resource paths and current unversioned platform `/api/*` paths separate in the module layer.
 - `schedules.ts` owns `/api/schedules` path helpers for list/detail/create/update/delete, fire history, unsaved/saved preview, and run-now; do not split run-now into run helpers.
-- `memory.ts` keeps scoped runtime `/api/memory` POST helpers separate from trusted admin `/api/memory/admin/entries*` helpers. Do not route runtime lookup/write through admin all-package reads, and do not make admin filters look like runtime authorization.
+- `memory.ts` keeps scoped runtime `/api/memory` POST helpers separate from trusted admin `/api/memory/admin/entries*` helpers. Runtime lookup is scoped and workflow-visible-only, runtime writes default hidden, admin create defaults visible, admin list defaults to all entries with optional `visibleToWorkflow` filtering, and admin single-entry delete calls `DELETE /api/memory/admin/entries/{memoryId}` as a `204 No Content` void mutation. Do not route runtime lookup/write through admin all-package reads, do not make admin filters look like runtime authorization, and do not add runtime or bulk delete helpers.
 - Match backend casing exactly; request/response types come from `../types/*` rather than inline object literals.
 
 ## ANTI-PATTERNS
