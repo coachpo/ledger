@@ -15,10 +15,7 @@ import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { ResourceRowCard } from "@/components/shared/resource-row-card";
-import {
-  ResourceStatusBadge,
-  ResourceStatusStrip,
-} from "@/components/shared/resource-status-strip";
+import { ResourceStatusBadge } from "@/components/shared/resource-status-strip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -77,7 +74,6 @@ import {
   type AdminRevisionVariables,
   type AdminWorkflowVisibilityVariables,
   type CreateDraft,
-  RUNTIME_IMPACT_COPY,
   SCOPE_TYPE_VALUES,
   buildOperatorProvenance,
   buildSubjectRefs,
@@ -220,11 +216,11 @@ export function MemoryDeleteDialog({
 
 export function JsonBlock({ label, value }: { label: string; value: unknown }) {
   return (
-    <section className="flex min-w-0 flex-col gap-2">
+    <section className="flex min-w-0 flex-col gap-2 border-t border-border pt-3">
       <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </h4>
-      <pre className="max-h-56 overflow-auto rounded-md border bg-muted/20 p-3 text-xs">
+      <pre className="max-h-56 overflow-auto bg-muted/20 py-2 pl-3 pr-2 text-xs leading-5">
         {JSON.stringify(value, null, 2)}
       </pre>
     </section>
@@ -241,14 +237,14 @@ function DetailField({
   value: ReactNode;
 }) {
   return (
-    <div className="min-w-0 rounded-md border bg-muted/20 p-3">
-      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="flex min-w-0 flex-col gap-1 border-t border-border pt-2 sm:flex-row sm:items-start sm:gap-3">
+      <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:w-36">
         {label}
       </dt>
       <dd
         className={cn(
-          "mt-1 break-words text-sm",
-          mono ? "font-mono text-xs" : null,
+          "min-w-0 break-words text-sm leading-6 text-foreground",
+          mono ? "break-all font-mono text-xs" : null,
         )}
       >
         {value}
@@ -339,17 +335,6 @@ export function SelectField<TValue extends string>({
   );
 }
 
-export function RuntimeImpactNotice() {
-  return (
-    <div
-      className="rounded-md border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground"
-      data-testid="memory-runtime-impact-copy"
-    >
-      {RUNTIME_IMPACT_COPY}
-    </div>
-  );
-}
-
 export function MemoryContextContract({
   createAction,
   onReset,
@@ -380,46 +365,16 @@ export function MemoryContextContract({
 export function MemoryDetailContext({
   actions,
   detail,
-  memoryId,
 }: {
   actions?: ReactNode;
   detail?: MemoryAdminEntryRead;
-  memoryId: string;
 }) {
   return (
     <PageContextBar
       actions={actions}
       description="Inspect one canonical memory entry, its append-only revisions, audit events, and trusted operator workflow visibility controls."
       layout="toolbar"
-      meta={
-        <ResourceStatusStrip
-          className="border-0 bg-transparent p-0"
-          density="toolbar"
-          items={[
-            {
-              label: "Memory",
-              value: <span className="font-mono">{memoryId}</span>,
-              tone: "muted",
-            },
-            ...(detail
-              ? [
-                  {
-                    label: "Workflow visibility",
-                    value: formatWorkflowVisibility(detail.visibleToWorkflow),
-                    tone: workflowVisibilityTone(detail.visibleToWorkflow),
-                  },
-                  {
-                    label: "Scope",
-                    value: formatScope(detail.scope),
-                    tone: "muted" as const,
-                  },
-                ]
-              : []),
-          ]}
-        />
-      }
       title={detail?.summary || "Memory Detail"}
-      toolbarMetaPlacement="middle"
     />
   );
 }
@@ -874,7 +829,6 @@ export function RevisionDialog({
           </DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={submit}>
-          <RuntimeImpactNotice />
           <TextField
             label="Revision summary"
             onChange={(value) => update("summary", value)}
@@ -965,7 +919,7 @@ function WorkflowVisibilityUpdateForm({
 
   return (
     <form
-      className="grid gap-3 rounded-md border bg-muted/20 p-3"
+      className="grid gap-3 border-t border-border pt-4"
       data-testid="memory-workflow-visibility-form"
       onSubmit={submit}
     >
@@ -973,7 +927,6 @@ function WorkflowVisibilityUpdateForm({
         <ShieldCheck />
         Workflow visibility
       </div>
-      <RuntimeImpactNotice />
       <div className="grid gap-3 md:grid-cols-2">
         <SelectField
           label="New workflow visibility"
@@ -1027,25 +980,22 @@ export function DetailInspection({
 }) {
   return (
     <div
-      className="flex min-w-0 flex-col gap-5"
+      className="flex min-w-0 flex-col gap-4"
       data-testid="memory-detail-panel"
     >
-      <ResourceStatusStrip
-        items={[
-          {
-            label: "Workflow visibility",
-            value: formatWorkflowVisibility(detail.visibleToWorkflow),
-            tone: workflowVisibilityTone(detail.visibleToWorkflow),
-          },
-          { label: "Kind", value: detail.kind },
-          { label: "Scope", value: formatScope(detail.scope), tone: "muted" },
-        ]}
-      />
-      <div className="rounded-md border bg-muted/20 p-3 text-sm">
-        <p className="whitespace-pre-wrap break-words">{detail.content}</p>
-      </div>
-      <dl className="grid gap-3 text-sm md:grid-cols-2">
-        <DetailField label="Memory id" mono value={detail.memoryId} />
+      <dl className="grid min-w-0 gap-x-6 gap-y-2 md:grid-cols-2">
+        <DetailField label="Memory" mono value={detail.memoryId} />
+        <DetailField
+          label="Workflow visibility"
+          value={
+            <ResourceStatusBadge
+              label={formatWorkflowVisibility(detail.visibleToWorkflow)}
+              tone={workflowVisibilityTone(detail.visibleToWorkflow)}
+            />
+          }
+        />
+        <DetailField label="Scope" value={formatScope(detail.scope)} />
+        <DetailField label="Kind" value={detail.kind} />
         <DetailField label="Revision id" mono value={detail.revisionId} />
         <DetailField label="Created" value={formatDateTime(detail.createdAt)} />
         <DetailField
@@ -1061,6 +1011,12 @@ export function DetailInspection({
           value={`v${detail.revision.version} · ${detail.revision.contentHash}`}
         />
       </dl>
+      <section
+        aria-label="Memory content"
+        className="min-w-0 border-t border-border pt-3 text-sm leading-6"
+      >
+        <p className="whitespace-pre-wrap break-words">{detail.content}</p>
+      </section>
       <JsonBlock label="Attributes" value={detail.attributes} />
       {detail.outcome ? (
         <JsonBlock label="Outcome" value={detail.outcome} />

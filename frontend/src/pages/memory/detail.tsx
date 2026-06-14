@@ -38,12 +38,10 @@ import type {
 
 function DetailPageMessage({
   description,
-  memoryId,
   testId,
   title,
 }: {
   description: string;
-  memoryId: string;
   testId: string;
   title: string;
 }) {
@@ -52,7 +50,7 @@ function DetailPageMessage({
       bodyAriaLabel="Memory admin detail message workspace"
       bodyClassName="gap-4"
       className="min-h-full"
-      contextBar={<MemoryDetailContext memoryId={memoryId} />}
+      contextBar={<MemoryDetailContext />}
       testId="memory-detail-page"
     >
       <Card
@@ -119,7 +117,6 @@ export function MemoryDetailPage() {
     return (
       <DetailPageMessage
         description="Open a memory entry from the Memory Admin list to inspect detail, revisions, and audit events."
-        memoryId="missing"
         testId="memory-detail-missing-id"
         title="Memory id is required"
       />
@@ -159,7 +156,6 @@ export function MemoryDetailPage() {
             ? detailQuery.error.message
             : "The selected memory entry could not be loaded."
         }
-        memoryId={resolvedMemoryId}
         testId="memory-detail-error"
         title="Unable to load memory detail"
       />
@@ -172,11 +168,7 @@ export function MemoryDetailPage() {
       bodyClassName="gap-4"
       className="min-h-full"
       contextBar={
-        <MemoryDetailContext
-          actions={actions}
-          detail={detail}
-          memoryId={resolvedMemoryId}
-        />
+        <MemoryDetailContext actions={actions} detail={detail} />
       }
       testId="memory-detail-page"
     >

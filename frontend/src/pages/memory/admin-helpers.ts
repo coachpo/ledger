@@ -25,8 +25,6 @@ export const SCOPE_TYPE_VALUES: readonly MemoryScopeType[] = [
   "agent",
   "namespace",
 ];
-export const RUNTIME_IMPACT_COPY =
-  "Workflow-visible memory in a matching scope may appear in future workflow lookup; workflow-hidden memory remains visible here for operators but is excluded from runtime lookup.";
 
 export type JsonObject = Record<string, unknown>;
 export type MemoryDetailTab = "detail" | "revisions" | "events";

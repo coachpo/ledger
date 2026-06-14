@@ -217,6 +217,42 @@ describe("MemoryDetailPage", () => {
     );
   });
 
+  it("keeps routed identity metadata in the Detail tab instead of the header", () => {
+    renderDetail();
+
+    const header = screen.getByTestId("workspace-page-shell-context");
+    const detailPanel = screen.getByTestId("memory-detail-panel");
+
+    expect(header).not.toHaveTextContent("mem-risk-1");
+    expect(header).not.toHaveTextContent("Workflow visibility");
+    expect(header).not.toHaveTextContent("Package pkg_alpha");
+    expect(detailPanel).toHaveTextContent("Memory");
+    expect(detailPanel).toHaveTextContent("mem-risk-1");
+    expect(detailPanel).toHaveTextContent("Workflow visibility");
+    expect(detailPanel).toHaveTextContent("Workflow visible");
+    expect(detailPanel).toHaveTextContent("Scope");
+    expect(detailPanel).toHaveTextContent("Package pkg_alpha");
+  });
+
+  it("omits runtime workflow lookup explainer copy from detail actions", () => {
+    renderDetail();
+
+    expect(
+      screen.queryByText(
+        "Workflow-visible memory in a matching scope may appear in future workflow lookup; workflow-hidden memory remains visible here for operators but is excluded from runtime lookup.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("memory-runtime-impact-copy"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Revise" }));
+    const revisionDialog = screen.getByRole("dialog");
+    expect(
+      within(revisionDialog).queryByTestId("memory-runtime-impact-copy"),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders revision history and audit events in routed tabs", () => {
     renderDetail();
 
