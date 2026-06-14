@@ -1,4 +1,5 @@
 import {
+  Copy,
   FileText,
   Plus,
   RotateCcw,
@@ -151,6 +152,9 @@ type MemoryDeleteDialogProps = {
   disabled?: boolean;
   isPending: boolean;
   onDelete: () => Promise<void>;
+  onOpenChange?: (open: boolean) => void;
+  open?: boolean;
+  trigger?: ReactNode | null;
 };
 
 function mutationErrorMessage(error: unknown, fallback: string): string {
@@ -161,31 +165,40 @@ export function MemoryDeleteDialog({
   disabled = false,
   isPending,
   onDelete,
+  onOpenChange,
+  open,
+  trigger,
 }: MemoryDeleteDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const dialogOpen = open ?? internalOpen;
+  const setDialogOpen = onOpenChange ?? setInternalOpen;
   const confirmDelete = async () => {
     try {
       await onDelete();
-      setOpen(false);
+      setDialogOpen(false);
     } catch (error) {
       toast.error(mutationErrorMessage(error, "Memory could not be deleted."));
     }
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button
-          className="w-full sm:w-auto"
-          disabled={disabled || isPending}
-          size="sm"
-          type="button"
-          variant="destructive"
-        >
-          <Trash2 data-icon="inline-start" />
-          Delete memory
-        </Button>
-      </AlertDialogTrigger>
+    <AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {trigger !== null ? (
+        <AlertDialogTrigger asChild>
+          {trigger ?? (
+            <Button
+              className="w-full sm:w-auto"
+              disabled={disabled || isPending}
+              size="sm"
+              type="button"
+              variant="destructive"
+            >
+              <Trash2 data-icon="inline-start" />
+              Delete memory
+            </Button>
+          )}
+        </AlertDialogTrigger>
+      ) : null}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete memory</AlertDialogTitle>
@@ -237,8 +250,8 @@ function DetailField({
   value: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 border-t border-border pt-2 sm:flex-row sm:items-start sm:gap-3">
-      <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:w-36">
+    <div className="flex min-w-0 flex-col gap-1 border-t border-border pt-2">
+      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </dt>
       <dd
@@ -250,6 +263,75 @@ function DetailField({
         {value}
       </dd>
     </div>
+  );
+}
+
+async function copyDetailValue(value: string, label: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success(`Copied ${label}`);
+  } catch {
+    toast.error(`${titleCase(label)} could not be copied.`);
+  }
+}
+
+function CopyableIdField({
+  copyLabel,
+  label,
+  value,
+}: {
+  copyLabel: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <DetailField
+      label={label}
+      value={
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate rounded-md border bg-muted/30 px-2 py-1 font-mono text-xs text-foreground">
+            {value}
+          </span>
+          <Button
+            aria-label={`Copy ${copyLabel}`}
+            size="icon"
+            type="button"
+            variant="ghost"
+            onClick={() => void copyDetailValue(value, copyLabel)}
+          >
+            <Copy />
+          </Button>
+        </div>
+      }
+    />
+  );
+}
+
+function DetailCard({
+  children,
+  description,
+  testId,
+  title,
+}: {
+  children: ReactNode;
+  description?: string;
+  testId?: string;
+  title: string;
+}) {
+  return (
+    <Card className="min-w-0 shadow-sm" data-testid={testId}>
+      <CardHeader className="px-4 pt-4">
+        <CardTitle className="text-base">{title}</CardTitle>
+        {description ? (
+          <CardDescription className="text-xs leading-5">
+            {description}
+          </CardDescription>
+        ) : null}
+      </CardHeader>
+      <CardContent className="flex min-w-0 flex-col gap-3 px-4 pb-4">
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -369,11 +451,22 @@ export function MemoryDetailContext({
   actions?: ReactNode;
   detail?: MemoryAdminEntryRead;
 }) {
+  const status = detail ? (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <ResourceStatusBadge
+        label={formatWorkflowVisibility(detail.visibleToWorkflow)}
+        tone={workflowVisibilityTone(detail.visibleToWorkflow)}
+      />
+      <Badge variant="outline">{detail.kind}</Badge>
+    </div>
+  ) : null;
+
   return (
     <PageContextBar
       actions={actions}
       description="Inspect one canonical memory entry, its append-only revisions, audit events, and trusted operator workflow visibility controls."
       layout="toolbar"
+      status={status}
       title={detail?.summary || "Memory Detail"}
     />
   );
@@ -764,14 +857,22 @@ export function MemoryCreateDialog({
 
 export function RevisionDialog({
   detail,
+  onOpenChange,
   onRevise,
+  open,
   pending,
+  trigger,
 }: {
   detail: MemoryAdminEntryRead | undefined;
+  onOpenChange?: (open: boolean) => void;
   onRevise: (payload: AdminRevisionVariables) => Promise<void>;
+  open?: boolean;
   pending: boolean;
+  trigger?: ReactNode | null;
 }) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const dialogOpen = open ?? internalOpen;
+  const setDialogOpen = onOpenChange ?? setInternalOpen;
   const [draft, setDraft] = useState(createRevisionDraft);
   const selectedMemoryId = detail?.memoryId;
   const update = <TKey extends keyof ReturnType<typeof createRevisionDraft>>(
@@ -804,7 +905,7 @@ export function RevisionDialog({
         },
       });
       setDraft(createRevisionDraft());
-      setOpen(false);
+      setDialogOpen(false);
     } catch (error) {
       toast.error(
         mutationErrorMessage(error, "Memory revision could not be created."),
@@ -813,13 +914,17 @@ export function RevisionDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button disabled={!detail} size="sm" type="button" variant="outline">
-          <SquarePen data-icon="inline-start" />
-          Revise
-        </Button>
-      </DialogTrigger>
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {trigger !== null ? (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button disabled={!detail} size="sm" type="button" variant="outline">
+              <SquarePen data-icon="inline-start" />
+              Revise
+            </Button>
+          )}
+        </DialogTrigger>
+      ) : null}
       <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Revise selected memory</DialogTitle>
@@ -851,7 +956,7 @@ export function RevisionDialog({
               disabled={pending}
               type="button"
               variant="outline"
-              onClick={() => setOpen(false)}
+              onClick={() => setDialogOpen(false)}
             >
               Cancel
             </Button>
@@ -919,15 +1024,21 @@ function WorkflowVisibilityUpdateForm({
 
   return (
     <form
-      className="grid gap-3 border-t border-border pt-4"
+      className="flex min-w-0 flex-col gap-4 rounded-xl border bg-card p-4 shadow-sm"
       data-testid="memory-workflow-visibility-form"
       onSubmit={submit}
     >
-      <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
-        <ShieldCheck />
-        Workflow visibility
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight">
+          <ShieldCheck data-icon="inline-start" />
+          Workflow visibility editor
+        </div>
+        <p className="text-xs leading-5 text-muted-foreground">
+          Change whether this memory can be returned to future workflow runtime
+          lookup while keeping the operator audit trail visible here.
+        </p>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3">
         <SelectField
           label="New workflow visibility"
           onChange={(value) =>
@@ -958,11 +1069,9 @@ function WorkflowVisibilityUpdateForm({
         rows={3}
         value={draft.attributesJson}
       />
-      <div>
-        <Button disabled={pending} size="sm" type="submit">
-          Update workflow visibility
-        </Button>
-      </div>
+      <Button className="w-full" disabled={pending} size="sm" type="submit">
+        Update workflow visibility
+      </Button>
     </form>
   );
 }
@@ -980,59 +1089,117 @@ export function DetailInspection({
 }) {
   return (
     <div
-      className="flex min-w-0 flex-col gap-4"
+      className="grid min-w-0 gap-4 lg:grid-cols-3"
+      data-layout="admin-card-grid"
       data-testid="memory-detail-panel"
     >
-      <dl className="grid min-w-0 gap-x-6 gap-y-2 md:grid-cols-2">
-        <DetailField label="Memory" mono value={detail.memoryId} />
-        <DetailField
-          label="Workflow visibility"
-          value={
-            <ResourceStatusBadge
-              label={formatWorkflowVisibility(detail.visibleToWorkflow)}
-              tone={workflowVisibilityTone(detail.visibleToWorkflow)}
-            />
-          }
-        />
-        <DetailField label="Scope" value={formatScope(detail.scope)} />
-        <DetailField label="Kind" value={detail.kind} />
-        <DetailField label="Revision id" mono value={detail.revisionId} />
-        <DetailField label="Created" value={formatDateTime(detail.createdAt)} />
-        <DetailField
-          label="Updated"
-          value={formatDateTime(detail.updatedAt ?? detail.createdAt)}
-        />
-        <DetailField
-          label="Provenance"
-          value={formatProvenance(detail.provenance)}
-        />
-        <DetailField
-          label="Latest revision"
-          value={`v${detail.revision.version} · ${detail.revision.contentHash}`}
-        />
-      </dl>
-      <section
-        aria-label="Memory content"
-        className="min-w-0 border-t border-border pt-3 text-sm leading-6"
+      <div
+        className="flex min-w-0 flex-col gap-4 lg:col-span-2"
+        data-testid="memory-detail-primary-column"
       >
-        <p className="whitespace-pre-wrap break-words">{detail.content}</p>
-      </section>
-      <JsonBlock label="Attributes" value={detail.attributes} />
-      {detail.outcome ? (
-        <JsonBlock label="Outcome" value={detail.outcome} />
-      ) : null}
-      {detail.reflections.length > 0 ? (
-        <JsonBlock label="Reflections" value={detail.reflections} />
-      ) : null}
-      {detail.auditLinks ? (
-        <JsonBlock label="Audit links" value={detail.auditLinks} />
-      ) : null}
-      <WorkflowVisibilityUpdateForm
-        key={`${detail.memoryId}-${detail.visibleToWorkflow}`}
-        detail={detail}
-        onUpdateWorkflowVisibility={onUpdateWorkflowVisibility}
-        pending={workflowVisibilityPending}
-      />
+        <DetailCard
+          description="Opaque identifiers, scope, and current memory classification."
+          testId="memory-detail-identity-card"
+          title="Core memory identity"
+        >
+          <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <CopyableIdField
+              copyLabel="memory id"
+              label="Memory"
+              value={detail.memoryId}
+            />
+            <DetailField label="Scope" value={formatScope(detail.scope)} />
+            <DetailField label="Kind" value={detail.kind} />
+          </dl>
+        </DetailCard>
+        <DetailCard
+          description="The canonical body text stored on the latest memory revision."
+          testId="memory-detail-content-card"
+          title="Description and body"
+        >
+          <section aria-label="Memory content" className="min-w-0 text-sm leading-6">
+            <p className="whitespace-pre-wrap break-words">{detail.content}</p>
+          </section>
+        </DetailCard>
+        <DetailCard
+          description="Structured attributes and optional memory snapshots remain internally scrollable."
+          testId="memory-detail-attributes-card"
+          title="Attributes JSON"
+        >
+          <JsonBlock label="Attributes" value={detail.attributes} />
+          {detail.outcome ? (
+            <JsonBlock label="Outcome" value={detail.outcome} />
+          ) : null}
+          {detail.reflections.length > 0 ? (
+            <JsonBlock label="Reflections" value={detail.reflections} />
+          ) : null}
+          {detail.auditLinks ? (
+            <JsonBlock label="Audit links" value={detail.auditLinks} />
+          ) : null}
+        </DetailCard>
+      </div>
+      <aside
+        className="flex min-w-0 flex-col gap-4"
+        data-testid="memory-detail-secondary-column"
+      >
+        <DetailCard
+          description="Read-only runtime visibility state for this memory."
+          testId="memory-detail-visibility-card"
+          title="Workflow visibility"
+        >
+          <dl className="grid min-w-0 gap-3">
+            <DetailField
+              label="Workflow visibility"
+              value={
+                <ResourceStatusBadge
+                  label={formatWorkflowVisibility(detail.visibleToWorkflow)}
+                  tone={workflowVisibilityTone(detail.visibleToWorkflow)}
+                />
+              }
+            />
+          </dl>
+        </DetailCard>
+        <DetailCard
+          description="Read-only origin and timestamp metadata."
+          testId="memory-detail-metadata-card"
+          title="Provenance"
+        >
+          <dl className="grid min-w-0 gap-3">
+            <DetailField
+              label="Provenance"
+              value={formatProvenance(detail.provenance)}
+            />
+            <DetailField label="Created" value={formatDateTime(detail.createdAt)} />
+            <DetailField
+              label="Updated"
+              value={formatDateTime(detail.updatedAt ?? detail.createdAt)}
+            />
+          </dl>
+        </DetailCard>
+        <DetailCard
+          description="Latest immutable revision identity and content hash."
+          testId="memory-detail-revision-card"
+          title="Revision details"
+        >
+          <dl className="grid min-w-0 gap-3">
+            <CopyableIdField
+              copyLabel="revision id"
+              label="Revision id"
+              value={detail.revisionId}
+            />
+            <DetailField
+              label="Latest revision"
+              value={`v${detail.revision.version} · ${detail.revision.contentHash}`}
+            />
+          </dl>
+        </DetailCard>
+        <WorkflowVisibilityUpdateForm
+          key={`${detail.memoryId}-${detail.visibleToWorkflow}`}
+          detail={detail}
+          onUpdateWorkflowVisibility={onUpdateWorkflowVisibility}
+          pending={workflowVisibilityPending}
+        />
+      </aside>
     </div>
   );
 }

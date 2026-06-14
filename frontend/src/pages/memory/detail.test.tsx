@@ -9,6 +9,8 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { Layout } from "@/components/layout";
+import { ThemeProvider } from "@/components/theme-provider";
 import type {
   MemoryAdminEntryRead,
   MemoryAdminEventListRead,
@@ -38,6 +40,10 @@ vi.mock("sonner", () => ({
     error: vi.fn(),
     success: vi.fn(),
   },
+}));
+
+vi.mock("@/hooks/use-extensions", () => ({
+  useExtensions: () => ({ data: undefined }),
 }));
 
 vi.mock("@/hooks/use-memory", () => ({
@@ -167,8 +173,30 @@ function renderDetail(initialEntry = "/memory/mem-risk-1") {
   );
 }
 
+function renderDetailWithShell(initialEntry = "/memory/mem-risk-1") {
+  return render(
+    <ThemeProvider>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route
+              element={<div data-testid="memory-list-route">Memory route</div>}
+              path="/memory"
+            />
+            <Route element={<MemoryDetailPage />} path="/memory/:memoryId" />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </ThemeProvider>,
+  );
+}
+
 describe("MemoryDetailPage", () => {
   beforeEach(() => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1024,
+    });
     createAdminMemoryRevisionMock.mockReset();
     deleteAdminMemoryEntryMock.mockReset();
     updateAdminMemoryWorkflowVisibilityMock.mockReset();
@@ -211,27 +239,145 @@ describe("MemoryDetailPage", () => {
     expect(screen.getByTestId("memory-detail-panel")).toHaveTextContent(
       "Latest revision",
     );
-    expect(screen.getByRole("link", { name: "Memory Admin" })).toHaveAttribute(
-      "href",
-      "/memory",
-    );
+    expect(
+      screen.getByRole("link", { name: "Back to Memory Admin" }),
+    ).toHaveAttribute("href", "/memory");
   });
 
-  it("keeps routed identity metadata in the Detail tab instead of the header", () => {
+  it("keeps the route-shell breadcrumb out of the detail header card", () => {
+    renderDetailWithShell();
+
+    const shellHeader = screen.getByRole("banner");
+    const pageHeader = screen.getByTestId("workspace-page-shell-context");
+
+    expect(
+      within(shellHeader).getByRole("link", { name: "Memory Admin" }),
+    ).toHaveAttribute("href", "/memory");
+    expect(within(shellHeader).getByText("Memory Detail")).toBeVisible();
+    expect(
+      within(pageHeader).queryByRole("navigation", { name: "Breadcrumb" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(pageHeader).queryByRole("link", { name: "Memory Admin" }),
+    ).not.toBeInTheDocument();
+    expect(pageHeader).not.toHaveTextContent("Memory Detail");
+  });
+
+  it("renders the redesigned admin header and two-column Detail tab", () => {
     renderDetail();
 
     const header = screen.getByTestId("workspace-page-shell-context");
     const detailPanel = screen.getByTestId("memory-detail-panel");
 
+    expect(
+      within(header).queryByRole("navigation", { name: "Breadcrumb" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(header).queryByRole("link", { name: "Memory Admin" }),
+    ).not.toBeInTheDocument();
+    expect(header).not.toHaveTextContent("Memory Detail");
+    expect(header).toHaveTextContent("Workflow visible");
+    expect(header).toHaveTextContent("insight");
     expect(header).not.toHaveTextContent("mem-risk-1");
-    expect(header).not.toHaveTextContent("Workflow visibility");
-    expect(header).not.toHaveTextContent("Package pkg_alpha");
-    expect(detailPanel).toHaveTextContent("Memory");
-    expect(detailPanel).toHaveTextContent("mem-risk-1");
-    expect(detailPanel).toHaveTextContent("Workflow visibility");
-    expect(detailPanel).toHaveTextContent("Workflow visible");
-    expect(detailPanel).toHaveTextContent("Scope");
-    expect(detailPanel).toHaveTextContent("Package pkg_alpha");
+    expect(
+      screen.getByRole("link", { name: "Back to Memory Admin" }),
+    ).toHaveAttribute("href", "/memory");
+    expect(screen.getByRole("button", { name: "Revise" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Delete memory" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "More actions" }),
+    ).not.toBeInTheDocument();
+
+    expect(detailPanel).toHaveAttribute("data-layout", "admin-card-grid");
+    expect(screen.getByTestId("memory-detail-primary-column")).toHaveTextContent(
+      "Core memory identity",
+    );
+    expect(
+      screen.getByTestId("memory-detail-secondary-column"),
+    ).toHaveTextContent("Workflow visibility editor");
+    expect(screen.getByTestId("memory-detail-identity-card")).toHaveTextContent(
+      "mem-risk-1",
+    );
+    expect(screen.getByTestId("memory-detail-content-card")).toHaveTextContent(
+      "Risk memo content with operator visibility.",
+    );
+    expect(screen.getByTestId("memory-detail-attributes-card")).toHaveTextContent(
+      "confidence",
+    );
+    expect(screen.getByTestId("memory-detail-metadata-card")).toHaveTextContent(
+      "Provenance",
+    );
+    expect(screen.getByTestId("memory-detail-revision-card")).toHaveTextContent(
+      "rev-risk-1",
+    );
+    expect(
+      screen.getByTestId("memory-workflow-visibility-form"),
+    ).toHaveTextContent("Update workflow visibility");
+  });
+
+  it("moves header actions into an accessible mobile overflow menu", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 390,
+    });
+    renderDetail();
+
+    const header = screen.getByTestId("workspace-page-shell-context");
+    const moreActions = await within(header).findByRole("button", {
+      name: "More actions",
+    });
+
+    expect(moreActions).toBeVisible();
+    expect(
+      within(header).queryByRole("link", { name: "Back to Memory Admin" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(header).queryByRole("button", { name: "Revise" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(header).queryByRole("button", { name: "Delete memory" }),
+    ).not.toBeInTheDocument();
+
+    moreActions.focus();
+    fireEvent.keyDown(moreActions, { key: "ArrowDown" });
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu).getByRole("menuitem", { name: "Back to Memory Admin" }),
+    ).toHaveAttribute("href", "/memory");
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Revise" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      "Revise selected memory",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    moreActions.focus();
+    fireEvent.keyDown(moreActions, { key: "ArrowDown" });
+    fireEvent.click(
+      within(await screen.findByRole("menu")).getByRole("menuitem", {
+        name: "Delete memory",
+      }),
+    );
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent(
+      "Delete memory",
+    );
+  });
+
+  it("copies long memory and revision ids with accessible controls", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    renderDetail();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy memory id" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("mem-risk-1"));
+    expect(toast.success).toHaveBeenCalledWith("Copied memory id");
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy revision id" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("rev-risk-1"));
+    expect(toast.success).toHaveBeenCalledWith("Copied revision id");
   });
 
   it("omits runtime workflow lookup explainer copy from detail actions", () => {

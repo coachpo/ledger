@@ -1,4 +1,5 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MoreHorizontal, SquarePen, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
@@ -11,7 +12,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useIsMobile } from "@/components/ui/use-mobile";
 import {
   useAdminMemoryEntry,
   useAdminMemoryEvents,
@@ -95,6 +105,9 @@ export function MemoryDetailPage() {
   const revisionMutation = useCreateAdminMemoryRevision();
   const workflowVisibilityMutation = useUpdateAdminMemoryWorkflowVisibility();
   const deleteMutation = useDeleteAdminMemoryEntry();
+  const isMobile = useIsMobile();
+  const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const reviseMemory = async (variables: AdminRevisionVariables) => {
     await revisionMutation.mutateAsync(variables);
@@ -124,24 +137,85 @@ export function MemoryDetailPage() {
   }
 
   const detail = detailQuery.data;
-  const actions = (
-    <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
-      <Button asChild size="sm" variant="ghost">
-        <Link to="/memory">
-          <ArrowLeft data-icon="inline-start" />
-          Memory Admin
-        </Link>
-      </Button>
+  const actions = isMobile ? (
+    <div className="flex min-w-0 items-center justify-end">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            aria-label="More actions"
+            size="icon"
+            type="button"
+            variant="outline"
+          >
+            <MoreHorizontal />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuGroup>
+            <DropdownMenuItem asChild>
+              <Link to="/memory">
+                <ArrowLeft data-icon="inline-start" />
+                Back to Memory Admin
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!detail || revisionMutation.isPending}
+              onSelect={() => setRevisionDialogOpen(true)}
+            >
+              <SquarePen data-icon="inline-start" />
+              Revise
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={!detail || deleteMutation.isPending}
+            variant="destructive"
+            onSelect={() => setDeleteDialogOpen(true)}
+          >
+            <Trash2 data-icon="inline-start" />
+            Delete memory
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <RevisionDialog
         detail={detail}
+        onOpenChange={setRevisionDialogOpen}
         onRevise={reviseMemory}
+        open={revisionDialogOpen}
         pending={revisionMutation.isPending}
+        trigger={null}
       />
       <MemoryDeleteDialog
         disabled={!detail}
         isPending={deleteMutation.isPending}
         onDelete={deleteMemory}
+        onOpenChange={setDeleteDialogOpen}
+        open={deleteDialogOpen}
+        trigger={null}
       />
+    </div>
+  ) : (
+    <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <Button asChild size="sm" variant="ghost">
+          <Link to="/memory">
+            <ArrowLeft data-icon="inline-start" />
+            Back to Memory Admin
+          </Link>
+        </Button>
+        <RevisionDialog
+          detail={detail}
+          onRevise={reviseMemory}
+          pending={revisionMutation.isPending}
+        />
+      </div>
+      <div className="rounded-md border border-destructive/20 bg-destructive/5 p-1">
+        <MemoryDeleteDialog
+          disabled={!detail}
+          isPending={deleteMutation.isPending}
+          onDelete={deleteMemory}
+        />
+      </div>
     </div>
   );
 
@@ -166,13 +240,13 @@ export function MemoryDetailPage() {
     <WorkspacePageShell
       bodyAriaLabel="Memory admin detail workspace"
       bodyClassName="gap-4"
-      className="min-h-full"
-      contextBar={
-        <MemoryDetailContext actions={actions} detail={detail} />
-      }
+      className="min-h-full bg-muted/30"
+      contentClassName="bg-muted/30"
+      contextBar={<MemoryDetailContext actions={actions} detail={detail} />}
+      contextBarClassName="bg-card/95"
       testId="memory-detail-page"
     >
-      <Tabs className="min-w-0" defaultValue="detail">
+      <Tabs className="flex min-w-0 flex-col gap-3" defaultValue="detail">
         <TabsList className="h-8" data-testid="memory-detail-tabs">
           <TabsTrigger className="text-xs" value="detail">
             Detail
