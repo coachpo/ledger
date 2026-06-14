@@ -28,7 +28,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Extension-owned tool specs keep their implementations in `app/extensions/<extension>/runtime_*` and register through private extension registrars.
 - `RuntimeToolRegistry` is the only place that converts granted tool keys into model declarations and dispatch descriptors.
 - Parsers should reject malformed JSON/unsupported fields with `RuntimeToolError` before provider dispatch.
-- Runtime outputs shown to models must stay narrow; memory write output may expose memory/revision ids, status, provenance, and warnings only.
+- Runtime outputs shown to models must stay narrow; memory lookup output omits workflow visibility, while memory write output may expose memory/revision ids, `visibleToWorkflow`, provenance, and warnings only.
 
 ## ANTI-PATTERNS
 - Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.

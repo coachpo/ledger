@@ -49,7 +49,7 @@ app/agents/
 - `ToolCatalog` and `RuntimeToolRegistry` must be built through extension-aware service wiring; do not construct alternate request-local registries that bypass enabled-extension filtering.
 - Server-declared finance tool keys currently cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, and report lookup. Server-declared Digital Oracle tool keys cover `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup` with unchanged OpenAI function names. Core memory tools are platform-owned.
 - `signaldeck.reports.lookup` remains a finance-owned report lookup anchor. The retired report-backed memory write surface is not a live runtime tool; do not route new core memory behavior through finance registrars.
-- Model-visible tool outputs must not expose report ids, slugs, names, raw markdown, URLs, downloads, or audit links. Runtime memory write output may expose `memoryId`, `revisionId`, status, revision action, provenance, and warnings.
+- Model-visible tool outputs must not expose report ids, slugs, names, raw markdown, URLs, downloads, or audit links. Runtime memory lookup output omits workflow visibility; runtime memory write output may expose `memoryId`, `revisionId`, `visibleToWorkflow`, revision action, provenance, and warnings.
 - Runtime tools and prompt builders treat `memoryId` values as opaque platform-core memory identifiers.
 - MCP boundary code owns URL/stdio safety, saved config normalization, snapshots, and dispatch wrapping; keep that safety logic here instead of scattering it through routes or services.
 - Do not recreate a `skills/` namespace here; package-private skills are not a live backend app/agents contract.
