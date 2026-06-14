@@ -5,8 +5,7 @@ import type {
   MemoryAdminListItemRead,
   MemoryAdminListParams,
   MemoryAdminRevisionCreateRequest,
-  MemoryAdminStatusUpdateRequest,
-  MemoryLifecycleStatus,
+  MemoryAdminWorkflowVisibilityUpdateRequest,
   MemoryProvenance,
   MemoryRevisionAction,
   MemoryScope,
@@ -16,12 +15,9 @@ import type {
 
 export const DEFAULT_OPERATOR_AGENT_KEY = "local-instance-operator";
 export const ALL_SCOPES_FILTER = "__all_scopes__";
-export const ALL_STATUSES_FILTER = "__all_statuses__";
-export const STATUS_VALUES: readonly MemoryLifecycleStatus[] = [
-  "pending",
-  "approved",
-  "archived",
-];
+export const ALL_WORKFLOW_VISIBILITY_FILTER = "__all_workflow_visibility__";
+export const WORKFLOW_VISIBLE_FILTER = "true";
+export const WORKFLOW_HIDDEN_FILTER = "false";
 export const SCOPE_TYPE_VALUES: readonly MemoryScopeType[] = [
   "package",
   "workflow",
@@ -30,7 +26,7 @@ export const SCOPE_TYPE_VALUES: readonly MemoryScopeType[] = [
   "namespace",
 ];
 export const RUNTIME_IMPACT_COPY =
-  "Approved memory in a matching scope may appear in future workflow lookup; pending or archived memory remains visible here for operators but is excluded from default runtime lookup.";
+  "Workflow-visible memory in a matching scope may appear in future workflow lookup; workflow-hidden memory remains visible here for operators but is excluded from runtime lookup.";
 
 export type JsonObject = Record<string, unknown>;
 export type MemoryDetailTab = "detail" | "revisions" | "events";
@@ -44,11 +40,11 @@ export type CreateDraft = {
   runId: string;
   scopeKey: string;
   scopeType: MemoryScopeType;
-  status: MemoryLifecycleStatus;
   subjectId: string;
   subjectKind: string;
   subjectLabel: string;
   summary: string;
+  visibleToWorkflow: boolean;
   workflowKey: string;
 };
 
@@ -58,10 +54,10 @@ export type RevisionDraft = {
   summary: string;
 };
 
-export type StatusDraft = {
+export type WorkflowVisibilityDraft = {
   attributesJson: string;
-  status: MemoryLifecycleStatus;
   summary: string;
+  visibleToWorkflow: boolean;
 };
 
 export type AdminRevisionVariables = {
@@ -69,9 +65,9 @@ export type AdminRevisionVariables = {
   payload: MemoryAdminRevisionCreateRequest;
 };
 
-export type AdminStatusVariables = {
+export type AdminWorkflowVisibilityVariables = {
   memoryId: string;
-  payload: MemoryAdminStatusUpdateRequest;
+  payload: MemoryAdminWorkflowVisibilityUpdateRequest;
 };
 
 export type AdminListFilterState = {
@@ -81,8 +77,8 @@ export type AdminListFilterState = {
   query: string;
   runId: string;
   scopeType: string;
-  status: string;
   workflowKey: string;
+  workflowVisibility: string;
 };
 
 export function optionalText(value: string): string | undefined {
@@ -135,14 +131,12 @@ export function titleCase(value: string): string {
     .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
-export function statusTone(status: MemoryLifecycleStatus) {
-  if (status === "approved") {
-    return "success" as const;
-  }
-  if (status === "pending") {
-    return "warning" as const;
-  }
-  return "muted" as const;
+export function workflowVisibilityTone(visibleToWorkflow: boolean) {
+  return visibleToWorkflow ? ("success" as const) : ("muted" as const);
+}
+
+export function formatWorkflowVisibility(visibleToWorkflow: boolean): string {
+  return visibleToWorkflow ? "Workflow visible" : "Workflow hidden";
 }
 
 export function revisionTone(action: MemoryRevisionAction) {
@@ -229,8 +223,12 @@ export function buildAdminListParams(
   if (filters.scopeType !== ALL_SCOPES_FILTER)
     params.scopeType = filters.scopeType as MemoryScopeType;
   if (normalizedKind) params.kind = normalizedKind;
-  if (filters.status !== ALL_STATUSES_FILTER)
-    params.status = filters.status as MemoryLifecycleStatus;
+  if (filters.workflowVisibility === WORKFLOW_VISIBLE_FILTER) {
+    params.visibleToWorkflow = true;
+  }
+  if (filters.workflowVisibility === WORKFLOW_HIDDEN_FILTER) {
+    params.visibleToWorkflow = false;
+  }
   if (normalizedQuery) params.query = normalizedQuery;
 
   return params;
@@ -246,11 +244,11 @@ export function createInitialDraft(): CreateDraft {
     runId: "",
     scopeKey: "",
     scopeType: "package",
-    status: "approved",
     subjectId: "",
     subjectKind: "",
     subjectLabel: "",
     summary: "",
+    visibleToWorkflow: true,
     workflowKey: "",
   };
 }
@@ -259,10 +257,10 @@ export function createRevisionDraft(): RevisionDraft {
   return { attributesJson: "{}", content: "", summary: "" };
 }
 
-export function createStatusDraft(
-  status: MemoryLifecycleStatus = "approved",
-): StatusDraft {
-  return { attributesJson: "{}", status, summary: "" };
+export function createWorkflowVisibilityDraft(
+  visibleToWorkflow = true,
+): WorkflowVisibilityDraft {
+  return { attributesJson: "{}", summary: "", visibleToWorkflow };
 }
 
 export function createMemoryPayloadFromDraft(
@@ -286,8 +284,8 @@ export function createMemoryPayloadFromDraft(
       workflowKey: optionalText(draft.workflowKey),
     }),
     scope: { scopeKey, scopeType: draft.scopeType },
-    status: draft.status,
     subjectRefs: buildSubjectRefs(draft),
     summary: draft.summary,
+    visibleToWorkflow: draft.visibleToWorkflow,
   };
 }

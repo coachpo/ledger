@@ -1,5 +1,5 @@
 import { ArrowLeft } from "lucide-react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
@@ -17,12 +17,14 @@ import {
   useAdminMemoryEvents,
   useAdminMemoryRevisions,
   useCreateAdminMemoryRevision,
-  useUpdateAdminMemoryStatus,
+  useDeleteAdminMemoryEntry,
+  useUpdateAdminMemoryWorkflowVisibility,
 } from "@/hooks/use-memory";
 
 import {
   DetailInspection,
   EventsInspection,
+  MemoryDeleteDialog,
   MemoryDetailContext,
   MemoryLoadState,
   QueryStateCard,
@@ -31,7 +33,7 @@ import {
 } from "./admin-components";
 import type {
   AdminRevisionVariables,
-  AdminStatusVariables,
+  AdminWorkflowVisibilityVariables,
 } from "./admin-helpers";
 
 function DetailPageMessage({
@@ -75,6 +77,7 @@ function DetailPageMessage({
 }
 
 export function MemoryDetailPage() {
+  const navigate = useNavigate();
   const { memoryId } = useParams<{ memoryId: string }>();
   const resolvedMemoryId = memoryId ?? "";
   const canReadMemory = Boolean(resolvedMemoryId);
@@ -92,15 +95,24 @@ export function MemoryDetailPage() {
     { enabled: canReadMemory },
   );
   const revisionMutation = useCreateAdminMemoryRevision();
-  const statusMutation = useUpdateAdminMemoryStatus();
+  const workflowVisibilityMutation = useUpdateAdminMemoryWorkflowVisibility();
+  const deleteMutation = useDeleteAdminMemoryEntry();
 
   const reviseMemory = async (variables: AdminRevisionVariables) => {
     await revisionMutation.mutateAsync(variables);
     toast.success("Memory revision created");
   };
 
-  const updateStatus = async (variables: AdminStatusVariables) => {
-    await statusMutation.mutateAsync(variables);
+  const updateWorkflowVisibility = async (
+    variables: AdminWorkflowVisibilityVariables,
+  ) => {
+    await workflowVisibilityMutation.mutateAsync(variables);
+  };
+
+  const deleteMemory = async () => {
+    await deleteMutation.mutateAsync(resolvedMemoryId);
+    toast.success("Memory deleted");
+    navigate("/memory", { replace: true });
   };
 
   if (!resolvedMemoryId) {
@@ -127,6 +139,11 @@ export function MemoryDetailPage() {
         detail={detail}
         onRevise={reviseMemory}
         pending={revisionMutation.isPending}
+      />
+      <MemoryDeleteDialog
+        disabled={!detail}
+        isPending={deleteMutation.isPending}
+        onDelete={deleteMemory}
       />
     </div>
   );
@@ -181,8 +198,8 @@ export function MemoryDetailPage() {
           ) : detail ? (
             <DetailInspection
               detail={detail}
-              onUpdateStatus={updateStatus}
-              statusPending={statusMutation.isPending}
+              onUpdateWorkflowVisibility={updateWorkflowVisibility}
+              workflowVisibilityPending={workflowVisibilityMutation.isPending}
             />
           ) : (
             <MemoryLoadState error={detailError} />

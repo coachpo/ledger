@@ -17,12 +17,15 @@ import type {
 
 import { MemoryListPage } from "./list";
 
-const { createAdminMemoryEntryMock, useAdminMemoryEntriesMock } = vi.hoisted(
-  () => ({
-    createAdminMemoryEntryMock: vi.fn(),
-    useAdminMemoryEntriesMock: vi.fn(),
-  }),
-);
+const {
+  createAdminMemoryEntryMock,
+  deleteAdminMemoryEntryMock,
+  useAdminMemoryEntriesMock,
+} = vi.hoisted(() => ({
+  createAdminMemoryEntryMock: vi.fn(),
+  deleteAdminMemoryEntryMock: vi.fn(),
+  useAdminMemoryEntriesMock: vi.fn(),
+}));
 
 vi.mock("sonner", () => ({
   toast: {
@@ -37,6 +40,10 @@ vi.mock("@/hooks/use-memory", () => ({
   useCreateAdminMemoryEntry: () => ({
     isPending: false,
     mutateAsync: createAdminMemoryEntryMock,
+  }),
+  useDeleteAdminMemoryEntry: () => ({
+    isPending: false,
+    mutateAsync: deleteAdminMemoryEntryMock,
   }),
 }));
 
@@ -58,9 +65,9 @@ function adminListItem(
     },
     revisionId: "rev-risk-1",
     scope: { scopeKey: "pkg_alpha", scopeType: "package" },
-    status: "approved",
     subjectRefs: [{ id: "AAPL", kind: "symbol", label: "Apple" }],
     summary: "Risk review memory",
+    visibleToWorkflow: true,
     updatedAt: "2026-05-20T10:05:00Z",
     ...overrides,
   };
@@ -74,8 +81,7 @@ const detailFixture: MemoryAdminEntryRead = {
   outcome: {
     attributes: { source: "operator" },
     observedAt: "2026-05-20T10:05:00Z",
-    status: "approved",
-    summary: "Approved operator memory",
+    summary: "Workflow-visible operator memory",
   },
   reflections: [],
   revision: {
@@ -114,6 +120,13 @@ function LocationProbe() {
   );
 }
 
+async function chooseSelectOption(label: string, optionName: string | RegExp) {
+  const selector = screen.getByRole("combobox", { name: label });
+  selector.focus();
+  fireEvent.keyDown(selector, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: optionName }));
+}
+
 function renderPage(initialEntry = "/memory") {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -126,11 +139,13 @@ function renderPage(initialEntry = "/memory") {
 describe("MemoryListPage", () => {
   beforeEach(() => {
     createAdminMemoryEntryMock.mockReset();
+    deleteAdminMemoryEntryMock.mockReset();
     useAdminMemoryEntriesMock.mockReset();
     vi.mocked(toast.error).mockClear();
     vi.mocked(toast.success).mockClear();
     useAdminMemoryEntriesMock.mockReturnValue(idleQuery(listResponse([])));
     createAdminMemoryEntryMock.mockResolvedValue(detailFixture);
+    deleteAdminMemoryEntryMock.mockResolvedValue(undefined);
   });
 
   it("requests the admin list immediately with default params and no old gates", () => {
@@ -173,7 +188,12 @@ describe("MemoryListPage", () => {
       ),
     ).not.toBeInTheDocument();
     expect(screen.queryByTestId("memory-write-card")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("memory-runtime-impact-copy")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("memory-runtime-impact-copy"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("pending")).not.toBeInTheDocument();
+    expect(screen.queryByText("approved")).not.toBeInTheDocument();
+    expect(screen.queryByText("archived")).not.toBeInTheDocument();
     expect(
       within(screen.getByTestId("memory-admin-filter-controls")).getByText(
         "Search canonical memory",
@@ -221,7 +241,7 @@ describe("MemoryListPage", () => {
     );
   });
 
-  it("renders rows from different packages, scopes, and statuses with detail links", () => {
+  it("renders rows from different packages, scopes, and workflow visibility states with detail links", () => {
     useAdminMemoryEntriesMock.mockReturnValue(
       idleQuery(
         listResponse([
@@ -230,15 +250,15 @@ describe("MemoryListPage", () => {
             excerpt: "Beta workflow finding",
             memoryId: "mem-beta-2",
             scope: { scopeKey: "beta-agent", scopeType: "agent" },
-            status: "pending",
             summary: "Beta package memory",
+            visibleToWorkflow: false,
           }),
           adminListItem({
-            excerpt: "Archived gamma workflow finding",
+            excerpt: "Hidden gamma workflow finding",
             memoryId: "mem-gamma-3",
             scope: { scopeKey: "gamma-workflow", scopeType: "workflow" },
-            status: "archived",
-            summary: "Gamma archived memory",
+            summary: "Gamma hidden memory",
+            visibleToWorkflow: false,
           }),
         ]),
       ),
@@ -254,18 +274,23 @@ describe("MemoryListPage", () => {
     expect(screen.getByTestId("memory-row-mem-risk-1")).toHaveTextContent(
       "Package pkg_alpha",
     );
+    expect(screen.getByTestId("memory-row-mem-risk-1")).toHaveTextContent(
+      "Workflow visible",
+    );
     expect(screen.getByTestId("memory-row-mem-beta-2")).toHaveTextContent(
       "Agent beta-agent",
     );
     expect(screen.getByTestId("memory-row-mem-beta-2")).toHaveTextContent(
-      "pending",
+      "Workflow hidden",
     );
     expect(screen.getByTestId("memory-row-mem-gamma-3")).toHaveTextContent(
       "Workflow gamma-workflow",
     );
     expect(screen.getByTestId("memory-row-mem-gamma-3")).toHaveTextContent(
-      "archived",
+      "Workflow hidden",
     );
+    expect(screen.queryByText("pending")).not.toBeInTheDocument();
+    expect(screen.queryByText("archived")).not.toBeInTheDocument();
     expect(
       within(screen.getByTestId("memory-row-mem-risk-1")).getByRole("link", {
         name: "Open detail",
@@ -278,9 +303,65 @@ describe("MemoryListPage", () => {
     ).toHaveAttribute("href", "/memory/mem-risk-1");
   });
 
+  it("confirms single-entry list deletion without resetting current filters", async () => {
+    useAdminMemoryEntriesMock.mockReturnValue(
+      idleQuery(listResponse([adminListItem()])),
+    );
+    renderPage("/memory?packageKey=pkg_alpha&query=drawdown");
+
+    const row = screen.getByTestId("memory-row-mem-risk-1");
+    expect(
+      within(row).getByRole("button", { name: "Delete memory" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete selected/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("memory-bulk-delete"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Delete memory" }),
+    );
+    const cancelDialog = screen.getByRole("alertdialog");
+    expect(cancelDialog).toHaveTextContent("Delete memory");
+    expect(cancelDialog).toHaveTextContent(
+      "This permanently removes this memory entry and its revisions. Existing run evidence keeps snapshot memory ids, but the memory entry will no longer appear in admin search or runtime lookup.",
+    );
+    fireEvent.click(
+      within(cancelDialog).getByRole("button", { name: "Cancel" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(deleteAdminMemoryEntryMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("location-probe")).toHaveTextContent(
+      "/memory?packageKey=pkg_alpha&query=drawdown",
+    );
+
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Delete memory" }),
+    );
+    const confirmDialog = screen.getByRole("alertdialog");
+    fireEvent.click(
+      within(confirmDialog).getByRole("button", { name: "Delete memory" }),
+    );
+
+    await waitFor(() =>
+      expect(deleteAdminMemoryEntryMock).toHaveBeenCalledWith("mem-risk-1"),
+    );
+    expect(deleteAdminMemoryEntryMock).toHaveBeenCalledTimes(1);
+    expect(toast.success).toHaveBeenCalledWith("Memory deleted");
+    expect(screen.getByTestId("location-probe")).toHaveTextContent(
+      "/memory?packageKey=pkg_alpha&query=drawdown",
+    );
+  });
+
   it("applies URL filters as optional admin params and reset restores the full corpus", async () => {
     renderPage(
-      "/memory?packageKey=pkg_alpha&workflowKey=risk-review&agentKey=analyst&runId=41&scopeType=agent&kind=insight&status=approved&query=drawdown",
+      "/memory?packageKey=pkg_alpha&workflowKey=risk-review&agentKey=analyst&runId=41&scopeType=agent&kind=insight&visibleToWorkflow=true&query=drawdown",
     );
 
     expect(useAdminMemoryEntriesMock).toHaveBeenLastCalledWith(
@@ -291,7 +372,7 @@ describe("MemoryListPage", () => {
         query: "drawdown",
         runId: 41,
         scopeType: "agent",
-        status: "approved",
+        visibleToWorkflow: true,
         workflowKey: "risk-review",
       },
       { enabled: true },
@@ -306,6 +387,34 @@ describe("MemoryListPage", () => {
       ),
     );
     expect(screen.getByTestId("location-probe")).toHaveTextContent("/memory");
+  });
+
+  it("maps workflow visibility filter labels to boolean admin params", async () => {
+    renderPage();
+
+    await chooseSelectOption("Workflow visibility", "Workflow visible");
+    await waitFor(() =>
+      expect(useAdminMemoryEntriesMock).toHaveBeenLastCalledWith(
+        { visibleToWorkflow: true },
+        { enabled: true },
+      ),
+    );
+
+    await chooseSelectOption("Workflow visibility", "Workflow hidden");
+    await waitFor(() =>
+      expect(useAdminMemoryEntriesMock).toHaveBeenLastCalledWith(
+        { visibleToWorkflow: false },
+        { enabled: true },
+      ),
+    );
+
+    await chooseSelectOption("Workflow visibility", "All");
+    await waitFor(() =>
+      expect(useAdminMemoryEntriesMock).toHaveBeenLastCalledWith(
+        {},
+        { enabled: true },
+      ),
+    );
   });
 
   it("narrows the corpus when filter fields change", async () => {
@@ -350,13 +459,21 @@ describe("MemoryListPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Create memory" }));
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).queryByText("Create operator memory")).not.toBeInTheDocument();
-    expect(within(dialog).queryByTestId("memory-runtime-impact-copy")).not.toBeInTheDocument();
     expect(
-      within(dialog).queryByText("Approved memory in a matching scope", {
-        exact: false,
-      }),
+      within(dialog).queryByText("Create operator memory"),
     ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByTestId("memory-runtime-impact-copy"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByText(
+        "Workflow-visible memory in a matching scope",
+        {
+          exact: false,
+        },
+      ),
+    ).not.toBeInTheDocument();
+    expect(within(dialog).getAllByText("Workflow visible")[0]).toBeVisible();
     fireEvent.change(within(dialog).getByLabelText("Summary"), {
       target: { value: "Operator note" },
     });
@@ -386,8 +503,8 @@ describe("MemoryListPage", () => {
             runId: 41,
           }),
           scope: { scopeKey: "pkg_alpha", scopeType: "package" },
-          status: "approved",
           summary: "Operator note",
+          visibleToWorkflow: true,
         }),
       ),
     );
@@ -402,7 +519,9 @@ describe("MemoryListPage", () => {
   });
 
   it("surfaces create mutation failures without navigating", async () => {
-    createAdminMemoryEntryMock.mockRejectedValueOnce(new Error("create failed"));
+    createAdminMemoryEntryMock.mockRejectedValueOnce(
+      new Error("create failed"),
+    );
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: "Create memory" }));
@@ -426,12 +545,14 @@ describe("MemoryListPage", () => {
       within(dialog).getByRole("button", { name: "Create memory" }),
     );
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("create failed"));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("create failed"),
+    );
     expect(screen.getByTestId("location-probe")).toHaveTextContent("/memory");
     expect(screen.getByRole("dialog")).toBeVisible();
   });
 
-  it("does not render removed inline inspector behavior or removal controls", () => {
+  it("does not render removed inline inspector behavior or bulk controls", () => {
     renderPage();
 
     const page = screen.getByTestId("memory-list-page");
@@ -450,11 +571,12 @@ describe("MemoryListPage", () => {
     expect(
       screen.queryByTestId("memory-sheet-inspector"),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /delete/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /bulk/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete selected/i }),
     ).not.toBeInTheDocument();
   });
 });

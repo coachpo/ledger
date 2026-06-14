@@ -6,6 +6,7 @@ import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import {
   useAdminMemoryEntries,
   useCreateAdminMemoryEntry,
+  useDeleteAdminMemoryEntry,
 } from "@/hooks/use-memory";
 import type { MemoryAdminCreateRequest } from "@/lib/types/memory";
 
@@ -17,7 +18,7 @@ import {
 } from "./admin-components";
 import {
   ALL_SCOPES_FILTER,
-  ALL_STATUSES_FILTER,
+  ALL_WORKFLOW_VISIBILITY_FILTER,
   buildAdminListParams,
 } from "./admin-helpers";
 
@@ -29,7 +30,7 @@ const FILTER_PARAM_KEYS = [
   "scopeType",
   "query",
   "kind",
-  "status",
+  "visibleToWorkflow",
 ] as const;
 
 export function MemoryListPage() {
@@ -48,8 +49,8 @@ export function MemoryListPage() {
   );
   const [query, setQuery] = useState(searchParams.get("query") ?? "");
   const [kind, setKind] = useState(searchParams.get("kind") ?? "");
-  const [status, setStatus] = useState(
-    searchParams.get("status") ?? ALL_STATUSES_FILTER,
+  const [workflowVisibility, setWorkflowVisibility] = useState(
+    searchParams.get("visibleToWorkflow") ?? ALL_WORKFLOW_VISIBILITY_FILTER,
   );
 
   const listParams = useMemo(
@@ -61,14 +62,24 @@ export function MemoryListPage() {
         query,
         runId,
         scopeType,
-        status,
         workflowKey,
+        workflowVisibility,
       }),
-    [agentKey, kind, packageKey, query, runId, scopeType, status, workflowKey],
+    [
+      agentKey,
+      kind,
+      packageKey,
+      query,
+      runId,
+      scopeType,
+      workflowKey,
+      workflowVisibility,
+    ],
   );
 
   const listQuery = useAdminMemoryEntries(listParams, { enabled: true });
   const createMutation = useCreateAdminMemoryEntry();
+  const deleteMutation = useDeleteAdminMemoryEntry();
 
   const resetFilters = () => {
     setPackageKey("");
@@ -78,7 +89,7 @@ export function MemoryListPage() {
     setScopeType(ALL_SCOPES_FILTER);
     setQuery("");
     setKind("");
-    setStatus(ALL_STATUSES_FILTER);
+    setWorkflowVisibility(ALL_WORKFLOW_VISIBILITY_FILTER);
     const next = new URLSearchParams(searchParams);
     FILTER_PARAM_KEYS.forEach((key) => next.delete(key));
     setSearchParams(next);
@@ -88,6 +99,11 @@ export function MemoryListPage() {
     const created = await createMutation.mutateAsync(payload);
     toast.success("Memory created");
     navigate(`/memory/${created.memoryId}`);
+  };
+
+  const deleteMemory = async (memoryId: string) => {
+    await deleteMutation.mutateAsync(memoryId);
+    toast.success("Memory deleted");
   };
 
   const items = listQuery.data?.items ?? [];
@@ -125,17 +141,19 @@ export function MemoryListPage() {
         setQuery={setQuery}
         setRunId={setRunId}
         setScopeType={setScopeType}
-        setStatus={setStatus}
         setWorkflowKey={setWorkflowKey}
-        status={status}
+        setWorkflowVisibility={setWorkflowVisibility}
         workflowKey={workflowKey}
+        workflowVisibility={workflowVisibility}
       />
       <MemoryListPane
+        deletePending={deleteMutation.isPending}
         hasActiveFilters={hasActiveFilters}
         isError={listQuery.isError}
         isPending={listQuery.isPending}
         items={items}
         listError={listQuery.error}
+        onDeleteMemory={deleteMemory}
         total={total}
       />
     </WorkspacePageShell>

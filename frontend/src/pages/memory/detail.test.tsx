@@ -19,13 +19,15 @@ import { MemoryDetailPage } from "./detail";
 
 const {
   createAdminMemoryRevisionMock,
-  updateAdminMemoryStatusMock,
+  deleteAdminMemoryEntryMock,
+  updateAdminMemoryWorkflowVisibilityMock,
   useAdminMemoryEntryMock,
   useAdminMemoryEventsMock,
   useAdminMemoryRevisionsMock,
 } = vi.hoisted(() => ({
   createAdminMemoryRevisionMock: vi.fn(),
-  updateAdminMemoryStatusMock: vi.fn(),
+  deleteAdminMemoryEntryMock: vi.fn(),
+  updateAdminMemoryWorkflowVisibilityMock: vi.fn(),
   useAdminMemoryEntryMock: vi.fn(),
   useAdminMemoryEventsMock: vi.fn(),
   useAdminMemoryRevisionsMock: vi.fn(),
@@ -48,9 +50,13 @@ vi.mock("@/hooks/use-memory", () => ({
     isPending: false,
     mutateAsync: createAdminMemoryRevisionMock,
   }),
-  useUpdateAdminMemoryStatus: () => ({
+  useDeleteAdminMemoryEntry: () => ({
     isPending: false,
-    mutateAsync: updateAdminMemoryStatusMock,
+    mutateAsync: deleteAdminMemoryEntryMock,
+  }),
+  useUpdateAdminMemoryWorkflowVisibility: () => ({
+    isPending: false,
+    mutateAsync: updateAdminMemoryWorkflowVisibilityMock,
   }),
 }));
 
@@ -64,8 +70,7 @@ const detailFixture: MemoryAdminEntryRead = {
   outcome: {
     attributes: { source: "operator" },
     observedAt: "2026-05-20T10:05:00Z",
-    status: "approved",
-    summary: "Approved operator memory",
+    summary: "Workflow-visible operator memory",
   },
   provenance: {
     agentKey: "local-instance-operator",
@@ -83,10 +88,10 @@ const detailFixture: MemoryAdminEntryRead = {
   },
   revisionId: "rev-risk-1",
   scope: { scopeKey: "pkg_alpha", scopeType: "package" },
-  status: "approved",
   subjectRefs: [{ id: "AAPL", kind: "symbol", label: "Apple" }],
   summary: "Risk review memory",
   updatedAt: "2026-05-20T10:05:00Z",
+  visibleToWorkflow: true,
 };
 
 const revisionsFixture: MemoryAdminRevisionListRead = {
@@ -101,10 +106,10 @@ const revisionsFixture: MemoryAdminRevisionListRead = {
       revisionId: "rev-risk-1",
       sourceAgentKey: "local-instance-operator",
       sourceRunId: 41,
-      status: "approved",
       subjectRefs: [{ id: "AAPL", kind: "symbol", label: "Apple" }],
       summary: "Risk review memory",
       version: 1,
+      visibleToWorkflow: true,
     },
   ],
   limit: 50,
@@ -125,7 +130,7 @@ const eventsFixture: MemoryAdminEventListRead = {
       resultSnapshot: { count: 1 },
       revisionId: "rev-risk-1",
       runId: 41,
-      statusSnapshot: { status: "approved" },
+      statusSnapshot: { visibleToWorkflow: true },
     },
   ],
   limit: 50,
@@ -141,10 +146,21 @@ function idleQuery(data?: unknown) {
   };
 }
 
+async function chooseSelectOption(label: string, optionName: string | RegExp) {
+  const selector = screen.getByRole("combobox", { name: label });
+  selector.focus();
+  fireEvent.keyDown(selector, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: optionName }));
+}
+
 function renderDetail(initialEntry = "/memory/mem-risk-1") {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
+        <Route
+          element={<div data-testid="memory-list-route">Memory route</div>}
+          path="/memory"
+        />
         <Route element={<MemoryDetailPage />} path="/memory/:memoryId" />
       </Routes>
     </MemoryRouter>,
@@ -154,7 +170,8 @@ function renderDetail(initialEntry = "/memory/mem-risk-1") {
 describe("MemoryDetailPage", () => {
   beforeEach(() => {
     createAdminMemoryRevisionMock.mockReset();
-    updateAdminMemoryStatusMock.mockReset();
+    deleteAdminMemoryEntryMock.mockReset();
+    updateAdminMemoryWorkflowVisibilityMock.mockReset();
     useAdminMemoryEntryMock.mockReset();
     useAdminMemoryEventsMock.mockReset();
     useAdminMemoryRevisionsMock.mockReset();
@@ -164,7 +181,8 @@ describe("MemoryDetailPage", () => {
     useAdminMemoryRevisionsMock.mockReturnValue(idleQuery(revisionsFixture));
     useAdminMemoryEventsMock.mockReturnValue(idleQuery(eventsFixture));
     createAdminMemoryRevisionMock.mockResolvedValue(detailFixture);
-    updateAdminMemoryStatusMock.mockResolvedValue(detailFixture);
+    deleteAdminMemoryEntryMock.mockResolvedValue(undefined);
+    updateAdminMemoryWorkflowVisibilityMock.mockResolvedValue(detailFixture);
   });
 
   it("queries detail, revisions, and audit events from the route param", () => {
@@ -215,15 +233,20 @@ describe("MemoryDetailPage", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Audit events" }), {
       button: 0,
     });
-    expect(screen.getByTestId("memory-events-panel")).toHaveTextContent(
-      "operator_created",
-    );
-    expect(screen.getByTestId("memory-events-panel")).toHaveTextContent(
-      "Risk memo content",
-    );
+    const eventsPanel = screen.getByTestId("memory-events-panel");
+    expect(eventsPanel).toHaveTextContent("operator_created");
+    expect(eventsPanel).toHaveTextContent("Risk memo content");
+    expect(eventsPanel).toHaveTextContent("Event state snapshot");
+    expect(eventsPanel).toHaveTextContent("visibleToWorkflow");
+    expect(eventsPanel).not.toHaveTextContent("approved");
+    expect(eventsPanel).not.toHaveTextContent("pending");
+    expect(eventsPanel).not.toHaveTextContent("archived");
   });
 
-  it("supports revise and lifecycle status update mutations", async () => {
+  it("supports revise and workflow visibility update mutations", async () => {
+    const hiddenDetail = { ...detailFixture, visibleToWorkflow: false };
+    updateAdminMemoryWorkflowVisibilityMock.mockResolvedValue(hiddenDetail);
+
     renderDetail();
 
     fireEvent.click(screen.getByRole("button", { name: "Revise" }));
@@ -251,25 +274,98 @@ describe("MemoryDetailPage", () => {
       }),
     );
 
-    fireEvent.change(screen.getByLabelText("Status summary"), {
-      target: { value: "Ready for workflow lookup" },
+    expect(
+      screen.getByTestId("memory-workflow-visibility-form"),
+    ).toHaveTextContent("Workflow visible");
+    expect(screen.queryByText("New status")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Update status" }),
+    ).not.toBeInTheDocument();
+    await chooseSelectOption("New workflow visibility", "Workflow hidden");
+    expect(
+      screen.getByTestId("memory-workflow-visibility-form"),
+    ).toHaveTextContent("Workflow hidden");
+    fireEvent.change(screen.getByLabelText("Visibility summary"), {
+      target: { value: "Hide from workflow lookup" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Update status" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Update workflow visibility" }),
+    );
 
     await waitFor(() =>
-      expect(updateAdminMemoryStatusMock).toHaveBeenCalledWith({
+      expect(updateAdminMemoryWorkflowVisibilityMock).toHaveBeenCalledWith({
         memoryId: "mem-risk-1",
         payload: expect.objectContaining({
-          status: "approved",
-          summary: "Ready for workflow lookup",
+          summary: "Hide from workflow lookup",
+          visibleToWorkflow: false,
         }),
       }),
     );
   });
 
-  it("surfaces revise and status mutation failures", async () => {
-    createAdminMemoryRevisionMock.mockRejectedValueOnce(new Error("revise failed"));
-    updateAdminMemoryStatusMock.mockRejectedValueOnce(new Error("status failed"));
+  it("confirms single-entry detail deletion and redirects to Memory Admin", async () => {
+    renderDetail();
+
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete selected/i }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete memory" }));
+    const cancelDialog = screen.getByRole("alertdialog");
+    expect(cancelDialog).toHaveTextContent("Delete memory");
+    expect(cancelDialog).toHaveTextContent(
+      "This permanently removes this memory entry and its revisions. Existing run evidence keeps snapshot memory ids, but the memory entry will no longer appear in admin search or runtime lookup.",
+    );
+    fireEvent.click(within(cancelDialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(deleteAdminMemoryEntryMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("memory-detail-page")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete memory" }));
+    const confirmDialog = screen.getByRole("alertdialog");
+    fireEvent.click(
+      within(confirmDialog).getByRole("button", { name: "Delete memory" }),
+    );
+
+    await waitFor(() =>
+      expect(deleteAdminMemoryEntryMock).toHaveBeenCalledWith("mem-risk-1"),
+    );
+    expect(deleteAdminMemoryEntryMock).toHaveBeenCalledTimes(1);
+    expect(toast.success).toHaveBeenCalledWith("Memory deleted");
+    await waitFor(() =>
+      expect(screen.getByTestId("memory-list-route")).toBeVisible(),
+    );
+  });
+
+  it("surfaces delete mutation failures without leaving detail", async () => {
+    deleteAdminMemoryEntryMock.mockRejectedValueOnce(new Error("delete failed"));
+    renderDetail();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete memory" }));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Delete memory",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("delete failed"),
+    );
+    expect(deleteAdminMemoryEntryMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("memory-detail-page")).toBeVisible();
+  });
+
+  it("surfaces revise and workflow visibility mutation failures", async () => {
+    createAdminMemoryRevisionMock.mockRejectedValueOnce(
+      new Error("revise failed"),
+    );
+    updateAdminMemoryWorkflowVisibilityMock.mockRejectedValueOnce(
+      new Error("visibility failed"),
+    );
     renderDetail();
 
     fireEvent.click(screen.getByRole("button", { name: "Revise" }));
@@ -296,13 +392,15 @@ describe("MemoryDetailPage", () => {
       }),
     );
 
-    fireEvent.change(screen.getByLabelText("Status summary"), {
+    fireEvent.change(screen.getByLabelText("Visibility summary"), {
       target: { value: "Ready for workflow lookup" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Update status" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Update workflow visibility" }),
+    );
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("status failed"),
+      expect(toast.error).toHaveBeenCalledWith("visibility failed"),
     );
   });
 

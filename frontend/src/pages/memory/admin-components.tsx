@@ -5,6 +5,7 @@ import {
   Search,
   ShieldCheck,
   SquarePen,
+  Trash2,
 } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { Link } from "react-router";
@@ -18,6 +19,17 @@ import {
   ResourceStatusBadge,
   ResourceStatusStrip,
 } from "@/components/shared/resource-status-strip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,28 +71,30 @@ import type {
 
 import {
   ALL_SCOPES_FILTER,
-  ALL_STATUSES_FILTER,
+  ALL_WORKFLOW_VISIBILITY_FILTER,
+  WORKFLOW_HIDDEN_FILTER,
+  WORKFLOW_VISIBLE_FILTER,
   type AdminRevisionVariables,
-  type AdminStatusVariables,
+  type AdminWorkflowVisibilityVariables,
   type CreateDraft,
   RUNTIME_IMPACT_COPY,
   SCOPE_TYPE_VALUES,
-  STATUS_VALUES,
   buildOperatorProvenance,
   buildSubjectRefs,
   createInitialDraft,
   createMemoryPayloadFromDraft,
   createRevisionDraft,
-  createStatusDraft,
+  createWorkflowVisibilityDraft,
   formatProvenance,
   formatScope,
+  formatWorkflowVisibility,
   optionalText,
   parseJsonObject,
   parseRequiredRunId,
   revisionTone,
-  statusTone,
   subjectRefSummary,
   titleCase,
+  workflowVisibilityTone,
 } from "./admin-helpers";
 
 type TextFieldProps = {
@@ -114,26 +128,94 @@ type MemoryAdminFilterControlsProps = {
   setQuery: (value: string) => void;
   setRunId: (value: string) => void;
   setScopeType: (value: string) => void;
-  setStatus: (value: string) => void;
   setWorkflowKey: (value: string) => void;
-  status: string;
+  setWorkflowVisibility: (value: string) => void;
   workflowKey: string;
+  workflowVisibility: string;
 };
 
 type MemoryListPaneProps = {
+  deletePending: boolean;
   hasActiveFilters: boolean;
   isError: boolean;
   isPending: boolean;
   items: readonly MemoryAdminListItemRead[];
   listError: unknown;
+  onDeleteMemory: (memoryId: string) => Promise<void>;
   total: number;
 };
 
 type RevisionItem = MemoryAdminRevisionListRead["items"][number];
 type EventItem = MemoryAdminEventListRead["items"][number];
 
+const DELETE_MEMORY_CONFIRMATION_COPY =
+  "This permanently removes this memory entry and its revisions. Existing run evidence keeps snapshot memory ids, but the memory entry will no longer appear in admin search or runtime lookup.";
+
+type MemoryDeleteDialogProps = {
+  disabled?: boolean;
+  isPending: boolean;
+  onDelete: () => Promise<void>;
+};
+
 function mutationErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+export function MemoryDeleteDialog({
+  disabled = false,
+  isPending,
+  onDelete,
+}: MemoryDeleteDialogProps) {
+  const [open, setOpen] = useState(false);
+  const confirmDelete = async () => {
+    try {
+      await onDelete();
+      setOpen(false);
+    } catch (error) {
+      toast.error(mutationErrorMessage(error, "Memory could not be deleted."));
+    }
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button
+          className="w-full sm:w-auto"
+          disabled={disabled || isPending}
+          size="sm"
+          type="button"
+          variant="destructive"
+        >
+          <Trash2 data-icon="inline-start" />
+          Delete memory
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete memory</AlertDialogTitle>
+          <AlertDialogDescription>
+            {DELETE_MEMORY_CONFIRMATION_COPY}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction asChild>
+            <Button
+              disabled={isPending}
+              type="button"
+              variant="destructive"
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+            >
+              Delete memory
+            </Button>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 }
 
 export function JsonBlock({ label, value }: { label: string; value: unknown }) {
@@ -287,7 +369,7 @@ export function MemoryContextContract({
             </Button>
           </div>
         }
-        description="Manage canonical memory across packages, scopes, and lifecycle states from the trusted local operator console."
+        description="Manage canonical memory across packages, scopes, and workflow visibility from the trusted local operator console."
         layout="toolbar"
         title="Memory"
       />
@@ -307,7 +389,7 @@ export function MemoryDetailContext({
   return (
     <PageContextBar
       actions={actions}
-      description="Inspect one canonical memory entry, its append-only revisions, audit events, and trusted operator lifecycle controls."
+      description="Inspect one canonical memory entry, its append-only revisions, audit events, and trusted operator workflow visibility controls."
       layout="toolbar"
       meta={
         <ResourceStatusStrip
@@ -322,9 +404,9 @@ export function MemoryDetailContext({
             ...(detail
               ? [
                   {
-                    label: "Status",
-                    value: detail.status,
-                    tone: statusTone(detail.status),
+                    label: "Workflow visibility",
+                    value: formatWorkflowVisibility(detail.visibleToWorkflow),
+                    tone: workflowVisibilityTone(detail.visibleToWorkflow),
                   },
                   {
                     label: "Scope",
@@ -367,31 +449,45 @@ export function QueryStateCard({ label }: { label: string }) {
   );
 }
 
-function MemoryListCard({ item }: { item: MemoryAdminListItemRead }) {
+function MemoryListCard({
+  deletePending,
+  item,
+  onDeleteMemory,
+}: {
+  deletePending: boolean;
+  item: MemoryAdminListItemRead;
+  onDeleteMemory: (memoryId: string) => Promise<void>;
+}) {
   const memoryPath = `/memory/${item.memoryId}`;
 
   return (
     <ResourceRowCard
       actions={
-        <Button
-          asChild
-          className="w-full sm:w-auto"
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          <Link to={memoryPath}>
-            <FileText data-icon="inline-start" />
-            Open detail
-          </Link>
-        </Button>
+        <>
+          <Button
+            asChild
+            className="w-full sm:w-auto"
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Link to={memoryPath}>
+              <FileText data-icon="inline-start" />
+              Open detail
+            </Link>
+          </Button>
+          <MemoryDeleteDialog
+            isPending={deletePending}
+            onDelete={() => onDeleteMemory(item.memoryId)}
+          />
+        </>
       }
       badges={
         <>
           <Badge variant="outline">{item.kind}</Badge>
           <ResourceStatusBadge
-            label={item.status}
-            tone={statusTone(item.status)}
+            label={formatWorkflowVisibility(item.visibleToWorkflow)}
+            tone={workflowVisibilityTone(item.visibleToWorkflow)}
           />
           <Badge variant="secondary">{formatScope(item.scope)}</Badge>
         </>
@@ -428,10 +524,10 @@ export function MemoryAdminFilterControls({
   setQuery,
   setRunId,
   setScopeType,
-  setStatus,
   setWorkflowKey,
-  status,
+  setWorkflowVisibility,
   workflowKey,
+  workflowVisibility,
 }: MemoryAdminFilterControlsProps) {
   const searchId = fieldId("Search canonical memory", useId());
 
@@ -443,8 +539,8 @@ export function MemoryAdminFilterControls({
             <CardTitle className="text-base">Operator filters</CardTitle>
             <CardDescription className="mt-1 text-xs leading-5">
               Narrow the admin-managed corpus by package, workflow, agent, run,
-              scope type, kind, status, or lexical query. Clearing all filters
-              restores the full trusted corpus.
+              scope type, kind, workflow visibility, or lexical query. Clearing
+              all filters restores the full trusted corpus.
             </CardDescription>
           </div>
         </div>
@@ -513,13 +609,18 @@ export function MemoryAdminFilterControls({
               </SelectItem>
             ))}
           </SelectField>
-          <SelectField label="Status" onChange={setStatus} value={status}>
-            <SelectItem value={ALL_STATUSES_FILTER}>All statuses</SelectItem>
-            {STATUS_VALUES.map((value) => (
-              <SelectItem key={value} value={value}>
-                {titleCase(value)}
-              </SelectItem>
-            ))}
+          <SelectField
+            label="Workflow visibility"
+            onChange={setWorkflowVisibility}
+            value={workflowVisibility}
+          >
+            <SelectItem value={ALL_WORKFLOW_VISIBILITY_FILTER}>All</SelectItem>
+            <SelectItem value={WORKFLOW_VISIBLE_FILTER}>
+              Workflow visible
+            </SelectItem>
+            <SelectItem value={WORKFLOW_HIDDEN_FILTER}>
+              Workflow hidden
+            </SelectItem>
           </SelectField>
         </div>
       </CardContent>
@@ -573,9 +674,7 @@ export function MemoryCreateDialog({
       setDraft(createInitialDraft());
       setOpen(false);
     } catch (error) {
-      toast.error(
-        mutationErrorMessage(error, "Memory could not be created."),
-      );
+      toast.error(mutationErrorMessage(error, "Memory could not be created."));
     }
   };
 
@@ -591,7 +690,7 @@ export function MemoryCreateDialog({
         <DialogHeader>
           <DialogTitle>Create memory</DialogTitle>
           <DialogDescription>
-            Write canonical memory with explicit scope, lifecycle status, and
+            Write canonical memory with explicit scope, workflow visibility, and
             local operator provenance.
           </DialogDescription>
         </DialogHeader>
@@ -644,15 +743,22 @@ export function MemoryCreateDialog({
               value={draft.scopeKey}
             />
             <SelectField
-              label="Initial status"
-              onChange={(value) => update("status", value)}
-              value={draft.status}
+              label="Initial workflow visibility"
+              onChange={(value) =>
+                update("visibleToWorkflow", value === WORKFLOW_VISIBLE_FILTER)
+              }
+              value={
+                draft.visibleToWorkflow
+                  ? WORKFLOW_VISIBLE_FILTER
+                  : WORKFLOW_HIDDEN_FILTER
+              }
             >
-              {STATUS_VALUES.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {titleCase(value)}
-                </SelectItem>
-              ))}
+              <SelectItem value={WORKFLOW_VISIBLE_FILTER}>
+                Workflow visible
+              </SelectItem>
+              <SelectItem value={WORKFLOW_HIDDEN_FILTER}>
+                Workflow hidden
+              </SelectItem>
             </SelectField>
             <TextField
               label="Subject kind"
@@ -805,19 +911,25 @@ export function RevisionDialog({
   );
 }
 
-function StatusUpdateForm({
+function WorkflowVisibilityUpdateForm({
   detail,
-  onUpdateStatus,
+  onUpdateWorkflowVisibility,
   pending,
 }: {
   detail: MemoryAdminEntryRead;
-  onUpdateStatus: (payload: AdminStatusVariables) => Promise<void>;
+  onUpdateWorkflowVisibility: (
+    payload: AdminWorkflowVisibilityVariables,
+  ) => Promise<void>;
   pending: boolean;
 }) {
-  const [draft, setDraft] = useState(() => createStatusDraft(detail.status));
-  const update = <TKey extends keyof ReturnType<typeof createStatusDraft>>(
+  const [draft, setDraft] = useState(() =>
+    createWorkflowVisibilityDraft(detail.visibleToWorkflow),
+  );
+  const update = <
+    TKey extends keyof ReturnType<typeof createWorkflowVisibilityDraft>,
+  >(
     key: TKey,
-    value: ReturnType<typeof createStatusDraft>[TKey],
+    value: ReturnType<typeof createWorkflowVisibilityDraft>[TKey],
   ) => {
     setDraft((current) => ({ ...current, [key]: value }));
   };
@@ -825,25 +937,28 @@ function StatusUpdateForm({
     event.preventDefault();
     const attributes = parseJsonObject(
       draft.attributesJson,
-      "Status attributes",
+      "Visibility attributes",
     );
     if (!attributes) {
       return;
     }
     try {
-      await onUpdateStatus({
+      await onUpdateWorkflowVisibility({
         memoryId: detail.memoryId,
         payload: {
           attributes,
           observedAt: new Date().toISOString(),
-          status: draft.status,
           summary: optionalText(draft.summary),
+          visibleToWorkflow: draft.visibleToWorkflow,
         },
       });
-      toast.success("Memory status updated");
+      toast.success("Memory workflow visibility updated");
     } catch (error) {
       toast.error(
-        mutationErrorMessage(error, "Memory status could not be updated."),
+        mutationErrorMessage(
+          error,
+          "Memory workflow visibility could not be updated.",
+        ),
       );
     }
   };
@@ -851,41 +966,48 @@ function StatusUpdateForm({
   return (
     <form
       className="grid gap-3 rounded-md border bg-muted/20 p-3"
-      data-testid="memory-status-form"
+      data-testid="memory-workflow-visibility-form"
       onSubmit={submit}
     >
       <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
         <ShieldCheck />
-        Lifecycle status
+        Workflow visibility
       </div>
       <RuntimeImpactNotice />
       <div className="grid gap-3 md:grid-cols-2">
         <SelectField
-          label="New status"
-          onChange={(value) => update("status", value)}
-          value={draft.status}
+          label="New workflow visibility"
+          onChange={(value) =>
+            update("visibleToWorkflow", value === WORKFLOW_VISIBLE_FILTER)
+          }
+          value={
+            draft.visibleToWorkflow
+              ? WORKFLOW_VISIBLE_FILTER
+              : WORKFLOW_HIDDEN_FILTER
+          }
         >
-          {STATUS_VALUES.map((value) => (
-            <SelectItem key={value} value={value}>
-              {titleCase(value)}
-            </SelectItem>
-          ))}
+          <SelectItem value={WORKFLOW_VISIBLE_FILTER}>
+            Workflow visible
+          </SelectItem>
+          <SelectItem value={WORKFLOW_HIDDEN_FILTER}>
+            Workflow hidden
+          </SelectItem>
         </SelectField>
         <TextField
-          label="Status summary"
+          label="Visibility summary"
           onChange={(value) => update("summary", value)}
           value={draft.summary}
         />
       </div>
       <TextareaField
-        label="Status attributes JSON"
+        label="Visibility attributes JSON"
         onChange={(value) => update("attributesJson", value)}
         rows={3}
         value={draft.attributesJson}
       />
       <div>
         <Button disabled={pending} size="sm" type="submit">
-          Update status
+          Update workflow visibility
         </Button>
       </div>
     </form>
@@ -894,12 +1016,14 @@ function StatusUpdateForm({
 
 export function DetailInspection({
   detail,
-  onUpdateStatus,
-  statusPending,
+  onUpdateWorkflowVisibility,
+  workflowVisibilityPending,
 }: {
   detail: MemoryAdminEntryRead;
-  onUpdateStatus: (payload: AdminStatusVariables) => Promise<void>;
-  statusPending: boolean;
+  onUpdateWorkflowVisibility: (
+    payload: AdminWorkflowVisibilityVariables,
+  ) => Promise<void>;
+  workflowVisibilityPending: boolean;
 }) {
   return (
     <div
@@ -909,9 +1033,9 @@ export function DetailInspection({
       <ResourceStatusStrip
         items={[
           {
-            label: "Status",
-            value: detail.status,
-            tone: statusTone(detail.status),
+            label: "Workflow visibility",
+            value: formatWorkflowVisibility(detail.visibleToWorkflow),
+            tone: workflowVisibilityTone(detail.visibleToWorkflow),
           },
           { label: "Kind", value: detail.kind },
           { label: "Scope", value: formatScope(detail.scope), tone: "muted" },
@@ -947,11 +1071,11 @@ export function DetailInspection({
       {detail.auditLinks ? (
         <JsonBlock label="Audit links" value={detail.auditLinks} />
       ) : null}
-      <StatusUpdateForm
-        key={`${detail.memoryId}-${detail.status}`}
+      <WorkflowVisibilityUpdateForm
+        key={`${detail.memoryId}-${detail.visibleToWorkflow}`}
         detail={detail}
-        onUpdateStatus={onUpdateStatus}
-        pending={statusPending}
+        onUpdateWorkflowVisibility={onUpdateWorkflowVisibility}
+        pending={workflowVisibilityPending}
       />
     </div>
   );
@@ -967,8 +1091,8 @@ function RevisionCard({ revision }: { revision: RevisionItem }) {
           tone={revisionTone(revision.revisionAction)}
         />
         <ResourceStatusBadge
-          label={revision.status}
-          tone={statusTone(revision.status)}
+          label={formatWorkflowVisibility(revision.visibleToWorkflow)}
+          tone={workflowVisibilityTone(revision.visibleToWorkflow)}
         />
       </div>
       <p className="break-words font-medium">{revision.summary}</p>
@@ -1024,7 +1148,7 @@ function EventCard({ event }: { event: EventItem }) {
         <p className="break-words text-muted-foreground">{event.excerpt}</p>
       ) : null}
       <JsonBlock label="Result snapshot" value={event.resultSnapshot} />
-      <JsonBlock label="Status snapshot" value={event.statusSnapshot} />
+      <JsonBlock label="Event state snapshot" value={event.statusSnapshot} />
     </article>
   );
 }
@@ -1052,11 +1176,13 @@ export function EventsInspection({ events }: { events: readonly EventItem[] }) {
 }
 
 export function MemoryListPane({
+  deletePending,
   hasActiveFilters,
   isError,
   isPending,
   items,
   listError,
+  onDeleteMemory,
   total,
 }: MemoryListPaneProps) {
   return (
@@ -1095,11 +1221,15 @@ export function MemoryListPane({
           {!isPending &&
             !isError &&
             items.map((item) => (
-              <MemoryListCard item={item} key={item.memoryId} />
+              <MemoryListCard
+                deletePending={deletePending}
+                item={item}
+                key={item.memoryId}
+                onDeleteMemory={onDeleteMemory}
+              />
             ))}
         </div>
       </CardContent>
     </Card>
   );
 }
-
