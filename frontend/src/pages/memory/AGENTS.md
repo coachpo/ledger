@@ -6,7 +6,7 @@
 
 `src/pages/memory/` owns the platform Memory Admin browse/detail routes at `/memory` and `/memory/:memoryId`. The routes are a trusted local operator/admin control plane for canonical workflow memory across packages, backed by admin hooks in `use-memory.ts`, `api/memory.ts`, and `types/memory.ts`.
 
-Memory is platform-core ownership. It is not part of the Finance Workspace extension, and finance report history stays in Reports. Runtime `signaldeck.core.memory.lookup/write` remains scoped to Workflow Package execution and must not become an unscoped global browser search path.
+Memory is platform-core ownership. It is not part of the Finance Workspace extension, and finance report history stays in Reports. Runtime `signaldeck.core.memory.lookup` and `signaldeck.core.memory.write` remain scoped to Workflow Package execution and must not become an unscoped global browser search path.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 

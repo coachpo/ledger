@@ -92,7 +92,7 @@ src/pages/
 - Editor routes use metadata-owned `fullHeight` shell mode when they need split panes or persistent action bars. They must expose a labeled route shell, labeled inputs, save/cancel hierarchy, and mobile containment.
 - Console routes such as package launch, Scheduled Task detail, and run detail use metadata-owned `fullHeight` shell mode. Preserve evidence, preflight, backend progress/queue/readiness payloads, scheduled input previews, trace, payload, and fork/rerun controls with internal scrolling for wide data.
 - System-state routes stay narrow and contract-bound. `/extensions` renders only slim statically resident extension state and must not grow marketplace, install, remove, or private scaffold details.
-- Memory is a platform admin route, not a Finance Workspace route. `/memory` uses trusted local operator visibility over canonical workflow memory across packages, while scoped runtime `/api/memory` and `signaldeck.core.memory.lookup/write` remain package/run/agent/scope-bound and are not unscoped global runtime search.
+- Memory is a platform admin route, not a Finance Workspace route. `/memory` uses trusted local operator visibility over canonical workflow memory across packages, while scoped runtime `/api/memory`, `signaldeck.core.memory.lookup`, and `signaldeck.core.memory.write` remain package/run/agent/scope-bound and are not unscoped global runtime search.
 - Loading, error, empty, filtered-empty, disabled-extension, not-found, creating, editing, saving, importing, validating, launching, and polling states must match the route's `stateVariants` metadata and have targeted test coverage when they are visible user states.
 
 ## REGRESSION COVERAGE MATRIX
