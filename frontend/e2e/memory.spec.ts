@@ -9,6 +9,8 @@ import {
 const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
 const FAKE_PROVIDER_BASE_URL =
   process.env.SIGNALDECK_FAKE_PROVIDER_BASE_URL ?? "http://127.0.0.1:18081/v1";
+const RETIRED_WORKFLOW_LOOKUP_COPY =
+  "Workflow-visible memory in a matching scope may appear in future workflow lookup; workflow-hidden memory remains visible here for operators but is excluded from runtime lookup.";
 
 function packageManifest(
   packageKey: string,
@@ -423,16 +425,24 @@ test.describe("memory admin workspace", () => {
         name: "Alpha workflow-visible operator memory",
       }),
     ).toBeVisible();
-    await expect(page.getByTestId("memory-detail-panel")).toContainText(
+    const detailHeader = page.getByTestId("workspace-page-shell-context");
+    const initialDetailPanel = page.getByTestId("memory-detail-panel");
+    await expect(initialDetailPanel).toContainText(
       "Alpha workflow-visible memory created from the admin browser flow.",
     );
-    await expect(page.getByTestId("memory-detail-panel")).toContainText(
-      "Workflow visible",
+    await expect(detailHeader).not.toContainText(createdMemoryId);
+    await expect(detailHeader).not.toContainText(`Package ${alphaPackageKey}`);
+    await expect(initialDetailPanel).toContainText("Memory");
+    await expect(initialDetailPanel).toContainText(createdMemoryId);
+    await expect(initialDetailPanel).toContainText("Workflow visible");
+    await expect(initialDetailPanel).toContainText(`Package ${alphaPackageKey}`);
+    await expect(page.getByTestId("memory-detail-page")).not.toContainText(
+      RETIRED_WORKFLOW_LOOKUP_COPY,
     );
     await expectNoRetiredLifecycleLabels(
       page.getByTestId("memory-detail-page"),
     );
-    await expect(page.getByTestId("memory-detail-panel")).toContainText(
+    await expect(initialDetailPanel).toContainText(
       `operator · local-instance-operator@1 · ${alphaWorkflowKey} · run #${alphaRun.runId}`,
     );
     await expect(
@@ -443,6 +453,7 @@ test.describe("memory admin workspace", () => {
 
     await page.getByRole("button", { name: "Revise" }).click();
     const revisionDialog = page.getByRole("dialog");
+    await expect(revisionDialog).not.toContainText(RETIRED_WORKFLOW_LOOKUP_COPY);
     await revisionDialog
       .getByLabel("Revision summary")
       .fill("Alpha revised operator memory");
