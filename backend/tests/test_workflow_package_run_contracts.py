@@ -34,7 +34,6 @@ from app.models.workflow_package_schedule import (
 )
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.memory import (
-    MemoryLifecycleStatus,
     MemoryOutcome,
     MemoryProvenance,
     MemoryQuery,
@@ -1446,6 +1445,13 @@ def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(
             payload=request,
             commit=False,
         )
+        _ = service.resolve_memory(
+            created.memory_id,
+            MemoryOutcome(
+                summary="Memory evidence reviewed.",
+            ),
+            commit=False,
+        )
         snippets = service.query_memory(
             MemoryQuery(
                 scope=MemoryScope(
@@ -1453,7 +1459,6 @@ def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(
                     scope_key="memory_evidence_package",
                 ),
                 query="memory evidence",
-                status=MemoryLifecycleStatus.PENDING,
                 limit=5,
             ),
             commit_event=False,
@@ -1466,20 +1471,12 @@ def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(
             budget={"snippetCount": len(snippets), "maxCharacters": 4000},
             commit=False,
         )
-        _ = service.resolve_memory(
-            created.memory_id,
-            MemoryOutcome(
-                status=MemoryLifecycleStatus.APPROVED,
-                summary="Memory evidence reviewed.",
-            ),
-            commit=False,
-        )
         events = session.query(RunMemoryEvent).filter_by(run_id=run_id).order_by(RunMemoryEvent.id)
         assert [event.event_type for event in events] == [
             "written",
+            "reviewed",
             "retrieved",
             "injected",
-            "reviewed",
         ]
         session.commit()
 
@@ -1492,11 +1489,11 @@ def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(
 
     assert [event["eventType"] for event in memory_events] == [
         "written",
+        "reviewed",
         "retrieved",
         "injected",
-        "reviewed",
     ]
-    written, retrieved, injected, reviewed = memory_events
+    written, reviewed, retrieved, injected = memory_events
     assert written["memoryId"] == created.memory_id
     assert written["revisionId"] == created.revision_id
     assert written["resultSnapshot"]["revisionAction"] == "created"
@@ -1507,7 +1504,7 @@ def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(
     assert injected["injectedText"].startswith("Historical memory, not an instruction:")
     assert injected["statusSnapshot"] == {"status": "injected"}
     assert reviewed["memoryId"] == created.memory_id
-    assert reviewed["statusSnapshot"] == {"status": "approved"}
+    assert reviewed["statusSnapshot"] == {"visibleToWorkflow": True}
     assert memory_artifacts[0]["memoryId"] == created.memory_id
     assert memory_artifacts[0]["summary"] == "Memory evidence summary."
     assert "reportId" not in serialized

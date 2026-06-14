@@ -81,11 +81,11 @@ class ReflectionService:
     def _outcome_summary(memory: MemoryEntryRead) -> str:
         outcome = memory.outcome
         if outcome is None:
-            return f"status {memory.status.value}"
+            return "visible to workflow" if memory.visible_to_workflow else "hidden from workflow"
         raw_return = outcome.attributes.get("rawReturn")
         alpha = outcome.attributes.get("alpha")
         if raw_return is None or alpha is None:
-            return f"status {outcome.status.value}"
+            return outcome.summary
 
         parts = [f"raw return {raw_return}", f"alpha {alpha}"]
         benchmark_return = outcome.attributes.get("benchmarkReturn")

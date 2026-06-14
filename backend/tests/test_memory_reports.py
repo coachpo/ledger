@@ -15,7 +15,6 @@ from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMe
 from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.schemas.memory import (
-    MemoryLifecycleStatus,
     MemoryOutcome,
     MemoryProvenance,
     MemoryQuery,
@@ -248,7 +247,6 @@ def test_core_memory_ignores_legacy_agent_memory_reports(
         _ = service.resolve_memory(
             created.memory_id,
             MemoryOutcome(
-                status=MemoryLifecycleStatus.APPROVED,
                 summary="Core memory resolved.",
                 observed_at=datetime(2026, 1, 17, 10, 30, tzinfo=UTC),
                 attributes={"rawReturn": "0.125", "alpha": "0.095"},
