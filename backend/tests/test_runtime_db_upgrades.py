@@ -893,7 +893,7 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "scope_type",
         "scope_key",
         "kind",
-        "status",
+        "visible_to_workflow",
         "summary",
         "subject_refs",
         "attributes",
@@ -909,16 +909,17 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "updated_at",
     } <= set(entry_columns)
     assert {"report_id", "report_slug", "report_name"}.isdisjoint(entry_columns)
+    assert "status" not in entry_columns
     assert entry_columns["content_hash"]["nullable"] is False
     assert entry_columns["scope_type"]["nullable"] is False
-    assert entry_columns["status"]["nullable"] is False
+    assert entry_columns["visible_to_workflow"]["nullable"] is False
 
     assert {
         "id",
         "memory_entry_id",
         "revision_id",
         "version",
-        "status",
+        "visible_to_workflow",
         "summary",
         "content",
         "content_hash",
@@ -932,8 +933,10 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "trace_span_id",
         "created_at",
     } <= set(revision_columns)
+    assert "status" not in revision_columns
     assert revision_columns["content_hash"]["nullable"] is False
     assert revision_columns["memory_entry_id"]["nullable"] is False
+    assert revision_columns["visible_to_workflow"]["nullable"] is False
 
     assert {
         "id",
@@ -984,8 +987,9 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
 
     assert {
         "ix_agent_memory_entries_scope",
-        "ix_agent_memory_entries_scope_status_kind",
-        "ix_agent_memory_entries_status_kind",
+        "ix_agent_memory_entries_scope_visible_kind",
+        "ix_agent_memory_entries_visible_kind",
+        "ix_agent_memory_entries_visible_updated_at_id",
         "ix_agent_memory_entries_content_hash",
         "ix_agent_memory_entries_subject_refs_gin",
         "ix_agent_memory_entries_attributes_gin",
@@ -994,7 +998,14 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "uq_agent_memory_entries_idempotency_fallback",
     } <= entry_indexes
     assert {
+        "ix_agent_memory_entries_scope_status_kind",
+        "ix_agent_memory_entries_status_kind",
+        "ix_agent_memory_entries_status_updated_at_id",
+    }.isdisjoint(entry_indexes)
+    assert {
         "ix_agent_memory_revisions_entry",
+        "ix_agent_memory_revisions_entry_visible",
+        "ix_agent_memory_revisions_visible_created_at",
         "ix_agent_memory_revisions_content_hash",
         "ix_agent_memory_revisions_created_at",
         "ix_agent_memory_revisions_supersedes",
@@ -1067,14 +1078,14 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
     }
     assert {
         "ck_agent_memory_entries_scope_type",
-        "ck_agent_memory_entries_status",
         "ck_agent_memory_entries_content_hash",
     } <= entry_checks
+    assert "ck_agent_memory_entries_status" not in entry_checks
     assert {
-        "ck_agent_memory_revisions_status",
         "ck_agent_memory_revisions_content_hash",
         "ck_agent_memory_revisions_version_positive",
     } <= revision_checks
+    assert "ck_agent_memory_revisions_status" not in revision_checks
     assert {
         "ck_agent_memory_chunks_chunk_index_non_negative",
         "ck_agent_memory_chunks_content_hash",
@@ -2458,6 +2469,299 @@ def test_upgrade_creates_run_forks_without_backfilling_legacy_lineage(
         engine.dispose()
 
 
+def test_init_db_maps_legacy_memory_status_to_workflow_visibility(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    legacy_statuses = ("approved", "pending", "archived")
+    content_hashes = ("a" * 64, "b" * 64, "c" * 64)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE agent_memory_revisions DROP COLUMN visible_to_workflow CASCADE"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE agent_memory_entries DROP COLUMN visible_to_workflow CASCADE"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE agent_memory_entries ADD COLUMN status VARCHAR(20) "
+                "NOT NULL DEFAULT 'pending'"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE agent_memory_revisions ADD COLUMN status VARCHAR(20) "
+                "NOT NULL DEFAULT 'pending'"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE agent_memory_entries ADD CONSTRAINT ck_agent_memory_entries_status "
+                "CHECK (status IN ('pending', 'approved', 'archived'))"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE agent_memory_revisions ADD CONSTRAINT ck_agent_memory_revisions_status "
+                "CHECK (status IN ('pending', 'approved', 'archived'))"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX ix_agent_memory_entries_scope_status_kind "
+                "ON agent_memory_entries (scope_type, scope_key, status, kind)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX ix_agent_memory_entries_status_kind "
+                "ON agent_memory_entries (status, kind)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX ix_agent_memory_entries_status_updated_at_id "
+                "ON agent_memory_entries (status, updated_at, id)"
+            )
+            run_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO runs (
+                        target_kind, target_id, target_key, target_version, input, status
+                    ) VALUES (
+                        'workflowPackage', 1, 'legacy_memory_status_package', 1,
+                        '{}'::jsonb, 'succeeded'
+                    )
+                    RETURNING id
+                    """
+                )
+            ).scalar_one()
+            for index, (legacy_status, content_hash) in enumerate(
+                zip(legacy_statuses, content_hashes, strict=True),
+                start=1,
+            ):
+                memory_entry_id = connection.execute(
+                    text(
+                        """
+                        INSERT INTO agent_memory_entries (
+                            memory_id, scope_type, scope_key, kind, status, summary,
+                            content_hash, source_run_id, source_agent_key,
+                            source_agent_version, source_step_id, source_slot
+                        ) VALUES (
+                            :memory_id, 'run', :scope_key, 'decision', :status,
+                            :summary, :content_hash, :run_id, 'research_agent', 1,
+                            :source_step_id, 'decision'
+                        ) RETURNING id
+                        """
+                    ),
+                    {
+                        "content_hash": content_hash,
+                        "memory_id": f"memory-status-{legacy_status}",
+                        "run_id": run_id,
+                        "scope_key": str(run_id),
+                        "source_step_id": f"write_memory_{index}",
+                        "status": legacy_status,
+                        "summary": f"{legacy_status} memory summary",
+                    },
+                ).scalar_one()
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO agent_memory_revisions (
+                            memory_entry_id, revision_id, version, status, summary, content,
+                            content_hash, source_run_id, source_agent_key, source_step_id,
+                            source_slot
+                        ) VALUES (
+                            :memory_entry_id, :revision_id, 1, :status, :summary,
+                            :content, :content_hash, :run_id, 'research_agent',
+                            :source_step_id, 'decision'
+                        )
+                        """
+                    ),
+                    {
+                        "content": f"{legacy_status} memory content.",
+                        "content_hash": content_hash,
+                        "memory_entry_id": memory_entry_id,
+                        "revision_id": f"memory-status-{legacy_status}:rev-1",
+                        "run_id": run_id,
+                        "source_step_id": f"write_memory_{index}",
+                        "status": legacy_status,
+                        "summary": f"{legacy_status} memory summary",
+                    },
+                )
+
+        init_db(database_url)
+        _assert_core_memory_table_shape(engine)
+
+        with engine.connect() as connection:
+            entry_visibility = connection.execute(
+                text(
+                    """
+                    SELECT memory_id, visible_to_workflow
+                    FROM agent_memory_entries
+                    WHERE memory_id LIKE 'memory-status-%'
+                    ORDER BY memory_id ASC
+                    """
+                )
+            ).all()
+            revision_visibility = connection.execute(
+                text(
+                    """
+                    SELECT revision_id, visible_to_workflow
+                    FROM agent_memory_revisions
+                    WHERE revision_id LIKE 'memory-status-%'
+                    ORDER BY revision_id ASC
+                    """
+                )
+            ).all()
+
+        assert entry_visibility == [
+            ("memory-status-approved", True),
+            ("memory-status-archived", False),
+            ("memory-status-pending", False),
+        ]
+        assert revision_visibility == [
+            ("memory-status-approved:rev-1", True),
+            ("memory-status-archived:rev-1", False),
+            ("memory-status-pending:rev-1", False),
+        ]
+    finally:
+        engine.dispose()
+
+
+def test_init_db_normalizes_legacy_memory_status_event_types(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE run_memory_events "
+                "DROP CONSTRAINT IF EXISTS ck_run_memory_events_event_type"
+            )
+            run_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO runs (
+                        target_kind, target_id, target_key, target_version, input, status
+                    ) VALUES (
+                        'workflowPackage', 1, 'legacy_memory_event_package', 1,
+                        '{}'::jsonb, 'succeeded'
+                    )
+                    RETURNING id
+                    """
+                )
+            ).scalar_one()
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO run_memory_events (run_id, event_type, status_snapshot)
+                    VALUES (
+                        :run_id, 'operator_status_changed',
+                        jsonb_build_object('visibleToWorkflow', TRUE)
+                    )
+                    """
+                ),
+                {"run_id": run_id},
+            )
+
+        init_db(database_url)
+        _assert_core_memory_table_shape(engine)
+        with engine.connect() as connection:
+            event_types = (
+                connection.execute(text("SELECT event_type FROM run_memory_events ORDER BY id"))
+                .scalars()
+                .all()
+            )
+
+        assert event_types == ["operator_visibility_changed"]
+    finally:
+        engine.dispose()
+
+
+def test_init_db_strips_legacy_memory_outcome_status(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    content_hash = "d" * 64
+
+    try:
+        with engine.begin() as connection:
+            run_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO runs (
+                        target_kind, target_id, target_key, target_version, input, status
+                    ) VALUES (
+                        'workflowPackage', 1, 'legacy_memory_outcome_package', 1,
+                        '{}'::jsonb, 'succeeded'
+                    )
+                    RETURNING id
+                    """
+                )
+            ).scalar_one()
+            memory_entry_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_memory_entries (
+                        memory_id, scope_type, scope_key, kind, visible_to_workflow, summary,
+                        attributes, content_hash, source_run_id, source_agent_key,
+                        source_agent_version, source_step_id, source_slot
+                    ) VALUES (
+                        'legacy-outcome-memory', 'run', :scope_key, 'decision', FALSE,
+                        'Legacy outcome memory',
+                        jsonb_build_object(
+                            'outcome', jsonb_build_object(
+                                'summary', 'Legacy outcome',
+                                'status', 'expired',
+                                'attributes', jsonb_build_object('rawReturn', '0.2')
+                            )
+                        ),
+                        :content_hash, :run_id, 'research_agent', 1,
+                        'write_memory', 'decision'
+                    ) RETURNING id
+                    """
+                ),
+                {"content_hash": content_hash, "run_id": run_id, "scope_key": str(run_id)},
+            ).scalar_one()
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_memory_revisions (
+                        memory_entry_id, revision_id, version, visible_to_workflow, summary,
+                        content, attributes, content_hash, source_run_id, source_agent_key,
+                        source_step_id, source_slot
+                    ) VALUES (
+                        :memory_entry_id, 'legacy-outcome-memory:rev-1', 1, FALSE,
+                        'Legacy outcome memory', 'Legacy outcome body.',
+                        jsonb_build_object(
+                            'outcome', jsonb_build_object(
+                                'summary', 'Legacy revision outcome',
+                                'status', 'expired',
+                                'attributes', jsonb_build_object('alpha', 1)
+                            )
+                        ),
+                        :content_hash, :run_id, 'research_agent', 'write_memory', 'decision'
+                    )
+                    """
+                ),
+                {
+                    "content_hash": content_hash,
+                    "memory_entry_id": memory_entry_id,
+                    "run_id": run_id,
+                },
+            )
+
+        init_db(database_url)
+        with engine.connect() as connection:
+            entry_outcome, revision_outcome = connection.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT attributes->'outcome' FROM agent_memory_entries
+                         WHERE memory_id = 'legacy-outcome-memory'),
+                        (SELECT attributes->'outcome' FROM agent_memory_revisions
+                         WHERE revision_id = 'legacy-outcome-memory:rev-1')
+                    """
+                )
+            ).one()
+
+        assert entry_outcome == {"summary": "Legacy outcome", "attributes": {"rawReturn": "0.2"}}
+        assert revision_outcome == {
+            "summary": "Legacy revision outcome",
+            "attributes": {"alpha": 1},
+        }
+    finally:
+        engine.dispose()
+
+
 def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> None:
     init_db(database_url)
     init_db(database_url)
@@ -2495,11 +2799,11 @@ def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> N
                 text(
                     """
                     INSERT INTO agent_memory_entries (
-                        memory_id, scope_type, scope_key, kind, status, summary,
+                        memory_id, scope_type, scope_key, kind, visible_to_workflow, summary,
                         content_hash, source_run_id, source_agent_key, source_agent_version,
                         source_step_id, source_slot
                     ) VALUES (
-                        'memory-core-1', 'run', :scope_key, 'decision', 'pending',
+                        'memory-core-1', 'run', :scope_key, 'decision', FALSE,
                         'Memory summary', :content_hash, :run_id, 'research_agent', 1,
                         'write_memory', 'decision'
                     ) RETURNING id
@@ -2516,11 +2820,11 @@ def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> N
                 text(
                     """
                     INSERT INTO agent_memory_revisions (
-                        memory_entry_id, revision_id, version, status, summary, content,
-                        content_hash, source_run_id, source_agent_key, source_step_id,
+                        memory_entry_id, revision_id, version, visible_to_workflow, summary,
+                        content, content_hash, source_run_id, source_agent_key, source_step_id,
                         source_slot
                     ) VALUES (
-                        :memory_entry_id, 'memory-core-1:rev-1', 1, 'pending',
+                        :memory_entry_id, 'memory-core-1:rev-1', 1, FALSE,
                         'Memory summary', 'Canonical memory content.', :content_hash, :run_id,
                         'research_agent', 'write_memory', 'decision'
                     ) RETURNING id
@@ -2536,18 +2840,18 @@ def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> N
                 text(
                     """
                     INSERT INTO agent_memory_revisions (
-                        memory_entry_id, revision_id, version, status, summary, content,
-                        content_hash, source_run_id, source_agent_key, source_step_id,
+                        memory_entry_id, revision_id, version, visible_to_workflow, summary,
+                        content, content_hash, source_run_id, source_agent_key, source_step_id,
                         source_slot
                     ) VALUES
                         (
-                            :memory_entry_id, 'memory-core-1:rev-2', 2, 'pending',
+                            :memory_entry_id, 'memory-core-1:rev-2', 2, FALSE,
                             'Updated memory summary', 'Canonical memory content B.',
                             :second_content_hash, :run_id, 'research_agent', 'write_memory',
                             'decision'
                         ),
                         (
-                            :memory_entry_id, 'memory-core-1:rev-3', 3, 'pending',
+                            :memory_entry_id, 'memory-core-1:rev-3', 3, FALSE,
                             'Memory summary restored', 'Canonical memory content.',
                             :first_content_hash, :run_id, 'research_agent', 'write_memory',
                             'decision'
@@ -2651,11 +2955,11 @@ def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> N
                     text(
                         """
                         INSERT INTO agent_memory_entries (
-                            memory_id, scope_type, scope_key, kind, status, summary,
+                            memory_id, scope_type, scope_key, kind, visible_to_workflow, summary,
                             content_hash, source_run_id, source_agent_key, source_agent_version,
                             source_step_id, source_slot
                         ) VALUES (
-                            'memory-core-duplicate', 'run', :scope_key, 'decision', 'pending',
+                            'memory-core-duplicate', 'run', :scope_key, 'decision', FALSE,
                             'Duplicate memory summary', :content_hash, :run_id,
                             'research_agent', 1, 'write_memory', 'decision'
                         )
@@ -2667,6 +2971,36 @@ def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> N
                         "scope_key": str(run_id),
                     },
                 )
+
+        with engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM agent_memory_entries WHERE id = :memory_entry_id"),
+                {"memory_entry_id": memory_entry_id},
+            )
+            cascade_counts = connection.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM agent_memory_entries),
+                        (SELECT COUNT(*) FROM agent_memory_revisions),
+                        (SELECT COUNT(*) FROM agent_memory_chunks),
+                        (SELECT COUNT(*) FROM run_memory_events)
+                    """
+                )
+            ).one()
+            event_snapshot = connection.execute(
+                text(
+                    """
+                    SELECT memory_entry_id, memory_revision_id, memory_id, revision_id
+                    FROM run_memory_events
+                    WHERE run_id = :run_id
+                    """
+                ),
+                {"run_id": run_id},
+            ).one()
+
+        assert cascade_counts == (0, 0, 0, 1)
+        assert event_snapshot == (None, None, "memory-core-1", "memory-core-1:rev-1")
     finally:
         engine.dispose()
 
@@ -2774,11 +3108,11 @@ def test_init_db_creates_memory_embedding_table_when_pgvector_available(database
                 text(
                     """
                     INSERT INTO agent_memory_entries (
-                        memory_id, scope_type, scope_key, kind, status, summary,
+                        memory_id, scope_type, scope_key, kind, visible_to_workflow, summary,
                         content_hash, source_run_id, source_agent_key, source_agent_version,
                         source_step_id, source_slot
                     ) VALUES (
-                        'memory-embedding-1', 'run', :scope_key, 'decision', 'pending',
+                        'memory-embedding-1', 'run', :scope_key, 'decision', FALSE,
                         'Embedding memory summary', :content_hash, :run_id,
                         'research_agent', 1, 'write_memory', 'decision'
                     ) RETURNING id
@@ -2794,11 +3128,11 @@ def test_init_db_creates_memory_embedding_table_when_pgvector_available(database
                 text(
                     """
                     INSERT INTO agent_memory_revisions (
-                        memory_entry_id, revision_id, version, status, summary, content,
-                        content_hash, source_run_id, source_agent_key, source_step_id,
+                        memory_entry_id, revision_id, version, visible_to_workflow, summary,
+                        content, content_hash, source_run_id, source_agent_key, source_step_id,
                         source_slot
                     ) VALUES (
-                        :memory_entry_id, 'memory-embedding-1:rev-1', 1, 'pending',
+                        :memory_entry_id, 'memory-embedding-1:rev-1', 1, FALSE,
                         'Embedding memory summary', 'Canonical memory content.', :content_hash,
                         :run_id, 'research_agent', 'write_memory', 'decision'
                     ) RETURNING id
@@ -2878,6 +3212,25 @@ def test_init_db_creates_memory_embedding_table_when_pgvector_available(database
             "ready",
             {"source": "test"},
         )
+
+        with engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM agent_memory_entries WHERE id = :memory_entry_id"),
+                {"memory_entry_id": memory_entry_id},
+            )
+            cascade_counts = connection.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM agent_memory_entries),
+                        (SELECT COUNT(*) FROM agent_memory_revisions),
+                        (SELECT COUNT(*) FROM agent_memory_chunks),
+                        (SELECT COUNT(*) FROM agent_memory_embeddings)
+                    """
+                )
+            ).one()
+
+        assert cascade_counts == (0, 0, 0, 0)
     finally:
         engine.dispose()
 

@@ -974,7 +974,7 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
         scope_type VARCHAR(40) NOT NULL,
         scope_key VARCHAR(160) NOT NULL,
         kind VARCHAR(80) NOT NULL,
-        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        visible_to_workflow BOOLEAN NOT NULL DEFAULT FALSE,
         summary TEXT NOT NULL,
         subject_refs JSONB NOT NULL DEFAULT '[]'::jsonb,
         attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -995,9 +995,6 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
         CONSTRAINT uq_agent_memory_entries_memory_id UNIQUE (memory_id),
         CONSTRAINT ck_agent_memory_entries_scope_type CHECK (
             scope_type IN ('workspace', 'package', 'workflow', 'run', 'agent', 'namespace')
-        ),
-        CONSTRAINT ck_agent_memory_entries_status CHECK (
-            status IN ('pending', 'approved', 'archived')
         ),
         CONSTRAINT ck_agent_memory_entries_content_hash CHECK (
             content_hash ~ '^[a-f0-9]{64}$'
@@ -1023,7 +1020,7 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
         memory_entry_id INTEGER NOT NULL REFERENCES agent_memory_entries(id) ON DELETE CASCADE,
         revision_id VARCHAR(160) NOT NULL,
         version INTEGER NOT NULL,
-        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        visible_to_workflow BOOLEAN NOT NULL DEFAULT FALSE,
         revision_action VARCHAR(20) NOT NULL DEFAULT 'created',
         summary TEXT NOT NULL,
         content TEXT NOT NULL,
@@ -1040,9 +1037,6 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
         CONSTRAINT uq_agent_memory_revisions_revision_id UNIQUE (revision_id),
         CONSTRAINT uq_agent_memory_revisions_entry_version UNIQUE (memory_entry_id, version),
         CONSTRAINT ck_agent_memory_revisions_version_positive CHECK (version > 0),
-        CONSTRAINT ck_agent_memory_revisions_status CHECK (
-            status IN ('pending', 'approved', 'archived')
-        ),
         CONSTRAINT ck_agent_memory_revisions_action CHECK (
             revision_action IN ('created', 'reused', 'superseded')
         ),
@@ -1123,7 +1117,7 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
             event_type IN (
                 'retrieved', 'injected', 'written', 'reused',
                 'superseded', 'reviewed', 'failed',
-                'operator_created', 'operator_revised', 'operator_status_changed'
+                'operator_created', 'operator_revised', 'operator_visibility_changed'
             )
         ),
         CONSTRAINT ck_run_memory_events_filters CHECK (jsonb_typeof(filters) = 'object'),
@@ -1139,33 +1133,94 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE run_memory_events ALTER COLUMN event_type TYPE VARCHAR(40)",
     "ALTER TABLE run_memory_events DROP CONSTRAINT IF EXISTS ck_run_memory_events_event_type",
     """
+    UPDATE run_memory_events
+    SET event_type = 'operator_visibility_changed'
+    WHERE event_type = 'operator_status_changed'
+    """,
+    """
     ALTER TABLE run_memory_events ADD CONSTRAINT ck_run_memory_events_event_type CHECK (
         event_type IN (
             'retrieved', 'injected', 'written', 'reused',
             'superseded', 'reviewed', 'failed',
-            'operator_created', 'operator_revised', 'operator_status_changed'
+            'operator_created', 'operator_revised', 'operator_visibility_changed'
         )
     )
+    """,
+    """
+    ALTER TABLE agent_memory_entries
+    ADD COLUMN IF NOT EXISTS visible_to_workflow BOOLEAN
+    """,
+    """
+    DO $$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'agent_memory_entries' AND column_name = 'status'
+        ) THEN
+            UPDATE agent_memory_entries
+            SET visible_to_workflow = (status = 'approved');
+        ELSE
+            UPDATE agent_memory_entries
+            SET visible_to_workflow = FALSE
+            WHERE visible_to_workflow IS NULL;
+        END IF;
+    END $$
+    """,
+    "ALTER TABLE agent_memory_entries ALTER COLUMN visible_to_workflow SET DEFAULT FALSE",
+    "ALTER TABLE agent_memory_entries ALTER COLUMN visible_to_workflow SET NOT NULL",
+    """
+    ALTER TABLE agent_memory_revisions
+    ADD COLUMN IF NOT EXISTS visible_to_workflow BOOLEAN
+    """,
+    """
+    DO $$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'agent_memory_revisions' AND column_name = 'status'
+        ) THEN
+            UPDATE agent_memory_revisions
+            SET visible_to_workflow = (status = 'approved');
+        ELSE
+            UPDATE agent_memory_revisions
+            SET visible_to_workflow = FALSE
+            WHERE visible_to_workflow IS NULL;
+        END IF;
+    END $$
+    """,
+    "ALTER TABLE agent_memory_revisions ALTER COLUMN visible_to_workflow SET DEFAULT FALSE",
+    "ALTER TABLE agent_memory_revisions ALTER COLUMN visible_to_workflow SET NOT NULL",
+    """
+    UPDATE agent_memory_entries
+    SET attributes = jsonb_set(attributes, '{outcome}', (attributes->'outcome') - 'status')
+    WHERE jsonb_typeof(attributes->'outcome') = 'object'
+      AND (attributes->'outcome') ? 'status'
+    """,
+    """
+    UPDATE agent_memory_revisions
+    SET attributes = jsonb_set(attributes, '{outcome}', (attributes->'outcome') - 'status')
+    WHERE jsonb_typeof(attributes->'outcome') = 'object'
+      AND (attributes->'outcome') ? 'status'
     """,
     (
         "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_scope "
         "ON agent_memory_entries (scope_type, scope_key)"
     ),
     (
-        "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_scope_status_kind "
-        "ON agent_memory_entries (scope_type, scope_key, status, kind)"
+        "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_scope_visible_kind "
+        "ON agent_memory_entries (scope_type, scope_key, visible_to_workflow, kind)"
     ),
     (
-        "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_status_kind "
-        "ON agent_memory_entries (status, kind)"
+        "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_visible_kind "
+        "ON agent_memory_entries (visible_to_workflow, kind)"
     ),
     (
         "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_updated_at_id "
         "ON agent_memory_entries (updated_at, id)"
     ),
     (
-        "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_status_updated_at_id "
-        "ON agent_memory_entries (status, updated_at, id)"
+        "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_visible_updated_at_id "
+        "ON agent_memory_entries (visible_to_workflow, updated_at, id)"
     ),
     (
         "CREATE INDEX IF NOT EXISTS ix_agent_memory_entries_content_hash "
@@ -1196,6 +1251,14 @@ _CORE_MEMORY_TABLE_STATEMENTS: tuple[str, ...] = (
     (
         "CREATE INDEX IF NOT EXISTS ix_agent_memory_revisions_entry "
         "ON agent_memory_revisions (memory_entry_id)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_agent_memory_revisions_entry_visible "
+        "ON agent_memory_revisions (memory_entry_id, visible_to_workflow)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_agent_memory_revisions_visible_created_at "
+        "ON agent_memory_revisions (visible_to_workflow, created_at)"
     ),
     (
         "CREATE INDEX IF NOT EXISTS ix_agent_memory_revisions_content_hash "
@@ -2989,6 +3052,12 @@ def _ensure_core_memory_tables(engine: Engine, table_names: set[str]) -> None:
     with engine.begin() as connection:
         for statement in _CORE_MEMORY_TABLE_STATEMENTS:
             connection.exec_driver_sql(statement)
+        for index_name in (
+            "ix_agent_memory_entries_scope_status_kind",
+            "ix_agent_memory_entries_status_kind",
+            "ix_agent_memory_entries_status_updated_at_id",
+        ):
+            connection.exec_driver_sql(f"DROP INDEX IF EXISTS {index_name}")
         _drop_constraint_if_exists(
             connection,
             "agent_memory_entries",
@@ -2999,31 +3068,9 @@ def _ensure_core_memory_tables(engine: Engine, table_names: set[str]) -> None:
             "agent_memory_revisions",
             "ck_agent_memory_revisions_status",
         )
+        connection.exec_driver_sql("ALTER TABLE agent_memory_entries DROP COLUMN IF EXISTS status")
         connection.exec_driver_sql(
-            "UPDATE agent_memory_entries "
-            "SET status = CASE status "
-            "WHEN 'resolved' THEN 'approved' "
-            "WHEN 'expired' THEN 'archived' "
-            "ELSE status END "
-            "WHERE status IN ('resolved', 'expired')"
-        )
-        connection.exec_driver_sql(
-            "UPDATE agent_memory_revisions "
-            "SET status = CASE status "
-            "WHEN 'resolved' THEN 'approved' "
-            "WHEN 'expired' THEN 'archived' "
-            "ELSE status END "
-            "WHERE status IN ('resolved', 'expired')"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE agent_memory_entries "
-            "ADD CONSTRAINT ck_agent_memory_entries_status "
-            "CHECK (status IN ('pending', 'approved', 'archived'))"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE agent_memory_revisions "
-            "ADD CONSTRAINT ck_agent_memory_revisions_status "
-            "CHECK (status IN ('pending', 'approved', 'archived'))"
+            "ALTER TABLE agent_memory_revisions DROP COLUMN IF EXISTS status"
         )
         _drop_constraint_if_exists(
             connection,
