@@ -17,7 +17,13 @@ from app.agents.runtime_tools.memory import (
     MEMORY_WRITE_TOOL_KEY,
 )
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
+from app.models.agent_memory import (
+    AgentMemoryChunk,
+    AgentMemoryEmbedding,
+    AgentMemoryEntry,
+    AgentMemoryRevision,
+    RunMemoryEvent,
+)
 from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
@@ -30,8 +36,7 @@ from app.schemas.memory import (
     MemoryAdminCreateRequest,
     MemoryAdminListQuery,
     MemoryAdminRevisionCreateRequest,
-    MemoryAdminStatusUpdateRequest,
-    MemoryLifecycleStatus,
+    MemoryAdminWorkflowVisibilityUpdateRequest,
     MemoryNamespaceGrant,
     MemoryNamespaceSelector,
     MemoryOutcome,
@@ -156,7 +161,7 @@ def _admin_create_request(
     run_id: int,
     *,
     scope: MemoryScope,
-    status: MemoryLifecycleStatus = MemoryLifecycleStatus.APPROVED,
+    visible_to_workflow: bool = True,
     summary: str = "Admin package memory.",
     content: str = "admin managed package alpha lookup signal.",
 ) -> MemoryAdminCreateRequest:
@@ -178,7 +183,7 @@ def _admin_create_request(
             slot="memory",
             trace_id="trace-admin-write",
         ),
-        status=status,
+        visible_to_workflow=visible_to_workflow,
     )
 
 
@@ -281,11 +286,11 @@ def test_admin_operator_lists_all_packages(
         )
         _ = service.resolve_memory(
             package_a.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Package A resolved"),
+            MemoryOutcome(summary="Package A resolved"),
         )
         _ = service.resolve_memory(
             package_b.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Package B resolved"),
+            MemoryOutcome(summary="Package B resolved"),
         )
 
         all_memory = service.list_admin_memory(MemoryAdminListQuery())
@@ -327,7 +332,7 @@ def test_admin_create_resolved_affects_matching_runtime_lookup(
             _admin_create_request(
                 run_a.id,
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_a_key),
-                content="admin scoped alpha approved memory should match alpha only.",
+                content="admin scoped alpha workflow-visible memory should match alpha only.",
             )
         )
         alpha_snippets = MemoryService(
@@ -341,7 +346,7 @@ def test_admin_create_resolved_affects_matching_runtime_lookup(
         ).query_memory(
             MemoryQuery(
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_a_key),
-                query="alpha approved",
+                query="alpha workflow-visible",
                 limit=10,
             ),
             record_event=False,
@@ -357,7 +362,7 @@ def test_admin_create_resolved_affects_matching_runtime_lookup(
         ).query_memory(
             MemoryQuery(
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_b_key),
-                query="alpha approved",
+                query="alpha workflow-visible",
                 limit=10,
             ),
             record_event=False,
@@ -365,7 +370,7 @@ def test_admin_create_resolved_affects_matching_runtime_lookup(
         admin_list = service.list_admin_memory(MemoryAdminListQuery())
         events = service.list_admin_memory_events(created.memory_id, limit=10, offset=0)
 
-    assert created.status == MemoryLifecycleStatus.APPROVED
+    assert created.visible_to_workflow is True
     assert created.scope == MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_a_key)
     assert created.provenance.created_by_type == "operator"
     assert created.provenance.agent_key == "local-instance-operator"
@@ -378,19 +383,134 @@ def test_admin_create_resolved_affects_matching_runtime_lookup(
     assert events.items[0].filters["channel"] == "memory_admin"
 
 
-def test_admin_pending_resolve_expire_revision_lookup(
+def test_admin_hard_delete_cascades_dependents_and_excludes_runtime_lookup(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
         run = _seed_run(session)
-        package_key = "pkg_admin_lifecycle"
+        package_key = "pkg_admin_delete_cascade"
         service = MemoryService(session)
         created = service.create_admin_memory(
             _admin_create_request(
                 run.id,
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
-                status=MemoryLifecycleStatus.PENDING,
-                content="pending admin memory is not in runtime lookup yet.",
+                content="admin delete cascade runtime lookup marker should disappear.",
+            )
+        )
+        entry = session.scalar(
+            select(AgentMemoryEntry).where(AgentMemoryEntry.memory_id == created.memory_id)
+        )
+        assert entry is not None
+        revision = session.scalar(
+            select(AgentMemoryRevision).where(
+                AgentMemoryRevision.revision_id == created.revision_id
+            )
+        )
+        assert revision is not None
+        chunk = AgentMemoryChunk(
+            memory_entry_id=entry.id,
+            memory_revision_id=revision.id,
+            memory_id=entry.memory_id,
+            revision_id=revision.revision_id,
+            chunk_id=f"{revision.revision_id}:chunk-0",
+            chunk_index=0,
+            chunking_version="memory-core-chunker/v1",
+            content=revision.content,
+            content_hash=revision.content_hash,
+            source_content_hash=revision.content_hash,
+            token_count=5,
+        )
+        session.add(chunk)
+        session.flush()
+        session.refresh(chunk)
+        session.add(
+            AgentMemoryEmbedding(
+                memory_chunk_id=chunk.id,
+                memory_entry_id=entry.id,
+                memory_revision_id=revision.id,
+                memory_id=entry.memory_id,
+                revision_id=revision.revision_id,
+                chunk_id=chunk.chunk_id,
+                embedding_provider="test",
+                embedding_model="text-embedding-3-small",
+                embedding_dimensions=3,
+                content_hash=revision.content_hash,
+                chunking_version=chunk.chunking_version,
+                status="pending",
+                metadata_={"source": "hard-delete-test"},
+            )
+        )
+        session.commit()
+
+        runtime_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=run.id,
+                package_key=package_key,
+                workflow_key="admin_workflow",
+                agent_key="admin_agent",
+            ),
+        )
+        before_delete = runtime_service.query_memory(
+            MemoryQuery(
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
+                query="delete cascade runtime lookup marker",
+                limit=10,
+            ),
+            record_event=False,
+        )
+        event_types_before_delete = list(
+            session.scalars(select(RunMemoryEvent.event_type).order_by(RunMemoryEvent.id))
+        )
+
+        service.delete_admin_memory(created.memory_id)
+
+        after_delete = runtime_service.query_memory(
+            MemoryQuery(
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
+                query="delete cascade runtime lookup marker",
+                limit=10,
+            ),
+            record_event=False,
+        )
+        event_rows_after_delete = session.execute(
+            select(
+                RunMemoryEvent.event_type,
+                RunMemoryEvent.memory_entry_id,
+                RunMemoryEvent.memory_revision_id,
+                RunMemoryEvent.memory_id,
+                RunMemoryEvent.revision_id,
+            ).order_by(RunMemoryEvent.id)
+        ).all()
+        row_counts = (
+            _count(session, AgentMemoryEntry),
+            _count(session, AgentMemoryRevision),
+            _count(session, AgentMemoryChunk),
+            _count(session, AgentMemoryEmbedding),
+        )
+
+    assert [snippet.memory_id for snippet in before_delete] == [created.memory_id]
+    assert after_delete == []
+    assert row_counts == (0, 0, 0, 0)
+    assert event_types_before_delete == ["operator_created"]
+    assert event_rows_after_delete == [
+        ("operator_created", None, None, created.memory_id, created.revision_id)
+    ]
+
+
+def test_admin_workflow_visibility_revision_lookup(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        run = _seed_run(session)
+        package_key = "pkg_admin_visibility"
+        service = MemoryService(session)
+        created = service.create_admin_memory(
+            _admin_create_request(
+                run.id,
+                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
+                visible_to_workflow=False,
+                content="workflow-hidden admin memory is not in runtime lookup yet.",
             )
         )
         runtime_service = MemoryService(
@@ -402,7 +522,7 @@ def test_admin_pending_resolve_expire_revision_lookup(
                 agent_key="admin_agent",
             ),
         )
-        pending_snippets = runtime_service.query_memory(
+        hidden_snippets = runtime_service.query_memory(
             MemoryQuery(
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
                 query="admin memory",
@@ -410,11 +530,11 @@ def test_admin_pending_resolve_expire_revision_lookup(
             ),
             record_event=False,
         )
-        approved = service.update_admin_memory_status(
+        workflow_visible = service.update_admin_memory_workflow_visibility(
             created.memory_id,
-            MemoryAdminStatusUpdateRequest(status=MemoryLifecycleStatus.APPROVED),
+            MemoryAdminWorkflowVisibilityUpdateRequest(visible_to_workflow=True),
         )
-        approved_snippets = runtime_service.query_memory(
+        workflow_visible_snippets = runtime_service.query_memory(
             MemoryQuery(
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
                 query="admin memory",
@@ -449,11 +569,14 @@ def test_admin_pending_resolve_expire_revision_lookup(
             ),
             record_event=False,
         )
-        archived = service.update_admin_memory_status(
+        workflow_hidden = service.update_admin_memory_workflow_visibility(
             created.memory_id,
-            MemoryAdminStatusUpdateRequest(status=MemoryLifecycleStatus.ARCHIVED),
+            MemoryAdminWorkflowVisibilityUpdateRequest(
+                visible_to_workflow=False,
+                summary="Admin workflow-hidden memory.",
+            ),
         )
-        archived_snippets = runtime_service.query_memory(
+        workflow_hidden_snippets = runtime_service.query_memory(
             MemoryQuery(
                 scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_key),
                 query="latest admin revision",
@@ -465,25 +588,25 @@ def test_admin_pending_resolve_expire_revision_lookup(
         events = service.list_admin_memory_events(created.memory_id, limit=10, offset=0)
         revisions = service.list_admin_memory_revisions(created.memory_id, limit=10, offset=0)
 
-    assert pending_snippets == []
-    assert approved.status == MemoryLifecycleStatus.APPROVED
-    assert [snippet.memory_id for snippet in approved_snippets] == [created.memory_id]
+    assert hidden_snippets == []
+    assert workflow_visible.visible_to_workflow is True
+    assert [snippet.memory_id for snippet in workflow_visible_snippets] == [created.memory_id]
     assert revised.content == "latest admin revision controls future lookup content."
     assert [snippet.content for snippet in latest_snippets] == [revised.content]
-    assert archived.status == MemoryLifecycleStatus.ARCHIVED
-    assert archived_snippets == []
-    assert admin_detail.status == MemoryLifecycleStatus.ARCHIVED
+    assert workflow_hidden.visible_to_workflow is False
+    assert workflow_hidden_snippets == []
+    assert admin_detail.visible_to_workflow is False
     assert admin_detail.content == revised.content
     assert [event.event_type for event in events.items] == [
         "operator_created",
-        "operator_status_changed",
+        "operator_visibility_changed",
         "operator_revised",
-        "operator_status_changed",
+        "operator_visibility_changed",
     ]
     assert [revision.version for revision in revisions.items] == [1, 2, 3, 4]
 
 
-def test_admin_list_status_sort(session_factory: sessionmaker[Session]) -> None:
+def test_admin_list_visibility_sort(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         run = _seed_run(session)
         service = MemoryService(session)
@@ -491,31 +614,31 @@ def test_admin_list_status_sort(session_factory: sessionmaker[Session]) -> None:
             scope_type=MemoryScopeType.PACKAGE,
             scope_key="pkg_admin_sort",
         )
-        pending = service.create_admin_memory(
+        first_hidden = service.create_admin_memory(
             _admin_create_request(
                 run.id,
                 scope=package_scope,
-                status=MemoryLifecycleStatus.PENDING,
-                summary="Pending admin sort memory.",
-                content="pending admin sort memory " + ("x" * 700),
+                visible_to_workflow=False,
+                summary="First hidden admin sort memory.",
+                content="first hidden admin sort memory " + ("x" * 700),
             )
         )
-        approved = service.create_admin_memory(
+        visible = service.create_admin_memory(
             _admin_create_request(
                 run.id,
                 scope=package_scope,
-                status=MemoryLifecycleStatus.APPROVED,
-                summary="Approved admin sort memory.",
-                content="approved admin sort memory.",
+                visible_to_workflow=True,
+                summary="Workflow-visible admin sort memory.",
+                content="workflow-visible admin sort memory.",
             )
         )
-        archived = service.create_admin_memory(
+        later_hidden = service.create_admin_memory(
             _admin_create_request(
                 run.id,
                 scope=package_scope,
-                status=MemoryLifecycleStatus.ARCHIVED,
-                summary="Archived admin sort memory.",
-                content="archived admin sort memory.",
+                visible_to_workflow=False,
+                summary="Later hidden admin sort memory.",
+                content="later hidden admin sort memory.",
             )
         )
         base_time = datetime(2026, 6, 13, 12, tzinfo=UTC)
@@ -524,42 +647,39 @@ def test_admin_list_status_sort(session_factory: sessionmaker[Session]) -> None:
             for entry in session.scalars(
                 select(AgentMemoryEntry).where(
                     AgentMemoryEntry.memory_id.in_(
-                        [pending.memory_id, approved.memory_id, archived.memory_id]
+                        [first_hidden.memory_id, visible.memory_id, later_hidden.memory_id]
                     )
                 )
             )
         }
-        entries[pending.memory_id].created_at = base_time
-        entries[pending.memory_id].updated_at = base_time + timedelta(minutes=2)
-        entries[approved.memory_id].created_at = base_time + timedelta(minutes=1)
-        entries[approved.memory_id].updated_at = base_time + timedelta(minutes=2)
-        entries[archived.memory_id].created_at = base_time + timedelta(minutes=3)
-        entries[archived.memory_id].updated_at = base_time + timedelta(minutes=1)
+        entries[first_hidden.memory_id].created_at = base_time
+        entries[first_hidden.memory_id].updated_at = base_time + timedelta(minutes=2)
+        entries[visible.memory_id].created_at = base_time + timedelta(minutes=1)
+        entries[visible.memory_id].updated_at = base_time + timedelta(minutes=2)
+        entries[later_hidden.memory_id].created_at = base_time + timedelta(minutes=3)
+        entries[later_hidden.memory_id].updated_at = base_time + timedelta(minutes=1)
         session.commit()
 
         default_list = service.list_admin_memory(MemoryAdminListQuery())
         created_sort = service.list_admin_memory(MemoryAdminListQuery(sort="createdAtDesc"))
-        pending_only = service.list_admin_memory(
-            MemoryAdminListQuery(status=MemoryLifecycleStatus.PENDING)
-        )
+        hidden_only = service.list_admin_memory(MemoryAdminListQuery(visible_to_workflow=False))
 
     assert default_list.total == 3
     assert [item.memory_id for item in default_list.items] == [
-        approved.memory_id,
-        pending.memory_id,
-        archived.memory_id,
+        visible.memory_id,
+        first_hidden.memory_id,
+        later_hidden.memory_id,
     ]
-    assert {item.status for item in default_list.items} == {
-        MemoryLifecycleStatus.PENDING,
-        MemoryLifecycleStatus.APPROVED,
-        MemoryLifecycleStatus.ARCHIVED,
-    }
+    assert {item.visible_to_workflow for item in default_list.items} == {False, True}
     assert [item.memory_id for item in created_sort.items] == [
-        archived.memory_id,
-        approved.memory_id,
-        pending.memory_id,
+        later_hidden.memory_id,
+        visible.memory_id,
+        first_hidden.memory_id,
     ]
-    assert [item.memory_id for item in pending_only.items] == [pending.memory_id]
+    assert {item.memory_id for item in hidden_only.items} == {
+        first_hidden.memory_id,
+        later_hidden.memory_id,
+    }
     assert len(default_list.items[1].excerpt) <= 500
 
 
@@ -685,11 +805,11 @@ def test_package_runtime_broader_scopes_are_package_isolated(
         )
         _ = alpha_service.resolve_memory(
             alpha_created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Alpha resolved"),
+            MemoryOutcome(summary="Alpha resolved"),
         )
         _ = beta_service.resolve_memory(
             beta_created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Beta resolved"),
+            MemoryOutcome(summary="Beta resolved"),
         )
         alpha_snippets = alpha_service.query_memory(
             MemoryQuery(query="package isolation", limit=10),
@@ -819,7 +939,6 @@ def test_admin_created_namespace_memory_still_requires_runtime_namespace_rules(
             MemoryQuery(
                 scope=namespace.to_scope(),
                 query="runtime grant marker",
-                status=MemoryLifecycleStatus.APPROVED,
                 limit=5,
             ),
             record_event=False,
@@ -828,7 +947,6 @@ def test_admin_created_namespace_memory_still_requires_runtime_namespace_rules(
             MemoryQuery(
                 scope=namespace.to_scope(),
                 query="runtime grant marker",
-                status=MemoryLifecycleStatus.APPROVED,
                 limit=5,
             ),
             record_event=False,
@@ -888,7 +1006,7 @@ def test_shared_namespace_owner_and_grant_read_write_semantics(
         )
         _ = owner_service.resolve_memory(
             owner_created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Owner resolved"),
+            MemoryOutcome(summary="Owner resolved"),
         )
         reader_service = MemoryService(
             session,
@@ -904,7 +1022,6 @@ def test_shared_namespace_owner_and_grant_read_write_semantics(
             MemoryQuery(
                 scope=namespace.to_scope(),
                 query="shared namespace",
-                status=MemoryLifecycleStatus.APPROVED,
                 limit=5,
             ),
             record_event=False,
@@ -1095,7 +1212,7 @@ def test_package_runtime_run_scope_default_remains_run_scoped(
         )
         _ = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Run resolved"),
+            MemoryOutcome(summary="Run resolved"),
         )
         snippets = service.query_memory(
             MemoryQuery(query="compounding", limit=5),
@@ -1141,7 +1258,7 @@ def test_package_runtime_current_context_lookup_uses_canonical_scope_keys(
         )
         _ = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Workflow resolved"),
+            MemoryOutcome(summary="Workflow resolved"),
         )
         snippets = service.query_memory(MemoryQuery(query="canonical fallback", limit=5))
         retrieval_event = session.scalar(
@@ -1251,7 +1368,7 @@ def test_core_memory_service_query_binds_current_context_with_finance_disabled(
         )
         approved = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Memory resolved"),
+            MemoryOutcome(summary="Memory resolved"),
         )
         snippets = service.query_memory(
             MemoryQuery(query="compounding"),
@@ -1263,7 +1380,7 @@ def test_core_memory_service_query_binds_current_context_with_finance_disabled(
         )
         reports = _reports(session)
 
-    assert approved.status == MemoryLifecycleStatus.APPROVED
+    assert approved.visible_to_workflow is True
     assert [snippet.memory_id for snippet in snippets] == [created.memory_id]
     assert "Long-term compounding memory" in snippets[0].text
     assert reports == []
@@ -1309,11 +1426,11 @@ def test_current_context_fallback_globally_reranks_before_limit(
         )
         _ = service.resolve_memory(
             run_scoped.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Run resolved"),
+            MemoryOutcome(summary="Run resolved"),
         )
         _ = service.resolve_memory(
             agent_scoped.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Agent resolved"),
+            MemoryOutcome(summary="Agent resolved"),
         )
 
         snippets = service.query_memory(MemoryQuery(query="shared ranking", limit=1))
@@ -1362,11 +1479,11 @@ def test_core_memory_query_uses_lexical_candidates_and_records_score_provenance(
         )
         _ = service.resolve_memory(
             first_created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="First resolved"),
+            MemoryOutcome(summary="First resolved"),
         )
         _ = service.resolve_memory(
             second_created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Second resolved"),
+            MemoryOutcome(summary="Second resolved"),
         )
 
         snippets = MemoryService(
@@ -1435,7 +1552,7 @@ def test_memory_context_service_uses_core_store_current_context_without_reports(
         )
         _ = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Memory resolved"),
+            MemoryOutcome(summary="Memory resolved"),
         )
         context_service = MemoryContextService(
             session,
@@ -1483,7 +1600,7 @@ def test_memory_context_service_persists_retrieval_and_injection_events_without_
         created = service.write_memory(capability_references=[], payload=write_request)
         _ = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Memory resolved"),
+            MemoryOutcome(summary="Memory resolved"),
         )
         prompt = MemoryContextService(
             session,
@@ -1642,7 +1759,6 @@ def test_core_memory_revision_update_rolls_back_when_event_persistence_fails(
             _ = service.resolve_memory(
                 created.memory_id,
                 MemoryOutcome(
-                    status=MemoryLifecycleStatus.APPROVED,
                     summary="Resolution should roll back",
                 ),
             )
@@ -1655,7 +1771,7 @@ def test_core_memory_revision_update_rolls_back_when_event_persistence_fails(
         events = list(session.scalars(select(RunMemoryEvent)))
 
     assert entry is not None
-    assert entry.status == "pending"
+    assert entry.visible_to_workflow is False
     assert [revision.version for revision in revisions] == [1]
     assert [event.event_type for event in events] == ["written"]
     assert events[0].revision_id == created.revision_id

@@ -7,7 +7,7 @@ from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.schemas.memory import (
     MEMORY_NAMESPACE_ACCESS_DENIED_CODE,
-    MemoryLifecycleStatus,
+    MEMORY_NOT_FOUND_CODE,
     MemoryNamespaceSelector,
     MemoryOutcome,
     MemoryProvenance,
@@ -139,7 +139,7 @@ def _admin_create_payload(run_id: int, *, include_scope: bool = True) -> dict[st
     payload: dict[str, object] = {
         "kind": "research.note",
         "summary": "Admin-created memory.",
-        "content": "Admin route creates approved memory without access context.",
+        "content": "Admin route creates workflow-visible memory without access context.",
         "subjectRefs": [{"kind": "instrument", "id": "MSFT"}],
         "attributes": {"source": "admin-route-test"},
         "provenance": {
@@ -194,8 +194,7 @@ def test_api_memory_authorized_private_scope_list_detail_history_and_actions(
         json={
             "accessContext": access,
             "outcome": {
-                "status": "approved",
-                "summary": "Owner approved memory.",
+                "summary": "Owner workflow-visible memory.",
                 "observedAt": "2026-01-17T10:30:00Z",
                 "attributes": {"verdict": "useful"},
             },
@@ -218,7 +217,6 @@ def test_api_memory_authorized_private_scope_list_detail_history_and_actions(
             "accessContext": access,
             "scope": {"scopeType": "run", "scopeKey": str(run_id)},
             "query": "canonical memory",
-            "status": "approved",
             "limit": 10,
         },
     )
@@ -290,7 +288,7 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
         )
         _ = service.resolve_memory(
             created.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Resolved"),
+            MemoryOutcome(summary="Resolved"),
         )
         memory_id = created.memory_id
         other_run_id = other_run.id
@@ -326,19 +324,16 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
             "accessContext": forged_reader_access,
             "scope": namespace.to_scope().model_dump(mode="json", by_alias=True),
             "query": "shared namespace",
-            "status": "approved",
         },
         {
             "accessContext": forged_owner_access,
             "scope": namespace.to_scope().model_dump(mode="json", by_alias=True),
             "query": "shared namespace",
-            "status": "approved",
         },
         {
             "accessContext": forged_reader_access,
             "visibility": "grant-visible-namespaces",
             "query": "shared namespace",
-            "status": "approved",
         },
     ]
     for payload in forged_payloads:
@@ -364,7 +359,7 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
             f"/api/memory/{memory_id}/actions/resolve",
             json={
                 "accessContext": forged_reader_access,
-                "outcome": {"status": "approved", "summary": "Forged resolve"},
+                "outcome": {"summary": "Forged resolve"},
             },
         ),
         client.post(
@@ -388,7 +383,6 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
                 "accessContext": denied_access,
                 "scope": namespace.to_scope().model_dump(mode="json", by_alias=True),
                 "query": "shared namespace",
-                "status": "approved",
             },
         ),
         client.post(f"/api/memory/{memory_id}/detail", json={"accessContext": denied_access}),
@@ -404,7 +398,7 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
             f"/api/memory/{memory_id}/actions/resolve",
             json={
                 "accessContext": denied_access,
-                "outcome": {"status": "approved", "summary": "Unauthorized resolve"},
+                "outcome": {"summary": "Unauthorized resolve"},
             },
         ),
     ]
@@ -444,7 +438,7 @@ def test_admin_list_without_access_context(
         )
         _ = service.resolve_memory(
             created_a.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Admin-visible"),
+            MemoryOutcome(summary="Admin-visible"),
         )
         created_b = service.write_memory(
             capability_references=[],
@@ -470,7 +464,7 @@ def test_admin_list_without_access_context(
         assert {
             "memoryId",
             "revisionId",
-            "status",
+            "visibleToWorkflow",
             "kind",
             "summary",
             "excerpt",
@@ -535,7 +529,7 @@ def test_admin_filters_narrow_and_clearing_filters_restores_full_corpus(
         )
         _ = alpha_service.resolve_memory(
             alpha.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Alpha resolved"),
+            MemoryOutcome(summary="Alpha resolved"),
         )
 
         beta_service = MemoryService(
@@ -573,7 +567,7 @@ def test_admin_filters_narrow_and_clearing_filters_restores_full_corpus(
         )
         _ = beta_service.resolve_memory(
             beta.memory_id,
-            MemoryOutcome(status=MemoryLifecycleStatus.ARCHIVED, summary="Beta expired"),
+            MemoryOutcome(summary="Beta expired"),
         )
 
         gamma_service = MemoryService(
@@ -618,7 +612,7 @@ def test_admin_filters_narrow_and_clearing_filters_restores_full_corpus(
         ({"runId": str(alpha_run_id)}, {alpha.memory_id}),
         ({"scopeType": "workflow"}, {beta.memory_id}),
         ({"kind": "decision.note"}, {beta.memory_id}),
-        ({"status": "pending"}, {gamma.memory_id}),
+        ({"visibleToWorkflow": False}, {gamma.memory_id}),
         ({"query": "gamma-query-needle"}, {gamma.memory_id}),
     ]
 
@@ -674,19 +668,50 @@ def test_admin_create_requires_scope(
     detail = client.get(f"/api/memory/admin/entries/{memory_id}")
     revisions = client.get(f"/api/memory/admin/entries/{memory_id}/revisions")
     events = client.get(f"/api/memory/admin/entries/{memory_id}/events")
-    status_update = client.patch(
-        f"/api/memory/admin/entries/{memory_id}/status",
-        json={"status": "archived", "summary": "Admin archived memory."},
+    visibility_update = client.patch(
+        f"/api/memory/admin/entries/{memory_id}/workflow-visibility",
+        json={"visibleToWorkflow": False, "summary": "Admin workflow-hidden memory."},
     )
 
-    assert created_payload["status"] == "approved"
+    assert created_payload["visibleToWorkflow"] is True
     assert created_payload["scope"] == {"scopeType": "run", "scopeKey": str(run_id)}
     assert "accessContext" not in str(created_payload)
     assert detail.status_code == 200, detail.json()
     assert revisions.status_code == 200, revisions.json()
     assert events.status_code == 200, events.json()
-    assert status_update.status_code == 200, status_update.json()
-    assert status_update.json()["status"] == "archived"
+    assert visibility_update.status_code == 200, visibility_update.json()
+    assert visibility_update.json()["visibleToWorkflow"] is False
+
+
+def test_admin_delete_entry_removes_detail_and_list_and_reuses_not_found_behavior(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        run = _seed_run(session)
+        run_id = run.id
+        session.commit()
+
+    created = client.post("/api/memory/admin/entries", json=_admin_create_payload(run_id))
+    assert created.status_code == 200, created.json()
+    memory_id = created.json()["memoryId"]
+
+    delete_response = client.delete(f"/api/memory/admin/entries/{memory_id}")
+    detail_after_delete = client.get(f"/api/memory/admin/entries/{memory_id}")
+    list_after_delete = client.get("/api/memory/admin/entries")
+    repeated_delete = client.delete(f"/api/memory/admin/entries/{memory_id}")
+    missing_delete = client.delete("/api/memory/admin/entries/memory_missing_delete_test")
+
+    assert delete_response.status_code == 204
+    assert delete_response.content == b""
+    assert detail_after_delete.status_code == 404, detail_after_delete.json()
+    assert detail_after_delete.json()["code"] == MEMORY_NOT_FOUND_CODE
+    assert list_after_delete.status_code == 200, list_after_delete.json()
+    assert list_after_delete.json()["total"] == 0
+    assert list_after_delete.json()["items"] == []
+    for response in (repeated_delete, missing_delete):
+        assert response.status_code == 404, response.json()
+        assert response.json()["code"] == MEMORY_NOT_FOUND_CODE
 
 
 def test_admin_write_payload_validation_and_scope_mutation_attempts(
@@ -719,10 +744,10 @@ def test_admin_write_payload_validation_and_scope_mutation_attempts(
             "scope": {"scopeType": "package", "scopeKey": "other_package"},
         },
     )
-    status_scope_mutation = client.patch(
-        f"/api/memory/admin/entries/{memory_id}/status",
+    visibility_scope_mutation = client.patch(
+        f"/api/memory/admin/entries/{memory_id}/workflow-visibility",
         json={
-            "status": "approved",
+            "visibleToWorkflow": True,
             "summary": "Mutating scope should fail.",
             "scope": {"scopeType": "package", "scopeKey": "other_package"},
         },
@@ -732,7 +757,7 @@ def test_admin_write_payload_validation_and_scope_mutation_attempts(
         invalid_create,
         blank_content,
         revision_scope_mutation,
-        status_scope_mutation,
+        visibility_scope_mutation,
     )
     for response in invalid_responses:
         assert response.status_code == 422, response.json()

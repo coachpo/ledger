@@ -31,7 +31,7 @@ from app.schemas.memory import (
     MemoryAdminListRead,
     MemoryAdminRevisionCreateRequest,
     MemoryAdminRevisionListRead,
-    MemoryAdminStatusUpdateRequest,
+    MemoryAdminWorkflowVisibilityUpdateRequest,
     MemoryApiAccessContext,
     MemoryApiAccessRequest,
     MemoryApiEntryRead,
@@ -45,7 +45,6 @@ from app.schemas.memory import (
     MemoryArtifactRead,
     MemoryAuditLinks,
     MemoryEntryRead,
-    MemoryLifecycleStatus,
     MemoryNamespaceAction,
     MemoryNamespaceGrant,
     MemoryNamespaceSelector,
@@ -259,7 +258,7 @@ class MemoryService:
             )
         effective_payload = self._authorize_and_canonicalize_write_payload(payload)
         try:
-            result = self.store.create_pending(
+            result = self.store.create_hidden(
                 effective_payload,
                 event_context=self._event_context_from_lookup(self.current_context),
             )
@@ -357,7 +356,7 @@ class MemoryService:
             run_id=payload.run_id,
             scope_type=payload.scope_type.value if payload.scope_type is not None else None,
             kind=payload.kind,
-            status=payload.status.value if payload.status is not None else None,
+            visible_to_workflow=payload.visible_to_workflow,
             query_text=query_text,
             sort=payload.sort,
             limit=payload.limit,
@@ -370,7 +369,7 @@ class MemoryService:
             run_id=payload.run_id,
             scope_type=payload.scope_type.value if payload.scope_type is not None else None,
             kind=payload.kind,
-            status=payload.status.value if payload.status is not None else None,
+            visible_to_workflow=payload.visible_to_workflow,
             query_text=query_text,
         )
         return MemoryAdminListRead(
@@ -389,7 +388,7 @@ class MemoryService:
                 scope_type=payload.scope.scope_type.value,
                 scope_key=payload.scope.scope_key,
                 kind=payload.kind,
-                status=payload.status.value,
+                visible_to_workflow=payload.visible_to_workflow,
                 summary=payload.summary,
                 subject_refs=self._subject_refs_payload(payload.subject_refs),
                 attributes=self._admin_attributes(payload.attributes),
@@ -409,7 +408,7 @@ class MemoryService:
             self.session.flush()
             self.session.refresh(entry)
             attributes = self._admin_attributes(payload.attributes)
-            if payload.status != MemoryLifecycleStatus.PENDING:
+            if payload.visible_to_workflow:
                 attributes["outcome"] = self._outcome_payload(payload.to_outcome())
                 entry.attributes = attributes
             revision = self._create_admin_revision_row(
@@ -429,7 +428,7 @@ class MemoryService:
                 filters={
                     "kind": payload.kind,
                     "scope": payload.scope.model_dump(mode="json", by_alias=True),
-                    "status": payload.status.value,
+                    "visibleToWorkflow": payload.visible_to_workflow,
                     "subjectRefs": [
                         subject_ref.model_dump(mode="json", by_alias=True, exclude_none=True)
                         for subject_ref in payload.subject_refs
@@ -447,6 +446,17 @@ class MemoryService:
 
     def get_admin_memory(self, memory_id: str) -> MemoryAdminEntryRead:
         return MemoryAdminEntryRead.from_entry(self.get_memory(memory_id))
+
+    def delete_admin_memory(self, memory_id: str) -> None:
+        try:
+            entry = self.entry_repository.get_by_memory_id_for_update(memory_id)
+            if entry is None:
+                raise self._memory_not_found()
+            self.entry_repository.delete(entry)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
 
     def list_admin_memory_revisions(
         self,
@@ -522,10 +532,10 @@ class MemoryService:
             raise
         return MemoryAdminEntryRead.from_entry(self.get_memory(entry.memory_id))
 
-    def update_admin_memory_status(
+    def update_admin_memory_workflow_visibility(
         self,
         memory_id: str,
-        payload: MemoryAdminStatusUpdateRequest,
+        payload: MemoryAdminWorkflowVisibilityUpdateRequest,
     ) -> MemoryAdminEntryRead:
         try:
             entry = self.entry_repository.get_by_memory_id_for_update(memory_id)
@@ -536,7 +546,7 @@ class MemoryService:
             attributes = self._revision_attributes(latest.attributes, {})
             attributes["outcome"] = self._outcome_payload(payload.to_outcome())
             self._apply_operator_entry_provenance(entry, provenance)
-            entry.status = payload.status.value
+            entry.visible_to_workflow = payload.visible_to_workflow
             entry.attributes = attributes
             entry.updated_at = utcnow()
             revision = self._create_admin_revision_row(
@@ -549,7 +559,7 @@ class MemoryService:
                 provenance=provenance,
             )
             self._record_operator_event(
-                event_type="operator_status_changed",
+                event_type="operator_visibility_changed",
                 entry=entry,
                 revision=revision,
                 provenance=provenance,
@@ -558,7 +568,7 @@ class MemoryService:
                         "scopeType": entry.scope_type,
                         "scopeKey": entry.scope_key,
                     },
-                    "status": payload.status.value,
+                    "visibleToWorkflow": payload.visible_to_workflow,
                 },
                 result_snapshot=self._operator_result_snapshot(entry, revision),
             )
@@ -590,7 +600,7 @@ class MemoryService:
             memory_entry_id=entry.id,
             revision_id=self._new_revision_id(),
             version=1 if latest is None else latest.version + 1,
-            status=entry.status,
+            visible_to_workflow=entry.visible_to_workflow,
             revision_action="created" if supersedes_revision_id is None else "superseded",
             summary=summary,
             content=content,
@@ -628,7 +638,10 @@ class MemoryService:
             revision_id=revision.revision_id,
             filters={**operator_snapshot, **filters},
             result_snapshot={**operator_snapshot, **result_snapshot},
-            status_snapshot={**operator_snapshot, "status": entry.status},
+            status_snapshot={
+                **operator_snapshot,
+                "visibleToWorkflow": entry.visible_to_workflow,
+            },
             step_id=provenance.step_id,
             trace_span_id=provenance.trace_id,
         )
@@ -733,7 +746,7 @@ class MemoryService:
         return {
             "memoryId": entry.memory_id,
             "revisionId": revision.revision_id,
-            "status": entry.status,
+            "visibleToWorkflow": entry.visible_to_workflow,
             "revisionAction": revision.revision_action,
         }
 
@@ -759,7 +772,7 @@ class MemoryService:
         return MemoryAdminListItemRead(
             memory_id=entry.memory_id,
             revision_id=revision.revision_id,
-            status=MemoryLifecycleStatus(entry.status),
+            visible_to_workflow=entry.visible_to_workflow,
             kind=entry.kind,
             summary=revision.summary,
             excerpt=row.excerpt or revision.summary,

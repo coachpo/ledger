@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response, status
 from pydantic import ValidationError
 
 from app.api.dependencies import get_memory_service
@@ -20,7 +20,7 @@ from app.schemas.memory import (
     MemoryAdminRevisionCreateRequest,
     MemoryAdminRevisionListRead,
     MemoryAdminSort,
-    MemoryAdminStatusUpdateRequest,
+    MemoryAdminWorkflowVisibilityUpdateRequest,
     MemoryApiAccessRequest,
     MemoryApiEntryRead,
     MemoryApiEventListRead,
@@ -29,7 +29,6 @@ from app.schemas.memory import (
     MemoryApiReflectRequest,
     MemoryApiResolveRequest,
     MemoryApiRevisionListRead,
-    MemoryLifecycleStatus,
     MemoryScopeType,
 )
 from app.services.memory_service import MemoryService
@@ -45,7 +44,7 @@ def _memory_admin_list_query(
     run_id: int | None,
     scope_type: MemoryScopeType | None,
     kind: str | None,
-    status_filter: MemoryLifecycleStatus | None,
+    visible_to_workflow: bool | None,
     query: str | None,
     limit: int,
     offset: int,
@@ -59,7 +58,7 @@ def _memory_admin_list_query(
             run_id=run_id,
             scope_type=scope_type,
             kind=kind,
-            status=status_filter,
+            visible_to_workflow=visible_to_workflow,
             query=query,
             limit=limit,
             offset=offset,
@@ -82,7 +81,7 @@ def list_admin_memory_entries(
     run_id: Annotated[int | None, Query(alias="runId", ge=1)] = None,
     scope_type: Annotated[MemoryScopeType | None, Query(alias="scopeType")] = None,
     kind: Annotated[str | None, Query(max_length=80)] = None,
-    status_filter: Annotated[MemoryLifecycleStatus | None, Query(alias="status")] = None,
+    visible_to_workflow: Annotated[bool | None, Query(alias="visibleToWorkflow")] = None,
     query: Annotated[str | None, Query(max_length=1_000)] = None,
     limit: Annotated[int, Query(ge=1, le=MEMORY_ADMIN_LIST_MAX_LIMIT)] = (
         MEMORY_ADMIN_LIST_DEFAULT_LIMIT
@@ -97,7 +96,7 @@ def list_admin_memory_entries(
         run_id=run_id,
         scope_type=scope_type,
         kind=kind,
-        status_filter=status_filter,
+        visible_to_workflow=visible_to_workflow,
         query=query,
         limit=limit,
         offset=offset,
@@ -120,6 +119,15 @@ def get_admin_memory_entry(
     service: Annotated[MemoryService, Depends(get_memory_service)],
 ) -> MemoryAdminEntryRead:
     return service.get_admin_memory(memory_id)
+
+
+@router.delete("/admin/entries/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_admin_memory_entry(
+    memory_id: str,
+    service: Annotated[MemoryService, Depends(get_memory_service)],
+) -> Response:
+    service.delete_admin_memory(memory_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/admin/entries/{memory_id}/revisions", response_model=MemoryAdminRevisionListRead)
@@ -151,13 +159,13 @@ def create_admin_memory_revision(
     return service.create_admin_memory_revision(memory_id, payload)
 
 
-@router.patch("/admin/entries/{memory_id}/status", response_model=MemoryAdminEntryRead)
-def update_admin_memory_status(
+@router.patch("/admin/entries/{memory_id}/workflow-visibility", response_model=MemoryAdminEntryRead)
+def update_admin_memory_workflow_visibility(
     memory_id: str,
-    payload: MemoryAdminStatusUpdateRequest,
+    payload: MemoryAdminWorkflowVisibilityUpdateRequest,
     service: Annotated[MemoryService, Depends(get_memory_service)],
 ) -> MemoryAdminEntryRead:
-    return service.update_admin_memory_status(memory_id, payload)
+    return service.update_admin_memory_workflow_visibility(memory_id, payload)
 
 
 @router.post("", response_model=MemoryApiListRead)
