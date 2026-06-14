@@ -29,7 +29,6 @@ from app.schemas.memory import (
     MemoryAttributes,
     MemoryAuditLinks,
     MemoryEntryRead,
-    MemoryLifecycleStatus,
     MemoryOutcome,
     MemoryPromptSnippet,
     MemoryProvenance,
@@ -101,13 +100,13 @@ class _RankedLookupCandidate:
 
 
 class MemoryStore(Protocol):
-    def create_pending(
+    def create_hidden(
         self,
         payload: MemoryWriteRequest,
         *,
         event_context: MemoryEventContext | None = None,
     ) -> MemoryWriteResult:
-        """Stage a pending memory write and return the memory-domain result."""
+        """Stage a hidden memory write and return the memory-domain result."""
         ...
 
     def get(self, memory_id: str) -> MemoryEntryRead:
@@ -139,11 +138,11 @@ class MemoryStore(Protocol):
         ...
 
     def resolve(self, memory_id: str, outcome: MemoryOutcome) -> MemoryEntryRead:
-        """Stage a lifecycle resolution for an existing memory."""
+        """Stage a workflow-visible outcome for an existing memory."""
         ...
 
     def append_reflection(self, memory_id: str, reflection: MemoryReflection) -> MemoryEntryRead:
-        """Stage a reflection append for an existing approved memory."""
+        """Stage a reflection append for an existing workflow-visible memory."""
         ...
 
     def record_review(
@@ -175,7 +174,7 @@ class PostgresMemoryStore:
         self.revisions = AgentMemoryRevisionRepository(session)
         self.events = RunMemoryEventRepository(session)
 
-    def create_pending(
+    def create_hidden(
         self,
         payload: MemoryWriteRequest,
         *,
@@ -213,7 +212,7 @@ class PostgresMemoryStore:
             scope_type=payload.scope.scope_type.value,
             scope_key=payload.scope.scope_key,
             kind=payload.kind,
-            status=MemoryLifecycleStatus.PENDING.value,
+            visible_to_workflow=False,
             summary=payload.summary,
             subject_refs=subject_refs,
             attributes=attributes,
@@ -337,7 +336,7 @@ class PostgresMemoryStore:
         latest = self._latest_revision(entry)
         attributes = self._attributes_payload(latest.attributes)
         attributes["outcome"] = self._outcome_payload(outcome)
-        entry.status = outcome.status.value
+        entry.visible_to_workflow = True
         entry.attributes = attributes
         entry.updated_at = utcnow()
         revision = self._create_revision(
@@ -358,7 +357,10 @@ class PostgresMemoryStore:
             event_type="reviewed",
             entry=entry,
             revision=revision,
-            result_snapshot={"memoryId": entry.memory_id, "status": entry.status},
+            result_snapshot={
+                "memoryId": entry.memory_id,
+                "visibleToWorkflow": entry.visible_to_workflow,
+            },
         )
         self.session.flush()
         self.session.refresh(entry)
@@ -475,7 +477,7 @@ class PostgresMemoryStore:
             "scope_key": query.scope.scope_key if query.scope is not None else None,
             "subject_refs": self._query_subject_refs(query.subject_refs),
             "kind": query.kind,
-            "status": (query.status or MemoryLifecycleStatus.APPROVED).value,
+            "visible_to_workflow": True,
             "agent_key": query.agent_key,
             "workflow_key": query.workflow_key,
             "tags": query.tags,
@@ -579,7 +581,7 @@ class PostgresMemoryStore:
             memory_entry_id=entry.id,
             revision_id=self._new_revision_id(),
             version=1 if latest is None else latest.version + 1,
-            status=entry.status,
+            visible_to_workflow=entry.visible_to_workflow,
             revision_action=revision_action,
             summary=summary,
             content=content,
@@ -643,7 +645,7 @@ class PostgresMemoryStore:
             excerpt=excerpt,
             injected_text=injected_text,
             result_snapshot=result_snapshot or {},
-            status_snapshot=status_snapshot or {"status": entry.status},
+            status_snapshot=status_snapshot or {"visibleToWorkflow": entry.visible_to_workflow},
             trace_span_id=(
                 event_context.trace_span_id
                 if event_context is not None and event_context.trace_span_id is not None
@@ -662,7 +664,7 @@ class PostgresMemoryStore:
         return MemoryWriteResult(
             memory_id=entry.memory_id,
             revision_id=revision.revision_id,
-            status=MemoryLifecycleStatus(entry.status),
+            visible_to_workflow=entry.visible_to_workflow,
             revision_action=revision_action,
             created_at=revision.created_at,
             provenance=self._provenance(entry),
@@ -681,7 +683,7 @@ class PostgresMemoryStore:
         return MemoryEntryRead(
             memory_id=entry.memory_id,
             revision_id=revision.revision_id,
-            status=MemoryLifecycleStatus(entry.status),
+            visible_to_workflow=entry.visible_to_workflow,
             kind=entry.kind,
             summary=revision.summary,
             content=revision.content,
@@ -734,7 +736,7 @@ class PostgresMemoryStore:
         return MemoryArtifactRead(
             memory_id=entry.memory_id,
             revision_id=revision.revision_id,
-            status=MemoryLifecycleStatus(entry.status),
+            visible_to_workflow=entry.visible_to_workflow,
             kind=entry.kind,
             summary=revision.summary,
             subject_refs=self._subject_ref_models(revision.subject_refs),
@@ -800,7 +802,7 @@ class PostgresMemoryStore:
         return MemoryApiRevisionRead(
             revision_id=revision.revision_id,
             version=revision.version,
-            status=MemoryLifecycleStatus(revision.status),
+            visible_to_workflow=revision.visible_to_workflow,
             revision_action=MemoryRevisionAction(revision.revision_action),
             summary=revision.summary,
             content=revision.content,
@@ -897,7 +899,6 @@ class PostgresMemoryStore:
         payload = outcome.model_dump(mode="json", by_alias=True, exclude_none=True)
         payload.update(
             {
-                "status": outcome.status.value,
                 "summary": outcome.summary,
                 "observedAt": PostgresMemoryStore._datetime_payload(outcome.observed_at),
                 "attributes": deepcopy(outcome.attributes),
@@ -951,7 +952,7 @@ class PostgresMemoryStore:
         return {
             "memoryId": entry.memory_id,
             "revisionId": revision.revision_id,
-            "status": entry.status,
+            "visibleToWorkflow": entry.visible_to_workflow,
             "revisionAction": revision_action.value,
         }
 
