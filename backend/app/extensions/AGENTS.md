@@ -5,9 +5,9 @@
 ## OVERVIEW
 `app/extensions/` owns first-party extension registration, private registrar wiring, and extension-owned composition roots. The current statically resident bundled extensions are Finance Workspace and Digital Oracle Runtime.
 
-`signaldeck.finance` owns preserved finance `/api/v1` routers, finance provider factories, finance runtime tool specs/executors, report lookup, and historical agent-memory report readers.
+`signaldeck.finance` owns preserved finance `/api/v1` routers, finance provider factories, finance runtime tool specs/executors, report lookup, and historical agent-memory report readers. Its public runtime tool keys are `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, and `signaldeck.finance.reports.lookup`.
 
-`signaldeck.digital_oracle` owns only Digital Oracle runtime tools in this upgrade.
+`signaldeck.digital_oracle` owns only `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup` in this upgrade.
 
 Extension model: this folder owns statically resident extension registration, private registrar wiring, and extension-owned composition roots for code shipped with SignalDeck Core.
 
@@ -42,6 +42,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 - Extension definitions are private registry wiring; behavior is supplied through explicit registrars and service-layer filtering.
+- Extension-owned public runtime tool keys must use the canonical `signaldeck.<owner>.<tool_collection>.<tool>` scheme listed above; do not define ownerless aliases.
 - `ExtensionService` is the authority for persisted state, `/api/extensions` toggles, and enabled ToolCatalog/runtime views.
 - Public extension state stays slim: `key`, `label`, and `enabled` only. Keep registrar paths, owner keys, scaffold details, and plugin-manifest-style fields private.
 

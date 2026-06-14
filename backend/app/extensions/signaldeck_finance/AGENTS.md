@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/backend/AGENTS.md`, and `/backend/app/extensions/AGENTS.md`. This file covers the statically resident `signaldeck.finance` extension only.
 
 ## OVERVIEW
-`signaldeck_finance/` owns the current first-party Finance Workspace behavior: preserved `/api/v1` portfolio/template/report routes, finance provider factories, finance runtime tools, report lookup, and historical agent-memory report readers. It does not own Digital Oracle prediction markets, SEC filings, or market sentiment runtime tools.
+`signaldeck_finance/` owns the current first-party Finance Workspace behavior: preserved `/api/v1` portfolio/template/report routes, finance provider factories, finance runtime tools, report lookup, and historical agent-memory report readers. Its public runtime tool keys are `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, and `signaldeck.finance.reports.lookup`. It does not own Digital Oracle prediction markets, SEC filings, or market sentiment runtime tools.
 
 Treat this folder as extension-owned product logic, not as a staging area for generic platform behavior. If a finance-specific feature becomes a shared platform contract, move that ownership intentionally and update registries, gates, docs, and tests together.
 
@@ -33,7 +33,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## CONVENTIONS
 - `FINANCE_WORKSPACE_EXTENSION_KEY` stays `signaldeck.finance` and is the owner key for finance routes, tools, providers, and hooks.
 - Finance route registrations must remain guarded by `require_extension_enabled()`.
-- Finance runtime tool keys and OpenAI function names stay stable while their specs and executors are registered through this extension. Digital Oracle tool keys and OpenAI function names also stay stable, but their specs and executors belong to `signaldeck.digital_oracle`.
+- Finance runtime tool keys use only the canonical `signaldeck.<owner>.<tool_collection>.<tool>` contract: `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, and `signaldeck.finance.reports.lookup`.
+- OpenAI function names are mechanical underscore mappings from canonical keys, for example `signaldeck.finance.market_data.quote_lookup` -> `signaldeck_finance_market_data_quote_lookup`. Digital Oracle tool keys and function names belong to `signaldeck.digital_oracle`.
 
 ## ANTI-PATTERNS
 - Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
