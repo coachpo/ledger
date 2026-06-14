@@ -28,7 +28,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Public multi-user auth, live broker execution, realtime market streaming, tax-lot accounting, and user-facing autonomous scheduling.
 - Removed `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, global Digital Oracle skill surfaces, and standalone global authoring routes.
 - TradingAgents-specific platform behavior, exact LangGraph graph parity, checkpoint/runtime semantics, or agent-initiated trading execution.
-- Unscoped runtime memory search, public memory CRUD, exact-id `signaldeck.memory.get`, vector activation/search, embeddings, chunk tables, destructive memory deletion, and report-history promotion in phase 1.
+- Unscoped runtime memory search, public memory CRUD, exact-id `signaldeck.memory.get`, vector activation/search, embeddings, chunk tables, runtime/global/public/bulk memory deletion, and report-history promotion in phase 1. Trusted admin single-entry hard delete is part of the shipped Memory Admin management surface.
 - Raw HTTP LLM calls in application code when an official provider SDK exists.
 
 ## Functional Requirements
@@ -96,8 +96,11 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Shared memory namespaces must be package-owned as `{ownerPackageKey}/{namespaceKey}` and require explicit read/write grants for non-owner access. Wildcards, ownerless namespaces, global search, and cross-package private writes must fail closed.
 - `/api/memory` must remain a platform-core route family, not `/api/v1` finance routing. Its scoped list/detail/revision/event/action paths must not provide admin-style all-package reads.
 - `/api/memory/admin/entries*` and `/memory` must provide trusted local operator/admin management over canonical workflow memory across packages, with optional filters that narrow rather than authorize the corpus.
-- Admin create, revise, and status operations must write canonical memory through explicit scope, status, provenance, immutable revision, and append-only event semantics using operator provenance and `memory_admin` channel metadata.
-- Approved admin entries whose scopes and namespace grants match future Workflow Package runs may affect later `signaldeck.memory.lookup`; pending and archived admin entries remain visible to the operator control plane only.
+- Runtime memory lookup must return only workflow-visible entries that match runtime scope and grant rules, and lookup output must omit `visibleToWorkflow`.
+- Runtime memory writes must default hidden with `visibleToWorkflow=false`; write output must include `visibleToWorkflow`.
+- Admin create, revise, and workflow-visibility operations must write canonical memory through explicit scope, `visible_to_workflow`, provenance, immutable revision, and append-only event semantics using operator provenance and `memory_admin` channel metadata.
+- Admin create must default visible with `visibleToWorkflow=true`; admin list must default to all entries and support optional `visibleToWorkflow=true|false` filtering.
+- Historical `approved`, `pending`, and `archived` values are migration-only inputs: startup repair maps `approved` to visible and `pending` or `archived` to hidden. They must not be live Memory Admin or runtime eligibility states.
 - Model-visible memory outputs must not expose report identity, download URLs, raw markdown, or audit links. API/UI memory projections must not include finance report-history rows.
 
 ## Non-Functional Requirements

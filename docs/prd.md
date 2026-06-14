@@ -47,7 +47,7 @@ Digital Oracle runtime support ships through the statically resident bundled `si
 - Runtime input schema `title` and `description` fields improve generated launch-form labels/help text without changing runtime semantics.
 - Report-series workflows can reuse stable tags and runtime inputs to reference the latest prior report in a series.
 - Report list/detail/download flows remain slug-addressed and source-aware across `compiled`, `uploaded`, `external`, and `agent` origins.
-- Historical agent-memory reports remain report-domain records, while canonical memory writes, lookup, scoped `/api/memory`, and trusted `/memory` admin use platform-core memory tools, tables, scopes, status, provenance, and runtime grant checks.
+- Historical agent-memory reports remain report-domain records, while canonical memory writes, lookup, scoped `/api/memory`, and trusted `/memory` admin use platform-core memory tools, tables, scopes, workflow visibility, provenance, and runtime grant checks.
 - Workflow Packages can be authored from `signaldeck.workflowPackage/v1` YAML manifests, validated before save, and exported/imported without database ids, run history, package secret binding rows, or raw secret values.
 - The Workflow Package editor stays authoring-only and does not own launch runtime state.
 - Package launches start from `/workflow-packages/:packageId/run`, create durable queued runs, and expose package provenance, progress, queue explanations, per-step agent/operation details, final output, memory evidence, typed failures, retry evidence, and safe error states.
