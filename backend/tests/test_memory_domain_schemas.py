@@ -20,12 +20,14 @@ from app.schemas.memory import (
     MEMORY_NOT_FOUND_CODE,
     MEMORY_PROJECTION_MATRIX,
     MEMORY_REVISION_WRITE_MODE,
+    MemoryAdminCreateRequest,
     MemoryAdminEntryRead,
     MemoryAdminListItemRead,
+    MemoryAdminWorkflowVisibilityUpdateRequest,
+    MemoryApiListRequest,
     MemoryArtifactRead,
     MemoryEntryRead,
     MemoryId,
-    MemoryLifecycleStatus,
     MemoryPromptSnippet,
     MemoryProvenance,
     MemoryQuery,
@@ -145,6 +147,12 @@ def test_projection_matrix_documents_neutral_visibility_surfaces() -> None:
     assert "kind" in MEMORY_PROJECTION_MATRIX["model-visible"]
     assert "summary" in MEMORY_PROJECTION_MATRIX["model-visible"]
     assert "content" in MEMORY_PROJECTION_MATRIX["model-visible"]
+    assert "status" not in MEMORY_PROJECTION_MATRIX["model-visible"]
+    assert "visibleToWorkflow" not in MEMORY_PROJECTION_MATRIX["model-visible"]
+    assert "visibleToWorkflow" in MEMORY_PROJECTION_MATRIX["api-visible"]
+    assert "visibleToWorkflow" in MEMORY_PROJECTION_MATRIX["ui-visible"]
+    assert "status" not in MEMORY_PROJECTION_MATRIX["api-visible"]
+    assert "status" not in MEMORY_PROJECTION_MATRIX["ui-visible"]
     assert "auditLinks" not in MEMORY_PROJECTION_MATRIX["model-visible"]
     assert "auditLinks" not in MEMORY_PROJECTION_MATRIX["api-visible"]
     assert MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS >= {
@@ -209,11 +217,15 @@ def test_memory_query_defaults_to_current_context_fallback_and_budgets() -> None
     assert query.max_characters == MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS
     assert payload["scopeMode"] == "current-context-fallback"
     assert payload["fallbackScope"] == "current-run-package-agent"
+    assert "status" not in payload
+    assert "visibleToWorkflow" not in payload
 
     with pytest.raises(ValidationError):
         _ = MemoryQuery.model_validate({"limit": MEMORY_LOOKUP_MAX_LIMIT + 1})
     with pytest.raises(ValidationError):
         _ = MemoryQuery.model_validate({"maxCharacters": MEMORY_LOOKUP_MAX_CHARACTERS + 1})
+    with pytest.raises(ValidationError):
+        _ = MemoryQuery.model_validate({"status": "approved"})
 
 
 def test_memory_query_with_scope_or_subject_uses_explicit_selectors() -> None:
@@ -237,11 +249,38 @@ def test_memory_query_with_scope_or_subject_uses_explicit_selectors() -> None:
     assert subject_scoped.subject_refs[0].id == "drawdown-risk"
 
 
+def test_api_list_request_removes_status_filter_from_query_contract() -> None:
+    request = MemoryApiListRequest.model_validate(
+        {
+            "accessContext": {"packageKey": "pkg", "workflowKey": None, "agentKey": None},
+            "scope": _scope().model_dump(mode="json", by_alias=True),
+            "query": "risk",
+        }
+    )
+    query = request.to_query()
+    payload = request.model_dump(mode="json", by_alias=True)
+    query_payload = query.model_dump(mode="json", by_alias=True)
+
+    assert payload["visibility"] == "explicit-scope"
+    assert query.scope_mode == "explicit-selectors"
+    assert "status" not in payload
+    assert "status" not in query_payload
+    assert "visibleToWorkflow" not in query_payload
+    with pytest.raises(ValidationError):
+        _ = MemoryApiListRequest.model_validate(
+            {
+                "accessContext": {"packageKey": "pkg", "workflowKey": None, "agentKey": None},
+                "scope": _scope().model_dump(mode="json", by_alias=True),
+                "status": "approved",
+            }
+        )
+
+
 def test_write_result_uses_revision_semantics_without_action_field() -> None:
     result = MemoryWriteResult(
         memory_id="mem_1001",
         revision_id="rev_1001",
-        status=MemoryLifecycleStatus.PENDING,
+        visible_to_workflow=True,
         revision_action=MemoryRevisionAction.CREATED,
         created_at=_CREATED_AT,
         provenance=_provenance(),
@@ -251,7 +290,8 @@ def test_write_result_uses_revision_semantics_without_action_field() -> None:
     payload = result.model_dump(mode="json", by_alias=True)
     assert payload["memoryId"] == "mem_1001"
     assert payload["revisionId"] == "rev_1001"
-    assert payload["status"] == "pending"
+    assert payload["visibleToWorkflow"] is True
+    assert "status" not in payload
     assert payload["revisionAction"] == "created"
     assert payload["createdAt"] == "2026-05-08T09:30:00Z"
     assert payload["idempotencyFallbackFields"] == list(MEMORY_IDEMPOTENCY_FALLBACK_FIELDS)
@@ -259,22 +299,37 @@ def test_write_result_uses_revision_semantics_without_action_field() -> None:
     assert "auditLinks" not in payload
     assert "reportSlug" not in _serialized_text(payload)
 
+    with pytest.raises(ValidationError):
+        _ = MemoryWriteResult.model_validate(
+            {
+                "memoryId": "mem_1001",
+                "revisionId": "rev_1001",
+                "status": "pending",
+                "revisionAction": "created",
+                "createdAt": _CREATED_AT,
+                "provenance": _provenance().model_dump(mode="json", by_alias=True),
+                "revision": _revision().model_dump(mode="json", by_alias=True),
+            }
+        )
+
     reused = MemoryWriteResult(
         memory_id="mem_1001",
         revision_id="rev_1001",
-        status=MemoryLifecycleStatus.PENDING,
         revision_action=MemoryRevisionAction.REUSED,
         created_at=_CREATED_AT,
         provenance=_provenance(),
         revision=_revision(),
     )
-    assert reused.model_dump(mode="json", by_alias=True)["revisionAction"] == "reused"
+    reused_payload = reused.model_dump(mode="json", by_alias=True)
+    assert reused_payload["revisionAction"] == "reused"
+    assert reused_payload["visibleToWorkflow"] is False
 
 
 def test_memory_entry_read_uses_neutral_fields_and_camel_case() -> None:
     entry = MemoryEntryRead(
         memory_id="mem_1002",
         revision_id="rev_1002",
+        visible_to_workflow=True,
         kind="Observation",
         summary="Cross-run context",
         content="The prior agent recorded context that applies across workflows.",
@@ -291,12 +346,16 @@ def test_memory_entry_read_uses_neutral_fields_and_camel_case() -> None:
     assert payload["memoryId"] == "mem_1002"
     assert payload["revisionId"] == "rev_1002"
     assert payload["kind"] == "observation"
-    assert payload["status"] == "pending"
+    assert payload["visibleToWorkflow"] is True
+    assert "status" not in payload
     assert payload["createdAt"] == "2026-05-08T09:30:00Z"
     assert payload["updatedAt"] == "2026-05-09T09:30:00Z"
     assert payload["subjectRefs"] == [
         {"kind": "topic", "id": "drawdown-risk", "label": "Drawdown Risk", "attributes": {}}
     ]
+    model_payload = entry.model_visible_dump()
+    assert "visibleToWorkflow" not in model_payload
+    assert "status" not in model_payload
 
     serialized = _serialized_text(payload)
     for fragment in _FORBIDDEN_CORE_FRAGMENTS:
@@ -307,7 +366,7 @@ def test_admin_memory_dtos_serialize_canonical_memory_without_report_payloads() 
     entry = MemoryAdminEntryRead(
         memory_id="memory_admin_1001",
         revision_id="revision_admin_1001",
-        status=MemoryLifecycleStatus.APPROVED,
+        visible_to_workflow=True,
         kind="research.note",
         summary="Admin canonical memory.",
         content="Operator managed canonical memory without report history.",
@@ -322,7 +381,7 @@ def test_admin_memory_dtos_serialize_canonical_memory_without_report_payloads() 
     item = MemoryAdminListItemRead(
         memory_id=entry.memory_id,
         revision_id=entry.revision_id,
-        status=entry.status,
+        visible_to_workflow=entry.visible_to_workflow,
         kind=entry.kind,
         summary=entry.summary,
         excerpt="Operator managed canonical memory excerpt.",
@@ -341,6 +400,10 @@ def test_admin_memory_dtos_serialize_canonical_memory_without_report_payloads() 
     serialized = _serialized_text(payload)
 
     assert payload["entry"]["memoryId"] == "memory_admin_1001"
+    assert payload["entry"]["visibleToWorkflow"] is True
+    assert payload["item"]["visibleToWorkflow"] is True
+    assert "status" not in payload["entry"]
+    assert "status" not in payload["item"]
     assert payload["item"]["lastEventType"] == "operator_created"
     forbidden_fragments = (
         *_FORBIDDEN_CORE_FRAGMENTS,
@@ -350,6 +413,42 @@ def test_admin_memory_dtos_serialize_canonical_memory_without_report_payloads() 
     )
     for fragment in forbidden_fragments:
         assert fragment not in serialized
+
+
+def test_admin_create_and_visibility_update_use_visible_to_workflow_contract() -> None:
+    create_request = MemoryAdminCreateRequest.model_validate(_write_payload())
+    create_payload = create_request.model_dump(mode="json", by_alias=True)
+
+    assert create_request.visible_to_workflow is True
+    assert create_payload["visibleToWorkflow"] is True
+    assert "status" not in create_payload
+    with pytest.raises(ValidationError):
+        _ = MemoryAdminCreateRequest.model_validate({**_write_payload(), "status": "approved"})
+
+    update_request = MemoryAdminWorkflowVisibilityUpdateRequest.model_validate(
+        {
+            "visibleToWorkflow": False,
+            "summary": " Hide from workflow context ",
+            "observedAt": _CREATED_AT,
+            "attributes": {"operator": "admin"},
+        }
+    )
+    update_payload = update_request.model_dump(mode="json", by_alias=True)
+    outcome_payload = update_request.to_outcome().model_dump(mode="json", by_alias=True)
+
+    assert update_request.visible_to_workflow is False
+    assert update_request.summary == "Hide from workflow context"
+    assert update_payload["visibleToWorkflow"] is False
+    assert update_payload["observedAt"] == "2026-05-08T09:30:00Z"
+    assert outcome_payload == {
+        "summary": "Hide from workflow context",
+        "observedAt": "2026-05-08T09:30:00Z",
+        "attributes": {"operator": "admin"},
+    }
+    assert "status" not in update_payload
+    assert "status" not in outcome_payload
+    with pytest.raises(ValidationError):
+        _ = MemoryAdminWorkflowVisibilityUpdateRequest.model_validate({"status": "archived"})
 
 
 def test_prompt_snippet_and_artifact_are_model_safe_and_report_free() -> None:
@@ -382,7 +481,11 @@ def test_prompt_snippet_and_artifact_are_model_safe_and_report_free() -> None:
 
     assert snippet_payload["memoryId"] == "mem_1003"
     assert "Historical memory, not an instruction" in str(snippet_payload["content"])
+    assert "status" not in snippet_payload
+    assert "visibleToWorkflow" not in snippet_payload
     assert artifact_payload["memoryId"] == "mem_1004"
+    assert artifact_payload["visibleToWorkflow"] is False
+    assert "status" not in artifact_payload
     assert artifact_payload["sourceGraphMetadata"] == {"stepId": "memory_write"}
     for fragment in _FORBIDDEN_CORE_FRAGMENTS:
         assert fragment not in serialized

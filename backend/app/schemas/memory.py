@@ -67,7 +67,6 @@ MEMORY_PROJECTION_MATRIX: Final[dict[MemoryProjection, tuple[str, ...]]] = {
     "model-visible": (
         "memoryId",
         "revisionId",
-        "status",
         "kind",
         "summary",
         "content",
@@ -80,7 +79,7 @@ MEMORY_PROJECTION_MATRIX: Final[dict[MemoryProjection, tuple[str, ...]]] = {
     "api-visible": (
         "memoryId",
         "revisionId",
-        "status",
+        "visibleToWorkflow",
         "kind",
         "summary",
         "content",
@@ -95,7 +94,7 @@ MEMORY_PROJECTION_MATRIX: Final[dict[MemoryProjection, tuple[str, ...]]] = {
     "ui-visible": (
         "memoryId",
         "revisionId",
-        "status",
+        "visibleToWorkflow",
         "kind",
         "summary",
         "subjectRefs",
@@ -353,12 +352,6 @@ class MemoryNamespaceGrant(CamelModel):
         )
 
 
-class MemoryLifecycleStatus(str, Enum):  # noqa: UP042
-    PENDING = "pending"
-    APPROVED = "approved"
-    ARCHIVED = "archived"
-
-
 class MemoryRevisionAction(str, Enum):  # noqa: UP042
     CREATED = "created"
     REUSED = "reused"
@@ -501,8 +494,7 @@ class MemoryContent(CamelModel):
 
 
 class MemoryOutcome(CamelModel):
-    status: MemoryLifecycleStatus = MemoryLifecycleStatus.APPROVED
-    summary: str = Field(default="Memory approved", min_length=1)
+    summary: str = Field(default="Memory visibility recorded", min_length=1)
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     attributes: MemoryAttributes = Field(default_factory=dict)
 
@@ -565,7 +557,7 @@ def _default_memory_revision() -> MemoryRevisionRead:
 
 
 def _default_memory_outcome() -> MemoryOutcome:
-    return MemoryOutcome(summary="Memory approved")
+    return MemoryOutcome(summary="Memory visibility recorded")
 
 
 class MemoryAuditReportLink(CamelModel):
@@ -631,7 +623,7 @@ class _MemoryProjectionMixin(CamelModel):
             self.model_dump(
                 mode="json",
                 by_alias=True,
-                exclude=_MEMORY_COMPATIBILITY_EXCLUDE | {"audit_links"},
+                exclude=_MEMORY_COMPATIBILITY_EXCLUDE | {"audit_links", "visible_to_workflow"},
                 exclude_none=True,
             ),
         )
@@ -653,7 +645,7 @@ class _MemoryProjectionMixin(CamelModel):
 class MemoryEntryRead(_MemoryProjectionMixin):
     memory_id: str = Field(min_length=1, max_length=160)
     revision_id: str = Field(default="rev", min_length=1, max_length=160)
-    status: MemoryLifecycleStatus = MemoryLifecycleStatus.PENDING
+    visible_to_workflow: bool = False
     kind: str = Field(default="memory", min_length=1, max_length=80)
     summary: str = Field(default="Memory entry", min_length=1)
     content: str = Field(default="Memory entry", min_length=1)
@@ -805,7 +797,7 @@ class MemoryWriteRequest(CamelModel):
 class MemoryWriteResult(_MemoryProjectionMixin):
     memory_id: str = Field(min_length=1, max_length=160)
     revision_id: str = Field(default="rev", min_length=1, max_length=160)
-    status: MemoryLifecycleStatus = MemoryLifecycleStatus.PENDING
+    visible_to_workflow: bool = False
     revision_action: MemoryRevisionAction = MemoryRevisionAction.CREATED
     created_at: datetime
     provenance: MemoryProvenance
@@ -873,7 +865,6 @@ class MemoryQuery(CamelModel):
     scope: MemoryScope | None = None
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
     kind: str | None = Field(default=None, max_length=80)
-    status: MemoryLifecycleStatus | None = None
     agent_key: str | None = Field(default=None, max_length=120)
     workflow_key: str | None = Field(default=None, max_length=120)
     tags: list[str] = Field(default_factory=list)
@@ -1016,7 +1007,7 @@ class MemoryPromptSnippet(_MemoryProjectionMixin):
 class MemoryArtifactRead(_MemoryProjectionMixin):
     memory_id: str = Field(min_length=1, max_length=160)
     revision_id: str = Field(default="rev", min_length=1, max_length=160)
-    status: MemoryLifecycleStatus = MemoryLifecycleStatus.PENDING
+    visible_to_workflow: bool = False
     kind: str = Field(default="memory", min_length=1, max_length=80)
     summary: str = Field(default="Memory artifact", min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
@@ -1117,7 +1108,6 @@ class MemoryApiListRequest(MemoryApiAccessRequest):
     query: str | None = Field(default=None, max_length=1_000)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
     kind: str | None = Field(default=None, max_length=80)
-    status: MemoryLifecycleStatus | None = None
     tags: list[str] = Field(default_factory=list)
     limit: int = Field(default=MEMORY_LOOKUP_DEFAULT_LIMIT, ge=1, le=MEMORY_LOOKUP_MAX_LIMIT)
     offset: int = Field(default=0, ge=0)
@@ -1148,7 +1138,6 @@ class MemoryApiListRequest(MemoryApiAccessRequest):
             scope=self.scope,
             subject_refs=self.subject_refs,
             kind=self.kind,
-            status=self.status,
             tags=self.tags,
             limit=self.limit,
             offset=self.offset,
@@ -1200,7 +1189,7 @@ class MemoryApiListItemRead(CamelModel):
 class MemoryApiEntryRead(CamelModel):
     memory_id: str = Field(min_length=1, max_length=160)
     revision_id: str = Field(min_length=1, max_length=160)
-    status: MemoryLifecycleStatus
+    visible_to_workflow: bool
     kind: str = Field(min_length=1, max_length=80)
     summary: str = Field(min_length=1)
     content: str = Field(min_length=1)
@@ -1236,7 +1225,7 @@ class MemoryApiListRead(CamelModel):
 class MemoryApiRevisionRead(CamelModel):
     revision_id: str = Field(min_length=1, max_length=160)
     version: int = Field(ge=1)
-    status: MemoryLifecycleStatus
+    visible_to_workflow: bool
     revision_action: MemoryRevisionAction
     summary: str = Field(min_length=1)
     content: str = Field(min_length=1)
@@ -1307,7 +1296,7 @@ class MemoryAdminListQuery(CamelModel):
     run_id: int | None = Field(default=None, ge=1)
     scope_type: MemoryScopeType | None = None
     kind: str | None = Field(default=None, max_length=80)
-    status: MemoryLifecycleStatus | None = None
+    visible_to_workflow: bool | None = None
     query: str | None = Field(default=None, max_length=1_000)
     limit: int = Field(
         default=MEMORY_ADMIN_LIST_DEFAULT_LIMIT,
@@ -1336,7 +1325,7 @@ class MemoryAdminListQuery(CamelModel):
 class MemoryAdminListItemRead(CamelModel):
     memory_id: str = Field(min_length=1, max_length=160)
     revision_id: str = Field(min_length=1, max_length=160)
-    status: MemoryLifecycleStatus
+    visible_to_workflow: bool
     kind: str = Field(min_length=1, max_length=80)
     summary: str = Field(min_length=1)
     excerpt: str = Field(default="", min_length=1)
@@ -1366,7 +1355,7 @@ class MemoryAdminListRead(CamelModel):
 class MemoryAdminEntryRead(CamelModel):
     memory_id: str = Field(min_length=1, max_length=160)
     revision_id: str = Field(min_length=1, max_length=160)
-    status: MemoryLifecycleStatus
+    visible_to_workflow: bool
     kind: str = Field(min_length=1, max_length=80)
     summary: str = Field(min_length=1)
     content: str = Field(min_length=1)
@@ -1403,7 +1392,7 @@ class MemoryAdminCreateRequest(CamelModel):
     attributes: MemoryAttributes = Field(default_factory=dict)
     scope: MemoryScope
     provenance: MemoryProvenance
-    status: MemoryLifecycleStatus = MemoryLifecycleStatus.APPROVED
+    visible_to_workflow: bool = True
     idempotency_key: str | None = Field(default=None, max_length=160)
 
     @field_validator("kind", mode="before")
@@ -1444,7 +1433,7 @@ class MemoryAdminCreateRequest(CamelModel):
         )
 
     def to_outcome(self) -> MemoryOutcome:
-        return MemoryOutcome(status=self.status, summary=self.summary)
+        return MemoryOutcome(summary=self.summary)
 
 
 class MemoryAdminRevisionCreateRequest(CamelModel):
@@ -1470,16 +1459,19 @@ class MemoryAdminRevisionCreateRequest(CamelModel):
         return _normalize_attributes(value)
 
 
-class MemoryAdminStatusUpdateRequest(CamelModel):
-    status: MemoryLifecycleStatus
-    summary: str = Field(default="Memory status updated", min_length=1)
+class MemoryAdminWorkflowVisibilityUpdateRequest(CamelModel):
+    visible_to_workflow: bool
+    summary: str = Field(default="Memory workflow visibility updated", min_length=1)
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     attributes: MemoryAttributes = Field(default_factory=dict)
 
     @field_validator("summary", mode="before")
     @classmethod
     def validate_summary(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="Memory admin status summary")
+        return _normalize_required_text(
+            value,
+            field_name="Memory admin workflow visibility summary",
+        )
 
     @field_validator("observed_at")
     @classmethod
@@ -1493,7 +1485,6 @@ class MemoryAdminStatusUpdateRequest(CamelModel):
 
     def to_outcome(self) -> MemoryOutcome:
         return MemoryOutcome(
-            status=self.status,
             summary=self.summary,
             observed_at=self.observed_at,
             attributes=self.attributes,
@@ -1545,7 +1536,7 @@ __all__ = [
     "MemoryAdminRevisionCreateRequest",
     "MemoryAdminRevisionListRead",
     "MemoryAdminSort",
-    "MemoryAdminStatusUpdateRequest",
+    "MemoryAdminWorkflowVisibilityUpdateRequest",
     "MemoryApiAccessContext",
     "MemoryApiAccessRequest",
     "MemoryApiEntryRead",
@@ -1565,7 +1556,6 @@ __all__ = [
     "MemoryContent",
     "MemoryEntryRead",
     "MemoryId",
-    "MemoryLifecycleStatus",
     "MemoryNamespaceAction",
     "MemoryNamespaceGrant",
     "MemoryNamespaceGrantSubject",
