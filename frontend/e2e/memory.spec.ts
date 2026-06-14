@@ -137,8 +137,8 @@ async function createAdminMemory(
     kind?: string;
     packageKey: string;
     runId: number;
-    status?: "pending" | "approved" | "archived";
     summary: string;
+    visibleToWorkflow?: boolean;
     workflowKey: string;
   },
 ) {
@@ -156,7 +156,7 @@ async function createAdminMemory(
           workflowKey: options.workflowKey,
         },
         scope: { scopeKey: options.packageKey, scopeType: "package" },
-        status: options.status ?? "approved",
+        visibleToWorkflow: options.visibleToWorkflow,
         subjectRefs: [
           {
             id: options.packageKey,
@@ -206,6 +206,15 @@ async function chooseSelectOption(
   await expect(combobox).toContainText(option);
 }
 
+async function expectNoRetiredLifecycleLabels(owner: Locator) {
+  await expect(owner.getByText(/\b(pending|approved|archived)\b/i)).toHaveCount(
+    0,
+  );
+  await expect(
+    owner.getByText(/\b(initial status|new status|update status)\b/i),
+  ).toHaveCount(0);
+}
+
 async function expectNoRetiredMemoryGates(page: Page) {
   const memoryPage = page.getByTestId("memory-list-page");
   const text = await memoryPage.innerText();
@@ -223,6 +232,19 @@ async function expectNoRetiredMemoryGates(page: Page) {
   ).toHaveCount(0);
   await expect(
     page.getByTestId(["memory", "explicit", "scope", "required"].join("-")),
+  ).toHaveCount(0);
+}
+
+async function expectNoMemoryBulkDeleteControls(owner: Locator) {
+  await expect(owner.getByRole("checkbox")).toHaveCount(0);
+  await expect(
+    owner.getByRole("button", { name: /delete selected/i }),
+  ).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: /bulk delete/i })).toHaveCount(
+    0,
+  );
+  await expect(
+    owner.getByText(/\b(delete selected|bulk delete|selected memories)\b/i),
   ).toHaveCount(0);
 }
 
@@ -247,7 +269,9 @@ test.describe("memory admin workspace", () => {
         url.port === "8001" &&
         url.pathname.startsWith("/api/memory")
       ) {
-        memoryRequests.push(`${browserRequest.method()} ${url.pathname}`);
+        memoryRequests.push(
+          `${browserRequest.method()} ${url.pathname}${url.search}`,
+        );
       }
     });
 
@@ -265,12 +289,12 @@ test.describe("memory admin workspace", () => {
     );
     const betaMemory = await createAdminMemory(request, {
       agentKey: betaAgentKey,
-      content: "Beta cross-package operator memory remains visible by default.",
+      content: "Beta cross-package operator memory remains hidden by request.",
       kind: "decision",
       packageKey: betaPackageKey,
       runId: betaRun.runId,
-      status: "pending",
-      summary: "Beta admin memory",
+      summary: "Beta hidden admin memory",
+      visibleToWorkflow: false,
       workflowKey: betaWorkflowKey,
     });
 
@@ -293,13 +317,22 @@ test.describe("memory admin workspace", () => {
     ).toBeVisible();
     await expect(
       page.getByTestId(`memory-row-${betaMemory.memoryId}`),
-    ).toContainText("Beta admin memory");
+    ).toContainText("Beta hidden admin memory");
     await expect(
       page.getByTestId(`memory-row-${betaMemory.memoryId}`),
-    ).toContainText("pending");
+    ).toContainText("Workflow hidden");
+    await expectNoRetiredLifecycleLabels(page.getByTestId("memory-list-page"));
     await expectNoRetiredMemoryGates(page);
-    expect(memoryRequests).toContain("GET /api/memory/admin/entries");
-    expect(memoryRequests).not.toContain("POST /api/memory");
+    expect(
+      memoryRequests.some((requestLine) =>
+        requestLine.startsWith("GET /api/memory/admin/entries"),
+      ),
+    ).toBe(true);
+    expect(
+      memoryRequests.some((requestLine) =>
+        requestLine.startsWith("POST /api/memory"),
+      ),
+    ).toBe(false);
 
     const filters = page.getByTestId("memory-admin-filter-controls");
     await filters.getByLabel("Package key").fill(betaPackageKey);
@@ -314,6 +347,38 @@ test.describe("memory admin workspace", () => {
     await expect(
       page.getByTestId(`memory-row-${betaMemory.memoryId}`),
     ).toBeVisible();
+    await chooseSelectOption(
+      page,
+      filters,
+      "Workflow visibility",
+      "Workflow visible",
+    );
+    await expect(
+      page.getByTestId(`memory-row-${betaMemory.memoryId}`),
+    ).toHaveCount(0);
+    await chooseSelectOption(
+      page,
+      filters,
+      "Workflow visibility",
+      "Workflow hidden",
+    );
+    await expect(
+      page.getByTestId(`memory-row-${betaMemory.memoryId}`),
+    ).toBeVisible();
+    expect(
+      memoryRequests.some((requestLine) =>
+        requestLine.includes("visibleToWorkflow=true"),
+      ),
+    ).toBe(true);
+    expect(
+      memoryRequests.some((requestLine) =>
+        requestLine.includes("visibleToWorkflow=false"),
+      ),
+    ).toBe(true);
+    await page.getByRole("button", { name: "Reset filters" }).click();
+    await expect(
+      filters.getByRole("combobox", { name: "Workflow visibility" }),
+    ).toContainText("All");
 
     await page.getByRole("button", { name: "Create memory" }).click();
     const createDialog = page.getByRole("dialog");
@@ -321,12 +386,16 @@ test.describe("memory admin workspace", () => {
     await expect(createDialog).not.toContainText(
       "Approved memory in a matching scope",
     );
+    await expect(createDialog).toContainText("workflow visibility");
     await expect(
-      createDialog.getByRole("combobox", { name: "Initial status" }),
-    ).toContainText("Approved");
+      createDialog.getByRole("combobox", {
+        name: "Initial workflow visibility",
+      }),
+    ).toContainText("Workflow visible");
+    await expectNoRetiredLifecycleLabels(createDialog);
     await createDialog
       .getByLabel("Summary")
-      .fill("Alpha approved operator memory");
+      .fill("Alpha workflow-visible operator memory");
     await createDialog.getByLabel("Kind", { exact: true }).fill("insight");
     await createDialog.getByLabel("Package key").fill(alphaPackageKey);
     await createDialog.getByLabel("Workflow key").fill(alphaWorkflowKey);
@@ -338,7 +407,9 @@ test.describe("memory admin workspace", () => {
     await createDialog.getByLabel("Subject label").fill("Apple");
     await createDialog
       .getByLabel("Content")
-      .fill("Alpha approved memory created from the admin browser flow.");
+      .fill(
+        "Alpha workflow-visible memory created from the admin browser flow.",
+      );
     await createDialog.getByRole("button", { name: "Create memory" }).click();
 
     await expect(page).toHaveURL(/\/memory\/[^/?]+$/);
@@ -348,13 +419,21 @@ test.describe("memory admin workspace", () => {
     await expectSingleRouteMain(page, "route-memory-detail", "scroll", "wide");
     await expect(page.getByTestId("memory-detail-page")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Alpha approved operator memory" }),
+      page.getByRole("heading", {
+        name: "Alpha workflow-visible operator memory",
+      }),
     ).toBeVisible();
     await expect(page.getByTestId("memory-detail-panel")).toContainText(
-      "Alpha approved memory created from the admin browser flow.",
+      "Alpha workflow-visible memory created from the admin browser flow.",
     );
     await expect(page.getByTestId("memory-detail-panel")).toContainText(
-      `operator · ${alphaAgentKey}@1 · ${alphaWorkflowKey} · run #${alphaRun.runId}`,
+      "Workflow visible",
+    );
+    await expectNoRetiredLifecycleLabels(
+      page.getByTestId("memory-detail-page"),
+    );
+    await expect(page.getByTestId("memory-detail-panel")).toContainText(
+      `operator · local-instance-operator@1 · ${alphaWorkflowKey} · run #${alphaRun.runId}`,
     );
     await expect(
       page
@@ -392,12 +471,32 @@ test.describe("memory admin workspace", () => {
 
     await page.getByRole("tab", { name: "Detail" }).click();
     const detailPanel = page.getByTestId("memory-detail-panel");
-    await chooseSelectOption(page, detailPanel, "New status", "Archived");
+    await chooseSelectOption(
+      page,
+      detailPanel,
+      "New workflow visibility",
+      "Workflow hidden",
+    );
     await detailPanel
-      .getByLabel("Status summary")
+      .getByLabel("Visibility summary")
       .fill("No longer current for runtime lookup");
-    await detailPanel.getByRole("button", { name: "Update status" }).click();
-    await expect(detailPanel).toContainText("archived");
+    await detailPanel
+      .getByRole("button", { name: "Update workflow visibility" })
+      .click();
+    await expect(detailPanel).toContainText("Workflow hidden");
+    await expectNoRetiredLifecycleLabels(
+      page.getByTestId("memory-detail-page"),
+    );
+    expect(
+      memoryRequests.some((requestLine) =>
+        requestLine.includes(
+          `/memory/admin/entries/${createdMemoryId}/workflow-visibility`,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      memoryRequests.some((requestLine) => requestLine.includes("/status")),
+    ).toBe(false);
     await expectNoDocumentOverflow(page);
 
     await page
@@ -408,7 +507,7 @@ test.describe("memory admin workspace", () => {
     await expectSingleRouteMain(page, "route-memory-list", "scroll", "wide");
     await expect(
       page.getByTestId(`memory-row-${createdMemoryId}`),
-    ).toContainText("archived");
+    ).toContainText("Workflow hidden");
     await expect(
       page.getByTestId(`memory-row-${createdMemoryId}`),
     ).toBeVisible();
@@ -427,7 +526,69 @@ test.describe("memory admin workspace", () => {
       refreshedFilters.getByLabel("Search canonical memory"),
     ).toHaveValue("");
 
+    const deleteConfirmationCopy =
+      "This permanently removes this memory entry and its revisions. Existing run evidence keeps snapshot memory ids, but the memory entry will no longer appear in admin search or runtime lookup.";
+    const createdRow = page.getByTestId(`memory-row-${createdMemoryId}`);
+    await expectNoMemoryBulkDeleteControls(page.getByTestId("memory-list-page"));
+    await createdRow.getByRole("button", { name: "Delete memory" }).click();
+    const listDeleteDialog = page.getByRole("alertdialog", {
+      name: "Delete memory",
+    });
+    await expect(listDeleteDialog).toContainText(deleteConfirmationCopy);
+    await listDeleteDialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(listDeleteDialog).toHaveCount(0);
+    await expect(createdRow).toBeVisible();
+
+    await createdRow.getByRole("link", { name: "Open detail" }).click();
+    await expect(page).toHaveURL(new RegExp(`/memory/${createdMemoryId}$`));
+    await expectSingleRouteMain(page, "route-memory-detail", "scroll", "wide");
+    await expectNoMemoryBulkDeleteControls(page.getByTestId("memory-detail-page"));
+    await page
+      .getByTestId("memory-detail-page")
+      .getByRole("button", { name: "Delete memory" })
+      .click();
+    const detailDeleteDialog = page.getByRole("alertdialog", {
+      name: "Delete memory",
+    });
+    await expect(detailDeleteDialog).toContainText(deleteConfirmationCopy);
+    await detailDeleteDialog
+      .getByRole("button", { name: "Delete memory" })
+      .click();
+    await expect(page).toHaveURL(/\/memory$/);
+    await expect(page.getByText("Memory deleted")).toBeVisible();
+    await expect(page.getByTestId(`memory-row-${createdMemoryId}`)).toHaveCount(
+      0,
+    );
+    expect(
+      memoryRequests.some(
+        (requestLine) =>
+          requestLine ===
+          `DELETE /api/memory/admin/entries/${createdMemoryId}`,
+      ),
+    ).toBe(true);
+
+    const postDeleteFilters = page.getByTestId("memory-admin-filter-controls");
+    await postDeleteFilters.getByLabel("Package key").fill(alphaPackageKey);
+    await expect(page.getByTestId(`memory-row-${createdMemoryId}`)).toHaveCount(
+      0,
+    );
+    await expect(
+      page.getByText("No memory entries match these filters"),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Reset filters" }).click();
+
+    await page.goto(`/memory/${createdMemoryId}`);
+    await expectSingleRouteMain(page, "route-memory-detail", "scroll", "wide");
+    await expect(page.getByTestId("memory-detail-error")).toBeVisible();
+    await expect(page.getByTestId("memory-detail-error")).toContainText(
+      "Unable to load memory detail",
+    );
+    await page.getByRole("link", { name: "Back to Memory Admin" }).click();
+    await expect(page).toHaveURL(/\/memory$/);
+
+    await expectNoRetiredLifecycleLabels(page.getByTestId("memory-list-page"));
     await expectNoRetiredMemoryGates(page);
+    await expectNoMemoryBulkDeleteControls(page.getByTestId("memory-list-page"));
     await expect(page.getByTestId("nav-memory")).toContainText("Memory Admin");
     await expectNoDocumentOverflow(page);
   });
