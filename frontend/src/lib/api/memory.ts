@@ -13,7 +13,7 @@ import type {
   MemoryAdminListRead,
   MemoryAdminRevisionCreateRequest,
   MemoryAdminRevisionListRead,
-  MemoryAdminStatusUpdateRequest,
+  MemoryAdminWorkflowVisibilityUpdateRequest,
   MemoryApiAccessRequest,
   MemoryApiEntryRead,
   MemoryApiEventListRead,
@@ -56,7 +56,7 @@ export function normalizeMemoryAdminListParams(
     runId: params.runId ?? undefined,
     scopeType: params.scopeType ?? undefined,
     sort: params.sort ?? "updatedAtDesc",
-    status: params.status ?? undefined,
+    visibleToWorkflow: params.visibleToWorkflow ?? undefined,
     workflowKey: normalizeOptionalText(params.workflowKey),
   };
 }
@@ -179,13 +179,13 @@ export function createAdminMemoryRevision(
   );
 }
 
-export function updateAdminMemoryStatus(
+export function updateAdminMemoryWorkflowVisibility(
   memoryId: IdParam,
-  payload: MemoryAdminStatusUpdateRequest,
+  payload: MemoryAdminWorkflowVisibilityUpdateRequest,
   signal?: AbortSignal,
 ): Promise<MemoryAdminEntryRead> {
   return requestPlatform<MemoryAdminEntryRead>(
-    `${adminMemoryPath(memoryId)}/status`,
+    `${adminMemoryPath(memoryId)}/workflow-visibility`,
     {
       body: payload,
       method: "PATCH",
@@ -193,17 +193,28 @@ export function updateAdminMemoryStatus(
     },
   );
 }
+
+export function deleteAdminMemoryEntry(
+  memoryId: IdParam,
+  signal?: AbortSignal,
+): Promise<void> {
+  return requestPlatform<void>(adminMemoryPath(memoryId), {
+    method: "DELETE",
+    signal,
+  });
+}
 export const memoryApi = {
   admin: {
     create: createAdminMemoryEntry,
     createRevision: createAdminMemoryRevision,
+    delete: deleteAdminMemoryEntry,
     detail: getAdminMemoryEntry,
     events: listAdminMemoryEvents,
     list: listAdminMemoryEntries,
     normalizeHistoryParams: normalizeMemoryAdminHistoryParams,
     normalizeListParams: normalizeMemoryAdminListParams,
     revisions: listAdminMemoryRevisions,
-    updateStatus: updateAdminMemoryStatus,
+    updateWorkflowVisibility: updateAdminMemoryWorkflowVisibility,
   },
   detail: getMemoryDetail,
   events: listMemoryEvents,

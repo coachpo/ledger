@@ -1,6 +1,5 @@
 import type { UnknownRecord } from "./common";
 
-export type MemoryLifecycleStatus = "pending" | "approved" | "archived";
 
 export type MemoryRevisionAction = "created" | "reused" | "superseded";
 
@@ -63,7 +62,6 @@ export interface MemoryApiListRequest extends MemoryApiAccessRequest {
   query?: string | null;
   subjectRefs?: MemorySubjectRef[];
   kind?: string | null;
-  status?: MemoryLifecycleStatus | null;
   tags?: string[];
   limit?: number;
   offset?: number;
@@ -92,7 +90,6 @@ export interface MemoryRevisionRead {
 }
 
 export interface MemoryOutcome {
-  status: MemoryLifecycleStatus;
   summary: string;
   observedAt: string;
   attributes: UnknownRecord;
@@ -124,7 +121,7 @@ export interface MemoryAuditLinks {
 export interface MemoryApiRevisionRead {
   revisionId: string;
   version: number;
-  status: MemoryLifecycleStatus;
+  visibleToWorkflow: boolean;
   revisionAction: MemoryRevisionAction;
   summary: string;
   content: string;
@@ -143,7 +140,7 @@ export interface MemoryApiRevisionRead {
 export interface MemoryApiEntryRead {
   memoryId: string;
   revisionId: string;
-  status: MemoryLifecycleStatus;
+  visibleToWorkflow: boolean;
   kind: string;
   summary: string;
   content: string;
@@ -205,7 +202,7 @@ export interface MemoryAdminListParams {
   runId?: number | null;
   scopeType?: MemoryScopeType | null;
   kind?: string | null;
-  status?: MemoryLifecycleStatus | null;
+  visibleToWorkflow?: boolean | null;
   query?: string | null;
   limit?: number;
   offset?: number;
@@ -220,7 +217,7 @@ export interface MemoryAdminHistoryParams {
 export interface MemoryAdminListItemRead {
   memoryId: string;
   revisionId: string;
-  status: MemoryLifecycleStatus;
+  visibleToWorkflow: boolean;
   kind: string;
   summary: string;
   excerpt: string;
@@ -243,7 +240,7 @@ export interface MemoryAdminListRead {
 export interface MemoryAdminEntryRead {
   memoryId: string;
   revisionId: string;
-  status: MemoryLifecycleStatus;
+  visibleToWorkflow: boolean;
   kind: string;
   summary: string;
   content: string;
@@ -267,7 +264,7 @@ export interface MemoryAdminCreateRequest {
   attributes?: UnknownRecord;
   scope: MemoryScope;
   provenance: MemoryProvenance;
-  status?: MemoryLifecycleStatus;
+  visibleToWorkflow?: boolean;
   idempotencyKey?: string | null;
 }
 
@@ -279,8 +276,8 @@ export interface MemoryAdminRevisionCreateRequest {
   provenance: MemoryProvenance;
 }
 
-export interface MemoryAdminStatusUpdateRequest {
-  status: MemoryLifecycleStatus;
+export interface MemoryAdminWorkflowVisibilityUpdateRequest {
+  visibleToWorkflow: boolean;
   summary?: string;
   observedAt?: string;
   attributes?: UnknownRecord;

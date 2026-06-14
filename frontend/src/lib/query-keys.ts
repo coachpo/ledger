@@ -94,7 +94,6 @@ function normalizeMemoryListRequest(payload: MemoryApiListRequest) {
     offset: payload.offset ?? 0,
     query: normalizeOptionalText(payload.query),
     scope: normalizeMemoryScope(payload.scope),
-    status: payload.status ?? undefined,
     subjectRefs: normalizeMemorySubjectRefs(payload.subjectRefs),
     tags: normalizeSymbols(payload.tags ?? []),
     visibility: payload.visibility ?? "explicit-scope",
@@ -112,7 +111,7 @@ function normalizeMemoryAdminListParams(params: MemoryAdminListParams = {}) {
     runId: params.runId ?? undefined,
     scopeType: params.scopeType ?? undefined,
     sort: params.sort ?? "updatedAtDesc",
-    status: params.status ?? undefined,
+    visibleToWorkflow: params.visibleToWorkflow ?? undefined,
     workflowKey: normalizeOptionalText(params.workflowKey),
   });
 }

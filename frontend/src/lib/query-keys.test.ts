@@ -188,7 +188,7 @@ describe("query keys", () => {
         query: " earnings ",
         runId: 41,
         scopeType: "package",
-        status: "archived",
+        visibleToWorkflow: true,
         workflowKey: " daily ",
       }),
     ).toEqual([
@@ -208,8 +208,24 @@ describe("query keys", () => {
         runId: 41,
         scopeType: "package",
         sort: "updatedAtDesc",
-        status: "archived",
+        visibleToWorkflow: true,
         workflowKey: "daily",
+      },
+    ]);
+    expect(
+      queryKeys.platform.memory.admin.list({ visibleToWorkflow: false }),
+    ).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "admin",
+      "entries",
+      "list",
+      {
+        limit: 50,
+        offset: 0,
+        sort: "updatedAtDesc",
+        visibleToWorkflow: false,
       },
     ]);
     expect(queryKeys.platform.memory.admin.detail(7)).toEqual([
