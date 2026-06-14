@@ -24,6 +24,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 - Public tool metadata is intentionally small: `key`, `displayName`, and `description`.
+- Public tool keys are canonical `signaldeck.<owner>.<tool_collection>.<tool>` strings only: `signaldeck.core.memory.write`, `signaldeck.core.memory.lookup`, `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, `signaldeck.finance.reports.lookup`, `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup`.
 - Known tools include platform-owned memory tools plus bundled extension contributions.
 - Disabled extensions hide their server-declared tools from registered-tool lists while still allowing known-tool dependency analysis where explicitly needed.
 - Capability profile validation reports field-indexed details for unknown, duplicate, or disabled tool keys.
@@ -33,7 +34,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
 - Do not expose module names, owner extension keys, registrar paths, scaffold metadata, or plugin-manifest fields through `/api/tools`.
 - Do not validate package `toolKeys` against an unfiltered catalog when enabled-extension state matters.
-- Do not duplicate tool-key normalization in route handlers or frontend code.
+- Do not duplicate tool-key normalization in route handlers or frontend code, and do not introduce ownerless aliases or legacy compatibility keys.
 
 ## VALIDATION
 ```bash

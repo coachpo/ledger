@@ -20,12 +20,12 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Runtime spec types | `types.py`, `declarations.py` | tool spec, context, warnings, model-facing declarations |
 | Failure taxonomy | `failure_taxonomy.py` | typed retryable/non-retryable runtime failure categories |
 | Platform memory tools | `memory.py` | `signaldeck.core.memory.write` and `signaldeck.core.memory.lookup` parsers/executors/results |
-| Extension shims | `market_data.py`, `positions.py`, `reports.py` | compatibility exports only; implementations are extension-owned |
+| Extension boundaries | `market_data.py`, `positions.py`, `reports.py` | import/export boundaries for extension-owned implementations; not public compatibility aliases |
 | Coverage | `../../../tests/test_runtime_tools.py`, `../../../tests/test_workflow_package_preflight.py` | tool keys, OpenAI function names, access checks, package validation |
 
 ## CONVENTIONS
-- Core memory tool keys are platform-owned and must remain available when bundled extensions are disabled.
-- Extension-owned tool specs keep their implementations in `app/extensions/<extension>/runtime_*` and register through private extension registrars.
+- Core memory tool keys `signaldeck.core.memory.write` and `signaldeck.core.memory.lookup` are platform-owned, map to `signaldeck_core_memory_write` and `signaldeck_core_memory_lookup`, and must remain available when bundled extensions are disabled.
+- All public runtime tool keys use the canonical `signaldeck.<owner>.<tool_collection>.<tool>` scheme; extension-owned tool specs keep their implementations in `app/extensions/<extension>/runtime_*` and register through private extension registrars.
 - `RuntimeToolRegistry` is the only place that converts granted tool keys into model declarations and dispatch descriptors.
 - Parsers should reject malformed JSON/unsupported fields with `RuntimeToolError` before provider dispatch.
 - Runtime outputs shown to models must stay narrow; memory lookup output omits workflow visibility, while memory write output may expose memory/revision ids, `visibleToWorkflow`, provenance, and warnings only.
