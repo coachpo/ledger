@@ -311,9 +311,8 @@ def test_core_follow_up_records_review_event_with_finance_disabled(
 
     assert reports == []
     assert result.checked == 1
-    assert result.approved == 0
-    assert result.archived == 0
-    assert result.pending == 1
+    assert result.made_workflow_visible == 0
+    assert result.kept_workflow_hidden == 1
     assert result.reflected == 0
     assert result.items[0].memory_id == created.memory_id
     assert result.items[0].reason == "no_evaluator"
@@ -322,7 +321,7 @@ def test_core_follow_up_records_review_event_with_finance_disabled(
     assert reviewed.memory_id == created.memory_id
     assert reviewed.result_snapshot["scheduler"] == "core.memory_follow_up"
     assert reviewed.result_snapshot["reason"] == "no_evaluator"
-    assert reviewed.status_snapshot == {"status": "pending", "reason": "no_evaluator"}
+    assert reviewed.status_snapshot == {"visibleToWorkflow": False, "reason": "no_evaluator"}
 
 
 def test_finance_evaluator_contribution_resolves_and_reflects_when_enabled(
@@ -365,18 +364,17 @@ def test_finance_evaluator_contribution_resolves_and_reflects_when_enabled(
 
     assert reports == []
     assert result.checked == 1
-    assert result.approved == 1
-    assert result.archived == 0
-    assert result.pending == 0
+    assert result.made_workflow_visible == 1
+    assert result.kept_workflow_hidden == 0
     assert result.reflected == 1
     assert result.items[0].memory_id == created.memory_id
     assert result.items[0].reason is None
-    assert memory.status.value == "approved"
+    assert memory.visible_to_workflow is True
     assert memory.outcome is not None
     assert memory.outcome.attributes["rawReturn"] == "0.2"
     assert memory.reflections
     assert [event.event_type for event in events] == ["written", "reviewed", "reviewed"]
-    assert events[1].status_snapshot == {"status": "approved"}
+    assert events[1].status_snapshot == {"visibleToWorkflow": True}
     assert events[2].result_snapshot["reflectionCount"] == 1
 
 
@@ -390,9 +388,8 @@ def test_follow_up_service_ignores_legacy_agent_memory_reports(
         assert persisted is not None
 
     assert result.checked == 0
-    assert result.approved == 0
-    assert result.archived == 0
-    assert result.pending == 0
+    assert result.made_workflow_visible == 0
+    assert result.kept_workflow_hidden == 0
     assert result.reflected == 0
     assert result.items == ()
     assert persisted.content == "# Historical pending memory\n"

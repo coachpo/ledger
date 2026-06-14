@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, Protocol
+from typing import Protocol
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,15 +11,13 @@ from sqlalchemy.orm import Session
 from app.core.errors import ApiError
 from app.core.formatting import to_utc
 from app.models.agent_memory import AgentMemoryEntry
-from app.schemas.memory import MemoryEntryRead, MemoryLifecycleStatus
+from app.schemas.memory import MemoryEntryRead
 from app.services.memory_service import MemoryService
-
-type MemoryFollowUpStatus = Literal["pending", "approved", "archived"]
 
 
 @dataclass(frozen=True, slots=True)
 class MemoryFollowUpEvaluation:
-    status: MemoryFollowUpStatus
+    visible_to_workflow: bool
     reason: str | None = None
     reflected: bool = False
     event_recorded: bool = False
@@ -42,7 +40,7 @@ class MemoryFollowUpEvaluator(Protocol):
 @dataclass(frozen=True, slots=True)
 class MemoryFollowUpItem:
     memory_id: str
-    status: MemoryFollowUpStatus
+    visible_to_workflow: bool
     reason: str | None
     reflected: bool
 
@@ -50,9 +48,8 @@ class MemoryFollowUpItem:
 @dataclass(frozen=True, slots=True)
 class MemoryFollowUpRunResult:
     checked: int
-    approved: int
-    archived: int
-    pending: int
+    made_workflow_visible: int
+    kept_workflow_hidden: int
     reflected: int
     items: tuple[MemoryFollowUpItem, ...]
 
@@ -73,7 +70,7 @@ class MemoryFollowUpService:
         items: list[MemoryFollowUpItem] = []
 
         try:
-            for memory in self._pending_memories():
+            for memory in self._hidden_memories():
                 evaluator = self._evaluator_for(memory)
                 evaluation = self._evaluate(
                     memory,
@@ -90,7 +87,7 @@ class MemoryFollowUpService:
                 items.append(
                     MemoryFollowUpItem(
                         memory_id=memory.memory_id,
-                        status=evaluation.status,
+                        visible_to_workflow=evaluation.visible_to_workflow,
                         reason=evaluation.reason,
                         reflected=evaluation.reflected,
                     )
@@ -112,7 +109,7 @@ class MemoryFollowUpService:
     ) -> MemoryFollowUpEvaluation:
         if evaluator is None:
             return MemoryFollowUpEvaluation(
-                status="pending",
+                visible_to_workflow=False,
                 reason="no_evaluator",
                 result_snapshot={"scheduler": "core.memory_follow_up"},
             )
@@ -140,7 +137,7 @@ class MemoryFollowUpService:
             "memoryId": memory.memory_id,
             "memoryKind": memory.kind,
             "scheduler": "core.memory_follow_up",
-            "status": evaluation.status,
+            "visibleToWorkflow": evaluation.visible_to_workflow,
             "reviewedAt": reviewed_at.isoformat().replace("+00:00", "Z"),
         }
         if evaluator_key is not None:
@@ -149,7 +146,7 @@ class MemoryFollowUpService:
             result_snapshot["reason"] = evaluation.reason
         result_snapshot.update(evaluation.result_snapshot)
 
-        status_snapshot: dict[str, object] = {"status": evaluation.status}
+        status_snapshot: dict[str, object] = {"visibleToWorkflow": evaluation.visible_to_workflow}
         if evaluation.reason is not None:
             status_snapshot["reason"] = evaluation.reason
         status_snapshot.update(evaluation.status_snapshot)
@@ -166,29 +163,28 @@ class MemoryFollowUpService:
             commit=False,
         )
 
-    def _pending_memories(self) -> list[MemoryEntryRead]:
+    def _hidden_memories(self) -> list[MemoryEntryRead]:
         statement = (
             select(AgentMemoryEntry.memory_id)
-            .where(AgentMemoryEntry.status == MemoryLifecycleStatus.PENDING.value)
+            .where(AgentMemoryEntry.visible_to_workflow.is_(False))
             .order_by(AgentMemoryEntry.created_at.asc(), AgentMemoryEntry.id.asc())
         )
-        pending: list[MemoryEntryRead] = []
+        hidden: list[MemoryEntryRead] = []
         for memory_id in self.session.scalars(statement):
             try:
                 memory = self.memory_service.get_memory(memory_id)
             except ApiError:
                 continue
-            if memory.status == MemoryLifecycleStatus.PENDING:
-                pending.append(memory)
-        return pending
+            if not memory.visible_to_workflow:
+                hidden.append(memory)
+        return hidden
 
     @staticmethod
     def _result(items: list[MemoryFollowUpItem]) -> MemoryFollowUpRunResult:
         return MemoryFollowUpRunResult(
             checked=len(items),
-            approved=sum(item.status == "approved" for item in items),
-            archived=sum(item.status == "archived" for item in items),
-            pending=sum(item.status == "pending" for item in items),
+            made_workflow_visible=sum(item.visible_to_workflow for item in items),
+            kept_workflow_hidden=sum(not item.visible_to_workflow for item in items),
             reflected=sum(item.reflected for item in items),
             items=tuple(items),
         )
@@ -200,5 +196,4 @@ __all__ = [
     "MemoryFollowUpItem",
     "MemoryFollowUpRunResult",
     "MemoryFollowUpService",
-    "MemoryFollowUpStatus",
 ]

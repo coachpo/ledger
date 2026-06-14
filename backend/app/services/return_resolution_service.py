@@ -12,17 +12,16 @@ from app.extensions.signaldeck_finance.service_gate import (
     RETURN_RESOLUTION_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
-from app.schemas.memory import MemoryEntryRead, MemoryLifecycleStatus, MemoryOutcome
+from app.schemas.memory import MemoryEntryRead, MemoryOutcome
 from app.services.market_data_service import MarketClosePoint, MarketDataService
 from app.services.memory_service import MemoryService
 from app.services.quote_provider import QuoteProviderError
 
-type ReturnResolutionStatus = Literal["pending", "approved", "archived"]
-
 
 @dataclass(frozen=True, slots=True)
 class ReturnResolutionResult:
-    status: ReturnResolutionStatus
+    visible_to_workflow: bool
+    review_recorded: bool
     memory: MemoryEntryRead
     reason: str | None = None
 
@@ -67,11 +66,12 @@ class ReturnResolutionService:
     ) -> ReturnResolutionResult:
         self._require_enabled()
         memory = self.memory_service.get_memory(memory_id)
-        if memory.status.value != "pending":
+        if memory.visible_to_workflow:
             return ReturnResolutionResult(
-                status=memory.status.value,
+                visible_to_workflow=True,
+                review_recorded=True,
                 memory=memory,
-                reason="already_finalized",
+                reason="already_visible",
             )
 
         start_boundary = self._start_boundary(memory.created_at)
@@ -83,25 +83,35 @@ class ReturnResolutionService:
         )
         if requested_end_boundary < resolution_end:
             return ReturnResolutionResult(
-                status="pending",
+                visible_to_workflow=False,
+                review_recorded=False,
                 memory=memory,
-                reason="exit_condition_pending",
+                reason="exit_condition_unmet",
             )
 
-        outcome, reason = self._build_resolution(
+        outcome, visible_to_workflow, reason = self._build_resolution(
             symbol=symbol,
             action=action,
             start_boundary=start_boundary,
             end_boundary=resolution_end,
             benchmark_symbol=benchmark_symbol,
         )
-        updated_memory = self.memory_service.resolve_memory(
-            memory_id,
-            outcome,
-            commit=commit,
-        )
+        if visible_to_workflow:
+            updated_memory = self.memory_service.resolve_memory(
+                memory_id,
+                outcome,
+                commit=commit,
+            )
+        else:
+            updated_memory = self.memory_service.record_review_event(
+                memory_id,
+                result_snapshot={"visibleToWorkflow": False, "reason": reason},
+                status_snapshot={"visibleToWorkflow": False, "reason": reason},
+                commit=commit,
+            )
         return ReturnResolutionResult(
-            status=outcome.status.value,
+            visible_to_workflow=visible_to_workflow,
+            review_recorded=True,
             memory=updated_memory,
             reason=reason,
         )
@@ -114,7 +124,7 @@ class ReturnResolutionService:
         start_boundary: datetime,
         end_boundary: datetime,
         benchmark_symbol: str | None,
-    ) -> tuple[MemoryOutcome, str | None]:
+    ) -> tuple[MemoryOutcome, bool, str | None]:
         raw_return = self._resolve_directional_return(
             action=action,
             symbol=symbol,
@@ -122,7 +132,7 @@ class ReturnResolutionService:
             end_boundary=end_boundary,
         )
         if raw_return is None:
-            return self._archived_resolution(end_boundary), "symbol_history_unavailable"
+            return self._hidden_resolution(end_boundary), False, "symbol_history_unavailable"
 
         benchmark_return: Decimal | None = None
         normalized_benchmark = self._normalize_benchmark_symbol(benchmark_symbol)
@@ -133,12 +143,15 @@ class ReturnResolutionService:
                 end_boundary=end_boundary,
             )
             if benchmark_result is None:
-                return self._archived_resolution(end_boundary), "benchmark_history_unavailable"
+                return (
+                    self._hidden_resolution(end_boundary),
+                    False,
+                    "benchmark_history_unavailable",
+                )
             benchmark_return = benchmark_result.value
 
         benchmark_baseline = benchmark_return if benchmark_return is not None else Decimal("0")
         outcome = MemoryOutcome(
-            status=MemoryLifecycleStatus.APPROVED,
             summary="Finance return resolved.",
             observed_at=self._resolved_at(end_boundary),
             attributes={
@@ -151,7 +164,7 @@ class ReturnResolutionService:
                 ),
             },
         )
-        return outcome, None
+        return outcome, True, None
 
     def _resolve_directional_return(
         self,
@@ -243,10 +256,9 @@ class ReturnResolutionService:
         return ReturnResolutionService._end_boundary(horizon_end)
 
     @staticmethod
-    def _archived_resolution(end_boundary: datetime) -> MemoryOutcome:
+    def _hidden_resolution(end_boundary: datetime) -> MemoryOutcome:
         return MemoryOutcome(
-            status=MemoryLifecycleStatus.ARCHIVED,
-            summary="Finance return archived.",
+            summary="Finance return kept hidden.",
             observed_at=ReturnResolutionService._resolved_at(end_boundary),
         )
 

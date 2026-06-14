@@ -39,7 +39,7 @@ class FinanceMemoryFollowUpEvaluator:
         metadata = read_finance_memory_metadata(self.session, memory.memory_id)
         if metadata is None:
             return MemoryFollowUpEvaluation(
-                status="pending",
+                visible_to_workflow=False,
                 reason="finance_metadata_missing",
                 result_snapshot={"evaluator": self.evaluator_key},
             )
@@ -53,7 +53,7 @@ class FinanceMemoryFollowUpEvaluator:
             commit=False,
         )
         reflected = False
-        if resolution.status != "pending" and not resolution.memory.reflections:
+        if resolution.review_recorded and not resolution.memory.reflections:
             _ = self.reflection_service.generate_and_append_reflection(
                 memory.memory_id,
                 ticker=metadata.ticker,
@@ -64,10 +64,10 @@ class FinanceMemoryFollowUpEvaluator:
             )
             reflected = True
         return MemoryFollowUpEvaluation(
-            status=resolution.status,
+            visible_to_workflow=resolution.visible_to_workflow,
             reason=resolution.reason,
             reflected=reflected,
-            event_recorded=resolution.status != "pending",
+            event_recorded=resolution.review_recorded,
             result_snapshot={"evaluator": self.evaluator_key},
         )
 
