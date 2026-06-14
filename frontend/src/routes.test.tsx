@@ -806,7 +806,9 @@ describe("router", () => {
     expect(screen.getByTestId("memory-list-page")).toBeVisible();
     const adminNotice = screen.getByTestId("memory-admin-notice");
     expect(adminNotice).toHaveTextContent(/trusted local operator console/);
-    expect(adminNotice).not.toHaveTextContent(/Mixed package rows are intentional/);
+    expect(adminNotice).not.toHaveTextContent(
+      /Mixed package rows are intentional/,
+    );
     expect(
       within(screen.getByTestId("workspace-page-shell-context")).getByRole(
         "button",
@@ -835,8 +837,8 @@ describe("router", () => {
 
   it("renders memory filtered-empty state from optional admin URL filters", async () => {
     renderMemoryRoute(
-      "/memory?packageKey=pkg_alpha&status=approved&query=risk",
-      { packageKey: "pkg_alpha", query: "risk", status: "approved" },
+      "/memory?packageKey=pkg_alpha&visibleToWorkflow=false&query=risk",
+      { packageKey: "pkg_alpha", query: "risk", visibleToWorkflow: false },
     );
 
     expect(
