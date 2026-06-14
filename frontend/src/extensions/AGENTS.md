@@ -42,7 +42,7 @@ src/extensions/
 | Runtime gates and shells | `runtime.tsx` | `FinanceWorkspaceRouteGate`, loading/disabled shells, and backend-state gating UI |
 | Runtime assembly | `runtime-helpers.ts` | `assembleFinanceWorkspaceRoutes()`, `assembleNavGroups()`, and `filterToolsForExtensionState()` |
 | Finance scaffold | `signaldeck-finance/scaffold.ts` | finance route/nav/tool entries and private backend-state gate tags |
-| Digital Oracle scaffold | `signaldeck-digital-oracle/scaffold.ts` | Digital Oracle tool prefixes only, with no route or nav contributions |
+| Digital Oracle scaffold | `signaldeck-digital-oracle/scaffold.ts` | Digital Oracle canonical tool keys only, with no route or nav contributions |
 | Registry export | `registry.ts`, `index.ts` | statically resident extension lookup and public exports |
 | Backend state hooks | `../hooks/use-extensions.ts` | TanStack Query wrapper for `/api/extensions` |
 | Route-state surface | `../pages/extensions/AGENTS.md` | `/extensions` page consumes the slim backend contract, not scaffold metadata |
@@ -50,7 +50,7 @@ src/extensions/
 ## CONVENTIONS
 - `runtime.tsx` owns gate components and loading/disabled shells; `runtime-helpers.ts` owns route assembly, nav grouping, and extension-filtered tool helpers.
 - Extension keys must match backend registry keys exactly; the bundled keys are `signaldeck.finance` and `signaldeck.digital_oracle`.
-- Keep route/nav/tool entries declarative in scaffolds and route gates generic in runtime. Digital Oracle stays tool-only here, with canonical owner-qualified tool keys, mechanical OpenAI function names, and no route or nav entries.
+- Keep route/nav/tool entries declarative in scaffolds and route gates generic in runtime. Digital Oracle stays tool-only here with `signaldeck.digital_oracle.prediction_markets.lookup` / `signaldeck_digital_oracle_prediction_markets_lookup`, `signaldeck.digital_oracle.sec_filings.lookup` / `signaldeck_digital_oracle_sec_filings_lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup` / `signaldeck_digital_oracle_market_sentiment_lookup`; there are no route or nav entries.
 - Private gate tags such as `requiredExtensionKey` are frontend wiring only. Do not mirror backend registry metadata or expose scaffold details as public state.
 - The `/extensions` route renders only the slim backend contract. Page/layout code must not recreate scaffold or registry logic that belongs here.
 
