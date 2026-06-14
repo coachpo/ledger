@@ -247,8 +247,7 @@ const NOW = "2026-04-20T10:00:00Z";
 const CONTENT_VISIBILITY_AUTO_CLASS = "[content-visibility:auto]";
 const RUNTIME_DEFERRED_SECTION_SIZE_CLASS =
   "[contain-intrinsic-size:auto_960px]";
-const MEMORY_EVENT_GROUP_SIZE_CLASS =
-  "[contain-intrinsic-size:auto_720px]";
+const MEMORY_EVENT_GROUP_SIZE_CLASS = "[contain-intrinsic-size:auto_720px]";
 const MEMORY_COMPACT_ARTIFACT_SIZE_CLASS =
   "[contain-intrinsic-size:auto_220px]";
 
@@ -734,7 +733,9 @@ describe("RunsDetailPage", () => {
       totalTokens: 2302,
     });
     const renderTab = (tab: RunDetailTabKey) => {
-      searchParamsMock = new URLSearchParams(tab === "output" ? "" : `tab=${tab}`);
+      searchParamsMock = new URLSearchParams(
+        tab === "output" ? "" : `tab=${tab}`,
+      );
       useRunMock.mockReturnValue(queryResult(run));
       return render(<RunsDetailPage />);
     };
@@ -792,7 +793,9 @@ describe("RunsDetailPage", () => {
     expect(tokenAccounting).toHaveTextContent(/Read model total/i);
     expect(tokenAccounting).toHaveTextContent(/Fresh execution/i);
     expect(tokenAccounting).toHaveTextContent(/Inherited context/i);
-    expect(tokenAccounting).toHaveTextContent(/No upstream source run boundary/i);
+    expect(tokenAccounting).toHaveTextContent(
+      /No upstream source run boundary/i,
+    );
     usageRender.unmount();
   });
 
@@ -805,14 +808,18 @@ describe("RunsDetailPage", () => {
     rendered.rerender(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-tab-panel-execution")).toBeVisible();
-    expect(screen.getByTestId("runs-detail-tab-panel-output")).not.toBeVisible();
+    expect(
+      screen.getByTestId("runs-detail-tab-panel-output"),
+    ).not.toBeVisible();
 
     latestRunDetailSectionStackProps().onTabChange("overview");
     applyLatestSearchParamsUpdate(searchParamsMock.toString());
     rendered.rerender(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-tab-panel-overview")).toBeVisible();
-    expect(screen.getByTestId("runs-detail-tab-panel-execution")).not.toBeVisible();
+    expect(
+      screen.getByTestId("runs-detail-tab-panel-execution"),
+    ).not.toBeVisible();
   });
 
   it.each([
@@ -883,16 +890,14 @@ describe("RunsDetailPage", () => {
       within(outputPanel).getByRole("heading", { name: "Output provenance" }),
     ).toBeVisible();
     expect(
-      within(screen.getByTestId("runs-detail-final-output")).getByRole(
-        "tab",
-        { name: "Rendered" },
-      ),
+      within(screen.getByTestId("runs-detail-final-output")).getByRole("tab", {
+        name: "Rendered",
+      }),
     ).toBeVisible();
     expect(
-      within(screen.getByTestId("runs-detail-final-output")).getByRole(
-        "tab",
-        { name: "Raw" },
-      ),
+      within(screen.getByTestId("runs-detail-final-output")).getByRole("tab", {
+        name: "Raw",
+      }),
     ).toBeVisible();
     expect(
       within(outputPanel).queryByRole("heading", { name: "Execution steps" }),
@@ -911,7 +916,9 @@ describe("RunsDetailPage", () => {
     outputRender.unmount();
 
     const executionRender = renderTab("execution");
-    const executionPanel = screen.getByTestId("runs-detail-tab-panel-execution");
+    const executionPanel = screen.getByTestId(
+      "runs-detail-tab-panel-execution",
+    );
     const diagnostics = within(executionPanel).getByTestId(
       "runs-detail-section-diagnostics",
     );
@@ -1002,7 +1009,7 @@ describe("RunsDetailPage", () => {
         {
           memoryId: "memory_safe",
           summary: "Compact safe memory",
-          status: "active",
+          visibleToWorkflow: true,
           createdAt: NOW,
           provenance: {
             agentKey: "portfolio_manager",
@@ -1064,7 +1071,9 @@ describe("RunsDetailPage", () => {
 
     const memoryRender = renderTab("memory");
     const memoryPanel = screen.getByTestId("runs-detail-tab-panel-memory");
-    expect(within(memoryPanel).getByTestId("runs-memory-workspace")).toBeVisible();
+    expect(
+      within(memoryPanel).getByTestId("runs-memory-workspace"),
+    ).toBeVisible();
     expect(
       within(memoryPanel).getByTestId("runs-memory-compact-artifacts"),
     ).toHaveTextContent(/compact artifact slice/i);
@@ -1080,7 +1089,9 @@ describe("RunsDetailPage", () => {
 
     renderTab("lineage");
     const lineagePanel = screen.getByTestId("runs-detail-tab-panel-lineage");
-    expect(within(lineagePanel).getByTestId("runs-lineage-workspace")).toBeVisible();
+    expect(
+      within(lineagePanel).getByTestId("runs-lineage-workspace"),
+    ).toBeVisible();
     expect(
       within(lineagePanel).queryByTestId("runs-memory-compact-artifacts"),
     ).not.toBeInTheDocument();
@@ -1092,9 +1103,13 @@ describe("RunsDetailPage", () => {
     const outputRender = render(<RunsDetailPage />);
     const finalOutputCard = screen.getByTestId("runs-detail-final-output-card");
     expect(finalOutputCard).not.toHaveClass("min-h-[136px]");
-    expect(finalOutputCard).not.toHaveAttribute("data-run-detail-section-block");
+    expect(finalOutputCard).not.toHaveAttribute(
+      "data-run-detail-section-block",
+    );
     expect(
-      finalOutputCard.querySelector('[data-state="open"], [data-state="closed"]'),
+      finalOutputCard.querySelector(
+        '[data-state="open"], [data-state="closed"]',
+      ),
     ).toBeNull();
     expect(screen.getByTestId("runs-detail-final-output")).toBeVisible();
     outputRender.unmount();
@@ -1129,7 +1144,9 @@ describe("RunsDetailPage", () => {
       expectedMode,
     );
     expect(screen.getByTestId("runs-detail-tab-panel-output")).toBeVisible();
-    expect(screen.queryByTestId("runs-stacked-workspace")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-stacked-workspace"),
+    ).not.toBeInTheDocument();
 
     rendered.unmount();
   });
@@ -1272,7 +1289,9 @@ describe("RunsDetailPage", () => {
       "summary",
     );
     expect(screen.getByTestId("runs-overview-workspace")).toBeVisible();
-    expect(screen.queryByTestId("runs-execution-outline")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-execution-outline"),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("split-inspector-right-pane"),
     ).not.toBeInTheDocument();
@@ -1384,7 +1403,7 @@ describe("RunsDetailPage", () => {
         {
           memoryId: "memory_safe",
           summary: "Compact safe memory",
-          status: "active",
+          visibleToWorkflow: true,
           createdAt: NOW,
           provenance: {
             agentKey: "portfolio_manager",
@@ -1608,7 +1627,7 @@ describe("RunsDetailPage", () => {
         {
           memoryId: "memory_701",
           summary: "AAPL decision memory",
-          status: "pending",
+          visibleToWorkflow: false,
           createdAt: NOW,
           provenance: {
             agentKey: "portfolio_manager",
@@ -1694,7 +1713,9 @@ describe("RunsDetailPage", () => {
       screen.queryByTestId("runs-detail-final-output"),
     ).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-detail-input")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-step-1-trace-summary")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("runs-step-1-trace-summary"),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByTestId("runs-memory-compact-artifact-memory_701"),
     ).toHaveTextContent(/AAPL decision memory/i);
@@ -2060,9 +2081,13 @@ describe("RunsDetailPage", () => {
     const finalOutput = within(finalOutputCard).getByTestId(
       "runs-detail-final-output",
     );
-    expect(finalOutputCard).not.toHaveAttribute("data-run-detail-section-block");
+    expect(finalOutputCard).not.toHaveAttribute(
+      "data-run-detail-section-block",
+    );
     expect(
-      finalOutputCard.querySelector('[data-state="open"], [data-state="closed"]'),
+      finalOutputCard.querySelector(
+        '[data-state="open"], [data-state="closed"]',
+      ),
     ).toBeNull();
     expect(finalOutput).toHaveTextContent(/normalized/i);
     expect(finalOutput).toHaveClass(
@@ -2562,7 +2587,7 @@ describe("RunsDetailPage", () => {
         {
           memoryId: "memory_safe",
           summary: "Compact safe memory",
-          status: "active",
+          visibleToWorkflow: true,
           createdAt: NOW,
           provenance: {
             agentKey: "portfolio_manager",
@@ -2619,7 +2644,9 @@ describe("RunsDetailPage", () => {
     searchParamsMock = new URLSearchParams("tab=runtime");
     const runtimeRender = render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("runs-detail-section-runtime-profile")).not.toHaveClass(
+    expect(
+      screen.getByTestId("runs-detail-section-runtime-profile"),
+    ).not.toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
       RUNTIME_DEFERRED_SECTION_SIZE_CLASS,
     );
@@ -2663,25 +2690,16 @@ describe("RunsDetailPage", () => {
     );
     expect(
       screen.getByTestId("runs-memory-group-retrievedContext"),
-    ).toHaveClass(
+    ).toHaveClass(CONTENT_VISIBILITY_AUTO_CLASS, MEMORY_EVENT_GROUP_SIZE_CLASS);
+    expect(screen.getByTestId("runs-memory-group-memoryWrites")).toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
       MEMORY_EVENT_GROUP_SIZE_CLASS,
     );
-    expect(
-      screen.getByTestId("runs-memory-group-memoryWrites"),
-    ).toHaveClass(
+    expect(screen.getByTestId("runs-memory-group-reviewFollowUp")).toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
       MEMORY_EVENT_GROUP_SIZE_CLASS,
     );
-    expect(
-      screen.getByTestId("runs-memory-group-reviewFollowUp"),
-    ).toHaveClass(
-      CONTENT_VISIBILITY_AUTO_CLASS,
-      MEMORY_EVENT_GROUP_SIZE_CLASS,
-    );
-    expect(
-      screen.getByTestId("runs-memory-group-auditTrail"),
-    ).toHaveClass(
+    expect(screen.getByTestId("runs-memory-group-auditTrail")).toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
       MEMORY_EVENT_GROUP_SIZE_CLASS,
     );
@@ -2691,9 +2709,7 @@ describe("RunsDetailPage", () => {
       CONTENT_VISIBILITY_AUTO_CLASS,
       MEMORY_COMPACT_ARTIFACT_SIZE_CLASS,
     );
-    expect(
-      screen.getByTestId("runs-memory-compact-artifacts"),
-    ).not.toHaveClass(
+    expect(screen.getByTestId("runs-memory-compact-artifacts")).not.toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
       MEMORY_COMPACT_ARTIFACT_SIZE_CLASS,
     );
@@ -2757,7 +2773,7 @@ describe("RunsDetailPage", () => {
             {
               memoryId: "memory_701",
               summary: "AAPL decision memory",
-              status: "pending",
+              visibleToWorkflow: false,
               createdAt: NOW,
               provenance: {
                 agentKey: "portfolio_manager",
@@ -2850,7 +2866,7 @@ describe("RunsDetailPage", () => {
 
     defaultRender.unmount();
     searchParamsMock = new URLSearchParams("mode=metadata&tab=memory");
-    render(<RunsDetailPage />);
+    const memoryTabRender = render(<RunsDetailPage />);
     expect(
       screen.queryByTestId("runs-detail-section-metadata"),
     ).not.toBeInTheDocument();
@@ -2861,7 +2877,7 @@ describe("RunsDetailPage", () => {
       "runs-memory-compact-artifact-memory_701",
     );
     expect(compactArtifact).toHaveTextContent("AAPL decision memory");
-    expect(compactArtifact).toHaveTextContent(/pending/i);
+    expect(compactArtifact).toHaveTextContent(/workflow hidden/i);
     expect(compactArtifact).toHaveTextContent(/portfolio_manager@3/i);
     expect(compactArtifact).toHaveTextContent(/workflow market_review/i);
     expect(compactArtifact).toHaveTextContent(/slot decision/i);
@@ -2872,6 +2888,19 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByTestId("runs-audit-row-artifact-memory_701"),
     ).not.toBeInTheDocument();
+    memoryTabRender.unmount();
+
+    searchParamsMock = new URLSearchParams(
+      "mode=memory&inspect=memory:memory_701&pane=details",
+    );
+    render(<RunsDetailPage />);
+    const canonicalMemoryLink = screen.getByRole("link", {
+      name: "Open canonical memory",
+    });
+    const canonicalMemoryHref = canonicalMemoryLink.getAttribute("href") ?? "";
+    expect(canonicalMemoryHref).toContain("visibleToWorkflow=false");
+    expect(canonicalMemoryHref).not.toContain("status=");
+    expect(canonicalMemoryHref).not.toContain("/status");
   });
 
   it("renders memory artifacts without report actions when audit links are absent", () => {
@@ -2882,7 +2911,7 @@ describe("RunsDetailPage", () => {
             {
               memoryId: "memory_702",
               summary: "AAPL risk memory",
-              status: "active",
+              visibleToWorkflow: true,
               createdAt: NOW,
               provenance: {
                 agentKey: "risk_manager",
@@ -2911,7 +2940,7 @@ describe("RunsDetailPage", () => {
       "runs-memory-compact-artifact-memory_702",
     );
     expect(artifact).toHaveTextContent("AAPL risk memory");
-    expect(artifact).toHaveTextContent(/active/i);
+    expect(artifact).toHaveTextContent(/workflow visible/i);
     expect(artifact).toHaveTextContent(/risk_manager@1/i);
     expect(artifact).toHaveTextContent(/workflow market_review/i);
     expect(artifact).toHaveTextContent(/run #42/i);
@@ -2934,7 +2963,7 @@ describe("RunsDetailPage", () => {
             {
               memoryId: "memory_safe",
               summary: "Compact safe memory",
-              status: "active",
+              visibleToWorkflow: true,
               createdAt: NOW,
               provenance: {
                 agentKey: "portfolio_manager",
@@ -2985,7 +3014,7 @@ describe("RunsDetailPage", () => {
               id: 9105,
               eventType: "reviewed",
               memoryId: "memory_safe",
-              statusSnapshot: { status: "approved" },
+              statusSnapshot: { visibleToWorkflow: true },
             }),
             buildMemoryEvent({
               id: 9106,
@@ -3048,7 +3077,10 @@ describe("RunsDetailPage", () => {
     ).toHaveTextContent(/reused/i);
     expect(
       screen.getByTestId("runs-memory-event-9105-status"),
-    ).toHaveTextContent(/approved/i);
+    ).toHaveTextContent(/visibleToWorkflow/i);
+    expect(
+      screen.getByTestId("runs-memory-event-9105-status"),
+    ).not.toHaveTextContent(/\b(approved|pending|archived)\b/i);
     expect(
       screen.getByTestId("runs-memory-event-9106-status"),
     ).toHaveTextContent(/memory_write_failed/i);
@@ -3264,7 +3296,9 @@ describe("RunsDetailPage", () => {
     );
 
     defaultRender.unmount();
-    searchParamsMock = new URLSearchParams("tab=execution&mode=execution&inspect=step:1");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&mode=execution&inspect=step:1",
+    );
     render(<RunsDetailPage />);
 
     const aggregatedOutput = screen.getByTestId(
@@ -3326,7 +3360,9 @@ describe("RunsDetailPage", () => {
     expect(finalOutput.querySelector("table")).toBeInTheDocument();
 
     defaultRender.unmount();
-    searchParamsMock = new URLSearchParams("tab=execution&mode=execution&inspect=step:1");
+    searchParamsMock = new URLSearchParams(
+      "tab=execution&mode=execution&inspect=step:1",
+    );
     render(<RunsDetailPage />);
 
     const aggregatedOutput = screen.getByTestId(
@@ -3918,9 +3954,7 @@ describe("RunsDetailPage", () => {
     expect(nextParams.has("stepIndex")).toBe(false);
   });
 
-  it(
-    "uses selected invocation fork actions and no ambiguous step shortcut for mixed or multi-invocation steps",
-    () => {
+  it("uses selected invocation fork actions and no ambiguous step shortcut for mixed or multi-invocation steps", () => {
     searchParamsMock = new URLSearchParams(
       "tab=execution&mode=execution&inspect=invocation:1001",
     );
@@ -4112,4 +4146,3 @@ describe("RunsDetailPage", () => {
     });
   });
 });
-

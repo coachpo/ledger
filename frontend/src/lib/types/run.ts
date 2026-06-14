@@ -12,11 +12,22 @@ import type {
 
 export type RunStatus = "queued" | "running" | "succeeded" | "failed";
 export type RunQueueState = "waiting" | "blocked";
-export type RunQueueReason = "awaiting-worker-capacity" | "blocked-by-package-serial-policy";
-export type RunStepStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
+export type RunQueueReason =
+  | "awaiting-worker-capacity"
+  | "blocked-by-package-serial-policy";
+export type RunStepStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped";
 export type RunStepOrigin = "planned" | "copied";
 export type RunInvocationInputMode = "passthrough" | "wired";
-export type RunInvocationResolvedInputOrigin = "derived" | "edited" | "copied" | "passthrough";
+export type RunInvocationResolvedInputOrigin =
+  | "derived"
+  | "edited"
+  | "copied"
+  | "passthrough";
 export type RunInvocationOutputOrigin = "executed" | "edited" | "copied";
 export type RunOperationKind = "http";
 export type RunTargetKind = "workflowPackage";
@@ -58,8 +69,13 @@ export interface RunModelGatewayUsageRead {
   totalTokens?: number | null;
 }
 
-export type RunProviderRetryAttemptOutcome = "retryScheduled" | "retryAfterHonored" | "exhausted";
-export type RunProviderRetryTerminalOutcome = "succeededAfterRetry" | "exhausted";
+export type RunProviderRetryAttemptOutcome =
+  | "retryScheduled"
+  | "retryAfterHonored"
+  | "exhausted";
+export type RunProviderRetryTerminalOutcome =
+  | "succeededAfterRetry"
+  | "exhausted";
 
 export interface RunProviderRetryAttemptRead {
   attempt: number;
@@ -119,7 +135,7 @@ export interface RunMemoryAuditReportLinkRead {
 export interface RunMemoryArtifactRead {
   memoryId: string;
   summary: string;
-  status: string;
+  visibleToWorkflow: boolean;
   createdAt: string;
   provenance: RunMemoryProvenanceRead;
   sourceGraphMetadata?: (RunGraphMetadata & UnknownRecord) | null;

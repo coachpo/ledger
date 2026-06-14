@@ -21,7 +21,13 @@ import {
   GitBranch,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { Link } from "react-router";
 
 import { EvidenceCluster } from "@/components/shared/evidence-cluster";
@@ -92,7 +98,11 @@ export {
   RunOutputWorkspace,
   RunOverviewWorkspace,
 } from "./payload-sections";
-export { RunContextStrip, RunRuntimeProfileSection, RunTokensWorkspace } from "./runtime";
+export {
+  RunContextStrip,
+  RunRuntimeProfileSection,
+  RunTokensWorkspace,
+} from "./runtime";
 
 import {
   JsonBlock,
@@ -114,7 +124,11 @@ import {
   RunDetailTableFrame,
   type DetailItem,
 } from "./shared";
-import { formatOptional, formatTimestamp, statusVariant } from "./shared-helpers";
+import {
+  formatOptional,
+  formatTimestamp,
+  statusVariant,
+} from "./shared-helpers";
 
 type MemoryEventGroupKey =
   | "retrievedContext"
@@ -153,7 +167,6 @@ const MEMORY_EVENT_GROUP_DEFERRED_SECTION_CLASS_NAME =
   "[content-visibility:auto] [contain-intrinsic-size:auto_720px]";
 const MEMORY_COMPACT_ARTIFACT_DEFERRED_CLASS_NAME =
   "[content-visibility:auto] [contain-intrinsic-size:auto_220px]";
-const MEMORY_ADMIN_STATUS_FILTERS = new Set(["pending", "approved", "archived"]);
 
 const MEMORY_EVENT_GROUPS: MemoryEventGroupDefinition[] = [
   {
@@ -541,9 +554,7 @@ function memoryWorkspacePath(
   if (artifact.provenance.agentKey) {
     params.set("agentKey", artifact.provenance.agentKey);
   }
-  if (MEMORY_ADMIN_STATUS_FILTERS.has(artifact.status)) {
-    params.set("status", artifact.status);
-  }
+  params.set("visibleToWorkflow", String(artifact.visibleToWorkflow));
   return `/memory?${params.toString()}`;
 }
 
@@ -565,6 +576,10 @@ function memoryProvenanceLabel(artifact: RunMemoryArtifactRead): string {
 
 function hasRecordEntries(value: Record<string, unknown>): boolean {
   return Object.keys(value).length > 0;
+}
+
+function formatMemoryWorkflowVisibility(visibleToWorkflow: boolean): string {
+  return visibleToWorkflow ? "Workflow visible" : "Workflow hidden";
 }
 
 function formatMemoryEventType(eventType: RunMemoryEventType): string {
@@ -1913,7 +1928,8 @@ function MemoryArtifactSummaryCard({
         <div className="min-w-0">
           <p className="truncate font-medium">{artifact.summary}</p>
           <p className="text-xs text-muted-foreground">
-            {artifact.status} · {formatDateTime(artifact.createdAt)}
+            {formatMemoryWorkflowVisibility(artifact.visibleToWorkflow)} ·{" "}
+            {formatDateTime(artifact.createdAt)}
           </p>
         </div>
         <FileText className="size-4 shrink-0 text-muted-foreground" />
@@ -1986,7 +2002,8 @@ function MemoryArtifactEvidence({
             <div className="min-w-0">
               <p className="truncate font-medium">{artifact.summary}</p>
               <p className="text-xs text-muted-foreground">
-                {artifact.status} · {formatDateTime(artifact.createdAt)}
+                {formatMemoryWorkflowVisibility(artifact.visibleToWorkflow)} ·{" "}
+                {formatDateTime(artifact.createdAt)}
               </p>
             </div>
             <FileText className="size-4 shrink-0 text-muted-foreground" />
@@ -2435,10 +2452,7 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
   );
 
   const outputContent = (
-    <div
-      className="grid min-w-0 gap-3"
-      data-testid="runs-output-tab-workspace"
-    >
+    <div className="grid min-w-0 gap-3" data-testid="runs-output-tab-workspace">
       <RunFinalOutputPane run={run} />
       <RunOutputWorkspace run={run} />
     </div>
@@ -2472,12 +2486,22 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
 
   const usageContent = <RunTokensWorkspace run={run} />;
 
+  const selectedMemoryId =
+    activeInspection.target.type === "memoryArtifact"
+      ? activeInspection.target.memoryId
+      : null;
+  const selectedMemoryArtifact = selectedMemoryId
+    ? run.memoryArtifacts.find(
+        (artifact) => artifact.memoryId === selectedMemoryId,
+      )
+    : null;
+
   const memoryContent = (
-    <div
-      className="grid min-w-0 gap-3"
-      data-testid="runs-memory-tab-workspace"
-    >
+    <div className="grid min-w-0 gap-3" data-testid="runs-memory-tab-workspace">
       <RunMemoryWorkspace run={run} />
+      {selectedMemoryArtifact ? (
+        <MemoryArtifactEvidence artifact={selectedMemoryArtifact} run={run} />
+      ) : null}
       {run.memoryArtifacts.length > 0 ? (
         <RunDetailContentSection
           description="These artifacts summarize memory rows written for human audit; they do not replace the event groups above."
