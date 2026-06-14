@@ -230,7 +230,6 @@ from app.schemas.memory import (
     MEMORY_NAMESPACE_ACCESS_DENIED_CODE,
     MemoryAdminCreateRequest,
     MemoryAdminListQuery,
-    MemoryLifecycleStatus,
     MemoryOutcome,
     MemoryProvenance,
     MemoryRevisionAction,
@@ -945,7 +944,6 @@ def _admin_memory_create_request(
             slot="memory",
             trace_id="trace-admin-runtime-guardrail",
         ),
-        status=MemoryLifecycleStatus.APPROVED,
     )
 
 
@@ -1484,6 +1482,26 @@ def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
     assert MEMORY_WRITE_OPENAI_FUNCTION_NAME in runtime_function_names
     assert MEMORY_LOOKUP_OPENAI_FUNCTION_NAME in runtime_function_names
     assert len(runtime_function_names) == len(runtime_spec_keys)
+
+    memory_runtime_specs = [
+        spec for spec in runtime_specs if spec.key.startswith("signaldeck.memory.")
+    ]
+    memory_server_specs = [
+        spec for spec in SERVER_DECLARED_TOOL_SPECS if spec.key.startswith("signaldeck.memory.")
+    ]
+    assert {spec.key for spec in memory_runtime_specs} == {
+        MEMORY_WRITE_TOOL_KEY,
+        MEMORY_LOOKUP_TOOL_KEY,
+    }
+    assert {spec.key for spec in memory_server_specs} == {
+        MEMORY_WRITE_TOOL_KEY,
+        MEMORY_LOOKUP_TOOL_KEY,
+    }
+    assert all("delete" not in spec.key for spec in memory_runtime_specs)
+    assert all("delete" not in spec.openai_function_name for spec in memory_runtime_specs)
+    assert all("delete" not in spec.parameters_schema for spec in memory_runtime_specs)
+    assert all("delete" not in spec.key for spec in memory_server_specs)
+    assert all("delete" not in spec.module for spec in memory_server_specs)
 
 
 def test_prediction_markets_sec_filings_market_sentiment_tool_ownership_constants() -> None:
@@ -2647,7 +2665,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
     core_memory_payload = RuntimeMemoryWriteResult(
         memory_id="memory_7",
         revision_id="revision_7",
-        status=MemoryLifecycleStatus.PENDING,
+        visible_to_workflow=False,
         revision_action=MemoryRevisionAction.CREATED,
         created_at=_NOW,
         provenance=_memory_write_provenance(),
@@ -4186,7 +4204,8 @@ def test_memory_write_runtime_tool_creates_core_memory_without_reports(
     assert first_payload["memoryId"] == second_payload["memoryId"]
     assert str(first_payload["memoryId"]).startswith("memory_")
     assert str(first_payload["revisionId"]).startswith("revision_")
-    assert first_payload["status"] == "pending"
+    assert first_payload["visibleToWorkflow"] is False
+    assert "status" not in first_payload
     assert first_payload["revisionAction"] == "created"
     assert second_payload["revisionAction"] == "reused"
     assert "action" not in first_payload
@@ -4266,7 +4285,7 @@ def test_memory_lookup_runtime_tool_stays_package_scoped_when_admin_lists_all_me
         service = MemoryService(session)
         _ = service.resolve_memory(
             str(alpha_payload["memoryId"]),
-            MemoryOutcome(status=MemoryLifecycleStatus.APPROVED, summary="Alpha approved"),
+            MemoryOutcome(summary="Alpha approved"),
         )
         beta = service.create_admin_memory(
             _admin_memory_create_request(
@@ -4286,7 +4305,6 @@ def test_memory_lookup_runtime_tool_stays_package_scoped_when_admin_lists_all_me
                 "scope": None,
                 "subjectRefs": None,
                 "kind": None,
-                "status": None,
                 "tags": None,
                 "limit": 10,
                 "offset": 0,
@@ -4305,7 +4323,6 @@ def test_memory_lookup_runtime_tool_stays_package_scoped_when_admin_lists_all_me
                     "scope": {"scopeType": "package", "scopeKey": package_beta_key},
                     "subjectRefs": None,
                     "kind": None,
-                    "status": None,
                     "tags": None,
                     "limit": 10,
                     "offset": 0,
@@ -4341,12 +4358,18 @@ def test_memory_lookup_runtime_tool_uses_current_context_with_finance_disabled(
             )
         }
     )
-    _ = registry.dispatch(
+    write_payload = registry.dispatch(
         name=MEMORY_WRITE_OPENAI_FUNCTION_NAME,
         arguments_json=write_args,
         granted_tool_keys={MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY},
         context=context,
     )
+    with session_factory() as session:
+        service = MemoryService(session)
+        _ = service.resolve_memory(
+            str(write_payload["memoryId"]),
+            MemoryOutcome(summary="Memory approved"),
+        )
 
     lookup_payload = registry.dispatch(
         name=MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -4356,7 +4379,6 @@ def test_memory_lookup_runtime_tool_uses_current_context_with_finance_disabled(
                 "scope": None,
                 "subjectRefs": None,
                 "kind": None,
-                "status": "pending",
                 "tags": None,
                 "limit": None,
                 "offset": None,
@@ -4381,9 +4403,16 @@ def test_memory_lookup_runtime_tool_uses_current_context_with_finance_disabled(
     with session_factory() as session:
         events = list(session.scalars(select(RunMemoryEvent).order_by(RunMemoryEvent.id)))
 
-    assert [event.event_type for event in events] == ["written", "retrieved", "injected"]
-    retrieval_event = events[1]
-    injected_event = events[2]
+    assert [event.event_type for event in events] == [
+        "written",
+        "reviewed",
+        "retrieved",
+        "injected",
+    ]
+    reviewed_event = events[1]
+    retrieval_event = events[2]
+    injected_event = events[3]
+    assert reviewed_event.result_snapshot["visibleToWorkflow"] is True
     assert retrieval_event.run_id == _RUNTIME_RUN_ID
     assert retrieval_event.run_step_id == _RUNTIME_RUN_STEP_ID
     assert retrieval_event.run_agent_invocation_id == _RUNTIME_AGENT_INVOCATION_ID
@@ -4437,7 +4466,6 @@ def test_memory_runtime_tools_reject_shared_namespace_without_trusted_runtime_so
                     "sharedNamespace": namespace_payload,
                     "subjectRefs": None,
                     "kind": None,
-                    "status": "pending",
                     "tags": None,
                     "limit": None,
                     "offset": None,

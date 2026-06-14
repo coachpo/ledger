@@ -6,12 +6,7 @@ from typing import Any, Final
 from sqlalchemy.orm import Session
 
 from app.core.formatting import to_utc
-from app.schemas.memory import (
-    MemoryLifecycleStatus,
-    MemoryPromptSnippet,
-    MemoryQuery,
-    MemorySubjectRef,
-)
+from app.schemas.memory import MemoryPromptSnippet, MemoryQuery, MemorySubjectRef
 from app.services.memory_service import MemoryLookupContext, MemoryService
 from app.services.memory_store import MemoryStore
 
@@ -150,11 +145,10 @@ class MemoryContextService:
                 subject_refs=subject_refs,
                 kind=kind,
                 agent_key=agent_key,
-                status=MemoryLifecycleStatus.APPROVED,
             )
         ]
         if query is not None or subject_refs or kind is not None:
-            groups.append(MemoryQuery(agent_key=agent_key, status=MemoryLifecycleStatus.APPROVED))
+            groups.append(MemoryQuery(agent_key=agent_key))
         return groups
 
     def _query_all(

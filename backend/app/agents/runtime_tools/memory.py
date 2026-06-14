@@ -16,7 +16,6 @@ from app.schemas.memory import (
     MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS,
     MEMORY_LOOKUP_MAX_CHARACTERS,
     MEMORY_LOOKUP_MAX_LIMIT,
-    MemoryLifecycleStatus,
     MemoryPromptSnippet,
     MemoryProvenance,
     MemoryQuery,
@@ -116,10 +115,6 @@ _MEMORY_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
             "items": _MEMORY_SUBJECT_REF_INPUT_SCHEMA,
         },
         "kind": {"type": ["string", "null"], "maxLength": 80},
-        "status": {
-            "type": ["string", "null"],
-            "enum": ["pending", "approved", "archived", None],
-        },
         "tags": {"type": ["array", "null"], "items": {"type": "string"}},
         "limit": {
             "type": ["integer", "null"],
@@ -138,7 +133,6 @@ _MEMORY_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
         "scope",
         "subjectRefs",
         "kind",
-        "status",
         "tags",
         "limit",
         "offset",
@@ -207,7 +201,6 @@ class RuntimeMemoryLookupArguments(CamelModel):
     scope: MemoryScope | None = None
     subject_refs: list[RuntimeMemorySubjectRefArguments] = Field(default_factory=list)
     kind: str | None = Field(default=None, max_length=80)
-    status: MemoryLifecycleStatus | None = None
     tags: list[str] = Field(default_factory=list)
     limit: int = Field(default=MEMORY_LOOKUP_DEFAULT_LIMIT, ge=1, le=MEMORY_LOOKUP_MAX_LIMIT)
     offset: int = Field(default=0, ge=0)
@@ -251,7 +244,6 @@ class RuntimeMemoryLookupArguments(CamelModel):
             scope=self._selected_scope(),
             subject_refs=[ref.to_memory_subject_ref() for ref in self.subject_refs],
             kind=self.kind,
-            status=self.status,
             tags=self.tags,
             limit=self.limit,
             offset=self.offset,
@@ -263,7 +255,7 @@ class RuntimeMemoryWriteResult(CamelModel):
     tool_key: Literal["signaldeck.memory.write"] = "signaldeck.memory.write"
     memory_id: str = Field(min_length=1, max_length=160)
     revision_id: str = Field(min_length=1, max_length=160)
-    status: MemoryLifecycleStatus
+    visible_to_workflow: bool
     revision_action: MemoryRevisionAction
     created_at: datetime
     provenance: MemoryProvenance
@@ -274,7 +266,7 @@ class RuntimeMemoryWriteResult(CamelModel):
         return cls(
             memory_id=result.memory_id,
             revision_id=result.revision_id,
-            status=result.status,
+            visible_to_workflow=result.visible_to_workflow,
             revision_action=result.revision_action,
             created_at=result.created_at,
             provenance=result.provenance,
@@ -425,7 +417,6 @@ def parse_memory_lookup_arguments(arguments_json: str) -> dict[str, object]:
             "scope",
             "subjectRefs",
             "kind",
-            "status",
             "tags",
             "limit",
             "offset",
