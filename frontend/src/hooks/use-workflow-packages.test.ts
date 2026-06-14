@@ -136,27 +136,27 @@ describe("useWorkflowPackages", () => {
     const toolCatalog = {
       items: [
         {
-          key: "signaldeck.reports.lookup",
+          key: "signaldeck.finance.reports.lookup",
           displayName: "Report Lookup",
           description: "Read persisted SignalDeck reports.",
         },
         {
-          key: "signaldeck.prediction_markets.lookup",
+          key: "signaldeck.digital_oracle.prediction_markets.lookup",
           displayName: "Prediction Markets",
           description: "Find prediction-market signals.",
         },
         {
-          key: "signaldeck.sec_filings.lookup",
+          key: "signaldeck.digital_oracle.sec_filings.lookup",
           displayName: "SEC Filings",
           description: "Find SEC filing summaries.",
         },
         {
-          key: "signaldeck.market_sentiment.lookup",
+          key: "signaldeck.digital_oracle.market_sentiment.lookup",
           displayName: "Market Sentiment",
           description: "Read market sentiment snapshots.",
         },
         {
-          key: "signaldeck.memory.lookup",
+          key: "signaldeck.core.memory.lookup",
           displayName: "Memory Lookup",
           description: "Read scoped package memory.",
         },
@@ -170,11 +170,11 @@ describe("useWorkflowPackages", () => {
     });
 
     expect(useTools().data?.items.map((tool) => tool.key)).toEqual([
-      "signaldeck.reports.lookup",
-      "signaldeck.prediction_markets.lookup",
-      "signaldeck.sec_filings.lookup",
-      "signaldeck.market_sentiment.lookup",
-      "signaldeck.memory.lookup",
+      "signaldeck.finance.reports.lookup",
+      "signaldeck.digital_oracle.prediction_markets.lookup",
+      "signaldeck.digital_oracle.sec_filings.lookup",
+      "signaldeck.digital_oracle.market_sentiment.lookup",
+      "signaldeck.core.memory.lookup",
     ]);
     expect(reactQueryState.useQueryMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -203,8 +203,8 @@ describe("useWorkflowPackages", () => {
     });
 
     expect(useTools().data?.items.map((tool) => tool.key)).toEqual([
-      "signaldeck.reports.lookup",
-      "signaldeck.memory.lookup",
+      "signaldeck.finance.reports.lookup",
+      "signaldeck.core.memory.lookup",
     ]);
 
     toolDiscoveryState.useExtensionsMock.mockReturnValue({
@@ -228,10 +228,10 @@ describe("useWorkflowPackages", () => {
     });
 
     expect(useTools().data?.items.map((tool) => tool.key)).toEqual([
-      "signaldeck.prediction_markets.lookup",
-      "signaldeck.sec_filings.lookup",
-      "signaldeck.market_sentiment.lookup",
-      "signaldeck.memory.lookup",
+      "signaldeck.digital_oracle.prediction_markets.lookup",
+      "signaldeck.digital_oracle.sec_filings.lookup",
+      "signaldeck.digital_oracle.market_sentiment.lookup",
+      "signaldeck.core.memory.lookup",
     ]);
   });
 

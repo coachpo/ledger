@@ -8,7 +8,10 @@ from app.agents.mcp.tool_adapter import (
     execution_tool_descriptor_to_openai_tool,
     execution_tool_descriptor_to_signaldeck_tool_declaration,
 )
-from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
+from app.agents.runtime_tools.declarations import (
+    SignalDeckToolDeclaration,
+    runtime_model_name_for_tool_key,
+)
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError, RuntimeToolSpec
 
 
@@ -25,14 +28,13 @@ class RuntimeToolRegistry:
         self._enabled_extension_keys: frozenset[str] | None = (
             None if enabled_extension_keys is None else frozenset(enabled_extension_keys)
         )
-        self._specs_by_openai_function_name: dict[str, RuntimeToolSpec] = {}
-        self._descriptors_by_openai_function_name: dict[str, ExecutionToolDescriptor] = {}
+        self._specs_by_model_name: dict[str, RuntimeToolSpec] = {}
+        self._descriptors_by_model_name: dict[str, ExecutionToolDescriptor] = {}
         self._validate_unique_specs(self._specs)
         for spec in self._specs:
-            self._specs_by_openai_function_name[spec.openai_function_name] = spec
-            self._descriptors_by_openai_function_name[spec.openai_function_name] = (
-                self._descriptor_for_spec(spec)
-            )
+            model_name = self._model_name_for_spec(spec)
+            self._specs_by_model_name[model_name] = spec
+            self._descriptors_by_model_name[model_name] = self._descriptor_for_spec(spec)
 
     def list_specs(self) -> tuple[RuntimeToolSpec, ...]:
         return self._specs
@@ -42,7 +44,7 @@ class RuntimeToolRegistry:
 
     def list_execution_descriptors(self) -> tuple[ExecutionToolDescriptor, ...]:
         return tuple(
-            self._descriptors_by_openai_function_name[spec.openai_function_name]
+            self._descriptors_by_model_name[self._model_name_for_spec(spec)]
             for spec in self._specs
             if self._is_enabled_spec(spec)
         )
@@ -52,7 +54,7 @@ class RuntimeToolRegistry:
         granted_tool_keys: Collection[str],
     ) -> tuple[ExecutionToolDescriptor, ...]:
         return tuple(
-            self._descriptors_by_openai_function_name[spec.openai_function_name]
+            self._descriptors_by_model_name[self._model_name_for_spec(spec)]
             for spec in self._specs
             if spec.key in granted_tool_keys and self._is_enabled_spec(spec)
         )
@@ -90,7 +92,7 @@ class RuntimeToolRegistry:
         granted_tool_keys: Collection[str],
         context: RuntimeToolContext,
     ) -> dict[str, object]:
-        spec = self._specs_by_openai_function_name.get(name)
+        spec = self._specs_by_model_name.get(name)
         if spec is None:
             raise RuntimeToolError(
                 code="agent_tool_call_unsupported",
@@ -126,25 +128,38 @@ class RuntimeToolRegistry:
     def _descriptor_for_spec(spec: RuntimeToolSpec) -> ExecutionToolDescriptor:
         return build_native_runtime_tool_descriptor(
             key=spec.key,
-            openai_function_name=spec.openai_function_name,
+            openai_function_name=RuntimeToolRegistry._model_name_for_spec(spec),
             description=spec.description,
             parameters_schema=spec.parameters_schema,
             owner_extension_key=spec.owner_extension_key,
         )
 
     @staticmethod
+    def _model_name_for_spec(spec: RuntimeToolSpec) -> str:
+        return runtime_model_name_for_tool_key(spec.key)
+
+    @staticmethod
     def _validate_unique_specs(specs: Sequence[RuntimeToolSpec]) -> None:
         seen_keys: set[str] = set()
-        seen_openai_function_names: set[str] = set()
+        seen_declared_openai_function_names: set[str] = set()
+        seen_model_names: set[str] = set()
         for spec in specs:
             if spec.key in seen_keys:
                 raise ValueError(f"Duplicate runtime tool key {spec.key!r}.")
-            if spec.openai_function_name in seen_openai_function_names:
+            if spec.openai_function_name in seen_declared_openai_function_names:
                 raise ValueError(
                     f"Duplicate runtime tool OpenAI function name {spec.openai_function_name!r}."
                 )
+            model_name = RuntimeToolRegistry._model_name_for_spec(spec)
+            if model_name in seen_model_names:
+                raise ValueError(f"Duplicate runtime tool OpenAI function name {model_name!r}.")
+            if spec.openai_function_name != model_name:
+                raise ValueError(
+                    f"Runtime tool {spec.key!r} OpenAI function name must be {model_name!r}."
+                )
             seen_keys.add(spec.key)
-            seen_openai_function_names.add(spec.openai_function_name)
+            seen_declared_openai_function_names.add(spec.openai_function_name)
+            seen_model_names.add(model_name)
 
 
 __all__ = ["RuntimeToolRegistry"]

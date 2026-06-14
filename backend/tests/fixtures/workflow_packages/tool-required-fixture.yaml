@@ -23,7 +23,7 @@ spec:
       name: Tool Required
       description: Requires native tool calls.
       toolKeys:
-        - signaldeck.memory.lookup
+        - signaldeck.core.memory.lookup
   outputSchemas:
     - key: report
       name: Report

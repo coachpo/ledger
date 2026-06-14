@@ -140,6 +140,12 @@ class _RuntimeRecordingOpenAIClient:
 
 
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
+_TRADINGAGENTS_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "workflow_packages"
+    / "tradingagents_advisory_research.yaml"
+)
 _TRADINGAGENTS_CANONICAL_SCHEDULES = (
     ("TradingAgents Advisory Research · 1h", "advisory_research"),
     ("TradingAgents Market Research · 1h", "market_research"),
@@ -182,18 +188,34 @@ _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
 )
 
 
+def _canonicalize_live_tool_keys(source: str) -> str:
+    return source
+
+
 def _digital_oracle_researcher_demo_source() -> str:
-    return _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text()
+    return _canonicalize_live_tool_keys(_DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text())
+
+
+def _delete_existing_package(client: TestClient, package_key: str) -> None:
+    packages_response = client.get("/api/workflow-packages")
+    assert packages_response.status_code == 200, packages_response.json()
+    package_items = cast(list[dict[str, object]], packages_response.json()["items"])
+    for package in package_items:
+        if package["key"] != package_key:
+            continue
+        deleted = client.delete(f"/api/workflow-packages/{package['id']}")
+        assert deleted.status_code == 204, deleted.text
+        break
 
 
 def _seeded_tradingagents_package(client: TestClient) -> dict[str, Any]:
-    packages_response = client.get("/api/workflow-packages")
-    assert packages_response.status_code == 200, packages_response.json()
-    package_items = cast(list[dict[str, Any]], packages_response.json()["items"])
-    for package in package_items:
-        if package["key"] == _TRADINGAGENTS_PRESET_KEY:
-            return package
-    raise AssertionError("TradingAgents advisory preset was not seeded")
+    _delete_existing_package(client, _TRADINGAGENTS_PRESET_KEY)
+    response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _canonicalize_live_tool_keys(_TRADINGAGENTS_FIXTURE.read_text())},
+    )
+    assert response.status_code == 201, response.json()
+    return cast(dict[str, Any], response.json())
 
 
 def _create_tradingagents_canonical_schedules(
@@ -946,9 +968,9 @@ def test_digital_oracle_package_local_system_prompt_receives_runtime_tool_guidan
     assert "Digital Oracle methodology is package-local for this agent." in instructions
     assert "Decompose the research question before calling tools." in instructions
     assert "Call the minimum relevant tools" in instructions
-    assert "call signaldeck_prediction_markets_lookup" in instructions
-    assert "call signaldeck_sec_filings_lookup" in instructions
-    assert "call signaldeck_market_sentiment_lookup" in instructions
+    assert "call signaldeck_digital_oracle_prediction_markets_lookup" in instructions
+    assert "call signaldeck_digital_oracle_sec_filings_lookup" in instructions
+    assert "call signaldeck_digital_oracle_market_sentiment_lookup" in instructions
     assert instructions.index("Digital Oracle methodology") < instructions.index(
         "When you need prediction-market signals"
     )
@@ -979,8 +1001,8 @@ def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local
     )
 
     expected_tool_keys = set(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS) | {
-        "signaldeck.market_data.history_lookup",
-        "signaldeck.market_data.ohlcv_lookup",
+        "signaldeck.finance.market_data.history_lookup",
+        "signaldeck.finance.market_data.ohlcv_lookup",
     }
 
     assert len(plan.steps) == 4
@@ -1003,9 +1025,9 @@ def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local
     assert "Seek at least three independent signal dimensions" in instructions
     assert "Disclose warnings" in instructions
     assert "Never invent prices" in instructions
-    assert "call signaldeck_prediction_markets_lookup" in instructions
-    assert "call signaldeck_sec_filings_lookup" in instructions
-    assert "call signaldeck_market_sentiment_lookup" in instructions
+    assert "call signaldeck_digital_oracle_prediction_markets_lookup" in instructions
+    assert "call signaldeck_digital_oracle_sec_filings_lookup" in instructions
+    assert "call signaldeck_digital_oracle_market_sentiment_lookup" in instructions
 
 
 def test_digital_oracle_guidance_omits_ungranted_phase1_tools_and_global_skill_surface(
@@ -1043,9 +1065,9 @@ def test_digital_oracle_guidance_omits_ungranted_phase1_tools_and_global_skill_s
     assert declared_tool_keys == set(granted_profile_tool_keys)
     assert MARKET_SENTIMENT_LOOKUP_TOOL_KEY not in declared_tool_keys
     assert "Digital Oracle methodology" not in guidance
-    assert "signaldeck_prediction_markets_lookup" in instructions
-    assert "signaldeck_sec_filings_lookup" in instructions
-    assert "signaldeck_market_sentiment_lookup" not in instructions
+    assert "signaldeck_digital_oracle_prediction_markets_lookup" in instructions
+    assert "signaldeck_digital_oracle_sec_filings_lookup" in instructions
+    assert "signaldeck_digital_oracle_market_sentiment_lookup" not in instructions
     assert "When you need broad market sentiment" not in guidance
     assert "skills:" not in manifest_source
     assert "skills" not in compiled_plan
@@ -2815,8 +2837,8 @@ def test_tradingagents_advisory_research_launch_persists_extension_dependencies(
         "hook.workflowPackageStart",
         "provider.quote",
         "provider.socialSentiment",
-        "runtime.tool.signaldeck.market_data.quote_lookup",
-        "tool.signaldeck.market_data.quote_lookup",
+        "runtime.tool.signaldeck.finance.market_data.quote_lookup",
+        "tool.signaldeck.finance.market_data.quote_lookup",
     } <= surfaces
     with session_factory() as session:
         package_row = session.query(WorkflowPackage).filter_by(id=int(package["id"])).one()
@@ -2885,7 +2907,7 @@ def test_package_private_mcp_dependency_snapshot_blocks_disabled_extension_runti
     dependency = cast(list[dict[str, object]], queued_detail.json()["extensionDependencies"])[0]
     surfaces = set(cast(list[str], dependency["surfaces"]))
     assert "mcp.packagePrivate.web_search_exa" in surfaces
-    assert "tool.signaldeck.market_data.quote_lookup" not in surfaces
+    assert "tool.signaldeck.finance.market_data.quote_lookup" not in surfaces
 
     _disable_finance_extension(session_factory)
     with session_factory() as session:

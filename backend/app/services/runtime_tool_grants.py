@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import cast
 
 from app.agents import ResolvedTool, ToolCatalog, ToolCatalogValidationError
 
@@ -49,11 +50,10 @@ class RuntimeToolGrantService:
                     code="capability_reference_removed",
                     message="Global capability references are not supported at runtime.",
                 )
-            for package_tool_key in package_tool_keys:
+            for package_tool_key in cast(list[object], package_tool_keys):
                 if isinstance(package_tool_key, str):
                     granted_tool_keys.add(package_tool_key)
-        _ = self._validate_tool_keys(granted_tool_keys)
-        return granted_tool_keys
+        return {tool.key for tool in self._validate_tool_keys(granted_tool_keys)}
 
     def require_runtime_tool_grant(
         self,

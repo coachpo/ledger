@@ -30,13 +30,13 @@ from app.schemas.memory import (
 from app.services.memory_service import MemoryLookupContext, MemoryService
 from app.services.runtime_tool_grants import RuntimeToolGrantPolicy, RuntimeToolGrantService
 
-MEMORY_WRITE_TOOL_KEY = "signaldeck.memory.write"
-MEMORY_LOOKUP_TOOL_KEY = "signaldeck.memory.lookup"
-MEMORY_WRITE_OPENAI_FUNCTION_NAME = "signaldeck_memory_write"
-MEMORY_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_memory_lookup"
+MEMORY_WRITE_TOOL_KEY = "signaldeck.core.memory.write"
+MEMORY_LOOKUP_TOOL_KEY = "signaldeck.core.memory.lookup"
+MEMORY_WRITE_OPENAI_FUNCTION_NAME = "signaldeck_core_memory_write"
+MEMORY_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_core_memory_lookup"
 MEMORY_TOOL_ACCESS_DENIED_CODE = "agent_execution_access_denied"
-MEMORY_WRITE_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use signaldeck.memory.write."
-MEMORY_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use signaldeck.memory.lookup."
+MEMORY_WRITE_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use signaldeck.core.memory.write."
+MEMORY_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use signaldeck.core.memory.lookup."
 MEMORY_WRITE_GRANT_POLICY = RuntimeToolGrantPolicy(
     tool_key=MEMORY_WRITE_TOOL_KEY,
     denied_code=MEMORY_TOOL_ACCESS_DENIED_CODE,
@@ -252,7 +252,7 @@ class RuntimeMemoryLookupArguments(CamelModel):
 
 
 class RuntimeMemoryWriteResult(CamelModel):
-    tool_key: Literal["signaldeck.memory.write"] = "signaldeck.memory.write"
+    tool_key: Literal["signaldeck.core.memory.write"] = "signaldeck.core.memory.write"
     memory_id: str = Field(min_length=1, max_length=160)
     revision_id: str = Field(min_length=1, max_length=160)
     visible_to_workflow: bool
@@ -313,7 +313,7 @@ class RuntimeMemoryLookupItem(CamelModel):
 
 
 class RuntimeMemoryLookupResult(CamelModel):
-    tool_key: Literal["signaldeck.memory.lookup"] = "signaldeck.memory.lookup"
+    tool_key: Literal["signaldeck.core.memory.lookup"] = "signaldeck.core.memory.lookup"
     scope_mode: Literal["explicit-selectors", "current-context-fallback"]
     fallback_scope: Literal["current-run-package-agent"]
     limit: int
@@ -358,7 +358,7 @@ def parse_memory_write_arguments(arguments_json: str) -> dict[str, object]:
     except ValidationError as exc:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message="signaldeck_memory_write arguments failed validation.",
+            message="signaldeck_core_memory_write arguments failed validation.",
             details=_validation_details_from_pydantic_error(exc),
         ) from exc
     return {"payload": payload}
@@ -429,7 +429,7 @@ def parse_memory_lookup_arguments(arguments_json: str) -> dict[str, object]:
     except ValidationError as exc:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message="signaldeck_memory_lookup arguments failed validation.",
+            message="signaldeck_core_memory_lookup arguments failed validation.",
             details=_validation_details_from_pydantic_error(exc),
         ) from exc
     return {"payload": payload}
@@ -446,7 +446,7 @@ def execute_memory_lookup(
         raise RuntimeToolError(
             code="agent_tool_dependency_missing",
             message=(
-                "signaldeck_memory_lookup requires at least one explicit selector or "
+                "signaldeck_core_memory_lookup requires at least one explicit selector or "
                 "current runtime context."
             ),
         )
@@ -579,7 +579,7 @@ def _selected_write_scope(
     if scope.scope_type == MemoryScopeType.RUN and lookup_context.run_id is None:
         raise RuntimeToolError(
             code="agent_tool_dependency_missing",
-            message="signaldeck_memory_write requires run runtime context for run memory scope.",
+            message="signaldeck_core_memory_write requires run runtime context for run memory scope.",
         )
     if (
         scope.scope_type
@@ -593,7 +593,7 @@ def _selected_write_scope(
         raise RuntimeToolError(
             code="agent_tool_dependency_missing",
             message=(
-                "signaldeck_memory_write requires package runtime ownership for "
+                "signaldeck_core_memory_write requires package runtime ownership for "
                 "package, workflow, or agent memory scopes."
             ),
         )
@@ -703,7 +703,7 @@ def _model_safe_text(value: str) -> str:
 _MEMORY_WRITE_DESCRIPTION = "Write a bounded, platform-core memory entry for this run."
 _MEMORY_WRITE_GUIDANCE = (
     "When a durable, platform-neutral memory should be persisted, call "
-    "signaldeck_memory_write with kind, summary, content, optional subjectRefs, "
+    "signaldeck_core_memory_write with kind, summary, content, optional subjectRefs, "
     "optional private scope, and idempotencyKey. Do not include report ids, "
     "report slugs, URLs, downloads, trusted run/agent fields, or free-form metadata maps."
 )
@@ -711,7 +711,7 @@ _MEMORY_LOOKUP_DESCRIPTION = (
     "Look up bounded, scoped platform-core memory snippets for the current run context."
 )
 _MEMORY_LOOKUP_GUIDANCE = (
-    "When historical SignalDeck memory is needed, call signaldeck_memory_lookup "
+    "When historical SignalDeck memory is needed, call signaldeck_core_memory_lookup "
     "with explicit private scope, subjectRefs, or kind. If no selector "
     "is provided, the server restricts lookup to the current run, package, "
     "workflow, and agent context. Keep limit at or below 20 and maxCharacters "

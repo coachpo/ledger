@@ -273,35 +273,35 @@ export const financeWorkspaceFrontendExtension = {
   toolAuthoringDiscovery: [
     {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.market_data.",
+      toolKeyPrefix: "signaldeck.finance.market_data.",
     },
     {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.indicators.",
+      toolKeyPrefix: "signaldeck.finance.indicators.",
     },
     {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.fundamentals.",
+      toolKeyPrefix: "signaldeck.finance.fundamentals.",
     },
     {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.news.",
+      toolKeyPrefix: "signaldeck.finance.news.",
     },
     {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.social_sentiment.",
+      toolKeyPrefix: "signaldeck.finance.social_sentiment.",
     },
     {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.insider_data.",
+      toolKeyPrefix: "signaldeck.finance.insider_data.",
     },
     {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.positions.",
+      toolKeyPrefix: "signaldeck.finance.positions.",
     },
     {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.reports.",
+      toolKeyPrefix: "signaldeck.finance.reports.",
     },
   ],
 } as const satisfies FrontendExtensionDefinition;

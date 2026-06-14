@@ -36,7 +36,7 @@ from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleProviderError,
 )
 
-MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_market_sentiment_lookup"
+MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_digital_oracle_market_sentiment_lookup"
 MARKET_SENTIMENT_LOOKUP_ACCESS_DENIED_CODE = DIGITAL_ORACLE_DENIED_CODE
 MARKET_SENTIMENT_LOOKUP_ACCESS_DENIED_MESSAGE = DIGITAL_ORACLE_DENIED_MESSAGES[
     MARKET_SENTIMENT_LOOKUP_TOOL_KEY
@@ -55,7 +55,7 @@ _MARKET_SENTIMENT_LOOKUP_DESCRIPTION = (
     "Read the normalized market-level Fear & Greed composite with history snapshots."
 )
 _MARKET_SENTIMENT_LOOKUP_GUIDANCE = (
-    "When you need broad market sentiment, call signaldeck_market_sentiment_lookup "
+    "When you need broad market sentiment, call signaldeck_digital_oracle_market_sentiment_lookup "
     "with indicator=fear_greed. Treat it as a market-level composite only, keep it "
     "separate from issuer-specific social sentiment or news tone, disclose warnings "
     "for unavailable or sparse history, and never invent missing readings."

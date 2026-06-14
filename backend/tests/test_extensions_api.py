@@ -203,7 +203,7 @@ def test_extension_state_helper_raises_extension_disabled_error(
         with pytest.raises(ApiError) as exc_info:
             _ = service.require_enabled(
                 FINANCE_WORKSPACE_EXTENSION_KEY,
-                surface="runtime.tool.signaldeck.reports.lookup",
+                surface="service.report",
             )
 
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
@@ -211,6 +211,6 @@ def test_extension_state_helper_raises_extension_disabled_error(
     assert exc_info.value.details == [
         {
             "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": "runtime.tool.signaldeck.reports.lookup",
+            "surface": "service.report",
         }
     ]

@@ -19,7 +19,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Registry | `registry.py`, `__init__.py` | enabled-extension filtering, descriptors, OpenAI tools, dispatch lookup |
 | Runtime spec types | `types.py`, `declarations.py` | tool spec, context, warnings, model-facing declarations |
 | Failure taxonomy | `failure_taxonomy.py` | typed retryable/non-retryable runtime failure categories |
-| Platform memory tools | `memory.py` | `signaldeck.memory.write` and `signaldeck.memory.lookup` parsers/executors/results |
+| Platform memory tools | `memory.py` | `signaldeck.core.memory.write` and `signaldeck.core.memory.lookup` parsers/executors/results |
 | Extension shims | `market_data.py`, `positions.py`, `reports.py` | compatibility exports only; implementations are extension-owned |
 | Coverage | `../../../tests/test_runtime_tools.py`, `../../../tests/test_workflow_package_preflight.py` | tool keys, OpenAI function names, access checks, package validation |
 

@@ -74,7 +74,7 @@ spec:
     - key: quote_tools
       name: Quote Tools
       toolKeys:
-        - signaldeck.market_data.quote_lookup
+        - signaldeck.finance.market_data.quote_lookup
   outputSchemas:
     - key: summary_output
       name: Summary Output
@@ -136,9 +136,9 @@ spec:
     - key: digital_oracle_tools
       name: Digital Oracle Tools
       toolKeys:
-        - signaldeck.prediction_markets.lookup
-        - signaldeck.sec_filings.lookup
-        - signaldeck.market_sentiment.lookup
+        - signaldeck.digital_oracle.prediction_markets.lookup
+        - signaldeck.digital_oracle.sec_filings.lookup
+        - signaldeck.digital_oracle.market_sentiment.lookup
   outputSchemas:
     - key: summary_output
       name: Summary Output
@@ -421,12 +421,12 @@ def test_finance_and_digital_oracle_mixed_states_are_independent(
         {
             "field": "spec.capabilityProfiles.quote_tools.toolKeys[0]",
             "issue": (
-                "Server-declared tool 'signaldeck.market_data.quote_lookup' is disabled because "
+                "Server-declared tool 'signaldeck.finance.market_data.quote_lookup' is disabled because "
                 "extension 'signaldeck.finance' is disabled"
             ),
             "code": "extension_disabled",
             "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": "tool.signaldeck.market_data.quote_lookup",
+            "surface": "tool.signaldeck.finance.market_data.quote_lookup",
         }
     ]
 
@@ -493,10 +493,10 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     )[0]
     assert set(enabled_dependency) == {"extensionKey", "surfaces", "fields"}
     assert enabled_dependency["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    assert "tool.signaldeck.market_data.quote_lookup" in cast(
-        list[str],
-        enabled_dependency["surfaces"],
-    )
+    assert {
+        "tool.signaldeck.finance.market_data.quote_lookup",
+        "runtime.tool.signaldeck.finance.market_data.quote_lookup",
+    } <= set(cast(list[str], enabled_dependency["surfaces"]))
 
     disabled_extension = _set_finance_extension(client, enabled=False)
     assert disabled_extension["enabled"] is False
@@ -530,12 +530,12 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
         {
             "field": "spec.capabilityProfiles.quote_tools.toolKeys[0]",
             "issue": (
-                "Server-declared tool 'signaldeck.market_data.quote_lookup' is disabled because "
+                "Server-declared tool 'signaldeck.finance.market_data.quote_lookup' is disabled because "
                 "extension 'signaldeck.finance' is disabled"
             ),
             "code": "extension_disabled",
             "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": "tool.signaldeck.market_data.quote_lookup",
+            "surface": "tool.signaldeck.finance.market_data.quote_lookup",
         }
     ]
 
@@ -553,7 +553,7 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     assert any(
         detail.get("code") == "extension_disabled"
         and detail.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
-        and detail.get("surface") == "tool.signaldeck.market_data.quote_lookup"
+        and detail.get("surface") == "tool.signaldeck.finance.market_data.quote_lookup"
         for detail in launch_details
     )
 
@@ -567,10 +567,10 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     assert failed_body["error"] == "Extension is disabled"
     failed_dependency = cast(list[dict[str, object]], failed_body["extensionDependencies"])[0]
     assert set(failed_dependency) == {"extensionKey", "surfaces", "fields"}
-    assert "tool.signaldeck.market_data.quote_lookup" in cast(
-        list[str],
-        failed_dependency["surfaces"],
-    )
+    assert {
+        "tool.signaldeck.finance.market_data.quote_lookup",
+        "runtime.tool.signaldeck.finance.market_data.quote_lookup",
+    } <= set(cast(list[str], failed_dependency["surfaces"]))
 
     with session_factory() as session:
         persisted_template = session.get(TextTemplate, template.json()["id"])
@@ -619,10 +619,10 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     restored_dependency = cast(list[dict[str, object]], restored_detail["extensionDependencies"])[0]
     assert set(restored_dependency) == {"extensionKey", "surfaces", "fields"}
     assert restored_dependency["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    assert "tool.signaldeck.market_data.quote_lookup" in cast(
-        list[str],
-        restored_dependency["surfaces"],
-    )
+    assert {
+        "tool.signaldeck.finance.market_data.quote_lookup",
+        "runtime.tool.signaldeck.finance.market_data.quote_lookup",
+    } <= set(cast(list[str], restored_dependency["surfaces"]))
 
 
 def test_finance_service_gate_owns_finance_surface_constants() -> None:

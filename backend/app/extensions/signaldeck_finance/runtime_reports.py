@@ -14,7 +14,7 @@ from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENS
 from app.extensions.signaldeck_finance.runtime_types import REPORT_LOOKUP_TOOL_KEY
 from app.services.report_service import ReportService
 
-REPORT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_reports_lookup"
+REPORT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_reports_lookup"
 
 _REPORT_LOOKUP_DISPLAY_NAME = "Report Lookup"
 _REPORT_LOOKUP_DESCRIPTION = (
@@ -23,7 +23,7 @@ _REPORT_LOOKUP_DESCRIPTION = (
 )
 _REPORT_LOOKUP_GUIDANCE = (
     "When you need persisted SignalDeck report context, call the "
-    "signaldeck_reports_lookup tool instead of inventing report content."
+    "signaldeck_finance_reports_lookup tool instead of inventing report content."
 )
 _REPORT_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -63,13 +63,13 @@ def parse_report_lookup_arguments(arguments_json: str) -> dict[str, object]:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                "OpenAI response requested signaldeck_reports_lookup with invalid JSON arguments."
+                "OpenAI response requested signaldeck_finance_reports_lookup with invalid JSON arguments."
             ),
         ) from exc
     if not isinstance(raw_payload, dict):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message="signaldeck_reports_lookup arguments must be a JSON object.",
+            message="signaldeck_finance_reports_lookup arguments must be a JSON object.",
         )
     raw_arguments = cast(dict[str, object], raw_payload)
 
@@ -79,7 +79,7 @@ def parse_report_lookup_arguments(arguments_json: str) -> dict[str, object]:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                "signaldeck_reports_lookup arguments contained unsupported fields: "
+                "signaldeck_finance_reports_lookup arguments contained unsupported fields: "
                 f"{', '.join(unexpected_keys)}"
             ),
         )
@@ -92,7 +92,7 @@ def parse_report_lookup_arguments(arguments_json: str) -> dict[str, object]:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                "signaldeck_reports_lookup source must be one of compiled, uploaded, external, "
+                "signaldeck_finance_reports_lookup source must be one of compiled, uploaded, external, "
                 "or agent."
             ),
         )
@@ -149,7 +149,7 @@ def _parse_optional_string_argument(value: object) -> str | None:
     if not isinstance(value, str):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message="signaldeck_reports_lookup string arguments must be strings.",
+            message="signaldeck_finance_reports_lookup string arguments must be strings.",
         )
     normalized = value.strip()
     return normalized or None
@@ -167,17 +167,17 @@ def _parse_optional_integer_argument(
     if isinstance(value, bool) or not isinstance(value, int):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"signaldeck_reports_lookup {field_name} must be an integer.",
+            message=f"signaldeck_finance_reports_lookup {field_name} must be an integer.",
         )
     if value < minimum:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"signaldeck_reports_lookup {field_name} must be at least {minimum}.",
+            message=f"signaldeck_finance_reports_lookup {field_name} must be at least {minimum}.",
         )
     if maximum is not None and value > maximum:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"signaldeck_reports_lookup {field_name} must be at most {maximum}.",
+            message=f"signaldeck_finance_reports_lookup {field_name} must be at most {maximum}.",
         )
     return int(value)
 

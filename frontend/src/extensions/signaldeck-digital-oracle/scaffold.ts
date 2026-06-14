@@ -6,15 +6,15 @@ export const DIGITAL_ORACLE_LABEL = "Digital Oracle Runtime";
 const digitalOracleToolAuthoringDiscovery = [
   {
     requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
-    toolKeyPrefix: "signaldeck.prediction_markets.",
+    toolKeyPrefix: "signaldeck.digital_oracle.prediction_markets.",
   },
   {
     requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
-    toolKeyPrefix: "signaldeck.sec_filings.",
+    toolKeyPrefix: "signaldeck.digital_oracle.sec_filings.",
   },
   {
     requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
-    toolKeyPrefix: "signaldeck.market_sentiment.",
+    toolKeyPrefix: "signaldeck.digital_oracle.market_sentiment.",
   },
 ] as const;
 

@@ -7,7 +7,7 @@ const DIGITAL_ORACLE_EXTENSION_SEGMENT = "signaldeck-digital-oracle";
 
 const financeTools = [
   {
-    key: "signaldeck.reports.lookup",
+    key: "signaldeck.finance.reports.lookup",
     displayName: "Report Lookup",
     description: "Read persisted SignalDeck reports.",
     module: "app.extensions.signaldeck_finance.tool_specs",
@@ -16,19 +16,19 @@ const financeTools = [
 
 const digitalOracleTools = [
   {
-    key: "signaldeck.prediction_markets.lookup",
+    key: "signaldeck.digital_oracle.prediction_markets.lookup",
     displayName: "Prediction Markets",
     description: "Find prediction-market signals.",
     module: "app.extensions.signaldeck_digital_oracle.tool_specs",
   },
   {
-    key: "signaldeck.sec_filings.lookup",
+    key: "signaldeck.digital_oracle.sec_filings.lookup",
     displayName: "SEC Filings",
     description: "Find SEC filing summaries.",
     module: "app.extensions.signaldeck_digital_oracle.tool_specs",
   },
   {
-    key: "signaldeck.market_sentiment.lookup",
+    key: "signaldeck.digital_oracle.market_sentiment.lookup",
     displayName: "Market Sentiment",
     description: "Read market sentiment snapshots.",
     module: "app.extensions.signaldeck_digital_oracle.tool_specs",

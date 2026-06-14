@@ -105,7 +105,7 @@ def test_model_visible_runtime_write_contracts_do_not_leak_report_identity() -> 
 
 def test_retired_report_memory_write_runtime_ballast_is_removed() -> None:
     forbidden_fragments = (
-        "signaldeck.reports.write",
+        "signaldeck.finance.reports.write",
         "signaldeck_reports_write",
         "report_memory_write_retired",
         "REPORT_MEMORY_WRITE",

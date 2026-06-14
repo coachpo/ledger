@@ -61,42 +61,42 @@ spec:
     name: Market Research Tools
     description: Reads market prices, history, OHLCV, and indicators from SignalDeck native tools.
     toolKeys:
-    - signaldeck.indicators.lookup
-    - signaldeck.market_data.history_lookup
-    - signaldeck.market_data.ohlcv_lookup
-    - signaldeck.market_data.quote_lookup
+    - signaldeck.finance.indicators.lookup
+    - signaldeck.finance.market_data.history_lookup
+    - signaldeck.finance.market_data.ohlcv_lookup
+    - signaldeck.finance.market_data.quote_lookup
   - key: fundamentals_tools
     name: Fundamentals Tools
     description: Reads fundamentals data exposed by the SignalDeck server catalog.
     toolKeys:
-    - signaldeck.fundamentals.lookup
+    - signaldeck.finance.fundamentals.lookup
   - key: news_research_tools
     name: News Research Tools
     description: Reads company news and insider-data context from SignalDeck native tools.
     toolKeys:
-    - signaldeck.insider_data.lookup
-    - signaldeck.news.lookup
+    - signaldeck.finance.insider_data.lookup
+    - signaldeck.finance.news.lookup
   - key: social_sentiment_tools
     name: Social Sentiment Tools
     description: Reads normalized social sentiment source blocks from SignalDeck native tools.
     toolKeys:
-    - signaldeck.social_sentiment.lookup
+    - signaldeck.finance.social_sentiment.lookup
   - key: report_context_tools
     name: Report Context Tools
     description: Reads persisted SignalDeck reports for advisory research context.
     toolKeys:
-    - signaldeck.reports.lookup
+    - signaldeck.finance.reports.lookup
   - key: portfolio_context_tools
     name: Portfolio Context Tools
     description: Reads persisted SignalDeck positions for portfolio context.
     toolKeys:
-    - signaldeck.positions.lookup
+    - signaldeck.finance.positions.lookup
   - key: memory_write_tools
     name: Memory Tools
     description: Reads and writes advisory memory through SignalDeck core memory tools.
     toolKeys:
-    - signaldeck.memory.lookup
-    - signaldeck.memory.write
+    - signaldeck.core.memory.lookup
+    - signaldeck.core.memory.write
   outputSchemas:
   - key: analyst_report
     name: Analyst Report

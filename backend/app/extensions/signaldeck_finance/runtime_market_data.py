@@ -45,14 +45,14 @@ from app.extensions.signaldeck_finance.runtime_types import (
 from app.schemas.market_data import MarketHistorySeriesRead, MarketQuoteRead
 from app.services.market_data_service import MarketDataService, QuoteProvider, QuoteProviderError
 
-MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_market_data_quote_lookup"
-MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_market_data_history_lookup"
-MARKET_DATA_OHLCV_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_market_data_ohlcv_lookup"
-INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_indicators_lookup"
-FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_fundamentals_lookup"
-NEWS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_news_lookup"
-SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_social_sentiment_lookup"
-INSIDER_DATA_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_insider_data_lookup"
+MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_market_data_quote_lookup"
+MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_market_data_history_lookup"
+MARKET_DATA_OHLCV_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_market_data_ohlcv_lookup"
+INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_indicators_lookup"
+FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_fundamentals_lookup"
+NEWS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_news_lookup"
+SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_social_sentiment_lookup"
+INSIDER_DATA_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_insider_data_lookup"
 
 MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
 MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
@@ -63,10 +63,10 @@ NEWS_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
 SOCIAL_SENTIMENT_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
 INSIDER_DATA_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
 MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
-    "signaldeck.market_data.quote_lookup"
+    MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY
 ]
 MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
-    "signaldeck.market_data.history_lookup"
+    MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY
 ]
 
 _QUOTE_SYMBOL_LIMIT = 10
@@ -91,25 +91,25 @@ _INSIDER_MAX_TRANSACTION_LIMIT = 100
 _FINANCIAL_STATEMENT_TYPES = {"income_statement", "balance_sheet", "cash_flow"}
 _FINANCIAL_STATEMENT_PERIODS = {"annual", "quarterly", "trailing_twelve_months"}
 MARKET_DATA_OHLCV_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
-    "signaldeck.market_data.ohlcv_lookup"
+    MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY
 ]
 INDICATORS_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
-    "signaldeck.indicators.lookup"
+    INDICATORS_LOOKUP_TOOL_KEY
 ]
 FUNDAMENTALS_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
-    "signaldeck.fundamentals.lookup"
+    FUNDAMENTALS_LOOKUP_TOOL_KEY
 ]
-NEWS_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES["signaldeck.news.lookup"]
+NEWS_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[NEWS_LOOKUP_TOOL_KEY]
 SOCIAL_SENTIMENT_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
-    "signaldeck.social_sentiment.lookup"
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY
 ]
 INSIDER_DATA_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
-    "signaldeck.insider_data.lookup"
+    INSIDER_DATA_LOOKUP_TOOL_KEY
 ]
 
 _QUOTE_LOOKUP_DESCRIPTION = "Read trusted market quote snapshots for up to 10 symbols."
 _QUOTE_LOOKUP_GUIDANCE = (
-    "When you need current or delayed market quotes, call the signaldeck_market_data_quote_lookup "
+    "When you need current or delayed market quotes, call the signaldeck_finance_market_data_quote_lookup "
     "tool instead of inventing prices. Disclose returned warnings or empty payloads as "
     "data quality or provider limitations."
 )
@@ -131,7 +131,7 @@ _HISTORY_LOOKUP_DESCRIPTION = (
     "Read trusted historical close-price series for up to 5 symbols and a bounded point count."
 )
 _HISTORY_LOOKUP_GUIDANCE = (
-    "When you need historical market prices, call the signaldeck_market_data_history_lookup "
+    "When you need historical market prices, call the signaldeck_finance_market_data_history_lookup "
     "tool instead of inventing price history. Disclose returned warnings or empty payloads "
     "as data quality or provider limitations."
 )
@@ -159,7 +159,7 @@ _OHLCV_LOOKUP_DESCRIPTION = (
     "Read provider-backed daily OHLCV rows for up to 5 symbols and bounded dates."
 )
 _OHLCV_LOOKUP_GUIDANCE = (
-    "When you need daily OHLCV bars, call signaldeck_market_data_ohlcv_lookup with explicit "
+    "When you need daily OHLCV bars, call signaldeck_finance_market_data_ohlcv_lookup with explicit "
     "date bounds instead of inventing bars. Disclose returned warnings or empty payloads "
     "as data quality or provider limitations, and do not claim coverage beyond the rows "
     "returned by SignalDeck."
@@ -189,7 +189,7 @@ _INDICATORS_LOOKUP_DESCRIPTION = (
     "Read close-price and SMA indicator rows for one symbol over bounded dates."
 )
 _INDICATORS_LOOKUP_GUIDANCE = (
-    "When you need close-price or SMA indicators, call signaldeck_indicators_lookup with "
+    "When you need close-price or SMA indicators, call signaldeck_finance_indicators_lookup with "
     "currentDate, startDate, and endDate. Treat null SMA values as warmup or insufficient "
     "history, disclose warnings or empty payloads as data quality or provider limitations, "
     "and do not infer unsupported indicators."
@@ -219,7 +219,7 @@ _FUNDAMENTALS_LOOKUP_DESCRIPTION = (
     "Read provider-backed fundamentals metrics and filtered financial statements for one symbol."
 )
 _FUNDAMENTALS_LOOKUP_GUIDANCE = (
-    "When you need fundamentals, call signaldeck_fundamentals_lookup instead of inventing "
+    "When you need fundamentals, call signaldeck_finance_fundamentals_lookup instead of inventing "
     "metrics or statements. Use only the returned data, disclose warnings or empty payloads "
     "as data quality or provider limitations, and do not claim unavailable coverage."
 )
@@ -255,7 +255,7 @@ _NEWS_LOOKUP_DESCRIPTION = (
     "Read provider-backed market news for optional symbols, query text, and bounded dates."
 )
 _NEWS_LOOKUP_GUIDANCE = (
-    "When you need market news, call signaldeck_news_lookup with symbols, query, or both "
+    "When you need market news, call signaldeck_finance_news_lookup with symbols, query, or both "
     "instead of inventing articles. Disclose warnings or empty results as data quality "
     "or provider limitations, and do not present unsupported provider coverage as if "
     "it were available."
@@ -285,10 +285,10 @@ _SOCIAL_SENTIMENT_LOOKUP_DESCRIPTION = (
     "Read provider-backed social sentiment source blocks for one symbol and optional sources."
 )
 _SOCIAL_SENTIMENT_LOOKUP_GUIDANCE = (
-    "When you need retail or social sentiment, call signaldeck_social_sentiment_lookup with a "
+    "When you need retail or social sentiment, call signaldeck_finance_social_sentiment_lookup with a "
     "symbol instead of treating news as social data. Use only returned source blocks and "
     "metrics, disclose warnings or empty payloads as data quality or provider limitations, "
-    "and keep this output separate from signaldeck_news_lookup results."
+    "and keep this output separate from signaldeck_finance_news_lookup results."
 )
 _SOCIAL_SENTIMENT_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -317,7 +317,7 @@ _INSIDER_DATA_LOOKUP_DESCRIPTION = (
     "Read provider-backed insider transactions for one symbol and optional bounded dates."
 )
 _INSIDER_DATA_LOOKUP_GUIDANCE = (
-    "When you need insider transactions, call signaldeck_insider_data_lookup with a symbol and "
+    "When you need insider transactions, call signaldeck_finance_insider_data_lookup with a symbol and "
     "optional date bounds. Disclose warnings or empty payloads as data quality or provider "
     "limitations, and do not fabricate transaction coverage."
 )

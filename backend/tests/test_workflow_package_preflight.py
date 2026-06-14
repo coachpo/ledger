@@ -61,29 +61,54 @@ _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
     Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
 )
 _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
-    "signaldeck.prediction_markets.lookup",
-    "signaldeck.sec_filings.lookup",
-    "signaldeck.market_sentiment.lookup",
+    "signaldeck.digital_oracle.prediction_markets.lookup",
+    "signaldeck.digital_oracle.sec_filings.lookup",
+    "signaldeck.digital_oracle.market_sentiment.lookup",
 )
 _FINANCE_PRICE_HISTORY_TOOL_KEYS = (
-    "signaldeck.market_data.history_lookup",
-    "signaldeck.market_data.ohlcv_lookup",
+    "signaldeck.finance.market_data.history_lookup",
+    "signaldeck.finance.market_data.ohlcv_lookup",
 )
 _CROSS_EXTENSION_RESEARCH_TOOL_KEYS = tuple(
     sorted([*_DIGITAL_ORACLE_PHASE1_TOOL_KEYS, *_FINANCE_PRICE_HISTORY_TOOL_KEYS])
 )
+def _legacy_tool_key(suffix: str) -> str:
+    return "signaldeck" + suffix
+
+
+_LEGACY_LIVE_TOOL_KEYS = (
+    _legacy_tool_key(".memory.write"),
+    _legacy_tool_key(".memory.lookup"),
+    _legacy_tool_key(".market_data.quote_lookup"),
+    _legacy_tool_key(".market_data.history_lookup"),
+    _legacy_tool_key(".market_data.ohlcv_lookup"),
+    _legacy_tool_key(".indicators.lookup"),
+    _legacy_tool_key(".fundamentals.lookup"),
+    _legacy_tool_key(".news.lookup"),
+    _legacy_tool_key(".social_sentiment.lookup"),
+    _legacy_tool_key(".insider_data.lookup"),
+    _legacy_tool_key(".positions.lookup"),
+    _legacy_tool_key(".reports.lookup"),
+    _legacy_tool_key(".prediction_markets.lookup"),
+    _legacy_tool_key(".sec_filings.lookup"),
+    _legacy_tool_key(".market_sentiment.lookup"),
+)
+
+
+def _canonicalize_live_tool_keys(source: str) -> str:
+    return source
 
 
 def _package_source() -> str:
-    return _FIXTURE.read_text()
+    return _canonicalize_live_tool_keys(_FIXTURE.read_text())
 
 
 def _tool_required_package_source() -> str:
-    return _TOOL_REQUIRED_FIXTURE.read_text()
+    return _canonicalize_live_tool_keys(_TOOL_REQUIRED_FIXTURE.read_text())
 
 
 def _digital_oracle_researcher_demo_source() -> str:
-    return _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text()
+    return _canonicalize_live_tool_keys(_DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text())
 
 
 def _expected_digital_oracle_disabled_tool_errors() -> list[dict[str, object]]:
@@ -137,9 +162,9 @@ spec:
       name: Digital Oracle Phase 1 Tools
       description: Grants Digital Oracle-owned phase-1 research tools.
       toolKeys:
-        - signaldeck.prediction_markets.lookup
-        - signaldeck.sec_filings.lookup
-        - signaldeck.market_sentiment.lookup
+        - signaldeck.digital_oracle.prediction_markets.lookup
+        - signaldeck.digital_oracle.sec_filings.lookup
+        - signaldeck.digital_oracle.market_sentiment.lookup
   outputSchemas:
     - key: digital_oracle_report
       name: Digital Oracle Report
@@ -217,15 +242,15 @@ spec:
       name: Finance Price History Tools
       description: Grants Finance-owned price-history tools for package-level research context.
       toolKeys:
-        - signaldeck.market_data.history_lookup
-        - signaldeck.market_data.ohlcv_lookup
+        - signaldeck.finance.market_data.history_lookup
+        - signaldeck.finance.market_data.ohlcv_lookup
     - key: digital_oracle_phase1_tools
       name: Digital Oracle Phase 1 Tools
       description: Grants Digital Oracle-owned phase-1 research tools.
       toolKeys:
-        - signaldeck.prediction_markets.lookup
-        - signaldeck.sec_filings.lookup
-        - signaldeck.market_sentiment.lookup
+        - signaldeck.digital_oracle.prediction_markets.lookup
+        - signaldeck.digital_oracle.sec_filings.lookup
+        - signaldeck.digital_oracle.market_sentiment.lookup
   outputSchemas:
     - key: digital_oracle_report
       name: Digital Oracle Report
@@ -298,7 +323,7 @@ spec:
     - key: tool_required
       name: Tool Required
       toolKeys:
-        - signaldeck.memory.lookup
+        - signaldeck.core.memory.lookup
   outputSchemas:
     - key: report
       name: Report
@@ -797,14 +822,14 @@ def test_validation_projection_hides_blocker_only_facts_but_strict_readiness_pre
             code="extension_disabled",
             field="spec.capabilityProfiles.quote_tools.toolKeys[0]",
             issue=(
-                "Server-declared tool 'signaldeck.market_data.quote_lookup' is disabled because "
+                "Server-declared tool 'signaldeck.finance.market_data.quote_lookup' is disabled because "
                 "extension 'signaldeck.finance' is disabled"
             ),
-            subject="tool.signaldeck.market_data.quote_lookup",
+            subject="tool.signaldeck.finance.market_data.quote_lookup",
             metadata={
                 "code": "extension_disabled",
                 "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-                "surface": "tool.signaldeck.market_data.quote_lookup",
+                "surface": "tool.signaldeck.finance.market_data.quote_lookup",
             },
             levels={
                 WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA: (
@@ -865,12 +890,12 @@ def test_validation_projection_hides_blocker_only_facts_but_strict_readiness_pre
         {
             "field": "spec.capabilityProfiles.quote_tools.toolKeys[0]",
             "issue": (
-                "Server-declared tool 'signaldeck.market_data.quote_lookup' is disabled because "
+                "Server-declared tool 'signaldeck.finance.market_data.quote_lookup' is disabled because "
                 "extension 'signaldeck.finance' is disabled"
             ),
             "code": "extension_disabled",
             "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": "tool.signaldeck.market_data.quote_lookup",
+            "surface": "tool.signaldeck.finance.market_data.quote_lookup",
         },
         {
             "field": "spec.workflows.notify.graph.steps[0].operations[0].request",
@@ -899,8 +924,8 @@ def test_preflight_accepts_fixture_report_lookup_and_core_memory_tool_keys(
 
     assert errors == []
     assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
-        "signaldeck.memory.lookup",
-        "signaldeck.memory.write",
+        "signaldeck.core.memory.lookup",
+        "signaldeck.core.memory.write",
     ]
     assert cast(list[dict[str, Any]], compiled_plan["mcpServers"]) == []
     assert "fanout" not in _package_source()
@@ -1130,9 +1155,9 @@ def test_preflight_rejects_duplicate_tool_keys_and_accepts_core_memory_tool_keys
     for profile in profiles:
         if profile["key"] == "memory_write_tools":
             profile["toolKeys"] = [
-                "signaldeck.memory.write",
-                "signaldeck.memory.write",
-                "signaldeck.memory.lookup",
+                "signaldeck.core.memory.write",
+                "signaldeck.core.memory.write",
+                "signaldeck.core.memory.lookup",
             ]
 
     with session_factory() as session:
@@ -1143,7 +1168,31 @@ def test_preflight_rejects_duplicate_tool_keys_and_accepts_core_memory_tool_keys
     assert errors == [
         {
             "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[1]",
-            "issue": "Duplicate tool key 'signaldeck.memory.write' is not allowed",
+            "issue": "Duplicate tool key 'signaldeck.core.memory.write' is not allowed",
+        }
+    ]
+
+
+@pytest.mark.parametrize("legacy_tool_key", _LEGACY_LIVE_TOOL_KEYS)
+def test_preflight_rejects_legacy_live_tool_keys_as_unknown_server_tools(
+    session_factory: sessionmaker[Session],
+    legacy_tool_key: str,
+) -> None:
+    compiled = compile_workflow_package_manifest(_package_source())
+    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
+    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
+    profile_key = str(profiles[0]["key"])
+    profiles[0]["toolKeys"] = [legacy_tool_key]
+
+    with session_factory() as session:
+        errors = _project_blocking_diagnostics(
+            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+        )
+
+    assert errors == [
+        {
+            "field": f"spec.capabilityProfiles.{profile_key}.toolKeys[0]",
+            "issue": f"Unknown server-declared tool {legacy_tool_key!r}",
         }
     ]
 
@@ -1155,9 +1204,9 @@ def test_preflight_missing_digital_oracle_toolKeys_diagnostic_preserves_field_on
     compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
     profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
     profiles[0]["toolKeys"] = [
-        "signaldeck.market_sentiment.lookup",
+        "signaldeck.digital_oracle.market_sentiment.lookup",
         "signaldeck.digital_oracle.missing",
-        "signaldeck.sec_filings.lookup",
+        "signaldeck.digital_oracle.sec_filings.lookup",
     ]
 
     with session_factory() as session:
@@ -1926,7 +1975,7 @@ def test_save_allows_disabled_extension_dependency_and_preflight_blocks(
     assert any(
         error.get("code") == "extension_disabled"
         and error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
-        and error.get("surface") == "tool.signaldeck.market_data.quote_lookup"
+        and error.get("surface") == "tool.signaldeck.finance.market_data.quote_lookup"
         for error in errors
     )
 
@@ -1951,7 +2000,7 @@ def test_preflight_blocks_tradingagents_advisory_research_when_extension_disable
     assert any(
         error.get("code") == "extension_disabled"
         and error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
-        and error.get("surface") == "tool.signaldeck.market_data.quote_lookup"
+        and error.get("surface") == "tool.signaldeck.finance.market_data.quote_lookup"
         for error in errors
     )
 

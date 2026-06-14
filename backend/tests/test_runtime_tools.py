@@ -288,38 +288,80 @@ _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
 )
 
 _GENERIC_PLATFORM_RUNTIME_TOOL_KEYS = (
-    MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY,
-    INDICATORS_LOOKUP_TOOL_KEY,
-    FUNDAMENTALS_LOOKUP_TOOL_KEY,
-    NEWS_LOOKUP_TOOL_KEY,
-    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
-    INSIDER_DATA_LOOKUP_TOOL_KEY,
+    "signaldeck.finance.market_data.ohlcv_lookup",
+    "signaldeck.finance.indicators.lookup",
+    "signaldeck.finance.fundamentals.lookup",
+    "signaldeck.finance.news.lookup",
+    "signaldeck.finance.social_sentiment.lookup",
+    "signaldeck.finance.insider_data.lookup",
 )
 _GENERIC_PLATFORM_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY = {
-    MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY: "signaldeck_market_data_ohlcv_lookup",
-    INDICATORS_LOOKUP_TOOL_KEY: "signaldeck_indicators_lookup",
-    FUNDAMENTALS_LOOKUP_TOOL_KEY: "signaldeck_fundamentals_lookup",
-    NEWS_LOOKUP_TOOL_KEY: "signaldeck_news_lookup",
-    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY: "signaldeck_social_sentiment_lookup",
-    INSIDER_DATA_LOOKUP_TOOL_KEY: "signaldeck_insider_data_lookup",
+    "signaldeck.finance.market_data.ohlcv_lookup": "signaldeck_finance_market_data_ohlcv_lookup",
+    "signaldeck.finance.indicators.lookup": "signaldeck_finance_indicators_lookup",
+    "signaldeck.finance.fundamentals.lookup": "signaldeck_finance_fundamentals_lookup",
+    "signaldeck.finance.news.lookup": "signaldeck_finance_news_lookup",
+    "signaldeck.finance.social_sentiment.lookup": "signaldeck_finance_social_sentiment_lookup",
+    "signaldeck.finance.insider_data.lookup": "signaldeck_finance_insider_data_lookup",
 }
 _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
-    MEMORY_WRITE_TOOL_KEY,
-    MEMORY_LOOKUP_TOOL_KEY,
-    MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
-    MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
-    MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY,
-    INDICATORS_LOOKUP_TOOL_KEY,
-    FUNDAMENTALS_LOOKUP_TOOL_KEY,
-    NEWS_LOOKUP_TOOL_KEY,
-    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
-    INSIDER_DATA_LOOKUP_TOOL_KEY,
-    PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
-    SEC_FILINGS_LOOKUP_TOOL_KEY,
-    MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
-    POSITION_LOOKUP_TOOL_KEY,
-    REPORT_LOOKUP_TOOL_KEY,
+    "signaldeck.core.memory.write",
+    "signaldeck.core.memory.lookup",
+    "signaldeck.finance.market_data.quote_lookup",
+    "signaldeck.finance.market_data.history_lookup",
+    "signaldeck.finance.market_data.ohlcv_lookup",
+    "signaldeck.finance.indicators.lookup",
+    "signaldeck.finance.fundamentals.lookup",
+    "signaldeck.finance.news.lookup",
+    "signaldeck.finance.social_sentiment.lookup",
+    "signaldeck.finance.insider_data.lookup",
+    "signaldeck.digital_oracle.prediction_markets.lookup",
+    "signaldeck.digital_oracle.sec_filings.lookup",
+    "signaldeck.digital_oracle.market_sentiment.lookup",
+    "signaldeck.finance.positions.lookup",
+    "signaldeck.finance.reports.lookup",
 }
+def _legacy_tool_key(suffix: str) -> str:
+    return "signaldeck" + suffix
+
+
+_LEGACY_LIVE_TOOL_KEYS = (
+    _legacy_tool_key(".memory.write"),
+    _legacy_tool_key(".memory.lookup"),
+    _legacy_tool_key(".market_data.quote_lookup"),
+    _legacy_tool_key(".market_data.history_lookup"),
+    _legacy_tool_key(".market_data.ohlcv_lookup"),
+    _legacy_tool_key(".indicators.lookup"),
+    _legacy_tool_key(".fundamentals.lookup"),
+    _legacy_tool_key(".news.lookup"),
+    _legacy_tool_key(".social_sentiment.lookup"),
+    _legacy_tool_key(".insider_data.lookup"),
+    _legacy_tool_key(".positions.lookup"),
+    _legacy_tool_key(".reports.lookup"),
+    _legacy_tool_key(".prediction_markets.lookup"),
+    _legacy_tool_key(".sec_filings.lookup"),
+    _legacy_tool_key(".market_sentiment.lookup"),
+)
+def _legacy_function_name(suffix: str) -> str:
+    return "signaldeck" + suffix
+
+
+_LEGACY_LIVE_OPENAI_FUNCTION_NAMES = (
+    _legacy_function_name("_memory_write"),
+    _legacy_function_name("_memory_lookup"),
+    _legacy_function_name("_market_data_quote_lookup"),
+    _legacy_function_name("_market_data_history_lookup"),
+    _legacy_function_name("_market_data_ohlcv_lookup"),
+    _legacy_function_name("_indicators_lookup"),
+    _legacy_function_name("_fundamentals_lookup"),
+    _legacy_function_name("_news_lookup"),
+    _legacy_function_name("_social_sentiment_lookup"),
+    _legacy_function_name("_insider_data_lookup"),
+    _legacy_function_name("_positions_lookup"),
+    _legacy_function_name("_reports_lookup"),
+    _legacy_function_name("_prediction_markets_lookup"),
+    _legacy_function_name("_sec_filings_lookup"),
+    _legacy_function_name("_market_sentiment_lookup"),
+)
 _FORBIDDEN_REPORT_WRITE_MODEL_KEYS = {
     "reportId",
     "reportSlug",
@@ -1482,12 +1524,19 @@ def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
     assert MEMORY_WRITE_OPENAI_FUNCTION_NAME in runtime_function_names
     assert MEMORY_LOOKUP_OPENAI_FUNCTION_NAME in runtime_function_names
     assert len(runtime_function_names) == len(runtime_spec_keys)
+    assert runtime_function_names == {
+        tool_key.replace(".", "_") for tool_key in _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
+    }
 
-    memory_runtime_specs = [
-        spec for spec in runtime_specs if spec.key.startswith("signaldeck.memory.")
-    ]
+    legacy_runtime_function_names = runtime_function_names & set(_LEGACY_LIVE_OPENAI_FUNCTION_NAMES)
+    assert legacy_runtime_function_names == set()
+    assert runtime_spec_keys.isdisjoint(_LEGACY_LIVE_TOOL_KEYS)
+    assert server_declared_keys.isdisjoint(_LEGACY_LIVE_TOOL_KEYS)
+
+    memory_tool_keys = {"signaldeck.core.memory.write", "signaldeck.core.memory.lookup"}
+    memory_runtime_specs = [spec for spec in runtime_specs if spec.key in memory_tool_keys]
     memory_server_specs = [
-        spec for spec in SERVER_DECLARED_TOOL_SPECS if spec.key.startswith("signaldeck.memory.")
+        spec for spec in SERVER_DECLARED_TOOL_SPECS if spec.key in memory_tool_keys
     ]
     assert {spec.key for spec in memory_runtime_specs} == {
         MEMORY_WRITE_TOOL_KEY,
@@ -1506,47 +1555,47 @@ def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
 
 def test_prediction_markets_sec_filings_market_sentiment_tool_ownership_constants() -> None:
     assert FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS == (
-        "signaldeck.market_data.quote_lookup",
-        "signaldeck.market_data.history_lookup",
-        "signaldeck.market_data.ohlcv_lookup",
-        "signaldeck.indicators.lookup",
-        "signaldeck.fundamentals.lookup",
-        "signaldeck.news.lookup",
-        "signaldeck.social_sentiment.lookup",
-        "signaldeck.insider_data.lookup",
-        "signaldeck.positions.lookup",
-        "signaldeck.reports.lookup",
+        "signaldeck.finance.market_data.quote_lookup",
+        "signaldeck.finance.market_data.history_lookup",
+        "signaldeck.finance.market_data.ohlcv_lookup",
+        "signaldeck.finance.indicators.lookup",
+        "signaldeck.finance.fundamentals.lookup",
+        "signaldeck.finance.news.lookup",
+        "signaldeck.finance.social_sentiment.lookup",
+        "signaldeck.finance.insider_data.lookup",
+        "signaldeck.finance.positions.lookup",
+        "signaldeck.finance.reports.lookup",
     )
     assert FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES == (
-        "signaldeck_market_data_quote_lookup",
-        "signaldeck_market_data_history_lookup",
-        "signaldeck_market_data_ohlcv_lookup",
-        "signaldeck_indicators_lookup",
-        "signaldeck_fundamentals_lookup",
-        "signaldeck_news_lookup",
-        "signaldeck_social_sentiment_lookup",
-        "signaldeck_insider_data_lookup",
-        "signaldeck_positions_lookup",
-        "signaldeck_reports_lookup",
+        "signaldeck_finance_market_data_quote_lookup",
+        "signaldeck_finance_market_data_history_lookup",
+        "signaldeck_finance_market_data_ohlcv_lookup",
+        "signaldeck_finance_indicators_lookup",
+        "signaldeck_finance_fundamentals_lookup",
+        "signaldeck_finance_news_lookup",
+        "signaldeck_finance_social_sentiment_lookup",
+        "signaldeck_finance_insider_data_lookup",
+        "signaldeck_finance_positions_lookup",
+        "signaldeck_finance_reports_lookup",
     )
     assert DIGITAL_ORACLE_RUNTIME_TOOL_KEYS == (
-        "signaldeck.prediction_markets.lookup",
-        "signaldeck.sec_filings.lookup",
-        "signaldeck.market_sentiment.lookup",
+        "signaldeck.digital_oracle.prediction_markets.lookup",
+        "signaldeck.digital_oracle.sec_filings.lookup",
+        "signaldeck.digital_oracle.market_sentiment.lookup",
     )
     assert DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES == (
-        "signaldeck_prediction_markets_lookup",
-        "signaldeck_sec_filings_lookup",
-        "signaldeck_market_sentiment_lookup",
+        "signaldeck_digital_oracle_prediction_markets_lookup",
+        "signaldeck_digital_oracle_sec_filings_lookup",
+        "signaldeck_digital_oracle_market_sentiment_lookup",
     )
-    assert DIGITAL_ORACLE_DENIED_MESSAGES["signaldeck.prediction_markets.lookup"] == (
-        "Agent is not authorized to use signaldeck.prediction_markets.lookup."
+    assert DIGITAL_ORACLE_DENIED_MESSAGES[
+        "signaldeck.digital_oracle.prediction_markets.lookup"
+    ] == ("Agent is not authorized to use signaldeck.digital_oracle.prediction_markets.lookup.")
+    assert DIGITAL_ORACLE_DENIED_MESSAGES["signaldeck.digital_oracle.sec_filings.lookup"] == (
+        "Agent is not authorized to use signaldeck.digital_oracle.sec_filings.lookup."
     )
-    assert DIGITAL_ORACLE_DENIED_MESSAGES["signaldeck.sec_filings.lookup"] == (
-        "Agent is not authorized to use signaldeck.sec_filings.lookup."
-    )
-    assert DIGITAL_ORACLE_DENIED_MESSAGES["signaldeck.market_sentiment.lookup"] == (
-        "Agent is not authorized to use signaldeck.market_sentiment.lookup."
+    assert DIGITAL_ORACLE_DENIED_MESSAGES["signaldeck.digital_oracle.market_sentiment.lookup"] == (
+        "Agent is not authorized to use signaldeck.digital_oracle.market_sentiment.lookup."
     )
 
 
@@ -2489,7 +2538,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         warnings=[warning],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(quote_payload)
-    assert quote_payload["toolKey"] == "signaldeck.market_data.quote_lookup"
+    assert quote_payload["toolKey"] == "signaldeck.finance.market_data.quote_lookup"
     assert quote_payload["quotes"][0]["previousClose"] == "119.75000000"
     assert quote_payload["quotes"][0]["asOf"] == "2026-01-02T03:04:05Z"
     assert quote_payload["quotes"][0]["isStale"] is False
@@ -2509,7 +2558,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         series=[_history_series_read()],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(history_payload)
-    assert history_payload["toolKey"] == "signaldeck.market_data.history_lookup"
+    assert history_payload["toolKey"] == "signaldeck.finance.market_data.history_lookup"
     assert history_payload["endDate"] == "2026-01-02T03:04:05Z"
     assert history_payload["series"][0]["points"][0] == {
         "at": "2026-01-01T00:00:00Z",
@@ -2522,7 +2571,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         series=[_ohlcv_series()],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(ohlcv_payload)
-    assert ohlcv_payload["toolKey"] == "signaldeck.market_data.ohlcv_lookup"
+    assert ohlcv_payload["toolKey"] == "signaldeck.finance.market_data.ohlcv_lookup"
     assert ohlcv_payload["series"][0]["rows"][0]["adjustedClose"] == "119.50"
 
     indicator_payload = RuntimeIndicatorLookupResult(
@@ -2543,7 +2592,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         ],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(indicator_payload)
-    assert indicator_payload["toolKey"] == "signaldeck.indicators.lookup"
+    assert indicator_payload["toolKey"] == "signaldeck.finance.indicators.lookup"
     assert indicator_payload["currentDate"] == "2026-01-02T03:04:05Z"
     assert indicator_payload["rows"][0]["values"][0] == {
         "name": "sma_20",
@@ -2580,7 +2629,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         ],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(fundamentals_payload)
-    assert fundamentals_payload["toolKey"] == "signaldeck.fundamentals.lookup"
+    assert fundamentals_payload["toolKey"] == "signaldeck.finance.fundamentals.lookup"
     assert fundamentals_payload["metrics"][0]["asOf"] == "2026-01-02T03:04:05Z"
     assert fundamentals_payload["statements"][0]["statementType"] == "income_statement"
     assert fundamentals_payload["statements"][0]["periodEnd"] == "2026-01-02T03:04:05Z"
@@ -2601,7 +2650,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         ],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(news_payload)
-    assert news_payload["toolKey"] == "signaldeck.news.lookup"
+    assert news_payload["toolKey"] == "signaldeck.finance.news.lookup"
     assert news_payload["items"][0]["publishedAt"] == "2026-01-02T03:04:05Z"
 
     social_sentiment_payload = RuntimeSocialSentimentLookupResult(
@@ -2633,7 +2682,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         warnings=[warning],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(social_sentiment_payload)
-    assert social_sentiment_payload["toolKey"] == "signaldeck.social_sentiment.lookup"
+    assert social_sentiment_payload["toolKey"] == "signaldeck.finance.social_sentiment.lookup"
     assert social_sentiment_payload["symbol"] == "NVDA"
     assert social_sentiment_payload["sources"] == ["reddit", "stocktwits"]
     assert social_sentiment_payload["sourceBlocks"][0]["source"] == "reddit"
@@ -2657,7 +2706,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         ],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(insider_payload)
-    assert insider_payload["toolKey"] == "signaldeck.insider_data.lookup"
+    assert insider_payload["toolKey"] == "signaldeck.finance.insider_data.lookup"
     assert insider_payload["transactions"][0]["insiderName"] == "Ada Lovelace"
     assert insider_payload["transactions"][0]["transactionDate"] == "2026-01-02T03:04:05Z"
     assert insider_payload["transactions"][0]["filedAt"] == "2026-01-02T03:04:05Z"
@@ -3252,21 +3301,21 @@ def test_report_lookup_accepts_agent_source() -> None:
 
 
 def test_runtime_tool_spec_is_frozen_and_separates_display_metadata_from_execution_fields() -> None:
-    assert MEMORY_WRITE_TOOL_KEY == "signaldeck.memory.write"
-    assert MEMORY_WRITE_OPENAI_FUNCTION_NAME == "signaldeck_memory_write"
+    assert MEMORY_WRITE_TOOL_KEY == "signaldeck.core.memory.write"
+    assert MEMORY_WRITE_OPENAI_FUNCTION_NAME == "signaldeck_core_memory_write"
     assert MEMORY_WRITE_TOOL_SPEC.key == MEMORY_WRITE_TOOL_KEY
     assert MEMORY_WRITE_TOOL_SPEC.openai_function_name == MEMORY_WRITE_OPENAI_FUNCTION_NAME
     assert MEMORY_WRITE_TOOL_SPEC.display_name == "Memory Write"
     assert MEMORY_WRITE_TOOL_SPEC.owner_extension_key is None
-    assert MEMORY_LOOKUP_TOOL_KEY == "signaldeck.memory.lookup"
-    assert MEMORY_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_memory_lookup"
+    assert MEMORY_LOOKUP_TOOL_KEY == "signaldeck.core.memory.lookup"
+    assert MEMORY_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_core_memory_lookup"
     assert MEMORY_LOOKUP_TOOL_SPEC.key == MEMORY_LOOKUP_TOOL_KEY
     assert MEMORY_LOOKUP_TOOL_SPEC.openai_function_name == MEMORY_LOOKUP_OPENAI_FUNCTION_NAME
     assert MEMORY_LOOKUP_TOOL_SPEC.display_name == "Memory Lookup"
     assert MEMORY_LOOKUP_TOOL_SPEC.owner_extension_key is None
 
-    assert REPORT_LOOKUP_TOOL_KEY == "signaldeck.reports.lookup"
-    assert REPORT_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_reports_lookup"
+    assert REPORT_LOOKUP_TOOL_KEY == "signaldeck.finance.reports.lookup"
+    assert REPORT_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_finance_reports_lookup"
     assert REPORT_LOOKUP_TOOL_SPEC.key == REPORT_LOOKUP_TOOL_KEY
     assert REPORT_LOOKUP_TOOL_SPEC.openai_function_name == REPORT_LOOKUP_OPENAI_FUNCTION_NAME
     assert REPORT_LOOKUP_TOOL_SPEC.display_name == "Report Lookup"
@@ -3498,7 +3547,7 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
     assert spec_by_key[REPORT_LOOKUP_TOOL_KEY].openai_function_name == (
         REPORT_LOOKUP_OPENAI_FUNCTION_NAME
     )
-    assert "signaldeck.reports.write" not in spec_by_key
+    assert "signaldeck.finance.reports.write" not in spec_by_key
     assert spec_by_key[MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY].openai_function_name == (
         MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME
     )
@@ -3511,7 +3560,7 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
     tools = registry.get_openai_tools(
         {
             REPORT_LOOKUP_TOOL_KEY,
-            "signaldeck.reports.write",
+            "signaldeck.finance.reports.write",
             MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
             MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
             SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
@@ -3538,7 +3587,7 @@ def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typ
         MEMORY_WRITE_OPENAI_FUNCTION_NAME,
         MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
     ]
-    assert "signaldeck_memory_lookup" in registry.get_guidance({MEMORY_LOOKUP_TOOL_KEY})
+    assert "signaldeck_core_memory_lookup" in registry.get_guidance({MEMORY_LOOKUP_TOOL_KEY})
 
     with pytest.raises(RuntimeToolError) as finance_exc_info:
         _ = registry.dispatch(
@@ -3648,7 +3697,7 @@ def test_financial_runtime_tool_exposure_follows_quote_history_and_report_lookup
             MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
             MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
             REPORT_LOOKUP_TOOL_KEY,
-            "signaldeck.reports.write",
+            "signaldeck.finance.reports.write",
         }
     )
 
@@ -3691,9 +3740,9 @@ def test_runtime_tool_registry_aggregates_guidance_in_sort_order() -> None:
 
     assert registry.get_guidance({POSITION_LOOKUP_TOOL_KEY, REPORT_LOOKUP_TOOL_KEY}) == (
         "When you need persisted SignalDeck report context, call the "
-        "signaldeck_reports_lookup tool instead of inventing report content.\n\n"
+        "signaldeck_finance_reports_lookup tool instead of inventing report content.\n\n"
         "When you need persisted SignalDeck position context, call the "
-        "signaldeck_positions_lookup tool instead of inventing portfolio holdings."
+        "signaldeck_finance_positions_lookup tool instead of inventing portfolio holdings."
     )
     assert registry.get_guidance(set()) == ""
 
@@ -3703,15 +3752,15 @@ def test_generic_platform_runtime_guidance_discloses_provider_limitations() -> N
 
     guidance = registry.get_guidance(set(_GENERIC_PLATFORM_RUNTIME_TOOL_KEYS))
 
-    assert "call signaldeck_market_data_ohlcv_lookup" in guidance
-    assert "call signaldeck_indicators_lookup" in guidance
-    assert "call signaldeck_fundamentals_lookup" in guidance
+    assert "call signaldeck_finance_market_data_ohlcv_lookup" in guidance
+    assert "call signaldeck_finance_indicators_lookup" in guidance
+    assert "call signaldeck_finance_fundamentals_lookup" in guidance
     assert "instead of inventing metrics" in guidance
-    assert "call signaldeck_news_lookup" in guidance
+    assert "call signaldeck_finance_news_lookup" in guidance
     assert "instead of inventing articles" in guidance
-    assert "call signaldeck_social_sentiment_lookup" in guidance
+    assert "call signaldeck_finance_social_sentiment_lookup" in guidance
     assert "instead of treating news as social data" in guidance
-    assert "call signaldeck_insider_data_lookup" in guidance
+    assert "call signaldeck_finance_insider_data_lookup" in guidance
     assert "Disclose warnings or empty results as data quality" in guidance
     assert guidance.count("data quality or provider limitations") >= 6
     assert "do not claim unavailable coverage" in guidance
@@ -3779,6 +3828,27 @@ def test_runtime_tool_registry_rejects_unknown_and_ungranted_names_before_parsin
         )
     assert ungranted_error.value.code == POSITION_LOOKUP_ACCESS_DENIED_CODE
     assert ungranted_error.value.message == POSITION_LOOKUP_ACCESS_DENIED_MESSAGE
+
+
+@pytest.mark.parametrize("legacy_function_name", _LEGACY_LIVE_OPENAI_FUNCTION_NAMES)
+def test_runtime_tool_registry_rejects_legacy_live_function_names(
+    legacy_function_name: str,
+) -> None:
+    registry = get_default_runtime_tool_registry()
+    context = _runtime_context(fail_on_session=True)
+
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = registry.dispatch(
+            name=legacy_function_name,
+            arguments_json="{}",
+            granted_tool_keys=_EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS,
+            context=context,
+        )
+
+    assert exc_info.value.code == "agent_tool_call_unsupported"
+    assert exc_info.value.message == (
+        f"Agent requested unsupported server tool {legacy_function_name!r}."
+    )
 
 
 def test_agent_execution_native_to_mcp_fallback_only_for_unsupported_tool_calls() -> None:
@@ -3881,7 +3951,7 @@ def test_failure_taxonomy_retryable_allowlist_is_closed_to_parser_schema_failure
 def test_failure_taxonomy_marks_provider_payload_invalid_json_as_retryable() -> None:
     with pytest.raises(ModelGatewayError) as exc_info:
         _ = build_model_tool_call(
-            name="signaldeck_memory_lookup",
+            name="signaldeck_core_memory_lookup",
             arguments="{",
             call_id="call-invalid-json",
             context="OpenAI response",
@@ -3903,7 +3973,7 @@ def test_failure_taxonomy_marks_provider_payload_invalid_json_as_retryable() -> 
 def test_failure_taxonomy_marks_provider_payload_non_object_arguments_as_retryable() -> None:
     with pytest.raises(ModelGatewayError) as exc_info:
         _ = build_model_tool_call(
-            name="signaldeck_memory_lookup",
+            name="signaldeck_core_memory_lookup",
             arguments="[]",
             call_id="call-non-object",
             context="OpenAI response",
@@ -4075,17 +4145,20 @@ def test_core_memory_runtime_tool_registry_denies_ungranted_before_parsing() -> 
 @pytest.mark.parametrize(
     ("arguments_json", "expected_message"),
     [
-        ("{", "OpenAI response requested signaldeck_memory_write with invalid JSON arguments."),
-        ("[]", "signaldeck_memory_write arguments must be a JSON object."),
+        (
+            "{",
+            "OpenAI response requested signaldeck_core_memory_write with invalid JSON arguments.",
+        ),
+        ("[]", "signaldeck_core_memory_write arguments must be a JSON object."),
         (
             '{"summary":"Memory","content":"Body","reportId":"rpt_1"}',
-            "signaldeck_memory_write arguments contained unsupported fields: reportId",
+            "signaldeck_core_memory_write arguments contained unsupported fields: reportId",
         ),
         (
             '{"summary":"Memory","content":"Body","attributes":{"confidence":"high"}}',
-            "signaldeck_memory_write arguments contained unsupported fields: attributes",
+            "signaldeck_core_memory_write arguments contained unsupported fields: attributes",
         ),
-        ('{"summary":"Memory"}', "signaldeck_memory_write arguments failed validation."),
+        ('{"summary":"Memory"}', "signaldeck_core_memory_write arguments failed validation."),
     ],
 )
 def test_memory_write_runtime_tool_parser_preserves_boundary_validation_messages(
@@ -4138,20 +4211,23 @@ def test_memory_write_runtime_tool_parser_rejects_subject_ref_attributes() -> No
         )
 
     assert exc_info.value.code == "agent_tool_call_invalid"
-    assert exc_info.value.message == "signaldeck_memory_write arguments failed validation."
+    assert exc_info.value.message == "signaldeck_core_memory_write arguments failed validation."
 
 
 @pytest.mark.parametrize(
     ("arguments_json", "expected_message"),
     [
-        ("{", "OpenAI response requested signaldeck_memory_lookup with invalid JSON arguments."),
-        ("[]", "signaldeck_memory_lookup arguments must be a JSON object."),
+        (
+            "{",
+            "OpenAI response requested signaldeck_core_memory_lookup with invalid JSON arguments.",
+        ),
+        ("[]", "signaldeck_core_memory_lookup arguments must be a JSON object."),
         (
             '{"unsupported":true}',
-            "signaldeck_memory_lookup arguments contained unsupported fields: unsupported",
+            "signaldeck_core_memory_lookup arguments contained unsupported fields: unsupported",
         ),
-        ('{"limit":21}', "signaldeck_memory_lookup arguments failed validation."),
-        ('{"maxCharacters":8001}', "signaldeck_memory_lookup arguments failed validation."),
+        ('{"limit":21}', "signaldeck_core_memory_lookup arguments failed validation."),
+        ('{"maxCharacters":8001}', "signaldeck_core_memory_lookup arguments failed validation."),
     ],
 )
 def test_memory_lookup_runtime_tool_parser_enforces_boundary_and_budget_rules(
@@ -4495,7 +4571,7 @@ def test_memory_lookup_runtime_tool_rejects_unscoped_call_without_context() -> N
 
     assert exc_info.value.code == "agent_tool_dependency_missing"
     assert exc_info.value.message == (
-        "signaldeck_memory_lookup requires at least one explicit selector or "
+        "signaldeck_core_memory_lookup requires at least one explicit selector or "
         "current runtime context."
     )
 
@@ -4576,17 +4652,17 @@ def test_market_data_history_lookup_service_denies_missing_capability_reference_
     [
         (
             "{",
-            "OpenAI response requested signaldeck_reports_lookup with invalid JSON arguments.",
+            "OpenAI response requested signaldeck_finance_reports_lookup with invalid JSON arguments.",
         ),
-        ("[]", "signaldeck_reports_lookup arguments must be a JSON object."),
+        ("[]", "signaldeck_finance_reports_lookup arguments must be a JSON object."),
         (
             '{"unsupported":true}',
-            "signaldeck_reports_lookup arguments contained unsupported fields: unsupported",
+            "signaldeck_finance_reports_lookup arguments contained unsupported fields: unsupported",
         ),
         (
             '{"source":"manual"}',
             (
-                "signaldeck_reports_lookup source must be one of compiled, uploaded, "
+                "signaldeck_finance_reports_lookup source must be one of compiled, uploaded, "
                 "external, or agent."
             ),
         ),
@@ -4594,9 +4670,9 @@ def test_market_data_history_lookup_service_denies_missing_capability_reference_
             '{"source":"agent"}',
             None,
         ),
-        ('{"ticker":123}', "signaldeck_reports_lookup string arguments must be strings."),
-        ('{"limit":51}', "signaldeck_reports_lookup limit must be at most 50."),
-        ('{"offset":-1}', "signaldeck_reports_lookup offset must be at least 0."),
+        ('{"ticker":123}', "signaldeck_finance_reports_lookup string arguments must be strings."),
+        ('{"limit":51}', "signaldeck_finance_reports_lookup limit must be at most 50."),
+        ('{"offset":-1}', "signaldeck_finance_reports_lookup offset must be at least 0."),
     ],
 )
 def test_report_runtime_tool_parser_preserves_validation_messages(
@@ -4620,26 +4696,29 @@ def test_report_runtime_tool_parser_preserves_validation_messages(
     [
         (
             "{",
-            "OpenAI response requested signaldeck_positions_lookup with invalid JSON arguments.",
+            "OpenAI response requested signaldeck_finance_positions_lookup with invalid JSON arguments.",
         ),
-        ("[]", "signaldeck_positions_lookup arguments must be a JSON object."),
+        ("[]", "signaldeck_finance_positions_lookup arguments must be a JSON object."),
         (
             '{"portfolioSlug":"reference","unsupported":true}',
-            "signaldeck_positions_lookup arguments contained unsupported fields: unsupported",
+            "signaldeck_finance_positions_lookup arguments contained unsupported fields: unsupported",
         ),
-        ("{}", "signaldeck_positions_lookup portfolioSlug is required."),
-        ('{"portfolioSlug":123}', "signaldeck_positions_lookup portfolioSlug must be a string."),
+        ("{}", "signaldeck_finance_positions_lookup portfolioSlug is required."),
+        (
+            '{"portfolioSlug":123}',
+            "signaldeck_finance_positions_lookup portfolioSlug must be a string.",
+        ),
         (
             '{"portfolioSlug":"reference","limit":"1"}',
-            "signaldeck_positions_lookup limit must be an integer.",
+            "signaldeck_finance_positions_lookup limit must be an integer.",
         ),
         (
             '{"portfolioSlug":"reference","limit":201}',
-            "signaldeck_positions_lookup limit must be at most 200.",
+            "signaldeck_finance_positions_lookup limit must be at most 200.",
         ),
         (
             '{"portfolioSlug":"reference","offset":-1}',
-            "signaldeck_positions_lookup offset must be at least 0.",
+            "signaldeck_finance_positions_lookup offset must be at least 0.",
         ),
     ],
 )
@@ -4660,33 +4739,33 @@ def test_position_runtime_tool_parser_preserves_validation_messages(
     [
         (
             "{",
-            "OpenAI response requested signaldeck_market_data_quote_lookup "
+            "OpenAI response requested signaldeck_finance_market_data_quote_lookup "
             + "with invalid JSON arguments.",
         ),
-        ("[]", "signaldeck_market_data_quote_lookup arguments must be a JSON object."),
+        ("[]", "signaldeck_finance_market_data_quote_lookup arguments must be a JSON object."),
         (
             '{"symbols":["NVDA"],"unsupported":true}',
             (
-                "signaldeck_market_data_quote_lookup arguments contained "
+                "signaldeck_finance_market_data_quote_lookup arguments contained "
                 "unsupported fields: unsupported"
             ),
         ),
-        ("{}", "signaldeck_market_data_quote_lookup symbols is required."),
+        ("{}", "signaldeck_finance_market_data_quote_lookup symbols is required."),
         (
             '{"symbols":"NVDA"}',
-            "signaldeck_market_data_quote_lookup symbols must be an array of strings.",
+            "signaldeck_finance_market_data_quote_lookup symbols must be an array of strings.",
         ),
         (
             '{"symbols":[123]}',
-            "signaldeck_market_data_quote_lookup symbols must be an array of strings.",
+            "signaldeck_finance_market_data_quote_lookup symbols must be an array of strings.",
         ),
         (
             '{"symbols":[""]}',
-            "signaldeck_market_data_quote_lookup symbols must not contain empty values.",
+            "signaldeck_finance_market_data_quote_lookup symbols must not contain empty values.",
         ),
         (
             '{"symbols":["NVDA"],"baseCurrency":"US"}',
-            "signaldeck_market_data_quote_lookup arguments contained unsupported "
+            "signaldeck_finance_market_data_quote_lookup arguments contained unsupported "
             "fields: baseCurrency",
         ),
     ],
@@ -4708,29 +4787,29 @@ def test_market_data_quote_lookup_parser_preserves_validation_messages(
     [
         (
             "{",
-            "OpenAI response requested signaldeck_market_data_history_lookup "
+            "OpenAI response requested signaldeck_finance_market_data_history_lookup "
             + "with invalid JSON arguments.",
         ),
-        ("[]", "signaldeck_market_data_history_lookup arguments must be a JSON object."),
+        ("[]", "signaldeck_finance_market_data_history_lookup arguments must be a JSON object."),
         (
             '{"symbols":["NVDA"],"unsupported":true}',
             (
-                "signaldeck_market_data_history_lookup arguments contained "
+                "signaldeck_finance_market_data_history_lookup arguments contained "
                 "unsupported fields: unsupported"
             ),
         ),
-        ("{}", "signaldeck_market_data_history_lookup symbols is required."),
+        ("{}", "signaldeck_finance_market_data_history_lookup symbols is required."),
         (
             '{"symbols":["NVDA"],"range":"10y"}',
-            "signaldeck_market_data_history_lookup range must be one of 1mo, 3mo, ytd, 1y, or max.",
+            "signaldeck_finance_market_data_history_lookup range must be one of 1mo, 3mo, ytd, 1y, or max.",
         ),
         (
             '{"symbols":["NVDA"],"pointLimit":"2"}',
-            "signaldeck_market_data_history_lookup pointLimit must be an integer.",
+            "signaldeck_finance_market_data_history_lookup pointLimit must be an integer.",
         ),
         (
             '{"symbols":["NVDA"],"pointLimit":251}',
-            "signaldeck_market_data_history_lookup pointLimit must be at most 250.",
+            "signaldeck_finance_market_data_history_lookup pointLimit must be at most 250.",
         ),
     ],
 )
@@ -4975,7 +5054,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": "2026-01-03",
                 "rowLimit": 3,
             },
-            "signaldeck_market_data_ohlcv_lookup startDate must be before or equal to endDate.",
+            "signaldeck_finance_market_data_ohlcv_lookup startDate must be before or equal to endDate.",
         ),
         (
             parse_ohlcv_lookup_arguments,
@@ -4985,7 +5064,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": "2026-01-03",
                 "rowLimit": 3,
             },
-            "signaldeck_market_data_ohlcv_lookup symbols must contain at most 5 symbols.",
+            "signaldeck_finance_market_data_ohlcv_lookup symbols must contain at most 5 symbols.",
         ),
         (
             parse_ohlcv_lookup_arguments,
@@ -4995,7 +5074,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": "2026-01-03",
                 "rowLimit": 501,
             },
-            "signaldeck_market_data_ohlcv_lookup rowLimit must be at most 500.",
+            "signaldeck_finance_market_data_ohlcv_lookup rowLimit must be at most 500.",
         ),
         (
             parse_indicators_lookup_arguments,
@@ -5007,7 +5086,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "smaWindows": [2],
                 "rowLimit": 3,
             },
-            "signaldeck_indicators_lookup endDate cannot be after currentDate.",
+            "signaldeck_finance_indicators_lookup endDate cannot be after currentDate.",
         ),
         (
             parse_indicators_lookup_arguments,
@@ -5019,7 +5098,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "smaWindows": [2],
                 "rowLimit": 501,
             },
-            "signaldeck_indicators_lookup rowLimit must be at most 500.",
+            "signaldeck_finance_indicators_lookup rowLimit must be at most 500.",
         ),
         (
             parse_fundamentals_lookup_arguments,
@@ -5029,7 +5108,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "periods": None,
                 "statementLimit": 3,
             },
-            "signaldeck_fundamentals_lookup statementTypes must use: "
+            "signaldeck_finance_fundamentals_lookup statementTypes must use: "
             + "balance_sheet, cash_flow, income_statement.",
         ),
         (
@@ -5040,7 +5119,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "periods": ["daily"],
                 "statementLimit": 3,
             },
-            "signaldeck_fundamentals_lookup periods must use: "
+            "signaldeck_finance_fundamentals_lookup periods must use: "
             + "annual, quarterly, trailing_twelve_months.",
         ),
         (
@@ -5051,7 +5130,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "periods": None,
                 "statementLimit": 13,
             },
-            "signaldeck_fundamentals_lookup statementLimit must be at most 12.",
+            "signaldeck_finance_fundamentals_lookup statementLimit must be at most 12.",
         ),
         (
             parse_news_lookup_arguments,
@@ -5062,7 +5141,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": "2026-01-03",
                 "itemLimit": 2,
             },
-            "signaldeck_news_lookup startDate must be before or equal to endDate.",
+            "signaldeck_finance_news_lookup startDate must be before or equal to endDate.",
         ),
         (
             parse_news_lookup_arguments,
@@ -5073,7 +5152,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": None,
                 "itemLimit": 2,
             },
-            "signaldeck_news_lookup symbols must contain at most 5 symbols.",
+            "signaldeck_finance_news_lookup symbols must contain at most 5 symbols.",
         ),
         (
             parse_news_lookup_arguments,
@@ -5084,7 +5163,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": None,
                 "itemLimit": 51,
             },
-            "signaldeck_news_lookup itemLimit must be at most 50.",
+            "signaldeck_finance_news_lookup itemLimit must be at most 50.",
         ),
         (
             parse_social_sentiment_lookup_arguments,
@@ -5095,7 +5174,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": None,
                 "itemLimit": 2,
             },
-            "signaldeck_social_sentiment_lookup sources must use: reddit, stocktwits.",
+            "signaldeck_finance_social_sentiment_lookup sources must use: reddit, stocktwits.",
         ),
         (
             parse_social_sentiment_lookup_arguments,
@@ -5106,7 +5185,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": None,
                 "itemLimit": 51,
             },
-            "signaldeck_social_sentiment_lookup itemLimit must be at most 50.",
+            "signaldeck_finance_social_sentiment_lookup itemLimit must be at most 50.",
         ),
         (
             parse_insider_data_lookup_arguments,
@@ -5116,7 +5195,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": "2026-01-03",
                 "transactionLimit": 2,
             },
-            "signaldeck_insider_data_lookup startDate must be before or equal to endDate.",
+            "signaldeck_finance_insider_data_lookup startDate must be before or equal to endDate.",
         ),
         (
             parse_insider_data_lookup_arguments,
@@ -5126,7 +5205,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": None,
                 "transactionLimit": 101,
             },
-            "signaldeck_insider_data_lookup transactionLimit must be at most 100.",
+            "signaldeck_finance_insider_data_lookup transactionLimit must be at most 100.",
         ),
     ],
 )
@@ -5162,7 +5241,9 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             granted_tool_keys={REPORT_LOOKUP_TOOL_KEY},
             context=context,
         )
-    assert report_error.value.message == "signaldeck_reports_lookup limit must be at most 50."
+    assert (
+        report_error.value.message == "signaldeck_finance_reports_lookup limit must be at most 50."
+    )
 
     with pytest.raises(RuntimeToolError) as position_error:
         _ = registry.dispatch(
@@ -5171,7 +5252,10 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             granted_tool_keys={POSITION_LOOKUP_TOOL_KEY},
             context=context,
         )
-    assert position_error.value.message == "signaldeck_positions_lookup limit must be at most 200."
+    assert (
+        position_error.value.message
+        == "signaldeck_finance_positions_lookup limit must be at most 200."
+    )
 
     with pytest.raises(RuntimeToolError) as quote_error:
         _ = registry.dispatch(
@@ -5181,7 +5265,7 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             context=context,
         )
     assert quote_error.value.message == (
-        "signaldeck_market_data_quote_lookup arguments contained unsupported fields: unsupported"
+        "signaldeck_finance_market_data_quote_lookup arguments contained unsupported fields: unsupported"
     )
 
     with pytest.raises(RuntimeToolError) as history_error:
@@ -5192,7 +5276,7 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             context=context,
         )
     assert history_error.value.message == (
-        "signaldeck_market_data_history_lookup pointLimit must be at most 250."
+        "signaldeck_finance_market_data_history_lookup pointLimit must be at most 250."
     )
 
     with pytest.raises(RuntimeToolError) as social_error:
@@ -5203,7 +5287,7 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             context=context,
         )
     assert social_error.value.message == (
-        "signaldeck_social_sentiment_lookup arguments contained unsupported fields: unsupported"
+        "signaldeck_finance_social_sentiment_lookup arguments contained unsupported fields: unsupported"
     )
 
 
@@ -5912,13 +5996,13 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
     with pytest.raises(RuntimeToolError) as invalid_venue:
         _ = parse_prediction_markets_lookup_arguments('{"query":"Fed","venues":["predictit"]}')
     assert invalid_venue.value.message == (
-        "signaldeck_prediction_markets_lookup venues must use: kalshi, polymarket."
+        "signaldeck_digital_oracle_prediction_markets_lookup venues must use: kalshi, polymarket."
     )
 
     with pytest.raises(RuntimeToolError) as invalid_limit:
         _ = parse_prediction_markets_lookup_arguments('{"query":"Fed","itemLimit":21}')
     assert invalid_limit.value.message == (
-        "signaldeck_prediction_markets_lookup itemLimit must be at most 20."
+        "signaldeck_digital_oracle_prediction_markets_lookup itemLimit must be at most 20."
     )
 
 
@@ -5929,7 +6013,7 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
             PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
             PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
             json.dumps({"query": "   "}),
-            "signaldeck_prediction_markets_lookup query must not be empty.",
+            "signaldeck_digital_oracle_prediction_markets_lookup query must not be empty.",
         ),
         (
             SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -5941,13 +6025,13 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
                     "endDate": "2026-01-01",
                 }
             ),
-            "signaldeck_sec_filings_lookup startDate must be before or equal to endDate.",
+            "signaldeck_digital_oracle_sec_filings_lookup startDate must be before or equal to endDate.",
         ),
         (
             MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
             MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
             json.dumps({"indicator": "fear_greed", "asOfDate": "not-a-date"}),
-            "signaldeck_market_sentiment_lookup asOfDate must be a valid ISO date.",
+            "signaldeck_digital_oracle_market_sentiment_lookup asOfDate must be a valid ISO date.",
         ),
     ],
 )
@@ -6759,7 +6843,7 @@ def test_prediction_markets_service_preserves_malformed_adapter_warnings_with_pa
 
 
 def test_sec_filings_runtime_tool_spec_uses_approved_parameters_schema() -> None:
-    assert SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_sec_filings_lookup"
+    assert SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_digital_oracle_sec_filings_lookup"
     assert SEC_FILINGS_LOOKUP_TOOL_SPEC.key == SEC_FILINGS_LOOKUP_TOOL_KEY
     assert (
         SEC_FILINGS_LOOKUP_TOOL_SPEC.openai_function_name == SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME
@@ -7250,7 +7334,10 @@ def test_sec_filings_runtime_executor_returns_empty_warning_for_configured_edgar
 
 
 def test_market_sentiment_runtime_tool_spec_uses_approved_parameters_schema() -> None:
-    assert MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_market_sentiment_lookup"
+    assert (
+        MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME
+        == "signaldeck_digital_oracle_market_sentiment_lookup"
+    )
     assert MARKET_SENTIMENT_LOOKUP_TOOL_SPEC.key == MARKET_SENTIMENT_LOOKUP_TOOL_KEY
     assert (
         MARKET_SENTIMENT_LOOKUP_TOOL_SPEC.openai_function_name
@@ -7280,7 +7367,7 @@ def test_market_sentiment_parser_normalizes_indicator_and_as_of_date() -> None:
     with pytest.raises(RuntimeToolError) as invalid_indicator:
         _ = parse_market_sentiment_lookup_arguments(json.dumps({"indicator": "social_sentiment"}))
     assert invalid_indicator.value.message == (
-        "signaldeck_market_sentiment_lookup indicator must use: fear_greed."
+        "signaldeck_digital_oracle_market_sentiment_lookup indicator must use: fear_greed."
     )
 
     with pytest.raises(RuntimeToolError, match="unsupported fields"):

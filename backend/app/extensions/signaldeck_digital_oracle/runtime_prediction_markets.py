@@ -39,7 +39,7 @@ from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleProviderError,
 )
 
-PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_prediction_markets_lookup"
+PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_digital_oracle_prediction_markets_lookup"
 PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_CODE = DIGITAL_ORACLE_DENIED_CODE
 PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_MESSAGE = DIGITAL_ORACLE_DENIED_MESSAGES[
     PREDICTION_MARKETS_LOOKUP_TOOL_KEY
@@ -56,7 +56,7 @@ _PREDICTION_MARKETS_LOOKUP_DESCRIPTION = (
     "Read normalized prediction-market events and contracts across supported venues."
 )
 _PREDICTION_MARKETS_LOOKUP_GUIDANCE = (
-    "When you need prediction-market signals, call signaldeck_prediction_markets_lookup "
+    "When you need prediction-market signals, call signaldeck_digital_oracle_prediction_markets_lookup "
     "with a plain-language query and optional venue filters. Use only returned event "
     "and contract probabilities/prices, disclose all warnings as coverage limitations, "
     "and never invent probabilities for unavailable markets."

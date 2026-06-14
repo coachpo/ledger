@@ -221,22 +221,22 @@ describe("WorkflowPackageEditorPage resource editors", () => {
       data: {
         items: [
           {
-            key: "signaldeck.reports.lookup",
+            key: "signaldeck.finance.reports.lookup",
             displayName: "Report Lookup",
             description: "Read reports",
           },
           {
-            key: "signaldeck.prediction_markets.lookup",
+            key: "signaldeck.digital_oracle.prediction_markets.lookup",
             displayName: "Prediction Markets",
             description: "Find prediction-market signals.",
           },
           {
-            key: "signaldeck.sec_filings.lookup",
+            key: "signaldeck.digital_oracle.sec_filings.lookup",
             displayName: "SEC Filings",
             description: "Find SEC filing summaries.",
           },
           {
-            key: "signaldeck.market_sentiment.lookup",
+            key: "signaldeck.digital_oracle.market_sentiment.lookup",
             displayName: "Market Sentiment",
             description: "Read market sentiment snapshots.",
           },
@@ -320,22 +320,22 @@ describe("WorkflowPackageEditorPage resource editors", () => {
       data: {
         items: [
           {
-            key: "signaldeck.reports.lookup",
+            key: "signaldeck.finance.reports.lookup",
             displayName: "Report Lookup",
             description: "Read reports",
           },
           {
-            key: "signaldeck.prediction_markets.lookup",
+            key: "signaldeck.digital_oracle.prediction_markets.lookup",
             displayName: "Prediction Markets",
             description: "Find prediction-market signals.",
           },
           {
-            key: "signaldeck.sec_filings.lookup",
+            key: "signaldeck.digital_oracle.sec_filings.lookup",
             displayName: "SEC Filings",
             description: "Find SEC filing summaries.",
           },
           {
-            key: "signaldeck.market_sentiment.lookup",
+            key: "signaldeck.digital_oracle.market_sentiment.lookup",
             displayName: "Market Sentiment",
             description: "Read market sentiment snapshots.",
           },

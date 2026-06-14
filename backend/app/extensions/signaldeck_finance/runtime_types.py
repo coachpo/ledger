@@ -44,16 +44,16 @@ from app.services.social_sentiment_snapshots import (
     SocialSentimentSourceBlock as RuntimeSocialSentimentSourceBlock,
 )
 
-MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY = "signaldeck.market_data.quote_lookup"
-MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY = "signaldeck.market_data.history_lookup"
-MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY = "signaldeck.market_data.ohlcv_lookup"
-INDICATORS_LOOKUP_TOOL_KEY = "signaldeck.indicators.lookup"
-FUNDAMENTALS_LOOKUP_TOOL_KEY = "signaldeck.fundamentals.lookup"
-NEWS_LOOKUP_TOOL_KEY = "signaldeck.news.lookup"
-SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY = "signaldeck.social_sentiment.lookup"
-INSIDER_DATA_LOOKUP_TOOL_KEY = "signaldeck.insider_data.lookup"
-POSITION_LOOKUP_TOOL_KEY = "signaldeck.positions.lookup"
-REPORT_LOOKUP_TOOL_KEY = "signaldeck.reports.lookup"
+MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY = "signaldeck.finance.market_data.quote_lookup"
+MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY = "signaldeck.finance.market_data.history_lookup"
+MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY = "signaldeck.finance.market_data.ohlcv_lookup"
+INDICATORS_LOOKUP_TOOL_KEY = "signaldeck.finance.indicators.lookup"
+FUNDAMENTALS_LOOKUP_TOOL_KEY = "signaldeck.finance.fundamentals.lookup"
+NEWS_LOOKUP_TOOL_KEY = "signaldeck.finance.news.lookup"
+SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY = "signaldeck.finance.social_sentiment.lookup"
+INSIDER_DATA_LOOKUP_TOOL_KEY = "signaldeck.finance.insider_data.lookup"
+POSITION_LOOKUP_TOOL_KEY = "signaldeck.finance.positions.lookup"
+REPORT_LOOKUP_TOOL_KEY = "signaldeck.finance.reports.lookup"
 
 NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS = (
     MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
@@ -93,14 +93,16 @@ class RuntimeNativeToolResult(CamelModel):
 
 
 class RuntimeQuoteLookupResult(CamelModel):
-    tool_key: Literal["signaldeck.market_data.quote_lookup"] = "signaldeck.market_data.quote_lookup"
+    tool_key: Literal["signaldeck.finance.market_data.quote_lookup"] = (
+        "signaldeck.finance.market_data.quote_lookup"
+    )
     quotes: list[MarketQuoteRead]
     warnings: list[RuntimeToolWarning] = Field(default_factory=list)
 
 
 class RuntimeHistoryLookupResult(CamelModel):
-    tool_key: Literal["signaldeck.market_data.history_lookup"] = (
-        "signaldeck.market_data.history_lookup"
+    tool_key: Literal["signaldeck.finance.market_data.history_lookup"] = (
+        "signaldeck.finance.market_data.history_lookup"
     )
     range: str
     interval: str
@@ -126,27 +128,37 @@ class RuntimeHistoryLookupResult(CamelModel):
 
 
 class RuntimeOhlcvLookupResult(MarketDataOhlcvLookupResult):
-    tool_key: Literal["signaldeck.market_data.ohlcv_lookup"] = "signaldeck.market_data.ohlcv_lookup"
+    tool_key: Literal["signaldeck.finance.market_data.ohlcv_lookup"] = (
+        "signaldeck.finance.market_data.ohlcv_lookup"
+    )
 
 
 class RuntimeIndicatorLookupResult(MarketDataIndicatorLookupResult):
-    tool_key: Literal["signaldeck.indicators.lookup"] = "signaldeck.indicators.lookup"
+    tool_key: Literal["signaldeck.finance.indicators.lookup"] = (
+        "signaldeck.finance.indicators.lookup"
+    )
 
 
 class RuntimeFundamentalsLookupResult(MarketDataFundamentalsLookupResult):
-    tool_key: Literal["signaldeck.fundamentals.lookup"] = "signaldeck.fundamentals.lookup"
+    tool_key: Literal["signaldeck.finance.fundamentals.lookup"] = (
+        "signaldeck.finance.fundamentals.lookup"
+    )
 
 
 class RuntimeNewsLookupResult(MarketDataNewsLookupResult):
-    tool_key: Literal["signaldeck.news.lookup"] = "signaldeck.news.lookup"
+    tool_key: Literal["signaldeck.finance.news.lookup"] = "signaldeck.finance.news.lookup"
 
 
 class RuntimeSocialSentimentLookupResult(SocialSentimentLookupResult):
-    tool_key: Literal["signaldeck.social_sentiment.lookup"] = "signaldeck.social_sentiment.lookup"
+    tool_key: Literal["signaldeck.finance.social_sentiment.lookup"] = (
+        "signaldeck.finance.social_sentiment.lookup"
+    )
 
 
 class RuntimeInsiderDataLookupResult(MarketDataInsiderDataLookupResult):
-    tool_key: Literal["signaldeck.insider_data.lookup"] = "signaldeck.insider_data.lookup"
+    tool_key: Literal["signaldeck.finance.insider_data.lookup"] = (
+        "signaldeck.finance.insider_data.lookup"
+    )
 
 
 __all__ = [

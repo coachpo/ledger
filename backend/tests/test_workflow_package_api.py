@@ -21,18 +21,18 @@ _FIXTURE = (
     / "tradingagents_advisory_research.yaml"
 )
 _EXPECTED_PACKAGE_TOOL_KEYS = {
-    "signaldeck.market_data.quote_lookup",
-    "signaldeck.market_data.history_lookup",
-    "signaldeck.market_data.ohlcv_lookup",
-    "signaldeck.indicators.lookup",
-    "signaldeck.fundamentals.lookup",
-    "signaldeck.news.lookup",
-    "signaldeck.social_sentiment.lookup",
-    "signaldeck.insider_data.lookup",
-    "signaldeck.positions.lookup",
-    "signaldeck.reports.lookup",
-    "signaldeck.memory.lookup",
-    "signaldeck.memory.write",
+    "signaldeck.finance.market_data.quote_lookup",
+    "signaldeck.finance.market_data.history_lookup",
+    "signaldeck.finance.market_data.ohlcv_lookup",
+    "signaldeck.finance.indicators.lookup",
+    "signaldeck.finance.fundamentals.lookup",
+    "signaldeck.finance.news.lookup",
+    "signaldeck.finance.social_sentiment.lookup",
+    "signaldeck.finance.insider_data.lookup",
+    "signaldeck.finance.positions.lookup",
+    "signaldeck.finance.reports.lookup",
+    "signaldeck.core.memory.lookup",
+    "signaldeck.core.memory.write",
 }
 
 
@@ -410,7 +410,7 @@ def test_validate_manifest_reports_diagnostics_without_persisting(
     session_factory: sessionmaker[Session],
 ) -> None:
     bad_source = _package_source().replace(
-        "signaldeck.market_data.quote_lookup",
+        "signaldeck.finance.market_data.quote_lookup",
         "signaldeck.unknown.tool",
         1,
     )

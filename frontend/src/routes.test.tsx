@@ -1073,49 +1073,49 @@ describe("router", () => {
     expect(financeExtension.toolAuthoringDiscovery).toEqual([
       {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.market_data.",
+        toolKeyPrefix: "signaldeck.finance.market_data.",
       },
       {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.indicators.",
+        toolKeyPrefix: "signaldeck.finance.indicators.",
       },
       {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.fundamentals.",
+        toolKeyPrefix: "signaldeck.finance.fundamentals.",
       },
       {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.news.",
+        toolKeyPrefix: "signaldeck.finance.news.",
       },
       {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.social_sentiment.",
+        toolKeyPrefix: "signaldeck.finance.social_sentiment.",
       },
       {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.insider_data.",
+        toolKeyPrefix: "signaldeck.finance.insider_data.",
       },
       {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.positions.",
+        toolKeyPrefix: "signaldeck.finance.positions.",
       },
       {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.reports.",
+        toolKeyPrefix: "signaldeck.finance.reports.",
       },
     ]);
     expect(digitalOracleExtension.toolAuthoringDiscovery).toEqual([
       {
         requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.prediction_markets.",
+        toolKeyPrefix: "signaldeck.digital_oracle.prediction_markets.",
       },
       {
         requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.sec_filings.",
+        toolKeyPrefix: "signaldeck.digital_oracle.sec_filings.",
       },
       {
         requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.market_sentiment.",
+        toolKeyPrefix: "signaldeck.digital_oracle.market_sentiment.",
       },
     ]);
   });
@@ -1131,27 +1131,27 @@ describe("router", () => {
     }
     const tools = [
       {
-        key: "signaldeck.reports.lookup",
+        key: "signaldeck.finance.reports.lookup",
         displayName: "Reports",
         description: "Read reports",
       },
       {
-        key: "signaldeck.prediction_markets.lookup",
+        key: "signaldeck.digital_oracle.prediction_markets.lookup",
         displayName: "Prediction Markets",
         description: "Find prediction-market signals.",
       },
       {
-        key: "signaldeck.sec_filings.lookup",
+        key: "signaldeck.digital_oracle.sec_filings.lookup",
         displayName: "SEC Filings",
         description: "Find SEC filing summaries.",
       },
       {
-        key: "signaldeck.market_sentiment.lookup",
+        key: "signaldeck.digital_oracle.market_sentiment.lookup",
         displayName: "Market Sentiment",
         description: "Read market sentiment snapshots.",
       },
       {
-        key: "signaldeck.memory.lookup",
+        key: "signaldeck.core.memory.lookup",
         displayName: "Memory Lookup",
         description: "Read scoped package memory.",
       },
@@ -1177,32 +1177,32 @@ describe("router", () => {
       financeRoutePaths,
     );
     expect(toolKeysForState(true, true)).toEqual([
-      "signaldeck.reports.lookup",
-      "signaldeck.prediction_markets.lookup",
-      "signaldeck.sec_filings.lookup",
-      "signaldeck.market_sentiment.lookup",
-      "signaldeck.memory.lookup",
+      "signaldeck.finance.reports.lookup",
+      "signaldeck.digital_oracle.prediction_markets.lookup",
+      "signaldeck.digital_oracle.sec_filings.lookup",
+      "signaldeck.digital_oracle.market_sentiment.lookup",
+      "signaldeck.core.memory.lookup",
       "core.echo",
     ]);
     expect(enabledFinanceRoutePaths(extensionList(true, false))).toEqual(
       financeRoutePaths,
     );
     expect(toolKeysForState(true, false)).toEqual([
-      "signaldeck.reports.lookup",
-      "signaldeck.memory.lookup",
+      "signaldeck.finance.reports.lookup",
+      "signaldeck.core.memory.lookup",
       "core.echo",
     ]);
     expect(enabledFinanceRoutePaths(extensionList(false, true))).toEqual([]);
     expect(toolKeysForState(false, true)).toEqual([
-      "signaldeck.prediction_markets.lookup",
-      "signaldeck.sec_filings.lookup",
-      "signaldeck.market_sentiment.lookup",
-      "signaldeck.memory.lookup",
+      "signaldeck.digital_oracle.prediction_markets.lookup",
+      "signaldeck.digital_oracle.sec_filings.lookup",
+      "signaldeck.digital_oracle.market_sentiment.lookup",
+      "signaldeck.core.memory.lookup",
       "core.echo",
     ]);
     expect(enabledFinanceRoutePaths(extensionList(false, false))).toEqual([]);
     expect(toolKeysForState(false, false)).toEqual([
-      "signaldeck.memory.lookup",
+      "signaldeck.core.memory.lookup",
       "core.echo",
     ]);
   });

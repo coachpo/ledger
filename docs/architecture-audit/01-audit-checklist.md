@@ -54,7 +54,7 @@ Use this as an executable checklist. For each item, inspect the cited file, symb
 ## Tools/Runtime Tool Dispatch
 
 - [ ] Confirm `/api/tools` in `backend/app/api/tools.py::list_tools` returns only `key`, `displayName`, and `description`.
-- [ ] Confirm platform-core tools in `backend/app/agents/tool_catalog/server_declared.py` are `signaldeck.memory.write` and `signaldeck.memory.lookup` and remain visible when bundled extensions are disabled.
+- [ ] Confirm platform-core tools in `backend/app/agents/tool_catalog/server_declared.py` are `signaldeck.core.memory.write` and `signaldeck.core.memory.lookup` and remain visible when bundled extensions are disabled.
 - [ ] Confirm extension-owned server-declared tools are filtered through `enabled_server_declared_tool_registry` and `ExtensionService.get_tool_catalog`.
 - [ ] Confirm `backend/app/agents/runtime_tools/registry.py::RuntimeToolRegistry.dispatch` enforces enabled-extension state and granted tool keys before executor dispatch.
 - [ ] Confirm runtime and catalog coverage in `backend/tests/test_runtime_tools.py`, `backend/tests/test_tool_catalog_api.py`, and `backend/tests/test_workflow_package_preflight.py`.
@@ -80,7 +80,7 @@ Use this as an executable checklist. For each item, inspect the cited file, symb
 - [ ] Confirm `backend/app/extensions/signaldeck_finance/api_routers.py` owns preserved finance `/api/v1` route registrations and extension gates.
 - [ ] Confirm finance routes cover portfolios, balances, positions, trading operations, market data, templates, and reports, and are absent/blocked when `signaldeck.finance` is disabled.
 - [ ] Confirm finance runtime tools and server-declared tool specs stay under `backend/app/extensions/signaldeck_finance/` and are not migrated into generic platform runtime modules without an explicit shared contract.
-- [ ] Confirm historical agent-memory report readers and `signaldeck.reports.lookup` stay finance/report-owned, while canonical memory remains platform-core.
+- [ ] Confirm historical agent-memory report readers and `signaldeck.finance.reports.lookup` stay finance/report-owned, while canonical memory remains platform-core.
 - [ ] Confirm frontend Finance route/nav contributions come from `frontend/src/extensions/signaldeck-finance/scaffold.ts` and are gated by `frontend/src/extensions/runtime-helpers.ts`.
 
 ## Frontend Routing/Navigation

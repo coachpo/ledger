@@ -719,7 +719,7 @@ class WorkflowPackagePreflightService:
                 profile_key,
                 str(detail.get("field", "toolKeys")),
             ),
-            "issue": detail.get("issue", "Invalid server-declared tool key"),
+            "issue": detail.get("issue", "Invalid canonical server-declared tool key"),
         }
         for key in ("code", "extensionKey", "surface"):
             if key in detail:

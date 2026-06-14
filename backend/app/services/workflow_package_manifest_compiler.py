@@ -360,7 +360,8 @@ def _resolved_profile_tool_keys(
     profile: WorkflowPackageCapabilityProfile,
     tool_catalog: ToolCatalog,
 ) -> list[str]:
-    return sorted(tool.key for tool in tool_catalog.resolve_tool_keys(profile.tool_keys))
+    resolved_tools = tool_catalog.resolve_tool_keys(profile.tool_keys)
+    return sorted(tool.key for tool in resolved_tools)
 
 
 def _compile_mcp_server(
@@ -746,7 +747,7 @@ def _validate_capability_profile_tools(
     except ToolCatalogValidationError as exc:
         return [
             _diagnostic(
-                str(detail.get("issue", "Invalid server-declared tool key")),
+                str(detail.get("issue", "Invalid canonical server-declared tool key")),
                 path=_profile_tool_key_path(profile.key, str(detail.get("field", "toolKeys"))),
                 source=source,
             )

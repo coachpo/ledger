@@ -3,15 +3,22 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import lru_cache
 from importlib import import_module
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
-from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
+from app.agents.runtime_tools.declarations import (
+    SignalDeckToolDeclaration,
+    runtime_model_name_for_tool_key,
+)
 from app.agents.runtime_tools.registry import RuntimeToolRegistry
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError, RuntimeToolSpec
 
 
 class _RuntimeContributionRegistry(Protocol):
     def list_runtime_tool_contributions(self) -> tuple[RuntimeToolSpec, ...]: ...
+
+
+if TYPE_CHECKING:
+    RUNTIME_TOOL_SPECS: tuple[RuntimeToolSpec, ...]
 
 
 def _load_runtime_tool_specs() -> tuple[RuntimeToolSpec, ...]:
@@ -36,7 +43,7 @@ def get_default_runtime_tool_registry() -> RuntimeToolRegistry:
     return RuntimeToolRegistry(_load_runtime_tool_specs())
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> object:
     if name == "RUNTIME_TOOL_SPECS":
         return _load_runtime_tool_specs()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -50,4 +57,5 @@ __all__ = [
     "RuntimeToolSpec",
     "SignalDeckToolDeclaration",
     "get_default_runtime_tool_registry",
+    "runtime_model_name_for_tool_key",
 ]

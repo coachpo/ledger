@@ -19,7 +19,6 @@ from app.db.upgrades import upgrade_legacy_schema
 from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.report import REPORT_SOURCE_CHECK_CONSTRAINT
-from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_service import WorkflowPackageService
 
 AGENT_PLATFORM_TABLE_NAMES = {
@@ -348,12 +347,12 @@ _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES = [
             "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
         ],
         "surfaces": [
-            "runtime.tool.signaldeck.market_sentiment.lookup",
-            "runtime.tool.signaldeck.prediction_markets.lookup",
-            "runtime.tool.signaldeck.sec_filings.lookup",
-            "tool.signaldeck.market_sentiment.lookup",
-            "tool.signaldeck.prediction_markets.lookup",
-            "tool.signaldeck.sec_filings.lookup",
+            "runtime.tool.signaldeck.digital_oracle.market_sentiment.lookup",
+            "runtime.tool.signaldeck.digital_oracle.prediction_markets.lookup",
+            "runtime.tool.signaldeck.digital_oracle.sec_filings.lookup",
+            "tool.signaldeck.digital_oracle.market_sentiment.lookup",
+            "tool.signaldeck.digital_oracle.prediction_markets.lookup",
+            "tool.signaldeck.digital_oracle.sec_filings.lookup",
         ],
     },
     {
@@ -369,13 +368,19 @@ _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES = [
             "provider.fallbackQuote",
             "provider.quote",
             "provider.socialSentiment",
-            "runtime.tool.signaldeck.market_data.history_lookup",
-            "runtime.tool.signaldeck.market_data.ohlcv_lookup",
-            "tool.signaldeck.market_data.history_lookup",
-            "tool.signaldeck.market_data.ohlcv_lookup",
+            "runtime.tool.signaldeck.finance.market_data.history_lookup",
+            "runtime.tool.signaldeck.finance.market_data.ohlcv_lookup",
+            "tool.signaldeck.finance.market_data.history_lookup",
+            "tool.signaldeck.finance.market_data.ohlcv_lookup",
         ],
     },
 ]
+def _compile_fixture_artifacts(engine: Engine, manifest_source: str) -> dict[str, object]:
+    test_session_factory: sessionmaker[Session] = sessionmaker(bind=engine, future=True)
+    with test_session_factory() as session:
+        return WorkflowPackageService(session, test_session_factory)._prepare_manifest(manifest_source)
+
+
 _TRADINGAGENTS_LAUNCH_METADATA_BY_WORKFLOW_KEY = {
     "advisory_research": (
         "Advisory Research",
@@ -3797,7 +3802,6 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
 ) -> None:
     fixture_source = _TRADINGAGENTS_FIXTURE_PATH.read_text(encoding="utf-8")
     preset_sql = _TRADINGAGENTS_PRESET_SQL_PATH.read_text(encoding="utf-8")
-    fixture_compiled = compile_workflow_package_manifest(fixture_source)
     assert "INSERT INTO workflow_packages" in preset_sql
     assert "ON CONFLICT (key) DO UPDATE" in preset_sql
     assert "WHERE NOT EXISTS" not in preset_sql
@@ -3809,12 +3813,17 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
     assert "INSERT INTO model_connections" not in preset_sql
     assert "workflow_package_secret_bindings (" not in preset_sql
     assert "INSERT INTO runs" not in preset_sql
-    compiled = fixture_compiled
-    expected_package_definition = cast(dict[str, object], compiled["packageDefinition"])
-    expected_compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
 
     init_db(database_url)
     engine = create_engine(database_url, future=True)
+    fixture_compiled = _compile_fixture_artifacts(engine, fixture_source)
+    expected_package_definition = cast(
+        dict[str, object], fixture_compiled["packageDefinition"]
+    )
+    expected_compiled_plan = cast(dict[str, object], fixture_compiled["compiledPlan"])
+    expected_extension_dependencies = cast(
+        list[dict[str, object]], fixture_compiled["extensionDependencies"]
+    )
 
     try:
         with engine.connect() as connection:
@@ -3878,17 +3887,11 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
             == cast(dict[str, object], expected_package_definition["metadata"])["description"]
         )
         assert row["manifest_source"] == fixture_source
-        assert row["manifest_hash"] == compiled["manifestHash"]
-        assert row["compiled_hash"] == compiled["compiledHash"]
+        assert row["manifest_hash"] == fixture_compiled["manifestHash"]
+        assert row["compiled_hash"] == fixture_compiled["compiledHash"]
         assert row["package_definition"] == expected_package_definition
         assert row["compiled_plan"] == expected_compiled_plan
-        extension_dependencies = cast(list[dict[str, object]], row["extension_dependencies"])
-        assert extension_dependencies
-        assert extension_dependencies[0]["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-        assert "runtime.tool.signaldeck.market_data.quote_lookup" in cast(
-            list[str],
-            extension_dependencies[0]["surfaces"],
-        )
+        assert row["extension_dependencies"] == expected_extension_dependencies
 
         serialized_preset = (
             fixture_source
@@ -3954,7 +3957,6 @@ def test_init_db_seeds_digital_oracle_preset_without_secret_state(database_url: 
     fixture_source = _DIGITAL_ORACLE_FIXTURE_PATH.read_text(encoding="utf-8")
     draft_fixture_source = _DIGITAL_ORACLE_DRAFT_FIXTURE_PATH.read_text(encoding="utf-8")
     preset_sql = _DIGITAL_ORACLE_PRESET_SQL_PATH.read_text(encoding="utf-8")
-    fixture_compiled = compile_workflow_package_manifest(fixture_source)
     assert "finance-owned" not in fixture_source
     assert "finance-owned" not in draft_fixture_source
     assert "INSERT INTO workflow_packages" in preset_sql
@@ -3962,11 +3964,17 @@ def test_init_db_seeds_digital_oracle_preset_without_secret_state(database_url: 
     assert "INSERT INTO model_connections" not in preset_sql
     assert "workflow_package_secret_bindings (" not in preset_sql
     assert "INSERT INTO runs" not in preset_sql
-    expected_package_definition = cast(dict[str, object], fixture_compiled["packageDefinition"])
-    expected_compiled_plan = cast(dict[str, object], fixture_compiled["compiledPlan"])
 
     init_db(database_url)
     engine = create_engine(database_url, future=True)
+    fixture_compiled = _compile_fixture_artifacts(engine, fixture_source)
+    expected_package_definition = cast(
+        dict[str, object], fixture_compiled["packageDefinition"]
+    )
+    expected_compiled_plan = cast(dict[str, object], fixture_compiled["compiledPlan"])
+    expected_extension_dependencies = cast(
+        list[dict[str, object]], fixture_compiled["extensionDependencies"]
+    )
 
     try:
         with engine.connect() as connection:
@@ -4033,8 +4041,8 @@ def test_init_db_seeds_digital_oracle_preset_without_secret_state(database_url: 
         assert row["compiled_hash"] == fixture_compiled["compiledHash"]
         assert row["package_definition"] == expected_package_definition
         assert row["compiled_plan"] == expected_compiled_plan
-        extension_dependencies = cast(list[dict[str, object]], row["extension_dependencies"])
-        assert extension_dependencies == _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES
+        assert row["extension_dependencies"] == expected_extension_dependencies
+        assert expected_extension_dependencies == _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES
 
         serialized_preset = (
             fixture_source
@@ -5505,7 +5513,11 @@ def test_upgrade_legacy_schema_normalizes_run_extension_snapshot_jsonb(
             "enabledAt": "2026-05-16T09:00:00Z",
             "disabledAt": None,
             "disabledReason": None,
-            "surfaces": ["tool.signaldeck.market_data.quote_lookup", 100],
+            "surfaces": [
+                "tool.signaldeck.finance.market_data.quote_lookup",
+                "runtime.tool.signaldeck.finance.market_data.quote_lookup",
+                100,
+            ],
             "fields": ["spec.capabilityProfiles.quote_tools.toolKeys[0]", None],
         },
         {
@@ -5576,7 +5588,10 @@ def test_upgrade_legacy_schema_normalizes_run_extension_snapshot_jsonb(
         assert row["extension_dependencies"] == [
             {
                 "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-                "surfaces": ["tool.signaldeck.market_data.quote_lookup"],
+                "surfaces": [
+                    "tool.signaldeck.finance.market_data.quote_lookup",
+                    "runtime.tool.signaldeck.finance.market_data.quote_lookup",
+                ],
                 "fields": ["spec.capabilityProfiles.quote_tools.toolKeys[0]"],
             },
             {"extensionKey": "custom.extension", "surfaces": [], "fields": []},

@@ -6,7 +6,7 @@
 
 `src/pages/memory/` owns the platform Memory Admin browse/detail routes at `/memory` and `/memory/:memoryId`. The routes are a trusted local operator/admin control plane for canonical workflow memory across packages, backed by admin hooks in `use-memory.ts`, `api/memory.ts`, and `types/memory.ts`.
 
-Memory is platform-core ownership. It is not part of the Finance Workspace extension, and finance report history stays in Reports. Runtime `signaldeck.memory.lookup/write` remains scoped to Workflow Package execution and must not become an unscoped global browser search path.
+Memory is platform-core ownership. It is not part of the Finance Workspace extension, and finance report history stays in Reports. Runtime `signaldeck.core.memory.lookup/write` remains scoped to Workflow Package execution and must not become an unscoped global browser search path.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -37,7 +37,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Selected memory is opened through real links to `/memory/:memoryId`; do not restore inline inspector or `memoryId` query-param selection.
 - The page queries the trusted admin list immediately. Cross-package and mixed-scope rows are intended local operator visibility, not a package-private browser gate.
 - Filters such as package, workflow, agent, run, scope, kind, `visibleToWorkflow`, and query narrow the operator-managed corpus; they do not authorize the corpus.
-- Admin list default all-entry visibility is intentional. Hidden rows stay admin-visible, while only workflow-visible rows that match runtime scope and grant rules can affect future `signaldeck.memory.lookup`.
+- Admin list default all-entry visibility is intentional. Hidden rows stay admin-visible, while only workflow-visible rows that match runtime scope and grant rules can affect future `signaldeck.core.memory.lookup`.
 - Create, revise, workflow visibility, and single-entry delete controls must preserve explicit scope, `visibleToWorkflow`, operator provenance, immutable revision, and append-only history semantics where applicable.
 - Shared namespace declarations and grants are not browser-authored here. Do not accept namespace declarations or grants from route JSON.
 - The list route shows browse/filter results plus create and per-row single-entry delete controls; the detail route shows detail, revisions, events, provenance, revise, workflow visibility, and one-entry delete controls. It must not add bulk deletion, runtime/global delete behavior, browse report history, or promote report history into memory.

@@ -493,7 +493,7 @@ def test_prompt_snippet_and_artifact_are_model_safe_and_report_free() -> None:
 
 def test_core_memory_tool_contract_names_and_get_deferral_are_explicit() -> None:
     assert MEMORY_CORE_RUNTIME_TOOL_KEYS == (
-        "signaldeck.memory.write",
-        "signaldeck.memory.lookup",
+        "signaldeck.core.memory.write",
+        "signaldeck.core.memory.lookup",
     )
     assert MEMORY_DEFERRED_GET_DECISION == "phase-1b"

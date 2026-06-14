@@ -26,7 +26,7 @@ Scheduled Tasks is the package-first automation surface for recurring Workflow P
 
 Rerun and fork are separate run-descendant flows. Rerun edits root launch `parameters` through `/api/runs/{runId}/reruns`. Fork edits one selected agent invocation input through `/api/runs/{runId}/fork-draft?sourceInvocationId=...` and `/api/runs/{runId}/forks`, preserves the source run input, copies upstream context, and resumes from `resumeStepIndex`. Historical step replay data may still appear through historical replay lineage reads, but it is not a live write surface.
 
-Legacy global authoring routes are unsupported. `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*` are removed surfaces, not compatibility aliases. Runtime tool keys and OpenAI function names stay unchanged.
+Legacy global authoring routes are unsupported. `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*` are removed surfaces, not compatibility aliases. Runtime tool keys use canonical owner-qualified names, and OpenAI function names are mechanical forms derived from those canonical keys.
 
 ## Prerequisites
 

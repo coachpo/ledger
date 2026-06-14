@@ -354,7 +354,7 @@ class PackageExecutionPlanBuilder:
                 key=str(raw_profile.get("key")),
                 name=str(raw_profile.get("name") or raw_profile.get("key")),
                 description=str(raw_profile.get("description") or ""),
-                tool_keys=tuple(str(key) for key in raw_profile.get("toolKeys") or []),
+                tool_keys=tuple(sorted(str(key) for key in raw_profile.get("toolKeys") or [])),
             )
             for raw_profile in self._iter_section("capabilityProfiles")
         }

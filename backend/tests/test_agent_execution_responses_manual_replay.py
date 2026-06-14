@@ -85,8 +85,8 @@ def _build_runtime_tool_registry(recorder: _DispatchRecorder) -> RuntimeToolRegi
     return RuntimeToolRegistry(
         [
             _build_spec(
-                key="signaldeck.market_data.quote_lookup",
-                function_name="signaldeck_market_data_quote_lookup",
+                key="signaldeck.finance.market_data.quote_lookup",
+                function_name="signaldeck_finance_market_data_quote_lookup",
                 parameters_schema={
                     "type": "object",
                     "properties": {
@@ -98,8 +98,8 @@ def _build_runtime_tool_registry(recorder: _DispatchRecorder) -> RuntimeToolRegi
                 sort_order=1,
             ),
             _build_spec(
-                key="signaldeck.market_data.history_lookup",
-                function_name="signaldeck_market_data_history_lookup",
+                key="signaldeck.finance.market_data.history_lookup",
+                function_name="signaldeck_finance_market_data_history_lookup",
                 parameters_schema={
                     "type": "object",
                     "properties": {
@@ -130,7 +130,7 @@ class _ManualReplayClient:
                     {"type": "reasoning", "id": "rs_1", "summary": [], "status": "completed"},
                     {
                         "type": "function_call",
-                        "name": "signaldeck_market_data_quote_lookup",
+                        "name": "signaldeck_finance_market_data_quote_lookup",
                         "arguments": json.dumps({"symbols": ["AAPL"]}),
                         "call_id": "call_quote",
                     },
@@ -161,7 +161,7 @@ class _ManualReplayClient:
             assert kwargs["input"] == [
                 {
                     "type": "function_call",
-                    "name": "signaldeck_market_data_quote_lookup",
+                    "name": "signaldeck_finance_market_data_quote_lookup",
                     "arguments": json.dumps({"symbols": ["AAPL"]}),
                     "call_id": "call_quote",
                 },
@@ -171,7 +171,7 @@ class _ManualReplayClient:
                     "output": json.dumps(
                         {
                             "arguments": {"symbols": ["AAPL"]},
-                            "tool": "signaldeck_market_data_quote_lookup",
+                            "tool": "signaldeck_finance_market_data_quote_lookup",
                         },
                         ensure_ascii=False,
                         sort_keys=True,
@@ -183,7 +183,7 @@ class _ManualReplayClient:
                 "output": [
                     {
                         "type": "function_call",
-                        "name": "signaldeck_market_data_history_lookup",
+                        "name": "signaldeck_finance_market_data_history_lookup",
                         "arguments": json.dumps(
                             {"symbols": ["AAPL"], "range": "1mo", "pointLimit": 5}
                         ),
@@ -197,7 +197,7 @@ class _ManualReplayClient:
             assert kwargs["input"] == [
                 {
                     "type": "function_call",
-                    "name": "signaldeck_market_data_history_lookup",
+                    "name": "signaldeck_finance_market_data_history_lookup",
                     "arguments": json.dumps({"symbols": ["AAPL"], "range": "1mo", "pointLimit": 5}),
                     "call_id": "call_history",
                 },
@@ -211,7 +211,7 @@ class _ManualReplayClient:
                                 "range": "1mo",
                                 "symbols": ["AAPL"],
                             },
-                            "tool": "signaldeck_market_data_history_lookup",
+                            "tool": "signaldeck_finance_market_data_history_lookup",
                         },
                         ensure_ascii=False,
                         sort_keys=True,
@@ -246,7 +246,7 @@ class _ContinuationProviderRetryClient:
                 "output": [
                     {
                         "type": "function_call",
-                        "name": "signaldeck_market_data_quote_lookup",
+                        "name": "signaldeck_finance_market_data_quote_lookup",
                         "arguments": json.dumps({"symbols": ["AAPL"]}),
                         "call_id": "call_quote",
                     }
@@ -264,7 +264,7 @@ class _ContinuationProviderRetryClient:
                     "output": json.dumps(
                         {
                             "arguments": {"symbols": ["AAPL"]},
-                            "tool": "signaldeck_market_data_quote_lookup",
+                            "tool": "signaldeck_finance_market_data_quote_lookup",
                         },
                         ensure_ascii=False,
                         sort_keys=True,
@@ -313,13 +313,13 @@ def test_invoke_responses_agent_replays_manual_context_after_call_id_failure(
         text_format=service._build_responses_text_format(_SummaryOutput),
         available_tools=tool_registry.get_openai_tools(
             {
-                "signaldeck.market_data.quote_lookup",
-                "signaldeck.market_data.history_lookup",
+                "signaldeck.finance.market_data.quote_lookup",
+                "signaldeck.finance.market_data.history_lookup",
             }
         ),
         granted_tool_keys={
-            "signaldeck.market_data.quote_lookup",
-            "signaldeck.market_data.history_lookup",
+            "signaldeck.finance.market_data.quote_lookup",
+            "signaldeck.finance.market_data.history_lookup",
         },
         runtime_tool_registry=tool_registry,
         runtime_tool_context=RuntimeToolContext(
@@ -333,8 +333,8 @@ def test_invoke_responses_agent_replays_manual_context_after_call_id_failure(
 
     assert result.output == {"summary": "manual replay ok"}
     assert [call["name"] for call in recorder.dispatch_calls] == [
-        "signaldeck_market_data_quote_lookup",
-        "signaldeck_market_data_history_lookup",
+        "signaldeck_finance_market_data_quote_lookup",
+        "signaldeck_finance_market_data_history_lookup",
     ]
     assert len(client.create_calls) == 4
     assert client.create_calls[1]["previous_response_id"] == "resp_initial"
@@ -384,8 +384,8 @@ def test_invoke_responses_agent_provider_retry_keeps_completed_tool_dispatch_sin
         instructions="Return only valid JSON.",
         response_input="Need tool usage first.",
         text_format=service._build_responses_text_format(_SummaryOutput),
-        available_tools=tool_registry.get_openai_tools({"signaldeck.market_data.quote_lookup"}),
-        granted_tool_keys={"signaldeck.market_data.quote_lookup"},
+        available_tools=tool_registry.get_openai_tools({"signaldeck.finance.market_data.quote_lookup"}),
+        granted_tool_keys={"signaldeck.finance.market_data.quote_lookup"},
         runtime_tool_registry=tool_registry,
         runtime_tool_context=RuntimeToolContext(
             session_factory=session_factory,
@@ -398,7 +398,7 @@ def test_invoke_responses_agent_provider_retry_keeps_completed_tool_dispatch_sin
 
     assert result.output == {"summary": "provider retry ok"}
     assert [call["name"] for call in recorder.dispatch_calls] == [
-        "signaldeck_market_data_quote_lookup"
+        "signaldeck_finance_market_data_quote_lookup"
     ]
     assert len(client.create_calls) == 3
     assert client.create_calls[1]["previous_response_id"] == "resp_initial"

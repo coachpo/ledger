@@ -38,8 +38,8 @@ MEMORY_REVISION_WRITE_MODE: Final = "immutable-revision-per-content-change"
 MEMORY_DUPLICATE_REVISION_BEHAVIOR: Final = "reuse-existing-active-revision"
 MEMORY_DEFERRED_GET_DECISION: Final = "phase-1b"
 MEMORY_CORE_RUNTIME_TOOL_KEYS: Final[tuple[str, str]] = (
-    "signaldeck.memory.write",
-    "signaldeck.memory.lookup",
+    "signaldeck.core.memory.write",
+    "signaldeck.core.memory.lookup",
 )
 MEMORY_IDEMPOTENCY_FALLBACK_FIELDS: Final[tuple[str, ...]] = (
     "scope_type",

@@ -7,7 +7,7 @@ _SERVER_DECLARED_MODULE = __name__
 
 DIGITAL_ORACLE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = (
     ServerDeclaredToolSpec(
-        key="signaldeck.prediction_markets.lookup",
+        key="signaldeck.digital_oracle.prediction_markets.lookup",
         display_name="Prediction Markets Lookup",
         description=(
             "Read normalized prediction-market signals from Digital Oracle market "
@@ -17,7 +17,7 @@ DIGITAL_ORACLE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = 
         owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.sec_filings.lookup",
+        key="signaldeck.digital_oracle.sec_filings.lookup",
         display_name="SEC Filings Lookup",
         description=(
             "Read normalized SEC filing signals from Digital Oracle filing lookups "
@@ -27,7 +27,7 @@ DIGITAL_ORACLE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = 
         owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.market_sentiment.lookup",
+        key="signaldeck.digital_oracle.market_sentiment.lookup",
         display_name="Market Sentiment Lookup",
         description=(
             "Read normalized market sentiment signals from Digital Oracle sentiment "

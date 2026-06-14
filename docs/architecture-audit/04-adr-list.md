@@ -81,7 +81,7 @@ Primary evidence:
 | Decision | Memory remains platform-core, explicit-scope, package-contextual, and grant-aware. There is no public global memory CRUD or unscoped search surface. |
 | Rationale | `00-contract-baseline.md:21`, `00-contract-baseline.md:29`, `00-contract-baseline.md:47`, and `02-current-architecture.md:72-74` define scoped memory and reject unscoped memory assumptions. |
 | Consequences | Memory APIs and tools require an access context. Model-visible, API-visible, and UI-visible projections remain separate. Report history remains Finance/report-owned history, not canonical memory storage. |
-| Acceptance checks | `/api/memory` remains access-context POST operations; `signaldeck.memory.write` and `signaldeck.memory.lookup` stay platform-owned; tests cover scoped grants and no unscoped search. |
+| Acceptance checks | `/api/memory` remains access-context POST operations; `signaldeck.core.memory.write` and `signaldeck.core.memory.lookup` stay platform-owned; tests cover scoped grants and no unscoped search. |
 
 ## ADR-008: Legacy Route Removal Policy
 

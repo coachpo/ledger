@@ -26,7 +26,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Coverage | `../../../../tests/test_runtime_tools.py`, `../../../../tests/fixtures/digital_oracle/` | tool keys, disabled-extension behavior, mocked phase-1 runtime dispatch |
 
 ## CONVENTIONS
-- Tool keys and OpenAI function names are fixed: `signaldeck.prediction_markets.lookup` / `signaldeck_prediction_markets_lookup`, `signaldeck.sec_filings.lookup` / `signaldeck_sec_filings_lookup`, and `signaldeck.market_sentiment.lookup` / `signaldeck_market_sentiment_lookup`.
+- Tool keys and OpenAI function names are canonical owner-qualified contracts: `signaldeck.digital_oracle.prediction_markets.lookup` / `signaldeck_digital_oracle_prediction_markets_lookup`, `signaldeck.digital_oracle.sec_filings.lookup` / `signaldeck_digital_oracle_sec_filings_lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup` / `signaldeck_digital_oracle_market_sentiment_lookup`.
 - Provider wrappers may call upstream HTTP APIs, but the extension must keep phase-1 boundaries explicit: do not vendor `digital-oracle` or require `yfinance`.
 - Runtime parsers reject unsupported fields and normalize inputs before service calls; executors return Pydantic `model_dump(mode="json", by_alias=True)` payloads.
 - Structured warnings are part of successful degraded responses. Do not treat missing, stale, malformed, disabled, or partial provider coverage as fatal unless the parser/config contract says so.

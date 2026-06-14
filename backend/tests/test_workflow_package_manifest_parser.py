@@ -32,7 +32,7 @@ spec:
       name: Market Research Tools
       description: Uses server-declared market data tools.
       toolKeys:
-        - signaldeck.market_data.quote_lookup
+        - signaldeck.finance.market_data.quote_lookup
   outputSchemas:
     - key: trading_decision
       name: Trading Decision
@@ -241,7 +241,7 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     removed_budget_field = "budget" + "Usd"
     assert removed_budget_field not in agents[0]
     assert "modelConnectionId" not in agents[0]
-    assert capability_profiles[0]["toolKeys"] == ["signaldeck.market_data.quote_lookup"]
+    assert capability_profiles[0]["toolKeys"] == ["signaldeck.finance.market_data.quote_lookup"]
     assert "tool_keys" not in capability_profiles[0]
     assert mcp_servers[0]["env"] == {"RESEARCH_CONTEXT_TOKEN": "local-token"}
     assert "secretRefs" not in mcp_servers[0]
@@ -273,13 +273,13 @@ def test_parse_digital_oracle_demo_preserves_methodology_tools_graph_and_private
 
     assert profile_tool_keys == {
         "digital_oracle_phase1_tools": [
-            "signaldeck.prediction_markets.lookup",
-            "signaldeck.sec_filings.lookup",
-            "signaldeck.market_sentiment.lookup",
+            "signaldeck.digital_oracle.prediction_markets.lookup",
+            "signaldeck.digital_oracle.sec_filings.lookup",
+            "signaldeck.digital_oracle.market_sentiment.lookup",
         ],
         "finance_price_history_tools": [
-            "signaldeck.market_data.history_lookup",
-            "signaldeck.market_data.ohlcv_lookup",
+            "signaldeck.finance.market_data.history_lookup",
+            "signaldeck.finance.market_data.ohlcv_lookup",
         ],
     }
     assert mcp_servers[0]["key"] == "exa"

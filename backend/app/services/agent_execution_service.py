@@ -261,16 +261,20 @@ class AgentExecutionService:
 
     @staticmethod
     def _runtime_granted_tool_keys(agent: PackageRuntimeAgentSpec) -> set[str]:
-        return {tool_key for profile in agent.capability_profiles for tool_key in profile.tool_keys}
+        return {
+            tool_key
+            for profile in agent.capability_profiles
+            for tool_key in sorted(profile.tool_keys)
+        }
 
     @staticmethod
     def _runtime_capability_references(agent: PackageRuntimeAgentSpec) -> list[dict[str, object]]:
         return [
             {
                 "packageCapabilityKey": profile.key,
-                "toolKeys": list(profile.tool_keys),
+                "toolKeys": sorted(profile.tool_keys),
             }
-            for profile in agent.capability_profiles
+            for profile in sorted(agent.capability_profiles, key=lambda item: item.key)
         ]
 
     @staticmethod

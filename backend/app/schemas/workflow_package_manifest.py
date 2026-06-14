@@ -159,12 +159,12 @@ class WorkflowPackageCapabilityProfile(CamelModel):
     @classmethod
     def validate_tool_keys(cls, value: object) -> list[str]:
         if not isinstance(value, list):
-            raise ValueError("toolKeys must be an array of server-declared global tool keys")
+            raise ValueError("toolKeys must be an array of canonical server-declared tool keys")
         keys: list[str] = []
         for item in cast(list[object], value):
             key = _required_text(item, field_name="Tool key")
             if _TOOL_KEY_RE.fullmatch(key) is None:
-                raise ValueError("Tool keys must use server-declared global tool key syntax")
+                raise ValueError("Tool keys must use canonical server-declared tool key syntax")
             keys.append(key)
         return keys
 
@@ -254,12 +254,12 @@ class WorkflowPackageMcpServer(CamelModel):
         if value is None:
             return []
         if not isinstance(value, list):
-            raise ValueError("toolKeys must be an array of server-declared global tool keys")
+            raise ValueError("toolKeys must be an array of canonical server-declared tool keys")
         keys: list[str] = []
         for item in cast(list[object], value):
             key = _required_text(item, field_name="Tool key")
             if _TOOL_KEY_RE.fullmatch(key) is None:
-                raise ValueError("Tool keys must use server-declared global tool key syntax")
+                raise ValueError("Tool keys must use canonical server-declared tool key syntax")
             keys.append(key)
         return keys
 

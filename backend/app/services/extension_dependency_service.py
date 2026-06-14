@@ -73,7 +73,7 @@ class ExtensionDependencyService:
                     self._record_dependency(
                         dependencies,
                         extension_key=tool_spec.owner_extension_key,
-                        surface=f"tool.{tool_spec.key}",
+                        surface=self._owner_qualified_tool_surface(tool_spec.key),
                         field=field,
                     )
                 runtime_spec = runtime_specs.get(tool_key)
@@ -81,7 +81,9 @@ class ExtensionDependencyService:
                     self._record_dependency(
                         dependencies,
                         extension_key=runtime_spec.owner_extension_key,
-                        surface=f"runtime.tool.{runtime_spec.key}",
+                        surface=self._owner_qualified_runtime_tool_surface(
+                            runtime_spec.key,
+                        ),
                         field=field,
                     )
 
@@ -168,6 +170,14 @@ class ExtensionDependencyService:
         from app.agents.runtime_tools import RUNTIME_TOOL_SPECS
 
         return {spec.key: spec for spec in RUNTIME_TOOL_SPECS}
+
+    @staticmethod
+    def _owner_qualified_tool_surface(tool_key: str) -> str:
+        return f"tool.{tool_key}"
+
+    @staticmethod
+    def _owner_qualified_runtime_tool_surface(tool_key: str) -> str:
+        return f"runtime.tool.{tool_key}"
 
     @staticmethod
     def _record_dependency(

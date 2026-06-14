@@ -95,18 +95,31 @@ from tests.test_workflow_package_manifest_http_node import assert_removed_contra
 RUNTIME_INPUT_PRESET_ENTRY_LIMIT = 20
 
 _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
-    "signaldeck.prediction_markets.lookup",
-    "signaldeck.sec_filings.lookup",
-    "signaldeck.market_sentiment.lookup",
+    "signaldeck.digital_oracle.prediction_markets.lookup",
+    "signaldeck.digital_oracle.sec_filings.lookup",
+    "signaldeck.digital_oracle.market_sentiment.lookup",
 )
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
 _DIGITAL_ORACLE_PRESET_KEY = "digital_oracle_researcher"
+_TRADINGAGENTS_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "workflow_packages"
+    / "tradingagents_advisory_research.yaml"
+)
+_DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
+    Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
+)
 _TRADINGAGENTS_CANONICAL_SCHEDULES = (
     ("TradingAgents Advisory Research · 1h", "advisory_research"),
     ("TradingAgents Market Research · 1h", "market_research"),
     ("TradingAgents News Research · 1h", "news_research"),
     ("TradingAgents Fundamentals Research · 1h", "fundamentals_research"),
 )
+def _canonicalize_live_tool_keys(source: str) -> str:
+    return source
+
+
 _TRADINGAGENTS_CANONICAL_SCHEDULE_INPUT_TEMPLATES: dict[str, dict[str, object]] = {
     "advisory_research": {
         "ticker": "SPY",
@@ -237,7 +250,7 @@ class _RuntimeRecordingChatCompletionsClient:
             tool_name = (
                 tool_name_sequence[call_index - 1]
                 if call_index <= len(tool_name_sequence)
-                else "signaldeck_memory_lookup"
+                else "signaldeck_core_memory_lookup"
             )
             arguments = (
                 tool_argument_sequence[call_index - 1]
@@ -248,7 +261,7 @@ class _RuntimeRecordingChatCompletionsClient:
             )
             call_id = (
                 "call_memory_lookup"
-                if tool_argument_sequence is None and tool_name == "signaldeck_memory_lookup"
+                if tool_argument_sequence is None and tool_name == "signaldeck_core_memory_lookup"
                 else f"call_{call_index}"
             )
             message: dict[str, Any] = {
@@ -293,7 +306,6 @@ class _RuntimeRecordingChatCompletionsClient:
                 "scope": None,
                 "subjectRefs": None,
                 "kind": None,
-                "status": None,
                 "tags": None,
                 "limit": 1,
                 "offset": 0,
@@ -337,7 +349,7 @@ class _RuntimeMalformedResponsesToolClient:
             "output": [
                 {
                     "type": "function_call",
-                    "name": "signaldeck_memory_lookup",
+                    "name": "signaldeck_core_memory_lookup",
                     "call_id": "call_memory_lookup",
                     "arguments": "{",
                 }
@@ -378,7 +390,7 @@ class _RuntimeRetryingResponsesToolClient:
             "output": [
                 {
                     "type": "function_call",
-                    "name": "signaldeck_memory_lookup",
+                    "name": "signaldeck_core_memory_lookup",
                     "call_id": f"call_{call_index}",
                     "arguments": arguments,
                 }
@@ -415,7 +427,7 @@ class _RuntimeProviderRetryingResponsesClient:
                 "output": [
                     {
                         "type": "function_call",
-                        "name": "signaldeck_memory_lookup",
+                        "name": "signaldeck_core_memory_lookup",
                         "call_id": "call_memory_lookup",
                         "arguments": (
                             _RuntimeRecordingChatCompletionsClient._memory_lookup_arguments()
@@ -595,7 +607,7 @@ def _package_source_with_memory_lookup(*, package_key: str) -> str:
     - key: memory_context_tools
       name: Memory Context Tools
       toolKeys:
-        - signaldeck.memory.lookup
+        - signaldeck.core.memory.lookup
   outputSchemas:""",
         1,
     )
@@ -640,9 +652,9 @@ spec:
     - key: digital_oracle_phase1_tools
       name: Digital Oracle Phase 1 Tools
       toolKeys:
-        - signaldeck.prediction_markets.lookup
-        - signaldeck.sec_filings.lookup
-        - signaldeck.market_sentiment.lookup
+        - signaldeck.digital_oracle.prediction_markets.lookup
+        - signaldeck.digital_oracle.sec_filings.lookup
+        - signaldeck.digital_oracle.market_sentiment.lookup
   outputSchemas:
     - key: summary_output
       name: Summary Output
@@ -767,12 +779,46 @@ def _seeded_package(client: TestClient, package_key: str) -> dict[str, Any]:
     raise AssertionError(f"Workflow package preset {package_key!r} was not seeded")
 
 
+def _delete_existing_package(client: TestClient, package_key: str) -> None:
+    packages_response = client.get("/api/workflow-packages")
+    assert packages_response.status_code == 200, packages_response.json()
+    package_items = cast(list[dict[str, object]], packages_response.json()["items"])
+    for package in package_items:
+        if package["key"] != package_key:
+            continue
+        deleted = client.delete(f"/api/workflow-packages/{package['id']}")
+        assert deleted.status_code == 204, deleted.text
+        break
+
+
+def _create_canonical_fixture_package(
+    client: TestClient,
+    *,
+    package_key: str,
+    fixture: Path,
+) -> dict[str, Any]:
+    _delete_existing_package(client, package_key)
+    body = _create_package_from_source(
+        client,
+        manifest_source=_canonicalize_live_tool_keys(fixture.read_text()),
+    )
+    return cast(dict[str, Any], body)
+
+
 def _seeded_tradingagents_package(client: TestClient) -> dict[str, Any]:
-    return _seeded_package(client, _TRADINGAGENTS_PRESET_KEY)
+    return _create_canonical_fixture_package(
+        client,
+        package_key=_TRADINGAGENTS_PRESET_KEY,
+        fixture=_TRADINGAGENTS_FIXTURE,
+    )
 
 
 def _seeded_digital_oracle_package(client: TestClient) -> dict[str, Any]:
-    return _seeded_package(client, _DIGITAL_ORACLE_PRESET_KEY)
+    return _create_canonical_fixture_package(
+        client,
+        package_key=_DIGITAL_ORACLE_PRESET_KEY,
+        fixture=_DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE,
+    )
 
 
 def _create_tradingagents_canonical_schedules(
@@ -2826,18 +2872,27 @@ def test_workflow_package_runtime_chat_completions_adapter_executes_tool_calls_a
     assert first_call["response_format"]["type"] == "json_schema"
     assert first_call["parallel_tool_calls"] is False
     tool_names = [tool["function"]["name"] for tool in first_call["tools"]]
-    assert "signaldeck_memory_lookup" in tool_names
+    assert "signaldeck_core_memory_lookup" in tool_names
 
     second_call = _RuntimeRecordingChatCompletionsClient.create_calls[1]
     assistant_message = second_call["messages"][-2]
     tool_message = second_call["messages"][-1]
     assert assistant_message["role"] == "assistant"
     assert assistant_message["reasoning_content"] == "preserved thinking trace"
-    assert assistant_message["tool_calls"][0]["id"] == "call_memory_lookup"
+    assert assistant_message["tool_calls"] == [
+        {
+            "id": "call_memory_lookup",
+            "type": "function",
+            "function": {
+                "name": "signaldeck_core_memory_lookup",
+                "arguments": _RuntimeRecordingChatCompletionsClient._memory_lookup_arguments(),
+            },
+        }
+    ]
     assert tool_message["role"] == "tool"
     assert tool_message["tool_call_id"] == "call_memory_lookup"
     tool_payload = json.loads(tool_message["content"])
-    assert tool_payload["toolKey"] == "signaldeck.memory.lookup"
+    assert tool_payload["toolKey"] == "signaldeck.core.memory.lookup"
     assert tool_payload["scopeMode"] == "current-context-fallback"
     assert tool_payload["count"] == 0
 
@@ -3554,7 +3609,7 @@ def test_workflow_package_runtime_native_parser_retry_success_records_accounting
     gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
     retry_failure = gateway_metadata["toolCallRetries"]["failures"][0]
     assert retry_failure["failureTaxonomy"]["failureClass"] == ("native_tool_argument_validation")
-    assert retry_failure["toolName"] == "signaldeck_memory_lookup"
+    assert retry_failure["toolName"] == "signaldeck_core_memory_lookup"
     assert "limit" in retry_failure["details"][0]["field"]
 
 

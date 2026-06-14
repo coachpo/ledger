@@ -42,18 +42,18 @@ EXPECTED_OUTPUT_SCHEMA_KEYS = {
     "portfolio_decision",
 }
 EXPECTED_TOOL_KEYS = {
-    "signaldeck.market_data.quote_lookup",
-    "signaldeck.market_data.history_lookup",
-    "signaldeck.market_data.ohlcv_lookup",
-    "signaldeck.indicators.lookup",
-    "signaldeck.fundamentals.lookup",
-    "signaldeck.news.lookup",
-    "signaldeck.social_sentiment.lookup",
-    "signaldeck.insider_data.lookup",
-    "signaldeck.positions.lookup",
-    "signaldeck.reports.lookup",
-    "signaldeck.memory.lookup",
-    "signaldeck.memory.write",
+    "signaldeck.finance.market_data.quote_lookup",
+    "signaldeck.finance.market_data.history_lookup",
+    "signaldeck.finance.market_data.ohlcv_lookup",
+    "signaldeck.finance.indicators.lookup",
+    "signaldeck.finance.fundamentals.lookup",
+    "signaldeck.finance.news.lookup",
+    "signaldeck.finance.social_sentiment.lookup",
+    "signaldeck.finance.insider_data.lookup",
+    "signaldeck.finance.positions.lookup",
+    "signaldeck.finance.reports.lookup",
+    "signaldeck.core.memory.lookup",
+    "signaldeck.core.memory.write",
 }
 FORBIDDEN_EXPORT_FIELDS = {
     "secretPayload",
@@ -162,11 +162,11 @@ def test_tradingagents_fixture_keeps_report_lookup_and_core_memory_profile() -> 
     profiles_by_key = {str(profile["key"]): profile for profile in profiles}
 
     assert cast(list[str], profiles_by_key["report_context_tools"]["toolKeys"]) == [
-        "signaldeck.reports.lookup"
+        "signaldeck.finance.reports.lookup"
     ]
     assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
-        "signaldeck.memory.lookup",
-        "signaldeck.memory.write",
+        "signaldeck.core.memory.lookup",
+        "signaldeck.core.memory.write",
     ]
 
 

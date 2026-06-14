@@ -93,7 +93,7 @@ Runtime tool dispatch remains separate from catalog metadata. Dispatch checks en
 
 Memory remains platform core and explicit-scope only. API and runtime callers must provide or derive a package-contextual access context before reads or writes. The browser keeps a single `/memory` route with no child detail routes. Public global memory CRUD, unscoped search, namespace-grant authoring, report-backed memory storage, vector search, embeddings, and chunk-table requirements remain out of scope.
 
-The target keeps `signaldeck.memory.write` and `signaldeck.memory.lookup` as platform-owned runtime tools. Model-visible, API-visible, and UI-visible projections stay separate so runtime grants do not accidentally become public browse access. Historical agent reports and `signaldeck.reports.lookup` stay Finance/report history, not canonical memory storage.
+The target keeps `signaldeck.core.memory.write` and `signaldeck.core.memory.lookup` as platform-owned runtime tools. Model-visible, API-visible, and UI-visible projections stay separate so runtime grants do not accidentally become public browse access. Historical agent reports and `signaldeck.finance.reports.lookup` stay Finance/report history, not canonical memory storage.
 
 ## Extension Model
 

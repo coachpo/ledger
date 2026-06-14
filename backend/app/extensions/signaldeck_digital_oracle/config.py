@@ -24,7 +24,7 @@ EDGAR_CONTACT_EMAIL_MISSING_CODE = "digital_oracle_edgar_contact_email_missing"
 EDGAR_CONTACT_EMAIL_MISSING_MESSAGE = (
     "SEC EDGAR provider is not configured. Set "
     f"{EDGAR_CONTACT_EMAIL_SETTING} in backend configuration before using "
-    "signaldeck.sec_filings.lookup."
+    "signaldeck.digital_oracle.sec_filings.lookup."
 )
 
 

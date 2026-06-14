@@ -7,35 +7,35 @@ _SERVER_DECLARED_MODULE = __name__
 
 FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = (
     ServerDeclaredToolSpec(
-        key="signaldeck.market_data.quote_lookup",
+        key="signaldeck.finance.market_data.quote_lookup",
         display_name="Market Data Quote Lookup",
         description="Read trusted market quote snapshots from server-owned integrations.",
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.market_data.history_lookup",
+        key="signaldeck.finance.market_data.history_lookup",
         display_name="Market Data History Lookup",
         description="Read trusted historical market series from server-owned integrations.",
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.market_data.ohlcv_lookup",
+        key="signaldeck.finance.market_data.ohlcv_lookup",
         display_name="OHLCV Lookup",
         description="Read server-owned OHLCV market data for supported symbols and ranges.",
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.indicators.lookup",
+        key="signaldeck.finance.indicators.lookup",
         display_name="Indicators Lookup",
         description="Read server-owned market indicators for supported symbols and ranges.",
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.fundamentals.lookup",
+        key="signaldeck.finance.fundamentals.lookup",
         display_name="Fundamentals Lookup",
         description=(
             "Read server-owned fundamentals data when provider support is "
@@ -45,7 +45,7 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.news.lookup",
+        key="signaldeck.finance.news.lookup",
         display_name="News Lookup",
         description=(
             "Read server-owned news data when provider support is "
@@ -55,7 +55,7 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.social_sentiment.lookup",
+        key="signaldeck.finance.social_sentiment.lookup",
         display_name="Social Sentiment Lookup",
         description=(
             "Read server-owned social sentiment data when provider support is "
@@ -65,7 +65,7 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.insider_data.lookup",
+        key="signaldeck.finance.insider_data.lookup",
         display_name="Insider Data Lookup",
         description=(
             "Read server-owned insider data when provider support is "
@@ -75,14 +75,14 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.positions.lookup",
+        key="signaldeck.finance.positions.lookup",
         display_name="Position Lookup",
         description="Read persisted SignalDeck positions through server-owned position lookups.",
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.reports.lookup",
+        key="signaldeck.finance.reports.lookup",
         display_name="Report Lookup",
         description="Read persisted SignalDeck reports through server-owned report lookups.",
         module=_SERVER_DECLARED_MODULE,

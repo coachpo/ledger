@@ -23,7 +23,7 @@ from tests.test_workflow_package_manifest_parser import _valid_package_manifest_
 
 def test_unknown_tool_key_is_package_diagnostic() -> None:
     source = _valid_package_manifest_source().replace(
-        "signaldeck.market_data.quote_lookup",
+        "signaldeck.finance.market_data.quote_lookup",
         "signaldeck.stock_analysis.report_lookup",
         1,
     )

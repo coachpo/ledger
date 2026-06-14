@@ -37,7 +37,7 @@ from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleSecFilingsQuery,
 )
 
-SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_sec_filings_lookup"
+SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_digital_oracle_sec_filings_lookup"
 SEC_FILINGS_LOOKUP_ACCESS_DENIED_CODE = DIGITAL_ORACLE_DENIED_CODE
 SEC_FILINGS_LOOKUP_ACCESS_DENIED_MESSAGE = DIGITAL_ORACLE_DENIED_MESSAGES[
     SEC_FILINGS_LOOKUP_TOOL_KEY
@@ -51,8 +51,9 @@ _SEC_FILINGS_LOOKUP_DESCRIPTION = (
     "Read normalized SEC EDGAR filing summaries for one ticker with optional filters."
 )
 _SEC_FILINGS_LOOKUP_GUIDANCE = (
-    "When you need SEC filing facts, call signaldeck_sec_filings_lookup with a ticker "
-    "and optional form/date filters. Use only returned filing summaries, disclose warnings "
+    "When you need SEC filing facts, call signaldeck_digital_oracle_sec_filings_lookup "
+    "with a ticker and optional form/date filters. Use only returned filing summaries, "
+    "disclose warnings "
     "for empty, stale, or config-blocked EDGAR coverage, and never invent filing facts "
     "or ask the model/user for the configured EDGAR contact email."
 )

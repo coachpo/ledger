@@ -9,13 +9,13 @@ from app.extensions.registry import get_bundled_extension_registry
 _CORE_SERVER_DECLARED_MODULE = __name__
 CORE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = (
     ServerDeclaredToolSpec(
-        key="signaldeck.memory.write",
+        key="signaldeck.core.memory.write",
         display_name="Memory Write",
         description="Write platform-core memory entries through server-owned memory storage.",
         module=_CORE_SERVER_DECLARED_MODULE,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.memory.lookup",
+        key="signaldeck.core.memory.lookup",
         display_name="Memory Lookup",
         description="Read bounded, scoped platform-core memory snippets.",
         module=_CORE_SERVER_DECLARED_MODULE,

@@ -9,9 +9,9 @@ from pydantic import Field, field_validator
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.schemas.common import CamelModel, ensure_timezone
 
-PREDICTION_MARKETS_LOOKUP_TOOL_KEY = "signaldeck.prediction_markets.lookup"
-SEC_FILINGS_LOOKUP_TOOL_KEY = "signaldeck.sec_filings.lookup"
-MARKET_SENTIMENT_LOOKUP_TOOL_KEY = "signaldeck.market_sentiment.lookup"
+PREDICTION_MARKETS_LOOKUP_TOOL_KEY = "signaldeck.digital_oracle.prediction_markets.lookup"
+SEC_FILINGS_LOOKUP_TOOL_KEY = "signaldeck.digital_oracle.sec_filings.lookup"
+MARKET_SENTIMENT_LOOKUP_TOOL_KEY = "signaldeck.digital_oracle.market_sentiment.lookup"
 
 NATIVE_RUNTIME_DIGITAL_ORACLE_TOOL_KEYS = (
     PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
@@ -52,8 +52,8 @@ class RuntimePredictionMarketEvent(CamelModel):
 
 
 class RuntimePredictionMarketsLookupResult(CamelModel):
-    tool_key: Literal["signaldeck.prediction_markets.lookup"] = (
-        "signaldeck.prediction_markets.lookup"
+    tool_key: Literal["signaldeck.digital_oracle.prediction_markets.lookup"] = (
+        "signaldeck.digital_oracle.prediction_markets.lookup"
     )
     query: str = Field(min_length=1)
     events: list[RuntimePredictionMarketEvent]
@@ -76,7 +76,9 @@ class RuntimeSecFiling(CamelModel):
 
 
 class RuntimeSecFilingsLookupResult(CamelModel):
-    tool_key: Literal["signaldeck.sec_filings.lookup"] = "signaldeck.sec_filings.lookup"
+    tool_key: Literal["signaldeck.digital_oracle.sec_filings.lookup"] = (
+        "signaldeck.digital_oracle.sec_filings.lookup"
+    )
     ticker: str = Field(min_length=1)
     cik: str | None = None
     entity_name: str | None = None
@@ -85,7 +87,9 @@ class RuntimeSecFilingsLookupResult(CamelModel):
 
 
 class RuntimeMarketSentimentLookupResult(CamelModel):
-    tool_key: Literal["signaldeck.market_sentiment.lookup"] = "signaldeck.market_sentiment.lookup"
+    tool_key: Literal["signaldeck.digital_oracle.market_sentiment.lookup"] = (
+        "signaldeck.digital_oracle.market_sentiment.lookup"
+    )
     indicator: Literal["fear_greed"]
     as_of_date: date | None = None
     provider: str = Field(min_length=1)

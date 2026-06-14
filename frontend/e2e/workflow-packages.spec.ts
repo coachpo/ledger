@@ -32,7 +32,7 @@ function packageManifest(
     "    - key: quote_tools",
     "      name: Quote Tools",
     "      toolKeys:",
-    "        - signaldeck.market_data.quote_lookup",
+    "        - signaldeck.finance.market_data.quote_lookup",
     "  outputSchemas:",
     "    - key: advisory_output",
     "      name: Advisory Output",
@@ -80,7 +80,7 @@ function packageManifest(
 function compatibilityPackageManifest(packageKey: string, modelKey: string) {
   return packageManifest(packageKey, modelKey)
     .replace(
-      "  capabilityProfiles:\n    - key: quote_tools\n      name: Quote Tools\n      toolKeys:\n        - signaldeck.market_data.quote_lookup\n",
+      "  capabilityProfiles:\n    - key: quote_tools\n      name: Quote Tools\n      toolKeys:\n        - signaldeck.finance.market_data.quote_lookup\n",
       "  capabilityProfiles: []\n",
     )
     .replace(

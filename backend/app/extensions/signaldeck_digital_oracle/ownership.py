@@ -9,26 +9,26 @@ DIGITAL_ORACLE_DEFAULT_ENABLED = True
 DIGITAL_ORACLE_DENIED_CODE = "agent_execution_access_denied"
 
 DIGITAL_ORACLE_DENIED_MESSAGES = {
-    "signaldeck.prediction_markets.lookup": (
-        "Agent is not authorized to use signaldeck.prediction_markets.lookup."
+    "signaldeck.digital_oracle.prediction_markets.lookup": (
+        "Agent is not authorized to use signaldeck.digital_oracle.prediction_markets.lookup."
     ),
-    "signaldeck.sec_filings.lookup": (
-        "Agent is not authorized to use signaldeck.sec_filings.lookup."
+    "signaldeck.digital_oracle.sec_filings.lookup": (
+        "Agent is not authorized to use signaldeck.digital_oracle.sec_filings.lookup."
     ),
-    "signaldeck.market_sentiment.lookup": (
-        "Agent is not authorized to use signaldeck.market_sentiment.lookup."
+    "signaldeck.digital_oracle.market_sentiment.lookup": (
+        "Agent is not authorized to use signaldeck.digital_oracle.market_sentiment.lookup."
     ),
 }
 
 DIGITAL_ORACLE_RUNTIME_TOOL_KEYS = (
-    "signaldeck.prediction_markets.lookup",
-    "signaldeck.sec_filings.lookup",
-    "signaldeck.market_sentiment.lookup",
+    "signaldeck.digital_oracle.prediction_markets.lookup",
+    "signaldeck.digital_oracle.sec_filings.lookup",
+    "signaldeck.digital_oracle.market_sentiment.lookup",
 )
 DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES = (
-    "signaldeck_prediction_markets_lookup",
-    "signaldeck_sec_filings_lookup",
-    "signaldeck_market_sentiment_lookup",
+    "signaldeck_digital_oracle_prediction_markets_lookup",
+    "signaldeck_digital_oracle_sec_filings_lookup",
+    "signaldeck_digital_oracle_market_sentiment_lookup",
 )
 
 __all__ = [

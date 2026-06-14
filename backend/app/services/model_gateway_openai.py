@@ -87,16 +87,16 @@ _CAPABILITY_PROBE_TOOL_SCHEMA = {
 }
 _CAPABILITY_PROBE_TOOL = SignalDeckToolDeclaration(
     kind="native_runtime",
-    tool_key="signaldeck.capability_probe.echo",
-    model_name="signaldeck_capability_probe_echo",
+    tool_key="signaldeck.core.capability_probe.echo",
+    model_name="signaldeck_core_capability_probe_echo",
     description="Echo a probe value for capability detection.",
     input_schema=_CAPABILITY_PROBE_TOOL_SCHEMA,
     schema_hash="capability-probe-echo/v1",
 )
 _CAPABILITY_PROBE_SECOND_TOOL = SignalDeckToolDeclaration(
     kind="native_runtime",
-    tool_key="signaldeck.capability_probe.second_echo",
-    model_name="signaldeck_capability_probe_second_echo",
+    tool_key="signaldeck.core.capability_probe.second_echo",
+    model_name="signaldeck_core_capability_probe_second_echo",
     description="Echo a second probe value for parallel capability detection.",
     input_schema=_CAPABILITY_PROBE_TOOL_SCHEMA,
     schema_hash="capability-probe-second-echo/v1",

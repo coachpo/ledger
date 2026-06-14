@@ -50,7 +50,7 @@ src/extensions/
 ## CONVENTIONS
 - `runtime.tsx` owns gate components and loading/disabled shells; `runtime-helpers.ts` owns route assembly, nav grouping, and extension-filtered tool helpers.
 - Extension keys must match backend registry keys exactly; the bundled keys are `signaldeck.finance` and `signaldeck.digital_oracle`.
-- Keep route/nav/tool entries declarative in scaffolds and route gates generic in runtime. Digital Oracle stays tool-only here, with unchanged tool keys and OpenAI function names and no route or nav entries.
+- Keep route/nav/tool entries declarative in scaffolds and route gates generic in runtime. Digital Oracle stays tool-only here, with canonical owner-qualified tool keys, mechanical OpenAI function names, and no route or nav entries.
 - Private gate tags such as `requiredExtensionKey` are frontend wiring only. Do not mirror backend registry metadata or expose scaffold details as public state.
 - The `/extensions` route renders only the slim backend contract. Page/layout code must not recreate scaffold or registry logic that belongs here.
 

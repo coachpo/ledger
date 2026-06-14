@@ -17,7 +17,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Package secret bindings for package-local encrypted HTTP operation secrets.
 - Package import/export with no database ids, no run history, no package secret binding rows, and no raw secret values.
 - Model Connection CRUD, encrypted stored secrets, OpenAI-family `protocolProfile` selection, backend-owned compatibility evidence, reachability tests, capability probes, and secret-safe read payloads.
-- Global read-only Tools metadata from the server-declared catalog, filtered by extension state where tools are extension-owned, including Digital Oracle-owned `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`.
+- Global read-only Tools metadata from the server-declared catalog, filtered by extension state where tools are extension-owned, including Digital Oracle-owned `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup`.
 - Dedicated Workflow Package launch console at `/workflow-packages/:packageId/run`, with preflight gating and run creation outside the editor.
 - Scheduled Tasks for recurring Workflow Package runs, including structured recurrence, scheduled input previews, run-now, fire history while the schedule exists, and deletion that preserves existing run history while stopping future automation.
 - Run list/detail, backend-owned progress/queue read models, package provenance, rerun drafts, reruns, fork drafts, invocation-input forks, operation invocation evidence, memory evidence, typed failure taxonomy, and bounded retry evidence.
@@ -28,7 +28,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Public multi-user auth, live broker execution, realtime market streaming, tax-lot accounting, and user-facing autonomous scheduling.
 - Removed `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, global Digital Oracle skill surfaces, and standalone global authoring routes.
 - TradingAgents-specific platform behavior, exact LangGraph graph parity, checkpoint/runtime semantics, or agent-initiated trading execution.
-- Unscoped runtime memory search, public memory CRUD, exact-id `signaldeck.memory.get`, vector activation/search, embeddings, chunk tables, runtime/global/public/bulk memory deletion, and report-history promotion in phase 1. Trusted admin single-entry hard delete is part of the shipped Memory Admin management surface.
+- Unscoped runtime memory search, public memory CRUD, exact-id `signaldeck.core.memory.get`, vector activation/search, embeddings, chunk tables, runtime/global/public/bulk memory deletion, and report-history promotion in phase 1. Trusted admin single-entry hard delete is part of the shipped Memory Admin management surface.
 - Raw HTTP LLM calls in application code when an official provider SDK exists.
 
 ## Functional Requirements
@@ -70,7 +70,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles.
 - Finance-owned tool entries must be hidden while `signaldeck.finance` is disabled; platform-core memory tools must remain visible.
 - Digital Oracle-owned tool entries must be hidden while `signaldeck.digital_oracle` is disabled; platform-core memory tools must remain visible.
-- The shipped Digital Oracle tools must be limited to `signaldeck.prediction_markets.lookup`, `signaldeck.sec_filings.lookup`, and `signaldeck.market_sentiment.lookup`; their tool keys and OpenAI function names must stay unchanged. Speculative phase-2 tools and raw provider payloads must not be documented or exposed as shipped contracts.
+- The shipped Digital Oracle tools must be limited to `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup`; their tool keys must remain canonical owner-qualified contracts and their OpenAI function names must remain mechanical forms derived from those keys. Speculative phase-2 tools and raw provider payloads must not be documented or exposed as shipped contracts.
 - Retired report-write tool names, including `signaldeck_reports_write`, must fail closed at native dispatch and must not reappear through live tool discovery or MCP fallback.
 - `/api/extensions` must expose only `key`, `label`, and `enabled`; toggle requests must accept only `enabled`.
 - `signaldeck.finance` is a statically resident, default-enabled bundled extension.
@@ -90,7 +90,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Live Workflow Package execution may record `graphMetadata.modelGateway.providerRetries` for transient provider create-call retries only. The contract must use `policy="transientProviderRetry/v1"`, `maxAttempts=3`, failed-attempt-only `attempts[]`, and `terminalOutcome` only for `succeededAfterRetry` or `exhausted`. First-attempt success and first non-retryable failure must omit `providerRetries` entirely. Connection tests, capability probes, and Responses manual replay must stay outside provider retry metadata.
 - Rerun must be the root-parameter descendant flow.
 - Fork must be the invocation-input descendant flow, keyed by `sourceInvocationId`, persisted through `run_forks`, with `resumeStepIndex` used only as the execution boundary.
-- Runtime memory writes must use `signaldeck.memory.write`; runtime memory lookup must use `signaldeck.memory.lookup`; exact-id `signaldeck.memory.get` remains out of scope.
+- Runtime memory writes must use `signaldeck.core.memory.write`; runtime memory lookup must use `signaldeck.core.memory.lookup`; exact-id `signaldeck.core.memory.get` remains out of scope.
 - Runtime memory lookup must never be unscoped global search; omitted runtime-tool selectors must fall back to the current run/package/agent context and runtime matching rules.
 - Runtime memory writes must create immutable revisions, reuse exact duplicate active revisions, and return retryable `memory_revision_conflict` for competing shared-scope mutations.
 - Shared memory namespaces must be package-owned as `{ownerPackageKey}/{namespaceKey}` and require explicit read/write grants for non-owner access. Wildcards, ownerless namespaces, global search, and cross-package private writes must fail closed.
@@ -121,5 +121,5 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - The Digital Oracle researcher demo path is `demo/digital_oracle_researcher.yaml`; it must grant the three phase-1 `signaldeck.digital_oracle` tools through package-local capability profiles and keep methodology in `systemPrompt`, not a global skill.
 - Package HTTP operations can be authored, bound to package-local secrets, launched, and inspected without exposing raw secret values.
 - Run detail exposes backend-owned progress, queue state, agent invocations, operation invocations, package provenance, extension dependencies, memory artifacts, memory events, typed failure taxonomy, and bounded retry evidence.
-- Runtime `/api/memory` and `signaldeck.memory.lookup/write` stay scoped and do not act as global memory search; `/memory` uses trusted operator admin visibility over canonical memory and does not surface finance report history as platform memory.
+- Runtime `/api/memory` and `signaldeck.core.memory.lookup/write` stay scoped and do not act as global memory search; `/memory` uses trusted operator admin visibility over canonical memory and does not surface finance report history as platform memory.
 - Removed Studio, Tryout, orchestration, runtime-v2, simulation, backtest, `/api/skills`, `/skills*`, global Digital Oracle skill surfaces, and standalone global authoring routes are not presented as current product surfaces.

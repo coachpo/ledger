@@ -100,7 +100,7 @@ def test_package_execution_plan_builds_from_local_compiled_plan_without_global_r
         "market_research_tools"
     ]
     assert [profile.tool_keys for profile in runtime_agent.capability_profiles] == [
-        ("signaldeck.market_data.quote_lookup",)
+        ("signaldeck.finance.market_data.quote_lookup",)
     ]
     assert [server.key for server in runtime_agent.mcp_servers] == ["research_context"]
     server = runtime_agent.mcp_servers[0]
@@ -186,7 +186,7 @@ spec:
     - key: graph_tools
       name: Graph Tools
       toolKeys:
-        - signaldeck.market_data.quote_lookup
+        - signaldeck.finance.market_data.quote_lookup
   outputSchemas:
     - key: graph_note
       name: Graph Note
@@ -314,7 +314,7 @@ spec:
     - key: graph_tools
       name: Graph Tools
       toolKeys:
-        - signaldeck.market_data.quote_lookup
+        - signaldeck.finance.market_data.quote_lookup
   outputSchemas:
     - key: graph_note
       name: Graph Note
@@ -511,16 +511,16 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis_with_priv
         (
             "digital_oracle_phase1_tools",
             (
-                "signaldeck.market_sentiment.lookup",
-                "signaldeck.prediction_markets.lookup",
-                "signaldeck.sec_filings.lookup",
+                "signaldeck.digital_oracle.market_sentiment.lookup",
+                "signaldeck.digital_oracle.prediction_markets.lookup",
+                "signaldeck.digital_oracle.sec_filings.lookup",
             ),
         ),
         (
             "finance_price_history_tools",
             (
-                "signaldeck.market_data.history_lookup",
-                "signaldeck.market_data.ohlcv_lookup",
+                "signaldeck.finance.market_data.history_lookup",
+                "signaldeck.finance.market_data.ohlcv_lookup",
             ),
         ),
     ]

@@ -43,26 +43,50 @@ from app.schemas.memory import MEMORY_CORE_RUNTIME_TOOL_KEYS
 from app.services.extension_service import ExtensionService
 
 _EXPECTED_DIGITAL_ORACLE_TOOL_KEYS = (
-    "signaldeck.prediction_markets.lookup",
-    "signaldeck.sec_filings.lookup",
-    "signaldeck.market_sentiment.lookup",
+    "signaldeck.digital_oracle.prediction_markets.lookup",
+    "signaldeck.digital_oracle.sec_filings.lookup",
+    "signaldeck.digital_oracle.market_sentiment.lookup",
 )
 _EXPECTED_DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES = (
-    "signaldeck_prediction_markets_lookup",
-    "signaldeck_sec_filings_lookup",
-    "signaldeck_market_sentiment_lookup",
+    "signaldeck_digital_oracle_prediction_markets_lookup",
+    "signaldeck_digital_oracle_sec_filings_lookup",
+    "signaldeck_digital_oracle_market_sentiment_lookup",
 )
-_DIGITAL_ORACLE_TOOL_KEYS = set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS)
+_DIGITAL_ORACLE_TOOL_KEYS = set(_EXPECTED_DIGITAL_ORACLE_TOOL_KEYS)
 _FINANCE_PRICE_HISTORY_TOOL_KEYS = {
-    "signaldeck.market_data.history_lookup",
-    "signaldeck.market_data.ohlcv_lookup",
+    "signaldeck.finance.market_data.history_lookup",
+    "signaldeck.finance.market_data.ohlcv_lookup",
 }
 _REQUIRED_FINANCE_TOOL_KEYS = {
-    "signaldeck.market_data.quote_lookup",
-    "signaldeck.reports.lookup",
+    "signaldeck.finance.market_data.quote_lookup",
+    "signaldeck.finance.reports.lookup",
     *_FINANCE_PRICE_HISTORY_TOOL_KEYS,
 }
-_REQUIRED_CORE_TOOL_KEYS = set(MEMORY_CORE_RUNTIME_TOOL_KEYS)
+_REQUIRED_CORE_TOOL_KEYS = {
+    "signaldeck.core.memory.write",
+    "signaldeck.core.memory.lookup",
+}
+def _legacy_tool_key(suffix: str) -> str:
+    return "signaldeck" + suffix
+
+
+_LEGACY_LIVE_TOOL_KEYS = (
+    _legacy_tool_key(".memory.write"),
+    _legacy_tool_key(".memory.lookup"),
+    _legacy_tool_key(".market_data.quote_lookup"),
+    _legacy_tool_key(".market_data.history_lookup"),
+    _legacy_tool_key(".market_data.ohlcv_lookup"),
+    _legacy_tool_key(".indicators.lookup"),
+    _legacy_tool_key(".fundamentals.lookup"),
+    _legacy_tool_key(".news.lookup"),
+    _legacy_tool_key(".social_sentiment.lookup"),
+    _legacy_tool_key(".insider_data.lookup"),
+    _legacy_tool_key(".positions.lookup"),
+    _legacy_tool_key(".reports.lookup"),
+    _legacy_tool_key(".prediction_markets.lookup"),
+    _legacy_tool_key(".sec_filings.lookup"),
+    _legacy_tool_key(".market_sentiment.lookup"),
+)
 _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS = {
     "signaldeck.rates.lookup",
     "signaldeck.macro.lookup",
@@ -77,7 +101,11 @@ _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS = {
 def _valid_manifest_source() -> str:
     module = import_module("tests.test_workflow_package_manifest_parser")
     source_factory = cast(Callable[[], str], module.__dict__["_valid_package_manifest_source"])
-    return source_factory()
+    return source_factory().replace(
+        "signaldeck.finance.market_data.quote_lookup",
+        "signaldeck.finance.market_data.quote_lookup",
+        1,
+    )
 
 
 def _api_tool_keys(client: TestClient) -> set[str]:
@@ -177,7 +205,7 @@ def test_digital_oracle_runtime_response_aliases_and_warnings_are_stable() -> No
     ).model_dump(mode="json", by_alias=True)
 
     assert set(prediction_markets) == {"toolKey", "query", "events", "warnings"}
-    assert prediction_markets["toolKey"] == "signaldeck.prediction_markets.lookup"
+    assert prediction_markets["toolKey"] == "signaldeck.digital_oracle.prediction_markets.lookup"
     assert set(sec_filings) == {
         "toolKey",
         "ticker",
@@ -186,7 +214,7 @@ def test_digital_oracle_runtime_response_aliases_and_warnings_are_stable() -> No
         "filings",
         "warnings",
     }
-    assert sec_filings["toolKey"] == "signaldeck.sec_filings.lookup"
+    assert sec_filings["toolKey"] == "signaldeck.digital_oracle.sec_filings.lookup"
     assert set(market_sentiment) == {
         "toolKey",
         "indicator",
@@ -201,7 +229,7 @@ def test_digital_oracle_runtime_response_aliases_and_warnings_are_stable() -> No
         "sourceUrl",
         "warnings",
     }
-    assert market_sentiment["toolKey"] == "signaldeck.market_sentiment.lookup"
+    assert market_sentiment["toolKey"] == "signaldeck.digital_oracle.market_sentiment.lookup"
     for payload in (prediction_markets, sec_filings, market_sentiment):
         assert payload["warnings"] == [
             {
@@ -248,16 +276,16 @@ def test_digital_oracle_upstream_provider_inventory_freezes_migration_scope(
         "methodology/package patterns",
     }
     assert in_scope_by_provider["PolymarketProvider"].signaldeck_tool_key == (
-        "signaldeck.prediction_markets.lookup"
+        "signaldeck.digital_oracle.prediction_markets.lookup"
     )
     assert in_scope_by_provider["KalshiProvider"].signaldeck_tool_key == (
-        "signaldeck.prediction_markets.lookup"
+        "signaldeck.digital_oracle.prediction_markets.lookup"
     )
     assert in_scope_by_provider["EdgarProvider"].signaldeck_tool_key == (
-        "signaldeck.sec_filings.lookup"
+        "signaldeck.digital_oracle.sec_filings.lookup"
     )
     assert in_scope_by_provider["FearGreedProvider"].signaldeck_tool_key == (
-        "signaldeck.market_sentiment.lookup"
+        "signaldeck.digital_oracle.market_sentiment.lookup"
     )
     assert in_scope_by_provider["methodology/package patterns"].signaldeck_tool_key is None
     assert in_scope_by_provider["methodology/package patterns"].capability_family == (
@@ -284,8 +312,8 @@ def test_default_tool_catalog_rejects_duplicate_and_unknown_keys() -> None:
     with pytest.raises(ToolCatalogValidationError) as exc_info:
         _ = catalog.resolve_tool_keys(
             [
-                "signaldeck.reports.lookup",
-                "signaldeck.reports.lookup",
+                "signaldeck.finance.reports.lookup",
+                "signaldeck.finance.reports.lookup",
                 "signaldeck.unknown.lookup",
             ]
         )
@@ -293,12 +321,27 @@ def test_default_tool_catalog_rejects_duplicate_and_unknown_keys() -> None:
     assert exc_info.value.details == [
         {
             "field": "toolKeys.1",
-            "issue": "Duplicate tool key 'signaldeck.reports.lookup' is not allowed",
+            "issue": "Duplicate tool key 'signaldeck.finance.reports.lookup' is not allowed",
         },
         {
             "field": "toolKeys.2",
             "issue": "Unknown server-declared tool 'signaldeck.unknown.lookup'",
         },
+    ]
+
+
+@pytest.mark.parametrize("legacy_tool_key", _LEGACY_LIVE_TOOL_KEYS)
+def test_default_tool_catalog_rejects_legacy_live_tool_keys(legacy_tool_key: str) -> None:
+    catalog = get_default_tool_catalog()
+
+    with pytest.raises(ToolCatalogValidationError) as exc_info:
+        _ = catalog.resolve_tool_keys([legacy_tool_key])
+
+    assert exc_info.value.details == [
+        {
+            "field": "toolKeys.0",
+            "issue": f"Unknown server-declared tool {legacy_tool_key!r}",
+        }
     ]
 
 
@@ -315,51 +358,51 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     assert _DIGITAL_ORACLE_TOOL_KEYS <= set(tools_by_key)
     assert _REQUIRED_CORE_TOOL_KEYS <= set(tools_by_key)
     assert MEMORY_CORE_RUNTIME_TOOL_KEYS == (
-        "signaldeck.memory.write",
-        "signaldeck.memory.lookup",
+        "signaldeck.core.memory.write",
+        "signaldeck.core.memory.lookup",
     )
     assert not set(MEMORY_CORE_RUNTIME_TOOL_KEYS) & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
-    memory_write_tool = tools_by_key["signaldeck.memory.write"]
-    memory_lookup_tool = tools_by_key["signaldeck.memory.lookup"]
-    quote_tool = tools_by_key["signaldeck.market_data.quote_lookup"]
-    history_tool = tools_by_key["signaldeck.market_data.history_lookup"]
-    ohlcv_tool = tools_by_key["signaldeck.market_data.ohlcv_lookup"]
-    report_lookup_tool = tools_by_key["signaldeck.reports.lookup"]
-    prediction_markets_tool = tools_by_key["signaldeck.prediction_markets.lookup"]
-    sec_filings_tool = tools_by_key["signaldeck.sec_filings.lookup"]
-    market_sentiment_tool = tools_by_key["signaldeck.market_sentiment.lookup"]
+    memory_write_tool = tools_by_key["signaldeck.core.memory.write"]
+    memory_lookup_tool = tools_by_key["signaldeck.core.memory.lookup"]
+    quote_tool = tools_by_key["signaldeck.finance.market_data.quote_lookup"]
+    history_tool = tools_by_key["signaldeck.finance.market_data.history_lookup"]
+    ohlcv_tool = tools_by_key["signaldeck.finance.market_data.ohlcv_lookup"]
+    report_lookup_tool = tools_by_key["signaldeck.finance.reports.lookup"]
+    prediction_markets_tool = tools_by_key["signaldeck.digital_oracle.prediction_markets.lookup"]
+    sec_filings_tool = tools_by_key["signaldeck.digital_oracle.sec_filings.lookup"]
+    market_sentiment_tool = tools_by_key["signaldeck.digital_oracle.market_sentiment.lookup"]
     assert memory_write_tool == {
-        "key": "signaldeck.memory.write",
+        "key": "signaldeck.core.memory.write",
         "displayName": "Memory Write",
         "description": "Write platform-core memory entries through server-owned memory storage.",
     }
     assert memory_lookup_tool == {
-        "key": "signaldeck.memory.lookup",
+        "key": "signaldeck.core.memory.lookup",
         "displayName": "Memory Lookup",
         "description": "Read bounded, scoped platform-core memory snippets.",
     }
     assert quote_tool == {
-        "key": "signaldeck.market_data.quote_lookup",
+        "key": "signaldeck.finance.market_data.quote_lookup",
         "displayName": "Market Data Quote Lookup",
         "description": "Read trusted market quote snapshots from server-owned integrations.",
     }
     assert history_tool == {
-        "key": "signaldeck.market_data.history_lookup",
+        "key": "signaldeck.finance.market_data.history_lookup",
         "displayName": "Market Data History Lookup",
         "description": "Read trusted historical market series from server-owned integrations.",
     }
     assert ohlcv_tool == {
-        "key": "signaldeck.market_data.ohlcv_lookup",
+        "key": "signaldeck.finance.market_data.ohlcv_lookup",
         "displayName": "OHLCV Lookup",
         "description": "Read server-owned OHLCV market data for supported symbols and ranges.",
     }
     assert report_lookup_tool == {
-        "key": "signaldeck.reports.lookup",
+        "key": "signaldeck.finance.reports.lookup",
         "displayName": "Report Lookup",
         "description": "Read persisted SignalDeck reports through server-owned report lookups.",
     }
     assert prediction_markets_tool == {
-        "key": "signaldeck.prediction_markets.lookup",
+        "key": "signaldeck.digital_oracle.prediction_markets.lookup",
         "displayName": "Prediction Markets Lookup",
         "description": (
             "Read normalized prediction-market signals from Digital Oracle market "
@@ -367,7 +410,7 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         ),
     }
     assert sec_filings_tool == {
-        "key": "signaldeck.sec_filings.lookup",
+        "key": "signaldeck.digital_oracle.sec_filings.lookup",
         "displayName": "SEC Filings Lookup",
         "description": (
             "Read normalized SEC filing signals from Digital Oracle filing lookups "
@@ -375,7 +418,7 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         ),
     }
     assert market_sentiment_tool == {
-        "key": "signaldeck.market_sentiment.lookup",
+        "key": "signaldeck.digital_oracle.market_sentiment.lookup",
         "displayName": "Market Sentiment Lookup",
         "description": (
             "Read normalized market sentiment signals from Digital Oracle sentiment "
