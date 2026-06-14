@@ -9,6 +9,7 @@ import {
 import {
   createAdminMemoryEntry,
   createAdminMemoryRevision,
+  deleteAdminMemoryEntry,
   getAdminMemoryEntry,
   getMemoryDetail,
   listAdminMemoryEntries,
@@ -17,7 +18,7 @@ import {
   listMemory,
   listMemoryEvents,
   listMemoryRevisions,
-  updateAdminMemoryStatus,
+  updateAdminMemoryWorkflowVisibility,
 } from "@/lib/api/memory";
 import type { IdParam } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
@@ -30,7 +31,7 @@ import type {
   MemoryAdminListRead,
   MemoryAdminRevisionCreateRequest,
   MemoryAdminRevisionListRead,
-  MemoryAdminStatusUpdateRequest,
+  MemoryAdminWorkflowVisibilityUpdateRequest,
   MemoryApiAccessRequest,
   MemoryApiEntryRead,
   MemoryApiEventListRead,
@@ -48,9 +49,9 @@ export type ReviseAdminMemoryVariables = {
   payload: MemoryAdminRevisionCreateRequest;
 };
 
-export type UpdateAdminMemoryStatusVariables = {
+export type UpdateAdminMemoryWorkflowVisibilityVariables = {
   memoryId: IdParam;
-  payload: MemoryAdminStatusUpdateRequest;
+  payload: MemoryAdminWorkflowVisibilityUpdateRequest;
 };
 
 function invalidateAdminMemoryEntryScope(
@@ -209,21 +210,32 @@ export function useCreateAdminMemoryRevision() {
   });
 }
 
-export function useUpdateAdminMemoryStatus() {
+export function useUpdateAdminMemoryWorkflowVisibility() {
   const queryClient = useQueryClient();
 
   return useMutation<
     MemoryAdminEntryRead,
     Error,
-    UpdateAdminMemoryStatusVariables
+    UpdateAdminMemoryWorkflowVisibilityVariables
   >({
     mutationFn: ({ memoryId, payload }) =>
-      updateAdminMemoryStatus(memoryId, payload),
+      updateAdminMemoryWorkflowVisibility(memoryId, payload),
     onSuccess: async (entry, variables) => {
       await Promise.all([
         invalidateAdminMemoryEntryScope(queryClient, variables.memoryId),
         invalidateAdminMemoryEntryScope(queryClient, entry.memoryId),
       ]);
+    },
+  });
+}
+
+export function useDeleteAdminMemoryEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, IdParam>({
+    mutationFn: (memoryId) => deleteAdminMemoryEntry(memoryId),
+    onSuccess: async (_result, memoryId) => {
+      await invalidateAdminMemoryEntryScope(queryClient, memoryId);
     },
   });
 }

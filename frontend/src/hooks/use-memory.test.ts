@@ -19,7 +19,7 @@ import type {
   MemoryAdminEntryRead,
   MemoryAdminListRead,
   MemoryAdminRevisionCreateRequest,
-  MemoryAdminStatusUpdateRequest,
+  MemoryAdminWorkflowVisibilityUpdateRequest,
   MemoryApiListRead,
   MemoryApiListRequest,
 } from "@/lib/types/memory";
@@ -30,8 +30,9 @@ import {
   useAdminMemoryRevisions,
   useCreateAdminMemoryEntry,
   useCreateAdminMemoryRevision,
+  useDeleteAdminMemoryEntry,
   useMemoryList,
-  useUpdateAdminMemoryStatus,
+  useUpdateAdminMemoryWorkflowVisibility,
 } from "./use-memory";
 
 type QueryOptions<T> = {
@@ -126,8 +127,8 @@ function adminEntry(
     },
     revisionId: "rev-admin-1",
     scope: { scopeKey: "research_package", scopeType: "package" },
-    status: "approved",
     subjectRefs: [],
+    visibleToWorkflow: true,
     summary: "Admin memory",
     updatedAt: "2026-06-13T12:05:00Z",
     ...overrides,
@@ -192,7 +193,7 @@ describe("admin memory hooks", () => {
       query: " operator note ",
       runId: 41,
       scopeType: "package" as const,
-      status: "archived" as const,
+      visibleToWorkflow: true as const,
       workflowKey: " daily_research ",
     };
     fetchMock.mockResolvedValueOnce(jsonResponse(response));
@@ -223,11 +224,22 @@ describe("admin memory hooks", () => {
       runId: "41",
       scopeType: "package",
       sort: "updatedAtDesc",
-      status: "archived",
+      visibleToWorkflow: "true",
       workflowKey: "daily_research",
     });
     expect(url.searchParams.has("accessContext")).toBe(false);
     expect(url.searchParams.has("visibility")).toBe(false);
+    expect(url.searchParams.has("status")).toBe(false);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(response));
+    useAdminMemoryEntries({ visibleToWorkflow: false }, { enabled: true });
+    await lastQueryOptions<MemoryAdminListRead>().queryFn({
+      signal: new AbortController().signal,
+    });
+    const hiddenCall = getLastFetchCall(fetchMock);
+    expect(hiddenCall.url.pathname).toBe("/api/memory/admin/entries");
+    expect(hiddenCall.url.searchParams.get("visibleToWorkflow")).toBe("false");
+    expect(hiddenCall.url.searchParams.has("status")).toBe(false);
   });
 
   it("reads admin detail, revisions, and events through admin entry routes", async () => {
@@ -311,15 +323,15 @@ describe("admin memory hooks", () => {
     });
   });
 
-  it("revises admin memory and updates admin status through separate mutation endpoints", async () => {
+  it("revises admin memory and updates workflow visibility through separate mutation endpoints", async () => {
     const response = adminEntry({ revisionId: "rev-admin-2" });
     const revisionPayload: MemoryAdminRevisionCreateRequest = {
       content: "Updated admin memory content",
       provenance: response.provenance,
       summary: "Updated admin memory",
     };
-    const statusPayload: MemoryAdminStatusUpdateRequest = {
-      status: "archived",
+    const visibilityPayload: MemoryAdminWorkflowVisibilityUpdateRequest = {
+      visibleToWorkflow: false,
       summary: "No longer current",
     };
     fetchMock.mockResolvedValueOnce(jsonResponse(response, 201));
@@ -354,27 +366,28 @@ describe("admin memory hooks", () => {
     });
 
     reactQueryState.invalidateQueriesMock.mockClear();
-    const archivedResponse = { ...response, status: "archived" as const };
-    fetchMock.mockResolvedValueOnce(jsonResponse(archivedResponse));
-    useUpdateAdminMemoryStatus();
-    const statusOptions = lastMutationOptions<
+    const hiddenResponse = { ...response, visibleToWorkflow: false };
+    fetchMock.mockResolvedValueOnce(jsonResponse(hiddenResponse));
+    useUpdateAdminMemoryWorkflowVisibility();
+    const visibilityOptions = lastMutationOptions<
       MemoryAdminEntryRead,
-      { memoryId: string; payload: MemoryAdminStatusUpdateRequest }
+      { memoryId: string; payload: MemoryAdminWorkflowVisibilityUpdateRequest }
     >();
-    await statusOptions.mutationFn({
+    await visibilityOptions.mutationFn({
       memoryId: "mem-admin-1",
-      payload: statusPayload,
+      payload: visibilityPayload,
     });
     lastCall = getLastFetchCall(fetchMock);
     expect(lastCall.url.pathname).toBe(
-      "/api/memory/admin/entries/mem-admin-1/status",
+      "/api/memory/admin/entries/mem-admin-1/workflow-visibility",
     );
+    expect(lastCall.url.pathname).not.toContain("/status");
     expect(lastCall.init?.method).toBe("PATCH");
-    expect(lastCall.init?.body).toBe(JSON.stringify(statusPayload));
+    expect(lastCall.init?.body).toBe(JSON.stringify(visibilityPayload));
 
-    await statusOptions.onSuccess?.(archivedResponse, {
+    await visibilityOptions.onSuccess?.(hiddenResponse, {
       memoryId: "mem-admin-1",
-      payload: statusPayload,
+      payload: visibilityPayload,
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.memory.admin.lists(),
@@ -383,7 +396,80 @@ describe("admin memory hooks", () => {
       queryKey: queryKeys.platform.memory.admin.detail("mem-admin-1"),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.memory.admin.detail(archivedResponse.memoryId),
+      queryKey: queryKeys.platform.memory.admin.detail(hiddenResponse.memoryId),
     });
+  });
+
+  it("deletes admin memory through DELETE /api/memory/admin/entries/{memoryId} and invalidates the deleted memory scopes", async () => {
+    const { memoryApi, deleteAdminMemoryEntry: deleteAdminMemoryEntryApi } =
+      await import("@/lib/api/memory");
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    expect(memoryApi.admin.delete).toBe(deleteAdminMemoryEntryApi);
+
+    await expect(deleteAdminMemoryEntryApi("mem-admin-1")).resolves.toBeUndefined();
+    let lastCall = getLastFetchCall(fetchMock);
+    expect(lastCall.url.pathname).toBe("/api/memory/admin/entries/mem-admin-1");
+    expect(lastCall.init?.method).toBe("DELETE");
+    expect(lastCall.init?.body).toBeUndefined();
+
+    reactQueryState.invalidateQueriesMock.mockClear();
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    useDeleteAdminMemoryEntry();
+    const deleteOptions = lastMutationOptions<void, string>();
+
+    await expect(deleteOptions.mutationFn("mem-admin-2")).resolves.toBeUndefined();
+    lastCall = getLastFetchCall(fetchMock);
+    expect(lastCall.url.pathname).toBe("/api/memory/admin/entries/mem-admin-2");
+    expect(lastCall.init?.method).toBe("DELETE");
+
+    await deleteOptions.onSuccess?.(undefined, "mem-admin-2");
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.memory.admin.lists(),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.memory.admin.detail("mem-admin-2"),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.memory.admin.revisionsScope("mem-admin-2"),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.memory.admin.eventsScope("mem-admin-2"),
+    });
+  });
+
+  it("normalizes admin memory visibility keys for all, visible, and hidden lists", () => {
+    expect(queryKeys.platform.memory.admin.list()).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "admin",
+      "entries",
+      "list",
+      { limit: 50, offset: 0, sort: "updatedAtDesc" },
+    ]);
+    expect(
+      queryKeys.platform.memory.admin.list({ visibleToWorkflow: true }),
+    ).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "admin",
+      "entries",
+      "list",
+      { limit: 50, offset: 0, sort: "updatedAtDesc", visibleToWorkflow: true },
+    ]);
+    expect(
+      queryKeys.platform.memory.admin.list({ visibleToWorkflow: false }),
+    ).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "admin",
+      "entries",
+      "list",
+      { limit: 50, offset: 0, sort: "updatedAtDesc", visibleToWorkflow: false },
+    ]);
   });
 });
