@@ -283,10 +283,14 @@ describe("MemoryDetailPage", () => {
       screen.getByRole("link", { name: "Back to Memory Admin" }),
     ).toHaveAttribute("href", "/memory");
     expect(screen.getByRole("button", { name: "Revise" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Delete memory" })).toBeVisible();
+    const deleteButton = screen.getByRole("button", { name: "Delete memory" });
+    expect(deleteButton).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "More actions" }),
     ).not.toBeInTheDocument();
+    expect(deleteButton.parentElement).toBe(
+      screen.getByTestId("memory-detail-desktop-actions"),
+    );
 
     expect(detailPanel).toHaveAttribute("data-layout", "admin-card-grid");
     expect(screen.getByTestId("memory-detail-primary-column")).toHaveTextContent(

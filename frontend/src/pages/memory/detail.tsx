@@ -195,7 +195,10 @@ export function MemoryDetailPage() {
       />
     </div>
   ) : (
-    <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+    <div
+      className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end"
+      data-testid="memory-detail-desktop-actions"
+    >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Button asChild size="sm" variant="ghost">
           <Link to="/memory">
@@ -209,13 +212,11 @@ export function MemoryDetailPage() {
           pending={revisionMutation.isPending}
         />
       </div>
-      <div className="rounded-md border border-destructive/20 bg-destructive/5 p-1">
-        <MemoryDeleteDialog
-          disabled={!detail}
-          isPending={deleteMutation.isPending}
-          onDelete={deleteMemory}
-        />
-      </div>
+      <MemoryDeleteDialog
+        disabled={!detail}
+        isPending={deleteMutation.isPending}
+        onDelete={deleteMemory}
+      />
     </div>
   );
 

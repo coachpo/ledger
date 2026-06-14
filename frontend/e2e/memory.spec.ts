@@ -448,7 +448,7 @@ test.describe("memory admin workspace", () => {
     await expect(
       page
         .getByTestId("memory-detail-page")
-        .getByRole("link", { name: "Memory Admin" }),
+        .getByRole("link", { name: "Back to Memory Admin" }),
     ).toHaveAttribute("href", "/memory");
 
     await page.getByRole("button", { name: "Revise" }).click();
@@ -512,7 +512,7 @@ test.describe("memory admin workspace", () => {
 
     await page
       .getByTestId("memory-detail-page")
-      .getByRole("link", { name: "Memory Admin" })
+      .getByRole("link", { name: "Back to Memory Admin" })
       .click();
     await expect(page).toHaveURL(/\/memory$/);
     await expectSingleRouteMain(page, "route-memory-list", "scroll", "wide");
