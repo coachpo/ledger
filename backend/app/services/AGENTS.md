@@ -61,7 +61,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `ExtensionService` is the service-layer authority for enabled extension keys, `/api/extensions` toggles, extension-filtered ToolCatalog/runtime registries, execution provider bundles, and run lifecycle hooks.
 - `RunService` creates optional Logfire spans, stores formatted top-level trace ids and per-invocation span ids, records dependency-only extension requirements, and falls back to trace-free execution when telemetry setup fails.
 - API launch/rerun/fork paths create durable queued rows only; `RunSchedulerWorker` and `RunQueueService` own later claim, lease heartbeat, stale-lease recovery, and claimed execution.
-- Tools are global read-only server-declared metadata; package-local capability profiles store `toolKeys` and validate against the extension-aware `ToolCatalog`.
+- Tools are global read-only server-declared metadata; package-local capability profiles store only canonical `signaldeck.<owner>.<tool_collection>.<tool>` `toolKeys` and validate against the extension-aware `ToolCatalog`.
 - Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from global Model Connections.
 
 ## ANTI-PATTERNS
