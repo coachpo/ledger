@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -35,10 +44,6 @@ class AgentMemoryEntry(IdMixin, Base):
             name="ck_agent_memory_entries_scope_type",
         ),
         CheckConstraint(
-            "status IN ('pending', 'approved', 'archived')",
-            name="ck_agent_memory_entries_status",
-        ),
-        CheckConstraint(
             "content_hash ~ '^[a-f0-9]{64}$'",
             name="ck_agent_memory_entries_content_hash",
         ),
@@ -64,17 +69,17 @@ class AgentMemoryEntry(IdMixin, Base):
         ),
         Index("ix_agent_memory_entries_scope", "scope_type", "scope_key"),
         Index(
-            "ix_agent_memory_entries_scope_status_kind",
+            "ix_agent_memory_entries_scope_visible_kind",
             "scope_type",
             "scope_key",
-            "status",
+            "visible_to_workflow",
             "kind",
         ),
-        Index("ix_agent_memory_entries_status_kind", "status", "kind"),
+        Index("ix_agent_memory_entries_visible_kind", "visible_to_workflow", "kind"),
         Index("ix_agent_memory_entries_updated_at_id", "updated_at", "id"),
         Index(
-            "ix_agent_memory_entries_status_updated_at_id",
-            "status",
+            "ix_agent_memory_entries_visible_updated_at_id",
+            "visible_to_workflow",
             "updated_at",
             "id",
         ),
@@ -117,11 +122,11 @@ class AgentMemoryEntry(IdMixin, Base):
     scope_type: Mapped[str] = mapped_column(String(40), nullable=False)
     scope_key: Mapped[str] = mapped_column(String(160), nullable=False)
     kind: Mapped[str] = mapped_column(String(80), nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(20),
+    visible_to_workflow: Mapped[bool] = mapped_column(
+        Boolean,
         nullable=False,
-        default="pending",
-        server_default="pending",
+        default=False,
+        server_default=sql_text("false"),
     )
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     subject_refs: Mapped[list[dict[str, Any]]] = mapped_column(
@@ -179,10 +184,6 @@ class AgentMemoryRevision(IdMixin, Base):
         ),
         CheckConstraint("version > 0", name="ck_agent_memory_revisions_version_positive"),
         CheckConstraint(
-            "status IN ('pending', 'approved', 'archived')",
-            name="ck_agent_memory_revisions_status",
-        ),
-        CheckConstraint(
             "revision_action IN ('created', 'reused', 'superseded')",
             name="ck_agent_memory_revisions_action",
         ),
@@ -203,6 +204,16 @@ class AgentMemoryRevision(IdMixin, Base):
             name="ck_agent_memory_revisions_source_run_id_positive",
         ),
         Index("ix_agent_memory_revisions_entry", "memory_entry_id"),
+        Index(
+            "ix_agent_memory_revisions_entry_visible",
+            "memory_entry_id",
+            "visible_to_workflow",
+        ),
+        Index(
+            "ix_agent_memory_revisions_visible_created_at",
+            "visible_to_workflow",
+            "created_at",
+        ),
         Index("ix_agent_memory_revisions_content_hash", "content_hash"),
         Index(
             "ix_agent_memory_revisions_search_text",
@@ -219,11 +230,11 @@ class AgentMemoryRevision(IdMixin, Base):
     )
     revision_id: Mapped[str] = mapped_column(String(160), nullable=False)
     version: Mapped[int] = mapped_column(nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(20),
+    visible_to_workflow: Mapped[bool] = mapped_column(
+        Boolean,
         nullable=False,
-        default="pending",
-        server_default="pending",
+        default=False,
+        server_default=sql_text("false"),
     )
     revision_action: Mapped[str] = mapped_column(
         String(20),
@@ -439,7 +450,7 @@ class RunMemoryEvent(IdMixin, Base):
             "event_type IN ("
             "'retrieved', 'injected', 'written', 'reused', "
             "'superseded', 'reviewed', 'failed', "
-            "'operator_created', 'operator_revised', 'operator_status_changed'"
+            "'operator_created', 'operator_revised', 'operator_visibility_changed'"
             ")",
             name="ck_run_memory_events_event_type",
         ),

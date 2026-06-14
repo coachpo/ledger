@@ -36,7 +36,6 @@ from app.models.run import Run
 from app.repositories.base import BaseRepository
 
 _ARTIFACT_EVENT_TYPES = ("written", "reused", "superseded", "reviewed")
-_ADMIN_STATUSES = ("pending", "approved", "archived")
 _ADMIN_EXCERPT_MAX_CHARACTERS = 500
 
 
@@ -135,7 +134,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         run_id: int | None,
         scope_type: str | None,
         kind: str | None,
-        status: str | None,
+        visible_to_workflow: bool | None,
         query_text: str | None,
         sort: str,
         limit: int,
@@ -149,7 +148,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             run_id=run_id,
             scope_type=scope_type,
             kind=kind,
-            status=status,
+            visible_to_workflow=visible_to_workflow,
             query_text=query_text,
         )
         last_event_type = self._admin_last_event_type_expression()
@@ -188,7 +187,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         run_id: int | None,
         scope_type: str | None,
         kind: str | None,
-        status: str | None,
+        visible_to_workflow: bool | None,
         query_text: str | None,
     ) -> int:
         statement, _rank_expression = self._admin_latest_revision_statement(
@@ -198,7 +197,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             run_id=run_id,
             scope_type=scope_type,
             kind=kind,
-            status=status,
+            visible_to_workflow=visible_to_workflow,
             query_text=query_text,
         )
         total = self.session.scalar(select(func.count()).select_from(statement.subquery()))
@@ -212,7 +211,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         scope_key: str | None,
         subject_refs: Sequence[dict[str, str]],
         kind: str | None,
-        status: str,
+        visible_to_workflow: bool,
         agent_key: str | None,
         workflow_key: str | None,
         tags: Sequence[str],
@@ -225,7 +224,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             scope_key=scope_key,
             subject_refs=subject_refs,
             kind=kind,
-            status=status,
+            visible_to_workflow=visible_to_workflow,
             agent_key=agent_key,
             workflow_key=workflow_key,
             tags=tags,
@@ -242,7 +241,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         scope_key: str | None,
         subject_refs: Sequence[dict[str, str]],
         kind: str | None,
-        status: str,
+        visible_to_workflow: bool,
         agent_key: str | None,
         workflow_key: str | None,
         tags: Sequence[str],
@@ -256,7 +255,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             scope_key=scope_key,
             subject_refs=subject_refs,
             kind=kind,
-            status=status,
+            visible_to_workflow=visible_to_workflow,
             agent_key=agent_key,
             workflow_key=workflow_key,
             tags=tags,
@@ -306,7 +305,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         run_id: int | None,
         scope_type: str | None,
         kind: str | None,
-        status: str | None,
+        visible_to_workflow: bool | None,
         query_text: str | None,
     ) -> tuple[Any, Any]:
         latest_versions = self._latest_revision_versions().subquery()
@@ -321,7 +320,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             run_id=run_id,
             scope_type=scope_type,
             kind=kind,
-            status=status,
+            visible_to_workflow=visible_to_workflow,
             query_text=query_text,
         )
         return statement.where(*filters), rank_expression
@@ -335,14 +334,12 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         run_id: int | None,
         scope_type: str | None,
         kind: str | None,
-        status: str | None,
+        visible_to_workflow: bool | None,
         query_text: str | None,
     ) -> tuple[list[ColumnElement[bool]], Any]:
         filters: list[ColumnElement[bool]] = []
-        if status is None:
-            filters.append(self.model.status.in_(_ADMIN_STATUSES))
-        else:
-            filters.append(self.model.status == status)
+        if visible_to_workflow is not None:
+            filters.append(self.model.visible_to_workflow == visible_to_workflow)
         if package_key is not None:
             filters.append(self._admin_package_filter(package_key))
         if workflow_key is not None:
@@ -450,7 +447,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         scope_key: str | None,
         subject_refs: Sequence[dict[str, str]],
         kind: str | None,
-        status: str,
+        visible_to_workflow: bool,
         agent_key: str | None,
         workflow_key: str | None,
         tags: Sequence[str],
@@ -470,7 +467,7 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
             scope_key=scope_key,
             subject_refs=subject_refs,
             kind=kind,
-            status=status,
+            visible_to_workflow=visible_to_workflow,
             agent_key=agent_key,
             workflow_key=workflow_key,
             tags=tags,
@@ -565,12 +562,12 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         scope_key: str | None,
         subject_refs: Sequence[dict[str, str]],
         kind: str | None,
-        status: str,
+        visible_to_workflow: bool,
         agent_key: str | None,
         workflow_key: str | None,
         tags: Sequence[str],
     ) -> list[ColumnElement[bool]]:
-        filters: list[ColumnElement[bool]] = [self.model.status == status]
+        filters: list[ColumnElement[bool]] = [self.model.visible_to_workflow == visible_to_workflow]
         if scope_type is not None and scope_key is not None:
             filters.append(self.model.scope_type == scope_type)
             filters.append(self.model.scope_key == scope_key)
