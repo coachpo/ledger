@@ -602,7 +602,7 @@ describe("router", () => {
     expect(unknownRouteMetadata).toMatchObject({
       archetype: "unknown",
       shellMode: "scroll",
-      widthMode: "compact",
+      widthMode: "wide",
       stateVariants: ["notFound"],
       testId: "route-unknown",
     });
@@ -874,6 +874,10 @@ describe("router", () => {
     expect(await screen.findByTestId("route-unknown")).toHaveAttribute(
       "data-route-shell-mode",
       "scroll",
+    );
+    expect(screen.getByTestId("route-unknown")).toHaveAttribute(
+      "data-route-width-mode",
+      "wide",
     );
     expect(screen.getByTestId("not-found-page")).toBeVisible();
     expect(

@@ -486,7 +486,7 @@ export const unknownRouteMetadata: RouteMetadata = {
   owner: { kind: "unknown" },
   pattern: UNKNOWN_ROUTE_PATTERN,
   shellMode: "scroll",
-  widthMode: "compact",
+  widthMode: "wide",
   stateVariants: ["notFound"],
   testId: "route-unknown",
 };
