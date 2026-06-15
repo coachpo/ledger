@@ -45,8 +45,10 @@ type DataTableProps<TData, TValue> = {
 };
 
 const tableContainerClassByDensity: Record<DataTableDensity, string> = {
-  comfortable: "overflow-x-auto rounded-xl border",
-  compact: "min-w-0 max-w-full overflow-x-auto rounded-md border",
+  comfortable:
+    "overflow-x-auto rounded-xl border border-border/70 bg-card/95 shadow-ui-xs",
+  compact:
+    "min-w-0 max-w-full overflow-x-auto rounded-xl border border-border/70 bg-card/95 shadow-ui-xs",
 };
 
 const tableCellClassByDensity: Record<DataTableDensity, string> = {
@@ -87,7 +89,7 @@ export function DataTable<TData, TValue>({
   });
 
   return (
-    <div className={cn("space-y-4", className)}>
+    <div className={cn("flex flex-col gap-4", className)}>
       <div className={tableContainerClassByDensity[density]}>
         <Table aria-label={tableLabel}>
           <TableHeader>
@@ -126,7 +128,10 @@ export function DataTable<TData, TValue>({
               ))
             ) : (
               <TableRow>
-                <TableCell className="h-24 text-center text-muted-foreground" colSpan={columns.length}>
+                <TableCell
+                  className="h-28 text-center text-muted-foreground"
+                  colSpan={columns.length}
+                >
                   {emptyMessage}
                 </TableCell>
               </TableRow>
@@ -135,7 +140,7 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/70 p-2 shadow-ui-xs sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>Rows per page</span>
             <Select

@@ -40,18 +40,42 @@ export function EvidenceCluster({
   layout = "grid",
 }: EvidenceClusterProps) {
   if (items.length === 0) {
-    return <div className={cn("rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground", className)}>{emptyLabel}</div>;
+    return (
+      <div
+        className={cn(
+          "rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-xs text-muted-foreground shadow-ui-xs",
+          className,
+        )}
+      >
+        {emptyLabel}
+      </div>
+    );
   }
 
   return (
     <div className={cn(clusterClassByLayout[layout], className)} role="list">
       {items.map((item, index) => (
-        <div className="min-w-0 rounded-lg border bg-card px-3 py-2" key={index} role="listitem">
+        <div
+          className="min-w-0 rounded-lg border border-border/70 bg-card/80 px-3 py-2 shadow-ui-xs"
+          key={index}
+          role="listitem"
+        >
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Badge data-tone={item.tone ?? "neutral"} variant={badgeVariantByTone[item.tone ?? "neutral"]}>{item.label}</Badge>
-            <span className="min-w-0 break-words text-sm font-medium text-foreground">{item.value}</span>
+            <Badge
+              data-tone={item.tone ?? "neutral"}
+              variant={badgeVariantByTone[item.tone ?? "neutral"]}
+            >
+              {item.label}
+            </Badge>
+            <span className="min-w-0 break-words text-sm font-medium text-foreground">
+              {item.value}
+            </span>
           </div>
-          {item.description ? <div className="mt-1 min-w-0 break-words text-xs text-muted-foreground">{item.description}</div> : null}
+          {item.description ? (
+            <div className="mt-1 min-w-0 break-words text-xs text-muted-foreground">
+              {item.description}
+            </div>
+          ) : null}
         </div>
       ))}
     </div>

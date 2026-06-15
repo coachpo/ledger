@@ -17,7 +17,7 @@ async function loadInventoryStatePanel() {
 }
 
 describe("InventoryStatePanel", () => {
-  it("keeps shared inventory copy inside the existing dashed state card chrome", async () => {
+  it("keeps shared inventory copy inside tokenized state card chrome", async () => {
     const InventoryStatePanel = await loadInventoryStatePanel();
 
     render(
@@ -29,7 +29,7 @@ describe("InventoryStatePanel", () => {
     );
 
     const panel = screen.getByTestId("inventory-state-panel");
-    expect(panel).toHaveClass("border-dashed");
+    expect(panel).toHaveClass("rounded-xl", "border", "shadow-ui-xs");
     expect(panel.querySelector("[role='alert']")).toHaveAttribute("data-tone", "neutral");
     expect(screen.getByText("Loading runs")).toBeVisible();
     expect(screen.getByText("Reading the latest run monitor state from the backend.")).toBeVisible();

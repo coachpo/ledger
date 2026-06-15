@@ -206,14 +206,14 @@ export function ReportDetailPage() {
       {isEditing ? (
         <textarea
           aria-label="Report markdown content"
-          className="min-h-[400px] w-full resize-y rounded-md border border-border bg-background px-4 py-3 font-mono text-sm leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          className="min-h-[400px] w-full resize-y rounded-xl border border-border/70 bg-ui-surface-inset px-4 py-3 font-mono text-sm leading-7 text-foreground shadow-inner shadow-black/[0.02] outline-none placeholder:text-muted-foreground focus:border-ring focus:[box-shadow:var(--ui-focus-shadow)] dark:shadow-black/20"
           value={editContent}
           onChange={(e) => setEditContent(e.target.value)}
           spellCheck={false}
         />
       ) : (
         <div
-          className="prose prose-sm dark:prose-invert min-w-0 max-w-none rounded-md border border-border bg-muted/30 px-6 py-4 text-foreground [&_*]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto"
+          className="prose prose-sm dark:prose-invert min-w-0 max-w-none rounded-xl border border-border/70 bg-card/95 px-6 py-5 text-foreground shadow-ui-xs [&_*]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto"
           data-testid="report-content-pane"
         >
           <Markdown remarkPlugins={[remarkGfm]}>{report.content}</Markdown>

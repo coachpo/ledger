@@ -119,18 +119,18 @@ function RunDraftReadinessPanel({
     >
       <AlertCircle />
       <AlertTitle>{title}</AlertTitle>
-      <AlertDescription className="space-y-3">
+      <AlertDescription className="flex flex-col gap-3">
         <p>{description}</p>
         {diagnostics.length > 0 ? (
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             {diagnostics.map((diagnostic, diagnosticIndex) => (
               <div
-                className="flex min-w-0 flex-wrap items-start gap-2 rounded-md border bg-background/60 p-3 text-sm"
+                className="flex min-w-0 flex-wrap items-start gap-2 rounded-lg border border-border/70 bg-card/70 p-3 text-sm shadow-ui-xs"
                 key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}-${diagnosticIndex}`}
               >
                 {draftDiagnosticBadge(diagnostic)}
                 <span className="min-w-0 flex-1 basis-60 break-words">
-                  <code className="break-all rounded bg-muted/40 px-2 py-1 text-xs">
+                  <code className="break-all rounded bg-ui-surface-grouped px-2 py-1 text-xs">
                     {diagnostic.field}
                   </code>
                   {`: ${diagnostic.issue}`}
@@ -306,7 +306,7 @@ export function RunRerunDialog({
         <div className="flex flex-col gap-4">
           {draftQuery.isPending ? (
             <div
-              className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground"
+              className="flex items-center gap-2 rounded-lg border border-border/70 bg-card/70 p-4 text-sm text-muted-foreground shadow-ui-xs"
               data-testid="run-rerun-loading"
             >
               <Loader2 className="size-4 animate-spin" />

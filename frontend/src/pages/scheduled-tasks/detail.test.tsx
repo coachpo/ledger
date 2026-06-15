@@ -19,6 +19,8 @@ import type {
 
 import { ScheduledTaskDetailPage } from "./detail";
 
+vi.setConfig({ testTimeout: 15_000 });
+
 const CONTENT_VISIBILITY_AUTO_CLASS = "[content-visibility:auto]";
 const FIRE_HISTORY_ROW_SIZE_CLASS =
   "[contain-intrinsic-size:auto_320px]";

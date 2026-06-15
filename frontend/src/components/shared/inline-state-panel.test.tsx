@@ -19,7 +19,7 @@ async function loadInlineStatePanel() {
 }
 
 describe("InlineStatePanel", () => {
-  it("renders dashed inline panel chrome with icon, copy, children, and custom class names", async () => {
+  it("renders tokenized inline panel chrome with icon, copy, children, and custom class names", async () => {
     const InlineStatePanel = await loadInlineStatePanel();
 
     render(
@@ -35,7 +35,7 @@ describe("InlineStatePanel", () => {
     );
 
     const panel = screen.getByTestId("inline-state-panel");
-    expect(panel).toHaveClass("border-dashed", "custom-panel");
+    expect(panel).toHaveClass("rounded-lg", "border", "shadow-ui-xs", "custom-panel");
     expect(screen.getByRole("alert")).toHaveAttribute("data-tone", "neutral");
     expect(screen.getByText("Sync status")).toBeVisible();
     expect(screen.getByText("Shows the latest connection sync state.")).toBeVisible();

@@ -123,7 +123,7 @@ function renderPlainInspector({
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       {hasHeader ? (
-        <div className="shrink-0 border-b bg-card/80 px-4 py-3">
+        <div className="shrink-0 border-b border-border/70 bg-ui-surface-chrome px-4 py-3 backdrop-blur-xl">
           <InspectorHeader actions={actions} title={title} />
         </div>
       ) : null}
@@ -180,7 +180,7 @@ function renderInspectorContent<TTab extends string = string>({
         onValueChange={(value) => onActiveTabChange?.(value as TTab)}
         value={selectedTab}
       >
-        <div className="flex shrink-0 flex-col gap-3 border-b bg-card/80 px-4 py-3">
+        <div className="flex shrink-0 flex-col gap-3 border-b border-border/70 bg-ui-surface-chrome px-4 py-3 backdrop-blur-xl">
           <InspectorHeader actions={inspectorActions} title={inspectorTitle} />
           <TabsList className="h-8 max-w-full justify-start overflow-x-auto">
             {tabs.map((tab) => (
@@ -249,7 +249,7 @@ export function SplitInspectorLayout<TTab extends string = string>({
   return (
     <ResizablePanelGroup
       className={cn(
-        "h-full min-h-0 min-w-0 overflow-hidden rounded-xl border bg-background",
+        "h-full min-h-0 min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card/95 shadow-ui-xs",
         className,
       )}
       data-inspector-state={inspectorOpen ? "open" : "closed"}
@@ -266,14 +266,14 @@ export function SplitInspectorLayout<TTab extends string = string>({
         </section>
       </ResizablePanel>
       <ResizableHandle
-        className="bg-border/80"
+        className="bg-border/70"
         data-testid="split-inspector-resize-handle"
         withHandle
       />
       <ResizablePanel className="min-h-0 min-w-0" {...rightSize}>
         <aside
           aria-label={inspectorAriaLabel}
-          className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card/30"
+          className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-ui-surface-grouped/50"
           data-testid="split-inspector-right-pane"
         >
           {inspectorContent}
@@ -314,7 +314,7 @@ export function SheetInspectorLayout<TTab extends string = string>({
   return (
     <div
       className={cn(
-        "h-full min-h-0 min-w-0 overflow-hidden rounded-xl border bg-background",
+        "h-full min-h-0 min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card/95 shadow-ui-xs",
         className,
       )}
       data-inspector-mode="sheet"

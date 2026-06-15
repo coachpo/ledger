@@ -252,7 +252,7 @@ function CompactDetailValue({
   value: string;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
       <div className="break-words">{value}</div>
       {description ? (
         <p className="text-xs leading-5 text-muted-foreground">

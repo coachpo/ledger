@@ -15,7 +15,10 @@ export function ResourceTableFrame({
 }: ResourceTableFrameProps) {
   return (
     <div
-      className={cn("min-w-0 max-w-full rounded-md border", className)}
+      className={cn(
+        "min-w-0 max-w-full overflow-hidden rounded-xl border border-border/70 bg-card/95 shadow-ui-xs",
+        className,
+      )}
       data-testid={testId}
     >
       {children}

@@ -284,7 +284,7 @@ function LineageNode({ data }: NodeProps<LineageDiagramNode>) {
   return (
     <div
       className={cn(
-        "nopan pointer-events-auto w-48 rounded-xl border bg-card p-3 text-left text-card-foreground shadow-sm",
+        "nopan pointer-events-auto w-48 rounded-xl border bg-card p-3 text-left text-card-foreground shadow-ui-xs",
         data.tone === "current" && "border-primary/30 bg-primary/5",
         data.tone === "source" && "border-positive/30 bg-positive/5",
       )}
@@ -296,7 +296,7 @@ function LineageNode({ data }: NodeProps<LineageDiagramNode>) {
         position={Position.Left}
         type="target"
       />
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
         <div>
           <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             {data.eyebrow}
@@ -305,7 +305,7 @@ function LineageNode({ data }: NodeProps<LineageDiagramNode>) {
             {data.title}
           </p>
         </div>
-        <dl className="space-y-1.5 text-xs">
+        <dl className="flex flex-col gap-1.5 text-xs">
           {data.details.map((item) => (
             <div className="min-w-0" key={item.label}>
               <dt className="font-medium uppercase tracking-wide text-muted-foreground">
@@ -387,7 +387,7 @@ function LineageDiagram({
     <div
       className={cn(
         LINEAGE_CANVAS_HEIGHT_CLASS,
-        "overflow-hidden rounded-xl border bg-muted/20 [&_.react-flow__edge-text]:fill-muted-foreground [&_.react-flow__edge-textbg]:fill-background",
+        "overflow-hidden rounded-xl border border-border/70 bg-ui-surface-grouped/60 shadow-ui-xs [&_.react-flow__edge-text]:fill-muted-foreground [&_.react-flow__edge-textbg]:fill-background",
       )}
       data-testid={testId}
     >
@@ -1770,7 +1770,7 @@ function RunLineageEvidence({
           {isCurrentFork ? "Fork" : "Historical lineage"} diagram.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex flex-col gap-4">
         {run.sourceRunId && !isCurrentFork ? (
           <Alert data-testid="runs-historical-lineage">
             <GitBranch />
@@ -1800,7 +1800,7 @@ function MemoryTextEvidence({
 }) {
   return (
     <div
-      className="rounded-md border bg-muted/20 p-3 text-sm"
+      className="rounded-lg border border-border/70 bg-card/70 p-3 text-sm shadow-ui-xs"
       data-testid={testId}
     >
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -1830,7 +1830,7 @@ function MemoryEventCard({ event }: { event: RunMemoryEventRead }) {
         </div>
         <CardDescription>{formatDateTime(event.createdAt)}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3 px-4 pb-4">
+      <CardContent className="flex flex-col gap-3 px-4 pb-4">
         <DetailGrid items={memoryEventDetails(event)} />
         {event.excerpt ? (
           <MemoryTextEvidence
@@ -1921,7 +1921,7 @@ function MemoryArtifactSummaryCard({
 }) {
   return (
     <div
-      className={`rounded-md border bg-muted/20 p-3 text-sm ${MEMORY_COMPACT_ARTIFACT_DEFERRED_CLASS_NAME}`}
+      className={`rounded-lg border border-border/70 bg-card/70 p-3 text-sm shadow-ui-xs ${MEMORY_COMPACT_ARTIFACT_DEFERRED_CLASS_NAME}`}
       data-testid={`runs-memory-compact-artifact-${artifact.memoryId}`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -1993,9 +1993,9 @@ function MemoryArtifactEvidence({
           audit actions only and not the memory source of truth.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex flex-col gap-4">
         <div
-          className="rounded-md border bg-muted/20 p-3 text-sm"
+          className="rounded-lg border border-border/70 bg-card/70 p-3 text-sm shadow-ui-xs"
           data-testid={`runs-memory-artifact-${artifact.memoryId}`}
         >
           <div className="flex items-start justify-between gap-3">
@@ -2057,12 +2057,12 @@ function StepSummaryEvidence({ step }: { step: RunStepRead }) {
 
   return (
     <div
-      className="min-w-0 space-y-5"
+      className="flex min-w-0 flex-col gap-5"
       data-testid={`runs-step-${step.index}-summary`}
     >
       <section
         aria-labelledby={`runs-step-${step.index}-metadata-heading`}
-        className="space-y-3"
+        className="flex flex-col gap-3"
       >
         <h3
           className="text-base font-medium leading-none"
@@ -2088,7 +2088,7 @@ function StepSummaryEvidence({ step }: { step: RunStepRead }) {
       </section>
       <section
         aria-labelledby={`runs-step-${step.index}-output-heading`}
-        className="space-y-3"
+        className="flex flex-col gap-3"
       >
         <h3
           className="text-base font-medium leading-none"
@@ -2210,7 +2210,7 @@ function StepErrorEvidence({ step }: { step: RunStepRead }) {
       <AlertDescription>{step.error}</AlertDescription>
     </Alert>
   ) : (
-    <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+    <div className="rounded-lg border border-border/70 bg-card/70 p-4 text-sm text-muted-foreground shadow-ui-xs">
       No step error recorded.
     </div>
   );
@@ -2277,11 +2277,11 @@ function InvocationEvidence({
       <Alert variant="destructive">
         <AlertCircle />
         <AlertTitle>{invocation.errorCode ?? "Invocation failed"}</AlertTitle>
-        <AlertDescription className="space-y-2">
+        <AlertDescription className="flex flex-col gap-2">
           <p>{invocation.errorMessage ?? "No error message recorded."}</p>
           {invocation.errorDetails.length > 0 ? (
             <pre
-              className="max-w-full overflow-x-auto whitespace-pre rounded-md border border-destructive/30 bg-muted/30 p-3 text-xs"
+              className="max-w-full overflow-x-auto whitespace-pre rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs shadow-ui-xs"
               data-wide-payload="scroll"
             >
               {stringifyJson(invocation.errorDetails)}
@@ -2290,7 +2290,7 @@ function InvocationEvidence({
         </AlertDescription>
       </Alert>
     ) : (
-      <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+      <div className="rounded-lg border border-border/70 bg-card/70 p-4 text-sm text-muted-foreground shadow-ui-xs">
         No invocation error recorded.
       </div>
     );
@@ -2358,11 +2358,11 @@ function OperationEvidence({
       <Alert variant="destructive">
         <AlertCircle />
         <AlertTitle>{invocation.errorCode ?? "Operation failed"}</AlertTitle>
-        <AlertDescription className="space-y-2">
+        <AlertDescription className="flex flex-col gap-2">
           <p>{invocation.errorMessage ?? "No error message recorded."}</p>
           {invocation.errorDetails.length > 0 ? (
             <pre
-              className="max-w-full overflow-x-auto whitespace-pre rounded-md border border-destructive/30 bg-muted/30 p-3 text-xs"
+              className="max-w-full overflow-x-auto whitespace-pre rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs shadow-ui-xs"
               data-wide-payload="scroll"
             >
               {stringifyJson(invocation.errorDetails)}
@@ -2371,7 +2371,7 @@ function OperationEvidence({
         </AlertDescription>
       </Alert>
     ) : (
-      <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+      <div className="rounded-lg border border-border/70 bg-card/70 p-4 text-sm text-muted-foreground shadow-ui-xs">
         No operation error recorded.
       </div>
     );
@@ -2678,14 +2678,14 @@ function RunInlineEvidence({
         <AlertDescription>{run.error}</AlertDescription>
       </Alert>
     ) : (
-      <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+      <div className="rounded-lg border border-border/70 bg-card/70 p-4 text-sm text-muted-foreground shadow-ui-xs">
         No run-level error recorded.
       </div>
     );
   } else if (activeInspection.pane === "input") {
     content =
       activeInspection.mode === "inputs" ? (
-        <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+        <div className="rounded-lg border border-border/70 bg-card/70 p-4 text-sm text-muted-foreground shadow-ui-xs">
           Select an input field to inspect raw detail.
         </div>
       ) : (
@@ -2724,7 +2724,7 @@ function RunInlineEvidence({
   } else {
     content =
       activeInspection.mode === "outputs" ? (
-        <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+        <div className="rounded-lg border border-border/70 bg-card/70 p-4 text-sm text-muted-foreground shadow-ui-xs">
           Select an output field to inspect raw detail.
         </div>
       ) : (
@@ -2769,7 +2769,7 @@ function RunInlineEvidence({
         data-testid="runs-active-evidence-viewer"
       >
         {content ?? (
-          <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-border/70 bg-card/70 p-4 text-sm text-muted-foreground shadow-ui-xs">
             Selected evidence is no longer available.
           </div>
         )}

@@ -152,7 +152,7 @@ function sortedSecretBindings(
 
 export function EditorSkeleton() {
   return (
-    <div className="space-y-4 p-4">
+    <div className="flex flex-col gap-4 p-4">
       <Skeleton className="h-28 w-full" />
       <Skeleton className="h-12 w-full" />
       <Skeleton className="h-72 w-full" />
@@ -173,7 +173,7 @@ export function ManifestBlockingState({
 }) {
   return (
     <Card
-      className="border-destructive/30 bg-destructive/5 shadow-sm"
+      className="border-destructive/30 bg-destructive/5 shadow-ui-xs"
       data-testid="workflow-package-manifest-blocker"
     >
       <CardHeader>
@@ -186,7 +186,7 @@ export function ManifestBlockingState({
           can be edited.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex flex-col gap-4">
         <Alert variant="destructive" role="alert">
           <AlertCircle />
           <AlertTitle>Editor locked</AlertTitle>
@@ -279,7 +279,7 @@ function AuthoringSection({
   return (
     <ConsoleSection
       actions={actions}
-      className="border-border/70 bg-card/80 shadow-sm backdrop-blur"
+      className="border-border/70 bg-card/80 shadow-ui-xs backdrop-blur"
       description={description ?? definition.description}
       title={title ?? definition.label}
     >
@@ -679,7 +679,7 @@ function AgentSheet(props: {
               )}
             />
             <div
-              className="space-y-2"
+              className="flex flex-col gap-2"
               data-field={`spec.agents[${agentIndex}].inputSchema`}
               tabIndex={-1}
             >
@@ -720,7 +720,7 @@ function MultiKeyPicker({
   selectedKeys: string[];
 }) {
   return (
-    <div className="space-y-2 rounded-lg border p-3">
+    <div className="flex flex-col gap-2 rounded-lg border border-border/70 bg-card/70 p-3 shadow-ui-xs">
       <Label>{label}</Label>
       {keys.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -812,7 +812,7 @@ export function AgentsTab(props: {
       title="Agents"
     >
       {draft.spec.agents.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+        <div className="rounded-xl border border-border/70 bg-card/70 p-6 text-sm text-muted-foreground shadow-ui-xs">
           No package-local agents yet.
         </div>
       ) : null}
@@ -820,10 +820,10 @@ export function AgentsTab(props: {
         {draft.spec.agents.map((agent, index) => (
           <div
             key={`${agent.key}-${index}`}
-            className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
+            className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/70 p-4 shadow-ui-xs sm:flex-row sm:items-center sm:justify-between"
             data-testid={`package-agent-row-${agent.key}`}
           >
-            <div className="min-w-0 space-y-1">
+            <div className="flex min-w-0 flex-col gap-1">
               <p className="font-medium">{agent.name || "Untitled agent"}</p>
               <p className="break-all font-mono text-xs text-muted-foreground">
                 {agent.key || "missing_key"}
@@ -930,7 +930,7 @@ export function OutputSchemasTab({
       title="Output Schemas"
     >
       {draft.spec.outputSchemas.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+        <div className="rounded-xl border border-border/70 bg-card/70 p-6 text-sm text-muted-foreground shadow-ui-xs">
           No package-local output schemas yet.
         </div>
       ) : null}
@@ -938,7 +938,7 @@ export function OutputSchemasTab({
         {draft.spec.outputSchemas.map((schema, index) => (
           <Card
             key={`${schema.key}-${index}`}
-            className="bg-background/60"
+            className="bg-card/80"
             data-field={`spec.outputSchemas[${index}]`}
             tabIndex={-1}
             data-testid={`package-output-schema-card-${schema.key}`}
@@ -949,9 +949,9 @@ export function OutputSchemasTab({
                 {schema.key || "missing_key"}
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="flex flex-col gap-4">
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <Label>Local key</Label>
                   <Input
                     aria-label={`Output schema ${index + 1} local key`}
@@ -980,7 +980,7 @@ export function OutputSchemasTab({
                     }
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <Label>Name</Label>
                   <Input
                     aria-label={`Output schema ${index + 1} name`}
@@ -997,7 +997,7 @@ export function OutputSchemasTab({
                   />
                 </div>
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Description</Label>
                 <Input
                   aria-label={`Output schema ${index + 1} description`}
@@ -1095,7 +1095,7 @@ export function CapabilityProfilesTab(props: {
       {draft.spec.capabilityProfiles.map((profile, index) => (
         <Card
           key={`${profile.key}-${index}`}
-          className="bg-background/60"
+          className="bg-card/80"
           data-field={`spec.capabilityProfiles[${index}]`}
           tabIndex={-1}
           data-testid={`package-capability-profile-card-${profile.key}`}
@@ -1107,8 +1107,8 @@ export function CapabilityProfilesTab(props: {
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-            <div className="space-y-3">
-              <div className="space-y-2">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
                 <Label>Local key</Label>
                 <Input
                   aria-label={`Capability profile ${index + 1} local key`}
@@ -1131,7 +1131,7 @@ export function CapabilityProfilesTab(props: {
                   )}
                 />
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Name</Label>
                 <Input
                   aria-label={`Capability profile ${index + 1} name`}
@@ -1147,7 +1147,7 @@ export function CapabilityProfilesTab(props: {
                   }
                 />
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Description</Label>
                 <Textarea
                   aria-label={`Capability profile ${index + 1} description`}
@@ -1182,7 +1182,7 @@ export function CapabilityProfilesTab(props: {
                 Remove profile
               </Button>
             </div>
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <Label>Server-declared tool catalog</Label>
               <div
                 data-field={`spec.capabilityProfiles[${index}].toolKeys[0]`}
@@ -1281,7 +1281,7 @@ export function CapabilityProfilesTab(props: {
         </Card>
       ))}
       {draft.spec.capabilityProfiles.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+        <div className="rounded-xl border border-border/70 bg-card/70 p-6 text-sm text-muted-foreground shadow-ui-xs">
           No local capability profiles yet.
         </div>
       ) : null}
@@ -1326,7 +1326,7 @@ export function PrivateMcpTab({
       {draft.spec.mcpServers.map((server, index) => (
         <Card
           key={`${server.key}-${index}`}
-          className="bg-background/60"
+          className="bg-card/80"
           data-field={`spec.mcpServers[${index}]`}
           tabIndex={-1}
           data-testid={`package-private-mcp-card-${server.key}`}
@@ -1337,9 +1337,9 @@ export function PrivateMcpTab({
               {server.key || "missing_key"}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="flex flex-col gap-4">
             <div className="grid gap-3 md:grid-cols-3">
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Local key</Label>
                 <Input
                   aria-label={`Private MCP ${index + 1} local key`}
@@ -1355,7 +1355,7 @@ export function PrivateMcpTab({
                   }
                 />
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Name</Label>
                 <Input
                   aria-label={`Private MCP ${index + 1} name`}
@@ -1370,7 +1370,7 @@ export function PrivateMcpTab({
                   }
                 />
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>Transport</Label>
                 <Select
                   value={server.transport}
@@ -1395,7 +1395,7 @@ export function PrivateMcpTab({
                 </Select>
               </div>
             </div>
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <Label>Description</Label>
               <Input
                 aria-label={`Private MCP ${index + 1} description`}
@@ -1412,7 +1412,7 @@ export function PrivateMcpTab({
             </div>
             {server.transport === "stdio" ? (
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <Label>Command</Label>
                   <Input
                     aria-label={`Private MCP ${index + 1} command`}
@@ -1431,7 +1431,7 @@ export function PrivateMcpTab({
                     }
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <Label>Args JSON array</Label>
                   <Textarea
                     aria-label={`Private MCP ${index + 1} args`}
@@ -1453,7 +1453,7 @@ export function PrivateMcpTab({
                 </div>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 <Label>URL</Label>
                 <Input
                   aria-label={`Private MCP ${index + 1} URL`}
@@ -1543,7 +1543,7 @@ export function PrivateMcpTab({
         </Card>
       ))}
       {draft.spec.mcpServers.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+        <div className="rounded-xl border border-border/70 bg-card/70 p-6 text-sm text-muted-foreground shadow-ui-xs">
           No package-private MCP servers yet.
         </div>
       ) : null}
@@ -1589,7 +1589,7 @@ function StringMapEditor({
   const displayName = name === "headers" ? "header" : name;
   return (
     <div
-      className="space-y-3 rounded-lg border p-3"
+      className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-3 shadow-ui-xs"
       data-testid={`private-mcp-${name}-values`}
     >
       <div className="flex items-center justify-between gap-3">
@@ -1716,7 +1716,7 @@ export function WorkflowYamlTab({
           </AlertDescription>
         </Alert>
       ) : null}
-      <div className="space-y-2" data-field="spec.workflows" tabIndex={-1}>
+      <div className="flex flex-col gap-2" data-field="spec.workflows" tabIndex={-1}>
         <Textarea
           id="workflow-yaml"
           aria-labelledby="workflow-yaml-title"
@@ -1803,7 +1803,7 @@ export function SecretBindingsTab(props: {
           <AlertDescription>{bindingsError}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+      <div className="rounded-lg border border-border/70 bg-card/70 p-3 text-sm shadow-ui-xs">
         <p className="font-medium">Referenced by workflow YAML</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {referencedSecretKeys.length === 0 ? (
@@ -1823,7 +1823,7 @@ export function SecretBindingsTab(props: {
         </div>
       </div>
       <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto]">
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="secret-binding-key">Secret binding key</Label>
           <Input
             id="secret-binding-key"
@@ -1833,7 +1833,7 @@ export function SecretBindingsTab(props: {
             onChange={(event) => setSecretKey(event.target.value)}
           />
         </div>
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="secret-binding-value">Secret binding value</Label>
           <Input
             id="secret-binding-value"
@@ -1859,19 +1859,19 @@ export function SecretBindingsTab(props: {
       </div>
       <div className="grid gap-2">
         {bindingsLoading ? (
-          <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-border/70 bg-card/70 p-3 text-sm text-muted-foreground shadow-ui-xs">
             Loading secret bindings...
           </div>
         ) : null}
         {sortedBindings.length === 0 && !bindingsLoading ? (
-          <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-border/70 bg-card/70 p-3 text-sm text-muted-foreground shadow-ui-xs">
             No package secret bindings configured.
           </div>
         ) : null}
         {sortedBindings.map((binding) => (
           <div
             key={binding.key}
-            className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+            className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-3 text-sm shadow-ui-xs sm:flex-row sm:items-center sm:justify-between"
           >
             <div className="min-w-0">
               <p className="font-medium">{binding.key}</p>

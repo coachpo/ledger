@@ -153,7 +153,7 @@ export function SchemaNodeCard({
   };
 
   return (
-    <Card className={depth > 0 ? "border-dashed" : undefined}>
+    <Card className={depth > 0 ? "bg-card/80" : undefined}>
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1">

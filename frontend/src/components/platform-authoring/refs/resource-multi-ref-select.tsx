@@ -147,7 +147,7 @@ export function ResourceMultiRefSelect({
           </Alert>
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed bg-muted/20 p-4">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-card/70 p-4 shadow-ui-xs">
           <Badge variant="outline">
             {value.length} binding{value.length === 1 ? "" : "s"}
           </Badge>

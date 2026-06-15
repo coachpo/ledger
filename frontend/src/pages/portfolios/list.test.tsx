@@ -93,12 +93,13 @@ describe("PortfolioListPage", () => {
       "No portfolios yet.",
     );
     expect(emptyState.closest("[data-slot='card']")).toHaveClass(
-      "border-dashed",
+      "border-border/70",
+      "shadow-ui-xs",
     );
     expect(screen.queryByText("Loading portfolios...")).not.toBeInTheDocument();
     expect(
       screen.getByRole("textbox", { name: "Search portfolios" }),
-    ).toHaveClass("h-8", "pl-8", "text-xs");
+    ).toHaveClass("h-[var(--ui-size-control-sm)]", "pl-9", "text-xs");
     expect(screen.getByText("0 of 0 portfolios shown")).toBeVisible();
     expect(
       within(inventory).getByRole("button", { name: /new portfolio/i }),
@@ -187,8 +188,10 @@ describe("PortfolioListPage", () => {
     expect(table.parentElement?.parentElement).toHaveClass(
       "min-w-0",
       "max-w-full",
-      "rounded-md",
+      "rounded-xl",
       "border",
+      "bg-card/95",
+      "shadow-ui-xs",
     );
     expect(
       within(table).getByRole("checkbox", { name: /select portfolio growth fund/i }),

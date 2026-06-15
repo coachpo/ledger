@@ -32,14 +32,14 @@ export function WorkspacePageShell({
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background font-sans",
+        "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-ui-canvas font-sans",
         className,
       )}
       data-testid={testId}
     >
       <div
         className={cn(
-          "sticky top-0 z-10 shrink-0 border-b border-border bg-background/95 p-3",
+          "sticky top-0 z-10 shrink-0 border-b border-border/70 bg-ui-surface-chrome p-4 backdrop-blur-xl",
           contextBarClassName,
         )}
         data-testid="workspace-page-shell-context"
@@ -50,7 +50,7 @@ export function WorkspacePageShell({
 
       <div
         className={cn(
-          "flex min-h-0 min-w-0 flex-1 gap-3 overflow-hidden p-3",
+          "flex min-h-0 min-w-0 flex-1 gap-3 overflow-hidden p-3 sm:p-4",
           leftRail ? "flex-col lg:flex-row" : "flex-col",
           contentClassName,
         )}
@@ -61,8 +61,9 @@ export function WorkspacePageShell({
           <aside
             aria-label={leftRailAriaLabel}
             className={cn(
-              "min-h-0 min-w-0 shrink-0 overflow-hidden lg:w-64",
-              leftRailClassName,
+            "min-h-0 min-w-0 shrink-0 overflow-hidden lg:w-64",
+            "rounded-xl border border-border/70 bg-card/80 shadow-ui-xs",
+            leftRailClassName,
             )}
             data-testid="workspace-page-shell-left-rail"
             data-workspace-shell-region="left-rail"

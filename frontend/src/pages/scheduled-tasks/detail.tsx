@@ -851,7 +851,7 @@ function DetailPageMessage({
       testId="scheduled-task-detail-page"
     >
       <Card
-        className="min-w-0 border-destructive/30 bg-destructive/5 shadow-sm"
+        className="min-w-0 border-destructive/30 bg-destructive/5 shadow-ui-xs"
         data-testid={testId}
       >
         <CardHeader>
@@ -1173,7 +1173,7 @@ function SummaryPanels({
       >
         <div className="flex min-w-0 flex-col gap-3">
           {visibleDiagnostics.length === 0 ? (
-            <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            <div className="rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-xs text-muted-foreground shadow-ui-xs">
               Ready for scheduled runs
             </div>
           ) : (
@@ -1812,7 +1812,7 @@ function ScheduleTemplateVarsEditor({
       </div>
       <div className="mt-2 flex min-w-0 flex-col gap-2">
         {rows.length === 0 ? (
-          <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs italic text-muted-foreground">
+          <p className="rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-xs italic text-muted-foreground shadow-ui-xs">
             No template variables yet.
           </p>
         ) : null}
@@ -1893,7 +1893,7 @@ function SchedulePlaceholderReference() {
           <div className="grid min-w-0 gap-3 lg:grid-cols-2 2xl:grid-cols-5">
             {SCHEDULE_PLACEHOLDER_GROUPS.map((group) => (
               <div
-                className="min-w-0 rounded-lg border bg-background/60 p-3"
+                className="min-w-0 rounded-lg border border-border/70 bg-card/70 p-3 shadow-ui-xs"
                 key={group.title}
               >
                 <div className="flex min-w-0 items-center justify-between gap-2">
@@ -1957,7 +1957,7 @@ function ScheduleInputPreview({
   if (!preview) {
     return (
       <div
-        className="rounded-lg border border-dashed bg-muted/20 p-3 text-xs leading-5 text-muted-foreground"
+        className="rounded-lg border border-border/70 bg-card/70 p-3 text-xs leading-5 text-muted-foreground shadow-ui-xs"
         data-testid="schedule-input-preview-empty"
       >
         Preview the next run to fill in placeholders and check the input shape
@@ -1968,7 +1968,7 @@ function ScheduleInputPreview({
 
   return (
     <div
-      className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3"
+      className="flex min-w-0 flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-3 shadow-ui-xs"
       data-testid="schedule-input-preview"
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -2513,7 +2513,7 @@ function FireHistoryRow({
 
   return (
     <div
-      className={`flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3 ${FIRE_HISTORY_ROW_DEFERRED_CLASS_NAME}`}
+      className={`flex min-w-0 flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-3 shadow-ui-xs ${FIRE_HISTORY_ROW_DEFERRED_CLASS_NAME}`}
       data-testid={`scheduled-task-fire-${fire.id}`}
     >
       <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
@@ -2573,7 +2573,7 @@ function FireHistoryRow({
           ["Linked run", fire.runId ? `#${fire.runId}` : "None"],
         ]}
       />
-      <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-dashed bg-muted/15 px-3 py-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-xs shadow-ui-xs">
         <span className="font-medium text-muted-foreground">Parameters</span>
         {parameterSummary.length > 0 ? (
           parameterSummary.map((item) => (
@@ -2606,7 +2606,7 @@ function FireHistoryRow({
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
       >
-        <div className="flex min-w-0 flex-col gap-2 rounded-md border bg-muted/10 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border/70 bg-card/70 px-3 py-2 shadow-ui-xs sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-xs font-medium text-foreground">
               Rendered parameters
@@ -2719,7 +2719,7 @@ function FireHistoryPanel({
         ) : null}
       </div>
       {safeHistory.fires.length === 0 ? (
-        <div className="flex min-w-0 flex-col gap-3 rounded-md border border-dashed bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+        <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border/70 bg-card/70 px-3 py-3 text-xs text-muted-foreground shadow-ui-xs">
           <div>
             <p className="font-medium text-foreground">No runs yet</p>
             <p>Scheduled and manual runs will appear here.</p>

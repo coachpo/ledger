@@ -50,7 +50,7 @@ describe("ResourceStatusStrip", () => {
   it("renders deterministic empty status copy", () => {
     render(<ResourceStatusStrip emptyLabel="No runtime status" items={[]} />);
 
-    expect(screen.getByText("No runtime status")).toHaveClass("border", "bg-muted/30", "text-muted-foreground");
+    expect(screen.getByText("No runtime status")).toHaveClass("border", "bg-card/70", "text-muted-foreground", "shadow-ui-xs");
   });
 
   it("exports a reusable status badge helper for shared callers", async () => {

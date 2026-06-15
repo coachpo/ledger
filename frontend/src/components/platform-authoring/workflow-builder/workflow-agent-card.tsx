@@ -203,7 +203,7 @@ export function WorkflowAgentCard({
           </div>
 
           {fieldNames.length === 0 ? (
-            <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-border/70 bg-card/70 p-4 text-sm text-muted-foreground shadow-ui-xs">
               Select an agent with an object input schema to configure slot wiring controls.
             </div>
           ) : (

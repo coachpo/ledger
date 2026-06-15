@@ -539,7 +539,7 @@ export function WorkflowPackageEditorPage() {
           leftRail={
             editorBlocker ? undefined : (
               <div
-                className="flex max-h-64 min-w-0 flex-col gap-2 overflow-y-auto rounded-xl border bg-card/80 p-2 shadow-sm lg:max-h-full"
+                className="flex max-h-64 min-w-0 flex-col gap-2 overflow-y-auto rounded-xl border border-border/70 bg-card/90 p-2 shadow-ui-xs lg:max-h-full"
                 data-testid="workflow-package-section-nav"
               >
                 <div className="px-2 py-1">

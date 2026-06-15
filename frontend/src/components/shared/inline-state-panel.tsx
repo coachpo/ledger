@@ -22,9 +22,9 @@ const alertVariantByTone: Record<InlineStatePanelTone, "default" | "destructive"
 };
 
 const panelClassByTone: Record<InlineStatePanelTone, string> = {
-  neutral: "",
-  warning: "border-muted-foreground/40",
-  danger: "border-destructive/40 bg-destructive/5 text-destructive",
+  neutral: "border-border/70 bg-card/70",
+  warning: "border-chart-3/35 bg-chart-3/10",
+  danger: "border-destructive/35 bg-destructive/5 text-destructive",
 };
 
 export function InlineStatePanel({
@@ -41,7 +41,7 @@ export function InlineStatePanel({
   return (
     <div
       className={cn(
-        "rounded-md border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground",
+        "rounded-lg border px-3 py-2 text-sm text-muted-foreground shadow-ui-xs",
         "flex flex-col gap-3",
         panelClassByTone[tone],
         className,
@@ -50,11 +50,21 @@ export function InlineStatePanel({
     >
       {hasBody ? (
         <Alert
-          className={cn("border-0 bg-transparent p-0", icon ? "grid-cols-[calc(var(--spacing)*4)_1fr] gap-x-3" : null)}
+          className={cn(
+            "border-0 bg-transparent p-0",
+            icon ? "grid-cols-[calc(var(--spacing)*7)_1fr] gap-x-3" : null,
+          )}
           data-tone={tone}
           variant={alertVariantByTone[tone]}
         >
-          {icon ? <div aria-hidden="true" className="col-start-1 row-start-1 size-4 translate-y-0.5 text-current [&_svg]:size-4">{icon}</div> : null}
+          {icon ? (
+            <div
+              aria-hidden="true"
+              className="col-start-1 row-start-1 flex size-7 items-center justify-center rounded-lg bg-muted/50 text-current [&_svg]:size-4"
+            >
+              {icon}
+            </div>
+          ) : null}
           {title ? <AlertTitle className={description ? undefined : "line-clamp-none"}>{title}</AlertTitle> : null}
           {description ? <AlertDescription>{description}</AlertDescription> : null}
         </Alert>

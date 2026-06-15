@@ -146,7 +146,7 @@ type CompactEvidenceRowsProps = {
 
 const COMPACT_EVIDENCE_TONE_CLASSES: Record<EvidenceClusterTone, string> = {
   danger: "border-l-destructive bg-destructive/5",
-  neutral: "border-l-border bg-muted/30",
+  neutral: "border-l-border bg-card/70",
   verified: "border-l-primary bg-primary/5",
   warning: "border-l-accent bg-accent/40",
 };
@@ -164,7 +164,7 @@ function EvidenceGroup({ children, title }: EvidenceGroupProps) {
 
 function CompactEvidenceRows({ items }: CompactEvidenceRowsProps) {
   return (
-    <div className="flex min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card/50">
+    <div className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card/80 shadow-ui-xs">
       {items.map((item) => {
         const tone = item.tone ?? "neutral";
 

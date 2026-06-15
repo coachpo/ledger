@@ -152,17 +152,17 @@ function RunForkReadinessPanel({
     >
       <AlertCircle />
       <AlertTitle>{title}</AlertTitle>
-      <AlertDescription className="space-y-3">
+      <AlertDescription className="flex flex-col gap-3">
         <p>{description}</p>
         {diagnostics.length > 0 ? (
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             {diagnostics.map((diagnostic) => (
               <div
-                className="grid min-w-0 gap-2 rounded-md border bg-background/60 p-3 text-sm md:grid-cols-[auto_minmax(0,10rem)_minmax(0,1fr)] md:items-center"
+                className="grid min-w-0 gap-2 rounded-lg border border-border/70 bg-card/70 p-3 text-sm shadow-ui-xs md:grid-cols-[auto_minmax(0,10rem)_minmax(0,1fr)] md:items-center"
                 key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}`}
               >
                 <div>{draftDiagnosticBadge(diagnostic)}</div>
-                <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">
+                <code className="min-w-0 break-all rounded bg-ui-surface-grouped px-2 py-1 text-xs">
                   {diagnostic.field}
                 </code>
                 <span className="min-w-0 break-words">{diagnostic.issue}</span>
@@ -420,7 +420,7 @@ export function RunForkDialog({
 
         {presentedAvailability.isAvailable && draftQuery.isPending ? (
           <div
-            className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground"
+            className="flex items-center gap-2 rounded-lg border border-border/70 bg-card/70 p-4 text-sm text-muted-foreground shadow-ui-xs"
             data-testid="run-fork-loading"
           >
             <Loader2 className="size-4 animate-spin" />
@@ -463,7 +463,7 @@ export function RunForkDialog({
                 stay unchanged; use rerun for root parameter edits.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="flex flex-col gap-4">
               <DetailGrid
                 items={[
                   {

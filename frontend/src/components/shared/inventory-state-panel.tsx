@@ -22,9 +22,9 @@ const alertVariantByTone: Record<InventoryStatePanelTone, "default" | "destructi
 };
 
 const panelClassByTone: Record<InventoryStatePanelTone, string> = {
-  neutral: "",
-  warning: "border-muted-foreground/40",
-  danger: "border-destructive/40",
+  neutral: "border-border/70 bg-card/95",
+  warning: "border-chart-3/35 bg-chart-3/10",
+  danger: "border-destructive/35 bg-destructive/5",
 };
 
 export function InventoryStatePanel({
@@ -37,7 +37,7 @@ export function InventoryStatePanel({
 }: InventoryStatePanelProps) {
   return (
     <Card
-      className={cn("border-dashed", panelClassByTone[tone], className)}
+      className={cn(panelClassByTone[tone], className)}
       data-testid={testId}
     >
       <CardContent className="p-4">

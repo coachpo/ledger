@@ -52,7 +52,10 @@ Leave feature-only widgets in their feature folder until they have a second real
 | Resource row or select-all checkbox checked-state mapping | `ResourceSelectionCheckbox` | Keep selected ids, selected items, and mutation behavior route-owned. |
 | Clickable resource card wrapper | `ResourceRowCard` plus `primaryAction` | Use real links and buttons. |
 | Status text with custom colors | `ResourceStatusBadge` or `ResourceStatusStrip` | Use supported tones only. |
-| Dashed empty or error cards | `InventoryStatePanel`, `EmptyStatePanel`, or `InlineStatePanel` | Match the scope of the state. |
+| Dashed empty or error cards | `InventoryStatePanel`, `EmptyStatePanel`, or `InlineStatePanel` | Match the scope of the state; shared state panels now use solid grouped/elevated surfaces. |
+| `rounded-md border bg-muted/20` route panels | Shared shell, `Card`, `ResourceTableFrame`, or a route-owned section component using `bg-card/70` or `bg-ui-surface-grouped` plus `shadow-ui-*` | Keep route copy and behavior in place while replacing only the visual wrapper. |
+| `shadow-sm`, `shadow-md`, or `shadow-lg` page chrome | `shadow-ui-xs`, `shadow-ui-md`, or primitive defaults | Keep one elevation scale across light and dark themes. |
+| New `space-y-*` stacks in shared UI | `flex flex-col gap-*` or `grid gap-*` | Keeps spacing explicit and easier to combine with responsive layouts. |
 | Local dialog content frame | `EntityDialogShell` | Parent still controls `Dialog` open state. |
 | Local destructive confirmation | `ConfirmDeleteDialog` | Parent still owns mutation state and post-delete cleanup. |
 | Local split pane with resize or inspector | `SplitInspectorLayout` or `SheetInspectorLayout` | Requires full-height route treatment when used as page structure. |
@@ -87,4 +90,5 @@ Don't hide accessibility regressions behind visual parity. Search, filters, dial
 - Links navigate. Buttons mutate, sort, toggle, or open transient UI.
 - Long ids, JSON, markdown, tables, and badges are mobile contained.
 - Light and dark themes remain readable.
+- No new route-local muted slabs, dashed empty containers, or one-off shadow utilities were introduced outside intentional chart/data-visualization affordances.
 - Component and route tests are updated when visible states or shared contracts change.

@@ -117,14 +117,20 @@ function ScheduleInputPreview({
 }) {
   if (!preview) {
     return (
-      <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-xs text-muted-foreground" data-testid="schedule-input-preview-empty">
+      <div
+        className="rounded-lg border border-border/70 bg-card/70 p-3 text-xs text-muted-foreground shadow-ui-xs"
+        data-testid="schedule-input-preview-empty"
+      >
         Preview the scheduled fire to prove placeholder substitution before saving.
       </div>
     );
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60 p-3" data-testid="schedule-input-preview">
+    <div
+      className="flex min-w-0 flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-3 shadow-ui-xs"
+      data-testid="schedule-input-preview"
+    >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Badge variant={preview.ready ? "secondary" : "destructive"}>{preview.ready ? "Ready" : "Not ready"}</Badge>
         <span className="text-xs text-muted-foreground">
@@ -134,11 +140,11 @@ function ScheduleInputPreview({
       <div className="grid min-w-0 gap-3 lg:grid-cols-2">
         <div className="min-w-0">
           <p className="mb-1 text-xs font-medium text-muted-foreground">Rendered parameters</p>
-          <pre className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 text-xs">{stringifyJson(preview.renderedParameters)}</pre>
+          <pre className="max-h-72 overflow-auto rounded-lg bg-ui-surface-inset p-3 text-xs shadow-inner shadow-black/[0.02] dark:shadow-black/20">{stringifyJson(preview.renderedParameters)}</pre>
         </div>
         <div className="min-w-0">
           <p className="mb-1 text-xs font-medium text-muted-foreground">Template context</p>
-          <pre className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 text-xs">{stringifyJson(preview.templateContext)}</pre>
+          <pre className="max-h-72 overflow-auto rounded-lg bg-ui-surface-inset p-3 text-xs shadow-inner shadow-black/[0.02] dark:shadow-black/20">{stringifyJson(preview.templateContext)}</pre>
         </div>
       </div>
     </div>
@@ -151,7 +157,10 @@ function TemplateVariableRows({ rows, onRowsChange }: { rows: RuntimeInputRow[];
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-2 rounded-lg border bg-muted/20 p-3" data-testid="scheduled-task-new-template-vars">
+    <div
+      className="flex min-w-0 flex-col gap-2 rounded-lg border border-border/70 bg-card/70 p-3 shadow-ui-xs"
+      data-testid="scheduled-task-new-template-vars"
+    >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h3 className="text-sm font-medium">Template variables</h3>
@@ -320,7 +329,7 @@ export function ScheduledTaskEditorPage() {
   return (
     <section className="flex h-full min-w-0 flex-col gap-4 overflow-y-auto p-4" data-testid="scheduled-task-new-page">
       <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-1">
+        <div className="flex min-w-0 flex-col gap-1">
           <h1 className="text-xl font-semibold tracking-tight">New Scheduled Task</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">Create a backend-backed Workflow Package schedule, preview scheduled input substitution, then save into the Scheduled Tasks route family.</p>
         </div>
@@ -365,7 +374,14 @@ export function ScheduledTaskEditorPage() {
             </Select>
             {selectedWorkflowOption?.description ? <p className="text-xs text-muted-foreground">{selectedWorkflowOption.description}</p> : null}
           </div>
-          {hasZeroWorkflowPackage ? <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground lg:col-span-2" data-testid="schedule-workflow-empty-state">This Workflow Package does not define any workflows. Choose a different package before previewing or saving this schedule.</div> : null}
+          {hasZeroWorkflowPackage ? (
+            <div
+              className="rounded-lg border border-border/70 bg-card/70 p-3 text-sm text-muted-foreground shadow-ui-xs lg:col-span-2"
+              data-testid="schedule-workflow-empty-state"
+            >
+              This Workflow Package does not define any workflows. Choose a different package before previewing or saving this schedule.
+            </div>
+          ) : null}
           <div className="flex flex-col gap-2"><Label htmlFor="schedule-name">Schedule name</Label><Input id="schedule-name" data-testid="schedule-name" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} /></div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="schedule-timezone">Timezone</Label>

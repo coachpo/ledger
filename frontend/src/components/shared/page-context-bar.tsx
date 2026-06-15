@@ -26,7 +26,7 @@ const rootClassByDensity: Record<PageContextBarDensity, string> = {
 function PageContextTitle({ children }: { children: ReactNode }) {
   return (
     <h1
-      className="shrink-0 text-2xl font-semibold leading-tight tracking-tight text-foreground sm:text-3xl"
+      className="shrink-0 text-2xl font-semibold leading-tight tracking-tight text-foreground sm:text-[1.75rem]"
       data-slot="page-context-title"
     >
       {children}
@@ -69,7 +69,7 @@ export function PageContextBar({
           <PageContextTitle>{title}</PageContextTitle>
           {description ? (
             <p
-              className="min-w-0 max-w-3xl truncate text-sm leading-6 text-muted-foreground"
+              className="min-w-0 max-w-3xl text-sm leading-6 text-muted-foreground"
               data-slot="page-context-description"
             >
               {description}

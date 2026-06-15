@@ -24,7 +24,12 @@ describe("ResourceRowCard", () => {
     );
 
     const row = screen.getByTestId("resource-row");
-    expect(row).toHaveClass("overflow-hidden", "transition-colors", "hover:bg-accent/50");
+    expect(row).toHaveClass(
+      "overflow-hidden",
+      "transition-[background-color,border-color,box-shadow]",
+      "hover:bg-accent/35",
+      "shadow-ui-xs",
+    );
     expect(within(row).queryByRole("button", { name: /quarterly report/i })).not.toBeInTheDocument();
     expect(within(row).queryByRole("link", { name: /quarterly report/i })).not.toBeInTheDocument();
   });

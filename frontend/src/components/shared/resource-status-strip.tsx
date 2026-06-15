@@ -78,7 +78,7 @@ export function ResourceStatusStrip({
     return (
       <div
         className={cn(
-          "rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground",
+          "rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-xs text-muted-foreground shadow-ui-xs",
           className,
         )}
       >
@@ -90,7 +90,7 @@ export function ResourceStatusStrip({
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center rounded-lg border bg-card text-card-foreground",
+        "flex flex-wrap items-center rounded-lg border border-border/70 bg-card/80 text-card-foreground shadow-ui-xs",
         densityClass[density],
         className,
       )}

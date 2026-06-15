@@ -290,16 +290,25 @@ describe("Layout", () => {
     );
     const activeItem = screen.getByTestId(metadata.nav.testId);
 
-    expect(banner).toHaveClass("h-12", "gap-2", "px-3");
-    expect(sidebarHeader).toHaveClass("h-12", "px-3");
+    expect(banner).toHaveClass(
+      "h-[var(--ui-layout-header-height)]",
+      "gap-2",
+      "px-3",
+      "bg-ui-surface-chrome",
+    );
+    expect(sidebarHeader).toHaveClass(
+      "h-[var(--ui-layout-header-height)]",
+      "px-3",
+    );
     expect(sidebarInset).toHaveClass(
-      "md:peer-data-[variant=inset]:my-1.5",
-      "md:peer-data-[variant=inset]:mr-1.5",
-      "md:peer-data-[variant=inset]:rounded-r-lg",
+      "md:peer-data-[variant=inset]:my-2",
+      "md:peer-data-[variant=inset]:mr-2",
+      "md:peer-data-[variant=inset]:rounded-r-xl",
+      "md:peer-data-[variant=inset]:shadow-ui-sm",
     );
     expect(activeItem).toHaveAttribute("data-active", "true");
     expect(activeItem).toHaveClass(
-      "data-[active=true]:bg-sidebar-primary/10",
+      "data-[active=true]:bg-sidebar-primary/12",
       "data-[active=true]:font-semibold",
       "data-[active=true]:text-sidebar-primary",
     );
@@ -383,7 +392,10 @@ describe("Layout", () => {
       groupedSidebarItems.map((group) => group.label),
     );
     expect(
-      screen.getAllByRole("link").map((link) => link.getAttribute("href")),
+      screen
+        .getAllByRole("link")
+        .filter((link) => link.getAttribute("href") !== "#app-main")
+        .map((link) => link.getAttribute("href")),
     ).toEqual(
       groupedSidebarItems.flatMap((group) =>
         group.items.map((item) => item.href),

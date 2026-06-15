@@ -152,7 +152,7 @@ export function TradingOperationForm({
   return (
     <Form {...form}>
       <form
-        className="space-y-4"
+        className="flex flex-col gap-4"
         onSubmit={form.handleSubmit((values) => {
           const common = {
             executedAt: new Date(values.executedAt).toISOString(),
@@ -245,13 +245,13 @@ export function TradingOperationForm({
                 )}
               />
             ) : (
-              <div className="rounded-md border border-dashed border-destructive/50 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive shadow-ui-xs">
                 {side} requires a deposit balance. Add one in the Balances tab
                 first.
               </div>
             )
           ) : (
-            <div className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-sm text-muted-foreground shadow-ui-xs">
               Split operations do not require a cash balance.
             </div>
           )}
@@ -357,7 +357,7 @@ export function TradingOperationForm({
                   </FormControl>
                   {symbolOptions.length > 0 && isSymbolMenuOpen ? (
                     <div
-                      className="bg-popover text-popover-foreground absolute top-full z-50 mt-1 w-full overflow-hidden rounded-md border shadow-md"
+                      className="absolute top-full z-50 mt-1 w-full overflow-hidden rounded-lg border border-border/80 bg-popover/98 text-popover-foreground shadow-ui-md backdrop-blur-sm"
                       id={symbolSuggestionsId}
                     >
                       {filteredSymbolOptions.length > 0 ? (

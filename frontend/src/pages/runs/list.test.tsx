@@ -175,8 +175,10 @@ describe("RunsListPage", () => {
     expect(table.parentElement?.parentElement).toHaveClass(
       "min-w-0",
       "max-w-full",
-      "rounded-md",
+      "rounded-xl",
       "border",
+      "bg-card/95",
+      "shadow-ui-xs",
     );
   });
 
@@ -196,7 +198,7 @@ describe("RunsListPage", () => {
     expect(header?.closest("[data-slot='card']")).not.toBeInTheDocument();
     expect(
       within(contextRegion as HTMLElement).getByText(/monitor workflow runs/i),
-    ).toHaveClass("max-w-3xl", "truncate", "text-sm");
+    ).toHaveClass("max-w-3xl", "text-sm", "leading-6");
     expect(
       within(contextRegion as HTMLElement).queryByRole("list"),
     ).not.toBeInTheDocument();

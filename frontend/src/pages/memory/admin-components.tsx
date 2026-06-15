@@ -233,7 +233,7 @@ export function JsonBlock({ label, value }: { label: string; value: unknown }) {
       <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </h4>
-      <pre className="max-h-56 overflow-auto bg-muted/20 py-2 pl-3 pr-2 text-xs leading-5">
+      <pre className="max-h-56 overflow-auto rounded-lg border border-border/70 bg-ui-surface-grouped/70 px-3 py-2 text-xs leading-5 shadow-inner">
         {JSON.stringify(value, null, 2)}
       </pre>
     </section>
@@ -289,7 +289,7 @@ function CopyableIdField({
       label={label}
       value={
         <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate rounded-md border bg-muted/30 px-2 py-1 font-mono text-xs text-foreground">
+          <span className="min-w-0 flex-1 truncate rounded-lg border border-border/70 bg-ui-surface-grouped px-2 py-1 font-mono text-xs text-foreground shadow-inner">
             {value}
           </span>
           <Button
@@ -319,7 +319,7 @@ function DetailCard({
   title: string;
 }) {
   return (
-    <Card className="min-w-0 shadow-sm" data-testid={testId}>
+    <Card className="min-w-0 shadow-ui-xs" data-testid={testId}>
       <CardHeader className="px-4 pt-4">
         <CardTitle className="text-base">{title}</CardTitle>
         {description ? (
@@ -1024,7 +1024,7 @@ function WorkflowVisibilityUpdateForm({
 
   return (
     <form
-      className="flex min-w-0 flex-col gap-4 rounded-xl border bg-card p-4 shadow-sm"
+      className="flex min-w-0 flex-col gap-4 rounded-xl border border-border/70 bg-card/95 p-4 shadow-ui-xs"
       data-testid="memory-workflow-visibility-form"
       onSubmit={submit}
     >

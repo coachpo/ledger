@@ -323,11 +323,11 @@ function ModelConnectionDetailsRow({
   detailsId: string;
 }) {
   return (
-    <TableRow className="bg-muted/20 hover:bg-muted/20" id={detailsId}>
+    <TableRow className="bg-ui-surface-grouped/60 hover:bg-ui-surface-grouped/60" id={detailsId}>
       <TableCell colSpan={6} className="whitespace-normal px-3 py-2">
         <ModelConnectionDetailSections
           ariaLabel={`Expanded details for ${connection.name}`}
-          className="rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+          className="rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-xs text-muted-foreground shadow-ui-xs"
           connection={connection}
           role="group"
         />
@@ -371,7 +371,7 @@ function ModelConnectionsTable({
     <ResourceTableFrame>
       <Table className="table-fixed text-xs">
         <TableHeader>
-          <TableRow className="bg-muted/30 hover:bg-muted/30">
+          <TableRow className="bg-ui-surface-grouped/80 hover:bg-ui-surface-grouped/80">
             <TableHead className="w-9 px-2 py-1.5">
               <ResourceSelectionCheckbox
                 ariaLabel="Select all shown model connections"

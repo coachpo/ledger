@@ -113,7 +113,10 @@ export function ArrayFieldList({
           const itemLabel = `${itemLabelPrefix} ${index + 1}`;
 
           return (
-            <div className="flex flex-col gap-3 rounded-lg border border-dashed p-4" key={`${label}-${index}-${item.pathTokens.join(".")}`}>
+            <div
+              className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-4 shadow-ui-xs"
+              key={`${label}-${index}-${item.pathTokens.join(".")}`}
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex flex-col gap-2">
                   <div className="flex flex-wrap items-center gap-2">

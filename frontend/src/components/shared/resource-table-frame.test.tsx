@@ -33,7 +33,14 @@ describe("ResourceTableFrame", () => {
     );
 
     const frame = screen.getByTestId("resource-table-frame");
-    expect(frame).toHaveClass("min-w-0", "max-w-full", "rounded-md", "border");
+    expect(frame).toHaveClass(
+      "min-w-0",
+      "max-w-full",
+      "rounded-xl",
+      "border",
+      "bg-card/95",
+      "shadow-ui-xs",
+    );
     expect(frame.querySelector("[data-slot='table-container']")).toHaveClass(
       "min-w-0",
       "w-full",

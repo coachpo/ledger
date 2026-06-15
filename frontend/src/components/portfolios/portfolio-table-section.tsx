@@ -33,13 +33,13 @@ export function PortfolioTableSection<TData, TValue>({
     <>
       <Card>
         <CardHeader>
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <CardTitle>{title}</CardTitle>
             {headerContent}
           </div>
           {action ? <CardAction>{action}</CardAction> : null}
         </CardHeader>
-        <CardContent className={contentTop ? "space-y-4" : undefined}>
+        <CardContent className={contentTop ? "flex flex-col gap-4" : undefined}>
           {contentTop}
           <DataTable
             columns={columns}

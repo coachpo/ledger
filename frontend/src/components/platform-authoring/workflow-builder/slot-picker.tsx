@@ -196,7 +196,7 @@ export function WorkflowSlotPicker({
 
         <Separator />
 
-        <div className="flex flex-col gap-3 rounded-md border border-dashed bg-muted/20 p-4">
+        <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-4 shadow-ui-xs">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">
               {hasSelectedStep ? `Step ${value.stepIndex}` : "No step selected"}

@@ -261,7 +261,7 @@ function StructuredValueNode({
             <span className="text-xs text-muted-foreground">{summary}</span>
           ) : null}
           {!isCollection && !isMultiline ? (
-            <code className="min-w-0 break-words whitespace-pre-wrap rounded bg-background px-1.5 py-0.5 text-xs text-foreground">
+          <code className="min-w-0 break-words whitespace-pre-wrap rounded bg-ui-surface-inset px-1.5 py-0.5 text-xs text-foreground">
               {formatPrimitiveValue(value, kind)}
             </code>
           ) : null}
@@ -279,7 +279,7 @@ function StructuredValueNode({
 
         {isCollection ? (
           entries.length > 0 ? (
-            <div className="mt-1 space-y-1">
+            <div className="mt-1 flex flex-col gap-1">
               {entries.map(([entryLabel, entryValue]) => (
                 <StructuredValueNode
                   depth={depth + 1}
@@ -304,7 +304,7 @@ function StructuredValueNode({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/20 p-3",
+        "flex flex-col gap-3 rounded-lg border border-border/70 bg-card/80 p-3 shadow-ui-xs",
         depth > 0 && "ml-4",
       )}
     >

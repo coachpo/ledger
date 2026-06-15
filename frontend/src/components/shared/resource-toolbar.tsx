@@ -42,12 +42,12 @@ function ResourceToolbarSearch({
         {label}
       </Label>
       <Search
-        className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
+        className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
         aria-hidden="true"
       />
       <Input
         aria-label={label}
-        className="h-8 pl-8 text-xs"
+        className="h-[var(--ui-size-control-sm)] pl-9 text-xs"
         disabled={disabled}
         id={id}
         name={name}
@@ -70,7 +70,12 @@ export function ResourceToolbar({
   selectionSummary,
 }: ResourceToolbarProps) {
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
+    <div
+      className={cn(
+        "flex flex-col gap-2 rounded-xl border border-border/70 bg-card/80 p-2 shadow-ui-xs",
+        className,
+      )}
+    >
       <div className="flex flex-wrap items-center gap-2">
         {search ? <ResourceToolbarSearch {...search} /> : null}
         {filters}
@@ -79,7 +84,7 @@ export function ResourceToolbar({
         ) : null}
       </div>
       {(resultSummary || selectionSummary || children) ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
           <div className="min-w-0 text-xs text-muted-foreground">
             {resultSummary}
           </div>

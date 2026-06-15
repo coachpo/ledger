@@ -30,28 +30,33 @@ export function EntityDialogShell({
   return (
     <DialogContent
       className={cn(
-        "flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl",
+        "flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[var(--ui-layout-dialog-width)]",
         className,
       )}
     >
-      <DialogHeader className="shrink-0 px-5 pt-5 text-left">
+      <DialogHeader className="shrink-0 px-5 pt-5 text-left sm:px-6 sm:pt-6">
         <DialogTitle>{title}</DialogTitle>
         {description ? <DialogDescription>{description}</DialogDescription> : null}
       </DialogHeader>
       {constraintStrip ? (
-        <div className="shrink-0 px-5" data-slot="entity-dialog-constraint-strip">
+        <div
+          className="shrink-0 px-5 sm:px-6"
+          data-slot="entity-dialog-constraint-strip"
+        >
           {constraintStrip}
         </div>
       ) : null}
       <Separator />
       <div
-        className="min-h-0 flex-1 overflow-auto overscroll-contain px-5 py-4"
+        className="min-h-0 flex-1 overflow-auto overscroll-contain bg-ui-surface px-5 py-4 sm:px-6"
         data-slot="entity-dialog-body"
       >
         {children}
       </div>
       <Separator />
-      <DialogFooter className="shrink-0 px-5 pb-5">{footer}</DialogFooter>
+      <DialogFooter className="shrink-0 bg-ui-surface-elevated px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
+        {footer}
+      </DialogFooter>
     </DialogContent>
   );
 }

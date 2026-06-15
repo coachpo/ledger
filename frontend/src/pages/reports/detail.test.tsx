@@ -126,12 +126,13 @@ describe("ReportDetailPage", () => {
     ).not.toBeInTheDocument();
     const contentPane = screen.getByTestId("report-content-pane");
     expect(contentPane).toHaveClass(
-      "rounded-md",
+      "rounded-xl",
       "border",
-      "border-border",
-      "bg-muted/30",
+      "border-border/70",
+      "bg-card/95",
       "px-6",
-      "py-4",
+      "py-5",
+      "shadow-ui-xs",
     );
     expect(contentPane).toHaveTextContent("Agent-created report.");
   });

@@ -62,7 +62,7 @@ export function TemplateRuntimeInputsSection({
       {open || rows.length > 0 ? (
         <div className="mt-2 flex flex-col gap-2">
           {rows.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-2 text-xs italic text-muted-foreground">
+            <p className="rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-xs italic text-muted-foreground shadow-ui-xs">
               No runtime inputs yet.
             </p>
           ) : null}

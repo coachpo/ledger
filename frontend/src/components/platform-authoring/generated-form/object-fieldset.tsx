@@ -121,7 +121,7 @@ export function ObjectFieldset({
           if (!existingField && field.required === false) {
             return (
               <div
-                className="flex items-center justify-between rounded-md border border-dashed bg-muted/20 p-3"
+                className="flex items-center justify-between rounded-lg border border-border/70 bg-card/70 p-3 shadow-ui-xs"
                 key={field.name}
               >
                 <div className="flex flex-col gap-1">

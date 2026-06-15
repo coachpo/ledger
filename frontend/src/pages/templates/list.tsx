@@ -186,7 +186,7 @@ export function TemplateListPage() {
           <ResourceTableFrame>
             <Table>
               <TableHeader>
-                <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableRow className="bg-ui-surface-grouped/80 hover:bg-ui-surface-grouped/80">
                   <TableHead className="w-9">
                     <ResourceSelectionCheckbox
                       ariaLabel="Select all shown templates"

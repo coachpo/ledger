@@ -130,7 +130,7 @@ export function ExampleEditorPage() {
           title="Validation runs before launch"
           description="Save changes, then use the launch page for runtime parameters."
         />
-        <section aria-label="Package manifest" className="min-h-0 flex-1 rounded-md border p-4">
+        <section aria-label="Package manifest" className="min-h-0 flex-1 rounded-xl border border-border/70 bg-card/95 p-4 shadow-ui-xs">
           <PackageManifestEditor />
         </section>
       </form>

@@ -793,7 +793,10 @@ function ExpandedScheduleDetails({
   return (
     <ScheduleDetailSections
       ariaLabel={`Expanded details for ${schedule.name}`}
-      className={cn("rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground", className)}
+      className={cn(
+        "rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-xs text-muted-foreground shadow-ui-xs",
+        className,
+      )}
       role="group"
       schedule={schedule}
     />
@@ -961,7 +964,7 @@ function ScheduleRow({
       </TableRow>
       {expanded ? (
         <TableRow
-          className="bg-muted/20 hover:bg-muted/20"
+          className="bg-ui-surface-grouped/60 hover:bg-ui-surface-grouped/60"
           data-testid={detailsId}
           id={detailsId}
         >
@@ -1003,7 +1006,7 @@ function ScheduleTable({
     <ResourceTableFrame>
       <Table className="table-fixed text-xs">
         <TableHeader>
-          <TableRow className="bg-muted/30 hover:bg-muted/30">
+          <TableRow className="bg-ui-surface-grouped/80 hover:bg-ui-surface-grouped/80">
             <TableHead className="w-9 px-2 py-1.5">
               <ResourceSelectionCheckbox
                 ariaLabel="Select all shown scheduled tasks"

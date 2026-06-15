@@ -15,7 +15,10 @@ Use one route shell. `Layout` owns page framing, sidebar navigation, breadcrumbs
 Keep pages thin. Pages choose data, route params, actions, and feature text. Shared components own repeatable chrome, spacing, table frames, status display, and shell structure.
 
 Prefer compact density. This app is an operator workspace, not a marketing page. Lists, filters, and status panels should be readable at high information density.
-Use semantic tokens. Colors come from `theme.css` and Tailwind semantic classes such as `bg-background`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-card`, `text-destructive`, `text-positive`, and `text-negative`.
+
+Use the renovated Apple-inspired surface model. Screens should read as a calm management workspace: neutral canvas, grouped surfaces, crisp separators, soft elevation, precise alignment, and compact system typography. Avoid decorative gradients, oversized marketing sections, and card-heavy bento layouts for ordinary management workflows.
+
+Use semantic tokens. Colors come from `theme.css` and Tailwind semantic classes such as `bg-ui-canvas`, `bg-card/95`, `bg-ui-surface-grouped`, `bg-ui-surface-inset`, `text-foreground`, `text-muted-foreground`, `border-border/70`, `text-destructive`, `text-positive`, and `text-negative`.
 
 Make state explicit. Loading, empty, filtered-empty, disabled-extension, error, saving, validating, launching, and polling states should map to route metadata and visible UI states.
 
@@ -30,7 +33,7 @@ Workspace and console routes use `WorkspacePageShell` when content needs full-he
 Split inspector flows use `SplitInspectorLayout` on desktop-like full-height routes and `SheetInspectorLayout` when the inspector should open as a sheet.
 Use `gap-*` for spacing. Don't use `space-x-*` or `space-y-*` in new shared UI. Prefer `min-w-0`, `overflow-auto`, `break-words`, and table wrappers for dense content.
 
-Use the project `--ui-*` tokens when component CSS needs custom values for spacing, shadows, z-index, motion, breakpoints, or control sizes. Don't create a parallel token file.
+Use the project `--ui-*` tokens when component CSS needs custom values for surfaces, spacing, shadows, z-index, motion, breakpoints, or control sizes. Don't create a parallel token file.
 
 ## Typography
 
@@ -49,7 +52,9 @@ Use `text-positive` and `text-negative` for financial deltas only when the value
 
 Don't add route-local theme state. `theme-provider.tsx` owns theme persistence and system sync.
 
-Check light and dark themes for every new shared pattern. Borders, muted panels, dashed state panels, and card backgrounds must remain visible in both themes.
+Check light and dark themes for every new shared pattern. Borders, grouped panels, inset surfaces, elevated cards, and focus shadows must remain visible in both themes.
+
+Do not add new route-local `bg-muted/20`, `bg-muted/30`, `rounded-md border bg-muted/*`, `border-dashed`, or `shadow-sm`/`shadow-md` page chrome. Use shared state/table/dialog components or the `bg-ui-*` and `shadow-ui-*` tokens. Dashed strokes are reserved for data-visualization affordances such as chart markers.
 
 ## Icons
 
@@ -107,7 +112,7 @@ Extension-owned routes must pass through extension runtime gates. Platform and s
 ## State patterns
 
 Use `InventoryStatePanel` for route-level inventory empty, filtered-empty, disabled, or error states inside inventory pages.
-Use `EmptyStatePanel` for dashed card empty states that may include an icon and action.
+Use `EmptyStatePanel` for card-like empty states that may include an icon and action.
 
 Use `InlineStatePanel` for inline notices inside existing panels, forms, payload sections, or split panes.
 

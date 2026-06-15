@@ -164,7 +164,7 @@ function ListCardBody({
   const descriptionClassName = descriptionClassByVariant[variant];
 
   return (
-    <div className={cn("min-w-0 space-y-1", className)}>
+    <div className={cn("flex min-w-0 flex-col gap-1", className)}>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <div className={titleClassByVariant[variant]}>
           {renderTitleAction(title, titleAction)}
@@ -252,7 +252,7 @@ function ResourceRowCardBody({
   titleAction,
 }: ResourceRowCardBodyProps) {
   return (
-    <div className={cn("min-w-0 space-y-0.5", className)}>
+    <div className={cn("flex min-w-0 flex-col gap-0.5", className)}>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <div className="min-w-0 break-words text-sm font-medium leading-5 tracking-tight text-foreground">
           {renderTitleAction(title, titleAction)}
@@ -307,7 +307,7 @@ function BaseListCard({
   return (
     <Card
       className={cn(
-        "overflow-hidden transition-colors hover:bg-accent/50 data-[state=selected]:bg-muted",
+        "overflow-hidden transition-[background-color,border-color,box-shadow] hover:border-border hover:bg-accent/35 data-[state=selected]:border-primary/30 data-[state=selected]:bg-accent/50",
         className,
       )}
       data-state={selected ? "selected" : undefined}
@@ -346,7 +346,7 @@ export function ResourceRowCard({
   return (
     <Card
       className={cn(
-        "overflow-hidden transition-colors hover:bg-accent/50 data-[state=selected]:bg-muted",
+        "overflow-hidden transition-[background-color,border-color,box-shadow] hover:border-border hover:bg-accent/35 data-[state=selected]:border-primary/30 data-[state=selected]:bg-accent/50",
         className,
       )}
       data-state={selected ? "selected" : undefined}

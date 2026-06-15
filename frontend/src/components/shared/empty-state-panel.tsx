@@ -22,9 +22,9 @@ const alertVariantByTone: Record<EmptyStatePanelTone, "default" | "destructive">
 };
 
 const panelClassByTone: Record<EmptyStatePanelTone, string> = {
-  neutral: "",
-  warning: "border-muted-foreground/40",
-  danger: "border-destructive/40",
+  neutral: "border-border/70 bg-card/95",
+  warning: "border-chart-3/35 bg-chart-3/10",
+  danger: "border-destructive/35 bg-destructive/5",
 };
 
 export function EmptyStatePanel({
@@ -36,18 +36,21 @@ export function EmptyStatePanel({
   tone = "neutral",
 }: EmptyStatePanelProps) {
   return (
-    <Card className={cn("border-dashed", panelClassByTone[tone], className)}>
+    <Card className={cn(panelClassByTone[tone], className)}>
       <CardContent className="p-4">
         <Alert
           className={cn(
             "border-0 bg-transparent p-0",
-            icon ? "grid-cols-[calc(var(--spacing)*4)_1fr] gap-x-3" : null,
+            icon ? "grid-cols-[calc(var(--spacing)*7)_1fr] gap-x-3" : null,
           )}
           data-tone={tone}
           variant={alertVariantByTone[tone]}
         >
           {icon ? (
-            <div aria-hidden="true" className="col-start-1 row-start-1 size-4 translate-y-0.5 text-current [&>svg]:size-4">
+            <div
+              aria-hidden="true"
+              className="col-start-1 row-start-1 flex size-7 items-center justify-center rounded-lg bg-muted/50 text-current [&>svg]:size-4"
+            >
               {icon}
             </div>
           ) : null}

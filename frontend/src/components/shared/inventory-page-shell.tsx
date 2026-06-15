@@ -34,7 +34,10 @@ export function InventoryPageShell({
 }: InventoryPageShellProps) {
   return (
     <div
-      className={cn("flex flex-col gap-4 p-4", className)}
+      className={cn(
+        "flex flex-col gap-4 p-[var(--ui-layout-page-padding)]",
+        className,
+      )}
       data-testid={testId}
     >
       <div data-inventory-shell-region="context">

@@ -221,7 +221,7 @@ function LaunchPageMessage({
       testId="workflow-package-launch-page"
     >
       <Card
-        className="min-w-0 border-destructive/30 bg-destructive/5 shadow-sm"
+        className="min-w-0 border-destructive/30 bg-destructive/5 shadow-ui-xs"
         data-testid="workflow-package-launch-error"
       >
         <CardHeader>
@@ -258,7 +258,7 @@ function RuntimeInputValidationAlert({
       <AlertCircle />
       <AlertTitle>Runtime inputs need attention</AlertTitle>
       <AlertDescription>
-        <ul className="list-disc space-y-1 pl-5">
+        <ul className="flex list-disc flex-col gap-1 pl-5">
           {errors.map((error) => (
             <li
               className="min-w-0 break-words"
@@ -329,12 +329,12 @@ function DiagnosticList({
   }
 
   return (
-    <div className="min-w-0 space-y-2" data-testid={testId}>
+    <div className="flex min-w-0 flex-col gap-2" data-testid={testId}>
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
       </h3>
       <div
-        className="min-w-0 divide-y rounded-lg border bg-background/60"
+        className="min-w-0 divide-y divide-border/70 rounded-lg border border-border/70 bg-card/70 shadow-ui-xs"
         role="list"
       >
         {diagnostics.map((diagnostic, diagnosticIndex) => (
@@ -410,7 +410,7 @@ function PackageDetailsDisclosure({
         className="pt-2"
         data-testid="workflow-package-launch-details"
       >
-        <dl className="grid min-w-0 gap-2 rounded-lg border bg-muted/20 p-3 text-xs sm:grid-cols-2 xl:grid-cols-3">
+        <dl className="grid min-w-0 gap-2 rounded-lg border border-border/70 bg-card/70 p-3 text-xs shadow-ui-xs sm:grid-cols-2 xl:grid-cols-3">
           <div className="min-w-0">
             <dt className="font-medium text-muted-foreground">Key</dt>
             <dd className="break-all font-mono text-foreground">
@@ -561,7 +561,7 @@ function LaunchReadinessSummary({
           {primaryStatusMessage}
         </CardDescription>
       </CardHeader>
-      <CardContent className="min-w-0 space-y-4 px-4 pb-4">
+      <CardContent className="flex min-w-0 flex-col gap-4 px-4 pb-4">
         {isLoadingMetadata ? (
           <p className="text-sm text-muted-foreground">
             Loading launch metadata...
@@ -685,7 +685,7 @@ function StickyLaunchActionBar({
 
   return (
     <div
-      className="sticky top-0 z-10 flex min-w-0 flex-col gap-2 rounded-xl border bg-background/95 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+      className="sticky top-0 z-10 flex min-w-0 flex-col gap-2 rounded-xl border border-border/70 bg-ui-surface-chrome p-3 shadow-ui-sm backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between"
       data-testid="workflow-package-run-actions"
     >
       <p className="min-w-0 text-sm text-muted-foreground">
@@ -763,7 +763,7 @@ function SchemaTemplateWarning({
         </CollapsibleTrigger>
       </div>
       <CollapsibleContent className="min-w-0 pt-2">
-        <div className="min-w-0 space-y-1 border-t border-chart-3/30 pt-2">
+        <div className="flex min-w-0 flex-col gap-1 border-t border-chart-3/30 pt-2">
           <p>
             {reason ??
               "Schema could not be converted into a launch JSON template."}
@@ -1541,7 +1541,7 @@ export function WorkflowPackageLaunchPage() {
                 activeLaunchDraft &&
                 activeLaunchInputMode === "form" ? (
                   <div
-                    className="flex min-w-0 flex-col gap-3 rounded-xl border bg-background/60 p-3"
+                    className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/70 bg-card/70 p-3 shadow-ui-xs"
                     data-testid="runtime-input-primary-form"
                   >
                     <div className="flex min-w-0 flex-col gap-1">
@@ -1582,7 +1582,7 @@ export function WorkflowPackageLaunchPage() {
                 ) : null}
                 {launchInputState.schemaSupported ? (
                   <Collapsible
-                    className="flex min-w-0 flex-col gap-3 rounded-lg border border-dashed bg-muted/10 p-3"
+                    className="flex min-w-0 flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-3 shadow-ui-xs"
                     data-testid="runtime-input-advanced-json"
                     defaultOpen
                   >

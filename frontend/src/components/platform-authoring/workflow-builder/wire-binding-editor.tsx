@@ -108,7 +108,7 @@ function BindingPathEditor({
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-dashed bg-muted/20 p-4">
+    <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-4 shadow-ui-xs">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1">
           <Label>{label}</Label>
@@ -120,7 +120,7 @@ function BindingPathEditor({
       </div>
 
       {binding.pathTokens.length === 0 ? (
-        <div className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+        <div className="rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-sm text-muted-foreground shadow-ui-xs">
           {binding.source === "input"
             ? `No explicit path selected. This will fall back to "${fieldName}".`
             : "No nested path selected. The full slot payload will be used."}

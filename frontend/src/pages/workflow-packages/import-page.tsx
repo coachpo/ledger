@@ -54,7 +54,7 @@ function ImportFailureAlert({ failure }: { failure: ImportFailure | null }) {
     >
       <AlertCircle />
       <AlertTitle>Import failed</AlertTitle>
-      <AlertDescription className="space-y-2">
+      <AlertDescription className="flex flex-col gap-2">
         <p>{failure.message}</p>
         {failure.details.length > 0 ? (
           <ul className="list-disc pl-5">
@@ -301,7 +301,7 @@ export function WorkflowPackageImportPage() {
         </section>
 
         <aside
-          className="min-h-0 bg-muted/20"
+          className="min-h-0 bg-ui-surface-grouped/50"
           aria-label="Import constraint inspector"
         >
           <ScrollArea className="h-full">

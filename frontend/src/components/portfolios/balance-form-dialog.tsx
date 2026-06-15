@@ -75,7 +75,7 @@ export function BalanceFormDialog({
         <Form {...form}>
           <form
             id={formId}
-            className="space-y-4"
+            className="flex flex-col gap-4"
             onSubmit={form.handleSubmit((values) =>
               onSave({
                 amount: values.amount.trim(),

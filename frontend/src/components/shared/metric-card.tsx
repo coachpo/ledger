@@ -25,7 +25,7 @@ type MetricCardProps = {
 
 const cardClassByTone: Record<MetricCardTone, string> = {
   default: "",
-  muted: "bg-muted/30",
+  muted: "bg-ui-surface-grouped/70",
 };
 
 const contentClassByDensity: Record<MetricCardDensity, string> = {
@@ -48,13 +48,13 @@ function MetricCardBody({
   return (
     <CardContent className={contentClassByDensity[density]}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
+        <div className="flex min-w-0 flex-col gap-1">
           <p className="text-xs font-medium tracking-tight text-muted-foreground">{title}</p>
-          <p className={cn("text-xl font-semibold tracking-tight text-foreground", valueClassName)}>{value}</p>
+          <p className={cn("text-xl font-semibold tracking-tight text-foreground tabular-nums", valueClassName)}>{value}</p>
           {note ? <p className="line-clamp-1 text-[11px] text-muted-foreground">{note}</p> : null}
         </div>
         {Icon ? (
-          <div className={cn("rounded-md p-1.5 text-muted-foreground", iconClassName)}>
+          <div className={cn("rounded-lg bg-muted/50 p-1.5 text-muted-foreground", iconClassName)}>
             <Icon className="size-4" />
           </div>
         ) : null}
@@ -77,7 +77,7 @@ export function MetricCard(props: MetricCardProps) {
     return (
       <Link
         className={cn(
-          "block rounded-xl border bg-card text-card-foreground transition-shadow hover:shadow-md",
+          "block rounded-xl border border-border/70 bg-card/95 text-card-foreground shadow-ui-xs outline-none transition-[background-color,border-color,box-shadow] hover:border-border hover:bg-accent/35 hover:shadow-ui-sm focus-visible:[box-shadow:var(--ui-focus-shadow)]",
           cardClassName,
         )}
         to={props.to}

@@ -147,8 +147,10 @@ describe("report source labels", () => {
     expect(table.parentElement?.parentElement).toHaveClass(
       "min-w-0",
       "max-w-full",
-      "rounded-md",
+      "rounded-xl",
       "border",
+      "bg-card/95",
+      "shadow-ui-xs",
     );
     expect(
       within(table).getByRole("button", { name: /sort reports by name/i }),

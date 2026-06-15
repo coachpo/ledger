@@ -24,7 +24,7 @@ describe("EvidenceCluster", () => {
   it("renders deterministic empty and inline layouts", () => {
     const { rerender } = render(<EvidenceCluster emptyLabel="No launch evidence" items={[]} />);
 
-    expect(screen.getByText("No launch evidence")).toHaveClass("border-dashed", "text-muted-foreground");
+    expect(screen.getByText("No launch evidence")).toHaveClass("bg-card/70", "shadow-ui-xs", "text-muted-foreground");
 
     rerender(<EvidenceCluster items={[{ label: "Trace", value: "trace-1" }]} layout="inline" />);
 

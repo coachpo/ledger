@@ -95,7 +95,7 @@ function SavedRuntimeInputEntryRow({
 
   return (
     <div
-      className="flex min-w-0 flex-col gap-2 rounded-lg border bg-background/60 p-3"
+      className="flex min-w-0 flex-col gap-2 rounded-lg border border-border/70 bg-card/70 p-3 shadow-ui-xs"
       data-testid={`${rowTestIdPrefix}-${entry.mode}-${entry.id}`}
     >
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -260,9 +260,12 @@ export function SavedRuntimeInputRegistryPanel(props: SavedRuntimeInputRegistryP
             </Badge>
           </TabsTrigger>
         </TabsList>
-        <TabsContent className={cn("min-w-0 space-y-3", tabContentClassName)} value="presets">
+        <TabsContent
+          className={cn("flex min-w-0 flex-col gap-3", tabContentClassName)}
+          value="presets"
+        >
           {presetSectionLabel ? (
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/10 px-3 py-2">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-card/70 px-3 py-2 shadow-ui-xs">
               <p className="text-xs font-medium text-muted-foreground">{presetSectionLabel}</p>
               <Badge variant="outline">{presetEntries.length} saved</Badge>
             </div>
@@ -320,9 +323,12 @@ export function SavedRuntimeInputRegistryPanel(props: SavedRuntimeInputRegistryP
             ))}
           </div>
         </TabsContent>
-        <TabsContent className={cn("min-w-0 space-y-3", tabContentClassName)} value="history">
+        <TabsContent
+          className={cn("flex min-w-0 flex-col gap-3", tabContentClassName)}
+          value="history"
+        >
           {historySectionLabel ? (
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/10 px-3 py-2">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-card/70 px-3 py-2 shadow-ui-xs">
               <p className="text-xs font-medium text-muted-foreground">{historySectionLabel}</p>
               <Badge variant="outline">{historyEntries.length} saved</Badge>
             </div>

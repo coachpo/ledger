@@ -3511,12 +3511,14 @@ describe("RunsDetailPage", () => {
       /\bCaptured\b|\bPending\b|Not produced/i,
     );
     expect(pendingFinalOutput).toHaveClass(
-      "rounded-md",
+      "rounded-lg",
       "border",
-      "bg-muted/20",
+      "border-border/70",
+      "bg-card/70",
       "p-3",
       "text-sm",
       "text-muted-foreground",
+      "shadow-ui-xs",
     );
     expect(
       within(pendingFinalOutputCard).getAllByRole("heading", {

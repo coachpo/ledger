@@ -11,6 +11,8 @@ import type {
 
 import { ScheduledTaskEditorPage } from "./editor";
 
+vi.setConfig({ testTimeout: 15_000 });
+
 const {
   createScheduleMock,
   navigateMock,

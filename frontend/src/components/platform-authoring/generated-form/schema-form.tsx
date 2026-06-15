@@ -263,7 +263,7 @@ function ValidationIssuesAlert({
       <AlertCircle />
       <AlertTitle>Value entry needs cleanup</AlertTitle>
       <AlertDescription>
-        <ul className="list-disc space-y-1 pl-4">
+        <ul className="flex list-disc flex-col gap-1 pl-4">
           {issues.slice(0, 5).map((issue) => (
             <li key={`${issue.field}-${issue.issue}`}>
               <span className="font-medium">{issue.field}</span>: {issue.issue}
@@ -297,7 +297,7 @@ function SchemaNodeEditor({
     );
 
     return (
-      <Card className={cn(depth > 0 && "border-dashed")}>
+      <Card className={cn(depth > 0 && "bg-card/80")}>
         <CardHeader>
           <SchemaEditorHeader
             label={displayLabel}
@@ -312,7 +312,7 @@ function SchemaNodeEditor({
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {definedFields.length === 0 ? (
-            <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-sm text-muted-foreground shadow-ui-xs">
               This object schema does not define any editable fields yet.
             </div>
           ) : null}
@@ -324,7 +324,7 @@ function SchemaNodeEditor({
             if (!existingField && field.required === false) {
               return (
                 <div
-                  className="flex items-center justify-between rounded-md border border-dashed bg-muted/20 p-3"
+                  className="flex items-center justify-between rounded-lg border border-border/70 bg-card/70 p-3 shadow-ui-xs"
                   key={field.name}
                 >
                   <div className="flex flex-col gap-1">
@@ -448,7 +448,7 @@ function SchemaNodeEditor({
         : createArrayValueEntry([], value.pathTokens);
 
     return (
-      <Card className={cn(depth > 0 && "border-dashed")}>
+      <Card className={cn(depth > 0 && "bg-card/80")}>
         <CardHeader>
           <SchemaEditorHeader
             label={displayLabel}
@@ -487,13 +487,13 @@ function SchemaNodeEditor({
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {arrayValue.items.length === 0 ? (
-            <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-sm text-muted-foreground shadow-ui-xs">
               No items yet. Add one to start capturing repeated values.
             </div>
           ) : null}
           {arrayValue.items.map((item, index) => (
             <div
-              className="flex flex-col gap-3 rounded-lg border border-dashed p-4"
+              className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-4 shadow-ui-xs"
               key={`${label}-${index}`}
             >
               <div className="flex justify-end">
@@ -549,7 +549,7 @@ function SchemaNodeEditor({
     const selectedOption = options[selectedIndex] ?? options[0];
 
     return (
-      <Card className={cn(depth > 0 && "border-dashed")}>
+      <Card className={cn(depth > 0 && "bg-card/80")}>
         <CardHeader>
           <SchemaEditorHeader
             label={displayLabel}
@@ -625,7 +625,7 @@ function SchemaNodeEditor({
       <Alert>
         <AlertCircle />
         <AlertTitle>{displayLabel}</AlertTitle>
-        <AlertDescription className="space-y-2">
+        <AlertDescription className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">ref</Badge>
             <Badge variant="secondary">
@@ -646,7 +646,7 @@ function SchemaNodeEditor({
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/20 p-4">
+    <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/80 p-4 shadow-ui-xs">
       <SchemaEditorHeader
         label={displayLabel}
         pathTokens={value.pathTokens}

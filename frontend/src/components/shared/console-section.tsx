@@ -27,9 +27,9 @@ export type ConsoleSectionProps = {
 
 const sectionClassByTone: Record<ConsoleSectionTone, string> = {
   default: "",
-  muted: "bg-muted/30",
-  warning: "border-muted-foreground/40",
-  danger: "border-destructive/40",
+  muted: "bg-ui-surface-grouped/70",
+  warning: "border-chart-3/35 bg-chart-3/10",
+  danger: "border-destructive/35 bg-destructive/5",
 };
 
 const headerClassByDensity: Record<ConsoleSectionDensity, string> = {
@@ -54,15 +54,27 @@ export function ConsoleSection({
   tone = "default",
 }: ConsoleSectionProps) {
   return (
-    <Card className={cn("gap-4", sectionClassByTone[tone], className)} data-testid={testId} data-tone={tone}>
+    <Card
+      className={cn("gap-4", sectionClassByTone[tone], className)}
+      data-testid={testId}
+      data-tone={tone}
+    >
       <CardHeader className={headerClassByDensity[density]}>
         <div className="min-w-0">
-          <CardTitle className="text-sm font-semibold tracking-tight">{title}</CardTitle>
-          {description ? <CardDescription className="mt-1 text-xs leading-5">{description}</CardDescription> : null}
+          <CardTitle className="text-sm font-semibold tracking-tight">
+            {title}
+          </CardTitle>
+          {description ? (
+            <CardDescription className="mt-1 text-xs leading-5">
+              {description}
+            </CardDescription>
+          ) : null}
         </div>
         {actions ? <CardAction>{actions}</CardAction> : null}
       </CardHeader>
-      <CardContent className={cn(contentClassByDensity[density], contentClassName)}>{children}</CardContent>
+      <CardContent className={cn(contentClassByDensity[density], contentClassName)}>
+        {children}
+      </CardContent>
     </Card>
   );
 }

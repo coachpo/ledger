@@ -48,9 +48,9 @@ function AppSidebar() {
 
   return (
     <Sidebar variant="inset">
-      <SidebarHeader className="h-12 justify-center border-b border-sidebar-border px-3 py-0">
+      <SidebarHeader className="h-[var(--ui-layout-header-height)] justify-center border-b border-sidebar-border/70 px-3 py-0">
         <div className="flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary/10 text-sidebar-primary">
+          <div className="flex size-8 items-center justify-center rounded-xl border border-sidebar-primary/15 bg-sidebar-primary/10 text-sidebar-primary shadow-ui-xs">
             <img
               alt=""
               aria-hidden="true"
@@ -60,7 +60,9 @@ function AppSidebar() {
           </div>
           {showExpandedContent ? (
             <div className="min-w-0">
-              <p className="text-sm font-semibold tracking-tight">SignalDeck</p>
+              <p className="text-sm font-semibold tracking-tight text-sidebar-foreground">
+                SignalDeck
+              </p>
             </div>
           ) : null}
         </div>
@@ -130,9 +132,15 @@ export function Layout() {
 
   return (
     <SidebarProvider>
+      <a
+        className="sr-only z-[var(--ui-z-toast)] rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-ui-md focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+        href="#app-main"
+      >
+        Skip to main content
+      </a>
       <AppSidebar />
       <SidebarInset>
-        <header className="sticky top-0 z-20 flex h-12 items-center gap-2 border-b border-border bg-background/95 px-3 backdrop-blur">
+        <header className="sticky top-0 z-20 flex h-[var(--ui-layout-header-height)] items-center gap-2 border-b border-border/70 bg-ui-surface-chrome px-3 backdrop-blur-xl">
           <SidebarTrigger className="shrink-0" />
           <div className="min-w-0 flex-1">
             <Breadcrumb>
@@ -165,6 +173,7 @@ export function Layout() {
         </header>
 
         <main
+          id="app-main"
           className="min-h-0 min-w-0 flex-1 overflow-hidden"
           data-route-shell-mode={routeMetadata.shellMode}
           data-route-width-mode={usesFullHeightShell ? "full" : routeMetadata.widthMode}

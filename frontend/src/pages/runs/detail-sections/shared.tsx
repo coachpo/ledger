@@ -37,7 +37,7 @@ export function RunDetailSectionTitle({
     <span className="inline-flex min-w-0 items-center gap-2">
       <span
         aria-hidden="true"
-        className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground"
+        className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-ui-surface-grouped text-muted-foreground shadow-ui-xs"
         data-testid={`runs-detail-section-icon-${blockId}`}
       >
         <Icon className="size-4" />
@@ -123,7 +123,7 @@ export function RunDetailEmptyState({
 }) {
   return (
     <div
-      className="rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground"
+      className="rounded-lg border border-border/70 bg-card/70 p-3 text-sm text-muted-foreground shadow-ui-xs"
       data-testid={testId}
     >
       {children}
@@ -143,7 +143,7 @@ export function RunDetailTableFrame({
   return (
     <div
       className={cn(
-        "min-w-0 overflow-x-auto rounded-lg border bg-card",
+        "min-w-0 overflow-x-auto rounded-xl border border-border/70 bg-card/95 shadow-ui-xs",
         className,
       )}
       data-testid={testId}
@@ -177,10 +177,10 @@ export function RunDetailContentSection({
   return (
     <section
       aria-labelledby={headingId}
-      className={cn("min-w-0 space-y-3", className)}
+      className={cn("flex min-w-0 flex-col gap-3", className)}
       data-testid={testId}
     >
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <h3
           className="text-sm font-semibold tracking-tight text-foreground"
           id={headingId}
@@ -204,7 +204,7 @@ export function DetailGrid({ items }: { items: DetailItem[] }) {
   return (
     <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => (
-        <div className="min-w-0 space-y-1" key={item.label}>
+        <div className="flex min-w-0 flex-col gap-1" key={item.label}>
           <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {item.label}
           </dt>

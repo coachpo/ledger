@@ -26,7 +26,11 @@ describe("ResourceToolbar", () => {
     const searchInput = screen.getByRole("textbox", {
       name: "Search packages",
     });
-    expect(searchInput).toHaveClass("h-8", "pl-8", "text-xs");
+    expect(searchInput).toHaveClass(
+      "h-[var(--ui-size-control-sm)]",
+      "pl-9",
+      "text-xs",
+    );
     expect(screen.getByText("3 packages shown")).toHaveClass(
       "text-muted-foreground",
     );
@@ -72,7 +76,7 @@ describe("ResourceToolbar", () => {
     );
 
     const filterBar = screen.getByTestId("resource-filter-bar");
-    expect(filterBar).toHaveClass("rounded-md", "border", "bg-muted/30");
+    expect(filterBar).toHaveClass("rounded-xl", "border", "bg-ui-surface-grouped/70");
     expect(screen.getByText("2 of 5 selected")).toBeInTheDocument();
     expect(screen.getByText("Owner").closest("[data-slot='badge']")).toHaveAttribute(
       "data-active",

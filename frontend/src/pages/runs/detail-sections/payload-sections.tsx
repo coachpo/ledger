@@ -24,7 +24,7 @@ function RawPayloadBlock({
 }) {
   return (
     <pre
-      className="max-w-full overflow-x-auto whitespace-pre rounded-md border bg-muted/20 p-3 text-xs"
+      className="max-w-full overflow-x-auto whitespace-pre rounded-lg border border-border/70 bg-ui-surface-inset p-3 text-xs shadow-inner shadow-black/[0.02] dark:shadow-black/20"
       data-testid={testId}
       data-wide-payload="scroll"
     >
@@ -66,7 +66,7 @@ function PayloadViewTabs({
       </div>
       <TabsContent className="min-w-0" value="rendered">
         <StructuredValueInspector
-          className="min-w-0 rounded-md border bg-muted/20 p-3 text-sm"
+          className="min-w-0 rounded-lg border border-border/70 bg-ui-surface-inset p-3 text-sm shadow-inner shadow-black/[0.02] dark:shadow-black/20"
           data-testid={testId ? `${testId}-rendered` : undefined}
           enableMarkdownStringPreview
           label={null}
@@ -95,7 +95,7 @@ export function JsonBlock({
   value: unknown;
 }) {
   return (
-    <div className="min-w-0 space-y-2">
+    <div className="flex min-w-0 flex-col gap-2">
       {label ? <p className="text-sm font-medium">{label}</p> : null}
       <PayloadViewTabs
         label={label ?? "Payload"}
@@ -116,7 +116,7 @@ export function RunPayloadPane({
   value: unknown;
 }) {
   return (
-    <section aria-label={label} className="min-w-0 space-y-3">
+    <section aria-label={label} className="flex min-w-0 flex-col gap-3">
       <PayloadViewTabs label={label} testId={testId} value={value} />
     </section>
   );
@@ -130,7 +130,7 @@ function CompactDetailValue({
   value: string;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
       <div className="break-words">{value}</div>
       {description ? (
         <p className="text-xs leading-5 text-muted-foreground">
@@ -144,7 +144,7 @@ function CompactDetailValue({
 export function RunFinalOutputPane({ run }: { run: RunRead }) {
   return (
     <RunDetailContentSection
-      contentClassName="space-y-5"
+      contentClassName="flex flex-col gap-5"
       description="Rendered payload view for the immutable run result."
       sectionId="final-output"
       testId="runs-detail-final-output-card"
@@ -157,7 +157,7 @@ export function RunFinalOutputPane({ run }: { run: RunRead }) {
           value={run.finalOutput}
         />
       ) : (
-        <section aria-label="Final output" className="space-y-3">
+        <section aria-label="Final output" className="flex flex-col gap-3">
           <RunDetailEmptyState testId="runs-detail-final-output">
             No final output payload was recorded for this run.
           </RunDetailEmptyState>
@@ -204,7 +204,7 @@ export function RunInputWorkspace({ run }: { run: RunRead }) {
   return (
     <div className="grid min-w-0 gap-3" data-testid="runs-input-workspace">
       <RunDetailContentSection
-        contentClassName="space-y-5"
+        contentClassName="flex flex-col gap-5"
         description="Launch payload captured with the immutable run snapshot."
         sectionId="run-input"
         testId="runs-detail-input-card"

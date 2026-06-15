@@ -80,8 +80,8 @@ describe("PageContextBar", () => {
     expect(description).toHaveClass(
       "min-w-0",
       "max-w-3xl",
-      "truncate",
       "text-sm",
+      "leading-6",
     );
   });
 
@@ -133,9 +133,7 @@ describe("PageContextBar", () => {
     const status = screen.getByText("Enabled").closest("[role='list']");
 
     expect(root).toHaveClass("lg:flex-row", "lg:items-center");
-    expect(screen.getByText("Slim route contract.")).toHaveClass(
-      "truncate",
-    );
+    expect(screen.getByText("Slim route contract.")).toHaveClass("leading-6");
     expect(meta.parentElement).toHaveClass("lg:justify-center");
     expect(status).toBeInTheDocument();
     expect(screen.getByText("3 results returned")).toBeInTheDocument();

@@ -62,7 +62,7 @@ function DetailPageMessage({
       testId="memory-detail-page"
     >
       <Card
-        className="min-w-0 border-destructive/30 bg-destructive/5 shadow-sm"
+        className="min-w-0 border-destructive/30 bg-destructive/5 shadow-ui-xs"
         data-testid={testId}
       >
         <CardHeader>
@@ -231,8 +231,8 @@ export function MemoryDetailPage() {
     <WorkspacePageShell
       bodyAriaLabel="Memory admin detail workspace"
       bodyClassName="gap-4"
-      className="min-h-full bg-muted/30"
-      contentClassName="bg-muted/30"
+      className="min-h-full bg-ui-canvas"
+      contentClassName="bg-ui-canvas"
       contextBar={<MemoryDetailContext actions={actions} detail={detail} />}
       contextBarClassName="bg-card/95"
       testId="memory-detail-page"
