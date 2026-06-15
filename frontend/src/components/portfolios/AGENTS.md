@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/components/AGENTS.md`. This file only covers `src/components/portfolios/`.
 
 ## OVERVIEW
-`src/components/portfolios/` owns the portfolio workspace sections, dialogs, tables, and trading forms that support the routed list/detail pages. It also contains a couple of generic dialogs that other features reuse.
+`src/components/portfolios/` owns the portfolio workspace sections, dialogs, tables, and trading forms that support the routed list/detail pages. Reusable destructive confirmation behavior now lives in `../shared/confirm-delete-dialog.tsx`.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 

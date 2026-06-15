@@ -1,6 +1,6 @@
 # FRONTEND GUIDE
 
-> Inherits root rules from `/AGENTS.md`. Local frontend docs live in `e2e/` and throughout the high-signal `src/**/AGENTS.md` boundaries.
+> Inherits root rules from `/AGENTS.md`. Local frontend docs live in `DESIGN_SYSTEM.md`, `e2e/`, and throughout the high-signal `src/**/AGENTS.md` boundaries.
 
 ## OVERVIEW
 React 19 + Vite frontend with a flat, metadata-driven route shell, TanStack Query for server state, extension-assembled Finance Workspace routes, routed workspace areas for Extensions, Workflow Packages, Scheduled Tasks, Model Connections, Memory, and Runs, plus shared inventory/workspace UI that keeps route logic thin. Workflow Packages are the only live executable agent workflow authoring and launch surface; Scheduled Tasks are the package-first automation surface for recurring runs.
@@ -22,6 +22,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
 
 ## CHILD DOCS
+- `DESIGN_SYSTEM.md` — frontend token, layout, shared-component, and migration rules
 - `e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions
 - `src/extensions/AGENTS.md` — frontend extension registry, route/nav/tool filtering, Finance Workspace scaffold, and Digital Oracle tool-only scaffold
 - `src/lib/AGENTS.md` — API client, query keys, formatting, runtime-input helpers, platform-authoring helpers, and shared types
@@ -52,6 +53,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## STRUCTURE
 ```text
 frontend/
+├── DESIGN_SYSTEM.md     # frontend design-system rules for tokens, shared UI, and route migration
 ├── src/extensions/     # frontend extension registry, route/nav assembly, and tool filtering
 ├── src/lib/            # API contract, query keys, formatting, analytics, grouping, types, platform-authoring helpers
 ├── src/hooks/          # TanStack Query hooks wrapping lib/api modules
@@ -69,7 +71,7 @@ frontend/
 | App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/routes.metadata.ts`, `src/extensions/runtime-helpers.ts`, `src/components/layout.tsx` | query client, router provider, metadata-driven shell/nav rendering, extension route assembly, theme toggle, and sidebar navigation |
 | Extension runtime and state | `src/extensions/AGENTS.md`, `src/pages/extensions/AGENTS.md`, `src/extensions/runtime.tsx`, `src/extensions/runtime-helpers.ts`, `src/hooks/use-extensions.ts` | bundled frontend extensions, finance route/nav filtering, extension-owned tool filtering, and `/extensions` state UI |
 | Shared API/state logic | `src/lib/AGENTS.md`, `src/lib/api/AGENTS.md`, `src/lib/types/AGENTS.md`, `src/lib/platform-authoring/AGENTS.md`, `src/hooks/AGENTS.md` | typed fetch, query keys, wire contracts, platform-authoring helpers, and TanStack Query wrappers |
-| Shared route shells and UI state | `src/components/shared/AGENTS.md`, `src/hooks/AGENTS.md` | inventory/workspace/split-inspector shells, resource chrome, table framing, and reusable filter/selection/inspector state helpers |
+| Shared route shells and UI state | `DESIGN_SYSTEM.md`, `src/components/shared/AGENTS.md`, `src/hooks/AGENTS.md` | design-system rules, inventory/workspace/split-inspector shells, resource chrome, table/action/selection framing, and reusable filter/selection/inspector state helpers |
 | Portfolio routes | `src/pages/portfolios/AGENTS.md`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
 | Template routes | `src/pages/templates/AGENTS.md`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
 | Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
@@ -88,7 +90,8 @@ frontend/
 - Use the `@` alias for `src/` imports instead of long relative paths.
 - Mutation-heavy screens use Sonner toasts for success/error feedback and shadcn/ui primitives for dialogs/forms.
 - `src/routes.metadata.ts` is the contract for route archetype, breadcrumb, sidebar ownership, shell mode, width mode, and visible state variants; `Layout` consumes that metadata instead of page-local chrome rules.
-- Shared inventory/workspace/split-inspector shells plus the route-state hooks in `src/hooks/` are the default way to compose page chrome; do not fork table/filter/selection/inspector scaffolding per route.
+- Shared inventory/workspace/split-inspector shells plus the route-state hooks in `src/hooks/` are the default way to compose page chrome; do not fork table/filter/action/selection/inspector scaffolding per route.
+- `DESIGN_SYSTEM.md` is the frontend-wide contract for token use, route shell choice, shared management UI, destructive confirmations, row action menus, selection checkboxes, and bulk action bars.
 - Template preview and report generation both support runtime-input maps built from shared row helpers in `src/lib/runtime-inputs.ts`.
 - Report flows are slug-addressed, use `use-reports.ts` for server state, and rely on `downloadReportUrl()` for native markdown downloads.
 - Report inventory grouping/search/sort logic lives in `src/lib/report-grouping.ts`; the route composes that derived view state instead of re-implementing grouping inline.
