@@ -76,8 +76,6 @@ import {
   type AdminWorkflowVisibilityVariables,
   type CreateDraft,
   SCOPE_TYPE_VALUES,
-  buildOperatorProvenance,
-  buildSubjectRefs,
   createInitialDraft,
   createMemoryPayloadFromDraft,
   createRevisionDraft,
@@ -86,8 +84,6 @@ import {
   formatScope,
   formatWorkflowVisibility,
   optionalText,
-  parseJsonObject,
-  parseRequiredRunId,
   revisionTone,
   subjectRefSummary,
   titleCase,
@@ -464,7 +460,7 @@ export function MemoryDetailContext({
   return (
     <PageContextBar
       actions={actions}
-      description="Inspect one canonical memory entry, its append-only revisions, audit events, and trusted operator workflow visibility controls."
+      description="Inspect one canonical memory entry with append-only revisions and admin event history as the audit trail."
       layout="toolbar"
       status={status}
       title={detail?.summary || "Memory Detail"}
@@ -628,7 +624,7 @@ export function MemoryAdminFilterControls({
             <Label className="text-sm" htmlFor={searchId}>
               Search canonical memory
             </Label>
-            <div className="relative" role="search">
+            <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground" />
               <Input
                 className="h-8 pl-8 text-xs"
@@ -693,32 +689,12 @@ export function MemoryCreateDialog({
   };
   const submit = async (event: { preventDefault: () => void }) => {
     event.preventDefault();
-    const packageKey = optionalText(draft.packageKey);
-    const runId = parseRequiredRunId(draft.runId);
-    const attributes = parseJsonObject(
-      draft.attributesJson,
-      "Create attributes",
-    );
-    if (!packageKey || !runId || !attributes) {
-      toast.error(
-        "Create memory needs package key, run id, scope key, and valid attributes.",
-      );
-      return;
-    }
     const payload = createMemoryPayloadFromDraft(draft);
     if (!payload) {
       return;
     }
     try {
-      await onCreate({
-        ...payload,
-        provenance: buildOperatorProvenance({
-          agentKey: draft.agentKey,
-          runId,
-          workflowKey: optionalText(draft.workflowKey),
-        }),
-        subjectRefs: buildSubjectRefs(draft),
-      });
+      await onCreate(payload);
       setDraft(createInitialDraft());
       setOpen(false);
     } catch (error) {
@@ -830,12 +806,6 @@ export function MemoryCreateDialog({
             rows={5}
             value={draft.content}
           />
-          <TextareaField
-            label="Attributes JSON"
-            onChange={(value) => update("attributesJson", value)}
-            rows={3}
-            value={draft.attributesJson}
-          />
           <DialogFooter>
             <Button
               disabled={pending}
@@ -886,20 +856,16 @@ export function RevisionDialog({
     if (!detail || !selectedMemoryId) {
       return;
     }
-    const attributes = parseJsonObject(
-      draft.attributesJson,
-      "Revision attributes",
-    );
-    if (!attributes) {
-      return;
-    }
     try {
       await onRevise({
         memoryId: selectedMemoryId,
         payload: {
-          attributes,
           content: draft.content,
-          provenance: { ...detail.provenance, createdByType: "operator" },
+          provenance: {
+            ...detail.provenance,
+            agentVersion: 1,
+            createdByType: "operator",
+          },
           subjectRefs: detail.subjectRefs,
           summary: draft.summary,
         },
@@ -945,12 +911,6 @@ export function RevisionDialog({
             rows={6}
             value={draft.content}
           />
-          <TextareaField
-            label="Revision attributes JSON"
-            onChange={(value) => update("attributesJson", value)}
-            rows={3}
-            value={draft.attributesJson}
-          />
           <DialogFooter>
             <Button
               disabled={pending}
@@ -994,18 +954,10 @@ function WorkflowVisibilityUpdateForm({
   };
   const submit = async (event: { preventDefault: () => void }) => {
     event.preventDefault();
-    const attributes = parseJsonObject(
-      draft.attributesJson,
-      "Visibility attributes",
-    );
-    if (!attributes) {
-      return;
-    }
     try {
       await onUpdateWorkflowVisibility({
         memoryId: detail.memoryId,
         payload: {
-          attributes,
           observedAt: new Date().toISOString(),
           summary: optionalText(draft.summary),
           visibleToWorkflow: draft.visibleToWorkflow,
@@ -1063,12 +1015,6 @@ function WorkflowVisibilityUpdateForm({
           value={draft.summary}
         />
       </div>
-      <TextareaField
-        label="Visibility attributes JSON"
-        onChange={(value) => update("attributesJson", value)}
-        rows={3}
-        value={draft.attributesJson}
-      />
       <Button className="w-full" disabled={pending} size="sm" type="submit">
         Update workflow visibility
       </Button>
@@ -1098,7 +1044,7 @@ export function DetailInspection({
         data-testid="memory-detail-primary-column"
       >
         <DetailCard
-          description="Opaque identifiers, scope, and current memory classification."
+          description="Opaque identifiers, scope, subject refs, and current memory classification."
           testId="memory-detail-identity-card"
           title="Core memory identity"
         >
@@ -1110,6 +1056,10 @@ export function DetailInspection({
             />
             <DetailField label="Scope" value={formatScope(detail.scope)} />
             <DetailField label="Kind" value={detail.kind} />
+            <DetailField
+              label="Subject refs"
+              value={subjectRefSummary(detail)}
+            />
           </dl>
         </DetailCard>
         <DetailCard
@@ -1120,22 +1070,6 @@ export function DetailInspection({
           <section aria-label="Memory content" className="min-w-0 text-sm leading-6">
             <p className="whitespace-pre-wrap break-words">{detail.content}</p>
           </section>
-        </DetailCard>
-        <DetailCard
-          description="Structured attributes and optional memory snapshots remain internally scrollable."
-          testId="memory-detail-attributes-card"
-          title="Attributes JSON"
-        >
-          <JsonBlock label="Attributes" value={detail.attributes} />
-          {detail.outcome ? (
-            <JsonBlock label="Outcome" value={detail.outcome} />
-          ) : null}
-          {detail.reflections.length > 0 ? (
-            <JsonBlock label="Reflections" value={detail.reflections} />
-          ) : null}
-          {detail.auditLinks ? (
-            <JsonBlock label="Audit links" value={detail.auditLinks} />
-          ) : null}
         </DetailCard>
       </div>
       <aside

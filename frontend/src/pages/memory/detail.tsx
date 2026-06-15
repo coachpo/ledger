@@ -127,7 +127,7 @@ export function MemoryDetailPage() {
   if (!resolvedMemoryId) {
     return (
       <DetailPageMessage
-        description="Open a memory entry from the Memory Admin list to inspect detail, revisions, and audit events."
+        description="Open a memory entry from the Memory Admin list to inspect detail, revisions, and admin event history."
         testId="memory-detail-missing-id"
         title="Memory id is required"
       />
@@ -246,7 +246,7 @@ export function MemoryDetailPage() {
             Revisions
           </TabsTrigger>
           <TabsTrigger className="text-xs" value="events">
-            Audit events
+            Admin events
           </TabsTrigger>
         </TabsList>
         <TabsContent className="mt-0 min-w-0" value="detail">
@@ -273,7 +273,7 @@ export function MemoryDetailPage() {
         </TabsContent>
         <TabsContent className="mt-0 min-w-0" value="events">
           {eventsQuery.isPending ? (
-            <QueryStateCard label="Loading audit events..." />
+            <QueryStateCard label="Loading admin events..." />
           ) : eventsQuery.isError ? (
             <MemoryLoadState error={eventsQuery.error} />
           ) : (

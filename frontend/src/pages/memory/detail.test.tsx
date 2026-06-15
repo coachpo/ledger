@@ -67,21 +67,16 @@ vi.mock("@/hooks/use-memory", () => ({
 }));
 
 const detailFixture: MemoryAdminEntryRead = {
-  attributes: { confidence: "high" },
-  auditLinks: null,
   content: "Risk memo content with operator visibility.",
   createdAt: "2026-05-20T10:00:00Z",
   kind: "insight",
   memoryId: "mem-risk-1",
   outcome: {
-    attributes: { source: "operator" },
     observedAt: "2026-05-20T10:05:00Z",
     summary: "Workflow-visible operator memory",
   },
   provenance: {
     agentKey: "local-instance-operator",
-    agentVersion: 1,
-    createdByType: "operator",
     runId: 41,
     workflowKey: "risk-review",
   },
@@ -104,7 +99,6 @@ const revisionsFixture: MemoryAdminRevisionListRead = {
   count: 1,
   items: [
     {
-      attributes: { confidence: "high" },
       content: "Risk memo content with operator visibility.",
       contentHash: "hash-risk-1",
       createdAt: "2026-05-20T10:00:00Z",
@@ -213,6 +207,15 @@ describe("MemoryDetailPage", () => {
     updateAdminMemoryWorkflowVisibilityMock.mockResolvedValue(detailFixture);
   });
 
+  it("keeps the admin fixtures lean and free of removed metadata fields", () => {
+    expect(detailFixture).not.toHaveProperty("attributes");
+    expect(detailFixture).not.toHaveProperty("auditLinks");
+    expect(revisionsFixture.items[0]).not.toHaveProperty("attributes");
+    expect(revisionsFixture.items[0]).not.toHaveProperty("auditLinks");
+    expect(eventsFixture.items[0]).not.toHaveProperty("attributes");
+    expect(eventsFixture.items[0]).not.toHaveProperty("auditLinks");
+  });
+
   it("queries detail, revisions, and audit events from the route param", () => {
     renderDetail();
 
@@ -234,7 +237,7 @@ describe("MemoryDetailPage", () => {
       { enabled: true },
     );
     expect(screen.getByTestId("memory-detail-panel")).toHaveTextContent(
-      "operator · local-instance-operator@1",
+      "local-instance-operator · risk-review · run #41",
     );
     expect(screen.getByTestId("memory-detail-panel")).toHaveTextContent(
       "Latest revision",
@@ -305,8 +308,10 @@ describe("MemoryDetailPage", () => {
     expect(screen.getByTestId("memory-detail-content-card")).toHaveTextContent(
       "Risk memo content with operator visibility.",
     );
-    expect(screen.getByTestId("memory-detail-attributes-card")).toHaveTextContent(
-      "confidence",
+    expect(detailPanel).not.toHaveTextContent("Attributes JSON");
+    expect(detailPanel).not.toHaveTextContent("Audit links");
+    expect(screen.getByTestId("memory-detail-identity-card")).toHaveTextContent(
+      "symbol:AAPL",
     );
     expect(screen.getByTestId("memory-detail-metadata-card")).toHaveTextContent(
       "Provenance",
@@ -398,6 +403,8 @@ describe("MemoryDetailPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Revise" }));
     const revisionDialog = screen.getByRole("dialog");
+    expect(revisionDialog).not.toHaveTextContent("Attributes JSON");
+    expect(revisionDialog).not.toHaveTextContent("Audit links");
     expect(
       within(revisionDialog).queryByTestId("memory-runtime-impact-copy"),
     ).not.toBeInTheDocument();
@@ -416,7 +423,7 @@ describe("MemoryDetailPage", () => {
       "Risk review memory",
     );
 
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Audit events" }), {
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Admin events" }), {
       button: 0,
     });
     const eventsPanel = screen.getByTestId("memory-events-panel");
@@ -424,6 +431,8 @@ describe("MemoryDetailPage", () => {
     expect(eventsPanel).toHaveTextContent("Risk memo content");
     expect(eventsPanel).toHaveTextContent("Event state snapshot");
     expect(eventsPanel).toHaveTextContent("visibleToWorkflow");
+    expect(eventsPanel).not.toHaveTextContent("Attributes JSON");
+    expect(eventsPanel).not.toHaveTextContent("Audit links");
     expect(eventsPanel).not.toHaveTextContent("approved");
     expect(eventsPanel).not.toHaveTextContent("pending");
     expect(eventsPanel).not.toHaveTextContent("archived");
