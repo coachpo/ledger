@@ -318,10 +318,6 @@ function createUnknownWorkflowOption(workflowKey: string): WorkflowOption {
   };
 }
 
-function isDefined<T>(value: T | null): value is T {
-  return value !== null;
-}
-
 function buildWorkflowFilterOptions({
   manifestOptions,
   schedules,
@@ -1188,40 +1184,6 @@ export function ScheduledTasksListPage() {
     !schedulesQuery.isError &&
     visibleSchedules.length > 0;
   const hasFilters = Boolean(packageKey.trim() || workflowKey.trim());
-  const activePackageLabel = resolvedPackageKey
-    ? packageItems.find((item) => item.value === resolvedPackageKey)?.label ??
-      resolvedPackageKey
-    : null;
-  const activeWorkflowLabel = resolvedWorkflowKey
-    ? workflowItems.find((item) => item.value === resolvedWorkflowKey)?.label ??
-      resolvedWorkflowKey
-    : null;
-  const activeFilterItems = [
-    activePackageLabel
-      ? {
-          active: true,
-          clearLabel: "Clear scheduled task package filter",
-          id: "package",
-          label: "Package",
-          value: activePackageLabel,
-          onClear: () => {
-            setPackageKey("");
-            setWorkflowKey("");
-          },
-        }
-      : null,
-    activeWorkflowLabel
-      ? {
-          active: true,
-          clearLabel: "Clear scheduled task workflow filter",
-          id: "workflow",
-          label: "Workflow",
-          value: activeWorkflowLabel,
-          onClear: () => setWorkflowKey(""),
-        }
-      : null,
-  ].filter(isDefined);
-
   const updatePackageFilter = (nextValue: string) => {
     const nextPackageKey =
       nextValue === ALL_PACKAGES_FILTER ? "" : normalizeFilter(nextValue) ?? "";
@@ -1353,24 +1315,11 @@ export function ScheduledTasksListPage() {
 
   return (
     <InventoryPageShell
-      filterBar={
-        activeFilterItems.length > 0
-          ? {
-              items: activeFilterItems,
-              onClearAll: () => {
-                setPackageKey("");
-                setWorkflowKey("");
-              },
-              testId: "scheduled-tasks-active-filters",
-            }
-          : null
-      }
       pageContext={{
         actions: <ScheduledTasksPageActions />,
         description: "Manage durable Workflow Package schedules.",
         title: "Scheduled Tasks",
       }}
-      renderContent={false}
       testId="scheduled-tasks-list-page"
       toolbar={{
         filters: (

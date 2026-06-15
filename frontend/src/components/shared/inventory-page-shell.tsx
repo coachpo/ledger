@@ -20,7 +20,6 @@ export type InventoryPageShellProps = {
   contentClassName?: string;
   filterBar?: ResourceFilterBarProps | null;
   pageContext: PageContextBarProps;
-  renderContent?: boolean;
   testId?: string;
   toolbar?: ResourceToolbarProps | null;
 };
@@ -30,7 +29,6 @@ export function InventoryPageShell({
   contentClassName,
   filterBar,
   pageContext,
-  renderContent = true,
   testId,
   toolbar,
 }: InventoryPageShellProps) {
@@ -55,15 +53,13 @@ export function InventoryPageShell({
           <ResourceFilterBar {...filterBar} />
         </div>
       ) : null}
-      {renderContent ? (
-        <div
-          className={cn("min-w-0", contentClassName)}
-          data-inventory-shell-region="content"
-          data-slot="inventory-page-shell-content"
-        >
-          {children}
-        </div>
-      ) : null}
+      <div
+        className={cn("min-w-0", contentClassName)}
+        data-inventory-shell-region="content"
+        data-slot="inventory-page-shell-content"
+      >
+        {children}
+      </div>
     </div>
   );
 }
