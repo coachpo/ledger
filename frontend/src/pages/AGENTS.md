@@ -104,6 +104,8 @@ src/pages/
 - `e2e/reports.spec.ts` covers seeded report flows plus representative empty and API-error list states for the finance inventory archetype.
 - `e2e/workflow-packages.spec.ts` covers package-first authoring, import/export, launch, run provenance, and wide payload overflow in the run-detail console.
 - `e2e/scheduled-tasks.spec.ts` covers scheduled package-run automation, fire history, delete confirmation and post-delete absence states, and run-now links into run detail.
+- `e2e/memory.spec.ts`, `e2e/model-connections.spec.ts`, and `e2e/runs.spec.ts` cover the Memory Admin list/detail split, model-connection secret-safe flows, and run inspection/rerun/fork paths.
+- `e2e/shell-regression.spec.ts`, `e2e/smoke.spec.ts`, `e2e/functional.spec.ts`, `e2e/workflow-package-compatibility-mock.spec.ts`, and `e2e/workflow-package-tradingagents-smoke.spec.ts` cover route-shell regressions, smoke navigation, seeded package compatibility, and TradingAgents package smoke behavior.
 
 ## ANTI-PATTERNS
 
