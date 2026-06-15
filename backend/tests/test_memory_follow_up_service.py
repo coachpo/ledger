@@ -13,12 +13,14 @@ from app.extensions.signaldeck_finance.execution_dependencies import (
 from app.extensions.signaldeck_finance.hooks import register_run_lifecycle_hooks
 from app.extensions.signaldeck_finance.memory_metadata import (
     FinanceMemoryMetadata,
-    finance_memory_attributes_payload,
+    read_finance_memory_metadata,
+    write_finance_memory_metadata,
 )
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.agent_memory import AgentMemoryEntry, RunMemoryEvent
 from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
+from app.models.signaldeck_finance_memory_metadata import SignalDeckFinanceMemoryMetadata
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.memory import MemoryProvenance, MemoryScope, MemoryScopeType, MemoryWriteRequest
 from app.schemas.memory_report import AGENT_MEMORY_REVIEW_TYPE, AGENT_MEMORY_VERSION_GROUP
@@ -239,23 +241,24 @@ def _neutral_memory_request(run_id: int) -> MemoryWriteRequest:
     )
 
 
+def _finance_metadata() -> FinanceMemoryMetadata:
+    return FinanceMemoryMetadata(
+        ticker="NVDA",
+        action="buy",
+        rationale="Demand supports a long position.",
+        risk_summary="Watch valuation.",
+        execution_plan="Review after the horizon elapses.",
+        horizon_days=2,
+        benchmark_symbol="SPY",
+        decision_summary="Finance evaluator should resolve this decision.",
+    )
+
+
 def _finance_memory_request(run_id: int) -> MemoryWriteRequest:
     return MemoryWriteRequest(
         kind="research.note",
         summary="Finance evaluator should resolve this decision.",
         content="Demand supports a long position. Watch valuation.",
-        attributes=finance_memory_attributes_payload(
-            FinanceMemoryMetadata(
-                ticker="NVDA",
-                action="buy",
-                rationale="Demand supports a long position.",
-                risk_summary="Watch valuation.",
-                execution_plan="Review after the horizon elapses.",
-                horizon_days=2,
-                benchmark_symbol="SPY",
-                decision_summary="Finance evaluator should resolve this decision.",
-            )
-        ),
         scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key="pkg-finance"),
         provenance=_provenance(run_id),
     )
@@ -319,12 +322,81 @@ def test_core_follow_up_records_review_event_with_finance_disabled(
     assert [event.event_type for event in events] == ["written", "reviewed"]
     reviewed = events[-1]
     assert reviewed.memory_id == created.memory_id
-    assert reviewed.result_snapshot["scheduler"] == "core.memory_follow_up"
-    assert reviewed.result_snapshot["reason"] == "no_evaluator"
-    assert reviewed.status_snapshot == {"visibleToWorkflow": False, "reason": "no_evaluator"}
+    assert reviewed.filters["source"] == "scheduler"
+    assert reviewed.filters["actor"] == "core.memory_follow_up"
+    assert reviewed.filters["channel"] == "memory_follow_up"
+    assert reviewed.result_snapshot == {
+        "memoryId": created.memory_id,
+        "revisionId": created.revision_id,
+        "reviewAction": "follow_up_reviewed",
+        "outcomeSummary": "no_evaluator",
+    }
+    assert reviewed.status_snapshot == {"visibleToWorkflow": False}
 
 
 def test_finance_evaluator_contribution_resolves_and_reflects_when_enabled(
+    session_factory: sessionmaker[Session],
+) -> None:
+    created_at = datetime(2026, 1, 1, 9, tzinfo=UTC)
+    reviewed_at = datetime(2026, 1, 6, tzinfo=UTC)
+    with session_factory() as session:
+        run = _seed_run(session)
+        memory_service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=run.id,
+                package_key="pkg-finance",
+                workflow_key="memory_follow_up_workflow",
+                agent_key="analyst",
+            ),
+        )
+        created = memory_service.write_memory(
+            capability_references=[],
+            payload=_finance_memory_request(run.id),
+        )
+        write_finance_memory_metadata(session, created.memory_id, _finance_metadata())
+        persisted_metadata = read_finance_memory_metadata(session, created.memory_id)
+        metadata_row = session.get(SignalDeckFinanceMemoryMetadata, created.memory_id)
+        _set_memory_created_at(session, created.memory_id, created_at)
+        hooks = register_run_lifecycle_hooks()
+        evaluator_factory = hooks[0].memory_follow_up_evaluators
+        assert evaluator_factory is not None
+        evaluators = evaluator_factory(
+            WorkflowPackageStartContext(
+                session=session,
+                provider_bundle=finance_execution_provider_bundle_from_parts(
+                    quote_provider=_ResolvingQuoteProvider()
+                ),
+                now=reviewed_at,
+            )
+        )
+        result = MemoryFollowUpService(session, evaluators=evaluators).run_due(reviewed_at)
+        memory = memory_service.get_memory(created.memory_id)
+        events = _memory_events(session, run.id)
+        reports = list(session.scalars(select(Report)))
+
+    assert reports == []
+    assert persisted_metadata == _finance_metadata()
+    assert metadata_row is not None
+    assert metadata_row.memory_id == created.memory_id
+    assert metadata_row.ticker == "NVDA"
+    assert result.checked == 1
+    assert result.made_workflow_visible == 1
+    assert result.kept_workflow_hidden == 0
+    assert result.reflected == 1
+    assert result.items[0].memory_id == created.memory_id
+    assert result.items[0].reason is None
+    assert memory.visible_to_workflow is True
+    assert [event.event_type for event in events] == ["written", "reviewed", "reviewed"]
+    assert events[1].status_snapshot == {"visibleToWorkflow": True}
+    assert events[1].result_snapshot["outcomeSummary"] == (
+        "Finance return resolved: raw return 0.2, alpha 0.1, benchmark return 0.1."
+    )
+    assert events[2].result_snapshot["reviewAction"] == "reflected"
+    assert events[2].result_snapshot["reflectionSource"] == "signaldeck.finance.return_resolution"
+
+
+def test_finance_evaluator_keeps_memory_hidden_when_finance_metadata_missing(
     session_factory: sessionmaker[Session],
 ) -> None:
     created_at = datetime(2026, 1, 1, 9, tzinfo=UTC)
@@ -360,22 +432,21 @@ def test_finance_evaluator_contribution_resolves_and_reflects_when_enabled(
         result = MemoryFollowUpService(session, evaluators=evaluators).run_due(reviewed_at)
         memory = memory_service.get_memory(created.memory_id)
         events = _memory_events(session, run.id)
-        reports = list(session.scalars(select(Report)))
 
-    assert reports == []
     assert result.checked == 1
-    assert result.made_workflow_visible == 1
-    assert result.kept_workflow_hidden == 0
-    assert result.reflected == 1
+    assert result.made_workflow_visible == 0
+    assert result.kept_workflow_hidden == 1
     assert result.items[0].memory_id == created.memory_id
-    assert result.items[0].reason is None
-    assert memory.visible_to_workflow is True
-    assert memory.outcome is not None
-    assert memory.outcome.attributes["rawReturn"] == "0.2"
-    assert memory.reflections
-    assert [event.event_type for event in events] == ["written", "reviewed", "reviewed"]
-    assert events[1].status_snapshot == {"visibleToWorkflow": True}
-    assert events[2].result_snapshot["reflectionCount"] == 1
+    assert result.items[0].reason == "finance_metadata_missing"
+    assert memory.visible_to_workflow is False
+    assert [event.event_type for event in events] == ["written", "reviewed"]
+    assert events[-1].result_snapshot == {
+        "memoryId": created.memory_id,
+        "revisionId": created.revision_id,
+        "reviewAction": "follow_up_reviewed",
+        "outcomeSummary": "finance_metadata_missing",
+    }
+    assert events[-1].status_snapshot == {"visibleToWorkflow": False}
 
 
 def test_follow_up_service_ignores_legacy_agent_memory_reports(

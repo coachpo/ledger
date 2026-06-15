@@ -41,7 +41,7 @@ class FinanceMemoryFollowUpEvaluator:
             return MemoryFollowUpEvaluation(
                 visible_to_workflow=False,
                 reason="finance_metadata_missing",
-                result_snapshot={"evaluator": self.evaluator_key},
+                outcome_summary="finance_metadata_missing",
             )
         resolution = self.return_resolution_service.resolve_memory(
             memory.memory_id,
@@ -53,8 +53,9 @@ class FinanceMemoryFollowUpEvaluator:
             commit=False,
         )
         reflected = False
-        if resolution.review_recorded and not resolution.memory.reflections:
-            _ = self.reflection_service.generate_and_append_reflection(
+        reflection_summary: str | None = None
+        if resolution.review_recorded:
+            reflected_memory = self.reflection_service.generate_and_append_reflection(
                 memory.memory_id,
                 ticker=metadata.ticker,
                 action=metadata.action,
@@ -63,12 +64,15 @@ class FinanceMemoryFollowUpEvaluator:
                 commit=False,
             )
             reflected = True
+            reflection_summary = reflected_memory.summary
         return MemoryFollowUpEvaluation(
             visible_to_workflow=resolution.visible_to_workflow,
             reason=resolution.reason,
             reflected=reflected,
             event_recorded=resolution.review_recorded,
-            result_snapshot={"evaluator": self.evaluator_key},
+            outcome_summary=resolution.outcome_summary,
+            reflection_summary=reflection_summary,
+            reflection_source="signaldeck.finance.return_resolution",
         )
 
 
