@@ -8,7 +8,7 @@ SignalDeck is a monorepo for a portfolio-tracking stack with a FastAPI backend, 
 - `frontend/` — React 19, Vite, TanStack Query, Vitest, and Playwright app
 - `docs/` — live product, platform, API, data-model, test, and runtime-input reference docs
 - `.github/workflows/` — root CI, Docker image, and cleanup workflows
-- `start.sh` — local full-stack startup helper with backend/frontend/db fallback logic
+- `start.sh` — local Docker Compose launcher for the root combined stack
 
 ## What Ships
 
@@ -30,12 +30,8 @@ Legacy global authoring routes are unsupported. `/api/agents`, `/api/capabilitie
 
 ## Prerequisites
 
-- Python 3.13+
-- Node 24+
-- pnpm 10+
-- uv
-- lsof
-- Docker with `docker compose`
+- Docker with `docker compose` for the containerized local stack
+- Python 3.13+, Node 24+, pnpm 10+, and uv for direct backend/frontend development and validation commands
 - An LLM provider key if you want live model-backed agent-platform execution
 
 ## Production Release Images and Local Root Compose
@@ -45,7 +41,7 @@ The supported production container artifacts are the backend and frontend images
 - `ghcr.io/<owner>/signaldeck-backend`
 - `ghcr.io/<owner>/signaldeck-frontend`
 
-Published backend/frontend images include Docker Buildx provenance and SBOM attestations on non-PR pushes. The backend image sets `SIGNALDECK_RUNTIME_MODE=production`, rejects missing `DATABASE_URL` or placeholder `AGENT_PLATFORM_ENCRYPTION_KEY` values at startup, and exposes a Docker health check against `/ready`. The frontend image exposes a Docker health check against its static server `/health` endpoint. The root Docker setup remains additive for local/demo combined-stack runs; it is not the supported production image and does not replace `backend/Dockerfile`, `frontend/Dockerfile`, or the DB-only `backend/docker-compose.yml`.
+Published backend/frontend images include Docker Buildx provenance and SBOM attestations on non-PR pushes. The backend image sets `SIGNALDECK_RUNTIME_MODE=production`, rejects missing `DATABASE_URL` or placeholder `AGENT_PLATFORM_ENCRYPTION_KEY` values at startup, and exposes a Docker health check against `/ready`. The frontend image exposes a Docker health check against its static server `/health` endpoint. The root Docker setup remains additive for local/demo combined-stack runs; it is not the supported production image and does not replace the supported `backend/Dockerfile` and `frontend/Dockerfile` artifacts.
 
 The root `Dockerfile` and root `docker-compose.yml` are labeled `local-demo-only` and are not published by CI, released to GHCR, or covered by production SBOM/provenance support. The root combined image entrypoint refuses `SIGNALDECK_RUNTIME_MODE=production`, `prod`, or `staging`; use the supported backend/frontend images for production deployments instead.
 
@@ -124,95 +120,55 @@ Compose sets safe local defaults for `SIGNALDECK_RUNTIME_MODE`, `SIGNALDECK_ROOT
 
 ## Run the Full Stack Locally
 
-### 1. Install backend dependencies
-
-```bash
-(cd backend && uv sync)
-```
-
-### 2. Install frontend dependencies
-
-```bash
-(cd frontend && pnpm install)
-```
-
-### 3. Set up model connections in the web UI
-
-If you only want the UI, API, and local database running, skip this step.
-
-Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set if you want those stored secrets encrypted at rest.
-
-### 4. Start everything with the local helper
+### 1. Start everything with the local helper
 
 ```bash
 ./start.sh
 ```
 
-`start.sh` is the source of truth for local development.
+`start.sh` is the source of truth for the containerized local/demo stack. It runs the root `docker-compose.yml`, builds the app image from the current source tree, and streams Docker Compose logs in the foreground. Press `Ctrl+C` to stop the stack.
 
 It will:
 
-- prefer PostgreSQL on `25432`, then fall back to `25433` or `25434` if needed
-- prefer the backend on `28000`, then fall back to `28001` or `28002` if the requested port is occupied by a non-SignalDeck service
-- prefer the frontend on `25173`, then fall back to `25174` if needed
-- stop SignalDeck-owned scheduler workers and the local Docker database before starting fresh ones
-- start the dedicated scheduler worker that materializes due Scheduled Tasks and claims queued Workflow Package runs
-- derive `DATABASE_URL` for backend and scheduler startup when you do not provide one
-- derive `VITE_API_BASE_URL` for frontend startup
+- start the `db` service with PostgreSQL/pgvector inside Docker
+- build and start the `app` service from the root `Dockerfile`
+- run Nginx, the FastAPI backend, and the scheduler inside the `app` container
+- publish only the app/Nginx port on the host, defaulting to `http://localhost:${APP_PORT:-8080}`
+- keep the backend/API same-origin behind Nginx through `/health`, `/ready`, `/api/`, and `/api/v1/`
 
-By default, `start.sh` does not kill unrelated processes that happen to listen on the usual development ports. If you intentionally want it to terminate existing port listeners, run `SIGNALDECK_START_FORCE_PORT_CLEANUP=1 ./start.sh`.
+The helper preserves the root Compose environment controls, including `APP_PORT`, `POSTGRES_PASSWORD`, `AGENT_PLATFORM_ENCRYPTION_KEY`, `BUILD_FRONTEND`, and `VITE_API_BASE_URL`.
 
-### 5. Open the app and verify the stack
+### 2. Open the app and verify the stack
 
 Once startup finishes, open:
 
-- Frontend: `http://127.0.0.1:25173/` or the fallback port printed by `start.sh`
-- Backend health: `http://127.0.0.1:28000/health` or the fallback backend port printed by `start.sh`
-- Backend readiness: `http://127.0.0.1:28000/ready` returns 200 only when the backend can reach PostgreSQL
+- App: `http://localhost:${APP_PORT:-8080}`
+- Health: `http://localhost:${APP_PORT:-8080}/health`
+- Readiness: `http://localhost:${APP_PORT:-8080}/ready`
 
-### 6. Stop the stack
+The database remains internal to Docker networking. The backend remains internal to the app container and is reached through Nginx, not through a host backend port.
+
+### 3. Configure model connections
+
+If you only want the UI, API, and local database running, skip this step.
+
+Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set if you want stored model-connection secrets encrypted with a non-default local key.
+
+### 4. Stop the stack
 
 Press `Ctrl+C` in the terminal running `./start.sh`.
 
-## Manual Startup
+## Direct Compose Commands
 
-Use this path only if you do not want `./start.sh` managing the stack for you.
-
-### 1. Start PostgreSQL
+Use this path only if you want to call Docker Compose directly instead of `./start.sh`.
 
 ```bash
-(cd backend && docker compose up -d db)
+docker compose -f docker-compose.yml up --build --remove-orphans
+docker compose -f docker-compose.yml down
+docker compose -f docker-compose.yml down -v
 ```
 
-Backend compose is DB-only and exposes Postgres on `${SIGNALDECK_DB_PORT:-25432}`.
-
-### 2. Start the backend
-
-```bash
-(cd backend && uv run uvicorn app.main:app --reload --port 28000)
-```
-
-The default local connection is `postgresql+psycopg://signaldeck:signaldeck@localhost:25432/signaldeck`. If you run the frontend on `25173`, keep backend CORS aligned with that origin through `CORS_ALLOWED_ORIGINS` when you need overrides.
-
-### 3. Start the scheduler worker
-
-```bash
-(cd backend && uv run python -m app.workers.run_scheduler)
-```
-
-Keep this process running beside the backend. API requests create Scheduled Tasks, preview scheduled inputs, run manual fires, and enqueue Workflow Package runs; the scheduler worker materializes due scheduled fires, claims queued runs, heartbeats leases, recovers expired leases, and executes work. Without it, due schedules and queued runs wait until a worker starts.
-
-Scheduler defaults are `RUN_SCHEDULER_MAX_ACTIVE_RUNS=4`, `RUN_SCHEDULER_MAX_ACTIVE_PER_PACKAGE=1`, `RUN_SCHEDULER_POLL_INTERVAL_SECONDS=1`, `RUN_SCHEDULER_HEARTBEAT_SECONDS=10`, and `RUN_SCHEDULER_LEASE_TTL_SECONDS=60`.
-
-### 4. Start the frontend
-
-```bash
-(cd frontend && VITE_API_BASE_URL=http://127.0.0.1:28000/api/v1 pnpm dev --host 127.0.0.1 --port 25173)
-```
-
-### 5. Open the app
-
-Visit `http://127.0.0.1:25173/`.
+The direct Compose path uses the same local/demo-only root image and keeps database and backend ports private by default.
 
 ## Runtime Notes
 

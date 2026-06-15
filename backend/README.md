@@ -4,19 +4,20 @@ FastAPI backend for SignalDeck’s portfolio, report, and current agent-platform
 
 ## Local Development
 
-For the easiest full-stack path, run `../start.sh` from the repo root. It owns local DB/backend/frontend startup and can fall back to DB ports `25432/25433/25434`, backend ports `28000/28001/28002`, and frontend ports `25173/25174`.
+For the easiest full-stack path, run `./start.sh` from the repository root. It uses the root `docker-compose.yml`, builds the local/demo-only app image from the current source, and starts both `db` and `app` services inside Docker.
 
-If you want the backend on its own:
+The public app URL is `http://localhost:${APP_PORT:-8080}`. Nginx runs inside the app container and proxies `/health`, `/ready`, `/api/`, and `/api/v1/` to the internal FastAPI backend. The backend, scheduler, and PostgreSQL/pgvector database are not exposed directly on host ports by default.
+
+The launcher preserves the root Compose environment controls, including `APP_PORT`, `POSTGRES_PASSWORD`, `AGENT_PLATFORM_ENCRYPTION_KEY`, `BUILD_FRONTEND`, and `VITE_API_BASE_URL`.
+
+If you want to work on the backend test suite directly outside the full local stack:
 
 ```bash
 uv sync
-docker compose up -d db
-uv run uvicorn app.main:app --reload --port 28000
+uv run pytest
 ```
 
-Run `uv run python -m app.workers.run_scheduler` beside Uvicorn when you need due Scheduled Tasks materialized or queued Workflow Package runs executed.
-
-The backend expects PostgreSQL everywhere. The default local connection is `postgresql+psycopg://signaldeck:signaldeck@localhost:25432/signaldeck`, so manual `uv run uvicorn ...` startup assumes PostgreSQL is already running on that port. Set `SIGNALDECK_DB_PORT` before `docker compose up -d db` if you need a different host port, then align `DATABASE_URL`. CORS is enabled for common local Vite dev hosts by default and can be overridden through `CORS_ALLOWED_ORIGINS`.
+The backend expects PostgreSQL everywhere. Full-stack local startup gets it from the root Compose `db` service at `db:5432`; backend tests that run outside Docker still need `TEST_DATABASE_URL` or `DATABASE_URL` pointing at a PostgreSQL server with permission to create/drop temporary databases.
 
 ## Model Connections
 
@@ -55,19 +56,18 @@ uv run pytest
 
 ## Docker Compose
 
-`docker-compose.yml` is DB-only. It starts PostgreSQL for local development and exposes it on `${SIGNALDECK_DB_PORT:-25432}`.
+The root `docker-compose.yml` is the local/demo full-stack Compose file. It starts PostgreSQL/pgvector in `db` and the combined Nginx/FastAPI/scheduler image in `app`.
 
 ```bash
-docker compose up -d db
+docker compose -f ../docker-compose.yml up --build --remove-orphans
 ```
 
-No API container is defined in compose. Start FastAPI separately with `uv run uvicorn app.main:app --reload --port 28000`.
-PostgreSQL is exposed on `localhost:${SIGNALDECK_DB_PORT:-25432}`.
+From the repository root, prefer `./start.sh`, which runs the same command and streams logs in the foreground. Only `${APP_PORT:-8080}:8080` is published on the host; PostgreSQL stays on the Docker network and FastAPI stays behind Nginx in the app container.
 
 To reset the container-managed PostgreSQL data:
 
 ```bash
-docker compose down -v
+docker compose -f ../docker-compose.yml down -v
 ```
 
 ## Notes

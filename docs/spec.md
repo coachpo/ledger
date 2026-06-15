@@ -1,6 +1,6 @@
 # Technical Specification
 
-> Status: Live technical reference for branch `main` at `6c40d44`.
+> Status: Live technical reference for the current branch.
 
 ## Overview
 
@@ -10,8 +10,8 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 
 ## Runtime Topology
 
-- Root startup is managed by `start.sh` with PostgreSQL `25432`, backend `28000`, frontend `25173`, and the scheduler worker as a sibling backend process; fallback ports are `25433/25434`, `28001/28002`, and `25174`.
-- Manual backend startup expects PostgreSQL from `backend/docker-compose.yml` plus a separate `uv run python -m app.workers.run_scheduler` process when queued Workflow Package runs should execute.
+- Root startup is managed by `start.sh`, which wraps the root `docker-compose.yml` local/demo stack. Compose starts PostgreSQL/pgvector in `db` and the combined Nginx/FastAPI/scheduler app image in `app`.
+- The public local app is `http://localhost:${APP_PORT:-8080}`. Nginx proxies `/health`, `/ready`, `/api/`, and `/api/v1/` to the internal backend; PostgreSQL and FastAPI are not exposed directly on host ports by default.
 - Playwright starts dedicated E2E servers on backend `8001` and frontend `4173`; the backend helper also launches the scheduler worker.
 - Backend requires Python 3.13+, frontend targets Node 24 and pnpm 10.
 

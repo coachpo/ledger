@@ -37,15 +37,15 @@ signaldeck/
 ├── docs/                 # canonical owner docs plus requirements and architecture-audit evidence
 ├── demo/                 # grounded Workflow Package YAML examples
 ├── .github/workflows/    # CI quality gates, Docker image publish, cleanup
-└── start.sh              # local orchestrator for db/backend/scheduler/frontend with fallback ports
+└── start.sh              # root Docker Compose wrapper for the local/demo stack
 ```
 
 ## WHERE TO LOOK
 
 | Task | Location | Notes |
 |---|---|---|
-| Bootstrap a fresh clone | `backend/pyproject.toml`, `frontend/package.json`, `README.md`, `start.sh` | install with `uv sync` and `pnpm install`, then prefer `./start.sh` |
-| Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`; starts `python -m app.workers.run_scheduler`; stops prior SignalDeck instances before restart and may fall back to `25433/25434`, `28001/28002`, or `25174` |
+| Bootstrap a fresh clone | `README.md`, `start.sh`, `docker-compose.yml`, `Dockerfile` | for the containerized local stack, install Docker with Compose and run `./start.sh` |
+| Start the full stack locally | `start.sh`, `docker-compose.yml`, `Dockerfile`, `docker/entrypoint.sh`, `docker/nginx.conf.template` | builds the root local/demo image, starts `db` and `app`, publishes only `${APP_PORT:-8080}:8080`, and keeps FastAPI/PostgreSQL internal to Docker |
 | Demo Workflow Package YAML | `demo/tradingagents_advisory_research.yaml`, `demo/digital_oracle_researcher.yaml` | grounded package inputs for manual import/testing across TradingAgents and Digital Oracle flows |
 | Cross-app E2E startup | `frontend/e2e/AGENTS.md`, `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with dedicated startup helpers |
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory plus extension-gated `/api/v1` and current `/api/*` composition |
@@ -123,8 +123,7 @@ signaldeck/
 (cd backend && uv sync)
 (cd frontend && pnpm install)
 ./start.sh
-(cd backend && uv run uvicorn app.main:app --reload --port 28000)
-(cd frontend && pnpm dev)
+docker compose -f docker-compose.yml down
 ```
 
 ## VALIDATION
@@ -140,7 +139,7 @@ signaldeck/
 
 ## NOTES
 
-- `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, stops prior SignalDeck instances before restart, may start PostgreSQL on `25432`, `25433`, or `25434`, starts the scheduler worker beside Uvicorn, and injects `DATABASE_URL` plus `VITE_API_BASE_URL`.
+- `start.sh` is the authoritative local stack launcher. It wraps the root `docker-compose.yml`, builds the current local/demo app image, starts PostgreSQL/pgvector in Docker, runs Nginx/FastAPI/scheduler inside the app container, and exposes only `http://localhost:${APP_PORT:-8080}` on the host.
 - Supported schema repair is code-based in `backend/app/db/`; startup repair targets live tables and treats retired global authoring tables as drop-only cleanup targets, not compatibility backfill surfaces. Do not create migration instructions around a reappearing Alembic scaffold.
 - Playwright runs against backend `8001` and frontend `4173`; the backend startup helper starts both Uvicorn and the scheduler worker, while the frontend helper serves the built preview.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
