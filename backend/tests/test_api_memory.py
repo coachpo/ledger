@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -106,7 +108,6 @@ def _write_request(
         summary="Canonical API memory.",
         content="canonical memory should stay scoped to trusted runtime writes.",
         subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
-        attributes={"source": "api-memory-test"},
         scope=scope,
         provenance=MemoryProvenance(
             run_id=run_id,
@@ -122,14 +123,18 @@ def _write_request(
     )
 
 
-def _assert_no_finance_report_payload(payload: object) -> None:
+def _assert_no_removed_core_memory_payload(payload: object) -> None:
     serialized = str(payload)
     for forbidden in (
+        "attributes",
+        "auditLinks",
         "legacy_agent_memory_report",
         "reportSlug",
         "reportName",
+        "downloadUrl",
         "portfolioSlug",
         "decisionSummary",
+        "tags",
         "/reports/",
     ):
         assert forbidden not in serialized
@@ -141,7 +146,6 @@ def _admin_create_payload(run_id: int, *, include_scope: bool = True) -> dict[st
         "summary": "Admin-created memory.",
         "content": "Admin route creates workflow-visible memory without access context.",
         "subjectRefs": [{"kind": "instrument", "id": "MSFT"}],
-        "attributes": {"source": "admin-route-test"},
         "provenance": {
             "runId": run_id,
             "agentKey": "admin_operator",
@@ -159,7 +163,7 @@ def _admin_create_payload(run_id: int, *, include_scope: bool = True) -> dict[st
     return payload
 
 
-def test_api_memory_authorized_private_scope_list_detail_history_and_actions(
+def test_api_memory_authorized_private_scope_list_detail_and_actions(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -196,7 +200,6 @@ def test_api_memory_authorized_private_scope_list_detail_history_and_actions(
             "outcome": {
                 "summary": "Owner workflow-visible memory.",
                 "observedAt": "2026-01-17T10:30:00Z",
-                "attributes": {"verdict": "useful"},
             },
         },
     )
@@ -224,11 +227,11 @@ def test_api_memory_authorized_private_scope_list_detail_history_and_actions(
         f"/api/memory/{memory_id}/detail",
         json={"accessContext": access},
     )
-    revisions_response = client.post(
+    removed_revisions_response = client.post(
         f"/api/memory/{memory_id}/revisions?limit=10",
         json={"accessContext": access},
     )
-    events_response = client.post(
+    removed_events_response = client.post(
         f"/api/memory/{memory_id}/events?limit=10",
         json={"accessContext": access},
     )
@@ -237,33 +240,25 @@ def test_api_memory_authorized_private_scope_list_detail_history_and_actions(
     assert reflect_response.status_code == 200, reflect_response.json()
     assert list_response.status_code == 200, list_response.json()
     assert detail_response.status_code == 200, detail_response.json()
-    assert revisions_response.status_code == 200, revisions_response.json()
-    assert events_response.status_code == 200, events_response.json()
+    assert removed_revisions_response.status_code == 404, removed_revisions_response.json()
+    assert removed_events_response.status_code == 404, removed_events_response.json()
 
-    list_payload = list_response.json()
-    detail_payload = detail_response.json()
-    revisions_payload = revisions_response.json()
-    events_payload = events_response.json()
+    list_payload = cast(dict[str, object], list_response.json())
+    detail_payload = cast(dict[str, object], detail_response.json())
+    list_items = cast(list[dict[str, object]], list_payload["items"])
+    detail_revision = cast(dict[str, object], detail_payload["revision"])
 
-    assert [item["memoryId"] for item in list_payload["items"]] == [memory_id]
+    assert [item["memoryId"] for item in list_items] == [memory_id]
     assert list_payload["visibility"] == "explicit-scope"
     assert detail_payload["scope"] == {"scopeType": "run", "scopeKey": str(run_id)}
-    assert detail_payload["attributes"] == {"source": "api-memory-test"}
-    assert [item["version"] for item in revisions_payload["items"]] == [1, 2, 3]
-    assert [item["eventType"] for item in events_payload["items"]] == [
-        "written",
-        "reviewed",
-        "reviewed",
-    ]
+    assert cast(int, detail_revision["version"]) >= 1
     for payload in (
-        resolve_response.json(),
-        reflect_response.json(),
+        cast(object, resolve_response.json()),
+        cast(object, reflect_response.json()),
         list_payload,
         detail_payload,
-        revisions_payload,
-        events_payload,
     ):
-        _assert_no_finance_report_payload(payload)
+        _assert_no_removed_core_memory_payload(payload)
 
 
 def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_access(
@@ -348,14 +343,6 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
             json={"accessContext": forged_reader_access},
         ),
         client.post(
-            f"/api/memory/{memory_id}/revisions",
-            json={"accessContext": forged_reader_access},
-        ),
-        client.post(
-            f"/api/memory/{memory_id}/events",
-            json={"accessContext": forged_reader_access},
-        ),
-        client.post(
             f"/api/memory/{memory_id}/actions/resolve",
             json={
                 "accessContext": forged_reader_access,
@@ -386,14 +373,6 @@ def test_api_memory_rejects_self_attested_namespace_grants_and_shared_namespace_
             },
         ),
         client.post(f"/api/memory/{memory_id}/detail", json={"accessContext": denied_access}),
-        client.post(
-            f"/api/memory/{memory_id}/revisions",
-            json={"accessContext": denied_access},
-        ),
-        client.post(
-            f"/api/memory/{memory_id}/events",
-            json={"accessContext": denied_access},
-        ),
         client.post(
             f"/api/memory/{memory_id}/actions/resolve",
             json={
@@ -643,6 +622,13 @@ def test_admin_filters_narrow_and_clearing_filters_restores_full_corpus(
         "written",
         "reviewed",
     ]
+    for payload in (
+        cleared_payload,
+        cast(object, detail_response.json()),
+        cast(object, revisions_response.json()),
+        cast(object, events_response.json()),
+    ):
+        _assert_no_removed_core_memory_payload(payload)
 
 
 def test_admin_create_requires_scope(
@@ -681,6 +667,14 @@ def test_admin_create_requires_scope(
     assert events.status_code == 200, events.json()
     assert visibility_update.status_code == 200, visibility_update.json()
     assert visibility_update.json()["visibleToWorkflow"] is False
+    for payload in (
+        created_payload,
+        cast(object, detail.json()),
+        cast(object, revisions.json()),
+        cast(object, events.json()),
+        cast(object, visibility_update.json()),
+    ):
+        _assert_no_removed_core_memory_payload(payload)
 
 
 def test_admin_delete_entry_removes_detail_and_list_and_reuses_not_found_behavior(
@@ -727,6 +721,10 @@ def test_admin_write_payload_validation_and_scope_mutation_attempts(
         "/api/memory/admin/entries",
         json={**_admin_create_payload(run_id), "status": "deleted"},
     )
+    arbitrary_attributes_create = client.post(
+        "/api/memory/admin/entries",
+        json={**_admin_create_payload(run_id), "attributes": {"adminFixture": "true"}},
+    )
     blank_content = client.post(
         "/api/memory/admin/entries",
         json={**_admin_create_payload(run_id), "content": ""},
@@ -744,6 +742,15 @@ def test_admin_write_payload_validation_and_scope_mutation_attempts(
             "scope": {"scopeType": "package", "scopeKey": "other_package"},
         },
     )
+    arbitrary_attributes_revision = client.post(
+        f"/api/memory/admin/entries/{memory_id}/revisions",
+        json={
+            "summary": "Revision attributes should fail.",
+            "content": "Revision payload must not accept arbitrary attributes.",
+            "provenance": _admin_create_payload(run_id)["provenance"],
+            "attributes": {"revision": "latest"},
+        },
+    )
     visibility_scope_mutation = client.patch(
         f"/api/memory/admin/entries/{memory_id}/workflow-visibility",
         json={
@@ -752,12 +759,19 @@ def test_admin_write_payload_validation_and_scope_mutation_attempts(
             "scope": {"scopeType": "package", "scopeKey": "other_package"},
         },
     )
+    arbitrary_attributes_visibility = client.patch(
+        f"/api/memory/admin/entries/{memory_id}/workflow-visibility",
+        json={"visibleToWorkflow": True, "attributes": {"outcome": "accepted"}},
+    )
 
     invalid_responses = (
         invalid_create,
+        arbitrary_attributes_create,
         blank_content,
         revision_scope_mutation,
+        arbitrary_attributes_revision,
         visibility_scope_mutation,
+        arbitrary_attributes_visibility,
     )
     for response in invalid_responses:
         assert response.status_code == 422, response.json()

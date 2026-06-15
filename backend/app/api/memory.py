@@ -23,12 +23,10 @@ from app.schemas.memory import (
     MemoryAdminWorkflowVisibilityUpdateRequest,
     MemoryApiAccessRequest,
     MemoryApiEntryRead,
-    MemoryApiEventListRead,
     MemoryApiListRead,
     MemoryApiListRequest,
     MemoryApiReflectRequest,
     MemoryApiResolveRequest,
-    MemoryApiRevisionListRead,
     MemoryScopeType,
 )
 from app.services.memory_service import MemoryService
@@ -183,38 +181,6 @@ def get_memory_detail(
     service: Annotated[MemoryService, Depends(get_memory_service)],
 ) -> MemoryApiEntryRead:
     return service.get_api_memory(memory_id, payload)
-
-
-@router.post("/{memory_id}/revisions", response_model=MemoryApiRevisionListRead)
-def list_memory_revisions(
-    memory_id: str,
-    payload: MemoryApiAccessRequest,
-    service: Annotated[MemoryService, Depends(get_memory_service)],
-    limit: Annotated[int, Query(ge=1, le=MEMORY_API_MAX_REVISIONS)] = (MEMORY_API_MAX_REVISIONS),
-    offset: Annotated[int, Query(ge=0)] = 0,
-) -> MemoryApiRevisionListRead:
-    return service.list_api_memory_revisions(
-        memory_id,
-        payload,
-        limit=limit,
-        offset=offset,
-    )
-
-
-@router.post("/{memory_id}/events", response_model=MemoryApiEventListRead)
-def list_memory_events(
-    memory_id: str,
-    payload: MemoryApiAccessRequest,
-    service: Annotated[MemoryService, Depends(get_memory_service)],
-    limit: Annotated[int, Query(ge=1, le=MEMORY_API_MAX_EVENTS)] = MEMORY_API_MAX_EVENTS,
-    offset: Annotated[int, Query(ge=0)] = 0,
-) -> MemoryApiEventListRead:
-    return service.list_api_memory_events(
-        memory_id,
-        payload,
-        limit=limit,
-        offset=offset,
-    )
 
 
 @router.post("/{memory_id}/actions/resolve", response_model=MemoryApiEntryRead)
