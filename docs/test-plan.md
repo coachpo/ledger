@@ -1,6 +1,6 @@
 # Test Plan
 
-> Status: Live automated-coverage reference for branch `main` at `f4f487f`.
+> Status: Live automated-coverage reference for branch `main` at `6c40d44`.
 
 ## Backend Quality Gates
 
@@ -10,7 +10,7 @@
 - `uv run mypy app`
 - `uv run pytest`
 
-Backend coverage must prove preserved `/api/v1` finance CRUD, template/report behavior, package-first platform contracts, Scheduled Tasks API and materialization semantics, backend-owned compatibility resolution, Model Gateway behavior, native runtime tools, Digital Oracle phase-1 tools owned by `signaldeck.digital_oracle`, typed tool-failure taxonomy, bounded `toolCallRetries`, distinct live-execution `providerRetries`, memory services, scoped runtime `/api/memory`, trusted operator `/api/memory/admin/entries*`, scheduler semantics, run provenance, and removed-route guarantees.
+Backend coverage must prove preserved `/api/v1` finance CRUD, template/report behavior, package-first platform contracts, Scheduled Tasks API and materialization semantics, backend-owned compatibility resolution, Model Gateway behavior, native runtime tools, Digital Oracle phase-1 tools owned by `signaldeck.digital_oracle`, typed tool-failure taxonomy, bounded `toolCallRetries`, distinct live-execution `providerRetries`, memory services, lean scoped runtime `/api/memory`, trusted operator `/api/memory/admin/entries*`, scheduler semantics, run provenance, and removed-route guarantees.
 
 Automated backend coverage must stay deterministic. CI uses fake clients, fixtures, deterministic provider settings, and descriptor assertions only; it must not call live provider APIs, live MCP web search, or `yfinance` network paths. Fixture refreshes, live provider smoke checks, and upstream/provider regression runs are manual/dev-only checks, with evidence captured outside CI.
 
@@ -38,7 +38,7 @@ Frontend coverage must prove API helpers, query keys, formatting helpers, portfo
 | Tools                        | Server-declared `/api/tools` catalog, extension filtering, canonical owner-qualified tool keys, mechanical OpenAI function names derived from those keys, Finance Workspace data tools, Digital Oracle-owned `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, report lookup, retired report-write fail-closed behavior, typed failure taxonomy, bounded `toolCallRetries`, platform memory tools, and absence of deferred Digital Oracle candidates such as `signaldeck.rates.lookup`. |
 | Runs                         | Launch, scheduler queue semantics, progress read model, run-owned package snapshots, approved model runtime profile provenance, rerun, fork, operation cards, extension dependencies, trace/span ids, memory evidence, typed failure taxonomy, bounded `toolCallRetries`, and live-execution `providerRetries` with `terminalOutcome` only for `succeededAfterRetry` or `exhausted`.       |
 | Runtime inputs               | JSON Schema `title` and `description` render as display metadata only; unsupported help-text/schema mechanisms remain rejected or ignored according to schema rules.                                                                                                             |
-| Memory                       | Core schemas, write/reuse/supersede semantics, scoped workflow-visible lookup fallback, namespace grants, conflict handling, runtime tools, trusted operator admin APIs, `/memory` admin behavior, all-entry admin visibility, `visibleToWorkflow` filtering, admin-only single-entry hard delete, dependent cascade cleanup, preserved run memory event snapshots, scope/provenance rules, no runtime or bulk delete, and report-domain separation. |
+| Memory                       | Lean core schemas, write/reuse semantics, scoped workflow-visible lookup fallback, backend-enforced namespace grants, conflict handling, runtime tools, trusted operator admin APIs, `/memory` admin behavior, all-entry admin visibility, `visibleToWorkflow` filtering, admin-only revision/event history, admin-only single-entry hard delete, canonical revision cascade cleanup, typed run memory event snapshots, scope/provenance rules, no runtime revisions or events, no runtime tags, no arbitrary attributes, no chunk or embedding live contract, no runtime or bulk delete, and report-domain separation. |
 | Removed surfaces             | Backend and frontend absence for `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtests, and removed global authoring routes.                                                                                                              |
 
 ## Backend Test Scope
@@ -74,6 +74,13 @@ Use targeted checks when these contracts change:
 (cd frontend && pnpm test:run src/pages/workflow-packages src/pages/scheduled-tasks src/pages/model-connections src/pages/runs src/pages/memory src/routes.test.tsx)
 (cd frontend && pnpm exec playwright test e2e/scheduled-tasks.spec.ts)
 (cd frontend && pnpm typecheck && pnpm test:run && cd ../backend && uv run pytest tests/test_workflow_package_preflight.py -k "digital_oracle" -q)
+```
+
+Core Memory docs alignment checks should prove the live owner docs describe lean `memory.write` and `memory.lookup`, `visibleToWorkflow`, backend-owned namespace grants, removed chunk/embedding contracts, and intentional absence language for arbitrary attributes, audit links, removed chunk/embedding tables, report-backed memory, and runtime revisions:
+
+```bash
+rg -n "memory.write|memory.lookup|visibleToWorkflow|namespace|chunk|embedding" docs/data-model.md docs/spec.md docs/requirements.md docs/test-plan.md
+rg -n "attributes|auditLinks|agent_memory_chunks|agent_memory_embeddings|report-backed memory|runtime revisions" docs/data-model.md docs/spec.md docs/requirements.md docs/test-plan.md
 ```
 
 Scheduled Tasks final-doc verification also checks live docs and route guidance for retention-contract drift, plus the broad build and backend suite:

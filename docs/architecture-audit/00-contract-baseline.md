@@ -26,7 +26,7 @@ The requested filenames exist at those paths. `open-questions.md` states that th
 
 - Legacy/global authoring roots outside Workflow Packages: global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration-v2, runtime-v2, and `/skills*`.
 - Digital Oracle routes, pages, navigation groups, provider bundles, lifecycle hooks, or finance behavior.
-- Public global memory CRUD, unscoped memory search, report-backed memory storage, vector search, embeddings, or chunk-table requirements.
+- Public global memory CRUD, unscoped memory search, report-backed memory storage, or vector retrieval requirements.
 - Multi-user authentication, authorization, tenancy, account management, or role enforcement.
 - Long-term Workflow Package import/export compatibility beyond the current live contract.
 - Raw cron scheduling and client-owned recurrence math.
