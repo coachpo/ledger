@@ -7,18 +7,13 @@ import pytest
 from sqlalchemy import CheckConstraint
 from sqlalchemy.exc import IntegrityError
 
-from app.models.agent_memory import (
-    AgentMemoryChunk,
-    AgentMemoryEmbedding,
-    AgentMemoryEntry,
-    AgentMemoryRevision,
-    RunMemoryEvent,
-)
+from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
 from app.models.base import Base
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
+from app.models.signaldeck_finance_memory_metadata import SignalDeckFinanceMemoryMetadata
 from app.schemas.model_connection import default_model_connection_capabilities
 from app.schemas.run import (
     RunListItemRead,
@@ -72,10 +67,13 @@ AGENT_PLATFORM_EXECUTION_TABLE_NAMES = {
 CORE_MEMORY_TABLE_NAMES = {
     "agent_memory_entries",
     "agent_memory_revisions",
-    "agent_memory_chunks",
-    "agent_memory_embeddings",
     "run_memory_events",
 }
+REMOVED_CORE_MEMORY_TABLE_NAMES = {
+    "agent_memory_chunks",
+    "agent_memory_embeddings",
+}
+FINANCE_MEMORY_METADATA_TABLE_NAMES = {"signaldeck_finance_memory_metadata"}
 REMOVED_WORKFLOW_PACKAGE_VERSION_TABLE_NAMES = {
     "workflow_package_versions",
     "workflow_package_version_model_connections",
@@ -167,11 +165,12 @@ def test_agent_platform_execution_tables_are_package_run_only() -> None:
 
 def test_core_memory_tables_are_registered_on_metadata() -> None:
     assert CORE_MEMORY_TABLE_NAMES <= set(Base.metadata.tables)
+    assert REMOVED_CORE_MEMORY_TABLE_NAMES.isdisjoint(Base.metadata.tables)
+    assert FINANCE_MEMORY_METADATA_TABLE_NAMES <= set(Base.metadata.tables)
 
     entry_table = Base.metadata.tables["agent_memory_entries"]
     revision_table = Base.metadata.tables["agent_memory_revisions"]
-    chunk_table = Base.metadata.tables[AgentMemoryChunk.__tablename__]
-    embedding_table = Base.metadata.tables[AgentMemoryEmbedding.__tablename__]
+    finance_metadata_table = Base.metadata.tables[SignalDeckFinanceMemoryMetadata.__tablename__]
     event_table = Base.metadata.tables["run_memory_events"]
 
     assert {"report_id", "report_slug", "report_name"}.isdisjoint(entry_table.c.keys())
@@ -180,52 +179,38 @@ def test_core_memory_tables_are_registered_on_metadata() -> None:
         "scope_type",
         "scope_key",
         "kind",
-        "status",
         "summary",
         "subject_refs",
-        "attributes",
         "content_hash",
         "idempotency_key",
         "source_run_id",
         "source_agent_key",
         "source_agent_version",
     } <= set(entry_table.c.keys())
+    assert "attributes" not in entry_table.c
+    assert "status" not in entry_table.c
     assert {
         "revision_id",
         "memory_entry_id",
         "version",
-        "status",
         "content",
         "content_hash",
         "source_run_id",
         "source_agent_key",
     } <= set(revision_table.c.keys())
+    assert "attributes" not in revision_table.c
+    assert "status" not in revision_table.c
     assert {
-        "memory_entry_id",
-        "memory_revision_id",
         "memory_id",
-        "revision_id",
-        "chunk_id",
-        "chunk_index",
-        "chunking_version",
-        "content",
-        "content_hash",
-        "source_content_hash",
-    } <= set(chunk_table.c.keys())
-    assert {
-        "memory_chunk_id",
-        "memory_entry_id",
-        "memory_revision_id",
-        "embedding_model",
-        "embedding_dimensions",
-        "embedding",
-        "content_hash",
-        "chunking_version",
-        "embedding_config_hash",
-        "status",
-        "metadata",
-    } <= set(embedding_table.c.keys())
-    assert str(embedding_table.c.embedding.type) == "VECTOR"
+        "ticker",
+        "action",
+        "rationale",
+        "risk_summary",
+        "execution_plan",
+        "horizon_days",
+        "benchmark_symbol",
+        "decision_summary",
+    } <= set(finance_metadata_table.c.keys())
     assert {
         "run_id",
         "event_type",
@@ -263,7 +248,6 @@ def test_core_memory_models_persist_revisions_and_run_events(session_factory) ->
             scope_type="run",
             scope_key=str(run.id),
             kind="decision",
-            status="pending",
             summary="Model memory summary",
             content_hash=first_content_hash,
             source_run_id=run.id,
@@ -280,7 +264,6 @@ def test_core_memory_models_persist_revisions_and_run_events(session_factory) ->
             memory_entry_id=entry.id,
             revision_id="memory-core-model-1:rev-1",
             version=1,
-            status="pending",
             summary=entry.summary,
             content="Model memory content.",
             content_hash=first_content_hash,
@@ -294,7 +277,6 @@ def test_core_memory_models_persist_revisions_and_run_events(session_factory) ->
             memory_entry_id=entry.id,
             revision_id="memory-core-model-1:rev-2",
             version=2,
-            status="pending",
             summary="Updated model memory summary",
             content="Model memory content B.",
             content_hash=second_content_hash,
@@ -305,22 +287,6 @@ def test_core_memory_models_persist_revisions_and_run_events(session_factory) ->
             trace_span_id="span-write",
         )
         session.add_all([first_revision, second_revision])
-        session.flush()
-
-        chunk = AgentMemoryChunk(
-            memory_entry_id=entry.id,
-            memory_revision_id=second_revision.id,
-            memory_id=entry.memory_id,
-            revision_id=second_revision.revision_id,
-            chunk_id="memory-core-model-1:rev-2:chunk-0",
-            chunk_index=0,
-            chunking_version="memory-core-chunker/v1",
-            content="Model memory content B.",
-            content_hash=second_content_hash,
-            source_content_hash=second_revision.content_hash,
-            token_count=4,
-        )
-        session.add(chunk)
         session.flush()
 
         event = RunMemoryEvent(
@@ -334,7 +300,7 @@ def test_core_memory_models_persist_revisions_and_run_events(session_factory) ->
             filters={"scopeType": "run"},
             budget={"limit": 1},
             result_snapshot={"memoryId": entry.memory_id},
-            status_snapshot={"status": entry.status},
+            status_snapshot={"visibleToWorkflow": entry.visible_to_workflow},
             trace_span_id="span-write",
         )
         session.add(event)
@@ -342,15 +308,12 @@ def test_core_memory_models_persist_revisions_and_run_events(session_factory) ->
 
         stored_entry = session.get(AgentMemoryEntry, entry.id)
         stored_revision = session.get(AgentMemoryRevision, second_revision.id)
-        stored_chunk = session.get(AgentMemoryChunk, chunk.id)
         stored_event = session.get(RunMemoryEvent, event.id)
 
         assert stored_entry is not None
         assert stored_entry.memory_id == "memory-core-model-1"
         assert stored_revision is not None
         assert stored_revision.revision_id == "memory-core-model-1:rev-2"
-        assert stored_chunk is not None
-        assert stored_chunk.chunking_version == "memory-core-chunker/v1"
         assert stored_event is not None
         assert stored_event.event_type == "written"
 
@@ -535,11 +498,9 @@ def test_run_memory_artifact_schema_serializes_memory_native_contract() -> None:
         {
             "memoryId": "mem_1001",
             "summary": "NVDA buy memory",
-            "status": "pending",
             "createdAt": created_at,
-            "provenance": {"runId": 42, "agentKey": "portfolio_manager", "agentVersion": 3},
+            "provenance": {"runId": 42, "agentKey": "portfolio_manager"},
             "sourceGraphMetadata": {"nodeId": "portfolio_decision", "slot": "decision"},
-            "auditLinks": {"report": {"slug": "agent_memory_nvda", "name": "agent_memory_nvda"}},
         }
     )
 

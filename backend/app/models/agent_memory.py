@@ -16,23 +16,9 @@ from sqlalchemy import (
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.types import UserDefinedType
 
 from app.core.formatting import utcnow
 from app.models.base import Base, IdMixin
-
-
-class PgVector(UserDefinedType[Any]):
-    cache_ok = True
-
-    def __init__(self, dimensions: int | None = None) -> None:
-        self.dimensions = dimensions
-
-    def get_col_spec(self, **kw: object) -> str:
-        del kw
-        if self.dimensions is None:
-            return "VECTOR"
-        return f"VECTOR({self.dimensions})"
 
 
 class AgentMemoryEntry(IdMixin, Base):
@@ -50,10 +36,6 @@ class AgentMemoryEntry(IdMixin, Base):
         CheckConstraint(
             "jsonb_typeof(subject_refs) = 'array'",
             name="ck_agent_memory_entries_subject_refs",
-        ),
-        CheckConstraint(
-            "jsonb_typeof(attributes) = 'object'",
-            name="ck_agent_memory_entries_attributes",
         ),
         CheckConstraint(
             "source_run_id > 0",
@@ -89,12 +71,6 @@ class AgentMemoryEntry(IdMixin, Base):
             "subject_refs",
             postgresql_using="gin",
             postgresql_ops={"subject_refs": "jsonb_path_ops"},
-        ),
-        Index(
-            "ix_agent_memory_entries_attributes_gin",
-            "attributes",
-            postgresql_using="gin",
-            postgresql_ops={"attributes": "jsonb_path_ops"},
         ),
         Index("ix_agent_memory_entries_source", "source_run_id", "source_agent_key"),
         Index(
@@ -134,12 +110,6 @@ class AgentMemoryEntry(IdMixin, Base):
         nullable=False,
         default=list,
         server_default=sql_text("'[]'::jsonb"),
-    )
-    attributes: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=sql_text("'{}'::jsonb"),
     )
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     idempotency_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
@@ -196,10 +166,6 @@ class AgentMemoryRevision(IdMixin, Base):
             name="ck_agent_memory_revisions_subject_refs",
         ),
         CheckConstraint(
-            "jsonb_typeof(attributes) = 'object'",
-            name="ck_agent_memory_revisions_attributes",
-        ),
-        CheckConstraint(
             "source_run_id > 0",
             name="ck_agent_memory_revisions_source_run_id_positive",
         ),
@@ -251,12 +217,6 @@ class AgentMemoryRevision(IdMixin, Base):
         default=list,
         server_default=sql_text("'[]'::jsonb"),
     )
-    attributes: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=sql_text("'{}'::jsonb"),
-    )
     supersedes_revision_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
     source_run_id: Mapped[int] = mapped_column(nullable=False)
     source_agent_key: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -268,178 +228,6 @@ class AgentMemoryRevision(IdMixin, Base):
         nullable=False,
         default=utcnow,
         server_default=sql_text("now()"),
-    )
-
-
-class AgentMemoryChunk(IdMixin, Base):
-    __tablename__ = "agent_memory_chunks"
-    __table_args__ = (
-        UniqueConstraint("chunk_id", name="uq_agent_memory_chunks_chunk_id"),
-        UniqueConstraint(
-            "memory_revision_id",
-            "chunk_index",
-            name="uq_agent_memory_chunks_revision_index",
-        ),
-        CheckConstraint(
-            "chunk_index >= 0",
-            name="ck_agent_memory_chunks_chunk_index_non_negative",
-        ),
-        CheckConstraint(
-            "token_count IS NULL OR token_count >= 0",
-            name="ck_agent_memory_chunks_token_count_non_negative",
-        ),
-        CheckConstraint(
-            "content_hash ~ '^[a-f0-9]{64}$'",
-            name="ck_agent_memory_chunks_content_hash",
-        ),
-        CheckConstraint(
-            "source_content_hash ~ '^[a-f0-9]{64}$'",
-            name="ck_agent_memory_chunks_source_content_hash",
-        ),
-        CheckConstraint(
-            "jsonb_typeof(attributes) = 'object'",
-            name="ck_agent_memory_chunks_attributes",
-        ),
-        Index("ix_agent_memory_chunks_entry", "memory_entry_id"),
-        Index("ix_agent_memory_chunks_revision", "memory_revision_id"),
-        Index("ix_agent_memory_chunks_memory_id", "memory_id"),
-        Index("ix_agent_memory_chunks_revision_id", "revision_id"),
-        Index("ix_agent_memory_chunks_content_hash", "content_hash"),
-        Index("ix_agent_memory_chunks_chunking_version", "chunking_version"),
-    )
-
-    memory_entry_id: Mapped[int] = mapped_column(
-        ForeignKey("agent_memory_entries.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    memory_revision_id: Mapped[int] = mapped_column(
-        ForeignKey("agent_memory_revisions.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    memory_id: Mapped[str] = mapped_column(String(160), nullable=False)
-    revision_id: Mapped[str] = mapped_column(String(160), nullable=False)
-    chunk_id: Mapped[str] = mapped_column(String(200), nullable=False)
-    chunk_index: Mapped[int] = mapped_column(nullable=False)
-    chunking_version: Mapped[str] = mapped_column(String(80), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    token_count: Mapped[int | None] = mapped_column(nullable=True)
-    attributes: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=sql_text("'{}'::jsonb"),
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=utcnow,
-        server_default=sql_text("now()"),
-    )
-
-
-class AgentMemoryEmbedding(IdMixin, Base):
-    __tablename__ = "agent_memory_embeddings"
-    __table_args__ = (
-        CheckConstraint(
-            "status IN ('pending', 'ready', 'stale', 'failed')",
-            name="ck_agent_memory_embeddings_status",
-        ),
-        CheckConstraint(
-            "embedding_dimensions > 0",
-            name="ck_agent_memory_embeddings_dimensions_positive",
-        ),
-        CheckConstraint(
-            "content_hash ~ '^[a-f0-9]{64}$'",
-            name="ck_agent_memory_embeddings_content_hash",
-        ),
-        CheckConstraint(
-            "embedding_config_hash IS NULL OR embedding_config_hash ~ '^[a-f0-9]{64}$'",
-            name="ck_agent_memory_embeddings_config_hash",
-        ),
-        CheckConstraint(
-            "status <> 'ready' OR embedding IS NOT NULL",
-            name="ck_agent_memory_embeddings_ready_has_vector",
-        ),
-        CheckConstraint(
-            "jsonb_typeof(metadata) = 'object'",
-            name="ck_agent_memory_embeddings_metadata",
-        ),
-        Index("ix_agent_memory_embeddings_chunk", "memory_chunk_id"),
-        Index("ix_agent_memory_embeddings_entry", "memory_entry_id"),
-        Index("ix_agent_memory_embeddings_revision", "memory_revision_id"),
-        Index("ix_agent_memory_embeddings_status", "status"),
-        Index("ix_agent_memory_embeddings_model_status", "embedding_model", "status"),
-        Index(
-            "ix_agent_memory_embeddings_provenance",
-            "embedding_model",
-            "embedding_dimensions",
-            "chunking_version",
-            "content_hash",
-        ),
-        Index(
-            "uq_agent_memory_embeddings_chunk_provenance",
-            "memory_chunk_id",
-            sql_text("COALESCE(embedding_provider, '')"),
-            "embedding_model",
-            "embedding_dimensions",
-            "chunking_version",
-            "content_hash",
-            sql_text("COALESCE(embedding_config_hash, '')"),
-            unique=True,
-        ),
-    )
-
-    memory_chunk_id: Mapped[int] = mapped_column(
-        ForeignKey("agent_memory_chunks.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    memory_entry_id: Mapped[int] = mapped_column(
-        ForeignKey("agent_memory_entries.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    memory_revision_id: Mapped[int] = mapped_column(
-        ForeignKey("agent_memory_revisions.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    memory_id: Mapped[str] = mapped_column(String(160), nullable=False)
-    revision_id: Mapped[str] = mapped_column(String(160), nullable=False)
-    chunk_id: Mapped[str] = mapped_column(String(200), nullable=False)
-    embedding_provider: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    embedding_model: Mapped[str] = mapped_column(String(200), nullable=False)
-    embedding_dimensions: Mapped[int] = mapped_column(nullable=False)
-    embedding: Mapped[list[float] | None] = mapped_column(PgVector(), nullable=True)
-    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    chunking_version: Mapped[str] = mapped_column(String(80), nullable=False)
-    embedding_config_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="pending",
-        server_default="pending",
-    )
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metadata_: Mapped[dict[str, Any]] = mapped_column(
-        "metadata",
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=sql_text("'{}'::jsonb"),
-    )
-    embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=utcnow,
-        server_default=sql_text("now()"),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=utcnow,
-        server_default=sql_text("now()"),
-        onupdate=utcnow,
     )
 
 
