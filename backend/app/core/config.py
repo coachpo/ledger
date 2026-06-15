@@ -131,10 +131,6 @@ class Settings(BaseSettings):
     )
     cors_allowed_origins: Annotated[list[str], NoDecode] = Field(
         default=[
-            "http://127.0.0.1:25173",
-            "http://localhost:25173",
-            "http://127.0.0.1:25174",
-            "http://localhost:25174",
             "http://127.0.0.1:4173",
             "http://localhost:4173",
             "http://127.0.0.1:5173",
@@ -144,8 +140,6 @@ class Settings(BaseSettings):
     )
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
     )
