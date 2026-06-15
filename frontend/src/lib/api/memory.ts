@@ -16,10 +16,8 @@ import type {
   MemoryAdminWorkflowVisibilityUpdateRequest,
   MemoryApiAccessRequest,
   MemoryApiEntryRead,
-  MemoryApiEventListRead,
   MemoryApiListRead,
   MemoryApiListRequest,
-  MemoryApiRevisionListRead,
 } from "../types/memory";
 
 function memoryPath(memoryId: IdParam): string {
@@ -90,32 +88,6 @@ export function getMemoryDetail(
     method: "POST",
     signal,
   });
-}
-
-export function listMemoryRevisions(
-  memoryId: IdParam,
-  payload: MemoryApiAccessRequest,
-  signal?: AbortSignal,
-): Promise<MemoryApiRevisionListRead> {
-  return requestPlatform<MemoryApiRevisionListRead>(
-    `${memoryPath(memoryId)}/revisions`,
-    { body: payload, method: "POST", signal },
-  );
-}
-
-export function listMemoryEvents(
-  memoryId: IdParam,
-  payload: MemoryApiAccessRequest,
-  signal?: AbortSignal,
-): Promise<MemoryApiEventListRead> {
-  return requestPlatform<MemoryApiEventListRead>(
-    `${memoryPath(memoryId)}/events`,
-    {
-      body: payload,
-      method: "POST",
-      signal,
-    },
-  );
 }
 export function listAdminMemoryEntries(
   params: MemoryAdminListParams = {},
@@ -217,7 +189,5 @@ export const memoryApi = {
     updateWorkflowVisibility: updateAdminMemoryWorkflowVisibility,
   },
   detail: getMemoryDetail,
-  events: listMemoryEvents,
   list: listMemory,
-  revisions: listMemoryRevisions,
 } as const;

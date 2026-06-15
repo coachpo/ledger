@@ -20,8 +20,11 @@ import type {
   MemoryAdminListRead,
   MemoryAdminRevisionCreateRequest,
   MemoryAdminWorkflowVisibilityUpdateRequest,
+  MemoryApiAccessRequest,
+  MemoryApiEntryRead,
   MemoryApiListRead,
   MemoryApiListRequest,
+  MemoryProvenance,
 } from "@/lib/types/memory";
 import {
   useAdminMemoryEntries,
@@ -31,6 +34,7 @@ import {
   useCreateAdminMemoryEntry,
   useCreateAdminMemoryRevision,
   useDeleteAdminMemoryEntry,
+  useMemoryDetail,
   useMemoryList,
   useUpdateAdminMemoryWorkflowVisibility,
 } from "./use-memory";
@@ -88,7 +92,27 @@ function memoryPayload(): MemoryApiListRequest {
     limit: 25,
     query: "earnings",
     scope: { scopeKey: "42", scopeType: "run" },
+    subjectRefs: [{ id: "NVDA", kind: "instrument", label: "NVIDIA" }],
     visibility: "explicit-scope",
+  };
+}
+
+function memoryAccessPayload(): MemoryApiAccessRequest {
+  return {
+    accessContext: {
+      packageKey: "research_package",
+      workflowKey: "daily_research",
+    },
+  };
+}
+
+function adminWriteProvenance(): MemoryProvenance {
+  return {
+    agentKey: "local-instance-operator",
+    agentVersion: 1,
+    createdByType: "operator",
+    runId: 41,
+    workflowKey: "daily_research",
   };
 }
 
@@ -107,16 +131,14 @@ function adminEntry(
   overrides: Partial<MemoryAdminEntryRead> = {},
 ): MemoryAdminEntryRead {
   return {
-    attributes: { confidence: "high" },
     content: "Admin-created memory content",
     createdAt: "2026-06-13T12:00:00Z",
     kind: "insight",
     memoryId: "mem-admin-1",
     provenance: {
       agentKey: "local-instance-operator",
-      agentVersion: 1,
-      createdByType: "operator",
       runId: 41,
+      workflowKey: "daily_research",
     },
     reflections: [],
     revision: {
@@ -176,6 +198,53 @@ describe("useMemoryList", () => {
     expect(url.pathname).toBe("/api/memory");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify(payload));
+    expect(JSON.stringify(queryKeys.platform.memory.list(payload))).not.toMatch(
+      /attributes|tags/,
+    );
+  });
+
+  it("keeps scoped runtime detail as the only memory-id runtime read helper", async () => {
+    const response: MemoryApiEntryRead = {
+      content: "Workflow-visible runtime memory",
+      createdAt: "2026-06-13T12:00:00Z",
+      kind: "insight",
+      memoryId: "mem-runtime-1",
+      provenance: {
+        agentKey: "research_agent",
+        runId: 41,
+        workflowKey: "daily_research",
+      },
+      revision: {
+        contentHash: "b".repeat(64),
+        createdAt: "2026-06-13T12:00:00Z",
+        revisionId: "rev-runtime-1",
+        version: 1,
+      },
+      revisionId: "rev-runtime-1",
+      scope: { scopeKey: "research_package", scopeType: "package" },
+      subjectRefs: [],
+      summary: "Runtime memory",
+      visibleToWorkflow: true,
+    };
+    const payload = memoryAccessPayload();
+    fetchMock.mockResolvedValueOnce(jsonResponse(response));
+
+    useMemoryDetail("mem-runtime-1", payload);
+    await expect(
+      lastQueryOptions<MemoryApiEntryRead>().queryFn({
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual(response);
+
+    const { init, url } = getLastFetchCall(fetchMock);
+    expect(url.pathname).toBe("/api/memory/mem-runtime-1/detail");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify(payload));
+
+    const { memoryApi } = await import("@/lib/api/memory");
+    expect(Object.keys(memoryApi).sort()).toEqual(["admin", "detail", "list"]);
+    expect(queryKeys.platform.memory).not.toHaveProperty("revisions");
+    expect(queryKeys.platform.memory).not.toHaveProperty("events");
   });
 });
 
@@ -282,16 +351,27 @@ describe("admin memory hooks", () => {
     expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({
       offset: "0",
     });
+    expect(adminEntry()).not.toHaveProperty("attributes");
+    expect(adminEntry()).not.toHaveProperty("auditLinks");
   });
 
   it("creates admin memory and invalidates list, detail, revision, and event scopes", async () => {
     const response = adminEntry();
     const payload: MemoryAdminCreateRequest = {
       content: "Admin-created memory content",
-      provenance: response.provenance,
+      provenance: adminWriteProvenance(),
       scope: response.scope,
       summary: "Admin memory",
     };
+    const rejectedPayload: MemoryAdminCreateRequest = {
+      content: payload.content,
+      provenance: payload.provenance,
+      scope: payload.scope,
+      summary: payload.summary,
+      // @ts-expect-error Admin create no longer accepts arbitrary attributes.
+      attributes: { confidence: "high" },
+    };
+    expect(rejectedPayload).toHaveProperty("attributes");
     fetchMock.mockResolvedValueOnce(jsonResponse(response, 201));
 
     useCreateAdminMemoryEntry();
@@ -327,13 +407,28 @@ describe("admin memory hooks", () => {
     const response = adminEntry({ revisionId: "rev-admin-2" });
     const revisionPayload: MemoryAdminRevisionCreateRequest = {
       content: "Updated admin memory content",
-      provenance: response.provenance,
+      provenance: adminWriteProvenance(),
       summary: "Updated admin memory",
     };
+    const rejectedRevisionPayload: MemoryAdminRevisionCreateRequest = {
+      content: revisionPayload.content,
+      provenance: revisionPayload.provenance,
+      summary: revisionPayload.summary,
+      // @ts-expect-error Admin revisions no longer accept arbitrary attributes.
+      attributes: { confidence: "high" },
+    };
+    expect(rejectedRevisionPayload).toHaveProperty("attributes");
     const visibilityPayload: MemoryAdminWorkflowVisibilityUpdateRequest = {
       visibleToWorkflow: false,
       summary: "No longer current",
     };
+    const rejectedVisibilityPayload: MemoryAdminWorkflowVisibilityUpdateRequest = {
+      summary: visibilityPayload.summary,
+      visibleToWorkflow: visibilityPayload.visibleToWorkflow,
+      // @ts-expect-error Workflow visibility updates no longer accept arbitrary attributes.
+      attributes: { operator: "admin" },
+    };
+    expect(rejectedVisibilityPayload).toHaveProperty("attributes");
     fetchMock.mockResolvedValueOnce(jsonResponse(response, 201));
     useCreateAdminMemoryRevision();
     const revisionOptions = lastMutationOptions<

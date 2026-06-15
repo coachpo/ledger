@@ -66,7 +66,6 @@ function normalizeMemorySubjectRefs(
 ) {
   return subjectRefs.map((subjectRef) =>
     omitUndefined({
-      attributes: subjectRef.attributes,
       id: subjectRef.id.trim(),
       kind: subjectRef.kind.trim().toLowerCase(),
       label: normalizeOptionalText(subjectRef.label),
@@ -95,7 +94,6 @@ function normalizeMemoryListRequest(payload: MemoryApiListRequest) {
     query: normalizeOptionalText(payload.query),
     scope: normalizeMemoryScope(payload.scope),
     subjectRefs: normalizeMemorySubjectRefs(payload.subjectRefs),
-    tags: normalizeSymbols(payload.tags ?? []),
     visibility: payload.visibility ?? "explicit-scope",
   });
 }
@@ -400,22 +398,8 @@ const memoryQueryKeys = {
     }
     return [...base, normalizeMemoryAccessRequest(payload)] as const;
   },
-  events: (memoryId: IdParam, payload?: MemoryApiAccessRequest) => {
-    const base = [...memoryRoot, "events", normalizeId(memoryId)] as const;
-    if (!payload) {
-      return base;
-    }
-    return [...base, normalizeMemoryAccessRequest(payload)] as const;
-  },
   list: (params: MemoryApiListRequest) =>
     [...memoryRoot, "list", normalizeMemoryListRequest(params)] as const,
-  revisions: (memoryId: IdParam, payload?: MemoryApiAccessRequest) => {
-    const base = [...memoryRoot, "revisions", normalizeId(memoryId)] as const;
-    if (!payload) {
-      return base;
-    }
-    return [...base, normalizeMemoryAccessRequest(payload)] as const;
-  },
 } as const;
 
 const platformQueryKeys = {
