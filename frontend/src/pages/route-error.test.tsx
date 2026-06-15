@@ -26,7 +26,7 @@ describe("RouteErrorPage", () => {
     isRouteErrorResponseMock.mockReturnValue(false);
   });
 
-  it("renders unexpected render failures through the compact error grammar", () => {
+  it("renders unexpected render failures through a readable responsive error layout", () => {
     routeErrorMock.mockReturnValue(new Error("Route harness failure"));
 
     render(<RouteErrorPage />);
@@ -35,27 +35,42 @@ describe("RouteErrorPage", () => {
     const content = screen.getByTestId("route-error-content");
     const status = screen.getByTestId("route-error-status");
     const statusStrip = status.querySelector("[role='list']");
+    const errorCard = screen
+      .getByText("Route error boundary")
+      .closest("[data-slot='card']");
 
     expect(page).toBeVisible();
-    expect(page).toHaveClass("min-h-screen", "px-4", "py-10");
-    expect(content).toHaveClass("max-w-5xl", "flex-col", "gap-4");
+    expect(page).toHaveClass("min-h-screen", "px-4", "py-8", "sm:py-10");
+    expect(content).toHaveClass("w-full", "max-w-5xl", "flex-col", "gap-6");
     expect(
       screen.getByRole("heading", { level: 1, name: "Route failed to render" }),
     ).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByTestId("route-error-description")).toHaveClass(
-      "max-w-2xl",
+      "max-w-3xl",
       "leading-6",
     );
-    expect(status).toHaveClass("min-w-0");
+    expect(status).toHaveClass("w-full", "min-w-0");
     expect(
       status.closest("[data-slot='page-context-actions']"),
     ).not.toBeInTheDocument();
-    expect(statusStrip).toHaveClass("w-fit", "max-w-full", "flex-wrap");
+    expect(statusStrip).toHaveClass(
+      "w-full",
+      "max-w-3xl",
+      "justify-start",
+      "flex-wrap",
+    );
     expect(screen.getByTestId("route-error-meta")).toHaveClass(
+      "w-full",
       "flex-wrap",
       "gap-2",
     );
+    expect(errorCard).toHaveClass("w-full", "max-w-3xl");
+    expect(
+      screen.getByText(
+        "SignalDeck hit an unexpected routed failure before this workspace could render safely.",
+      ),
+    ).toHaveClass("max-w-2xl", "leading-6");
     expect(screen.getByText("Route error boundary")).toBeVisible();
     expect(screen.getByText("Render failure")).toBeVisible();
     expect(screen.queryByText("Route harness failure")).not.toBeInTheDocument();

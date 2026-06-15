@@ -59,30 +59,30 @@ export function RouteErrorPage() {
 
   return (
     <main
-      className="min-h-screen bg-background px-4 py-10 sm:px-6 lg:px-8"
+      className="min-h-screen bg-background px-4 py-8 sm:px-6 sm:py-10 lg:px-8"
       data-testid="route-error-page"
     >
       <div
-        className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-5xl flex-col justify-center gap-4"
+        className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-5xl flex-col justify-center gap-6"
         data-testid="route-error-content"
       >
-        <header className="flex min-w-0 flex-col gap-4">
+        <header className="flex w-full min-w-0 flex-col gap-4">
           <div className="flex min-w-0 flex-col gap-2">
             <h1 className="max-w-3xl text-2xl font-semibold leading-tight tracking-tight text-foreground sm:text-[1.75rem]">
               {details.title}
             </h1>
             <p
-              className="max-w-2xl text-sm leading-6 text-muted-foreground"
+              className="max-w-3xl text-sm leading-6 text-muted-foreground"
               data-testid="route-error-description"
             >
               React Router redirected this route into SignalDeck's product-owned
               error boundary.
             </p>
           </div>
-          <div className="flex min-w-0 flex-col gap-3">
-            <div className="min-w-0" data-testid="route-error-status">
+          <div className="flex w-full min-w-0 flex-col gap-3">
+            <div className="w-full min-w-0" data-testid="route-error-status">
               <ResourceStatusStrip
-                className="w-fit max-w-full"
+                className="w-full max-w-3xl justify-start"
                 items={[
                   {
                     label: "State",
@@ -98,7 +98,7 @@ export function RouteErrorPage() {
               />
             </div>
             <div
-              className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground"
+              className="flex w-full min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground"
               data-testid="route-error-meta"
             >
               <ProvenanceBadge
@@ -115,6 +115,7 @@ export function RouteErrorPage() {
           </div>
         </header>
         <EmptyStatePanel
+          className="w-full max-w-3xl"
           action={
             <Button asChild size="sm">
               <Link to="/workflow-packages">
@@ -123,7 +124,7 @@ export function RouteErrorPage() {
               </Link>
             </Button>
           }
-          description={details.description}
+          description={<p className="max-w-2xl leading-6">{details.description}</p>}
           icon={<AlertTriangle className="size-4 text-destructive" />}
           title="Route error boundary"
           tone="danger"
