@@ -228,14 +228,10 @@ from app.models.run_step import RunStep
 from app.schemas.market_data import MarketHistoryPointRead, MarketHistorySeriesRead, MarketQuoteRead
 from app.schemas.memory import (
     MEMORY_NAMESPACE_ACCESS_DENIED_CODE,
-    MemoryAdminCreateRequest,
     MemoryAdminListQuery,
     MemoryOutcome,
-    MemoryProvenance,
     MemoryRevisionAction,
-    MemoryScope,
-    MemoryScopeType,
-    MemorySubjectRef,
+    MemoryRuntimeProvenance,
 )
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
@@ -320,6 +316,8 @@ _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
     "signaldeck.finance.positions.lookup",
     "signaldeck.finance.reports.lookup",
 }
+
+
 def _legacy_tool_key(suffix: str) -> str:
     return "signaldeck" + suffix
 
@@ -341,6 +339,8 @@ _LEGACY_LIVE_TOOL_KEYS = (
     _legacy_tool_key(".sec_filings.lookup"),
     _legacy_tool_key(".market_sentiment.lookup"),
 )
+
+
 def _legacy_function_name(suffix: str) -> str:
     return "signaldeck" + suffix
 
@@ -363,15 +363,21 @@ _LEGACY_LIVE_OPENAI_FUNCTION_NAMES = (
     _legacy_function_name("_market_sentiment_lookup"),
 )
 _FORBIDDEN_REPORT_WRITE_MODEL_KEYS = {
+    "agentName",
+    "agentVersion",
+    "attributes",
     "reportId",
     "reportSlug",
     "reportName",
     "auditLinks",
+    "createdByType",
+    "traceId",
     "url",
     "downloadUrl",
+    "workflowVersion",
 }
 _FORBIDDEN_REPORT_WRITE_MODEL_FRAGMENTS = ("/reports/", "download")
-_FORBIDDEN_CORE_MEMORY_MODEL_KEYS = _FORBIDDEN_REPORT_WRITE_MODEL_KEYS
+_FORBIDDEN_CORE_MEMORY_MODEL_KEYS = _FORBIDDEN_REPORT_WRITE_MODEL_KEYS | {"tags"}
 _FORBIDDEN_CORE_MEMORY_MODEL_FRAGMENTS = ("/reports/", "download", "http://", "https://")
 
 
@@ -903,7 +909,6 @@ def _memory_write_arguments_json(
         "subjectRefs": [{"kind": "instrument", "id": "NVDA", "label": None}],
         "scope": {"scopeType": "run", "scopeKey": str(_RUNTIME_RUN_ID)},
         "idempotencyKey": "runtime-core-memory-write",
-        "supersedesRevisionId": None,
     }
     if overrides is not None:
         payload.update(overrides)
@@ -947,45 +952,13 @@ def _memory_runtime_context(
     )
 
 
-def _memory_write_provenance() -> MemoryProvenance:
-    return MemoryProvenance(
+def _memory_write_provenance() -> MemoryRuntimeProvenance:
+    return MemoryRuntimeProvenance(
         run_id=4242,
         agent_key="portfolio_manager",
-        agent_version=3,
-        agent_name="Portfolio Manager",
         workflow_key="platform_graph_daily_review",
-        workflow_version=5,
         step_id="portfolio_decision",
         slot="decision",
-        trace_id="trace-runtime-tools",
-    )
-
-
-def _admin_memory_create_request(
-    run_id: int,
-    *,
-    scope: MemoryScope,
-    summary: str,
-    content: str,
-) -> MemoryAdminCreateRequest:
-    return MemoryAdminCreateRequest(
-        kind="research.note",
-        summary=summary,
-        content=content,
-        subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
-        attributes={"adminFixture": "true"},
-        scope=scope,
-        provenance=MemoryProvenance(
-            run_id=run_id,
-            agent_key="ignored_admin_agent",
-            agent_version=1,
-            agent_name="Ignored Admin Agent",
-            workflow_key="admin_memory_guardrail",
-            workflow_version=1,
-            step_id="admin_create",
-            slot="memory",
-            trace_id="trace-admin-runtime-guardrail",
-        ),
     )
 
 
@@ -2724,6 +2697,13 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
     assert core_memory_payload["memoryId"] == "memory_7"
     assert core_memory_payload["revisionId"] == "revision_7"
     assert core_memory_payload["revisionAction"] == "created"
+    assert core_memory_payload["provenance"] == {
+        "runId": 4242,
+        "agentKey": "portfolio_manager",
+        "workflowKey": "platform_graph_daily_review",
+        "stepId": "portfolio_decision",
+        "slot": "decision",
+    }
     assert "action" not in core_memory_payload
 
 
@@ -3491,6 +3471,7 @@ def test_core_memory_runtime_tools_expose_recursively_strict_schemas() -> None:
     )
     write_properties = cast(dict[str, object], write_parameters["properties"])
     assert "attributes" not in write_properties
+    assert "supersedesRevisionId" not in write_properties
     write_subject_refs = cast(dict[str, object], write_properties["subjectRefs"])
     write_subject_ref_properties = cast(
         dict[str, object], cast(dict[str, object], write_subject_refs["items"])["properties"]
@@ -3501,6 +3482,7 @@ def test_core_memory_runtime_tools_expose_recursively_strict_schemas() -> None:
         dict[str, object], tools_by_name[MEMORY_LOOKUP_OPENAI_FUNCTION_NAME]["parameters"]
     )
     lookup_properties = cast(dict[str, object], lookup_parameters["properties"])
+    assert "tags" not in lookup_properties
     lookup_subject_refs = cast(dict[str, object], lookup_properties["subjectRefs"])
     lookup_subject_ref_properties = cast(
         dict[str, object], cast(dict[str, object], lookup_subject_refs["items"])["properties"]
@@ -4158,10 +4140,17 @@ def test_core_memory_runtime_tool_registry_denies_ungranted_before_parsing() -> 
             '{"summary":"Memory","content":"Body","attributes":{"confidence":"high"}}',
             "signaldeck_core_memory_write arguments contained unsupported fields: attributes",
         ),
+        (
+            '{"summary":"Memory","content":"Body","supersedesRevisionId":"revision_1"}',
+            (
+                "signaldeck_core_memory_write arguments contained unsupported fields: "
+                "supersedesRevisionId"
+            ),
+        ),
         ('{"summary":"Memory"}', "signaldeck_core_memory_write arguments failed validation."),
     ],
 )
-def test_memory_write_runtime_tool_parser_preserves_boundary_validation_messages(
+def test_memory_write_runtime_tool_parser_rejects_unsupported_fields_with_boundary_messages(
     arguments_json: str,
     expected_message: str,
 ) -> None:
@@ -4205,7 +4194,6 @@ def test_memory_write_runtime_tool_parser_rejects_subject_ref_attributes() -> No
                     ],
                     "scope": {"scopeType": "run", "scopeKey": str(_RUNTIME_RUN_ID)},
                     "idempotencyKey": "runtime-core-memory-write",
-                    "supersedesRevisionId": None,
                 }
             )
         )
@@ -4225,6 +4213,10 @@ def test_memory_write_runtime_tool_parser_rejects_subject_ref_attributes() -> No
         (
             '{"unsupported":true}',
             "signaldeck_core_memory_lookup arguments contained unsupported fields: unsupported",
+        ),
+        (
+            '{"tags":["earnings"]}',
+            "signaldeck_core_memory_lookup arguments contained unsupported fields: tags",
         ),
         ('{"limit":21}', "signaldeck_core_memory_lookup arguments failed validation."),
         ('{"maxCharacters":8001}', "signaldeck_core_memory_lookup arguments failed validation."),
@@ -4284,6 +4276,13 @@ def test_memory_write_runtime_tool_creates_core_memory_without_reports(
     assert "status" not in first_payload
     assert first_payload["revisionAction"] == "created"
     assert second_payload["revisionAction"] == "reused"
+    assert first_payload["provenance"] == {
+        "runId": _RUNTIME_RUN_ID,
+        "agentKey": "portfolio_manager",
+        "workflowKey": "platform_graph_daily_review",
+        "stepId": "portfolio_decision",
+        "slot": "decision",
+    }
     assert "action" not in first_payload
 
     with session_factory() as session:
@@ -4298,7 +4297,7 @@ def test_memory_write_runtime_tool_creates_core_memory_without_reports(
     assert entry.created_by_type == "agent"
     assert entry.source_agent_key == "portfolio_manager"
     assert entry.source_slot == "decision"
-    assert entry.source_trace_id == "trace-runtime-tools"
+    assert entry.source_trace_id is None
     assert [event.event_type for event in events] == ["written", "reused"]
     for event in events:
         assert event.run_id == _RUNTIME_RUN_ID
@@ -4356,6 +4355,22 @@ def test_memory_lookup_runtime_tool_stays_package_scoped_when_admin_lists_all_me
         granted_tool_keys={MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY},
         context=alpha_context,
     )
+    beta_context = _memory_runtime_context(
+        session_factory,
+        package_ownership=_runtime_package_ownership(package_key=package_beta_key),
+    )
+    beta_payload = registry.dispatch(
+        name=MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+        arguments_json=_memory_write_arguments_json(
+            {
+                "scope": {"scopeType": "package", "scopeKey": package_beta_key},
+                "content": "runtime package guardrail memory belongs to beta only.",
+                "idempotencyKey": "runtime-beta-package-guardrail",
+            }
+        ),
+        granted_tool_keys={MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY},
+        context=beta_context,
+    )
 
     with session_factory() as session:
         service = MemoryService(session)
@@ -4363,14 +4378,11 @@ def test_memory_lookup_runtime_tool_stays_package_scoped_when_admin_lists_all_me
             str(alpha_payload["memoryId"]),
             MemoryOutcome(summary="Alpha approved"),
         )
-        beta = service.create_admin_memory(
-            _admin_memory_create_request(
-                beta_run_id,
-                scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_beta_key),
-                summary="Admin beta package memory.",
-                content="runtime package guardrail memory belongs to beta only.",
-            )
+        _ = service.resolve_memory(
+            str(beta_payload["memoryId"]),
+            MemoryOutcome(summary="Beta approved"),
         )
+        entries = list(session.scalars(select(AgentMemoryEntry)))
         admin_list = service.list_admin_memory(MemoryAdminListQuery())
 
     lookup_payload = registry.dispatch(
@@ -4381,7 +4393,6 @@ def test_memory_lookup_runtime_tool_stays_package_scoped_when_admin_lists_all_me
                 "scope": None,
                 "subjectRefs": None,
                 "kind": None,
-                "tags": None,
                 "limit": 10,
                 "offset": 0,
                 "maxCharacters": None,
@@ -4399,7 +4410,6 @@ def test_memory_lookup_runtime_tool_stays_package_scoped_when_admin_lists_all_me
                     "scope": {"scopeType": "package", "scopeKey": package_beta_key},
                     "subjectRefs": None,
                     "kind": None,
-                    "tags": None,
                     "limit": 10,
                     "offset": 0,
                     "maxCharacters": None,
@@ -4412,11 +4422,15 @@ def test_memory_lookup_runtime_tool_stays_package_scoped_when_admin_lists_all_me
     memories = cast(list[dict[str, object]], lookup_payload["memories"])
     assert {item.memory_id for item in admin_list.items} == {
         alpha_payload["memoryId"],
-        beta.memory_id,
+        beta_payload["memoryId"],
+    }
+    assert {entry.memory_id for entry in entries} == {
+        alpha_payload["memoryId"],
+        beta_payload["memoryId"],
     }
     assert lookup_payload["toolKey"] == MEMORY_LOOKUP_TOOL_KEY
     assert [memory["memoryId"] for memory in memories] == [alpha_payload["memoryId"]]
-    assert all(memory["memoryId"] != beta.memory_id for memory in memories)
+    assert all(memory["memoryId"] != beta_payload["memoryId"] for memory in memories)
     assert beta_scope_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
 
 
@@ -4455,7 +4469,6 @@ def test_memory_lookup_runtime_tool_uses_current_context_with_finance_disabled(
                 "scope": None,
                 "subjectRefs": None,
                 "kind": None,
-                "tags": None,
                 "limit": None,
                 "offset": None,
                 "maxCharacters": None,
@@ -4474,7 +4487,14 @@ def test_memory_lookup_runtime_tool_uses_current_context_with_finance_disabled(
     assert lookup_payload["count"] == 1
     memory = cast(list[dict[str, object]], lookup_payload["memories"])[0]
     assert memory["content"] == "Report [redacted]\nKeep this insight."
-    assert memory["attributes"] == {}
+    assert "attributes" not in memory
+    assert cast(dict[str, object], memory["provenance"]) == {
+        "runId": _RUNTIME_RUN_ID,
+        "agentKey": "portfolio_manager",
+        "workflowKey": "platform_graph_daily_review",
+        "stepId": "portfolio_decision",
+        "slot": "decision",
+    }
 
     with session_factory() as session:
         events = list(session.scalars(select(RunMemoryEvent).order_by(RunMemoryEvent.id)))
@@ -4488,7 +4508,13 @@ def test_memory_lookup_runtime_tool_uses_current_context_with_finance_disabled(
     reviewed_event = events[1]
     retrieval_event = events[2]
     injected_event = events[3]
-    assert reviewed_event.result_snapshot["visibleToWorkflow"] is True
+    assert reviewed_event.result_snapshot == {
+        "memoryId": write_payload["memoryId"],
+        "revisionId": reviewed_event.revision_id,
+        "reviewAction": "resolved",
+        "outcomeSummary": "Memory approved",
+    }
+    assert reviewed_event.status_snapshot == {"visibleToWorkflow": True}
     assert retrieval_event.run_id == _RUNTIME_RUN_ID
     assert retrieval_event.run_step_id == _RUNTIME_RUN_STEP_ID
     assert retrieval_event.run_agent_invocation_id == _RUNTIME_AGENT_INVOCATION_ID
@@ -4542,7 +4568,6 @@ def test_memory_runtime_tools_reject_shared_namespace_without_trusted_runtime_so
                     "sharedNamespace": namespace_payload,
                     "subjectRefs": None,
                     "kind": None,
-                    "tags": None,
                     "limit": None,
                     "offset": None,
                     "maxCharacters": None,
@@ -4652,7 +4677,8 @@ def test_market_data_history_lookup_service_denies_missing_capability_reference_
     [
         (
             "{",
-            "OpenAI response requested signaldeck_finance_reports_lookup with invalid JSON arguments.",
+            "OpenAI response requested signaldeck_finance_reports_lookup with invalid JSON "
+            + "arguments.",
         ),
         ("[]", "signaldeck_finance_reports_lookup arguments must be a JSON object."),
         (
@@ -4696,12 +4722,14 @@ def test_report_runtime_tool_parser_preserves_validation_messages(
     [
         (
             "{",
-            "OpenAI response requested signaldeck_finance_positions_lookup with invalid JSON arguments.",
+            "OpenAI response requested signaldeck_finance_positions_lookup with invalid JSON "
+            + "arguments.",
         ),
         ("[]", "signaldeck_finance_positions_lookup arguments must be a JSON object."),
         (
             '{"portfolioSlug":"reference","unsupported":true}',
-            "signaldeck_finance_positions_lookup arguments contained unsupported fields: unsupported",
+            "signaldeck_finance_positions_lookup arguments contained unsupported fields: "
+            + "unsupported",
         ),
         ("{}", "signaldeck_finance_positions_lookup portfolioSlug is required."),
         (
@@ -4766,7 +4794,7 @@ def test_position_runtime_tool_parser_preserves_validation_messages(
         (
             '{"symbols":["NVDA"],"baseCurrency":"US"}',
             "signaldeck_finance_market_data_quote_lookup arguments contained unsupported "
-            "fields: baseCurrency",
+            + "fields: baseCurrency",
         ),
     ],
 )
@@ -4801,7 +4829,8 @@ def test_market_data_quote_lookup_parser_preserves_validation_messages(
         ("{}", "signaldeck_finance_market_data_history_lookup symbols is required."),
         (
             '{"symbols":["NVDA"],"range":"10y"}',
-            "signaldeck_finance_market_data_history_lookup range must be one of 1mo, 3mo, ytd, 1y, or max.",
+            "signaldeck_finance_market_data_history_lookup range must be one of 1mo, "
+            + "3mo, ytd, 1y, or max.",
         ),
         (
             '{"symbols":["NVDA"],"pointLimit":"2"}',
@@ -5054,7 +5083,8 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": "2026-01-03",
                 "rowLimit": 3,
             },
-            "signaldeck_finance_market_data_ohlcv_lookup startDate must be before or equal to endDate.",
+            "signaldeck_finance_market_data_ohlcv_lookup startDate must be before or "
+            + "equal to endDate.",
         ),
         (
             parse_ohlcv_lookup_arguments,
@@ -5265,7 +5295,8 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             context=context,
         )
     assert quote_error.value.message == (
-        "signaldeck_finance_market_data_quote_lookup arguments contained unsupported fields: unsupported"
+        "signaldeck_finance_market_data_quote_lookup arguments contained unsupported fields: "
+        "unsupported"
     )
 
     with pytest.raises(RuntimeToolError) as history_error:
@@ -5287,7 +5318,8 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             context=context,
         )
     assert social_error.value.message == (
-        "signaldeck_finance_social_sentiment_lookup arguments contained unsupported fields: unsupported"
+        "signaldeck_finance_social_sentiment_lookup arguments contained unsupported fields: "
+        "unsupported"
     )
 
 
@@ -6025,7 +6057,8 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
                     "endDate": "2026-01-01",
                 }
             ),
-            "signaldeck_digital_oracle_sec_filings_lookup startDate must be before or equal to endDate.",
+            "signaldeck_digital_oracle_sec_filings_lookup startDate must be before or "
+            + "equal to endDate.",
         ),
         (
             MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
