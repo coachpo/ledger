@@ -2,7 +2,6 @@ import { Link, isRouteErrorResponse, useRouteError } from "react-router";
 import { AlertTriangle, Home } from "lucide-react";
 
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
-import { PageContextBar } from "@/components/shared/page-context-bar";
 import { ProvenanceBadge } from "@/components/shared/provenance-badge";
 import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Button } from "@/components/ui/button";
@@ -59,26 +58,62 @@ export function RouteErrorPage() {
   const details = routeErrorDetails(error);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-6" data-testid="route-error-page">
-      <div className="flex w-full max-w-2xl flex-col gap-3">
-        <PageContextBar
-          description="React Router redirected this route into SignalDeck's product-owned error boundary."
-          meta={
-            <div className="flex flex-wrap items-center gap-2">
-              <ProvenanceBadge detail="error boundary" label="Surface" tone="destructive" />
-              <ProvenanceBadge detail={details.eyebrow} label="Failure" tone="warning" />
+    <main
+      className="min-h-screen bg-background px-4 py-10 sm:px-6 lg:px-8"
+      data-testid="route-error-page"
+    >
+      <div
+        className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-5xl flex-col justify-center gap-4"
+        data-testid="route-error-content"
+      >
+        <header className="flex min-w-0 flex-col gap-4">
+          <div className="flex min-w-0 flex-col gap-2">
+            <h1 className="max-w-3xl text-2xl font-semibold leading-tight tracking-tight text-foreground sm:text-[1.75rem]">
+              {details.title}
+            </h1>
+            <p
+              className="max-w-2xl text-sm leading-6 text-muted-foreground"
+              data-testid="route-error-description"
+            >
+              React Router redirected this route into SignalDeck's product-owned
+              error boundary.
+            </p>
+          </div>
+          <div className="flex min-w-0 flex-col gap-3">
+            <div className="min-w-0" data-testid="route-error-status">
+              <ResourceStatusStrip
+                className="w-fit max-w-full"
+                items={[
+                  {
+                    label: "State",
+                    tone: "danger",
+                    value: details.statusLabel,
+                  },
+                  {
+                    label: "Fallback",
+                    tone: "neutral",
+                    value: "Workflow packages",
+                  },
+                ]}
+              />
             </div>
-          }
-          status={
-            <ResourceStatusStrip
-              items={[
-                { label: "State", tone: "danger", value: details.statusLabel },
-                { label: "Fallback", tone: "neutral", value: "Workflow packages" },
-              ]}
-            />
-          }
-          title={details.title}
-        />
+            <div
+              className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground"
+              data-testid="route-error-meta"
+            >
+              <ProvenanceBadge
+                detail="error boundary"
+                label="Surface"
+                tone="destructive"
+              />
+              <ProvenanceBadge
+                detail={details.eyebrow}
+                label="Failure"
+                tone="warning"
+              />
+            </div>
+          </div>
+        </header>
         <EmptyStatePanel
           action={
             <Button asChild size="sm">

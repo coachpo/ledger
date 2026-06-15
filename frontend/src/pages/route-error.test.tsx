@@ -31,11 +31,31 @@ describe("RouteErrorPage", () => {
 
     render(<RouteErrorPage />);
 
-    expect(screen.getByTestId("route-error-page")).toBeVisible();
+    const page = screen.getByTestId("route-error-page");
+    const content = screen.getByTestId("route-error-content");
+    const status = screen.getByTestId("route-error-status");
+    const statusStrip = status.querySelector("[role='list']");
+
+    expect(page).toBeVisible();
+    expect(page).toHaveClass("min-h-screen", "px-4", "py-10");
+    expect(content).toHaveClass("max-w-5xl", "flex-col", "gap-4");
     expect(
       screen.getByRole("heading", { level: 1, name: "Route failed to render" }),
     ).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByTestId("route-error-description")).toHaveClass(
+      "max-w-2xl",
+      "leading-6",
+    );
+    expect(status).toHaveClass("min-w-0");
+    expect(
+      status.closest("[data-slot='page-context-actions']"),
+    ).not.toBeInTheDocument();
+    expect(statusStrip).toHaveClass("w-fit", "max-w-full", "flex-wrap");
+    expect(screen.getByTestId("route-error-meta")).toHaveClass(
+      "flex-wrap",
+      "gap-2",
+    );
     expect(screen.getByText("Route error boundary")).toBeVisible();
     expect(screen.getByText("Render failure")).toBeVisible();
     expect(screen.queryByText("Route harness failure")).not.toBeInTheDocument();
@@ -56,6 +76,8 @@ describe("RouteErrorPage", () => {
     ).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("404")).toBeVisible();
-    expect(screen.queryByText("Unexpected Application Error!")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Unexpected Application Error!"),
+    ).not.toBeInTheDocument();
   });
 });
