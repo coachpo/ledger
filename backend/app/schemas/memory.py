@@ -58,7 +58,6 @@ MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS: Final[frozenset[str]] = frozenset(
         "reportName",
         "url",
         "downloadUrl",
-        "auditLinks",
         "outcome",
         "reflections",
     }
@@ -71,7 +70,6 @@ MEMORY_PROJECTION_MATRIX: Final[dict[MemoryProjection, tuple[str, ...]]] = {
         "summary",
         "content",
         "subjectRefs",
-        "attributes",
         "scope",
         "provenance",
         "warnings",
@@ -84,7 +82,6 @@ MEMORY_PROJECTION_MATRIX: Final[dict[MemoryProjection, tuple[str, ...]]] = {
         "summary",
         "content",
         "subjectRefs",
-        "attributes",
         "scope",
         "provenance",
         "revision",
@@ -104,10 +101,6 @@ MEMORY_PROJECTION_MATRIX: Final[dict[MemoryProjection, tuple[str, ...]]] = {
         "updatedAt",
     ),
 }
-
-type JsonScalar = str | int | float | bool | None
-type JsonValue = JsonScalar | list[JsonScalar] | dict[str, JsonScalar]
-type MemoryAttributes = dict[str, JsonValue]
 
 _MEMORY_COMPATIBILITY_EXCLUDE: Final[set[str]] = {
     "outcome",
@@ -204,19 +197,6 @@ def _normalize_kind(value: object, *, field_name: str = "kind") -> str:
 def _normalize_optional_kind(value: object, *, field_name: str = "kind") -> str | None:
     normalized = _normalize_optional_text(value, field_name=field_name, max_length=80)
     return None if normalized is None else normalized.lower()
-
-
-def _normalize_attributes(value: object) -> MemoryAttributes:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise ValueError("attributes must be an object")
-    raw_attributes = cast(dict[object, JsonValue], value)
-    normalized: MemoryAttributes = {}
-    for raw_key, raw_value in raw_attributes.items():
-        key = _normalize_required_text(raw_key, field_name="Attribute key", max_length=120)
-        normalized[key] = raw_value
-    return normalized
 
 
 def _normalize_idempotency_fallback_fields(value: object) -> tuple[str, ...]:
@@ -387,7 +367,6 @@ class MemorySubjectRef(CamelModel):
     kind: str = Field(min_length=1, max_length=80)
     id: str = Field(min_length=1, max_length=160)
     label: str | None = Field(default=None, max_length=160)
-    attributes: MemoryAttributes = Field(default_factory=dict)
 
     @field_validator("kind", mode="before")
     @classmethod
@@ -403,12 +382,6 @@ class MemorySubjectRef(CamelModel):
     @classmethod
     def normalize_label(cls, value: object) -> str | None:
         return _normalize_optional_text(value, field_name="subjectRef.label", max_length=160)
-
-    @field_validator("attributes", mode="before")
-    @classmethod
-    def normalize_attributes(cls, value: object) -> MemoryAttributes:
-        return _normalize_attributes(value)
-
 
 class MemoryRevisionPolicy(CamelModel):
     mode: Literal["immutable-revision-per-content-change"] = MEMORY_REVISION_WRITE_MODE
@@ -454,49 +427,50 @@ class MemoryRevisionRead(CamelModel):
         return ensure_timezone(value)
 
 
-class MemoryProvenance(CamelModel):
+class MemoryRuntimeProvenance(CamelModel):
     run_id: int = Field(ge=1)
     agent_key: str = Field(min_length=1, max_length=120)
-    agent_version: int = Field(ge=1)
-    created_by_type: Literal["agent", "operator"] = "agent"
-    agent_name: str | None = Field(default=None, max_length=160)
     workflow_key: str | None = Field(default=None, max_length=120)
-    workflow_version: int | None = Field(default=None, ge=1)
     step_id: str | None = Field(default=None, max_length=120)
     slot: str | None = Field(default=None, max_length=120)
-    trace_id: str | None = Field(default=None, max_length=255)
 
     @field_validator("agent_key", mode="before")
     @classmethod
     def validate_agent_key(cls, value: object) -> str:
         return _normalize_required_text(value, field_name="agentKey", max_length=120)
 
-    @field_validator("agent_name", "workflow_key", "step_id", "slot", "trace_id", mode="before")
+    @field_validator("workflow_key", "step_id", "slot", mode="before")
     @classmethod
     def normalize_optional_text_fields(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="Runtime provenance field", max_length=120)
+
+
+class MemoryProvenance(MemoryRuntimeProvenance):
+    agent_version: int = Field(ge=1)
+    created_by_type: Literal["agent", "operator"] = "agent"
+    agent_name: str | None = Field(default=None, max_length=160)
+    workflow_version: int | None = Field(default=None, ge=1)
+    trace_id: str | None = Field(default=None, max_length=255)
+
+    @field_validator("agent_name", "trace_id", mode="before")
+    @classmethod
+    def normalize_optional_rich_text_fields(cls, value: object) -> str | None:
         return _normalize_optional_text(value, field_name="Provenance field", max_length=255)
 
 
 class MemoryContent(CamelModel):
     summary: str = Field(default="Memory content", min_length=1)
     content: str = Field(default="Memory content", min_length=1)
-    attributes: MemoryAttributes = Field(default_factory=dict)
 
     @field_validator("summary", "content", mode="before")
     @classmethod
     def validate_text(cls, value: object) -> str:
         return _normalize_required_text(value, field_name="Memory content")
 
-    @field_validator("attributes", mode="before")
-    @classmethod
-    def normalize_attributes(cls, value: object) -> MemoryAttributes:
-        return _normalize_attributes(value)
-
 
 class MemoryOutcome(CamelModel):
     summary: str = Field(default="Memory visibility recorded", min_length=1)
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    attributes: MemoryAttributes = Field(default_factory=dict)
 
     @field_validator("summary", mode="before")
     @classmethod
@@ -507,11 +481,6 @@ class MemoryOutcome(CamelModel):
     @classmethod
     def validate_observed_at(cls, value: datetime) -> datetime:
         return ensure_timezone(value)
-
-    @field_validator("attributes", mode="before")
-    @classmethod
-    def normalize_attributes(cls, value: object) -> MemoryAttributes:
-        return _normalize_attributes(value)
 
 
 class MemoryReflection(MemoryContent):
@@ -560,7 +529,7 @@ def _default_memory_outcome() -> MemoryOutcome:
     return MemoryOutcome(summary="Memory visibility recorded")
 
 
-class MemoryAuditReportLink(CamelModel):
+class RunMemoryArtifactAuditReportLink(CamelModel):
     reference: str = Field(default="audit-reference", min_length=1, max_length=255)
     label: str | None = Field(default=None, max_length=160)
     slug: str | None = Field(default=None, max_length=160)
@@ -591,9 +560,9 @@ class MemoryAuditReportLink(CamelModel):
         return _normalize_optional_text(value, field_name="Audit link field", max_length=255)
 
 
-class MemoryAuditLinks(CamelModel):
-    references: list[MemoryAuditReportLink] = Field(default_factory=list)
-    report: MemoryAuditReportLink | None = None
+class RunMemoryArtifactAuditLinks(CamelModel):
+    references: list[RunMemoryArtifactAuditReportLink] = Field(default_factory=list)
+    report: RunMemoryArtifactAuditReportLink | None = None
 
     @field_validator("references", mode="before")
     @classmethod
@@ -611,10 +580,6 @@ class _MemoryProjectionMixin(CamelModel):
     ) -> dict[str, object]:
         payload = cast(dict[str, object], handler(self))
         _ = payload.pop("action", None)
-        if payload.get("auditLinks") is None:
-            _ = payload.pop("auditLinks", None)
-        if payload.get("audit_links") is None:
-            _ = payload.pop("audit_links", None)
         return payload
 
     def model_visible_dump(self) -> dict[str, object]:
@@ -623,7 +588,7 @@ class _MemoryProjectionMixin(CamelModel):
             self.model_dump(
                 mode="json",
                 by_alias=True,
-                exclude=_MEMORY_COMPATIBILITY_EXCLUDE | {"audit_links", "visible_to_workflow"},
+                exclude=_MEMORY_COMPATIBILITY_EXCLUDE | {"visible_to_workflow"},
                 exclude_none=True,
             ),
         )
@@ -650,15 +615,13 @@ class MemoryEntryRead(_MemoryProjectionMixin):
     summary: str = Field(default="Memory entry", min_length=1)
     content: str = Field(default="Memory entry", min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
-    attributes: MemoryAttributes = Field(default_factory=dict)
     scope: MemoryScope = Field(default_factory=_default_memory_scope)
-    provenance: MemoryProvenance
+    provenance: MemoryRuntimeProvenance
     revision: MemoryRevisionRead = Field(default_factory=_default_memory_revision)
     created_at: datetime
     updated_at: datetime | None = None
     outcome: MemoryOutcome | None = None
     reflections: list[MemoryReflection] = Field(default_factory=list)
-    audit_links: MemoryAuditLinks | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -713,11 +676,6 @@ class MemoryEntryRead(_MemoryProjectionMixin):
             return []
         return value
 
-    @field_validator("attributes", mode="before")
-    @classmethod
-    def normalize_attributes(cls, value: object) -> MemoryAttributes:
-        return _normalize_attributes(value)
-
     @field_validator("created_at", "updated_at")
     @classmethod
     def validate_timestamps(cls, value: datetime | None) -> datetime | None:
@@ -737,9 +695,8 @@ class MemoryWriteRequest(CamelModel):
     summary: str = Field(default="Memory entry", min_length=1)
     content: str = Field(default="Memory entry", min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
-    attributes: MemoryAttributes = Field(default_factory=dict)
     scope: MemoryScope
-    provenance: MemoryProvenance
+    provenance: MemoryRuntimeProvenance
     revision: MemoryRevisionPolicy = Field(default_factory=MemoryRevisionPolicy)
     idempotency_key: str | None = Field(default=None, max_length=160)
     idempotency_fallback_fields: tuple[str, ...] = Field(
@@ -762,11 +719,6 @@ class MemoryWriteRequest(CamelModel):
         if value is None:
             return []
         return value
-
-    @field_validator("attributes", mode="before")
-    @classmethod
-    def normalize_attributes(cls, value: object) -> MemoryAttributes:
-        return _normalize_attributes(value)
 
     @field_validator("idempotency_key", mode="before")
     @classmethod
@@ -800,14 +752,13 @@ class MemoryWriteResult(_MemoryProjectionMixin):
     visible_to_workflow: bool = False
     revision_action: MemoryRevisionAction = MemoryRevisionAction.CREATED
     created_at: datetime
-    provenance: MemoryProvenance
+    provenance: MemoryRuntimeProvenance
     revision: MemoryRevisionRead = Field(default_factory=_default_memory_revision)
     idempotency_key: str | None = Field(default=None, max_length=160)
     idempotency_fallback_fields: tuple[str, ...] = Field(
         default=MEMORY_IDEMPOTENCY_FALLBACK_FIELDS,
     )
     warnings: list[dict[str, object]] = Field(default_factory=list)
-    audit_links: MemoryAuditLinks | None = None
     action: Literal["created", "existing"] = "created"
 
     @model_validator(mode="before")
@@ -867,7 +818,6 @@ class MemoryQuery(CamelModel):
     kind: str | None = Field(default=None, max_length=80)
     agent_key: str | None = Field(default=None, max_length=120)
     workflow_key: str | None = Field(default=None, max_length=120)
-    tags: list[str] = Field(default_factory=list)
     limit: int = Field(default=MEMORY_LOOKUP_DEFAULT_LIMIT, ge=1, le=MEMORY_LOOKUP_MAX_LIMIT)
     offset: int = Field(default=0, ge=0)
     max_characters: int = Field(
@@ -894,13 +844,6 @@ class MemoryQuery(CamelModel):
     @classmethod
     def normalize_context_filters(cls, value: object) -> str | None:
         return _normalize_optional_text(value, field_name="Memory query field", max_length=120)
-
-    @field_validator("tags", mode="before")
-    @classmethod
-    def coerce_tags(cls, value: object) -> object:
-        if value is None:
-            return []
-        return value
 
     @field_validator("subject_refs", mode="before")
     @classmethod
@@ -946,7 +889,7 @@ class MemoryPromptSnippet(_MemoryProjectionMixin):
     text: str = Field(default="", min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
     scope: MemoryScope = Field(default_factory=_default_memory_scope)
-    provenance: MemoryProvenance
+    provenance: MemoryRuntimeProvenance
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     outcome: MemoryOutcome = Field(default_factory=_default_memory_outcome)
     reflections: list[MemoryReflection] = Field(default_factory=list)
@@ -1012,9 +955,9 @@ class MemoryArtifactRead(_MemoryProjectionMixin):
     summary: str = Field(default="Memory artifact", min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
     scope: MemoryScope = Field(default_factory=_default_memory_scope)
-    provenance: MemoryProvenance
+    provenance: MemoryRuntimeProvenance
     created_at: datetime
-    audit_links: MemoryAuditLinks | None = None
+    audit_links: RunMemoryArtifactAuditLinks | None = None
     source_graph_metadata: dict[str, object] | None = None
 
     @model_serializer(mode="wrap")
@@ -1108,7 +1051,6 @@ class MemoryApiListRequest(MemoryApiAccessRequest):
     query: str | None = Field(default=None, max_length=1_000)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
     kind: str | None = Field(default=None, max_length=80)
-    tags: list[str] = Field(default_factory=list)
     limit: int = Field(default=MEMORY_LOOKUP_DEFAULT_LIMIT, ge=1, le=MEMORY_LOOKUP_MAX_LIMIT)
     offset: int = Field(default=0, ge=0)
     max_characters: int = Field(
@@ -1127,7 +1069,7 @@ class MemoryApiListRequest(MemoryApiAccessRequest):
     def normalize_kind(cls, value: object) -> str | None:
         return _normalize_optional_kind(value)
 
-    @field_validator("subject_refs", "tags", mode="before")
+    @field_validator("subject_refs", mode="before")
     @classmethod
     def coerce_lists(cls, value: object) -> object:
         return [] if value is None else value
@@ -1138,7 +1080,6 @@ class MemoryApiListRequest(MemoryApiAccessRequest):
             scope=self.scope,
             subject_refs=self.subject_refs,
             kind=self.kind,
-            tags=self.tags,
             limit=self.limit,
             offset=self.offset,
             max_characters=self.max_characters,
@@ -1161,7 +1102,7 @@ class MemoryApiListItemRead(CamelModel):
     content: str = Field(min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
     scope: MemoryScope
-    provenance: MemoryProvenance
+    provenance: MemoryRuntimeProvenance
     created_at: datetime
     retrieval_score: MemoryRetrievalScore | None = None
 
@@ -1194,16 +1135,24 @@ class MemoryApiEntryRead(CamelModel):
     summary: str = Field(min_length=1)
     content: str = Field(min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
-    attributes: MemoryAttributes = Field(default_factory=dict)
     scope: MemoryScope
-    provenance: MemoryProvenance
+    provenance: MemoryRuntimeProvenance
     revision: MemoryRevisionRead
     created_at: datetime
     updated_at: datetime | None = None
 
     @classmethod
     def from_entry(cls, entry: MemoryEntryRead) -> Self:
-        return cls.model_validate(entry.dump_for_projection("api-visible"))
+        payload = entry.dump_for_projection("api-visible")
+        provenance = entry.provenance
+        payload["provenance"] = {
+            "runId": provenance.run_id,
+            "agentKey": provenance.agent_key,
+            "workflowKey": provenance.workflow_key,
+            "stepId": provenance.step_id,
+            "slot": provenance.slot,
+        }
+        return cls.model_validate(payload)
 
     @field_validator("created_at", "updated_at")
     @classmethod
@@ -1231,7 +1180,6 @@ class MemoryApiRevisionRead(CamelModel):
     content: str = Field(min_length=1)
     content_hash: str = Field(min_length=64, max_length=64)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
-    attributes: MemoryAttributes = Field(default_factory=dict)
     supersedes_revision_id: str | None = Field(default=None, max_length=160)
     source_run_id: int = Field(ge=1)
     source_agent_key: str = Field(min_length=1, max_length=120)
@@ -1331,7 +1279,7 @@ class MemoryAdminListItemRead(CamelModel):
     excerpt: str = Field(default="", min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
     scope: MemoryScope
-    provenance: MemoryProvenance
+    provenance: MemoryRuntimeProvenance
     created_at: datetime
     updated_at: datetime | None = None
     last_event_type: str | None = Field(default=None, max_length=40)
@@ -1360,21 +1308,26 @@ class MemoryAdminEntryRead(CamelModel):
     summary: str = Field(min_length=1)
     content: str = Field(min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
-    attributes: MemoryAttributes = Field(default_factory=dict)
     scope: MemoryScope
-    provenance: MemoryProvenance
+    provenance: MemoryRuntimeProvenance
     revision: MemoryRevisionRead
     created_at: datetime
     updated_at: datetime | None = None
     outcome: MemoryOutcome | None = None
     reflections: list[MemoryReflection] = Field(default_factory=list)
-    audit_links: MemoryAuditLinks | None = None
 
     @classmethod
     def from_entry(cls, entry: MemoryEntryRead) -> Self:
-        return cls.model_validate(
-            entry.model_dump(mode="json", by_alias=True, exclude_none=True),
-        )
+        payload = entry.model_dump(mode="json", by_alias=True, exclude_none=True)
+        provenance = entry.provenance
+        payload["provenance"] = {
+            "runId": provenance.run_id,
+            "agentKey": provenance.agent_key,
+            "workflowKey": provenance.workflow_key,
+            "stepId": provenance.step_id,
+            "slot": provenance.slot,
+        }
+        return cls.model_validate(payload)
 
     @field_validator("created_at", "updated_at")
     @classmethod
@@ -1389,7 +1342,6 @@ class MemoryAdminCreateRequest(CamelModel):
     summary: str = Field(default="Memory entry", min_length=1)
     content: str = Field(default="Memory entry", min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
-    attributes: MemoryAttributes = Field(default_factory=dict)
     scope: MemoryScope
     provenance: MemoryProvenance
     visible_to_workflow: bool = True
@@ -1410,11 +1362,6 @@ class MemoryAdminCreateRequest(CamelModel):
     def coerce_subject_refs(cls, value: object) -> object:
         return [] if value is None else value
 
-    @field_validator("attributes", mode="before")
-    @classmethod
-    def normalize_attributes(cls, value: object) -> MemoryAttributes:
-        return _normalize_attributes(value)
-
     @field_validator("idempotency_key", mode="before")
     @classmethod
     def normalize_idempotency_key(cls, value: object) -> str | None:
@@ -1426,9 +1373,14 @@ class MemoryAdminCreateRequest(CamelModel):
             summary=self.summary,
             content=self.content,
             subject_refs=self.subject_refs,
-            attributes=self.attributes,
             scope=self.scope,
-            provenance=self.provenance,
+            provenance=MemoryRuntimeProvenance(
+                run_id=self.provenance.run_id,
+                agent_key=self.provenance.agent_key,
+                workflow_key=self.provenance.workflow_key,
+                step_id=self.provenance.step_id,
+                slot=self.provenance.slot,
+            ),
             idempotency_key=self.idempotency_key,
         )
 
@@ -1440,7 +1392,6 @@ class MemoryAdminRevisionCreateRequest(CamelModel):
     summary: str = Field(min_length=1)
     content: str = Field(min_length=1)
     subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
-    attributes: MemoryAttributes = Field(default_factory=dict)
     provenance: MemoryProvenance
 
     @field_validator("summary", "content", mode="before")
@@ -1453,17 +1404,10 @@ class MemoryAdminRevisionCreateRequest(CamelModel):
     def coerce_subject_refs(cls, value: object) -> object:
         return [] if value is None else value
 
-    @field_validator("attributes", mode="before")
-    @classmethod
-    def normalize_attributes(cls, value: object) -> MemoryAttributes:
-        return _normalize_attributes(value)
-
-
 class MemoryAdminWorkflowVisibilityUpdateRequest(CamelModel):
     visible_to_workflow: bool
     summary: str = Field(default="Memory workflow visibility updated", min_length=1)
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    attributes: MemoryAttributes = Field(default_factory=dict)
 
     @field_validator("summary", mode="before")
     @classmethod
@@ -1478,16 +1422,10 @@ class MemoryAdminWorkflowVisibilityUpdateRequest(CamelModel):
     def validate_observed_at(cls, value: datetime) -> datetime:
         return ensure_timezone(value)
 
-    @field_validator("attributes", mode="before")
-    @classmethod
-    def normalize_attributes(cls, value: object) -> MemoryAttributes:
-        return _normalize_attributes(value)
-
     def to_outcome(self) -> MemoryOutcome:
         return MemoryOutcome(
             summary=self.summary,
             observed_at=self.observed_at,
-            attributes=self.attributes,
         )
 
 
@@ -1550,9 +1488,6 @@ __all__ = [
     "MemoryApiRevisionListRead",
     "MemoryApiRevisionRead",
     "MemoryArtifactRead",
-    "MemoryAuditLinks",
-    "MemoryAuditReportLink",
-    "MemoryAttributes",
     "MemoryContent",
     "MemoryEntryRead",
     "MemoryId",
@@ -1570,11 +1505,14 @@ __all__ = [
     "MemoryRevisionAction",
     "MemoryRevisionPolicy",
     "MemoryRevisionRead",
+    "MemoryRuntimeProvenance",
     "MemoryScope",
     "MemoryScopeType",
     "MemorySubjectRef",
     "MemoryWriteRequest",
     "MemoryWriteResult",
+    "RunMemoryArtifactAuditLinks",
+    "RunMemoryArtifactAuditReportLink",
     "invalid_memory_id_error",
     "memory_not_found_error",
 ]

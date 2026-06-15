@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
@@ -21,8 +21,10 @@ class MemoryFollowUpEvaluation:
     reason: str | None = None
     reflected: bool = False
     event_recorded: bool = False
-    result_snapshot: dict[str, object] = field(default_factory=dict)
-    status_snapshot: dict[str, object] = field(default_factory=dict)
+    review_action: str = "follow_up_reviewed"
+    outcome_summary: str | None = None
+    reflection_summary: str | None = None
+    reflection_source: str | None = None
 
 
 class MemoryFollowUpEvaluator(Protocol):
@@ -82,7 +84,6 @@ class MemoryFollowUpService:
                         memory,
                         evaluator_key=None if evaluator is None else evaluator.evaluator_key,
                         evaluation=evaluation,
-                        reviewed_at=reviewed_at,
                     )
                 items.append(
                     MemoryFollowUpItem(
@@ -111,7 +112,7 @@ class MemoryFollowUpService:
             return MemoryFollowUpEvaluation(
                 visible_to_workflow=False,
                 reason="no_evaluator",
-                result_snapshot={"scheduler": "core.memory_follow_up"},
+                outcome_summary="no_evaluator",
             )
         return evaluator.evaluate(memory, reviewed_at=reviewed_at)
 
@@ -131,32 +132,34 @@ class MemoryFollowUpService:
         *,
         evaluator_key: str | None,
         evaluation: MemoryFollowUpEvaluation,
-        reviewed_at: datetime,
     ) -> None:
         result_snapshot: dict[str, object] = {
             "memoryId": memory.memory_id,
-            "memoryKind": memory.kind,
-            "scheduler": "core.memory_follow_up",
-            "visibleToWorkflow": evaluation.visible_to_workflow,
-            "reviewedAt": reviewed_at.isoformat().replace("+00:00", "Z"),
+            "revisionId": memory.revision_id,
+            "reviewAction": evaluation.review_action,
         }
-        if evaluator_key is not None:
-            result_snapshot["evaluator"] = evaluator_key
-        if evaluation.reason is not None:
-            result_snapshot["reason"] = evaluation.reason
-        result_snapshot.update(evaluation.result_snapshot)
+        outcome_summary = evaluation.outcome_summary or evaluation.reason
+        if outcome_summary is not None:
+            result_snapshot["outcomeSummary"] = outcome_summary
+        if evaluation.reflection_summary is not None:
+            result_snapshot["reflectionSummary"] = evaluation.reflection_summary
+        if evaluation.reflection_source is not None:
+            result_snapshot["reflectionSource"] = evaluation.reflection_source
 
         status_snapshot: dict[str, object] = {"visibleToWorkflow": evaluation.visible_to_workflow}
-        if evaluation.reason is not None:
-            status_snapshot["reason"] = evaluation.reason
-        status_snapshot.update(evaluation.status_snapshot)
 
         _ = self.memory_service.record_review_event(
             memory.memory_id,
             filters={
-                "scheduler": "core.memory_follow_up",
-                "memoryKind": memory.kind,
-                "evaluator": evaluator_key,
+                "scope": memory.scope.model_dump(mode="json", by_alias=True),
+                "subjectRefs": [
+                    subject_ref.model_dump(mode="json", by_alias=True, exclude_none=True)
+                    for subject_ref in memory.subject_refs
+                ],
+                "functionName": evaluator_key or "core.memory_follow_up.run_due",
+                "source": "scheduler",
+                "actor": evaluator_key or "core.memory_follow_up",
+                "channel": "memory_follow_up",
             },
             result_snapshot=result_snapshot,
             status_snapshot=status_snapshot,

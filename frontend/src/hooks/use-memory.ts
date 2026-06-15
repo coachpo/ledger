@@ -16,8 +16,6 @@ import {
   listAdminMemoryEvents,
   listAdminMemoryRevisions,
   listMemory,
-  listMemoryEvents,
-  listMemoryRevisions,
   updateAdminMemoryWorkflowVisibility,
 } from "@/lib/api/memory";
 import type { IdParam } from "@/lib/api-client";
@@ -34,10 +32,8 @@ import type {
   MemoryAdminWorkflowVisibilityUpdateRequest,
   MemoryApiAccessRequest,
   MemoryApiEntryRead,
-  MemoryApiEventListRead,
   MemoryApiListRead,
   MemoryApiListRequest,
-  MemoryApiRevisionListRead,
 } from "@/lib/types/memory";
 
 type MemoryQueryOptions = {
@@ -94,36 +90,6 @@ export function useMemoryDetail(
   return useQuery({
     queryKey: queryKeys.platform.memory.detail(resolvedMemoryId, payload),
     queryFn: ({ signal }) => getMemoryDetail(resolvedMemoryId, payload, signal),
-    enabled: Boolean(memoryId) && (options.enabled ?? true),
-  });
-}
-
-export function useMemoryRevisions(
-  memoryId: IdParam | undefined,
-  payload: MemoryApiAccessRequest,
-  options: MemoryQueryOptions = {},
-): UseQueryResult<MemoryApiRevisionListRead, Error> {
-  const resolvedMemoryId = memoryId ?? "";
-
-  return useQuery({
-    queryKey: queryKeys.platform.memory.revisions(resolvedMemoryId, payload),
-    queryFn: ({ signal }) =>
-      listMemoryRevisions(resolvedMemoryId, payload, signal),
-    enabled: Boolean(memoryId) && (options.enabled ?? true),
-  });
-}
-
-export function useMemoryEvents(
-  memoryId: IdParam | undefined,
-  payload: MemoryApiAccessRequest,
-  options: MemoryQueryOptions = {},
-): UseQueryResult<MemoryApiEventListRead, Error> {
-  const resolvedMemoryId = memoryId ?? "";
-
-  return useQuery({
-    queryKey: queryKeys.platform.memory.events(resolvedMemoryId, payload),
-    queryFn: ({ signal }) =>
-      listMemoryEvents(resolvedMemoryId, payload, signal),
     enabled: Boolean(memoryId) && (options.enabled ?? true),
   });
 }

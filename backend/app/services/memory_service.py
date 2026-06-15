@@ -43,7 +43,6 @@ from app.schemas.memory import (
     MemoryApiResolveRequest,
     MemoryApiRevisionListRead,
     MemoryArtifactRead,
-    MemoryAuditLinks,
     MemoryEntryRead,
     MemoryNamespaceAction,
     MemoryNamespaceGrant,
@@ -57,6 +56,7 @@ from app.schemas.memory import (
     MemoryScopeType,
     MemoryWriteRequest,
     MemoryWriteResult,
+    RunMemoryArtifactAuditLinks,
     memory_not_found_error,
 )
 from app.services.memory_store import (
@@ -391,7 +391,6 @@ class MemoryService:
                 visible_to_workflow=payload.visible_to_workflow,
                 summary=payload.summary,
                 subject_refs=self._subject_refs_payload(payload.subject_refs),
-                attributes=self._admin_attributes(payload.attributes),
                 content_hash=self._content_hash(payload.content),
                 idempotency_key=payload.idempotency_key,
                 created_by_type=provenance.created_by_type,
@@ -407,36 +406,33 @@ class MemoryService:
             )
             self.session.flush()
             self.session.refresh(entry)
-            attributes = self._admin_attributes(payload.attributes)
-            if payload.visible_to_workflow:
-                attributes["outcome"] = self._outcome_payload(payload.to_outcome())
-                entry.attributes = attributes
             revision = self._create_admin_revision_row(
                 entry,
                 summary=payload.summary,
                 content=payload.content,
                 subject_refs=self._subject_refs_payload(payload.subject_refs),
-                attributes=attributes,
                 supersedes_revision_id=None,
                 provenance=provenance,
             )
-            self._record_operator_event(
+            _ = self._record_operator_event(
                 event_type="operator_created",
                 entry=entry,
                 revision=revision,
                 provenance=provenance,
                 filters={
-                    "kind": payload.kind,
+                    "functionName": "memory.admin.create",
                     "scope": payload.scope.model_dump(mode="json", by_alias=True),
-                    "visibleToWorkflow": payload.visible_to_workflow,
                     "subjectRefs": [
                         subject_ref.model_dump(mode="json", by_alias=True, exclude_none=True)
                         for subject_ref in payload.subject_refs
                     ],
-                    "idempotencyKey": payload.idempotency_key,
-                    "contentHash": self._content_hash(payload.content),
                 },
-                result_snapshot=self._operator_result_snapshot(entry, revision),
+                result_snapshot=self._operator_result_snapshot(
+                    entry,
+                    revision,
+                    review_action="created",
+                    outcome_summary=payload.summary if payload.visible_to_workflow else None,
+                ),
             )
             self.session.commit()
         except Exception:
@@ -494,12 +490,10 @@ class MemoryService:
                 raise self._memory_not_found()
             latest = self._latest_revision(entry)
             provenance = self._operator_provenance(payload.provenance)
-            attributes = self._revision_attributes(latest.attributes, payload.attributes)
             subject_refs = self._subject_refs_payload(payload.subject_refs)
             self._apply_operator_entry_provenance(entry, provenance)
             entry.summary = payload.summary
             entry.subject_refs = subject_refs
-            entry.attributes = attributes
             entry.content_hash = self._content_hash(payload.content)
             entry.updated_at = utcnow()
             revision = self._create_admin_revision_row(
@@ -507,24 +501,27 @@ class MemoryService:
                 summary=payload.summary,
                 content=payload.content,
                 subject_refs=subject_refs,
-                attributes=attributes,
                 supersedes_revision_id=latest.revision_id,
                 provenance=provenance,
             )
-            self._record_operator_event(
+            _ = self._record_operator_event(
                 event_type="operator_revised",
                 entry=entry,
                 revision=revision,
                 provenance=provenance,
                 filters={
+                    "functionName": "memory.admin.revise",
                     "scope": {
                         "scopeType": entry.scope_type,
                         "scopeKey": entry.scope_key,
                     },
-                    "contentHash": revision.content_hash,
-                    "supersedesRevisionId": latest.revision_id,
+                    "subjectRefs": self._subject_refs_payload(payload.subject_refs),
                 },
-                result_snapshot=self._operator_result_snapshot(entry, revision),
+                result_snapshot=self._operator_result_snapshot(
+                    entry,
+                    revision,
+                    review_action="revised",
+                ),
             )
             self.session.commit()
         except Exception:
@@ -543,34 +540,36 @@ class MemoryService:
                 raise self._memory_not_found()
             latest = self._latest_revision(entry)
             provenance = self._operator_provenance_from_entry(entry)
-            attributes = self._revision_attributes(latest.attributes, {})
-            attributes["outcome"] = self._outcome_payload(payload.to_outcome())
             self._apply_operator_entry_provenance(entry, provenance)
             entry.visible_to_workflow = payload.visible_to_workflow
-            entry.attributes = attributes
             entry.updated_at = utcnow()
             revision = self._create_admin_revision_row(
                 entry,
                 summary=latest.summary,
                 content=latest.content,
                 subject_refs=self._subject_refs_payload(latest.subject_refs),
-                attributes=attributes,
                 supersedes_revision_id=latest.revision_id,
                 provenance=provenance,
             )
-            self._record_operator_event(
+            _ = self._record_operator_event(
                 event_type="operator_visibility_changed",
                 entry=entry,
                 revision=revision,
                 provenance=provenance,
                 filters={
+                    "functionName": "memory.admin.workflow_visibility",
                     "scope": {
                         "scopeType": entry.scope_type,
                         "scopeKey": entry.scope_key,
                     },
-                    "visibleToWorkflow": payload.visible_to_workflow,
+                    "subjectRefs": self._subject_refs_payload(latest.subject_refs),
                 },
-                result_snapshot=self._operator_result_snapshot(entry, revision),
+                result_snapshot=self._operator_result_snapshot(
+                    entry,
+                    revision,
+                    review_action="visibility_changed",
+                    outcome_summary=payload.summary,
+                ),
             )
             self.session.commit()
         except Exception:
@@ -591,7 +590,6 @@ class MemoryService:
         summary: str,
         content: str,
         subject_refs: list[dict[str, Any]],
-        attributes: dict[str, Any],
         supersedes_revision_id: str | None,
         provenance: MemoryProvenance,
     ) -> AgentMemoryRevision:
@@ -606,7 +604,6 @@ class MemoryService:
             content=content,
             content_hash=self._content_hash(content),
             subject_refs=subject_refs,
-            attributes=attributes,
             supersedes_revision_id=supersedes_revision_id,
             source_run_id=provenance.run_id,
             source_agent_key=provenance.agent_key,
@@ -637,11 +634,8 @@ class MemoryService:
             memory_id=entry.memory_id,
             revision_id=revision.revision_id,
             filters={**operator_snapshot, **filters},
-            result_snapshot={**operator_snapshot, **result_snapshot},
-            status_snapshot={
-                **operator_snapshot,
-                "visibleToWorkflow": entry.visible_to_workflow,
-            },
+            result_snapshot=result_snapshot,
+            status_snapshot={"visibleToWorkflow": entry.visible_to_workflow},
             step_id=provenance.step_id,
             trace_span_id=provenance.trace_id,
         )
@@ -703,26 +697,6 @@ class MemoryService:
         entry.source_slot = provenance.slot
         entry.source_trace_id = provenance.trace_id
 
-    @classmethod
-    def _revision_attributes(
-        cls,
-        current_attributes: object,
-        replacement_attributes: dict[str, Any],
-    ) -> dict[str, Any]:
-        attributes = cls._admin_attributes(replacement_attributes)
-        if isinstance(current_attributes, dict):
-            for key in ("outcome", "reflections"):
-                if key in current_attributes and key not in attributes:
-                    attributes[key] = current_attributes[key]
-        return attributes
-
-    @staticmethod
-    def _admin_attributes(attributes: dict[str, Any]) -> dict[str, Any]:
-        return {
-            **dict(attributes),
-            "_operatorProvenance": MemoryService._operator_snapshot(),
-        }
-
     @staticmethod
     def _subject_refs_payload(subject_refs: Sequence[Any]) -> list[dict[str, Any]]:
         return [
@@ -735,20 +709,27 @@ class MemoryService:
         ]
 
     @staticmethod
-    def _outcome_payload(outcome: MemoryOutcome) -> dict[str, Any]:
-        return outcome.model_dump(mode="json", by_alias=True, exclude_none=True)
-
-    @staticmethod
     def _operator_result_snapshot(
         entry: AgentMemoryEntry,
         revision: AgentMemoryRevision,
+        *,
+        review_action: str,
+        outcome_summary: str | None = None,
+        reflection_summary: str | None = None,
+        reflection_source: str | None = None,
     ) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "memoryId": entry.memory_id,
             "revisionId": revision.revision_id,
-            "visibleToWorkflow": entry.visible_to_workflow,
-            "revisionAction": revision.revision_action,
+            "reviewAction": review_action,
         }
+        if outcome_summary is not None:
+            payload["outcomeSummary"] = outcome_summary
+        if reflection_summary is not None:
+            payload["reflectionSummary"] = reflection_summary
+        if reflection_source is not None:
+            payload["reflectionSource"] = reflection_source
+        return payload
 
     @staticmethod
     def _content_hash(content: str) -> str:
@@ -963,7 +944,7 @@ class MemoryService:
             commit=commit,
         )
 
-    def get_audit_links(self, memory_id: str) -> MemoryAuditLinks:
+    def get_audit_links(self, memory_id: str) -> RunMemoryArtifactAuditLinks:
         return self.store.audit_links(memory_id)
 
     def _query_api_memory(

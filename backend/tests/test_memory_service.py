@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import pytest
 from pydantic import ValidationError
@@ -17,13 +18,7 @@ from app.agents.runtime_tools.memory import (
     MEMORY_WRITE_TOOL_KEY,
 )
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-from app.models.agent_memory import (
-    AgentMemoryChunk,
-    AgentMemoryEmbedding,
-    AgentMemoryEntry,
-    AgentMemoryRevision,
-    RunMemoryEvent,
-)
+from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
 from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
@@ -141,7 +136,6 @@ def _write_request(run_id: int = 42) -> MemoryWriteRequest:
             "Sizing should account for semiconductor cyclicality."
         ),
         subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
-        attributes={"confidence": "high"},
         scope=MemoryScope(scope_type=MemoryScopeType.RUN, scope_key=str(run_id)),
         provenance=MemoryProvenance(
             run_id=run_id,
@@ -170,7 +164,6 @@ def _admin_create_request(
         summary=summary,
         content=content,
         subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
-        attributes={"adminFixture": "true"},
         scope=scope,
         provenance=MemoryProvenance(
             run_id=run_id,
@@ -369,10 +362,20 @@ def test_admin_create_resolved_affects_matching_runtime_lookup(
         )
         admin_list = service.list_admin_memory(MemoryAdminListQuery())
         events = service.list_admin_memory_events(created.memory_id, limit=10, offset=0)
+        entry = session.scalar(
+            select(AgentMemoryEntry).where(AgentMemoryEntry.memory_id == created.memory_id)
+        )
+        revision = session.scalar(
+            select(AgentMemoryRevision).where(
+                AgentMemoryRevision.revision_id == created.revision_id
+            )
+        )
 
     assert created.visible_to_workflow is True
     assert created.scope == MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key=package_a_key)
-    assert created.provenance.created_by_type == "operator"
+    assert entry is not None
+    assert revision is not None
+    assert entry.created_by_type == "operator"
     assert created.provenance.agent_key == "local-instance-operator"
     assert [snippet.memory_id for snippet in alpha_snippets] == [created.memory_id]
     assert beta_snippets == []
@@ -381,6 +384,14 @@ def test_admin_create_resolved_affects_matching_runtime_lookup(
     assert events.items[0].filters["source"] == "operator"
     assert events.items[0].filters["actor"] == "local-instance-operator"
     assert events.items[0].filters["channel"] == "memory_admin"
+    assert events.items[0].filters["functionName"] == "memory.admin.create"
+    assert events.items[0].result_snapshot == {
+        "memoryId": created.memory_id,
+        "revisionId": created.revision_id,
+        "reviewAction": "created",
+        "outcomeSummary": "Admin package memory.",
+    }
+    assert events.items[0].status_snapshot == {"visibleToWorkflow": True}
 
 
 def test_admin_hard_delete_cascades_dependents_and_excludes_runtime_lookup(
@@ -407,39 +418,6 @@ def test_admin_hard_delete_cascades_dependents_and_excludes_runtime_lookup(
             )
         )
         assert revision is not None
-        chunk = AgentMemoryChunk(
-            memory_entry_id=entry.id,
-            memory_revision_id=revision.id,
-            memory_id=entry.memory_id,
-            revision_id=revision.revision_id,
-            chunk_id=f"{revision.revision_id}:chunk-0",
-            chunk_index=0,
-            chunking_version="memory-core-chunker/v1",
-            content=revision.content,
-            content_hash=revision.content_hash,
-            source_content_hash=revision.content_hash,
-            token_count=5,
-        )
-        session.add(chunk)
-        session.flush()
-        session.refresh(chunk)
-        session.add(
-            AgentMemoryEmbedding(
-                memory_chunk_id=chunk.id,
-                memory_entry_id=entry.id,
-                memory_revision_id=revision.id,
-                memory_id=entry.memory_id,
-                revision_id=revision.revision_id,
-                chunk_id=chunk.chunk_id,
-                embedding_provider="test",
-                embedding_model="text-embedding-3-small",
-                embedding_dimensions=3,
-                content_hash=revision.content_hash,
-                chunking_version=chunk.chunking_version,
-                status="pending",
-                metadata_={"source": "hard-delete-test"},
-            )
-        )
         session.commit()
 
         runtime_service = MemoryService(
@@ -485,13 +463,11 @@ def test_admin_hard_delete_cascades_dependents_and_excludes_runtime_lookup(
         row_counts = (
             _count(session, AgentMemoryEntry),
             _count(session, AgentMemoryRevision),
-            _count(session, AgentMemoryChunk),
-            _count(session, AgentMemoryEmbedding),
         )
 
     assert [snippet.memory_id for snippet in before_delete] == [created.memory_id]
     assert after_delete == []
-    assert row_counts == (0, 0, 0, 0)
+    assert row_counts == (0, 0)
     assert event_types_before_delete == ["operator_created"]
     assert event_rows_after_delete == [
         ("operator_created", None, None, created.memory_id, created.revision_id)
@@ -548,7 +524,6 @@ def test_admin_workflow_visibility_revision_lookup(
                 summary="Revised admin memory.",
                 content="latest admin revision controls future lookup content.",
                 subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
-                attributes={"revision": "latest"},
                 provenance=MemoryProvenance(
                     run_id=run.id,
                     agent_key="ignored_reviser",
@@ -603,6 +578,28 @@ def test_admin_workflow_visibility_revision_lookup(
         "operator_revised",
         "operator_visibility_changed",
     ]
+    assert events.items[1].filters["functionName"] == "memory.admin.workflow_visibility"
+    assert events.items[1].result_snapshot == {
+        "memoryId": created.memory_id,
+        "revisionId": workflow_visible.revision_id,
+        "reviewAction": "visibility_changed",
+        "outcomeSummary": "Memory workflow visibility updated",
+    }
+    assert events.items[1].status_snapshot == {"visibleToWorkflow": True}
+    assert events.items[2].filters["functionName"] == "memory.admin.revise"
+    assert events.items[2].result_snapshot == {
+        "memoryId": created.memory_id,
+        "revisionId": revised.revision_id,
+        "reviewAction": "revised",
+    }
+    assert events.items[2].status_snapshot == {"visibleToWorkflow": True}
+    assert events.items[3].result_snapshot == {
+        "memoryId": created.memory_id,
+        "revisionId": workflow_hidden.revision_id,
+        "reviewAction": "visibility_changed",
+        "outcomeSummary": "Admin workflow-hidden memory.",
+    }
+    assert events.items[3].status_snapshot == {"visibleToWorkflow": False}
     assert [revision.version for revision in revisions.items] == [1, 2, 3, 4]
 
 
@@ -683,23 +680,12 @@ def test_admin_list_visibility_sort(session_factory: sessionmaker[Session]) -> N
     assert len(default_list.items[1].excerpt) <= 500
 
 
-def test_admin_lexical_search_no_vector(
+def test_admin_search_uses_lexical_memory_only(
     session_factory: sessionmaker[Session],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_vector_path(*args: object, **kwargs: object) -> object:
-        raise AssertionError("admin search must not use vector memory paths")
+    assert not hasattr(AgentMemoryEntryRepository, "list_vector_lookup_candidates")
+    assert not hasattr(AgentMemoryEntryRepository, "_embedding_table_available")
 
-    monkeypatch.setattr(
-        AgentMemoryEntryRepository,
-        "list_vector_lookup_candidates",
-        fail_vector_path,
-    )
-    monkeypatch.setattr(
-        AgentMemoryEntryRepository,
-        "_embedding_table_available",
-        fail_vector_path,
-    )
     with session_factory() as session:
         run = _seed_run(session)
         service = MemoryService(session)
@@ -964,7 +950,7 @@ def test_admin_created_namespace_memory_still_requires_runtime_namespace_rules(
         )
         entries = list(session.scalars(select(AgentMemoryEntry).order_by(AgentMemoryEntry.id)))
 
-    assert created.provenance.created_by_type == "operator"
+    assert created.provenance.agent_key == "local-instance-operator"
     assert owner_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
     assert reader_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
     assert writer_denied.value.code == MEMORY_NAMESPACE_ACCESS_DENIED_CODE
@@ -1331,7 +1317,6 @@ def test_core_memory_service_write_returns_canonical_memory_projections(
     assert result.memory_id.startswith("memory_")
     assert not result.memory_id.startswith("mem_")
     assert entry.memory_id == result.memory_id
-    assert entry.audit_links is None
     model_payload = result.model_visible_dump()
     assert model_payload["memoryId"] == result.memory_id
     assert "auditLinks" not in model_payload
@@ -1344,13 +1329,14 @@ def test_core_memory_service_write_returns_canonical_memory_projections(
     ui_payload = artifact.dump_for_projection("ui-visible")
     artifact_model_payload = artifact.model_visible_dump()
     assert artifact.memory_id == result.memory_id
-    assert ui_payload["sourceGraphMetadata"] == {
+    source_graph_metadata = cast(dict[str, object], ui_payload["sourceGraphMetadata"])
+    assert source_graph_metadata == {
         "stepId": "portfolio_decision",
         "slot": "decision",
-        "traceId": "trace-abc123",
         "workflowKey": "platform_graph_daily_review",
-        "workflowVersion": 5,
     }
+    assert "traceId" not in source_graph_metadata
+    assert "workflowVersion" not in source_graph_metadata
     assert "auditLinks" not in artifact_model_payload
     assert "reportSlug" not in str(artifact_model_payload)
 

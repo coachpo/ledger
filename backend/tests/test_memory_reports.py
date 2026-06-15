@@ -138,7 +138,6 @@ def _core_memory_write_request(run_id: int) -> MemoryWriteRequest:
         summary="Core memory survives report retirement.",
         content="Core memory is table backed; report rows must not participate.",
         subject_refs=[MemorySubjectRef(kind="instrument", id="NVDA")],
-        attributes={"confidence": "high"},
         scope=MemoryScope(scope_type=MemoryScopeType.RUN, scope_key=str(run_id)),
         provenance=MemoryProvenance(
             run_id=run_id,
@@ -249,7 +248,6 @@ def test_core_memory_ignores_legacy_agent_memory_reports(
             MemoryOutcome(
                 summary="Core memory resolved.",
                 observed_at=datetime(2026, 1, 17, 10, 30, tzinfo=UTC),
-                attributes={"rawReturn": "0.125", "alpha": "0.095"},
             ),
         )
         after = service.query_memory(

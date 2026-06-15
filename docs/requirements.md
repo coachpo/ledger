@@ -1,6 +1,6 @@
 # Requirements Document
 
-> Status: Live requirements reference for branch `main` at `f4f487f`.
+> Status: Live requirements reference for branch `main` at `6c40d44`.
 
 ## Purpose
 
@@ -28,7 +28,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Public multi-user auth, live broker execution, realtime market streaming, tax-lot accounting, and user-facing autonomous scheduling.
 - Removed `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, global Digital Oracle skill surfaces, and standalone global authoring routes.
 - TradingAgents-specific platform behavior, exact LangGraph graph parity, checkpoint/runtime semantics, or agent-initiated trading execution.
-- Unscoped runtime memory search, public memory CRUD, exact-id `signaldeck.core.memory.get`, vector activation/search, embeddings, chunk tables, runtime/global/public/bulk memory deletion, and report-history promotion in phase 1. Trusted admin single-entry hard delete is part of the shipped Memory Admin management surface.
+- Unscoped runtime memory search, public memory CRUD, exact-id `signaldeck.core.memory.get`, vector activation/search, chunk or embedding retrieval contracts, runtime/global/public/bulk memory deletion, runtime tags, arbitrary core-memory attributes, core-memory audit links, and report-history promotion in phase 1. Trusted admin single-entry hard delete is part of the shipped Memory Admin management surface.
 - Raw HTTP LLM calls in application code when an official provider SDK exists.
 
 ## Functional Requirements
@@ -91,17 +91,19 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Rerun must be the root-parameter descendant flow.
 - Fork must be the invocation-input descendant flow, keyed by `sourceInvocationId`, persisted through `run_forks`, with `resumeStepIndex` used only as the execution boundary.
 - Runtime memory writes must use `signaldeck.core.memory.write`; runtime memory lookup must use `signaldeck.core.memory.lookup`; exact-id `signaldeck.core.memory.get` remains out of scope.
-- Runtime memory lookup must never be unscoped global search; omitted runtime-tool selectors must fall back to the current run/package/agent context and runtime matching rules.
+- Runtime memory write and lookup contracts must stay lean, allowlisted, scoped, and free of arbitrary attributes, runtime tags, report identity, audit links, chunks, embeddings, and caller-authored namespace grants.
+- Runtime memory lookup must never be unscoped global search; omitted runtime-tool selectors must fall back to the current run/package/agent context and runtime matching rules. Lookup selectors must not accept tags, attributes, report selectors, chunk selectors, embedding selectors, or vector-search controls.
 - Runtime memory writes must create immutable revisions, reuse exact duplicate active revisions, and return retryable `memory_revision_conflict` for competing shared-scope mutations.
 - Shared memory namespaces must be package-owned as `{ownerPackageKey}/{namespaceKey}` and require explicit read/write grants for non-owner access. Wildcards, ownerless namespaces, global search, and cross-package private writes must fail closed.
-- `/api/memory` must remain a platform-core route family, not `/api/v1` finance routing. Its scoped list/detail/revision/event/action paths must not provide admin-style all-package reads.
+- `/api/memory` must remain a platform-core route family, not `/api/v1` finance routing. Its scoped list/detail/resolve/reflect paths must not provide admin-style all-package reads, runtime revisions, runtime events, or scoped history feeds.
 - `/api/memory/admin/entries*` and `/memory` must provide trusted local operator/admin management over canonical workflow memory across packages, with optional filters that narrow rather than authorize the corpus.
 - Runtime memory lookup must return only workflow-visible entries that match runtime scope and grant rules, and lookup output must omit `visibleToWorkflow`.
 - Runtime memory writes must default hidden with `visibleToWorkflow=false`; write output must include `visibleToWorkflow`.
-- Admin create, revise, and workflow-visibility operations must write canonical memory through explicit scope, `visible_to_workflow`, provenance, immutable revision, and append-only event semantics using operator provenance and `memory_admin` channel metadata.
+- Admin create, revise, and workflow-visibility operations must write canonical memory through explicit scope, `visible_to_workflow`, subject refs, operator provenance, immutable revision, and append-only typed event semantics using `memory_admin` channel metadata. Admin review/history data must be typed revision and event surfaces, not arbitrary entry or revision attributes.
 - Admin create must default visible with `visibleToWorkflow=true`; admin list must default to all entries and support optional `visibleToWorkflow=true|false` filtering.
 - Historical `approved`, `pending`, and `archived` values are migration-only inputs: startup repair maps `approved` to visible and `pending` or `archived` to hidden. They must not be live Memory Admin or runtime eligibility states.
-- Model-visible memory outputs must not expose report identity, download URLs, raw markdown, or audit links. API/UI memory projections must not include finance report-history rows.
+- Model-visible memory outputs must not expose report identity, download URLs, raw markdown, audit links, arbitrary attributes, runtime tags, chunks, embeddings, or vector scores. API/UI memory projections must not include finance report-history rows. Run memory artifacts may retain their own non-runtime report or audit evidence as run evidence without making that evidence part of core runtime memory lookup.
+- Startup repair coverage may prove obsolete chunk and embedding table removal, but chunk, embedding, and vector persistence must not be documented as live runtime, admin, or UI behavior.
 
 ## Non-Functional Requirements
 
@@ -112,7 +114,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Application LLM calls must use official SDKs rather than raw provider HTTP paths.
 - CI must run version sync, backend quality, frontend quality, and frontend E2E.
 - Finance-owned behavior must remain extension-owned unless explicitly promoted to platform core.
-- Platform-core memory tools, `/api/memory`, and `/memory` must operate separately from Finance Workspace report history and extension-owned report lookup.
+- Platform-core memory tools, `/api/memory`, and `/memory` must operate separately from Finance Workspace report history, extension-owned report lookup, and finance follow-up metadata stored outside canonical core memory rows.
 
 ## Acceptance Criteria
 
@@ -121,5 +123,5 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - The Digital Oracle researcher demo path is `demo/digital_oracle_researcher.yaml`; it must grant the three phase-1 `signaldeck.digital_oracle` tools through package-local capability profiles and keep methodology in `systemPrompt`, not a global skill.
 - Package HTTP operations can be authored, bound to package-local secrets, launched, and inspected without exposing raw secret values.
 - Run detail exposes backend-owned progress, queue state, agent invocations, operation invocations, package provenance, extension dependencies, memory artifacts, memory events, typed failure taxonomy, and bounded retry evidence.
-- Runtime `/api/memory` and `signaldeck.core.memory.lookup/write` stay scoped and do not act as global memory search; `/memory` uses trusted operator admin visibility over canonical memory and does not surface finance report history as platform memory.
+- Runtime `/api/memory` and `signaldeck.core.memory.lookup/write` stay scoped and do not act as global memory search; `/memory` uses trusted operator admin visibility over canonical memory and does not surface finance report history, arbitrary attributes, runtime tags, chunks, embeddings, or core-memory audit links as platform memory.
 - Removed Studio, Tryout, orchestration, runtime-v2, simulation, backtest, `/api/skills`, `/skills*`, global Digital Oracle skill surfaces, and standalone global authoring routes are not presented as current product surfaces.

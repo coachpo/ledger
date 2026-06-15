@@ -7,6 +7,7 @@ import type {
   MemoryAdminRevisionCreateRequest,
   MemoryAdminWorkflowVisibilityUpdateRequest,
   MemoryProvenance,
+  MemoryRuntimeProvenance,
   MemoryRevisionAction,
   MemoryScope,
   MemoryScopeType,
@@ -26,12 +27,10 @@ export const SCOPE_TYPE_VALUES: readonly MemoryScopeType[] = [
   "namespace",
 ];
 
-export type JsonObject = Record<string, unknown>;
 export type MemoryDetailTab = "detail" | "revisions" | "events";
 
 export type CreateDraft = {
   agentKey: string;
-  attributesJson: string;
   content: string;
   kind: string;
   packageKey: string;
@@ -47,13 +46,11 @@ export type CreateDraft = {
 };
 
 export type RevisionDraft = {
-  attributesJson: string;
   content: string;
   summary: string;
 };
 
 export type WorkflowVisibilityDraft = {
-  attributesJson: string;
   summary: string;
   visibleToWorkflow: boolean;
 };
@@ -97,32 +94,6 @@ export function parseRequiredRunId(value: string): number | null {
   return optionalRunId(value) ?? null;
 }
 
-export function parseJsonObject(
-  value: string,
-  label: string,
-): JsonObject | null {
-  const normalized = value.trim();
-  if (!normalized) {
-    return {};
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(normalized) as unknown;
-  } catch (error) {
-    const suffix = error instanceof Error ? ` ${error.message}` : "";
-    toast.error(`${label} must be a JSON object.${suffix}`);
-    return null;
-  }
-
-  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-    return parsed as JsonObject;
-  }
-
-  toast.error(`${label} must be a JSON object.`);
-  return null;
-}
-
 export function titleCase(value: string): string {
   return value
     .replace(/[-_]/g, " ")
@@ -151,12 +122,11 @@ export function formatScope(scope: MemoryScope): string {
     : `${titleCase(scope.scopeType)} ${scope.scopeKey}`;
 }
 
-export function formatProvenance(provenance: MemoryProvenance): string {
+export function formatProvenance(provenance: MemoryRuntimeProvenance): string {
   const workflow = provenance.workflowKey ? ` · ${provenance.workflowKey}` : "";
-  const creator = provenance.createdByType
-    ? `${provenance.createdByType} · `
-    : "";
-  return `${creator}${provenance.agentKey}@${provenance.agentVersion}${workflow} · run #${provenance.runId}`;
+  const step = provenance.stepId ? ` · step ${provenance.stepId}` : "";
+  const slot = provenance.slot ? ` · ${provenance.slot}` : "";
+  return `${provenance.agentKey}${workflow}${step}${slot} · run #${provenance.runId}`;
 }
 
 export function subjectRefSummary(
@@ -235,7 +205,6 @@ export function buildAdminListParams(
 export function createInitialDraft(): CreateDraft {
   return {
     agentKey: DEFAULT_OPERATOR_AGENT_KEY,
-    attributesJson: "{}",
     content: "",
     kind: "note",
     packageKey: "",
@@ -252,13 +221,13 @@ export function createInitialDraft(): CreateDraft {
 }
 
 export function createRevisionDraft(): RevisionDraft {
-  return { attributesJson: "{}", content: "", summary: "" };
+  return { content: "", summary: "" };
 }
 
 export function createWorkflowVisibilityDraft(
   visibleToWorkflow = true,
 ): WorkflowVisibilityDraft {
-  return { attributesJson: "{}", summary: "", visibleToWorkflow };
+  return { summary: "", visibleToWorkflow };
 }
 
 export function createMemoryPayloadFromDraft(
@@ -266,14 +235,12 @@ export function createMemoryPayloadFromDraft(
 ): MemoryAdminCreateRequest | null {
   const scopeKey = optionalText(draft.scopeKey);
   const runId = parseRequiredRunId(draft.runId);
-  const attributes = parseJsonObject(draft.attributesJson, "Create attributes");
-  if (!scopeKey || !runId || !attributes) {
-    toast.error("Create memory needs run id, scope key, and valid attributes.");
+  if (!scopeKey || !runId) {
+    toast.error("Create memory needs run id and scope key.");
     return null;
   }
 
   return {
-    attributes,
     content: draft.content,
     kind: optionalText(draft.kind) ?? "note",
     provenance: buildOperatorProvenance({

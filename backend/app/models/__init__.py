@@ -1,10 +1,4 @@
-from app.models.agent_memory import (
-    AgentMemoryChunk,
-    AgentMemoryEmbedding,
-    AgentMemoryEntry,
-    AgentMemoryRevision,
-    RunMemoryEvent,
-)
+from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
 from app.models.balance import Balance
 from app.models.extension import ExtensionState
 from app.models.market_quote import MarketQuote
@@ -17,6 +11,7 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_fork import RunFork
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
+from app.models.signaldeck_finance_memory_metadata import SignalDeckFinanceMemoryMetadata
 from app.models.symbol_name_cache import SymbolNameCache
 from app.models.text_template import TextTemplate
 from app.models.trading_operation import TradingOperation
@@ -31,8 +26,6 @@ from app.models.workflow_package_schedule import (
 )
 
 __all__ = [
-    "AgentMemoryChunk",
-    "AgentMemoryEmbedding",
     "AgentMemoryEntry",
     "AgentMemoryRevision",
     "Balance",
@@ -49,6 +42,7 @@ __all__ = [
     "RunWorkflowPackageSnapshot",
     "RunOperationInvocation",
     "RunStep",
+    "SignalDeckFinanceMemoryMetadata",
     "SymbolNameCache",
     "TextTemplate",
     "TradingOperation",

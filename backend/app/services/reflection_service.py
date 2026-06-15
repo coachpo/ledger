@@ -26,12 +26,14 @@ class ReflectionService:
         *,
         reflection: str,
         reflected_at: datetime,
+        source: str | None = None,
         commit: bool = True,
     ) -> MemoryEntryRead:
         self._require_enabled()
         payload = MemoryReflection(
             reflection=reflection,
             reflected_at=reflected_at,
+            source=source,
         )
         return self.memory_service.append_reflection(
             memory_id,
@@ -61,6 +63,7 @@ class ReflectionService:
             memory_id,
             reflection=reflection,
             reflected_at=reflected_at,
+            source="signaldeck.finance.return_resolution",
             commit=commit,
         )
 
@@ -79,19 +82,9 @@ class ReflectionService:
 
     @staticmethod
     def _outcome_summary(memory: MemoryEntryRead) -> str:
-        outcome = memory.outcome
-        if outcome is None:
-            return "visible to workflow" if memory.visible_to_workflow else "hidden from workflow"
-        raw_return = outcome.attributes.get("rawReturn")
-        alpha = outcome.attributes.get("alpha")
-        if raw_return is None or alpha is None:
-            return outcome.summary
-
-        parts = [f"raw return {raw_return}", f"alpha {alpha}"]
-        benchmark_return = outcome.attributes.get("benchmarkReturn")
-        if benchmark_return is not None:
-            parts.append(f"benchmark return {benchmark_return}")
-        return ", ".join(parts)
+        if memory.outcome is not None:
+            return memory.outcome.summary
+        return "visible to workflow" if memory.visible_to_workflow else "hidden from workflow"
 
 
 __all__ = ["ReflectionService"]

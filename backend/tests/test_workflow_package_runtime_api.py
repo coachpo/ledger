@@ -306,7 +306,6 @@ class _RuntimeRecordingChatCompletionsClient:
                 "scope": None,
                 "subjectRefs": None,
                 "kind": None,
-                "tags": None,
                 "limit": 1,
                 "offset": 0,
                 "maxCharacters": 1000,

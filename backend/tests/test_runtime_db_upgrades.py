@@ -36,10 +36,10 @@ AGENT_PLATFORM_TABLE_NAMES = {
 CORE_MEMORY_TABLE_NAMES = {
     "agent_memory_entries",
     "agent_memory_revisions",
-    "agent_memory_chunks",
     "run_memory_events",
 }
-CORE_MEMORY_PGVECTOR_TABLE_NAMES = {"agent_memory_embeddings"}
+FINANCE_MEMORY_METADATA_TABLE_NAMES = {"signaldeck_finance_memory_metadata"}
+REMOVED_CORE_MEMORY_TABLE_NAMES = {"agent_memory_chunks", "agent_memory_embeddings"}
 SCHEDULE_TABLE_NAMES = {
     "workflow_package_schedules",
     "workflow_package_schedule_fires",
@@ -69,7 +69,7 @@ LEGACY_BACKEND_TABLE_NAMES = {
     "orchestration_characters",
 }
 LIVE_AGENT_PLATFORM_TABLE_NAMES = AGENT_PLATFORM_TABLE_NAMES
-LIVE_CORE_MEMORY_TABLE_NAMES = CORE_MEMORY_TABLE_NAMES
+LIVE_CORE_MEMORY_TABLE_NAMES = CORE_MEMORY_TABLE_NAMES | FINANCE_MEMORY_METADATA_TABLE_NAMES
 LIVE_SCHEDULE_TABLE_NAMES = SCHEDULE_TABLE_NAMES
 REMOVED_RUN_PROVENANCE_COLUMNS = {
     "workflow_package_version_id",
@@ -375,10 +375,14 @@ _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES = [
         ],
     },
 ]
+
+
 def _compile_fixture_artifacts(engine: Engine, manifest_source: str) -> dict[str, object]:
     test_session_factory: sessionmaker[Session] = sessionmaker(bind=engine, future=True)
     with test_session_factory() as session:
-        return WorkflowPackageService(session, test_session_factory)._prepare_manifest(manifest_source)
+        return WorkflowPackageService(session, test_session_factory)._prepare_manifest(
+            manifest_source
+        )
 
 
 _TRADINGAGENTS_LAUNCH_METADATA_BY_WORKFLOW_KEY = {
@@ -874,6 +878,7 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     assert LIVE_CORE_MEMORY_TABLE_NAMES <= table_names
+    assert REMOVED_CORE_MEMORY_TABLE_NAMES.isdisjoint(table_names)
 
     entry_columns = {
         column["name"]: column for column in inspector.get_columns("agent_memory_entries")
@@ -881,15 +886,15 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
     revision_columns = {
         column["name"]: column for column in inspector.get_columns("agent_memory_revisions")
     }
-    chunk_columns = {
-        column["name"]: column for column in inspector.get_columns("agent_memory_chunks")
-    }
     event_columns = {
         column["name"]: column for column in inspector.get_columns("run_memory_events")
     }
+    finance_metadata_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("signaldeck_finance_memory_metadata")
+    }
     entry_indexes = {index["name"] for index in inspector.get_indexes("agent_memory_entries")}
     revision_indexes = {index["name"] for index in inspector.get_indexes("agent_memory_revisions")}
-    chunk_indexes = {index["name"] for index in inspector.get_indexes("agent_memory_chunks")}
     event_indexes = {index["name"] for index in inspector.get_indexes("run_memory_events")}
 
     assert {
@@ -901,7 +906,6 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "visible_to_workflow",
         "summary",
         "subject_refs",
-        "attributes",
         "content_hash",
         "idempotency_key",
         "source_run_id",
@@ -914,6 +918,7 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "updated_at",
     } <= set(entry_columns)
     assert {"report_id", "report_slug", "report_name"}.isdisjoint(entry_columns)
+    assert "attributes" not in entry_columns
     assert "status" not in entry_columns
     assert entry_columns["content_hash"]["nullable"] is False
     assert entry_columns["scope_type"]["nullable"] is False
@@ -929,7 +934,6 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "content",
         "content_hash",
         "subject_refs",
-        "attributes",
         "supersedes_revision_id",
         "source_run_id",
         "source_agent_key",
@@ -938,31 +942,11 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "trace_span_id",
         "created_at",
     } <= set(revision_columns)
+    assert "attributes" not in revision_columns
     assert "status" not in revision_columns
     assert revision_columns["content_hash"]["nullable"] is False
     assert revision_columns["memory_entry_id"]["nullable"] is False
     assert revision_columns["visible_to_workflow"]["nullable"] is False
-
-    assert {
-        "id",
-        "memory_entry_id",
-        "memory_revision_id",
-        "memory_id",
-        "revision_id",
-        "chunk_id",
-        "chunk_index",
-        "chunking_version",
-        "content",
-        "content_hash",
-        "source_content_hash",
-        "token_count",
-        "attributes",
-        "created_at",
-    } <= set(chunk_columns)
-    assert chunk_columns["memory_entry_id"]["nullable"] is False
-    assert chunk_columns["memory_revision_id"]["nullable"] is False
-    assert chunk_columns["content_hash"]["nullable"] is False
-    assert chunk_columns["source_content_hash"]["nullable"] is False
 
     assert {
         "id",
@@ -989,6 +973,20 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
     } <= set(event_columns)
     assert event_columns["run_id"]["nullable"] is False
     assert event_columns["event_type"]["nullable"] is False
+    assert {
+        "memory_id",
+        "ticker",
+        "action",
+        "rationale",
+        "risk_summary",
+        "execution_plan",
+        "horizon_days",
+        "benchmark_symbol",
+        "decision_summary",
+    } <= set(finance_metadata_columns)
+    assert finance_metadata_columns["memory_id"]["nullable"] is False
+    assert finance_metadata_columns["ticker"]["nullable"] is False
+    assert finance_metadata_columns["action"]["nullable"] is False
 
     assert {
         "ix_agent_memory_entries_scope",
@@ -997,12 +995,12 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "ix_agent_memory_entries_visible_updated_at_id",
         "ix_agent_memory_entries_content_hash",
         "ix_agent_memory_entries_subject_refs_gin",
-        "ix_agent_memory_entries_attributes_gin",
         "ix_agent_memory_entries_source",
         "uq_agent_memory_entries_idempotency_key",
         "uq_agent_memory_entries_idempotency_fallback",
     } <= entry_indexes
     assert {
+        "ix_agent_memory_entries_attributes_gin",
         "ix_agent_memory_entries_scope_status_kind",
         "ix_agent_memory_entries_status_kind",
         "ix_agent_memory_entries_status_updated_at_id",
@@ -1015,15 +1013,7 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "ix_agent_memory_revisions_created_at",
         "ix_agent_memory_revisions_supersedes",
     } <= revision_indexes
-    assert {
-        "ix_agent_memory_chunks_entry",
-        "ix_agent_memory_chunks_revision",
-        "ix_agent_memory_chunks_memory_id",
-        "ix_agent_memory_chunks_revision_id",
-        "ix_agent_memory_chunks_content_hash",
-        "ix_agent_memory_chunks_chunking_version",
-    } <= chunk_indexes
-
+    assert "ix_agent_memory_revisions_attributes_gin" not in revision_indexes
     assert {
         "ix_run_memory_events_run_created_at",
         "ix_run_memory_events_run_type_created_at",
@@ -1045,20 +1035,11 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         for constraint in inspector.get_unique_constraints("agent_memory_revisions")
         if constraint.get("name")
     }
-    chunk_constraints = {
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("agent_memory_chunks")
-        if constraint.get("name")
-    }
     assert "uq_agent_memory_entries_memory_id" in entry_constraints
     assert {
         "uq_agent_memory_revisions_revision_id",
         "uq_agent_memory_revisions_entry_version",
     } <= revision_constraints
-    assert {
-        "uq_agent_memory_chunks_chunk_id",
-        "uq_agent_memory_chunks_revision_index",
-    } <= chunk_constraints
     assert "uq_agent_memory_revisions_entry_content_hash" not in revision_constraints
 
     entry_checks = {
@@ -1071,11 +1052,6 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         for constraint in inspector.get_check_constraints("agent_memory_revisions")
         if constraint.get("name")
     }
-    chunk_checks = {
-        constraint["name"]
-        for constraint in inspector.get_check_constraints("agent_memory_chunks")
-        if constraint.get("name")
-    }
     event_checks = {
         constraint["name"]
         for constraint in inspector.get_check_constraints("run_memory_events")
@@ -1086,33 +1062,28 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "ck_agent_memory_entries_content_hash",
     } <= entry_checks
     assert "ck_agent_memory_entries_status" not in entry_checks
+    assert "ck_agent_memory_entries_attributes" not in entry_checks
     assert {
         "ck_agent_memory_revisions_content_hash",
         "ck_agent_memory_revisions_version_positive",
     } <= revision_checks
     assert "ck_agent_memory_revisions_status" not in revision_checks
-    assert {
-        "ck_agent_memory_chunks_chunk_index_non_negative",
-        "ck_agent_memory_chunks_content_hash",
-        "ck_agent_memory_chunks_source_content_hash",
-    } <= chunk_checks
+    assert "ck_agent_memory_revisions_attributes" not in revision_checks
     assert "ck_run_memory_events_event_type" in event_checks
 
     revision_foreign_keys = {
         _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
         for foreign_key in inspector.get_foreign_keys("agent_memory_revisions")
     }
-    chunk_foreign_keys = {
-        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
-        for foreign_key in inspector.get_foreign_keys("agent_memory_chunks")
-    }
     event_foreign_keys = {
         _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
         for foreign_key in inspector.get_foreign_keys("run_memory_events")
     }
+    finance_metadata_foreign_keys = {
+        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
+        for foreign_key in inspector.get_foreign_keys("signaldeck_finance_memory_metadata")
+    }
     assert (("memory_entry_id",), "agent_memory_entries", "CASCADE") in revision_foreign_keys
-    assert (("memory_entry_id",), "agent_memory_entries", "CASCADE") in chunk_foreign_keys
-    assert (("memory_revision_id",), "agent_memory_revisions", "CASCADE") in chunk_foreign_keys
     assert (("run_id",), "runs", "CASCADE") in event_foreign_keys
     assert (("run_step_id",), "run_steps", "SET NULL") in event_foreign_keys
     assert (
@@ -1125,77 +1096,7 @@ def _assert_core_memory_table_shape(engine: Engine) -> None:
         "agent_memory_revisions",
         "SET NULL",
     ) in event_foreign_keys
-
-
-def _assert_memory_embedding_table_shape(engine: Engine) -> None:
-    inspector = inspect(engine)
-    assert CORE_MEMORY_PGVECTOR_TABLE_NAMES <= set(inspector.get_table_names())
-
-    embedding_columns = {
-        column["name"]: column for column in inspector.get_columns("agent_memory_embeddings")
-    }
-    embedding_indexes = {
-        index["name"] for index in inspector.get_indexes("agent_memory_embeddings")
-    }
-    assert {
-        "id",
-        "memory_chunk_id",
-        "memory_entry_id",
-        "memory_revision_id",
-        "memory_id",
-        "revision_id",
-        "chunk_id",
-        "embedding_provider",
-        "embedding_model",
-        "embedding_dimensions",
-        "embedding",
-        "content_hash",
-        "chunking_version",
-        "embedding_config_hash",
-        "status",
-        "error_message",
-        "metadata",
-        "embedded_at",
-        "created_at",
-        "updated_at",
-    } <= set(embedding_columns)
-    assert embedding_columns["memory_chunk_id"]["nullable"] is False
-    assert embedding_columns["embedding_model"]["nullable"] is False
-    assert embedding_columns["embedding_dimensions"]["nullable"] is False
-    assert embedding_columns["content_hash"]["nullable"] is False
-    assert {
-        "ix_agent_memory_embeddings_chunk",
-        "ix_agent_memory_embeddings_entry",
-        "ix_agent_memory_embeddings_revision",
-        "ix_agent_memory_embeddings_status",
-        "ix_agent_memory_embeddings_model_status",
-        "ix_agent_memory_embeddings_provenance",
-        "uq_agent_memory_embeddings_chunk_provenance",
-    } <= embedding_indexes
-
-    embedding_checks = {
-        constraint["name"]
-        for constraint in inspector.get_check_constraints("agent_memory_embeddings")
-        if constraint.get("name")
-    }
-    assert {
-        "ck_agent_memory_embeddings_status",
-        "ck_agent_memory_embeddings_dimensions_positive",
-        "ck_agent_memory_embeddings_content_hash",
-        "ck_agent_memory_embeddings_ready_has_vector",
-    } <= embedding_checks
-
-    embedding_foreign_keys = {
-        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
-        for foreign_key in inspector.get_foreign_keys("agent_memory_embeddings")
-    }
-    assert (("memory_chunk_id",), "agent_memory_chunks", "CASCADE") in embedding_foreign_keys
-    assert (("memory_entry_id",), "agent_memory_entries", "CASCADE") in embedding_foreign_keys
-    assert (
-        ("memory_revision_id",),
-        "agent_memory_revisions",
-        "CASCADE",
-    ) in embedding_foreign_keys
+    assert (("memory_id",), "agent_memory_entries", "CASCADE") in finance_metadata_foreign_keys
 
 
 def _model_connection_reasoning_effort_check_sql(engine: Engine) -> str:
@@ -2672,97 +2573,41 @@ def test_init_db_normalizes_legacy_memory_status_event_types(database_url: str) 
         engine.dispose()
 
 
-def test_init_db_strips_legacy_memory_outcome_status(database_url: str) -> None:
+def test_init_db_drops_obsolete_core_memory_attributes(database_url: str) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
-    content_hash = "d" * 64
 
     try:
         with engine.begin() as connection:
-            run_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO runs (
-                        target_kind, target_id, target_key, target_version, input, status
-                    ) VALUES (
-                        'workflowPackage', 1, 'legacy_memory_outcome_package', 1,
-                        '{}'::jsonb, 'succeeded'
-                    )
-                    RETURNING id
-                    """
-                )
-            ).scalar_one()
-            memory_entry_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO agent_memory_entries (
-                        memory_id, scope_type, scope_key, kind, visible_to_workflow, summary,
-                        attributes, content_hash, source_run_id, source_agent_key,
-                        source_agent_version, source_step_id, source_slot
-                    ) VALUES (
-                        'legacy-outcome-memory', 'run', :scope_key, 'decision', FALSE,
-                        'Legacy outcome memory',
-                        jsonb_build_object(
-                            'outcome', jsonb_build_object(
-                                'summary', 'Legacy outcome',
-                                'status', 'expired',
-                                'attributes', jsonb_build_object('rawReturn', '0.2')
-                            )
-                        ),
-                        :content_hash, :run_id, 'research_agent', 1,
-                        'write_memory', 'decision'
-                    ) RETURNING id
-                    """
-                ),
-                {"content_hash": content_hash, "run_id": run_id, "scope_key": str(run_id)},
-            ).scalar_one()
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO agent_memory_revisions (
-                        memory_entry_id, revision_id, version, visible_to_workflow, summary,
-                        content, attributes, content_hash, source_run_id, source_agent_key,
-                        source_step_id, source_slot
-                    ) VALUES (
-                        :memory_entry_id, 'legacy-outcome-memory:rev-1', 1, FALSE,
-                        'Legacy outcome memory', 'Legacy outcome body.',
-                        jsonb_build_object(
-                            'outcome', jsonb_build_object(
-                                'summary', 'Legacy revision outcome',
-                                'status', 'expired',
-                                'attributes', jsonb_build_object('alpha', 1)
-                            )
-                        ),
-                        :content_hash, :run_id, 'research_agent', 'write_memory', 'decision'
-                    )
-                    """
-                ),
-                {
-                    "content_hash": content_hash,
-                    "memory_entry_id": memory_entry_id,
-                    "run_id": run_id,
-                },
+            connection.exec_driver_sql(
+                "ALTER TABLE agent_memory_entries "
+                "ADD COLUMN attributes JSONB NOT NULL DEFAULT '{}'::jsonb"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE agent_memory_revisions "
+                "ADD COLUMN attributes JSONB NOT NULL DEFAULT '{}'::jsonb"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE agent_memory_entries "
+                "ADD CONSTRAINT ck_agent_memory_entries_attributes "
+                "CHECK (jsonb_typeof(attributes) = 'object')"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE agent_memory_revisions "
+                "ADD CONSTRAINT ck_agent_memory_revisions_attributes "
+                "CHECK (jsonb_typeof(attributes) = 'object')"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX ix_agent_memory_entries_attributes_gin "
+                "ON agent_memory_entries USING gin (attributes jsonb_path_ops)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX ix_agent_memory_revisions_attributes_gin "
+                "ON agent_memory_revisions USING gin (attributes jsonb_path_ops)"
             )
 
         init_db(database_url)
-        with engine.connect() as connection:
-            entry_outcome, revision_outcome = connection.execute(
-                text(
-                    """
-                    SELECT
-                        (SELECT attributes->'outcome' FROM agent_memory_entries
-                         WHERE memory_id = 'legacy-outcome-memory'),
-                        (SELECT attributes->'outcome' FROM agent_memory_revisions
-                         WHERE revision_id = 'legacy-outcome-memory:rev-1')
-                    """
-                )
-            ).one()
-
-        assert entry_outcome == {"summary": "Legacy outcome", "attributes": {"rawReturn": "0.2"}}
-        assert revision_outcome == {
-            "summary": "Legacy revision outcome",
-            "attributes": {"alpha": 1},
-        }
+        _assert_core_memory_table_shape(engine)
     finally:
         engine.dispose()
 
@@ -2870,27 +2715,6 @@ def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> N
                     "second_content_hash": second_content_hash,
                 },
             )
-            memory_chunk_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO agent_memory_chunks (
-                        memory_entry_id, memory_revision_id, memory_id, revision_id, chunk_id,
-                        chunk_index, chunking_version, content, content_hash, source_content_hash,
-                        token_count
-                    ) VALUES (
-                        :memory_entry_id, :revision_id, 'memory-core-1', 'memory-core-1:rev-1',
-                        'memory-core-1:rev-1:chunk-0', 0, 'memory-core-chunker/v1',
-                        'Canonical memory content.', :content_hash, :content_hash, 3
-                    ) RETURNING id
-                    """
-                ),
-                {
-                    "content_hash": first_content_hash,
-                    "memory_entry_id": memory_entry_id,
-                    "revision_id": revision_id,
-                },
-            ).scalar_one()
-            assert memory_chunk_id is not None
             connection.execute(
                 text(
                     """
@@ -2918,12 +2742,11 @@ def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> N
                     SELECT
                         (SELECT COUNT(*) FROM agent_memory_entries),
                         (SELECT COUNT(*) FROM agent_memory_revisions),
-                        (SELECT COUNT(*) FROM agent_memory_chunks),
                         (SELECT COUNT(*) FROM run_memory_events)
                     """
                 )
             ).one()
-        assert counts == (1, 3, 1, 1)
+        assert counts == (1, 3, 1)
         with engine.connect() as connection:
             revision_hashes = connection.execute(
                 text(
@@ -2941,19 +2764,6 @@ def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> N
             (2, second_content_hash),
             (3, first_content_hash),
         ]
-        with engine.connect() as connection:
-            chunk_row = connection.execute(
-                text(
-                    """
-                    SELECT chunk_index, chunking_version, content_hash, source_content_hash
-                    FROM agent_memory_chunks
-                    WHERE memory_revision_id = :revision_id
-                    """
-                ),
-                {"revision_id": revision_id},
-            ).one()
-        assert chunk_row == (0, "memory-core-chunker/v1", first_content_hash, first_content_hash)
-
         with pytest.raises(IntegrityError):
             with engine.begin() as connection:
                 connection.execute(
@@ -2988,7 +2798,6 @@ def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> N
                     SELECT
                         (SELECT COUNT(*) FROM agent_memory_entries),
                         (SELECT COUNT(*) FROM agent_memory_revisions),
-                        (SELECT COUNT(*) FROM agent_memory_chunks),
                         (SELECT COUNT(*) FROM run_memory_events)
                     """
                 )
@@ -3004,7 +2813,7 @@ def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> N
                 {"run_id": run_id},
             ).one()
 
-        assert cascade_counts == (0, 0, 0, 1)
+        assert cascade_counts == (0, 0, 1)
         assert event_snapshot == (None, None, "memory-core-1", "memory-core-1:rev-1")
     finally:
         engine.dispose()
@@ -3017,7 +2826,6 @@ def test_init_db_repairs_jsonb_and_text_indexes_on_existing_persistence_tables(
     engine = create_engine(database_url, future=True)
     index_names = (
         "ix_agent_memory_entries_subject_refs_gin",
-        "ix_agent_memory_entries_attributes_gin",
         "ix_agent_memory_revisions_search_text",
         "ix_run_workflow_package_snapshots_compiled_plan_gin",
         "ix_run_workflow_package_snapshots_model_connections_gin",
@@ -3049,7 +2857,6 @@ def test_init_db_repairs_jsonb_and_text_indexes_on_existing_persistence_tables(
 
         assert set(index_definitions) == set(index_names)
         assert "jsonb_path_ops" in index_definitions["ix_agent_memory_entries_subject_refs_gin"]
-        assert "jsonb_path_ops" in index_definitions["ix_agent_memory_entries_attributes_gin"]
         assert (
             "to_tsvector('simple'::regconfig"
             in index_definitions["ix_agent_memory_revisions_search_text"]
@@ -3066,176 +2873,35 @@ def test_init_db_repairs_jsonb_and_text_indexes_on_existing_persistence_tables(
         engine.dispose()
 
 
-def test_init_db_keeps_core_memory_available_without_pgvector(
-    database_url: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("app.db.upgrades._ensure_pgvector_extension", lambda engine: False)
+def test_init_db_drops_removed_memory_chunk_and_embedding_tables(database_url: str) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
 
     try:
-        inspector = inspect(engine)
-        table_names = set(inspector.get_table_names())
-        assert LIVE_CORE_MEMORY_TABLE_NAMES <= table_names
-        assert CORE_MEMORY_PGVECTOR_TABLE_NAMES.isdisjoint(table_names)
-        _assert_core_memory_table_shape(engine)
-    finally:
-        engine.dispose()
-
-
-def test_init_db_creates_memory_embedding_table_when_pgvector_available(database_url: str) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-    first_content_hash = "a" * 64
-
-    try:
-        if not CORE_MEMORY_PGVECTOR_TABLE_NAMES <= set(inspect(engine).get_table_names()):
-            pytest.skip("pgvector extension is not available for this PostgreSQL instance")
-
-        _assert_core_memory_table_shape(engine)
-        _assert_memory_embedding_table_shape(engine)
-
         with engine.begin() as connection:
-            run_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO runs (
-                        target_kind, target_id, target_key, target_version, input, status
-                    ) VALUES (
-                        'workflowPackage', 1, 'embedding_package', 1, '{}'::jsonb, 'succeeded'
-                    )
-                    RETURNING id
-                    """
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE agent_memory_chunks (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    memory_entry_id INTEGER,
+                    memory_revision_id INTEGER
                 )
-            ).scalar_one()
-            memory_entry_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO agent_memory_entries (
-                        memory_id, scope_type, scope_key, kind, visible_to_workflow, summary,
-                        content_hash, source_run_id, source_agent_key, source_agent_version,
-                        source_step_id, source_slot
-                    ) VALUES (
-                        'memory-embedding-1', 'run', :scope_key, 'decision', FALSE,
-                        'Embedding memory summary', :content_hash, :run_id,
-                        'research_agent', 1, 'write_memory', 'decision'
-                    ) RETURNING id
-                    """
-                ),
-                {
-                    "content_hash": first_content_hash,
-                    "run_id": run_id,
-                    "scope_key": str(run_id),
-                },
-            ).scalar_one()
-            revision_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO agent_memory_revisions (
-                        memory_entry_id, revision_id, version, visible_to_workflow, summary,
-                        content, content_hash, source_run_id, source_agent_key, source_step_id,
-                        source_slot
-                    ) VALUES (
-                        :memory_entry_id, 'memory-embedding-1:rev-1', 1, FALSE,
-                        'Embedding memory summary', 'Canonical memory content.', :content_hash,
-                        :run_id, 'research_agent', 'write_memory', 'decision'
-                    ) RETURNING id
-                    """
-                ),
-                {
-                    "content_hash": first_content_hash,
-                    "memory_entry_id": memory_entry_id,
-                    "run_id": run_id,
-                },
-            ).scalar_one()
-            memory_chunk_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO agent_memory_chunks (
-                        memory_entry_id, memory_revision_id, memory_id, revision_id, chunk_id,
-                        chunk_index, chunking_version, content, content_hash, source_content_hash,
-                        token_count
-                    ) VALUES (
-                        :memory_entry_id, :revision_row_id, 'memory-embedding-1',
-                        'memory-embedding-1:rev-1', 'memory-embedding-1:rev-1:chunk-0', 0,
-                        'memory-core-chunker/v1', 'Canonical memory content.', :content_hash,
-                        :content_hash, 3
-                    ) RETURNING id
-                    """
-                ),
-                {
-                    "content_hash": first_content_hash,
-                    "memory_entry_id": memory_entry_id,
-                    "revision_row_id": revision_id,
-                },
-            ).scalar_one()
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO agent_memory_embeddings (
-                        memory_chunk_id, memory_entry_id, memory_revision_id, memory_id,
-                        revision_id, chunk_id, embedding_provider, embedding_model,
-                        embedding_dimensions, embedding, content_hash, chunking_version,
-                        embedding_config_hash, status, metadata, embedded_at
-                    ) VALUES (
-                        :memory_chunk_id, :memory_entry_id, :revision_row_id,
-                        'memory-embedding-1', 'memory-embedding-1:rev-1',
-                        'memory-embedding-1:rev-1:chunk-0', 'openai',
-                        'text-embedding-3-small', 3, '[0.1,0.2,0.3]'::vector,
-                        :content_hash, 'memory-core-chunker/v1', :embedding_config_hash,
-                        'ready', '{"source":"test"}'::jsonb, NOW()
-                    )
-                    """
-                ),
-                {
-                    "content_hash": first_content_hash,
-                    "embedding_config_hash": "b" * 64,
-                    "memory_chunk_id": memory_chunk_id,
-                    "memory_entry_id": memory_entry_id,
-                    "revision_row_id": revision_id,
-                },
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE agent_memory_embeddings (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    memory_chunk_id INTEGER REFERENCES agent_memory_chunks(id) ON DELETE CASCADE
+                )
+                """
             )
 
-        with engine.connect() as connection:
-            provenance = connection.execute(
-                text(
-                    """
-                    SELECT embedding_model, embedding_dimensions, content_hash,
-                           chunking_version, status, metadata
-                    FROM agent_memory_embeddings
-                    WHERE memory_chunk_id = :memory_chunk_id
-                    """
-                ),
-                {"memory_chunk_id": memory_chunk_id},
-            ).one()
-        assert provenance == (
-            "text-embedding-3-small",
-            3,
-            first_content_hash,
-            "memory-core-chunker/v1",
-            "ready",
-            {"source": "test"},
-        )
+        init_db(database_url)
 
-        with engine.begin() as connection:
-            connection.execute(
-                text("DELETE FROM agent_memory_entries WHERE id = :memory_entry_id"),
-                {"memory_entry_id": memory_entry_id},
-            )
-            cascade_counts = connection.execute(
-                text(
-                    """
-                    SELECT
-                        (SELECT COUNT(*) FROM agent_memory_entries),
-                        (SELECT COUNT(*) FROM agent_memory_revisions),
-                        (SELECT COUNT(*) FROM agent_memory_chunks),
-                        (SELECT COUNT(*) FROM agent_memory_embeddings)
-                    """
-                )
-            ).one()
-
-        assert cascade_counts == (0, 0, 0, 0)
+        table_names = set(inspect(engine).get_table_names())
+        assert REMOVED_CORE_MEMORY_TABLE_NAMES.isdisjoint(table_names)
+        _assert_core_memory_table_shape(engine)
     finally:
         engine.dispose()
 
@@ -3288,13 +2954,12 @@ def test_init_db_ignores_legacy_report_backed_memory_rows(database_url: str) -> 
                     SELECT
                         (SELECT COUNT(*) FROM agent_memory_entries),
                         (SELECT COUNT(*) FROM agent_memory_revisions),
-                        (SELECT COUNT(*) FROM agent_memory_chunks),
                         (SELECT COUNT(*) FROM run_memory_events)
                     """
                 )
             ).one()
 
-        assert memory_counts == (0, 0, 0, 0)
+        assert memory_counts == (0, 0, 0)
         assert rows[legacy_slug]["source"] == "agent"
         assert rows[legacy_slug]["metadata"] == _agent_memory_report_metadata()
         assert rows[normal_slug] == {
@@ -3817,9 +3482,7 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
     init_db(database_url)
     engine = create_engine(database_url, future=True)
     fixture_compiled = _compile_fixture_artifacts(engine, fixture_source)
-    expected_package_definition = cast(
-        dict[str, object], fixture_compiled["packageDefinition"]
-    )
+    expected_package_definition = cast(dict[str, object], fixture_compiled["packageDefinition"])
     expected_compiled_plan = cast(dict[str, object], fixture_compiled["compiledPlan"])
     expected_extension_dependencies = cast(
         list[dict[str, object]], fixture_compiled["extensionDependencies"]
@@ -3968,9 +3631,7 @@ def test_init_db_seeds_digital_oracle_preset_without_secret_state(database_url: 
     init_db(database_url)
     engine = create_engine(database_url, future=True)
     fixture_compiled = _compile_fixture_artifacts(engine, fixture_source)
-    expected_package_definition = cast(
-        dict[str, object], fixture_compiled["packageDefinition"]
-    )
+    expected_package_definition = cast(dict[str, object], fixture_compiled["packageDefinition"])
     expected_compiled_plan = cast(dict[str, object], fixture_compiled["compiledPlan"])
     expected_extension_dependencies = cast(
         list[dict[str, object]], fixture_compiled["extensionDependencies"]

@@ -58,8 +58,6 @@ function adminListItem(
     memoryId: "mem-risk-1",
     provenance: {
       agentKey: "local-instance-operator",
-      agentVersion: 1,
-      createdByType: "operator",
       runId: 41,
       workflowKey: "risk-review",
     },
@@ -75,11 +73,8 @@ function adminListItem(
 
 const detailFixture: MemoryAdminEntryRead = {
   ...adminListItem(),
-  attributes: { confidence: "high" },
-  auditLinks: null,
   content: "Risk memo content with operator visibility.",
   outcome: {
-    attributes: { source: "operator" },
     observedAt: "2026-05-20T10:05:00Z",
     summary: "Workflow-visible operator memory",
   },
@@ -146,6 +141,13 @@ describe("MemoryListPage", () => {
     useAdminMemoryEntriesMock.mockReturnValue(idleQuery(listResponse([])));
     createAdminMemoryEntryMock.mockResolvedValue(detailFixture);
     deleteAdminMemoryEntryMock.mockResolvedValue(undefined);
+  });
+
+  it("keeps the admin fixtures lean and free of removed metadata fields", () => {
+    expect(adminListItem()).not.toHaveProperty("attributes");
+    expect(adminListItem()).not.toHaveProperty("auditLinks");
+    expect(detailFixture).not.toHaveProperty("attributes");
+    expect(detailFixture).not.toHaveProperty("auditLinks");
   });
 
   it("requests the admin list immediately with default params and no old gates", () => {
@@ -465,6 +467,8 @@ describe("MemoryListPage", () => {
     expect(
       within(dialog).queryByTestId("memory-runtime-impact-copy"),
     ).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Attributes JSON")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Audit links")).not.toBeInTheDocument();
     expect(
       within(dialog).queryByText(
         "Workflow-visible memory in a matching scope",

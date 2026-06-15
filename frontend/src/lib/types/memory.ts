@@ -23,19 +23,21 @@ export interface MemorySubjectRef {
   kind: string;
   id: string;
   label?: string | null;
-  attributes?: UnknownRecord;
 }
 
-export interface MemoryProvenance {
+export interface MemoryRuntimeProvenance {
   runId: number;
   agentKey: string;
+  workflowKey?: string | null;
+  stepId?: string | null;
+  slot?: string | null;
+}
+
+export interface MemoryProvenance extends MemoryRuntimeProvenance {
   agentName?: string | null;
   agentVersion: number;
   createdByType?: "agent" | "operator";
-  workflowKey?: string | null;
   workflowVersion?: number | null;
-  stepId?: string | null;
-  slot?: string | null;
   traceId?: string | null;
 }
 
@@ -62,7 +64,6 @@ export interface MemoryApiListRequest extends MemoryApiAccessRequest {
   query?: string | null;
   subjectRefs?: MemorySubjectRef[];
   kind?: string | null;
-  tags?: string[];
   limit?: number;
   offset?: number;
   maxCharacters?: number;
@@ -76,7 +77,7 @@ export interface MemoryApiListItemRead {
   content: string;
   subjectRefs: MemorySubjectRef[];
   scope: MemoryScope;
-  provenance: MemoryProvenance;
+  provenance: MemoryRuntimeProvenance;
   createdAt: string;
   retrievalScore?: MemoryRetrievalScore | null;
 }
@@ -92,30 +93,14 @@ export interface MemoryRevisionRead {
 export interface MemoryOutcome {
   summary: string;
   observedAt: string;
-  attributes: UnknownRecord;
 }
 
 export interface MemoryReflection {
   summary: string;
   content: string;
-  attributes: UnknownRecord;
   reflectedAt: string;
   source?: string | null;
   reflection: string;
-}
-
-export interface MemoryAuditReportLink {
-  reference: string;
-  label?: string | null;
-  slug?: string | null;
-  name?: string | null;
-  url?: string | null;
-  downloadUrl?: string | null;
-}
-
-export interface MemoryAuditLinks {
-  references: MemoryAuditReportLink[];
-  report?: MemoryAuditReportLink | null;
 }
 
 export interface MemoryApiRevisionRead {
@@ -127,7 +112,6 @@ export interface MemoryApiRevisionRead {
   content: string;
   contentHash: string;
   subjectRefs: MemorySubjectRef[];
-  attributes: UnknownRecord;
   supersedesRevisionId?: string | null;
   sourceRunId: number;
   sourceAgentKey: string;
@@ -145,10 +129,9 @@ export interface MemoryApiEntryRead {
   summary: string;
   content: string;
   subjectRefs: MemorySubjectRef[];
-  attributes: UnknownRecord;
   scope: MemoryScope;
-  provenance: MemoryProvenance;
-  revision: MemoryApiRevisionRead;
+  provenance: MemoryRuntimeProvenance;
+  revision: MemoryRevisionRead;
   createdAt: string;
   updatedAt?: string | null;
 }
@@ -223,7 +206,7 @@ export interface MemoryAdminListItemRead {
   excerpt: string;
   subjectRefs: MemorySubjectRef[];
   scope: MemoryScope;
-  provenance: MemoryProvenance;
+  provenance: MemoryRuntimeProvenance;
   createdAt: string;
   updatedAt?: string | null;
   lastEventType?: string | null;
@@ -245,15 +228,13 @@ export interface MemoryAdminEntryRead {
   summary: string;
   content: string;
   subjectRefs: MemorySubjectRef[];
-  attributes: UnknownRecord;
   scope: MemoryScope;
-  provenance: MemoryProvenance;
+  provenance: MemoryRuntimeProvenance;
   revision: MemoryRevisionRead;
   createdAt: string;
   updatedAt?: string | null;
   outcome?: MemoryOutcome | null;
   reflections: MemoryReflection[];
-  auditLinks?: MemoryAuditLinks | null;
 }
 
 export interface MemoryAdminCreateRequest {
@@ -261,7 +242,6 @@ export interface MemoryAdminCreateRequest {
   summary?: string;
   content?: string;
   subjectRefs?: MemorySubjectRef[];
-  attributes?: UnknownRecord;
   scope: MemoryScope;
   provenance: MemoryProvenance;
   visibleToWorkflow?: boolean;
@@ -272,7 +252,6 @@ export interface MemoryAdminRevisionCreateRequest {
   summary: string;
   content: string;
   subjectRefs?: MemorySubjectRef[];
-  attributes?: UnknownRecord;
   provenance: MemoryProvenance;
 }
 
@@ -280,7 +259,6 @@ export interface MemoryAdminWorkflowVisibilityUpdateRequest {
   visibleToWorkflow: boolean;
   summary?: string;
   observedAt?: string;
-  attributes?: UnknownRecord;
 }
 
 export type MemoryAdminRevisionListRead = MemoryApiRevisionListRead;

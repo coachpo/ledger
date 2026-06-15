@@ -21,6 +21,7 @@ from app.schemas.memory import (
     MemoryQuery,
     MemoryRevisionAction,
     MemoryRevisionPolicy,
+    MemoryRuntimeProvenance,
     MemoryScope,
     MemoryScopeType,
     MemorySubjectRef,
@@ -36,7 +37,9 @@ MEMORY_WRITE_OPENAI_FUNCTION_NAME = "signaldeck_core_memory_write"
 MEMORY_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_core_memory_lookup"
 MEMORY_TOOL_ACCESS_DENIED_CODE = "agent_execution_access_denied"
 MEMORY_WRITE_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use signaldeck.core.memory.write."
-MEMORY_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use signaldeck.core.memory.lookup."
+MEMORY_LOOKUP_ACCESS_DENIED_MESSAGE = (
+    "Agent is not authorized to use signaldeck.core.memory.lookup."
+)
 MEMORY_WRITE_GRANT_POLICY = RuntimeToolGrantPolicy(
     tool_key=MEMORY_WRITE_TOOL_KEY,
     denied_code=MEMORY_TOOL_ACCESS_DENIED_CODE,
@@ -49,7 +52,20 @@ MEMORY_LOOKUP_GRANT_POLICY = RuntimeToolGrantPolicy(
 )
 
 _FORBIDDEN_OUTPUT_KEYS = frozenset(
-    {"auditLinks", "downloadUrl", "reportId", "reportName", "reportSlug", "url"}
+    {
+        "agentName",
+        "agentVersion",
+        "attributes",
+        "auditLinks",
+        "createdByType",
+        "downloadUrl",
+        "reportId",
+        "reportName",
+        "reportSlug",
+        "traceId",
+        "url",
+        "workflowVersion",
+    }
 )
 _FORBIDDEN_TEXT_RE = re.compile(r"https?://\S+|/reports/\S*|\bdownload(?:url)?\b", re.I)
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)]\([^)]+\)")
@@ -92,7 +108,6 @@ _MEMORY_WRITE_PARAMETERS_SCHEMA: dict[str, object] = {
         },
         "scope": _MEMORY_SCOPE_SCHEMA,
         "idempotencyKey": {"type": ["string", "null"], "maxLength": 160},
-        "supersedesRevisionId": {"type": ["string", "null"], "maxLength": 160},
     },
     "required": [
         "kind",
@@ -101,7 +116,6 @@ _MEMORY_WRITE_PARAMETERS_SCHEMA: dict[str, object] = {
         "subjectRefs",
         "scope",
         "idempotencyKey",
-        "supersedesRevisionId",
     ],
     "additionalProperties": False,
 }
@@ -115,7 +129,6 @@ _MEMORY_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
             "items": _MEMORY_SUBJECT_REF_INPUT_SCHEMA,
         },
         "kind": {"type": ["string", "null"], "maxLength": 80},
-        "tags": {"type": ["array", "null"], "items": {"type": "string"}},
         "limit": {
             "type": ["integer", "null"],
             "minimum": 1,
@@ -133,7 +146,6 @@ _MEMORY_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
         "scope",
         "subjectRefs",
         "kind",
-        "tags",
         "limit",
         "offset",
         "maxCharacters",
@@ -167,7 +179,6 @@ class RuntimeMemorySubjectRefArguments(CamelModel):
             kind=self.kind,
             id=self.id,
             label=self.label,
-            attributes={},
         )
 
 
@@ -178,9 +189,8 @@ class RuntimeMemoryWriteArguments(CamelModel):
     subject_refs: list[RuntimeMemorySubjectRefArguments] = Field(default_factory=list)
     scope: MemoryScope
     idempotency_key: str | None = Field(default=None, max_length=160)
-    supersedes_revision_id: str | None = Field(default=None, max_length=160)
 
-    @field_validator("kind", "idempotency_key", "supersedes_revision_id", mode="before")
+    @field_validator("kind", "idempotency_key", mode="before")
     @classmethod
     def normalize_optional_text(cls, value: object) -> str | None:
         return _optional_text(value)
@@ -201,7 +211,6 @@ class RuntimeMemoryLookupArguments(CamelModel):
     scope: MemoryScope | None = None
     subject_refs: list[RuntimeMemorySubjectRefArguments] = Field(default_factory=list)
     kind: str | None = Field(default=None, max_length=80)
-    tags: list[str] = Field(default_factory=list)
     limit: int = Field(default=MEMORY_LOOKUP_DEFAULT_LIMIT, ge=1, le=MEMORY_LOOKUP_MAX_LIMIT)
     offset: int = Field(default=0, ge=0)
     max_characters: int = Field(
@@ -215,7 +224,7 @@ class RuntimeMemoryLookupArguments(CamelModel):
     def normalize_optional_text(cls, value: object) -> str | None:
         return _optional_text(value)
 
-    @field_validator("subject_refs", "tags", mode="before")
+    @field_validator("subject_refs", mode="before")
     @classmethod
     def coerce_lists(cls, value: object) -> object:
         return [] if value is None else value
@@ -244,7 +253,6 @@ class RuntimeMemoryLookupArguments(CamelModel):
             scope=self._selected_scope(),
             subject_refs=[ref.to_memory_subject_ref() for ref in self.subject_refs],
             kind=self.kind,
-            tags=self.tags,
             limit=self.limit,
             offset=self.offset,
             max_characters=self.max_characters,
@@ -258,7 +266,7 @@ class RuntimeMemoryWriteResult(CamelModel):
     visible_to_workflow: bool
     revision_action: MemoryRevisionAction
     created_at: datetime
-    provenance: MemoryProvenance
+    provenance: MemoryRuntimeProvenance
     warnings: list[dict[str, object]] = Field(default_factory=list)
 
     @classmethod
@@ -269,7 +277,7 @@ class RuntimeMemoryWriteResult(CamelModel):
             visible_to_workflow=result.visible_to_workflow,
             revision_action=result.revision_action,
             created_at=result.created_at,
-            provenance=result.provenance,
+            provenance=_runtime_provenance(result.provenance),
             warnings=_model_safe_list(result.warnings),
         )
 
@@ -286,9 +294,8 @@ class RuntimeMemoryLookupItem(CamelModel):
     summary: str = Field(min_length=1)
     content: str = Field(min_length=1)
     subject_refs: list[dict[str, object]] = Field(default_factory=list)
-    attributes: dict[str, object] = Field(default_factory=dict)
     scope: MemoryScope
-    provenance: MemoryProvenance
+    provenance: MemoryRuntimeProvenance
     created_at: datetime
 
     @classmethod
@@ -300,9 +307,8 @@ class RuntimeMemoryLookupItem(CamelModel):
             summary=_model_safe_text(snippet.summary),
             content=_model_safe_text(snippet.content),
             subject_refs=[_subject_ref_payload(ref) for ref in snippet.subject_refs],
-            attributes={},
             scope=snippet.scope,
-            provenance=snippet.provenance,
+            provenance=_runtime_provenance(snippet.provenance),
             created_at=snippet.created_at,
         )
 
@@ -349,7 +355,6 @@ def parse_memory_write_arguments(arguments_json: str) -> dict[str, object]:
             "subjectRefs",
             "scope",
             "idempotencyKey",
-            "supersedesRevisionId",
         },
         function_name=MEMORY_WRITE_OPENAI_FUNCTION_NAME,
     )
@@ -379,12 +384,9 @@ def execute_memory_write(
         summary=payload.summary,
         content=payload.content,
         subject_refs=[ref.to_memory_subject_ref() for ref in payload.subject_refs],
-        attributes={},
         scope=_selected_write_scope(payload, lookup_context),
         provenance=provenance,
-        revision=MemoryRevisionPolicy(
-            supersedes_revision_id=payload.supersedes_revision_id,
-        ),
+        revision=MemoryRevisionPolicy(),
         idempotency_key=payload.idempotency_key,
     )
     with context.session_factory() as session:
@@ -417,7 +419,6 @@ def parse_memory_lookup_arguments(arguments_json: str) -> dict[str, object]:
             "scope",
             "subjectRefs",
             "kind",
-            "tags",
             "limit",
             "offset",
             "maxCharacters",
@@ -647,14 +648,18 @@ def _subject_ref_payload(ref: MemorySubjectRef) -> dict[str, object]:
         dict[str, object],
         ref.model_dump(mode="json", by_alias=True, exclude_none=True),
     )
-    attributes = payload.get("attributes")
-    if isinstance(attributes, Mapping):
-        safe_attributes = _model_safe_mapping(attributes)
-        if safe_attributes:
-            payload["attributes"] = safe_attributes
-        else:
-            _ = payload.pop("attributes", None)
+    _ = payload.pop("attributes", None)
     return _model_safe_mapping(payload)
+
+
+def _runtime_provenance(provenance: MemoryRuntimeProvenance) -> MemoryRuntimeProvenance:
+    return MemoryRuntimeProvenance(
+        run_id=provenance.run_id,
+        agent_key=provenance.agent_key,
+        workflow_key=provenance.workflow_key,
+        step_id=provenance.step_id,
+        slot=provenance.slot,
+    )
 
 
 def _model_safe_mapping(value: Mapping[Any, Any]) -> dict[str, object]:
@@ -704,15 +709,16 @@ _MEMORY_WRITE_DESCRIPTION = "Write a bounded, platform-core memory entry for thi
 _MEMORY_WRITE_GUIDANCE = (
     "When a durable, platform-neutral memory should be persisted, call "
     "signaldeck_core_memory_write with kind, summary, content, optional subjectRefs, "
-    "optional private scope, and idempotencyKey. Do not include report ids, "
-    "report slugs, URLs, downloads, trusted run/agent fields, or free-form metadata maps."
+    "private scope, and idempotencyKey. Do not include report ids, report slugs, "
+    "URLs, downloads, supersession ids, trusted run/agent fields, or free-form metadata maps."
 )
 _MEMORY_LOOKUP_DESCRIPTION = (
     "Look up bounded, scoped platform-core memory snippets for the current run context."
 )
 _MEMORY_LOOKUP_GUIDANCE = (
     "When historical SignalDeck memory is needed, call signaldeck_core_memory_lookup "
-    "with explicit private scope, subjectRefs, or kind. If no selector "
+    "with explicit private scope, subjectRefs, or kind. Do not include tags or free-form "
+    "metadata filters. If no selector "
     "is provided, the server restricts lookup to the current run, package, "
     "workflow, and agent context. Keep limit at or below 20 and maxCharacters "
     "at or below 8000."
