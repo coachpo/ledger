@@ -1,43 +1,35 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-06-13
-**Commit:** d916433
+**Generated:** 2026-06-15
+**Commit:** 389cb17
 **Branch:** main
 
 ## OVERVIEW
+SignalDeck is a trusted single-user, dual-stack universal agents workflow/pipeline platform with a FastAPI backend and React/Vite frontend. The repo has no external users yet, so prefer clean architecture and current best practices over compatibility shims or speculative legacy paths.
 
-The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
+Executable agent workflows enter and run only as Workflow Packages. Standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, runtime-v2, auth/RBAC, and multi-tenant account management are removed or non-goal surfaces unless explicitly re-scoped.
 
-SignalDeck Core ships with statically resident extensions: the codebase contains the extension registrars, routes, tools, and hooks, and runtime state decides which surfaces are enabled. This is a Core-plus-driver model, not a marketplace or hot-loading plugin system.
+Core ships statically resident extensions: `signaldeck.finance` supplies first-party Finance Workspace routes/tools/providers, while default-enabled `signaldeck.digital_oracle` is tool-only. Public runtime tool keys are canonical `signaldeck.<owner>.<tool_collection>.<tool>` strings, and OpenAI function names are the mechanical underscore mapping.
 
-Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
-
-SignalDeck is a dual-stack universal agents workflow/pipeline platform with a FastAPI backend and a React/Vite frontend tracked directly in this repository. Executable agent workflows are accepted only as Workflow Packages. The statically resident `signaldeck.finance` Finance Workspace extension supplies first-party portfolio data, reports, market data, trading tools, and finance-owned runtime tools that packages can use. The statically resident `signaldeck.digital_oracle` extension is default enabled and tool-only in this upgrade. Public runtime tool keys are canonical `signaldeck.<owner>.<tool_collection>.<tool>` strings only; OpenAI function names are the mechanical underscore mapping from those canonical keys.
-
-Future upgrade work must keep the platform-core versus extension-owned boundary explicit. Decide intentionally whether a capability belongs in generic platform contracts or in statically resident extension ownership, then keep routes, tools, registries, docs, and tests aligned to that choice.
-
-Trusted single-user scope: SignalDeck is a trusted single-user app. Auth, authorization, RBAC, login/session flows, user/account lifecycle, organizations, and multi-tenant account management are non-goals unless explicitly re-scoped.
+Keep platform-core versus extension-owned boundaries explicit. Decide intentionally whether a capability belongs in generic platform contracts or extension ownership, then align routes, tools, registries, docs, and tests.
 
 ## Compatibility, Upgrades, and Removal Policy
-
 - This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
 - During upgrade work, favor the best current implementation and clean internal boundaries. Preserve legacy shapes, migration bridges, fallback behavior, or compatibility shims only when the task explicitly requests them.
 - For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
 
 ## CHILD DOCS
-
 - `backend/AGENTS.md`, `backend/app/*/AGENTS.md`, `backend/tests/AGENTS.md` — backend layer, runtime, persistence, schema, worker, and test rules
 - `backend/app/agents/{tool_catalog,runtime_tools,mcp}/AGENTS.md` — server tool metadata, native runtime dispatch, and MCP safety boundaries
 - `backend/app/extensions/signaldeck_finance/AGENTS.md`, `backend/app/extensions/signaldeck_digital_oracle/AGENTS.md` — first-party extension ownership
 - `.github/workflows/AGENTS.md` — CI gates, container publishing, and cleanup workflow rules
 - `docs/AGENTS.md` — live docs ownership, obsolete-content rules, and platform/extension documentation boundary
-- `frontend/AGENTS.md`, `frontend/e2e/AGENTS.md` — frontend shell, browser tests, and startup conventions
+- `frontend/AGENTS.md`, `frontend/DESIGN_SYSTEM.md`, `frontend/e2e/AGENTS.md` — frontend shell, design system, browser tests, and startup conventions
 - `frontend/src/extensions/AGENTS.md`, `frontend/src/hooks/AGENTS.md`, `frontend/src/lib/**/AGENTS.md` — extension runtime, query hooks, API/type/platform-authoring contracts
 - `frontend/src/components/**/AGENTS.md`, `frontend/src/pages/AGENTS.md` — reusable UI, feature UI, form/dialog helpers, and routed page-family rules
 - `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/memory/AGENTS.md`, `frontend/src/pages/scheduled-tasks/AGENTS.md`, `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md`, `frontend/src/pages/runs/detail-sections/AGENTS.md` — deeper route-family hotspots
 
 ## STRUCTURE
-
 ```text
 signaldeck/
 ├── backend/              # FastAPI app, SQLAlchemy models, services, pytest suite
@@ -62,7 +54,7 @@ signaldeck/
 | Backend runtime tools, MCP, schedules, memory, and traces | `backend/app/agents/AGENTS.md`, `backend/app/agents/{tool_catalog,runtime_tools,mcp}/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py`, `backend/app/services/workflow_package_schedule_service.py`, `backend/app/workers/run_scheduler.py`, `backend/app/api/memory.py`, `backend/app/core/telemetry.py` | server-declared tools, native runtime tools, due schedule materialization, MCP snapshots/dispatch, platform-core memory API, Logfire trace ids/spans, and memory writes |
 | Backend preserved v1 flow | `backend/app/extensions/signaldeck_finance/api_routers.py`, `backend/app/api/portfolios.py`, `backend/app/api/balances.py`, `backend/app/api/positions.py`, `backend/app/api/trading_operations.py`, `backend/app/api/market_data.py`, `backend/app/api/templates.py`, `backend/app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
 | Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/routes.metadata.ts`, `frontend/src/extensions/runtime-helpers.ts`, `frontend/src/components/layout.tsx` | query client, router provider, metadata-driven shell/nav rendering, extension route assembly, and theme toggle |
-| Frontend shared route shells | `frontend/src/components/shared/AGENTS.md`, `frontend/src/hooks/AGENTS.md` | inventory/workspace/split-inspector shells plus reusable view/filter/selection/inspector state hooks for shared route chrome |
+| Frontend shared route shells and design system | `frontend/DESIGN_SYSTEM.md`, `frontend/src/components/shared/AGENTS.md`, `frontend/src/hooks/AGENTS.md` | design tokens, inventory/workspace/split-inspector shells, management-list actions/selection, and reusable view/filter/selection/inspector state hooks |
 | Frontend extension runtime | `frontend/src/extensions/AGENTS.md`, `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/extensions/runtime.tsx`, `frontend/src/extensions/runtime-helpers.ts`, `frontend/src/hooks/use-extensions.ts` | frontend route/nav/tool filtering plus statically resident extension state UI |
 | Frontend agent-platform UI | `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/scheduled-tasks/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md`, `frontend/src/pages/memory/AGENTS.md` | Workflow Packages, Scheduled Tasks, Model Connections, Runs, and Memory; Tools appear as package-authoring metadata, not a standalone browser route |
 | Frontend preserved product UI | `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md` | preserved portfolio, template, and report routes |
