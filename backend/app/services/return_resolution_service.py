@@ -24,6 +24,7 @@ class ReturnResolutionResult:
     review_recorded: bool
     memory: MemoryEntryRead
     reason: str | None = None
+    outcome_summary: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,8 +106,24 @@ class ReturnResolutionService:
         else:
             updated_memory = self.memory_service.record_review_event(
                 memory_id,
-                result_snapshot={"visibleToWorkflow": False, "reason": reason},
-                status_snapshot={"visibleToWorkflow": False, "reason": reason},
+                filters={
+                    "scope": memory.scope.model_dump(mode="json", by_alias=True),
+                    "subjectRefs": [
+                        subject_ref.model_dump(mode="json", by_alias=True, exclude_none=True)
+                        for subject_ref in memory.subject_refs
+                    ],
+                    "functionName": "signaldeck.finance.return_resolution.resolve_memory",
+                    "source": "scheduler",
+                    "actor": "signaldeck.finance.return_resolution",
+                    "channel": "memory_follow_up",
+                },
+                result_snapshot={
+                    "memoryId": memory.memory_id,
+                    "revisionId": memory.revision_id,
+                    "reviewAction": "resolved",
+                    "outcomeSummary": outcome.summary,
+                },
+                status_snapshot={"visibleToWorkflow": False},
                 commit=commit,
             )
         return ReturnResolutionResult(
@@ -114,6 +131,7 @@ class ReturnResolutionService:
             review_recorded=True,
             memory=updated_memory,
             reason=reason,
+            outcome_summary=outcome.summary,
         )
 
     def _build_resolution(
@@ -152,17 +170,12 @@ class ReturnResolutionService:
 
         benchmark_baseline = benchmark_return if benchmark_return is not None else Decimal("0")
         outcome = MemoryOutcome(
-            summary="Finance return resolved.",
+            summary=self._resolved_summary(
+                raw_return=raw_return,
+                alpha=raw_return - benchmark_baseline,
+                benchmark_return=benchmark_return,
+            ),
             observed_at=self._resolved_at(end_boundary),
-            attributes={
-                "rawReturn": decimal_to_string(raw_return),
-                "alpha": decimal_to_string(raw_return - benchmark_baseline),
-                **(
-                    {"benchmarkReturn": decimal_to_string(benchmark_return)}
-                    if benchmark_return is not None
-                    else {}
-                ),
-            },
         )
         return outcome, True, None
 
@@ -261,6 +274,21 @@ class ReturnResolutionService:
             summary="Finance return kept hidden.",
             observed_at=ReturnResolutionService._resolved_at(end_boundary),
         )
+
+    @staticmethod
+    def _resolved_summary(
+        *,
+        raw_return: Decimal,
+        alpha: Decimal,
+        benchmark_return: Decimal | None,
+    ) -> str:
+        parts = [
+            f"Finance return resolved: raw return {decimal_to_string(raw_return)}",
+            f"alpha {decimal_to_string(alpha)}",
+        ]
+        if benchmark_return is not None:
+            parts.append(f"benchmark return {decimal_to_string(benchmark_return)}")
+        return ", ".join(parts) + "."
 
     @staticmethod
     def _normalize_benchmark_symbol(symbol: str | None) -> str | None:
