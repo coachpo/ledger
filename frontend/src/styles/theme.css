@@ -63,6 +63,14 @@
   --ui-breakpoint-md: 48rem;
   --ui-breakpoint-lg: 64rem;
   --ui-breakpoint-xl: 80rem;
+  --ui-layout-compact: 56rem;
+  --ui-layout-readable: 64rem;
+  --ui-layout-wide: 100%;
+  --ui-layout-full: 100%;
+  --ui-border-width: 1px;
+  --ui-state-hover-opacity: 0.5;
+  --ui-state-muted-surface-opacity: 0.3;
+  --ui-state-selected-surface-opacity: 1;
   --ui-size-control-sm: 2rem;
   --ui-size-control-md: 2.25rem;
   --ui-size-control-lg: 2.75rem;

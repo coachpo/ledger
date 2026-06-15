@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useCreatePosition, useDeletePosition, useUpdatePosition } from "@/hooks/use-positions";
@@ -17,15 +17,11 @@ import { ConsoleSection } from "@/components/shared/console-section";
 import { DataTable } from "@/components/shared/data-table";
 import { DataTableColumnHeader } from "@/components/shared/data-table-column-header";
 import { EvidenceCluster } from "@/components/shared/evidence-cluster";
+import { ResourceActionsMenu } from "@/components/shared/resource-actions-menu";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
-import { ConfirmDeleteDialog } from "./confirm-delete-dialog";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { PositionFormDialog } from "./position-form-dialog";
 import { RecordTradingOperationDialog } from "./record-trading-operation-dialog";
 
@@ -134,13 +130,10 @@ export function PortfolioPositionsSection({
       {
         cell: ({ row }) => (
           <div className="flex">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button aria-label={`Open actions for ${row.original.symbol}`} size="icon" variant="ghost">
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
+            <ResourceActionsMenu
+              align="start"
+              ariaLabel={`Open actions for ${row.original.symbol}`}
+            >
                 <DropdownMenuItem onSelect={() => setOperationSymbol(row.original.symbol)}>
                   <Plus className="size-4" />
                   Record trading operation
@@ -158,8 +151,7 @@ export function PortfolioPositionsSection({
                   <Trash2 className="size-4" />
                   Delete position
                 </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            </ResourceActionsMenu>
           </div>
         ),
         enableSorting: false,

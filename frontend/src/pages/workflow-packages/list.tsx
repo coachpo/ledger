@@ -15,16 +15,17 @@ import {
   useDeleteWorkflowPackages,
   useWorkflowPackages,
 } from "@/hooks/use-workflow-packages";
+import { useResourceSelectionState } from "@/hooks/use-resource-selection-state";
 import { formatDateTime } from "@/lib/format";
 import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
-import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
-import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import { ResourceBulkActionsBar } from "@/components/shared/resource-bulk-actions-bar";
+import { ResourceSelectionCheckbox } from "@/components/shared/resource-selection-checkbox";
 import { ResourceStatusBadge } from "@/components/shared/resource-status-strip";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -41,6 +42,10 @@ function formatNullableHash(value: string | null): string {
 
 function hasRecordedHash(value: string | null): boolean {
   return Boolean(value?.trim());
+}
+
+function getWorkflowPackageId(workflowPackage: WorkflowPackageRead) {
+  return workflowPackage.id;
 }
 
 function getPackageReadiness(workflowPackage: WorkflowPackageRead) {
@@ -227,17 +232,12 @@ function WorkflowPackagesTable({
         <TableHeader>
           <TableRow className="bg-muted/30 hover:bg-muted/30">
             <TableHead className="w-9">
-              <Checkbox
-                aria-label="Select all shown workflow packages"
-                checked={
-                  allFilteredSelected
-                    ? true
-                    : someFilteredSelected
-                      ? "indeterminate"
-                      : false
-                }
-                onCheckedChange={(checked) =>
-                  onSelect(packages, checked === true)
+              <ResourceSelectionCheckbox
+                ariaLabel="Select all shown workflow packages"
+                indeterminate={someFilteredSelected}
+                selected={allFilteredSelected}
+                onSelectedChange={(selected) =>
+                  onSelect(packages, selected)
                 }
               />
             </TableHead>
@@ -262,11 +262,11 @@ function WorkflowPackagesTable({
                 data-testid={`workflow-packages-row-${workflowPackage.key}`}
               >
                 <TableCell>
-                  <Checkbox
-                    aria-label={`Select workflow package ${workflowPackage.name}`}
-                    checked={isSelected}
-                    onCheckedChange={(checked) =>
-                      onSelect([workflowPackage], checked === true)
+                  <ResourceSelectionCheckbox
+                    ariaLabel={`Select workflow package ${workflowPackage.name}`}
+                    selected={isSelected}
+                    onSelectedChange={(selected) =>
+                      onSelect([workflowPackage], selected)
                     }
                   />
                 </TableCell>
@@ -344,46 +344,6 @@ function WorkflowPackagesTable({
   );
 }
 
-function WorkflowPackagesBulkActions({
-  filteredCount,
-  selectedCount,
-  isPending,
-  onClear,
-  onDeleteSelected,
-}: {
-  filteredCount: number;
-  selectedCount: number;
-  isPending: boolean;
-  onClear: () => void;
-  onDeleteSelected: () => void;
-}) {
-  if (selectedCount === 0) {
-    return null;
-  }
-
-  return (
-    <ResourceFilterBar
-      actions={
-        <>
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={isPending}
-            onClick={onDeleteSelected}
-          >
-            <Trash2 className="size-3.5" /> Delete selected
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onClear}>
-            Clear
-          </Button>
-        </>
-      }
-      summary={`${selectedCount} of ${filteredCount} workflow packages selected`}
-      testId="workflow-packages-bulk-actions"
-    />
-  );
-}
-
 export function WorkflowPackagesListPage() {
   const deletePackage = useDeleteWorkflowPackage();
   const deletePackages = useDeleteWorkflowPackages();
@@ -395,52 +355,24 @@ export function WorkflowPackagesListPage() {
   const [deleting, setDeleting] = useState<WorkflowPackageRead | null>(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [search, setSearch] = useState("");
-  const [selectedPackageIds, setSelectedPackageIds] = useState<
-    Set<WorkflowPackageRead["id"]>
-  >(new Set());
   const filteredPackages = useMemo(
     () => filterPackages(packages, search),
     [packages, search],
   );
-  const selectedPackages = useMemo(
-    () =>
-      filteredPackages.filter((workflowPackage) =>
-        selectedPackageIds.has(workflowPackage.id),
-      ),
-    [filteredPackages, selectedPackageIds],
-  );
-  const selectedCount = selectedPackages.length;
-  const allFilteredSelected =
-    filteredPackages.length > 0 &&
-    filteredPackages.every((workflowPackage) =>
-      selectedPackageIds.has(workflowPackage.id),
-    );
-  const someFilteredSelected = filteredPackages.some((workflowPackage) =>
-    selectedPackageIds.has(workflowPackage.id),
-  );
+  const packageSelection = useResourceSelectionState({
+    getId: getWorkflowPackageId,
+    items: filteredPackages,
+  });
+  const selectedPackages = packageSelection.selectedItems;
+  const selectedCount = packageSelection.selectedCount;
+  const allFilteredSelected = packageSelection.allSelected;
+  const someFilteredSelected = packageSelection.someSelected;
 
   const deletePending = deletePackage.isPending || deletePackages.isPending;
   const showTable =
     !packagesQuery.isPending &&
     !packagesQuery.isError &&
     filteredPackages.length > 0;
-
-  const setPackagesSelected = (
-    packagesToUpdate: readonly WorkflowPackageRead[],
-    selected: boolean,
-  ) => {
-    setSelectedPackageIds((previous) => {
-      const next = new Set(previous);
-      packagesToUpdate.forEach((workflowPackage) => {
-        if (selected) {
-          next.add(workflowPackage.id);
-        } else {
-          next.delete(workflowPackage.id);
-        }
-      });
-      return next;
-    });
-  };
 
   const deleteSelectedPackage = async () => {
     if (!deleting) {
@@ -450,11 +382,7 @@ export function WorkflowPackagesListPage() {
     try {
       await deletePackage.mutateAsync(deleting.id);
       toast.success("Workflow package permanently deleted");
-      setSelectedPackageIds((previous) => {
-        const next = new Set(previous);
-        next.delete(deleting.id);
-        return next;
-      });
+      packageSelection.setIdsSelected([deleting.id], false);
       setDeleting(null);
     } catch (error) {
       toast.error(
@@ -485,7 +413,7 @@ export function WorkflowPackagesListPage() {
         toast.success(
           `${count} ${count === 1 ? "workflow package" : "workflow packages"} deleted`,
         );
-        setSelectedPackageIds(new Set());
+        packageSelection.clearSelection();
         setIsBulkDeleting(false);
       },
     });
@@ -523,17 +451,19 @@ export function WorkflowPackagesListPage() {
           allFilteredSelected={allFilteredSelected}
           deletePending={deletePending}
           packages={filteredPackages}
-          selectedPackageIds={selectedPackageIds}
+          selectedPackageIds={packageSelection.selectedIds}
           someFilteredSelected={someFilteredSelected}
           onDelete={setDeleting}
-          onSelect={setPackagesSelected}
+          onSelect={packageSelection.setItemsSelected}
         />
       ) : null}
-      <WorkflowPackagesBulkActions
-        filteredCount={filteredPackages.length}
+      <ResourceBulkActionsBar
+        deletePending={deletePackages.isPending}
+        resourceLabel="workflow packages"
         selectedCount={selectedCount}
-        isPending={deletePackages.isPending}
-        onClear={() => setSelectedPackageIds(new Set())}
+        testId="workflow-packages-bulk-actions"
+        totalCount={filteredPackages.length}
+        onClear={packageSelection.clearSelection}
         onDeleteSelected={() => setIsBulkDeleting(true)}
       />
       <ConfirmDeleteDialog

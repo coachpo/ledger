@@ -8,15 +8,16 @@ import {
   useDeleteModelConnections,
   useModelConnections,
 } from "@/hooks/use-model-connections";
-import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { useResourceSelectionState } from "@/hooks/use-resource-selection-state";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
-import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import { ResourceBulkActionsBar } from "@/components/shared/resource-bulk-actions-bar";
+import { ResourceSelectionCheckbox } from "@/components/shared/resource-selection-checkbox";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/components/ui/utils";
 import {
   Table,
@@ -47,6 +48,10 @@ type ModelConnectionSelectionHandlers = {
     selected: boolean,
   ) => void;
 };
+
+function getModelConnectionId(connection: ModelConnectionListItemRead) {
+  return connection.id;
+}
 
 function sortConnections(items: readonly ModelConnectionListItemRead[]) {
   return [...items].sort((left, right) => {
@@ -368,17 +373,12 @@ function ModelConnectionsTable({
         <TableHeader>
           <TableRow className="bg-muted/30 hover:bg-muted/30">
             <TableHead className="w-9 px-2 py-1.5">
-              <Checkbox
-                aria-label="Select all shown model connections"
-                checked={
-                  allFilteredSelected
-                    ? true
-                    : someFilteredSelected
-                      ? "indeterminate"
-                      : false
-                }
-                onCheckedChange={(checked) =>
-                  onSelect(connections, checked === true)
+              <ResourceSelectionCheckbox
+                ariaLabel="Select all shown model connections"
+                indeterminate={someFilteredSelected}
+                selected={allFilteredSelected}
+                onSelectedChange={(selected) =>
+                  onSelect(connections, selected)
                 }
               />
             </TableHead>
@@ -402,11 +402,11 @@ function ModelConnectionsTable({
                   data-testid={`model-connections-row-${connection.id}`}
                 >
                   <TableCell className="px-2 py-1.5">
-                    <Checkbox
-                      aria-label={`Select model connection ${connection.name}`}
-                      checked={isSelected}
-                      onCheckedChange={(checked) =>
-                        onSelect([connection], checked === true)
+                    <ResourceSelectionCheckbox
+                      ariaLabel={`Select model connection ${connection.name}`}
+                      selected={isSelected}
+                      onSelectedChange={(selected) =>
+                        onSelect([connection], selected)
                       }
                     />
                   </TableCell>
@@ -493,46 +493,6 @@ function ModelConnectionsTable({
   );
 }
 
-function ModelConnectionsBulkActions({
-  filteredCount,
-  isPending,
-  selectedCount,
-  onClear,
-  onDeleteSelected,
-}: {
-  filteredCount: number;
-  isPending: boolean;
-  selectedCount: number;
-  onClear: () => void;
-  onDeleteSelected: () => void;
-}) {
-  if (selectedCount === 0) {
-    return null;
-  }
-
-  return (
-    <ResourceFilterBar
-      actions={
-        <>
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={isPending}
-            onClick={onDeleteSelected}
-          >
-            <Trash2 className="size-3.5" /> Delete selected
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onClear}>
-            Clear
-          </Button>
-        </>
-      }
-      summary={`${selectedCount} of ${filteredCount} model connections selected`}
-      testId="model-connections-bulk-actions"
-    />
-  );
-}
-
 export function ModelConnectionsListPage() {
   const connectionsQuery = useModelConnections();
   const deleteMutation = useDeleteModelConnection();
@@ -542,9 +502,6 @@ export function ModelConnectionsListPage() {
     [connectionsQuery.data?.items],
   );
   const [search, setSearch] = useState("");
-  const [selectedConnectionIds, setSelectedConnectionIds] = useState<
-    Set<ModelConnectionListItemRead["id"]>
-  >(new Set());
   const [deleting, setDeleting] = useState<ModelConnectionListItemRead | null>(
     null,
   );
@@ -553,22 +510,14 @@ export function ModelConnectionsListPage() {
     [connections, search],
   );
   const activeSearch = search.trim();
-  const selectedConnections = useMemo(
-    () =>
-      filteredConnections.filter((connection) =>
-        selectedConnectionIds.has(connection.id),
-      ),
-    [filteredConnections, selectedConnectionIds],
-  );
-  const selectedCount = selectedConnections.length;
-  const allFilteredSelected =
-    filteredConnections.length > 0 &&
-    filteredConnections.every((connection) =>
-      selectedConnectionIds.has(connection.id),
-    );
-  const someFilteredSelected = filteredConnections.some((connection) =>
-    selectedConnectionIds.has(connection.id),
-  );
+  const connectionSelection = useResourceSelectionState({
+    getId: getModelConnectionId,
+    items: filteredConnections,
+  });
+  const selectedConnections = connectionSelection.selectedItems;
+  const selectedCount = connectionSelection.selectedCount;
+  const allFilteredSelected = connectionSelection.allSelected;
+  const someFilteredSelected = connectionSelection.someSelected;
 
   const deletePending =
     deleteMutation.isPending || deleteConnectionsMutation.isPending;
@@ -576,23 +525,6 @@ export function ModelConnectionsListPage() {
     !connectionsQuery.isPending &&
     !connectionsQuery.isError &&
     filteredConnections.length > 0;
-
-  const setConnectionsSelected = (
-    connectionsToUpdate: readonly ModelConnectionListItemRead[],
-    selected: boolean,
-  ) => {
-    setSelectedConnectionIds((previous) => {
-      const next = new Set(previous);
-      connectionsToUpdate.forEach((connection) => {
-        if (selected) {
-          next.add(connection.id);
-        } else {
-          next.delete(connection.id);
-        }
-      });
-      return next;
-    });
-  };
 
   const handleDelete = async () => {
     if (!deleting) {
@@ -604,11 +536,7 @@ export function ModelConnectionsListPage() {
     try {
       await deleteMutation.mutateAsync(modelConnectionId);
       toast.success("Model connection deleted");
-      setSelectedConnectionIds((previous) => {
-        const next = new Set(previous);
-        next.delete(modelConnectionId);
-        return next;
-      });
+      connectionSelection.setIdsSelected([modelConnectionId], false);
       setDeleting(null);
     } catch (error) {
       toast.error(
@@ -639,7 +567,7 @@ export function ModelConnectionsListPage() {
         toast.success(
           `${count} ${count === 1 ? "model connection" : "model connections"} deleted`,
         );
-        setSelectedConnectionIds(new Set());
+        connectionSelection.clearSelection();
       },
     });
   };
@@ -694,17 +622,19 @@ export function ModelConnectionsListPage() {
           allFilteredSelected={allFilteredSelected}
           connections={filteredConnections}
           deletePending={deletePending}
-          selectedConnectionIds={selectedConnectionIds}
+          selectedConnectionIds={connectionSelection.selectedIds}
           someFilteredSelected={someFilteredSelected}
           onDelete={setDeleting}
-          onSelect={setConnectionsSelected}
+          onSelect={connectionSelection.setItemsSelected}
         />
       ) : null}
-      <ModelConnectionsBulkActions
-        filteredCount={filteredConnections.length}
-        isPending={deleteConnectionsMutation.isPending}
+      <ResourceBulkActionsBar
+        deletePending={deleteConnectionsMutation.isPending}
+        resourceLabel="model connections"
         selectedCount={selectedCount}
-        onClear={() => setSelectedConnectionIds(new Set())}
+        testId="model-connections-bulk-actions"
+        totalCount={filteredConnections.length}
+        onClear={connectionSelection.clearSelection}
         onDeleteSelected={handleDeleteSelected}
       />
       <ConfirmDeleteDialog

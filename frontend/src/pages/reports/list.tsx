@@ -4,7 +4,6 @@ import {
   ChevronRight,
   Download,
   Eye,
-  MoreHorizontal,
   Plus,
   Trash2,
   Upload,
@@ -27,18 +26,14 @@ import type { TextTemplateRead } from "@/lib/types/text-template";
 import { ReportUploadDialog } from "@/components/forms/report-upload-dialog";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
-import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import { ResourceActionsMenu } from "@/components/shared/resource-actions-menu";
+import { ResourceBulkActionsBar } from "@/components/shared/resource-bulk-actions-bar";
+import { ResourceSelectionCheckbox } from "@/components/shared/resource-selection-checkbox";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { GenerateReportDialog } from "@/components/forms/generate-report-dialog";
 import { Label } from "@/components/ui/label";
 import {
@@ -72,7 +67,7 @@ import {
   sortReports,
 } from "@/lib/report-grouping";
 
-import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 
 type TemplateListData = TextTemplateRead[] | { items?: TextTemplateRead[] };
 
@@ -452,19 +447,14 @@ export function ReportListPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-9">
-                            <Checkbox
-                              aria-label={`Select reports in ${groupLabel}`}
-                              checked={
-                                allGroupSelected
-                                  ? true
-                                  : someGroupSelected
-                                    ? "indeterminate"
-                                    : false
-                              }
-                              onCheckedChange={(checked) =>
+                            <ResourceSelectionCheckbox
+                              ariaLabel={`Select reports in ${groupLabel}`}
+                              indeterminate={someGroupSelected}
+                              selected={allGroupSelected}
+                              onSelectedChange={(selected) =>
                                 setReportsSelected(
                                   sortedReports,
-                                  checked === true,
+                                  selected,
                                 )
                               }
                             />
@@ -497,13 +487,13 @@ export function ReportListPage() {
                               data-state={isSelected ? "selected" : undefined}
                             >
                               <TableCell>
-                                <Checkbox
-                                  aria-label={`Select report ${report.name}`}
-                                  checked={isSelected}
-                                  onCheckedChange={(checked) =>
+                                <ResourceSelectionCheckbox
+                                  ariaLabel={`Select report ${report.name}`}
+                                  selected={isSelected}
+                                  onSelectedChange={(selected) =>
                                     setReportsSelected(
                                       [report],
-                                      checked === true,
+                                      selected,
                                     )
                                   }
                                 />
@@ -531,36 +521,26 @@ export function ReportListPage() {
                                       View
                                     </Link>
                                   </Button>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button
-                                        aria-label={`Open actions for ${report.name}`}
-                                        size="icon"
-                                        type="button"
-                                        variant="ghost"
+                                  <ResourceActionsMenu
+                                    ariaLabel={`Open actions for ${report.name}`}
+                                  >
+                                    <DropdownMenuItem asChild>
+                                      <a
+                                        href={downloadReportUrl(report.slug)}
+                                        download
                                       >
-                                        <MoreHorizontal className="size-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuItem asChild>
-                                        <a
-                                          href={downloadReportUrl(report.slug)}
-                                          download
-                                        >
-                                          <Download className="size-3.5" />
-                                          Download
-                                        </a>
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        onSelect={() => setDeleting(report)}
-                                        variant="destructive"
-                                      >
-                                        <Trash2 className="size-3.5" />
-                                        Delete
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
+                                        <Download data-icon="inline-start" />
+                                        Download
+                                      </a>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onSelect={() => setDeleting(report)}
+                                      variant="destructive"
+                                    >
+                                      <Trash2 data-icon="inline-start" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </ResourceActionsMenu>
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -575,31 +555,15 @@ export function ReportListPage() {
         })}
       </div>
 
-      {selectedCount > 0 ? (
-        <ResourceFilterBar
-          actions={
-            <>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={deleteReportsMutation.isPending}
-                onClick={handleDeleteSelected}
-              >
-                <Trash2 className="size-3.5" /> Delete selected
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setSelectedSlugs(new Set())}
-              >
-                Clear
-              </Button>
-            </>
-          }
-          summary={`${selectedCount} of ${filtered.length} reports selected`}
-          testId="reports-bulk-actions"
-        />
-      ) : null}
+      <ResourceBulkActionsBar
+        deletePending={deleteReportsMutation.isPending}
+        resourceLabel="reports"
+        selectedCount={selectedCount}
+        testId="reports-bulk-actions"
+        totalCount={filtered.length}
+        onClear={() => setSelectedSlugs(new Set())}
+        onDeleteSelected={handleDeleteSelected}
+      />
 
       <ConfirmDeleteDialog
         open={Boolean(deleting)}

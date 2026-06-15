@@ -4,13 +4,13 @@ import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import { PortfolioFormDialog } from "@/components/forms/portfolio-form-dialog";
-import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
-import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import { ResourceBulkActionsBar } from "@/components/shared/resource-bulk-actions-bar";
+import { ResourceSelectionCheckbox } from "@/components/shared/resource-selection-checkbox";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -228,17 +228,12 @@ export function PortfolioListPage() {
               <TableHeader>
                 <TableRow className="bg-muted/30 hover:bg-muted/30">
                   <TableHead className="w-9">
-                    <Checkbox
-                      aria-label="Select all shown portfolios"
-                      checked={
-                        allFilteredSelected
-                          ? true
-                          : someFilteredSelected
-                            ? "indeterminate"
-                            : false
-                      }
-                      onCheckedChange={(checked) =>
-                        setItemsSelected(filteredPortfolios, checked === true)
+                    <ResourceSelectionCheckbox
+                      ariaLabel="Select all shown portfolios"
+                      indeterminate={someFilteredSelected}
+                      selected={allFilteredSelected}
+                      onSelectedChange={(selected) =>
+                        setItemsSelected(filteredPortfolios, selected)
                       }
                     />
                   </TableHead>
@@ -258,11 +253,11 @@ export function PortfolioListPage() {
                       data-state={isPortfolioSelected ? "selected" : undefined}
                     >
                       <TableCell>
-                        <Checkbox
-                          aria-label={`Select portfolio ${portfolio.name}`}
-                          checked={isPortfolioSelected}
-                          onCheckedChange={(checked) =>
-                            setItemsSelected([portfolio], checked === true)
+                        <ResourceSelectionCheckbox
+                          ariaLabel={`Select portfolio ${portfolio.name}`}
+                          selected={isPortfolioSelected}
+                          onSelectedChange={(selected) =>
+                            setItemsSelected([portfolio], selected)
                           }
                         />
                       </TableCell>
@@ -327,33 +322,15 @@ export function PortfolioListPage() {
         ) : null}
       </section>
 
-      {selectedCount > 0 ? (
-        <ResourceFilterBar
-          actions={
-            <>
-              <Button
-                size="sm"
-                type="button"
-                variant="destructive"
-                disabled={deletePortfoliosMutation.isPending}
-                onClick={handleDeleteSelected}
-              >
-                <Trash2 data-icon="inline-start" /> Delete selected
-              </Button>
-              <Button
-                size="sm"
-                type="button"
-                variant="ghost"
-                onClick={clearSelection}
-              >
-                Clear
-              </Button>
-            </>
-          }
-          summary={`${selectedCount} of ${filteredPortfolios.length} portfolios selected`}
-          testId="portfolios-bulk-actions"
-        />
-      ) : null}
+      <ResourceBulkActionsBar
+        deletePending={deletePortfoliosMutation.isPending}
+        resourceLabel="portfolios"
+        selectedCount={selectedCount}
+        testId="portfolios-bulk-actions"
+        totalCount={filteredPortfolios.length}
+        onClear={clearSelection}
+        onDeleteSelected={handleDeleteSelected}
+      />
 
       <PortfolioFormDialog
         open={showForm}

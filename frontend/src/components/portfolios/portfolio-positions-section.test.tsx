@@ -40,7 +40,7 @@ vi.mock("./position-form-dialog", () => ({
   PositionFormDialog: () => null,
 }));
 
-vi.mock("./confirm-delete-dialog", () => ({
+vi.mock("@/components/shared/confirm-delete-dialog", () => ({
   ConfirmDeleteDialog: () => null,
 }));
 

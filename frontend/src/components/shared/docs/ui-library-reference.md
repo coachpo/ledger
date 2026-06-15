@@ -140,6 +140,81 @@ Accessibility: clear buttons need meaningful labels. The default is based on the
 
 Common mistakes: duplicating active filter chips in the toolbar and filter bar, or rendering clear controls that don't update route state.
 
+## ResourceBulkActionsBar
+
+Purpose: standard selected-count bar for inventory bulk actions.
+
+Use when a management list has selected rows and needs the common destructive delete plus clear-selection controls.
+
+Don't use for row-level actions or non-destructive filter summaries. Use `ResourceFilterBar` for active filters.
+
+API: `selectedCount`, `totalCount`, `resourceLabel`, `onDeleteSelected`, `onClear`, optional `deletePending`, `deleteLabel`, `clearLabel`, `summary`, and `testId`.
+
+Accessibility: routes still own the action meaning. Use clear resource labels such as `reports`, `templates`, or `scheduled tasks`.
+
+Common mistakes: moving mutation logic into the component, or using it when a route needs a different bulk workflow than delete/clear.
+
+## ResourceSelectionCheckbox
+
+Purpose: standard checkbox for selectable management rows and select-all table headers.
+
+Use when a resource list already owns selection state and needs consistent accessible checkbox wiring for row or visible-list selection.
+
+Don't use for forms, feature toggles, boolean settings, or editor checkboxes.
+
+API: `ariaLabel`, `selected`, `onSelectedChange`, optional `indeterminate`, `disabled`, `className`, and `testId`.
+
+Accessibility: labels should describe the selection target, such as `Select all shown templates` or `Select report Quarterly review`.
+
+Example:
+
+```tsx
+<ResourceSelectionCheckbox
+  ariaLabel="Select all shown reports"
+  indeterminate={someReportsSelected}
+  selected={allReportsSelected}
+  onSelectedChange={(selected) =>
+    reportSelection.setItemsSelected(visibleReports, selected)
+  }
+/>
+```
+
+Common mistakes: using it for non-resource form fields, passing generic labels, or moving selected-id state into the component.
+
+## ResourceActionsMenu
+
+Purpose: standard row or compact header overflow menu trigger and dropdown frame.
+
+Use when a resource row, table action cell, or compact header needs the common "more actions" icon button with consistent sizing, labels, alignment, and menu content framing.
+
+Don't use for bulk actions, primary row navigation, or menus that need custom trigger content.
+
+API: `ariaLabel`, `children`, optional `align`, `disabled`, `testId`, `triggerClassName`, `triggerVariant`, `contentClassName`, and `className`.
+
+Accessibility: every caller must pass a specific `ariaLabel`, such as `Open actions for Quarterly report`. Menu items remain route-owned links or buttons through shadcn `DropdownMenuItem`.
+
+Example:
+
+```tsx
+<ResourceActionsMenu ariaLabel={`Open actions for ${report.name}`}>
+  <DropdownMenuItem asChild>
+    <a href={downloadReportUrl(report.slug)} download>
+      <Download data-icon="inline-start" />
+      Download
+    </a>
+  </DropdownMenuItem>
+  <DropdownMenuItem
+    variant="destructive"
+    onSelect={() => setDeleting(report)}
+  >
+    <Trash2 data-icon="inline-start" />
+    Delete
+  </DropdownMenuItem>
+</ResourceActionsMenu>
+```
+
+Common mistakes: moving route callbacks into the component, using generic labels like `Actions`, or wrapping a visible primary action that should be a normal button or link.
+
 ## ResourceRowCard
 
 Purpose: compact resource card for inventory lists with title link, metadata, badges, evidence, status, provenance, footer, and trailing actions.
@@ -249,6 +324,18 @@ Example:
 </Dialog>
 ```
 Common mistakes: placing `DialogContent` around `EntityDialogShell`, omitting footer actions, or letting the dialog component call route APIs directly.
+
+## ConfirmDeleteDialog
+
+Purpose: controlled destructive confirmation dialog for cross-route delete flows.
+
+Use for confirmation-only destructive actions. Parent pages keep mutation state, toasts, navigation, and selection cleanup.
+
+Don't use for create/edit form dialogs. Use `EntityDialogShell` inside a normal `Dialog` for those.
+
+API: `open`, `title`, `description`, `onOpenChange`, `onConfirm`, optional `confirmLabel`, and optional `isPending`.
+
+Accessibility: renders shadcn `AlertDialogTitle` and `AlertDialogDescription`; keep descriptions explicit about irreversible effects.
 
 ## MetricCard
 

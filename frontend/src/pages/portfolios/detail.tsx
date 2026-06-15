@@ -28,7 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { PortfolioBalancesSection } from "@/components/portfolios/portfolio-balances-section";
 import { PortfolioFormDialog } from "@/components/forms/portfolio-form-dialog";
 import { PortfolioPositionsSection } from "@/components/portfolios/portfolio-positions-section";

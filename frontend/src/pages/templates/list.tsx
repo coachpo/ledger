@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
@@ -13,19 +13,15 @@ import {
 import { formatDateTime } from "@/lib/format";
 import type { TextTemplateRead } from "@/lib/types/text-template";
 
-import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
-import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import { ResourceActionsMenu } from "@/components/shared/resource-actions-menu";
+import { ResourceBulkActionsBar } from "@/components/shared/resource-bulk-actions-bar";
+import { ResourceSelectionCheckbox } from "@/components/shared/resource-selection-checkbox";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -192,19 +188,14 @@ export function TemplateListPage() {
               <TableHeader>
                 <TableRow className="bg-muted/30 hover:bg-muted/30">
                   <TableHead className="w-9">
-                    <Checkbox
-                      aria-label="Select all shown templates"
-                      checked={
-                        templateSelection.allSelected
-                          ? true
-                          : templateSelection.someSelected
-                            ? "indeterminate"
-                            : false
-                      }
-                      onCheckedChange={(checked) =>
+                    <ResourceSelectionCheckbox
+                      ariaLabel="Select all shown templates"
+                      indeterminate={templateSelection.someSelected}
+                      selected={templateSelection.allSelected}
+                      onSelectedChange={(selected) =>
                         templateSelection.setItemsSelected(
                           filteredTemplates,
-                          checked === true,
+                          selected,
                         )
                       }
                     />
@@ -226,13 +217,13 @@ export function TemplateListPage() {
                       data-state={isSelected ? "selected" : undefined}
                     >
                       <TableCell>
-                        <Checkbox
-                          aria-label={`Select template ${template.name}`}
-                          checked={isSelected}
-                          onCheckedChange={(checked) =>
+                        <ResourceSelectionCheckbox
+                          ariaLabel={`Select template ${template.name}`}
+                          selected={isSelected}
+                          onSelectedChange={(selected) =>
                             templateSelection.setItemsSelected(
                               [template],
-                              checked === true,
+                              selected,
                             )
                           }
                         />
@@ -258,28 +249,18 @@ export function TemplateListPage() {
                               Open Editor
                             </Link>
                           </Button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                aria-label={`Open actions for ${template.name}`}
-                                className="size-7"
-                                size="icon"
-                                type="button"
-                                variant="ghost"
-                              >
-                                <MoreHorizontal />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onSelect={() => setDeleting(template)}
-                                variant="destructive"
-                              >
-                                <Trash2 className="size-3.5" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <ResourceActionsMenu
+                            ariaLabel={`Open actions for ${template.name}`}
+                            triggerClassName="size-7"
+                          >
+                            <DropdownMenuItem
+                              onSelect={() => setDeleting(template)}
+                              variant="destructive"
+                            >
+                              <Trash2 data-icon="inline-start" />
+                              Delete
+                            </DropdownMenuItem>
+                          </ResourceActionsMenu>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -291,32 +272,15 @@ export function TemplateListPage() {
         ) : null}
       </section>
 
-      {selectedCount > 0 ? (
-        <ResourceFilterBar
-          actions={
-            <>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={deleteTemplatesMutation.isPending}
-                onClick={handleDeleteSelected}
-              >
-                <Trash2 data-icon="inline-start" />
-                Delete selected
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={templateSelection.clearSelection}
-              >
-                Clear
-              </Button>
-            </>
-          }
-          summary={`${selectedCount} of ${filteredTemplates.length} templates selected`}
-          testId="templates-bulk-actions"
-        />
-      ) : null}
+      <ResourceBulkActionsBar
+        deletePending={deleteTemplatesMutation.isPending}
+        resourceLabel="templates"
+        selectedCount={selectedCount}
+        testId="templates-bulk-actions"
+        totalCount={filteredTemplates.length}
+        onClear={templateSelection.clearSelection}
+        onDeleteSelected={handleDeleteSelected}
+      />
 
       <ConfirmDeleteDialog
         open={Boolean(deleting)}

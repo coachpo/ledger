@@ -78,7 +78,7 @@ vi.mock("@/components/forms/portfolio-form-dialog", () => ({
   PortfolioFormDialog: ({ open }: { open: boolean }) =>
     open ? <div role="dialog">Portfolio edit form</div> : null,
 }));
-vi.mock("@/components/portfolios/confirm-delete-dialog", () => ({
+vi.mock("@/components/shared/confirm-delete-dialog", () => ({
   ConfirmDeleteDialog: ({ open, title }: { open: boolean; title: string }) =>
     open ? <div role="alertdialog">{title}</div> : null,
 }));

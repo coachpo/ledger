@@ -1,8 +1,9 @@
-import { ArrowLeft, MoreHorizontal, SquarePen, Trash2 } from "lucide-react";
+import { ArrowLeft, SquarePen, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
+import { ResourceActionsMenu } from "@/components/shared/resource-actions-menu";
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,12 +14,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsMobile } from "@/components/ui/use-mobile";
@@ -139,18 +137,11 @@ export function MemoryDetailPage() {
   const detail = detailQuery.data;
   const actions = isMobile ? (
     <div className="flex min-w-0 items-center justify-end">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            aria-label="More actions"
-            size="icon"
-            type="button"
-            variant="outline"
-          >
-            <MoreHorizontal />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
+      <ResourceActionsMenu
+        ariaLabel="More actions"
+        contentClassName="w-56"
+        triggerVariant="outline"
+      >
           <DropdownMenuGroup>
             <DropdownMenuItem asChild>
               <Link to="/memory">
@@ -175,8 +166,7 @@ export function MemoryDetailPage() {
             <Trash2 data-icon="inline-start" />
             Delete memory
           </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      </ResourceActionsMenu>
       <RevisionDialog
         detail={detail}
         onOpenChange={setRevisionDialogOpen}

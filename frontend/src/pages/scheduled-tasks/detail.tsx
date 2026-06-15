@@ -5,7 +5,6 @@ import {
   CopyPlus,
   ExternalLink,
   Loader2,
-  MoreHorizontal,
   PauseCircle,
   PlayCircle,
   RotateCcw,
@@ -16,9 +15,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
-import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { ConsoleSection } from "@/components/shared/console-section";
 import { PageContextBar } from "@/components/shared/page-context-bar";
+import { ResourceActionsMenu } from "@/components/shared/resource-actions-menu";
 import {
   ResourceStatusStrip,
   type ResourceStatusStripItem,
@@ -45,12 +45,9 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -954,18 +951,11 @@ function ScheduleHeader({
         )}
         {toggleLabel}
       </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            aria-label="More actions"
-            size="icon"
-            type="button"
-            variant="outline"
-          >
-            <MoreHorizontal />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
+      <ResourceActionsMenu
+        ariaLabel="More actions"
+        contentClassName="w-48"
+        triggerVariant="outline"
+      >
           <DropdownMenuGroup>
             <DropdownMenuItem asChild>
               <Link to={`/workflow-packages/${schedule.packageId}`}>
@@ -989,8 +979,7 @@ function ScheduleHeader({
             <Trash2 data-icon="inline-start" />
             Delete
           </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      </ResourceActionsMenu>
     </div>
   );
 

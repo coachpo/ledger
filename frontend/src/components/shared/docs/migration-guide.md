@@ -10,6 +10,12 @@ Replace hand-built search rows with `ResourceToolbar.search`. It gives compact s
 
 Replace local active filter chip rows with `ResourceFilterBar`.
 
+Replace selected-count delete/clear bars with `ResourceBulkActionsBar`.
+
+Replace repeated row overflow dropdown trigger/content wrappers with `ResourceActionsMenu`.
+
+Replace resource table select-all and row selection checkbox wiring with `ResourceSelectionCheckbox`.
+
 Replace repeated card rows with `ResourceRowCard` when the card represents a resource and needs title link, badges, metadata, status, evidence, or actions.
 
 Replace raw status spans with `ResourceStatusBadge` or `ResourceStatusStrip`.
@@ -18,6 +24,8 @@ Replace ad-hoc bordered table wrappers with `ResourceTableFrame`, or replace cus
 Replace local empty, warning, and error card markup with `InventoryStatePanel`, `EmptyStatePanel`, or `InlineStatePanel`.
 
 Replace create or edit dialog content scaffolding with `EntityDialogShell` when the flow has a form body and footer actions.
+
+Replace destructive confirmation dialogs with `ConfirmDeleteDialog`.
 
 Replace route-local split pane scaffolds with `SplitInspectorLayout` or `SheetInspectorLayout` when the route has a selected item and inspector content.
 
@@ -39,10 +47,14 @@ Leave feature-only widgets in their feature folder until they have a second real
 | Page-local title, summary, toolbar, and list stack | `InventoryPageShell` | Pass `pageContext`, `toolbar`, and `filterBar` props from the route. |
 | Search input with copied icon and sizing | `ResourceToolbar.search` | Keep search state route-owned. |
 | Filter summary card or badge row | `ResourceFilterBar` | Use item `onClear` callbacks to update route state. |
+| Selected-count delete/clear bar | `ResourceBulkActionsBar` | Keep selection state, mutation calls, and toasts route-owned. |
+| Row action dropdown trigger/content wrapper | `ResourceActionsMenu` | Keep `DropdownMenuItem` children, links, callbacks, and destructive variants route-owned. |
+| Resource row or select-all checkbox checked-state mapping | `ResourceSelectionCheckbox` | Keep selected ids, selected items, and mutation behavior route-owned. |
 | Clickable resource card wrapper | `ResourceRowCard` plus `primaryAction` | Use real links and buttons. |
 | Status text with custom colors | `ResourceStatusBadge` or `ResourceStatusStrip` | Use supported tones only. |
 | Dashed empty or error cards | `InventoryStatePanel`, `EmptyStatePanel`, or `InlineStatePanel` | Match the scope of the state. |
 | Local dialog content frame | `EntityDialogShell` | Parent still controls `Dialog` open state. |
+| Local destructive confirmation | `ConfirmDeleteDialog` | Parent still owns mutation state and post-delete cleanup. |
 | Local split pane with resize or inspector | `SplitInspectorLayout` or `SheetInspectorLayout` | Requires full-height route treatment when used as page structure. |
 ## Incremental migration order
 

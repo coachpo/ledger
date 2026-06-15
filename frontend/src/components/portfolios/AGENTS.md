@@ -25,7 +25,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Balances section | `portfolio-balances-section.tsx`, `balance-form-dialog.tsx` | balance table + create/edit dialog |
 | Positions section | `portfolio-positions-section.tsx`, `position-form-dialog.tsx` | position table, quote warnings, create/edit dialog |
 | Trading operations | `portfolio-trades-section.tsx`, `record-trading-operation-dialog.tsx`, `trading-operation-form.tsx` | operation history + BUY/SELL/DIVIDEND/SPLIT flows |
-| Shared dialogs | `../forms/portfolio-form-dialog.tsx`, `confirm-delete-dialog.tsx` | create/edit/delete flows reused across routes |
+| Shared dialogs | `../forms/portfolio-form-dialog.tsx`, `../shared/confirm-delete-dialog.tsx` | create/edit/delete flows reused across routes |
 | Focused tests | `*.test.tsx` | portfolio form, positions, trades, trading-operation dialog/form |
 
 ## CONVENTIONS
@@ -34,7 +34,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Use `formatCurrency()` and `formatDateTime()` for display consistency.
 - Quote warnings are informational; show them without blocking the rest of the workspace.
 - Mutation success/error feedback uses toasts close to the routed page or section that initiated the action.
-- `ConfirmDeleteDialog` stays presentation-oriented so template pages can reuse it without importing portfolio-specific data logic.
+- `ConfirmDeleteDialog` lives in shared UI and stays presentation-oriented so template pages can reuse it without importing portfolio-specific data logic.
 
 ## ANTI-PATTERNS
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.

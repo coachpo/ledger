@@ -113,9 +113,9 @@ function AppSidebar() {
 function routeWidthWrapperClassName(widthMode: RouteWidthMode) {
   switch (widthMode) {
     case "compact":
-      return "min-h-full min-w-0 max-w-full [&>*]:mx-auto [&>*]:min-w-0 [&>*]:w-full [&>*]:max-w-4xl";
+      return "min-h-full min-w-0 max-w-full [&>*]:mx-auto [&>*]:min-w-0 [&>*]:w-full [&>*]:max-w-[var(--ui-layout-compact)]";
     case "readable":
-      return "min-h-full min-w-0 max-w-full [&>*]:mx-auto [&>*]:min-w-0 [&>*]:w-full [&>*]:max-w-5xl";
+      return "min-h-full min-w-0 max-w-full [&>*]:mx-auto [&>*]:min-w-0 [&>*]:w-full [&>*]:max-w-[var(--ui-layout-readable)]";
     case "wide":
     default:
       return "min-h-full min-w-0 max-w-full [&>*]:min-w-0 [&>*]:w-full";

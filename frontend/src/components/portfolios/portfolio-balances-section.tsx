@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useCreateBalance, useDeleteBalance, useUpdateBalance } from "@/hooks/use-balances";
@@ -11,17 +11,13 @@ import type { BalanceRead, BalanceUpdateInput, BalanceWriteInput } from "@/lib/t
 import { ConsoleSection } from "@/components/shared/console-section";
 import { DataTable } from "@/components/shared/data-table";
 import { DataTableColumnHeader } from "@/components/shared/data-table-column-header";
+import { ResourceActionsMenu } from "@/components/shared/resource-actions-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 import { BalanceFormDialog } from "./balance-form-dialog";
-import { ConfirmDeleteDialog } from "./confirm-delete-dialog";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 
 type PortfolioBalancesSectionProps = {
   portfolioId: number | string;
@@ -77,13 +73,10 @@ export function PortfolioBalancesSection({
       {
         cell: ({ row }) => (
           <div className="flex">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button aria-label={`Open actions for ${row.original.label}`} size="icon" variant="ghost">
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
+            <ResourceActionsMenu
+              align="start"
+              ariaLabel={`Open actions for ${row.original.label}`}
+            >
                 <DropdownMenuItem
                   onSelect={() => {
                     setEditing(row.original);
@@ -97,8 +90,7 @@ export function PortfolioBalancesSection({
                   <Trash2 className="size-4" />
                   Delete balance
                 </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            </ResourceActionsMenu>
           </div>
         ),
         enableSorting: false,

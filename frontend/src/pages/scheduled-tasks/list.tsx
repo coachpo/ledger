@@ -5,7 +5,6 @@ import {
   ChevronRight,
   CopyPlus,
   ExternalLink,
-  MoreHorizontal,
   PauseCircle,
   PlayCircle,
   RotateCcw,
@@ -16,24 +15,22 @@ import { type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
-import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
-import { ResourceFilterBar } from "@/components/shared/resource-filter-bar";
+import { ResourceActionsMenu } from "@/components/shared/resource-actions-menu";
+import { ResourceBulkActionsBar } from "@/components/shared/resource-bulk-actions-bar";
+import { ResourceSelectionCheckbox } from "@/components/shared/resource-selection-checkbox";
 import {
   ResourceStatusBadge,
   type ResourceStatusTone,
 } from "@/components/shared/resource-status-strip";
 import { ResourceTableFrame } from "@/components/shared/resource-table-frame";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import {
@@ -64,6 +61,7 @@ import {
   useWorkflowPackageManifest,
   useWorkflowPackages,
 } from "@/hooks/use-workflow-packages";
+import { useResourceSelectionState } from "@/hooks/use-resource-selection-state";
 import { formatDateTime, formatDateTimeInTimeZone } from "@/lib/format";
 import type {
   ScheduleListParams,
@@ -141,6 +139,10 @@ function getLatestStatus(
   schedule: Pick<ScheduleRead, "latestStatus">,
 ): string | null {
   return schedule.latestStatus ?? null;
+}
+
+function getScheduleId(schedule: ScheduleRead) {
+  return schedule.id;
 }
 
 function latestStatusTone(status: string | null): StatusTone {
@@ -850,19 +852,12 @@ function ScheduleTableActions({
         )}
         {isPaused ? "Resume" : "Pause"}
       </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            aria-label={`More actions for ${schedule.name}`}
-            className="h-8 w-8"
-            size="icon"
-            type="button"
-            variant="outline"
-          >
-            <MoreHorizontal aria-hidden="true" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
+      <ResourceActionsMenu
+        ariaLabel={`More actions for ${schedule.name}`}
+        contentClassName="w-48"
+        triggerClassName="h-8 w-8"
+        triggerVariant="outline"
+      >
           <DropdownMenuGroup>
             <DropdownMenuItem asChild>
               <Link aria-label={`Edit schedule ${schedule.name}`} to={`/scheduled-tasks/${schedule.id}`}>
@@ -902,8 +897,7 @@ function ScheduleTableActions({
             <Trash2 data-icon="inline-start" />
             Delete
           </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      </ResourceActionsMenu>
     </div>
   );
 }
@@ -934,10 +928,10 @@ function ScheduleRow({
         data-testid={`scheduled-task-row-${schedule.id}`}
       >
         <TableCell className="align-top px-2 py-1.5">
-          <Checkbox
-            aria-label={`Select scheduled task ${schedule.name}`}
-            checked={isSelected}
-            onCheckedChange={(checked) => onSelect([schedule], checked === true)}
+          <ResourceSelectionCheckbox
+            ariaLabel={`Select scheduled task ${schedule.name}`}
+            selected={isSelected}
+            onSelectedChange={(selected) => onSelect([schedule], selected)}
           />
         </TableCell>
         <TableCell className="min-w-[20rem] align-top px-2 py-1.5 whitespace-normal">
@@ -1011,16 +1005,11 @@ function ScheduleTable({
         <TableHeader>
           <TableRow className="bg-muted/30 hover:bg-muted/30">
             <TableHead className="w-9 px-2 py-1.5">
-              <Checkbox
-                aria-label="Select all shown scheduled tasks"
-                checked={
-                  allFilteredSelected
-                    ? true
-                    : someFilteredSelected
-                      ? "indeterminate"
-                      : false
-                }
-                onCheckedChange={(checked) => onSelect(schedules, checked === true)}
+              <ResourceSelectionCheckbox
+                ariaLabel="Select all shown scheduled tasks"
+                indeterminate={someFilteredSelected}
+                selected={allFilteredSelected}
+                onSelectedChange={(selected) => onSelect(schedules, selected)}
               />
             </TableHead>
             <TableHead
@@ -1068,46 +1057,6 @@ function ScheduleTable({
   );
 }
 
-function ScheduledTasksBulkActions({
-  filteredCount,
-  isPending,
-  selectedCount,
-  onClear,
-  onDeleteSelected,
-}: {
-  filteredCount: number;
-  isPending: boolean;
-  selectedCount: number;
-  onClear: () => void;
-  onDeleteSelected: () => void;
-}) {
-  if (selectedCount === 0) {
-    return null;
-  }
-
-  return (
-    <ResourceFilterBar
-      actions={
-        <>
-          <Button
-            disabled={isPending}
-            size="sm"
-            variant="destructive"
-            onClick={onDeleteSelected}
-          >
-            <Trash2 className="size-3.5" /> Delete selected
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onClear}>
-            Clear
-          </Button>
-        </>
-      }
-      summary={`${selectedCount} of ${filteredCount} scheduled tasks selected`}
-      testId="scheduled-tasks-bulk-actions"
-    />
-  );
-}
-
 function ScheduledTasksEmptyState({ hasFilters }: { hasFilters: boolean }) {
   return (
     <InventoryStatePanel
@@ -1138,9 +1087,6 @@ export function ScheduledTasksListPage() {
     new Set(),
   );
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
-  const [selectedScheduleIds, setSelectedScheduleIds] = useState<Set<ScheduleRead["id"]>>(
-    new Set(),
-  );
   const [sortState, setSortState] = useState<ScheduleSortState>({
     direction: "asc",
     field: "nextRun",
@@ -1221,17 +1167,14 @@ export function ScheduledTasksListPage() {
     [workflowOptions],
   );
   const workflowFilterDisabled = !resolvedPackageKey;
-  const selectedSchedules = useMemo(
-    () => schedules.filter((schedule) => selectedScheduleIds.has(schedule.id)),
-    [schedules, selectedScheduleIds],
-  );
-  const selectedCount = selectedSchedules.length;
-  const allFilteredSelected =
-    schedules.length > 0 &&
-    schedules.every((schedule) => selectedScheduleIds.has(schedule.id));
-  const someFilteredSelected = schedules.some((schedule) =>
-    selectedScheduleIds.has(schedule.id),
-  );
+  const scheduleSelection = useResourceSelectionState({
+    getId: getScheduleId,
+    items: schedules,
+  });
+  const selectedSchedules = scheduleSelection.selectedItems;
+  const selectedCount = scheduleSelection.selectedCount;
+  const allFilteredSelected = scheduleSelection.allSelected;
+  const someFilteredSelected = scheduleSelection.someSelected;
   const mutationPending =
     updateSchedule.isPending ||
     runNow.isPending ||
@@ -1292,23 +1235,6 @@ export function ScheduledTasksListPage() {
     setWorkflowKey(
       nextValue === ALL_WORKFLOWS_FILTER ? "" : normalizeFilter(nextValue) ?? "",
     );
-  };
-
-  const setSchedulesSelected = (
-    schedulesToUpdate: readonly ScheduleRead[],
-    selected: boolean,
-  ) => {
-    setSelectedScheduleIds((previous) => {
-      const next = new Set(previous);
-      schedulesToUpdate.forEach((schedule) => {
-        if (selected) {
-          next.add(schedule.id);
-        } else {
-          next.delete(schedule.id);
-        }
-      });
-      return next;
-    });
   };
 
   const toggleScheduleExpanded = (scheduleId: number) => {
@@ -1384,11 +1310,7 @@ export function ScheduledTasksListPage() {
         scheduleId: deleting.id,
       });
       toast.success("Scheduled task deleted");
-      setSelectedScheduleIds((previous) => {
-        const next = new Set(previous);
-        next.delete(deleting.id);
-        return next;
-      });
+      scheduleSelection.setIdsSelected([deleting.id], false);
       setDeleting(null);
     } catch (error) {
       toast.error(
@@ -1419,7 +1341,7 @@ export function ScheduledTasksListPage() {
           toast.success(
             `${count} ${count === 1 ? "scheduled task" : "scheduled tasks"} deleted`,
           );
-          setSelectedScheduleIds(new Set());
+          scheduleSelection.clearSelection();
           setIsBulkDeleting(false);
         },
       },
@@ -1496,23 +1418,25 @@ export function ScheduledTasksListPage() {
           expandedScheduleIds={expandedScheduleIds}
           mutationPending={mutationPending}
           schedules={visibleSchedules}
-          selectedScheduleIds={selectedScheduleIds}
+          selectedScheduleIds={scheduleSelection.selectedIds}
           someFilteredSelected={someFilteredSelected}
           sortState={sortState}
           onDelete={setDeleting}
           onRunNow={runScheduleNow}
-          onSelect={setSchedulesSelected}
+          onSelect={scheduleSelection.setItemsSelected}
           onSort={handleSort}
           onToggleExpand={toggleScheduleExpanded}
           onToggleStatus={toggleScheduleStatus}
         />
       ) : null}
 
-      <ScheduledTasksBulkActions
-        filteredCount={visibleSchedules.length}
-        isPending={deleteSchedules.isPending}
+      <ResourceBulkActionsBar
+        deletePending={deleteSchedules.isPending}
+        resourceLabel="scheduled tasks"
         selectedCount={selectedCount}
-        onClear={() => setSelectedScheduleIds(new Set())}
+        testId="scheduled-tasks-bulk-actions"
+        totalCount={visibleSchedules.length}
+        onClear={scheduleSelection.clearSelection}
         onDeleteSelected={() => setIsBulkDeleting(true)}
       />
 
