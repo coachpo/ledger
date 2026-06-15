@@ -169,6 +169,10 @@ def test_core_memory_contracts_do_not_define_finance_shaped_fields() -> None:
                 "raw_return",
                 "rawReturn",
                 "alpha",
+                "attributes",
+                "tags",
+                "audit_links",
+                "auditLinks",
             ),
         )
     _assert_fragments_absent("core memory schema", core_memory_source, ("MemoryDecision",))
