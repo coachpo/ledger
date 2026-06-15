@@ -33,12 +33,15 @@ from app.services.memory_service import MemoryService
 from app.services.memory_store import PostgresMemoryStore
 
 _FORBIDDEN_MODEL_FRAGMENTS = (
+    "agentVersion",
+    "attributes",
     "reportId",
     "reportSlug",
     "reportName",
     "auditLinks",
     "/reports/",
     "download",
+    "workflowVersion",
     "# Agent Memory",
 )
 
@@ -110,7 +113,6 @@ def _write_request(
         summary=summary,
         content=content,
         subject_refs=[MemorySubjectRef(kind="instrument", id="nvda", label="NVDA")],
-        attributes={"confidence": "medium"},
         scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key="pkg-advisory"),
         provenance=_provenance(run_id),
         idempotency_key=idempotency_key,
@@ -121,7 +123,6 @@ def _outcome() -> MemoryOutcome:
     return MemoryOutcome(
         summary="Sizing check completed.",
         observed_at=datetime(2026, 1, 17, 10, 30, tzinfo=UTC),
-        attributes={"verdict": "useful"},
     )
 
 
@@ -163,8 +164,8 @@ def test_create_get_round_trip_writes_canonical_rows_without_reports(
         assert entry.memory_id == result.memory_id
         assert entry.revision_id == result.revision_id
         assert entry.kind == "research.note"
-        assert entry.attributes == {"confidence": "medium"}
-        assert entry.audit_links is None
+        assert entry.outcome is None
+        assert entry.reflections == []
         assert payload["memoryId"] == result.memory_id
         assert payload["revisionAction"] == "created"
         assert "action" not in payload
@@ -229,6 +230,12 @@ def test_run_memory_event_snapshots_survive_admin_hard_delete(
     assert [row[4] for row in event_rows] == [created.revision_id, reviewed.revision_id]
     assert event_rows[0][5]["memoryId"] == created.memory_id
     assert event_rows[0][5]["revisionId"] == created.revision_id
+    assert event_rows[1][5] == {
+        "memoryId": created.memory_id,
+        "revisionId": reviewed.revision_id,
+        "reviewAction": "resolved",
+        "outcomeSummary": "Sizing check completed.",
+    }
 
 
 def test_duplicate_create_reuses_existing_entry_and_records_event(
@@ -335,13 +342,33 @@ def test_resolve_append_and_query_use_canonical_revisions_without_leaks(
         events = list(session.scalars(select(RunMemoryEvent).order_by(RunMemoryEvent.id)))
 
     assert approved.visible_to_workflow is True
-    assert approved.outcome is not None
-    assert approved.outcome.summary == "Sizing check completed."
-    assert reflected.reflections[0].reflection == "Outcome confirmed the liquidity gate."
-    assert [revision.version for revision in revisions] == [1, 2, 3]
+    assert approved.outcome is None
+    assert reflected.outcome is None
+    assert reflected.reflections == []
+    assert [revision.version for revision in revisions] == [1, 2]
     assert revisions[1].supersedes_revision_id == revisions[0].revision_id
-    assert revisions[2].supersedes_revision_id == revisions[1].revision_id
     assert [event.event_type for event in events] == ["written", "reviewed", "reviewed"]
+    assert events[1].filters == {
+        "scope": {"scopeType": "package", "scopeKey": "pkg-advisory"},
+        "subjectRefs": [{"kind": "instrument", "id": "nvda", "label": "NVDA"}],
+        "source": "runtime",
+        "actor": "memory_curator",
+        "channel": "scoped_core_memory",
+    }
+    assert events[1].result_snapshot == {
+        "memoryId": created.memory_id,
+        "revisionId": revisions[1].revision_id,
+        "reviewAction": "resolved",
+        "outcomeSummary": "Sizing check completed.",
+    }
+    assert events[1].status_snapshot == {"visibleToWorkflow": True}
+    assert events[2].result_snapshot == {
+        "memoryId": created.memory_id,
+        "revisionId": revisions[1].revision_id,
+        "reviewAction": "reflected",
+        "reflectionSummary": "Outcome confirmed the liquidity gate.",
+    }
+    assert events[2].status_snapshot == {"visibleToWorkflow": True}
     assert len(snippets) == 1
     snippet_payload = snippets[0].model_visible_dump()
     assert snippets[0].memory_id == created.memory_id
@@ -393,19 +420,20 @@ def test_concurrent_shared_scope_revision_update_conflicts_then_retries_without_
     assert error.status_code == 409
     assert error.code == "memory_revision_conflict"
     assert winner.revision.version == 2
-    assert retried.revision.version == 3
-    assert retried.reflections[0].reflection == _reflection().reflection
+    assert retried.revision.version == 2
+    assert retried.reflections == []
     assert entry is not None
     assert entry.visible_to_workflow is True
-    assert [revision.version for revision in revisions] == [1, 2, 3]
+    assert [revision.version for revision in revisions] == [1, 2]
     assert revisions[1].supersedes_revision_id == revisions[0].revision_id
-    assert revisions[2].supersedes_revision_id == revisions[1].revision_id
     assert [event.event_type for event in events] == ["written", "reviewed", "reviewed"]
     assert [event.revision_id for event in events] == [
         revisions[0].revision_id,
         revisions[1].revision_id,
-        revisions[2].revision_id,
+        revisions[1].revision_id,
     ]
+    assert events[2].result_snapshot["reviewAction"] == "reflected"
+    assert events[2].result_snapshot["reflectionSummary"] == _reflection().summary
 
 
 def test_query_uses_lexical_retrieval_with_no_embedding_contract(
@@ -453,13 +481,14 @@ def test_list_artifacts_for_run_uses_event_stream_without_audit_links(
     assert artifact.audit_links is None
     assert audit_links.references == []
     assert audit_links.report is None
-    assert ui_payload["sourceGraphMetadata"] == {
+    source_graph_metadata = cast(dict[str, object], ui_payload["sourceGraphMetadata"])
+    assert source_graph_metadata == {
         "stepId": "memory_write",
         "slot": "post_run_note",
-        "traceId": "trace-abc123",
         "workflowKey": "daily_review",
-        "workflowVersion": 7,
     }
+    assert "traceId" not in source_graph_metadata
+    assert "workflowVersion" not in source_graph_metadata
     for fragment in _FORBIDDEN_MODEL_FRAGMENTS:
         assert fragment not in _serialized(ui_payload)
         assert fragment not in _serialized(model_payload)
@@ -488,7 +517,6 @@ def test_repositories_expose_canonical_lookup_helpers(
             visible_to_workflow=True,
             agent_key="memory_curator",
             workflow_key="daily_review",
-            tags=[],
             limit=5,
             offset=0,
         )

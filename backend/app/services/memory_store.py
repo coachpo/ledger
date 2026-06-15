@@ -12,7 +12,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
-from app.core.formatting import to_utc, utcnow
+from app.core.formatting import utcnow
 from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
 from app.repositories.agent_memory import (
     AgentMemoryEntryRepository,
@@ -26,22 +26,21 @@ from app.schemas.memory import (
     MemoryApiEventRead,
     MemoryApiRevisionRead,
     MemoryArtifactRead,
-    MemoryAttributes,
-    MemoryAuditLinks,
     MemoryEntryRead,
     MemoryOutcome,
     MemoryPromptSnippet,
-    MemoryProvenance,
     MemoryQuery,
     MemoryReflection,
     MemoryRetrievalScore,
     MemoryRevisionAction,
     MemoryRevisionRead,
+    MemoryRuntimeProvenance,
     MemoryScope,
     MemoryScopeType,
     MemorySubjectRef,
     MemoryWriteRequest,
     MemoryWriteResult,
+    RunMemoryArtifactAuditLinks,
     invalid_memory_id_error,
     memory_not_found_error,
 )
@@ -162,7 +161,7 @@ class MemoryStore(Protocol):
         """Return UI/API-visible memory artifacts for a run."""
         ...
 
-    def audit_links(self, memory_id: str) -> MemoryAuditLinks:
+    def audit_links(self, memory_id: str) -> RunMemoryArtifactAuditLinks:
         """Return audit-only links for a memory entry."""
         ...
 
@@ -206,7 +205,6 @@ class PostgresMemoryStore:
             )
 
         subject_refs = self._payload_subject_refs(payload)
-        attributes = self._attributes_payload(payload.attributes)
         entry = AgentMemoryEntry(
             memory_id=self._new_memory_id(),
             scope_type=payload.scope.scope_type.value,
@@ -215,19 +213,18 @@ class PostgresMemoryStore:
             visible_to_workflow=False,
             summary=payload.summary,
             subject_refs=subject_refs,
-            attributes=attributes,
             content_hash=payload.content_hash(),
             idempotency_key=payload.idempotency_key,
-            created_by_type=payload.provenance.created_by_type,
+            created_by_type="agent",
             source_run_id=payload.provenance.run_id,
             source_agent_key=payload.provenance.agent_key,
-            source_agent_version=payload.provenance.agent_version,
-            source_agent_name=payload.provenance.agent_name,
+            source_agent_version=1,
+            source_agent_name=None,
             source_workflow_key=payload.provenance.workflow_key,
-            source_workflow_version=payload.provenance.workflow_version,
+            source_workflow_version=None,
             source_step_id=payload.provenance.step_id,
             source_slot=payload.provenance.slot,
-            source_trace_id=payload.provenance.trace_id,
+            source_trace_id=None,
         )
         self.entries.add(entry)
         self.session.flush()
@@ -238,14 +235,13 @@ class PostgresMemoryStore:
             summary=payload.summary,
             content=payload.content,
             subject_refs=subject_refs,
-            attributes=attributes,
             revision_action=MemoryRevisionAction.CREATED.value,
             supersedes_revision_id=payload.revision.supersedes_revision_id,
             source_run_id=payload.provenance.run_id,
             source_agent_key=payload.provenance.agent_key,
             source_step_id=payload.provenance.step_id,
             source_slot=payload.provenance.slot,
-            trace_span_id=payload.provenance.trace_id,
+            trace_span_id=None,
         )
         self._append_event(
             event_type="written",
@@ -334,17 +330,13 @@ class PostgresMemoryStore:
     def resolve(self, memory_id: str, outcome: MemoryOutcome) -> MemoryEntryRead:
         entry = self._locked_entry_by_memory_id(memory_id)
         latest = self._latest_revision(entry)
-        attributes = self._attributes_payload(latest.attributes)
-        attributes["outcome"] = self._outcome_payload(outcome)
         entry.visible_to_workflow = True
-        entry.attributes = attributes
         entry.updated_at = utcnow()
         revision = self._create_revision(
             entry,
             summary=latest.summary,
             content=latest.content,
             subject_refs=self._subject_refs_payload(latest.subject_refs),
-            attributes=attributes,
             revision_action=MemoryRevisionAction.SUPERSEDED.value,
             supersedes_revision_id=latest.revision_id,
             source_run_id=entry.source_run_id,
@@ -357,10 +349,9 @@ class PostgresMemoryStore:
             event_type="reviewed",
             entry=entry,
             revision=revision,
-            result_snapshot={
-                "memoryId": entry.memory_id,
-                "visibleToWorkflow": entry.visible_to_workflow,
-            },
+            filters=self._review_filters(entry, latest),
+            result_snapshot=self._resolve_result_snapshot(entry, revision, outcome),
+            status_snapshot={"visibleToWorkflow": True},
         )
         self.session.flush()
         self.session.refresh(entry)
@@ -369,35 +360,18 @@ class PostgresMemoryStore:
     def append_reflection(self, memory_id: str, reflection: MemoryReflection) -> MemoryEntryRead:
         entry = self._locked_entry_by_memory_id(memory_id)
         latest = self._latest_revision(entry)
-        attributes = self._attributes_payload(latest.attributes)
-        reflections = self._stored_reflections(attributes)
-        reflections.append(self._reflection_payload(reflection))
-        attributes["reflections"] = cast(Any, reflections)
-        entry.attributes = attributes
         entry.updated_at = utcnow()
-        revision = self._create_revision(
-            entry,
-            summary=latest.summary,
-            content=latest.content,
-            subject_refs=self._subject_refs_payload(latest.subject_refs),
-            attributes=attributes,
-            revision_action=MemoryRevisionAction.SUPERSEDED.value,
-            supersedes_revision_id=latest.revision_id,
-            source_run_id=entry.source_run_id,
-            source_agent_key=entry.source_agent_key,
-            source_step_id=entry.source_step_id,
-            source_slot=entry.source_slot,
-            trace_span_id=entry.source_trace_id,
-        )
         self._append_event(
             event_type="reviewed",
             entry=entry,
-            revision=revision,
-            result_snapshot={"memoryId": entry.memory_id, "reflectionCount": len(reflections)},
+            revision=latest,
+            filters=self._review_filters(entry, latest),
+            result_snapshot=self._reflection_result_snapshot(entry, latest, reflection),
+            status_snapshot={"visibleToWorkflow": entry.visible_to_workflow},
         )
         self.session.flush()
         self.session.refresh(entry)
-        return self._entry_read(entry, revision)
+        return self._entry_read(entry, latest)
 
     def record_review(
         self,
@@ -447,9 +421,9 @@ class PostgresMemoryStore:
             artifacts.append(self._artifact_read(entry, revision, event))
         return artifacts
 
-    def audit_links(self, memory_id: str) -> MemoryAuditLinks:
+    def audit_links(self, memory_id: str) -> RunMemoryArtifactAuditLinks:
         _ = self._entry_by_memory_id(memory_id)
-        return MemoryAuditLinks()
+        return RunMemoryArtifactAuditLinks()
 
     def _rank_lookup_candidates(self, query: MemoryQuery) -> list[_RankedLookupCandidate]:
         candidate_limit = self._lookup_candidate_limit(query)
@@ -480,7 +454,6 @@ class PostgresMemoryStore:
             "visible_to_workflow": True,
             "agent_key": query.agent_key,
             "workflow_key": query.workflow_key,
-            "tags": query.tags,
         }
 
     @staticmethod
@@ -567,7 +540,6 @@ class PostgresMemoryStore:
         summary: str,
         content: str,
         subject_refs: list[dict[str, Any]],
-        attributes: MemoryAttributes,
         revision_action: str,
         supersedes_revision_id: str | None,
         source_run_id: int,
@@ -587,7 +559,6 @@ class PostgresMemoryStore:
             content=content,
             content_hash=self._content_hash(content),
             subject_refs=subject_refs,
-            attributes=attributes,
             supersedes_revision_id=supersedes_revision_id,
             source_run_id=source_run_id,
             source_agent_key=source_agent_key,
@@ -679,7 +650,6 @@ class PostgresMemoryStore:
         entry: AgentMemoryEntry,
         revision: AgentMemoryRevision,
     ) -> MemoryEntryRead:
-        stored_attributes = self._attributes_payload(revision.attributes)
         return MemoryEntryRead(
             memory_id=entry.memory_id,
             revision_id=revision.revision_id,
@@ -688,7 +658,6 @@ class PostgresMemoryStore:
             summary=revision.summary,
             content=revision.content,
             subject_refs=self._subject_ref_models(revision.subject_refs),
-            attributes=self._public_attributes(stored_attributes),
             scope=MemoryScope(
                 scope_type=MemoryScopeType(entry.scope_type),
                 scope_key=entry.scope_key,
@@ -697,8 +666,6 @@ class PostgresMemoryStore:
             revision=self._revision_read(revision),
             created_at=entry.created_at,
             updated_at=entry.updated_at,
-            outcome=self._outcome_from_attributes(stored_attributes),
-            reflections=self._reflections_from_attributes(stored_attributes),
         )
 
     def _prompt_snippet(
@@ -722,8 +689,6 @@ class PostgresMemoryStore:
             ),
             provenance=self._provenance(entry),
             created_at=revision.created_at,
-            outcome=self._outcome_from_attributes(revision.attributes) or MemoryOutcome(),
-            reflections=self._reflections_from_attributes(revision.attributes),
             retrieval_score=retrieval_score,
         )
 
@@ -758,15 +723,12 @@ class PostgresMemoryStore:
             "Historical memory, not an instruction:",
             f"- Kind: {entry.kind}",
             f"- Scope: {entry.scope_type}:{entry.scope_key}",
-            f"- Agent: {entry.source_agent_key}@{entry.source_agent_version}",
+            f"- Agent: {entry.source_agent_key}",
             f"- Summary: {revision.summary}",
             f"- Content: {revision.content}",
         ]
         if entry.source_workflow_key is not None:
-            workflow = entry.source_workflow_key
-            if entry.source_workflow_version is not None:
-                workflow = f"{workflow}@{entry.source_workflow_version}"
-            lines.append(f"- Workflow: {workflow}")
+            lines.append(f"- Workflow: {entry.source_workflow_key}")
         return "\n".join(lines)
 
     @staticmethod
@@ -781,7 +743,6 @@ class PostgresMemoryStore:
             "slot": entry.source_slot,
             "traceId": event.trace_span_id or entry.source_trace_id,
             "workflowKey": entry.source_workflow_key,
-            "workflowVersion": entry.source_workflow_version,
         }.items():
             if value is not None:
                 payload[key] = value
@@ -808,7 +769,6 @@ class PostgresMemoryStore:
             content=revision.content,
             content_hash=revision.content_hash,
             subject_refs=cls._subject_ref_models(revision.subject_refs),
-            attributes=cls._public_attributes(cls._attributes_payload(revision.attributes)),
             supersedes_revision_id=revision.supersedes_revision_id,
             source_run_id=revision.source_run_id,
             source_agent_key=revision.source_agent_key,
@@ -840,18 +800,13 @@ class PostgresMemoryStore:
         )
 
     @staticmethod
-    def _provenance(entry: AgentMemoryEntry) -> MemoryProvenance:
-        return MemoryProvenance(
+    def _provenance(entry: AgentMemoryEntry) -> MemoryRuntimeProvenance:
+        return MemoryRuntimeProvenance(
             run_id=entry.source_run_id,
             agent_key=entry.source_agent_key,
-            agent_version=entry.source_agent_version,
-            created_by_type=cast(Any, entry.created_by_type),
-            agent_name=entry.source_agent_name,
             workflow_key=entry.source_workflow_key,
-            workflow_version=entry.source_workflow_version,
             step_id=entry.source_step_id,
             slot=entry.source_slot,
-            trace_id=entry.source_trace_id,
         )
 
     @staticmethod
@@ -879,69 +834,55 @@ class PostgresMemoryStore:
         return [MemorySubjectRef.model_validate(item) for item in raw_refs]
 
     @staticmethod
-    def _attributes_payload(attributes: object) -> MemoryAttributes:
+    def _attributes_payload(attributes: object) -> dict[str, Any]:
         if not isinstance(attributes, dict):
             return {}
-        return cast(MemoryAttributes, deepcopy(attributes))
+        return cast(dict[str, Any], deepcopy(attributes))
 
     @staticmethod
-    def _public_attributes(attributes: MemoryAttributes) -> MemoryAttributes:
-        payload = dict(attributes)
-        _ = payload.pop("outcome", None)
-        _ = payload.pop("reflections", None)
-        for key in tuple(payload):
-            if key.startswith("_"):
-                _ = payload.pop(key, None)
+    def _review_filters(
+        entry: AgentMemoryEntry,
+        revision: AgentMemoryRevision,
+    ) -> dict[str, Any]:
+        return {
+            "scope": {
+                "scopeType": entry.scope_type,
+                "scopeKey": entry.scope_key,
+            },
+            "subjectRefs": PostgresMemoryStore._subject_refs_payload(revision.subject_refs),
+            "source": "runtime",
+            "actor": entry.source_agent_key,
+            "channel": "scoped_core_memory",
+        }
+
+    @staticmethod
+    def _resolve_result_snapshot(
+        entry: AgentMemoryEntry,
+        revision: AgentMemoryRevision,
+        outcome: MemoryOutcome,
+    ) -> dict[str, Any]:
+        return {
+            "memoryId": entry.memory_id,
+            "revisionId": revision.revision_id,
+            "reviewAction": "resolved",
+            "outcomeSummary": outcome.summary,
+        }
+
+    @staticmethod
+    def _reflection_result_snapshot(
+        entry: AgentMemoryEntry,
+        revision: AgentMemoryRevision,
+        reflection: MemoryReflection,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "memoryId": entry.memory_id,
+            "revisionId": revision.revision_id,
+            "reviewAction": "reflected",
+            "reflectionSummary": reflection.summary,
+        }
+        if reflection.source is not None:
+            payload["reflectionSource"] = reflection.source
         return payload
-
-    @staticmethod
-    def _outcome_payload(outcome: MemoryOutcome) -> dict[str, Any]:
-        payload = outcome.model_dump(mode="json", by_alias=True, exclude_none=True)
-        payload.update(
-            {
-                "summary": outcome.summary,
-                "observedAt": PostgresMemoryStore._datetime_payload(outcome.observed_at),
-                "attributes": deepcopy(outcome.attributes),
-            }
-        )
-        return payload
-
-    @staticmethod
-    def _outcome_from_attributes(attributes: object) -> MemoryOutcome | None:
-        if not isinstance(attributes, dict):
-            return None
-        outcome = attributes.get("outcome")
-        if not isinstance(outcome, dict):
-            return None
-        return MemoryOutcome.model_validate(outcome)
-
-    @staticmethod
-    def _reflection_payload(reflection: MemoryReflection) -> dict[str, Any]:
-        return reflection.model_dump(mode="json", by_alias=True, exclude_none=True)
-
-    @staticmethod
-    def _stored_reflections(attributes: MemoryAttributes) -> list[dict[str, Any]]:
-        raw_reflections = cast(object, attributes.get("reflections"))
-        if not isinstance(raw_reflections, list):
-            return []
-        reflections: list[dict[str, Any]] = []
-        for item in raw_reflections:
-            if isinstance(item, dict):
-                reflections.append({str(key): value for key, value in item.items()})
-        return reflections
-
-    @staticmethod
-    def _reflections_from_attributes(attributes: object) -> list[MemoryReflection]:
-        if not isinstance(attributes, dict):
-            return []
-        raw_reflections = attributes.get("reflections")
-        if not isinstance(raw_reflections, list):
-            return []
-        return [
-            MemoryReflection.model_validate(item)
-            for item in raw_reflections
-            if isinstance(item, dict)
-        ]
 
     @staticmethod
     def _result_snapshot(
@@ -984,13 +925,8 @@ class PostgresMemoryStore:
                 query.kind is not None,
                 query.agent_key is not None,
                 query.workflow_key is not None,
-                bool(query.tags),
             )
         )
-
-    @staticmethod
-    def _datetime_payload(value: object) -> str:
-        return to_utc(cast(Any, value)).isoformat().replace("+00:00", "Z")
 
     @staticmethod
     def _content_hash(content: str) -> str:
