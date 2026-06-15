@@ -109,11 +109,14 @@ merged_cors_allowed_origins() {
   local frontend_port="$2"
   local allowed_origins="${CORS_ALLOWED_ORIGINS:-}"
   local host
+  local port
 
-  while IFS= read -r host; do
-    [[ -z "$host" ]] && continue
-    allowed_origins="$(append_unique_origin "$allowed_origins" "http://${host}:${frontend_port}")"
-  done < <(normalize_loopback_aliases "$frontend_host")
+  for port in 25173 25174 "$frontend_port"; do
+    while IFS= read -r host; do
+      [[ -z "$host" ]] && continue
+      allowed_origins="$(append_unique_origin "$allowed_origins" "http://${host}:${port}")"
+    done < <(normalize_loopback_aliases "$frontend_host")
+  done
 
   printf '%s' "$allowed_origins"
 }
@@ -344,4 +347,4 @@ BACKEND_PID=$!
 fi
 
 cd "$FRONTEND_DIR"
-VITE_API_BASE_URL="$API_BASE_URL" pnpm dev --host "$FRONTEND_HOST" --port "$SELECTED_FRONTEND_PORT"
+VITE_API_BASE_URL="$API_BASE_URL" pnpm dev --host "$FRONTEND_HOST" --port "$SELECTED_FRONTEND_PORT" --strictPort
