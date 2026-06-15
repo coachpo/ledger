@@ -33,7 +33,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Report routes | `reports.py` | filterable list/detail, compile from template, external create, upload markdown, edit, delete, download |
 | Platform routes | `workflow_packages.py`, `schedules.py`, `model_connections.py`, `extensions.py`, `memory.py`, `tools.py`, `runs.py` | live `/api/*` routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs, including rerun/fork endpoints under Runs |
 | Finance route registrations | `../extensions/signaldeck_finance/api_routers.py` | extension-gated `/api/v1` registration list for preserved finance routes |
-| Removed global authoring APIs | `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows` | deleted after cutover proof; keep only removed-surface absence guards, not route modules |
+| Removed global authoring APIs | `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/api/v1/templates/seed`, `/api/v1/orchestration/*`, `/api/v2/*` | deleted after cutover proof; keep only removed-surface absence guards, not route modules |
 | Shared API handlers | `../main.py`, `../core/errors.py` | healthcheck plus global error translation |
 
 ## CONVENTIONS
@@ -48,7 +48,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
 - Workflow Package routes are canonical for platform authoring. The mounted platform routers are Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs. Package manifests keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
 - Scheduled Task routes expose package-first automation only: list/detail/create/update/delete, fire history, unsaved/saved preview, and run-now. They delegate recurrence, template rendering, idempotency, run materialization, and schedule-owned cleanup to services.
-- Legacy global authoring route modules have been deleted after cutover proof. Do not recreate them, remount them, document them as live, or treat them as compatibility aliases.
+- Legacy global authoring route modules plus `/api/v1/templates/seed`, `/api/v1/orchestration/*`, and `/api/v2/*` have been deleted after cutover proof. Do not recreate them, remount them, document them as live, or treat them as compatibility aliases.
 - Do not change runtime tool keys or OpenAI function names here.
 
 ## ANTI-PATTERNS

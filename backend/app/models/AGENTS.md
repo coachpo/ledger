@@ -32,6 +32,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Extension state | `extension.py` | persisted enable/disable state for statically resident extension keys |
 | Platform package entities | `workflow_package.py`, `workflow_package_schedule.py` | package headers, immutable package version artifacts, package-backed schedules, and schedule fire history |
 | Platform global entities | `model_connection.py`, `run.py` | saved model connections plus persisted global run detail, schedule provenance, and package provenance |
+| Quarantined legacy entities | `agent.py`, `workflow.py`, `capability.py`, `mcp_server.py`, `output_schema.py`, `platform_reference.py` | cutover-era models kept out of live routes/import paths; do not document as shipped authoring surfaces |
 ## CONVENTIONS
 - ORM models use `Mapped[...]` annotations and `mapped_column(...)`.
 - Use explicit table names via `__tablename__` and explicit indexes or `CheckConstraint`s.
@@ -68,3 +69,4 @@ uv run pytest tests/test_api.py tests/test_runtime_models.py
 - `report.py` stores unique `name` and `slug`, tracks the canonical origin `source` values `compiled`, `uploaded`, `external`, and `agent`, and keeps optional metadata in JSONB under the `metadata` column. Historical agent-memory reports remain report-domain records; canonical memory rows live in `agent_memory.py`.
 - `symbol_name_cache.py` is intentionally `UNLOGGED` because the cache is reconstructible from provider lookups.
 - `extension.py` stores `extension_states` rows keyed by statically resident extension key; the initial enabled seed is declared in `app/extensions/registry.py` and applied by DB upgrades.
+- Legacy global-authoring model files may still exist for startup cleanup or quarantine tests, but Workflow Packages and run-owned snapshots are the live persistence contracts.
