@@ -1370,6 +1370,7 @@ export function ScheduledTasksListPage() {
         description: "Manage durable Workflow Package schedules.",
         title: "Scheduled Tasks",
       }}
+      renderContent={false}
       testId="scheduled-tasks-list-page"
       toolbar={{
         filters: (
