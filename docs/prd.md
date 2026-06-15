@@ -1,6 +1,6 @@
 # Product Requirements Document
 
-> Status: Live product-scope reference for branch `main` at `f4f487f`.
+> Status: Live product-scope reference for branch `main` at `6c40d44`.
 
 ## Product Summary
 
@@ -26,7 +26,7 @@ Digital Oracle runtime support ships through the statically resident bundled `si
 - Live broker integration, order routing, realtime quotes, alerts, tax-lot accounting, or user-facing autonomous scheduling products. The backend run scheduler is internal queue infrastructure only.
 - Removed Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract, global Digital Oracle skill, or standalone global authoring browser/API surfaces.
 - TradingAgents-specific platform behavior or exact LangGraph graph parity. TradingAgents is smoke/demo package data and research rationale only.
-- Unscoped runtime memory search, public memory CRUD, exact-id runtime memory get, embeddings, or memory chunk-table workflows in the current phase.
+- Unscoped runtime memory search, public memory CRUD, exact-id runtime memory get, or vector retrieval workflows in the current phase.
 
 ## Product Areas
 
