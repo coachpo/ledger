@@ -38,6 +38,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Generate Report is a saved-template flow only. Keep it behind the shared dialog plus `useCompileReport()` instead of ad-hoc page fetch logic.
 - Placeholder browsing, exact JSON preview, and markdown formatting stay in shared helpers/components; the page composes them but does not reimplement their parsing or serialization logic.
 - Route metadata owns `/templates` as a scroll inventory and `/templates/new` plus `/templates/:templateId/edit` as full-height editor routes. Keep the editor shell labeled and mobile contained.
+- Finance runtime gates own disabled-extension states for list, new, and edit routes; do not fork extension-disabled rendering inside the route pages.
 - Template table navigation must stay as visible links. The table owns row checkboxes, select-all for shown rows, the bottom bulk-action bar, and clear selection. Formatting, preview, close, save, generate, delete, and runtime-input row actions remain buttons or form controls.
 
 ## ANTI-PATTERNS
