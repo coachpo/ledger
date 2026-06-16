@@ -25,6 +25,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 - MCP configs are package-private runtime dependencies; do not recreate global live MCP authoring routes.
+- Runtime dispatch accepts only `packagePrivate: true` MCP refs; global MCP refs are rejected instead of treated as compatibility aliases.
+- Current package-private MCP runtime tool grants are allowlisted by descriptor key/version/hash. Keep `web_search_exa` as the only shipped browser-authored MCP runtime key unless backend tests and package preflight move with it.
 - URL/stdio validation belongs in `security.py`; routes/services should not duplicate or weaken those checks.
 - Runtime results must be safe for model consumption: redact long or sensitive MCP text and preserve tool/server identifiers for auditability.
 - MCP tool schemas are adapter output, not hand-built OpenAI schemas scattered through execution services.
