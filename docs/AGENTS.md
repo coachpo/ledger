@@ -2,7 +2,7 @@
 
 > Inherits `/AGENTS.md`. This file governs the live reference docs in `docs/`.
 >
-> Status: Docs consolidation reference for branch `main` at `d916433`.
+> Status: Docs consolidation reference for branch `main` at `9c6feec`.
 
 ## OVERVIEW
 

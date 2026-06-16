@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-06-15
-**Commit:** 389cb17
+**Generated:** 2026-06-16
+**Commit:** 9c6feec
 **Branch:** main
 
 ## OVERVIEW
@@ -24,7 +24,7 @@ Keep platform-core versus extension-owned boundaries explicit. Decide intentiona
 - `backend/app/extensions/signaldeck_finance/AGENTS.md`, `backend/app/extensions/signaldeck_digital_oracle/AGENTS.md` — first-party extension ownership
 - `.github/workflows/AGENTS.md` — CI gates, container publishing, and cleanup workflow rules
 - `docs/AGENTS.md` — live docs ownership, obsolete-content rules, and platform/extension documentation boundary
-- `frontend/AGENTS.md`, `frontend/DESIGN_SYSTEM.md`, `frontend/e2e/AGENTS.md` — frontend shell, design system, browser tests, and startup conventions
+- `frontend/AGENTS.md`, `frontend/src/components/shared/docs/README.md`, `frontend/e2e/AGENTS.md` — frontend shell, design system, browser tests, and startup conventions
 - `frontend/src/extensions/AGENTS.md`, `frontend/src/hooks/AGENTS.md`, `frontend/src/lib/**/AGENTS.md` — extension runtime, query hooks, API/type/platform-authoring contracts
 - `frontend/src/components/**/AGENTS.md`, `frontend/src/pages/AGENTS.md` — reusable UI, feature UI, form/dialog helpers, and routed page-family rules
 - `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/memory/AGENTS.md`, `frontend/src/pages/scheduled-tasks/AGENTS.md`, `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md`, `frontend/src/pages/runs/detail-sections/AGENTS.md` — deeper route-family hotspots
@@ -54,7 +54,7 @@ signaldeck/
 | Backend runtime tools, MCP, schedules, memory, and traces | `backend/app/agents/AGENTS.md`, `backend/app/agents/{tool_catalog,runtime_tools,mcp}/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py`, `backend/app/services/workflow_package_schedule_service.py`, `backend/app/workers/run_scheduler.py`, `backend/app/api/memory.py`, `backend/app/core/telemetry.py` | server-declared tools, native runtime tools, due schedule materialization, MCP snapshots/dispatch, platform-core memory API, Logfire trace ids/spans, and memory writes |
 | Backend preserved v1 flow | `backend/app/extensions/signaldeck_finance/api_routers.py`, `backend/app/api/portfolios.py`, `backend/app/api/balances.py`, `backend/app/api/positions.py`, `backend/app/api/trading_operations.py`, `backend/app/api/market_data.py`, `backend/app/api/templates.py`, `backend/app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
 | Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/routes.metadata.ts`, `frontend/src/extensions/runtime-helpers.ts`, `frontend/src/components/layout.tsx` | query client, router provider, metadata-driven shell/nav rendering, extension route assembly, and theme toggle |
-| Frontend shared route shells and design system | `frontend/DESIGN_SYSTEM.md`, `frontend/src/components/shared/AGENTS.md`, `frontend/src/hooks/AGENTS.md` | design tokens, inventory/workspace/split-inspector shells, management-list actions/selection, and reusable view/filter/selection/inspector state hooks |
+| Frontend shared route shells and design system | `frontend/src/components/shared/docs/README.md`, `frontend/src/components/shared/AGENTS.md`, `frontend/src/hooks/AGENTS.md` | UI/UX standards, inventory/workspace/split-inspector shells, management-list actions/selection, and reusable view/filter/selection/inspector state hooks |
 | Frontend extension runtime | `frontend/src/extensions/AGENTS.md`, `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/extensions/runtime.tsx`, `frontend/src/extensions/runtime-helpers.ts`, `frontend/src/hooks/use-extensions.ts` | frontend route/nav/tool filtering plus statically resident extension state UI |
 | Frontend agent-platform UI | `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/scheduled-tasks/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md`, `frontend/src/pages/memory/AGENTS.md` | Workflow Packages, Scheduled Tasks, Model Connections, Runs, and Memory; Tools appear as package-authoring metadata, not a standalone browser route |
 | Frontend preserved product UI | `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md` | preserved portfolio, template, and report routes |
