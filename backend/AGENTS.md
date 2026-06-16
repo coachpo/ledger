@@ -27,11 +27,11 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `app/api/AGENTS.md` — route-handler delegation, extension-gated `/api/v1`, and dependency wiring
 - `app/extensions/AGENTS.md` — statically resident extension registry, slim state, private registrar, and ownership boundaries
 - `app/extensions/signaldeck_finance/AGENTS.md` — `signaldeck.finance` route/tool/provider/report ownership
-- `app/agents/AGENTS.md` — tool catalog, native runtime tools, MCP security/runtime boundaries, and platform memory-tool ownership
-- `app/services/AGENTS.md` — service orchestration, extension state, manifests, Scheduled Tasks, execution providers/lifecycle hooks, runtime execution, core memory, historical agent-memory reports, and quote-provider wiring
-- `app/schemas/AGENTS.md` — request/response validation, manifests, memory metadata, serialization
-- `app/models/AGENTS.md` — ORM entities, constraints, indexes, cache tables, manifests, runtime metadata
-- `app/repositories/AGENTS.md` — SQLAlchemy query/repository patterns and runtime lookups
+- `app/agents/AGENTS.md` — tool catalog, native runtime tools, MCP security/runtime boundaries, and declarative workflow memory middleware ownership
+- `app/services/AGENTS.md` — service orchestration, extension state, manifests, Scheduled Tasks, execution providers/lifecycle hooks, runtime execution, workflow memory review/middleware, historical report-domain agent-memory records, and quote-provider wiring
+- `app/schemas/AGENTS.md` — request/response validation, manifests, workflow memory review payloads, serialization
+- `app/models/AGENTS.md` — ORM entities, constraints, indexes, cache tables, manifests, workflow memory tables, and runtime metadata
+- `app/repositories/AGENTS.md` — SQLAlchemy query/repository patterns and workflow memory persistence lookups
 - `tests/AGENTS.md` — pytest fixtures, isolated PostgreSQL databases, and high-signal regression tests
 
 ## STRUCTURE
@@ -42,7 +42,7 @@ backend/
 ├── app/api/                    # APIRouter modules + dependency wiring for /api/v1 and /api/*
 ├── app/extensions/             # statically resident extension registry plus finance and Digital Oracle ownership
 ├── app/agents/                 # server-declared tools, native runtime tools, MCP boundaries
-├── app/services/               # CRUD, extension state, manifests, schedules, execution, queueing, memory, templates, market data, trading rules
+├── app/services/               # CRUD, extension state, manifests, schedules, execution, queueing, workflow memory, templates, market data, trading rules
 ├── app/workers/                # long-lived scheduler worker entrypoints for queued package runs
 ├── app/repositories/           # persistence queries
 ├── app/models/                 # SQLAlchemy entities + constraints/indexes
@@ -57,14 +57,14 @@ backend/
 | Service construction | `app/api/dependencies.py` | constructs extension-aware CRUD, template, report, ToolCatalog, MCP tester, platform, run, and quote-provider services |
 | Extension registry/state | `app/extensions/AGENTS.md`, `app/services/extension_service.py`, `app/api/extensions.py` | private statically resident extension registry, slim `/api/extensions`, enabled tool/runtime filtering |
 | Platform route families | `app/api/workflow_packages.py`, `app/api/schedules.py`, `app/api/model_connections.py`, `app/api/extensions.py`, `app/api/memory.py`, `app/api/tools.py`, `app/api/runs.py` | Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs |
-| Runtime tools / MCP / scheduler / traces | `app/agents/AGENTS.md`, `app/workers/AGENTS.md`, `app/services/workflow_package_schedule_service.py`, `app/services/workflow_package_schedule_materializer.py`, `app/services/run_queue_service.py`, `app/services/run_read_projection.py`, `app/services/run_service.py`, `app/core/telemetry.py` | server-declared tools, due schedule materialization, extension-filtered native runtime dispatch, explicit queued-run worker, backend progress/queue read models, MCP snapshots, Logfire trace ids/spans, and memory writes |
+| Runtime tools / MCP / scheduler / traces | `app/agents/AGENTS.md`, `app/workers/AGENTS.md`, `app/services/workflow_package_schedule_service.py`, `app/services/workflow_package_schedule_materializer.py`, `app/services/run_queue_service.py`, `app/services/run_read_projection.py`, `app/services/run_service.py`, `app/core/telemetry.py` | server-declared tools, due schedule materialization, extension-filtered native runtime dispatch, explicit queued-run worker, backend progress/queue read models, MCP snapshots, Logfire trace ids/spans, and workflow memory evidence |
 | Preserved v1 route families | `app/extensions/signaldeck_finance/api_routers.py`, `app/api/portfolios.py`, `app/api/balances.py`, `app/api/positions.py`, `app/api/trading_operations.py`, `app/api/market_data.py`, `app/api/templates.py`, `app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
 | Shared config / errors / telemetry / normalization | `app/core/AGENTS.md` | env aliases, `ApiError`, Logfire setup, decimal/symbol/currency helpers |
 | DB init/session | `app/db/AGENTS.md` | engine/session caches, `init_db()`, PostgreSQL upgrades, startup repair, and repair markers |
-| Service internals | `app/services/AGENTS.md` | transactions, manifest parser/compiler/decompiler/backfills, schedule recurrence/materialization, execution providers/lifecycle hooks, runtime execution, queue claims/read projections, core memory, historical agent-memory reports, and market-data fallback |
-| API payload shape | `app/schemas/AGENTS.md` | Pydantic validation, manifest contracts, run progress/queue read models, memory metadata, serialization, camelCase aliasing |
+| Service internals | `app/services/AGENTS.md` | transactions, manifest parser/compiler/decompiler/backfills, schedule recurrence/materialization, execution providers/lifecycle hooks, runtime execution, queue claims/read projections, workflow memory middleware/review, historical report-domain agent-memory records, and market-data fallback |
+| API payload shape | `app/schemas/AGENTS.md` | Pydantic validation, manifest contracts, run progress/queue read models, workflow memory review payloads, serialization, camelCase aliasing |
 | Persistence / constraints | `app/models/AGENTS.md`, `app/repositories/AGENTS.md` | ORM entities, report/cache/model-connection tables, manifest fields, run forks, and runtime data access |
-| Core test coverage | `tests/AGENTS.md` | CRUD, manifests, MCP, package preflight, rerun/fork contracts, core memory and historical agent-memory reports, runtime tools, removed-surface coverage, and DB-upgrade coverage |
+| Core test coverage | `tests/AGENTS.md` | CRUD, manifests, MCP, package preflight, rerun/fork contracts, workflow memory middleware/review, historical report-domain agent-memory records, runtime tools, removed-surface coverage, and DB-upgrade coverage |
 
 ## CONVENTIONS
 - Each route module declares `APIRouter(prefix=..., tags=[...])`, accepts integer ids where applicable, and delegates to a service.
@@ -76,13 +76,13 @@ backend/
 - Shared domain errors come from `app/core/errors.py`; routes and services should raise `ApiError` helpers rather than raw framework exceptions.
 - Logfire setup and trace/span id formatting live in `app/core/telemetry.py`; run execution must keep working when no Logfire token is configured.
 - Services return read schemas via `*.model_validate(...)` and own `commit()/rollback()` around multi-step writes.
-- `ReportService` owns slug normalization, timestamped report-name generation for compiled reports, external JSON creation, filtered list retrieval, markdown-upload validation, and download-by-slug semantics; agent-memory report updates route through memory services.
+- `ReportService` owns slug normalization, timestamped report-name generation for compiled reports, external JSON creation, filtered list retrieval, markdown-upload validation, and download-by-slug semantics; historical agent-memory report records are report-domain history only and do not feed workflow memory retrieval.
 - Workflow package writes use YAML manifest parser/compiler/decompiler services; unsupported `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite values, duplicate refs, raw global ids, and old workflow roots stay invalid. Package save/import is artifact-only; launch, preflight, rerun, and fork evaluate live readiness later.
 - Scheduled Tasks use `/api/schedules`, structured recurrence, IANA timezones, JSON input templates, idempotent manual fires, and ordinary queued runs. The scheduler worker materializes due fires; routes do not execute runs inline.
-- Removed orchestration, Studio, Tryout, runtime-v2 routes, and global authoring routes are not mounted live. Keep docs aligned with Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs.
-- `signaldeck.finance` owns preserved `/api/v1` finance routers, finance service dependencies, provider factories, finance runtime tools, report lookup, and historical agent-memory report readers while enabled.
+- Removed orchestration, Studio, Tryout, runtime-v2 routes, and global authoring routes are not mounted live. Keep docs aligned with Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Workflow Memory Review, Tools, and Runs.
+- `signaldeck.finance` owns preserved `/api/v1` finance routers, finance service dependencies, provider factories, finance runtime tools, report lookup, and historical report-domain agent-memory readers while enabled.
 - `signaldeck.digital_oracle` is default enabled and tool-only in this upgrade. It owns `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup` with canonical owner-qualified tool keys and mechanical OpenAI function names, and it adds no API router, provider bundle, lifecycle hook, route, or nav surface.
-- Tools are global read-only metadata at `/api/tools`; packages reference only canonical owner-qualified tool keys through package-local capability profiles. The live public keys are `signaldeck.core.memory.write`, `signaldeck.core.memory.lookup`, `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, `signaldeck.finance.reports.lookup`, `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup`. Platform-core memory tools stay separate from extension-owned Finance Workspace and Digital Oracle tools.
+- Tools are global read-only metadata at `/api/tools`; packages reference only canonical owner-qualified tool keys through package-local capability profiles. Live tool metadata is extension-owned Finance Workspace and Digital Oracle tooling; Workflow Package memory is declared through `spec.memory`, not direct runtime memory tools.
 - LLM-provider calls must stay inside official SDK clients (`OpenAI`) rather than ad-hoc raw HTTP request code.
 
 ## ANTI-PATTERNS
@@ -117,7 +117,7 @@ uv run pytest
 
 ## NOTES
 - `tests/test_api.py` is the high-signal regression file for CRUD, templates, reports, trading operations, market-data fallback, symbol-name cache behavior, report placeholder cycles, and schema upgrades.
-- Extension API, extension registry, lifecycle matrix, social sentiment, manifest, MCP, runtime-tool, memory-report, workflow package, schedule, tool catalog, model connection, and reset-seed tests cover the current agent-platform and finance-extension contract beyond the original runtime suite.
-- `tests/test_workflow_package_*.py`, `tests/test_workflow_package_runtime_api.py`, `tests/test_workflow_package_runtime_artifacts.py`, `tests/test_workflow_package_run_contracts.py`, `tests/test_workflow_package_preflight.py`, `tests/test_workflow_run_contract_schemas.py`, `tests/test_run_operation_invocations.py`, `tests/test_memory_domain_schemas.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, preflight/tool contracts, scheduled tasks, rerun/fork behavior, scheduler queues, trace, run-owned snapshot provenance, memory DTOs, and current-package persistence contracts.
+- Extension API, extension registry, lifecycle matrix, social sentiment, manifest, MCP, runtime-tool, workflow-memory, workflow package, schedule, tool catalog, model connection, and reset-seed tests cover the current agent-platform and finance-extension contract beyond the original runtime suite.
+- `tests/test_workflow_package_*.py`, `tests/test_workflow_package_runtime_api.py`, `tests/test_workflow_package_runtime_artifacts.py`, `tests/test_workflow_package_run_contracts.py`, `tests/test_workflow_package_preflight.py`, `tests/test_workflow_run_contract_schemas.py`, `tests/test_run_operation_invocations.py`, `tests/test_workflow_memory_*.py`, `tests/test_agent_execution_memory_context.py`, `tests/test_run_read_projection.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, preflight/tool contracts, scheduled tasks, rerun/fork behavior, scheduler queues, trace, run-owned snapshot provenance, workflow memory evidence, and current-package persistence contracts.
 - `tests/test_runtime_db_upgrades.py` and `tests/test_legacy_backend_cutover.py` cover startup schema repair, schedule tables, retired-table cleanup, and removed-route guarantees.
 - There is no live Alembic migration path; schema changes stay in `app/db/upgrades.py`, even if a scaffold reappears.

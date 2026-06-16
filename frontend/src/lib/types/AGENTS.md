@@ -33,7 +33,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Package-local authoring contracts | `agent.ts`, `capability.ts`, `output-schema.ts`, `mcp-server.ts`, `workflow.ts` | package-local agent, capability profile, output schema, private MCP, and workflow graph resource shapes |
 | Scheduled Task contracts | `schedule.ts` | recurrence, status, preview, fire history, run-now, and schedule-linked run payloads |
 | Platform catalog and binding contracts | `tool.ts`, `model-connection.ts` | read-only tool metadata and saved model connection payloads |
-| Platform memory contracts | `memory.ts` | admin entries, scopes, `visibleToWorkflow`, provenance, history, write payloads, and separate scoped runtime payloads |
+| Platform memory contracts | `memory.ts` | proposal review, approve/reject, audit-event, and quarantine payloads |
 | Platform execution contracts | `run.ts` | run list/detail, monitor payloads, memory evidence, and package provenance |
 
 ## CONVENTIONS
@@ -46,8 +46,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Package-local authoring types are frontend wire mirrors for resources inside Workflow Packages; do not promote them back into global `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, or `/workflows*` route contracts.
 - Extension state types must stay slim. Do not add plugin-manifest fields, scaffold data, reason text, categories, version policy, or state counters to `extension.ts`.
 - Scheduled Task types use structured recurrence, IANA timezone strings, JSON object templates/vars, `scheduled` or `manual` fire reasons, and schedule-linked run metadata; do not introduce raw cron or finance-owned fields here.
-- Run memory evidence is phase-1 core memory shaped: `memoryEvents` carries the full event stream, `memoryArtifacts` is the compact artifact slice, and `memoryId` is an opaque string. Optional report actions live only under `auditLinks.report`; frontend types must not derive report slugs, report downloads, or route paths from `memoryId`.
-- `memory.ts` covers trusted admin `/api/memory/admin/entries*` shapes and separate scoped runtime `/api/memory` shapes. Admin entries carry scope, `visibleToWorkflow`, provenance, revision, and history semantics; runtime lookup and write must stay scoped and must not become admin-style all-package search. Runtime lookup output omits visibility; runtime write output includes `visibleToWorkflow`. Admin delete is a single-entry `204 No Content` mutation and does not need a request/response wire shape.
+- Run memory evidence is exposed through `workflowMemoryEvidence` on `run.ts`, grouped into injections, proposals, decisions, quarantines, checkpoints, and audit events. Do not add alternate run-detail memory streams, compact artifact slices, or report-link derivation from opaque memory identifiers.
+- `memory.ts` covers workflow memory proposal, decision, audit-event, and quarantine shapes for the review route. It must not reintroduce browser entry CRUD, direct model-execution payloads, or all-package search/storage shapes.
 - There is no vector activation/search, embeddings browser, wildcard memory browser, namespace-grant authoring shape, bulk-delete selection shape, runtime delete shape, tombstone/recycle/undo/delete-reason shape, or report-history promotion shape.
 
 ## ANTI-PATTERNS

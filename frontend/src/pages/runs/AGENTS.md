@@ -4,7 +4,7 @@
 
 ## OVERVIEW
 
-`src/pages/runs/` contains the routed run inventory and run detail views. The list page acts as a polling monitor, and the detail route has grown into the execution evidence surface: progress, usage, lineage diagrams, root-parameter rerun, invocation-specific fork actions, trace linkage, inspection panes, memory event groups, memory artifacts, and per-agent/per-operation drilldowns.
+`src/pages/runs/` contains the routed run inventory and run detail views. The list page acts as a polling monitor, and the detail route has grown into the execution evidence surface: progress, usage, lineage diagrams, root-parameter rerun, invocation-specific fork actions, trace linkage, inspection panes, workflow memory evidence groups, and per-agent/per-operation drilldowns.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
@@ -33,8 +33,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 - `list.tsx` keeps target-kind, target-key, and status filters local to the page and refetches on a timer while any run is queued or running.
 - Run list and detail render backend `run.progress` and nullable `run.queue`; do not recreate status-to-percent or queued-reason heuristics in the page layer. Keep trace linkage visible even when the top-level trace id is missing.
-- Run detail renders `memoryEvents` as the canonical run-scoped evidence stream and `memoryArtifacts` as the compact artifact slice. Artifact `memoryId` values are opaque. Report open/download actions are optional audit actions sourced from `artifact.auditLinks.report.url` and `artifact.auditLinks.report.downloadUrl`, never derived from `memoryId`.
-- Memory event presentation is grouped into retrieved context, memory writes/reuse, review/follow-up, and audit-trail panes; keep those groupings route-owned instead of flattening everything into one raw event list.
+- Run detail renders backend `workflowMemoryEvidence` as the canonical run-scoped memory evidence surface. Keep injections, proposals, decisions, quarantines, checkpoints, and audit events grouped in route-owned panes instead of flattening everything into one raw event list.
 - Per-agent and per-operation details stay inside accordions/inspection panes so the page can expose the full run without flattening the layout.
 - Run detail expects ref-based invocation payloads such as `agentRef` and `outputSchemaRef`, not scalar internal ids.
 - Rerun is the only root-parameter editor. It opens from `rerun=1` and uses rerun draft/create hooks.

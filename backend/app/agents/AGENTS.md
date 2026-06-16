@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file covers `app/agents/` only.
 
 ## OVERVIEW
-`app/agents/` owns server-declared tool metadata, native runtime tool dispatch, and MCP execution boundaries. Extension registrars contribute extension-owned tool specs and executors, while `ExtensionService` decides which enabled extension keys reach `ToolCatalog`, `RuntimeToolRegistry`, execution providers, and run lifecycle hooks. This package keeps platform-owned memory tools separate from extension-owned tools and owns the safe MCP/runtime boundary.
+`app/agents/` owns server-declared tool metadata, native runtime tool dispatch, and MCP execution boundaries. Extension registrars contribute extension-owned tool specs and executors, while `ExtensionService` decides which enabled extension keys reach `ToolCatalog`, `RuntimeToolRegistry`, execution providers, and run lifecycle hooks. Workflow Package memory now runs through declarative `spec.memory` middleware and review surfaces instead of public runtime tool declarations.
 
 Extension model: statically resident extension-contributed tools from Finance Workspace and Digital Oracle Runtime.
 
@@ -35,22 +35,21 @@ app/agents/
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Server-declared tools | `tool_catalog/AGENTS.md`, `tool_catalog/server_declared.py`, `../extensions/signaldeck_finance/tool_specs.py`, `../extensions/signaldeck_digital_oracle/tool_specs.py` | canonical platform memory tool keys plus extension-contributed keys, names, and descriptions |
+| Server-declared tools | `tool_catalog/AGENTS.md`, `tool_catalog/server_declared.py`, `../extensions/signaldeck_finance/tool_specs.py`, `../extensions/signaldeck_digital_oracle/tool_specs.py` | extension-contributed tool keys, names, and descriptions |
 | Capability tool-key validation | `tool_catalog/AGENTS.md`, `tool_catalog/__init__.py` | validates `toolKeys` against known server tools after enabled-extension filtering |
 | Native registry | `runtime_tools/AGENTS.md`, `runtime_tools/__init__.py`, `runtime_tools/registry.py`, `../extensions/signaldeck_finance/runtime_executors.py`, `../extensions/signaldeck_digital_oracle/runtime_executors.py` | core plus extension OpenAI tool definitions and grant-checked dispatch |
-| Core memory native tools | `runtime_tools/AGENTS.md`, `runtime_tools/memory.py` | platform-owned `signaldeck.core.memory.write` and `signaldeck.core.memory.lookup` parsers, access rules, executors, and result models |
+| Workflow Package memory middleware | workflow memory context service, `../services/workflow_memory_middleware.py`, `../services/workflow_memory_policy_service.py`, `../services/workflow_checkpoint_service.py`, `../services/agent_execution_service.py` | declarative memory context injection, proposal staging, policy activation, checkpoints, and review persistence for package runs |
 | Extension runtime tools | `../extensions/signaldeck_finance/runtime_*`, `../extensions/signaldeck_digital_oracle/runtime_*` | Finance Workspace quotes/history/OHLCV/indicators/fundamentals/news/social sentiment/insider data, positions, and report lookup plus Digital Oracle prediction markets, SEC filings, and market sentiment |
 | MCP runtime | `mcp/AGENTS.md`, `mcp/boundaries.py`, `mcp/security.py`, `mcp/runtime.py`, `mcp/tool_adapter.py` | saved config boundaries, URL/stdio safety, snapshots, dispatch |
 | Integration points | `../services/extension_service.py`, `../services/agent_execution_service.py` | enabled-extension filtering, runtime dispatch, and execution wiring |
-| Coverage | `../../tests/test_runtime_tools.py`, `../../tests/test_mcp_runtime.py`, `../../tests/test_workflow_package_preflight.py` | tool keys, MCP safety, memory outputs, and package capability validation |
+| Coverage | `../../tests/test_runtime_tools.py`, `../../tests/test_mcp_runtime.py`, `../../tests/test_workflow_package_preflight.py`, `../../tests/test_workflow_memory_middleware.py` | tool keys, MCP safety, workflow memory middleware, and package capability validation |
 
 ## CONVENTIONS
-- Core memory tool keys `signaldeck.core.memory.write` and `signaldeck.core.memory.lookup` are platform-owned, have OpenAI function names `signaldeck_core_memory_write` and `signaldeck_core_memory_lookup`, and must remain visible when all extensions are disabled.
 - `ToolCatalog` and `RuntimeToolRegistry` must be built through extension-aware service wiring; do not construct alternate request-local registries that bypass enabled-extension filtering.
-- Server-declared public tool keys use only the canonical `signaldeck.<owner>.<tool_collection>.<tool>` scheme. The live keys are `signaldeck.core.memory.write`, `signaldeck.core.memory.lookup`, `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, `signaldeck.finance.reports.lookup`, `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup`; OpenAI function names are mechanical underscores derived from those canonical keys. Core memory tools are platform-owned, while Finance Workspace and Digital Oracle tools are extension-owned.
+- Server-declared public tool keys use only the canonical `signaldeck.<owner>.<tool_collection>.<tool>` scheme for extension-owned tools. The live extension keys are `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, `signaldeck.finance.reports.lookup`, `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup`; OpenAI function names are mechanical underscores derived from those canonical keys.
 - `signaldeck.finance.reports.lookup` remains a finance-owned report lookup anchor. The retired report-backed memory write surface is not a live runtime tool; do not route new core memory behavior through finance registrars.
-- Model-visible tool outputs must not expose report ids, slugs, names, raw markdown, URLs, downloads, or audit links. Runtime memory lookup output omits workflow visibility; runtime memory write output may expose `memoryId`, `revisionId`, `visibleToWorkflow`, revision action, provenance, and warnings.
-- Runtime tools and prompt builders treat `memoryId` values as opaque platform-core memory identifiers.
+- Model-visible tool outputs must not expose report ids, slugs, names, raw markdown, URLs, downloads, or audit links. Memory context and review projections must stay scoped to package/run/agent boundaries and keep `memoryId` values opaque.
+- Runtime prompt builders and memory middleware treat `memoryId` values as opaque platform-core memory identifiers.
 - MCP boundary code owns URL/stdio safety, saved config normalization, snapshots, and dispatch wrapping; keep that safety logic here instead of scattering it through routes or services.
 - Do not recreate a `skills/` namespace here; package-private skills are not a live backend app/agents contract.
 
@@ -68,5 +67,5 @@ uv run pytest tests/test_runtime_tools.py tests/test_mcp_runtime.py tests/test_w
 ```
 
 ## NOTES
-- The live platform/server-declared tool contract is small: platform-owned memory tools plus extension-filtered finance market/report tools and Digital Oracle runtime tools.
+- The live platform/server-declared tool contract is small: extension-filtered finance market/report tools and Digital Oracle runtime tools, with Workflow Package memory handled by declarative middleware.
 - Most user-visible drift here shows up first in package preflight, runtime tool, or MCP tests rather than route handlers.

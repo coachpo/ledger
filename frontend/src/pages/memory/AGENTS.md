@@ -4,9 +4,9 @@
 
 ## OVERVIEW
 
-`src/pages/memory/` owns the platform Memory Admin browse/detail routes at `/memory` and `/memory/:memoryId`. The routes are a trusted local operator/admin control plane for canonical workflow memory across packages, backed by admin hooks in `use-memory.ts`, `api/memory.ts`, `types/memory.ts`, and route-local admin components/helpers.
+`src/pages/memory/` owns the workflow memory review route at `/memory`. The route is a trusted local operator review surface for proposals, audit events, and quarantine evidence, backed by review hooks in `use-memory.ts`, `api/memory.ts`, `types/memory.ts`, and route-local components/helpers.
 
-Memory is platform-core ownership. It is not part of the Finance Workspace extension, and finance report history stays in Reports. Runtime `signaldeck.core.memory.lookup` and `signaldeck.core.memory.write` remain scoped to Workflow Package execution and must not become an unscoped global browser search path.
+Memory is platform-core ownership. It is not part of the Finance Workspace extension, and finance report history stays in Reports. Workflow Package `spec.memory` middleware and review APIs remain scoped to package execution and must not become an unscoped global browser search path.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -24,41 +24,36 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 | Task                | Location                    | Notes                                                                                                                     |
 | ------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Memory list route   | `list.tsx`                  | `/memory` admin workspace shell, URL-backed filters, create flow, linked list cards, and per-entry delete                  |
-| Memory detail route | `detail.tsx`                | `/memory/:memoryId` workspace detail, tabs for detail/revisions/audit events, revise flow, workflow visibility update, and single-entry delete |
-| Admin route UI      | `admin-components.tsx`      | Memory context bars, filters, list pane, cards, dialogs, tabs, JSON/detail/revision/event inspectors, and state panels     |
-| Admin route helpers | `admin-helpers.ts`          | filter-param normalization, JSON parsing, operator provenance, subject refs, draft builders, and display formatting        |
-| Memory hooks        | `../../hooks/use-memory.ts` | admin list/detail/history/create/revise/workflow-visibility/delete hooks plus separate scoped runtime memory hooks         |
-| Memory API helpers  | `../../lib/api/memory.ts`   | admin `/api/memory/admin/entries*` helpers including single-entry delete plus scoped runtime `/api/memory` helpers         |
-| Memory wire types   | `../../lib/types/memory.ts` | admin entries, scopes, `visibleToWorkflow`, provenance, history, write payloads, and separate runtime payloads            |
-| Route metadata      | `../../routes.metadata.ts`  | platform-owned Memory Admin list/detail routes, Agent Platform sidebar item, scroll/wide shells, and admin state variants |
+| Memory review route | `list.tsx`                  | `/memory` review workspace with proposal, audit-event, and quarantine tabs plus approve/reject actions                    |
+| Memory hooks        | `../../hooks/use-memory.ts` | proposal list, approve/reject, audit-event list, and quarantine list hooks                                                |
+| Memory API helpers  | `../../lib/api/memory.ts`   | `/api/memory/proposals`, `/api/memory/audit-events`, and `/api/memory/quarantine` helpers plus proposal decisions         |
+| Memory wire types   | `../../lib/types/memory.ts` | proposal, decision, audit-event, and quarantine payloads                                                                 |
+| Route metadata      | `../../routes.metadata.ts`  | platform-owned workflow memory review route, Agent Platform sidebar item, scroll/wide shell, and review state variants    |
 
 ## CONVENTIONS
 
-- `/memory` is the live browser list route and `/memory/:memoryId` is the live detail route for one memory entry.
-- Selected memory is opened through real links to `/memory/:memoryId`; do not restore inline inspector or `memoryId` query-param selection.
-- The page queries the trusted admin list immediately. Cross-package and mixed-scope rows are intended local operator visibility, not a package-private browser gate.
-- Filters such as package, workflow, agent, run, scope, kind, `visibleToWorkflow`, and query narrow the operator-managed corpus; they do not authorize the corpus.
-- Admin list default all-entry visibility is intentional. Hidden rows stay admin-visible, while only workflow-visible rows that match runtime scope and grant rules can affect future `signaldeck.core.memory.lookup`.
-- Create, revise, workflow visibility, and single-entry delete controls must preserve explicit scope, `visibleToWorkflow`, operator provenance, immutable revision, and append-only history semantics where applicable.
+- `/memory` is the live browser route for workflow memory proposal review, audit events, and quarantine evidence.
+- The page queries review endpoints only. Cross-package review visibility is intended local operator visibility, not a package-private browser gate.
+- Review filters narrow proposal, audit, and quarantine lists for operator triage; they do not authorize workflow memory retrieval.
+- Approve and reject controls must preserve explicit operator decisions and policy provenance. Policy service activation remains the only path from accepted proposal to committed workflow memory.
 - Shared namespace declarations and grants are not browser-authored here. Do not accept namespace declarations or grants from route JSON.
-- The list route delegates Memory Admin filter/list/card/dialog UI to `admin-components.tsx` and helper normalization to `admin-helpers.ts`; keep data fetching and mutations in `list.tsx`/`detail.tsx` through hooks.
-- The list route shows browse/filter results plus create and per-row single-entry delete controls; the detail route shows detail, revisions, events, provenance, revise, workflow visibility, and one-entry delete controls. It must not add bulk deletion, runtime/global delete behavior, browse report history, or promote report history into memory.
-- `WorkspacePageShell` is the route frame for both list and detail; do not reintroduce a route-local page shell or inline inspector selection model.
-- Route metadata includes list creating state and detail saving state; keep create/revise/workflow-visibility feedback in those route-owned states rather than generic shared shell state.
-- Keep Memory Admin in the Agent Platform nav group with platform ownership. Do not move it under extension gates or Finance Workspace ownership.
+- The route keeps review data fetching and proposal decisions in `list.tsx` through hooks.
+- The route shows proposal, audit-event, and quarantine evidence only. It must not add memory CRUD, global search, report-history browsing, or report-history promotion to workflow memory.
+- `WorkspacePageShell` is the route frame; do not reintroduce detail pages, route-local page shells, or inline inspector selection models.
+- Route metadata includes list loading/error/empty/review states; keep proposal decision feedback in route-owned states rather than generic shared shell state.
+- Keep workflow memory review in the Agent Platform nav group with platform ownership. Do not move it under extension gates or Finance Workspace ownership.
 - Tool discovery stays API and hook support for Workflow Package capability authoring. Do not add or document a standalone Tools browser route from this folder.
 - Long ids, memory content, subject refs, and event payload fragments need wrapping or internal scrolling so the route does not create mobile overflow.
 
 ## ANTI-PATTERNS
 
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
-- Do not add `/memory/:memoryId/revisions` or `/memory/:memoryId/events` child routes unless `src/routes.ts` and route metadata are intentionally changed.
-- Do not call `api/memory.ts` directly from `list.tsx`, `detail.tsx`, or `admin-components.tsx`; use `use-memory.ts` so query keys and enabled gates stay centralized.
-- Do not wire `/memory` back to scoped runtime `/api/memory` gating; use the admin hooks for the route and keep runtime helpers separate for Workflow Package execution paths.
+- Do not add memory detail, revision, event, or entry CRUD child routes.
+- Do not call `api/memory.ts` directly from `list.tsx`; use `use-memory.ts` so query keys and enabled gates stay centralized.
+- Do not wire `/memory` to model-execution memory paths; use only proposal, audit-event, quarantine, approve, and reject helpers.
 - Do not treat opaque `memoryId` values as report slugs, download URLs, or routable finance identifiers.
-- Do not add namespace wildcard search, vector activation/search, embeddings browser, chunk-table browser, grant-authoring UI, bulk delete, checkboxes, row selection, runtime/global delete actions, recycle bin, undo, tombstones, delete reasons, run/package ownership cascades, or report-history promotion to this route.
-- Do not move Memory-specific dialog, draft, provenance, or JSON parsing behavior into `src/components/shared`; it is route-owned until another real route needs it.
+- Do not add namespace wildcard search, vector activation/search, embeddings browser, chunk-table browser, grant-authoring UI, bulk delete, checkboxes, row selection, global delete actions, recycle bin, undo, tombstones, delete reasons, run/package ownership cascades, or report-history promotion to this route.
+- Do not move Memory-specific review, decision, provenance, or JSON parsing behavior into `src/components/shared`; it is route-owned until another real route needs it.
 - Do not duplicate Memory API types in the page. Add wire changes in `src/lib/types/memory.ts` and update hooks/API guides together.
 
 ## VALIDATION
@@ -72,6 +67,5 @@ pnpm test:run
 
 ## NOTES
 
-- `list.tsx` keeps URL-backed admin filter state, create mutation, delete mutation, and navigation local while delegating presentational pieces to `admin-components.tsx`.
-- `detail.tsx` reads the route memory id and owns detail, revision, event, revise, workflow visibility, responsive action menu, and single-entry delete mutation wiring while runtime memory helpers remain separate.
-- The route is intentionally a trusted local operator control plane, not a runtime global search surface.
+- `list.tsx` keeps review tab state, proposal approve/reject mutations, and list rendering local.
+- The route is intentionally a trusted local operator review surface, not a global search or storage surface.

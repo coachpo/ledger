@@ -6,7 +6,7 @@
 
 - `extensions/AGENTS.md` — `/extensions` system-state route family
 - `model-connections/AGENTS.md` — global model endpoint inventory/editor, write-only secrets, and connection-test route family
-- `memory/AGENTS.md` — `/memory` trusted local operator Memory Admin route
+- `memory/AGENTS.md` — `/memory` workflow memory proposal/audit/quarantine review route
 - `portfolios/AGENTS.md` — portfolio list/detail workspace route family
 - `reports/AGENTS.md` — report inventory/detail, upload, generation, and markdown-edit route family
 - `templates/AGENTS.md` — stored-template inventory/editor route family
@@ -43,7 +43,7 @@ src/pages/
 ├── workflow-packages/           # package list and editor/launch routes
 ├── scheduled-tasks/             # scheduled package-run list, create, and detail routes
 ├── model-connections/           # saved model connection list and editor routes
-├── memory/                      # platform Memory Admin route
+├── memory/                      # workflow memory review route
 ├── runs/                        # run list and detail routes
 ├── portfolios/                  # portfolio workspace routes
 ├── templates/                   # stored-template list/editor routes
@@ -60,7 +60,7 @@ src/pages/
 | Workflow Package pages       | `workflow-packages/AGENTS.md`                                                           | package authoring, validation, preflight, launch, import, and export                                        |
 | Scheduled Task pages         | `scheduled-tasks/AGENTS.md`, `../hooks/use-scheduled-tasks.ts`                          | scheduled package-run inventory, create/detail editors, preview, fire history, delete, and run-now          |
 | Model connection pages       | `model-connections/AGENTS.md`, `../hooks/use-model-connections.ts`                      | saved connection inventory, write-only secrets, delete flow, and connection-test UI                         |
-| Memory routes                | `memory/AGENTS.md`, `../hooks/use-memory.ts`, `../lib/api/memory.ts`                    | `/memory` trusted operator admin inventory plus `/memory/:memoryId` detail, revision, event, workflow visibility, and admin delete flows with scoped runtime helpers kept separate |
+| Memory routes                | `memory/AGENTS.md`, `../hooks/use-memory.ts`, `../lib/api/memory.ts`                    | `/memory` proposal review, audit event, quarantine evidence, approve, and reject flows |
 | Run pages                    | `runs/AGENTS.md`                                                                        | run list, detail, root-parameter rerun, invocation-input fork, trace views, and historical replay lineage reads |
 | Portfolio workspace          | `portfolios/AGENTS.md`, `../components/portfolios/AGENTS.md`                            | portfolio list/detail workspace                                                                             |
 | Template list/editor         | `templates/AGENTS.md`, `../components/templates/AGENTS.md`, `../hooks/use-templates.ts` | stored-template CRUD, inline compile preview, placeholder browser, and saved-template report generation     |
@@ -92,7 +92,7 @@ src/pages/
 - Editor routes use metadata-owned `fullHeight` shell mode when they need split panes or persistent action bars. They must expose a labeled route shell, labeled inputs, save/cancel hierarchy, and mobile containment.
 - Console routes such as package launch, Scheduled Task detail, and run detail use metadata-owned `fullHeight` shell mode. Preserve evidence, preflight, backend progress/queue/readiness payloads, scheduled input previews, trace, payload, and fork/rerun controls with internal scrolling for wide data.
 - System-state routes stay narrow and contract-bound. `/extensions` renders only slim statically resident extension state and must not grow marketplace, install, remove, or private scaffold details.
-- Memory is a platform admin route, not a Finance Workspace route. `/memory` uses trusted local operator visibility over canonical workflow memory across packages, while scoped runtime `/api/memory`, `signaldeck.core.memory.lookup`, and `signaldeck.core.memory.write` remain package/run/agent/scope-bound and are not unscoped global runtime search.
+- Memory is a platform review route, not a Finance Workspace route. `/memory` reviews workflow memory proposals, audit events, and quarantine evidence, while Workflow Package `spec.memory` middleware controls non-authoritative context injection and proposal staging.
 - Loading, error, empty, filtered-empty, disabled-extension, not-found, creating, editing, saving, importing, validating, launching, and polling states must match the route's `stateVariants` metadata and have targeted test coverage when they are visible user states.
 
 ## REGRESSION COVERAGE MATRIX
@@ -104,7 +104,7 @@ src/pages/
 - `e2e/reports.spec.ts` covers seeded report flows plus representative empty and API-error list states for the finance inventory archetype.
 - `e2e/workflow-packages.spec.ts` covers package-first authoring, import/export, launch, run provenance, and wide payload overflow in the run-detail console.
 - `e2e/scheduled-tasks.spec.ts` covers scheduled package-run automation, fire history, delete confirmation and post-delete absence states, and run-now links into run detail.
-- `e2e/memory.spec.ts`, `e2e/model-connections.spec.ts`, and `e2e/runs.spec.ts` cover the Memory Admin list/detail split, model-connection secret-safe flows, and run inspection/rerun/fork paths.
+- `e2e/memory.spec.ts`, `e2e/model-connections.spec.ts`, and `e2e/runs.spec.ts` cover workflow memory review tabs, model-connection secret-safe flows, and run inspection/rerun/fork paths.
 - `e2e/shell-regression.spec.ts`, `e2e/smoke.spec.ts`, `e2e/functional.spec.ts`, `e2e/workflow-package-compatibility-mock.spec.ts`, and `e2e/workflow-package-tradingagents-smoke.spec.ts` cover route-shell regressions, smoke navigation, seeded package compatibility, and TradingAgents package smoke behavior.
 
 ## ANTI-PATTERNS
