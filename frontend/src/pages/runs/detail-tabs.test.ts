@@ -162,7 +162,7 @@ describe("run detail tab contract", () => {
         rawInspect: "memory:abc",
         rawHash: null,
       }),
-    ).toBe("memory");
+    ).toBeNull();
 
     expect(
       inferRunDetailTabFromUrlHints({

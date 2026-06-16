@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryRouter, matchRoutes, RouterProvider } from "react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -34,10 +34,8 @@ import {
 } from "./routes.metadata";
 import { queryKeys } from "./lib/query-keys";
 import type { ExtensionListRead } from "./lib/types/extension";
-import type { MemoryAdminListParams } from "./lib/types/memory";
 import { NotFoundPage } from "./pages/not-found";
 import { RouteErrorPage } from "./pages/route-error";
-import { MemoryDetailPage } from "./pages/memory/detail";
 import { MemoryListPage } from "./pages/memory/list";
 import { ScheduledTaskDetailPage } from "./pages/scheduled-tasks/detail";
 import { ScheduledTaskEditorPage } from "./pages/scheduled-tasks/editor";
@@ -148,7 +146,7 @@ const LIVE_PLATFORM_NAV_ENTRIES = [
     testId: "nav-model-connections",
     to: "/model-connections",
   },
-  { label: "Memory Admin", testId: "nav-memory", to: "/memory" },
+  { label: "Memory Review", testId: "nav-memory", to: "/memory" },
   { label: "Extensions", testId: "nav-extensions", to: "/extensions" },
   { label: "Runs", testId: "nav-runs", to: "/runs" },
 ] as const;
@@ -180,20 +178,31 @@ function extensionList(
   };
 }
 
-function emptyAdminMemoryResponse() {
+function emptyMemoryProposalResponse() {
   return {
     items: [],
     limit: 50,
     offset: 0,
-    sort: "updatedAtDesc" as const,
+    status: "review_pending" as const,
     total: 0,
   };
 }
 
-function renderMemoryRoute(
-  initialEntry: string,
-  listParams: MemoryAdminListParams = {},
-) {
+function emptyMemoryAuditResponse() {
+  return { items: [], limit: 50, offset: 0, total: 0 };
+}
+
+function emptyMemoryQuarantineResponse() {
+  return {
+    items: [],
+    limit: 50,
+    offset: 0,
+    total: 0,
+    unresolvedOnly: true,
+  };
+}
+
+function renderMemoryRoute(initialEntry: string) {
   const testRouter = createMemoryRouter(router.routes, {
     initialEntries: [initialEntry],
   });
@@ -205,8 +214,16 @@ function renderMemoryRoute(
     extensionList(true),
   );
   queryClient.setQueryData(
-    queryKeys.platform.memory.admin.list(listParams),
-    emptyAdminMemoryResponse(),
+    queryKeys.platform.memory.proposals({ status: "review_pending" }),
+    emptyMemoryProposalResponse(),
+  );
+  queryClient.setQueryData(
+    queryKeys.platform.memory.auditEvents(),
+    emptyMemoryAuditResponse(),
+  );
+  queryClient.setQueryData(
+    queryKeys.platform.memory.quarantine(),
+    emptyMemoryQuarantineResponse(),
   );
 
   return render(
@@ -390,10 +407,10 @@ describe("router", () => {
     });
     expect(getRouteMetadataByPattern("/memory")).toMatchObject({
       archetype: "inventory",
-      breadcrumb: { title: "Memory Admin" },
+      breadcrumb: { title: "Workflow Memory Review" },
       nav: {
         group: "Agent Platform",
-        label: "Memory Admin",
+        label: "Memory Review",
         path: "/memory",
         sidebar: true,
         testId: "nav-memory",
@@ -401,28 +418,10 @@ describe("router", () => {
       owner: { kind: "platform" },
       shellMode: "scroll",
       widthMode: "wide",
-      stateVariants: [
-        "loading",
-        "ready",
-        "error",
-        "empty",
-        "filteredEmpty",
-        "creating",
-      ],
+      stateVariants: ["loading", "ready", "error", "empty", "saving"],
       testId: "route-memory-list",
     });
-    expect(getRouteMetadataByPattern("/memory/:memoryId")).toMatchObject({
-      archetype: "detail",
-      breadcrumb: {
-        parent: { href: "/memory", title: "Memory Admin" },
-        title: "Memory Detail",
-      },
-      owner: { kind: "platform" },
-      shellMode: "scroll",
-      widthMode: "wide",
-      stateVariants: ["loading", "ready", "error", "notFound", "saving"],
-      testId: "route-memory-detail",
-    });
+    expect(getRouteMetadataByPattern("/memory/:memoryId")).toBeUndefined();
     expect(getRouteMetadataByPattern("/scheduled-tasks")).toMatchObject({
       archetype: "inventory",
       breadcrumb: { title: "Scheduled Tasks" },
@@ -758,12 +757,12 @@ describe("router", () => {
       matchRoutes(router.routes, "/model-connections/123/edit"),
     ).not.toBeNull();
     expect(matchedRouteComponent("/memory")).toBe(MemoryListPage);
-    expect(matchedRouteComponent("/memory/mem-risk-1")).toBe(MemoryDetailPage);
+    expect(matchedRouteComponent("/memory/mem-risk-1")).toBe(NotFoundPage);
     expect(getRouteMetadataForPathname("/memory")?.testId).toBe(
       "route-memory-list",
     );
-    expect(getRouteMetadataForPathname("/memory/mem-risk-1")?.testId).toBe(
-      "route-memory-detail",
+    expect(getRouteMetadataForPathname("/memory/mem-risk-1")).toBe(
+      unknownRouteMetadata,
     );
     expect(matchedRouteComponent("/api/memory")).toBe(NotFoundPage);
     expect(getRouteMetadataForPathname("/api/memory")).toBe(
@@ -792,7 +791,7 @@ describe("router", () => {
     expect(matchRoutes(router.routes, "/runs/123")).not.toBeNull();
   });
 
-  it("renders trusted local operator admin empty state for /memory", async () => {
+  it("renders workflow memory review empty state for /memory", async () => {
     renderMemoryRoute("/memory");
 
     expect(await screen.findByTestId("route-memory-list")).toHaveAttribute(
@@ -804,51 +803,25 @@ describe("router", () => {
       "wide",
     );
     expect(screen.getByTestId("memory-list-page")).toBeVisible();
-    const adminNotice = screen.getByTestId("memory-admin-notice");
-    expect(adminNotice).toHaveTextContent(/trusted local operator console/);
-    expect(adminNotice).not.toHaveTextContent(
-      /Mixed package rows are intentional/,
-    );
     expect(
-      within(screen.getByTestId("workspace-page-shell-context")).getByRole(
-        "button",
-        { name: "Create memory" },
-      ),
+      screen.getByRole("heading", { level: 1, name: "Workflow Memory Review" }),
     ).toBeVisible();
-    expect(
-      screen.getByTestId("memory-admin-filter-controls"),
-    ).toHaveTextContent(/Operator filters/);
-    expect(screen.getByTestId("memory-empty-state-panel")).toHaveTextContent(
-      /No canonical memory exists yet/,
+    expect(screen.getByTestId("memory-review-contract")).toHaveTextContent(
+      /Review-only surface/,
     );
     expect(
-      screen.getByTestId("memory-empty-state-panel"),
-    ).not.toHaveTextContent(/admin filters narrowed/);
+      screen.getByRole("combobox", { name: "Proposal status" }),
+    ).toBeVisible();
+    expect(screen.getByText("No proposals to review")).toBeVisible();
     const memoryPageText =
       screen.getByTestId("memory-list-page").textContent ?? "";
-    expect(memoryPageText).not.toContain(["package", "context"].join(" "));
-    expect(memoryPageText).not.toContain(["private", "scope"].join(" "));
-    expect(memoryPageText).not.toContain(["explicit", "scope"].join("-"));
+    expect(memoryPageText).not.toContain("Memory Admin");
+    expect(memoryPageText).not.toContain("Create memory");
+    expect(memoryPageText).not.toContain("Workflow visibility");
     expect(
       screen.queryByLabelText("Namespace declarations"),
     ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Namespace grants")).not.toBeInTheDocument();
-  });
-
-  it("renders memory filtered-empty state from optional admin URL filters", async () => {
-    renderMemoryRoute(
-      "/memory?packageKey=pkg_alpha&visibleToWorkflow=false&query=risk",
-      { packageKey: "pkg_alpha", query: "risk", visibleToWorkflow: false },
-    );
-
-    expect(
-      await screen.findByTestId("memory-empty-state-panel"),
-    ).toHaveTextContent(/No memory entries match these filters/);
-    expect(screen.getByTestId("memory-empty-state-panel")).toHaveTextContent(
-      /current admin filters narrowed the operator corpus to zero/,
-    );
-    expect(screen.getByDisplayValue("pkg_alpha")).toBeVisible();
-    expect(screen.getByDisplayValue("risk")).toBeVisible();
   });
 
   it("renders a product-owned catch-all 404 inside the app shell", async () => {
@@ -1155,11 +1128,6 @@ describe("router", () => {
         description: "Read market sentiment snapshots.",
       },
       {
-        key: "signaldeck.core.memory.lookup",
-        displayName: "Memory Lookup",
-        description: "Read scoped package memory.",
-      },
-      {
         key: "core.echo",
         displayName: "Echo",
         description: "Core smoke tool",
@@ -1185,7 +1153,6 @@ describe("router", () => {
       "signaldeck.digital_oracle.prediction_markets.lookup",
       "signaldeck.digital_oracle.sec_filings.lookup",
       "signaldeck.digital_oracle.market_sentiment.lookup",
-      "signaldeck.core.memory.lookup",
       "core.echo",
     ]);
     expect(enabledFinanceRoutePaths(extensionList(true, false))).toEqual(
@@ -1193,7 +1160,6 @@ describe("router", () => {
     );
     expect(toolKeysForState(true, false)).toEqual([
       "signaldeck.finance.reports.lookup",
-      "signaldeck.core.memory.lookup",
       "core.echo",
     ]);
     expect(enabledFinanceRoutePaths(extensionList(false, true))).toEqual([]);
@@ -1201,14 +1167,10 @@ describe("router", () => {
       "signaldeck.digital_oracle.prediction_markets.lookup",
       "signaldeck.digital_oracle.sec_filings.lookup",
       "signaldeck.digital_oracle.market_sentiment.lookup",
-      "signaldeck.core.memory.lookup",
       "core.echo",
     ]);
     expect(enabledFinanceRoutePaths(extensionList(false, false))).toEqual([]);
-    expect(toolKeysForState(false, false)).toEqual([
-      "signaldeck.core.memory.lookup",
-      "core.echo",
-    ]);
+    expect(toolKeysForState(false, false)).toEqual(["core.echo"]);
   });
 
   it("renders a deterministic disabled state for direct finance route links", async () => {

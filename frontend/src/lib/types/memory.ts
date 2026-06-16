@@ -1,266 +1,133 @@
 import type { UnknownRecord } from "./common";
 
+export type WorkflowMemoryPolicyStatus =
+  | "proposed"
+  | "rejected"
+  | "quarantined"
+  | "review_pending"
+  | "committed";
 
-export type MemoryRevisionAction = "created" | "reused" | "superseded";
+export type WorkflowMemoryProposalStatusFilter =
+  | WorkflowMemoryPolicyStatus
+  | "all";
 
-export type MemoryAdminSort = "updatedAtDesc" | "createdAtDesc";
+export type WorkflowMemoryDecisionValue =
+  | "commit"
+  | "reject"
+  | "quarantine"
+  | "review";
 
-export type MemoryScopeType =
-  | "package"
-  | "workflow"
-  | "run"
-  | "agent"
-  | "namespace";
+export type WorkflowMemoryDecisionActor = "policy" | "review_api";
 
-export type MemoryApiVisibility = "explicit-scope";
-
-export interface MemoryScope {
-  scopeType: MemoryScopeType;
-  scopeKey: string;
+export interface WorkflowMemoryListParams {
+  limit?: number;
+  offset?: number;
 }
 
-export interface MemorySubjectRef {
-  kind: string;
-  id: string;
-  label?: string | null;
+export interface WorkflowMemoryProposalListParams
+  extends WorkflowMemoryListParams {
+  status?: WorkflowMemoryProposalStatusFilter;
 }
 
-export interface MemoryRuntimeProvenance {
-  runId: number;
+export interface WorkflowMemoryQuarantineListParams
+  extends WorkflowMemoryListParams {
+  unresolvedOnly?: boolean;
+}
+
+export interface WorkflowMemoryProposalRead {
   agentKey: string;
-  workflowKey?: string | null;
-  stepId?: string | null;
-  slot?: string | null;
-}
-
-export interface MemoryProvenance extends MemoryRuntimeProvenance {
-  agentName?: string | null;
-  agentVersion: number;
-  createdByType?: "agent" | "operator";
-  workflowVersion?: number | null;
-  traceId?: string | null;
-}
-
-export interface MemoryRetrievalScore {
-  rank?: number | null;
-  score?: number | null;
-  sources?: "lexical"[];
-}
-
-export interface MemoryApiAccessContext {
-  runId?: number | null;
-  packageKey: string;
-  workflowKey?: string | null;
-  agentKey?: string | null;
-}
-
-export interface MemoryApiAccessRequest {
-  accessContext: MemoryApiAccessContext;
-}
-
-export interface MemoryApiListRequest extends MemoryApiAccessRequest {
-  visibility?: MemoryApiVisibility;
-  scope: MemoryScope;
-  query?: string | null;
-  subjectRefs?: MemorySubjectRef[];
-  kind?: string | null;
-  limit?: number;
-  offset?: number;
-  maxCharacters?: number;
-}
-
-export interface MemoryApiListItemRead {
-  memoryId: string;
-  revisionId: string;
-  kind: string;
-  summary: string;
-  content: string;
-  subjectRefs: MemorySubjectRef[];
-  scope: MemoryScope;
-  provenance: MemoryRuntimeProvenance;
+  content: UnknownRecord;
   createdAt: string;
-  retrievalScore?: MemoryRetrievalScore | null;
-}
-
-export interface MemoryRevisionRead {
-  revisionId: string;
-  version: number;
-  contentHash: string;
-  createdAt: string;
-  supersedesRevisionId?: string | null;
-}
-
-export interface MemoryOutcome {
-  summary: string;
-  observedAt: string;
-}
-
-export interface MemoryReflection {
-  summary: string;
-  content: string;
-  reflectedAt: string;
-  source?: string | null;
-  reflection: string;
-}
-
-export interface MemoryApiRevisionRead {
-  revisionId: string;
-  version: number;
-  visibleToWorkflow: boolean;
-  revisionAction: MemoryRevisionAction;
-  summary: string;
-  content: string;
-  contentHash: string;
-  subjectRefs: MemorySubjectRef[];
-  supersedesRevisionId?: string | null;
-  sourceRunId: number;
-  sourceAgentKey: string;
-  sourceStepId?: string | null;
-  sourceSlot?: string | null;
-  traceSpanId?: string | null;
-  createdAt: string;
-}
-
-export interface MemoryApiEntryRead {
-  memoryId: string;
-  revisionId: string;
-  visibleToWorkflow: boolean;
-  kind: string;
-  summary: string;
-  content: string;
-  subjectRefs: MemorySubjectRef[];
-  scope: MemoryScope;
-  provenance: MemoryRuntimeProvenance;
-  revision: MemoryRevisionRead;
-  createdAt: string;
-  updatedAt?: string | null;
-}
-
-export interface MemoryApiListRead {
-  items: MemoryApiListItemRead[];
-  count: number;
-  limit: number;
-  offset: number;
-  visibility: MemoryApiVisibility;
-  scope: MemoryScope;
-}
-
-export interface MemoryApiRevisionListRead {
-  items: MemoryApiRevisionRead[];
-  count: number;
-  limit: number;
-  offset: number;
-}
-
-export interface MemoryApiEventRead {
-  eventId: number;
-  runId: number;
-  eventType: string;
-  memoryId?: string | null;
-  revisionId?: string | null;
-  retrievalMode?: string | null;
-  filters: UnknownRecord;
-  budget: UnknownRecord;
-  excerpt?: string | null;
-  injectedText?: string | null;
-  resultSnapshot: UnknownRecord;
-  statusSnapshot: UnknownRecord;
-  stepId?: string | null;
+  detectors: UnknownRecord;
   invocationId?: string | null;
-  traceSpanId?: string | null;
-  createdAt: string;
-}
-
-export interface MemoryApiEventListRead {
-  items: MemoryApiEventRead[];
-  count: number;
-  limit: number;
-  offset: number;
-}
-
-export interface MemoryAdminListParams {
-  packageKey?: string | null;
-  workflowKey?: string | null;
-  agentKey?: string | null;
+  kind: string;
+  namespace: string;
+  packageKey: string;
+  proposalId: string;
+  reason?: string | null;
   runId?: number | null;
-  scopeType?: MemoryScopeType | null;
-  kind?: string | null;
-  visibleToWorkflow?: boolean | null;
-  query?: string | null;
-  limit?: number;
-  offset?: number;
-  sort?: MemoryAdminSort;
+  sourceOutputPath?: string | null;
+  status: WorkflowMemoryPolicyStatus;
+  stepId: string;
+  updatedAt: string;
+  workflowKey: string;
 }
 
-export interface MemoryAdminHistoryParams {
-  limit?: number;
-  offset?: number;
-}
-
-export interface MemoryAdminListItemRead {
-  memoryId: string;
-  revisionId: string;
-  visibleToWorkflow: boolean;
-  kind: string;
-  summary: string;
-  excerpt: string;
-  subjectRefs: MemorySubjectRef[];
-  scope: MemoryScope;
-  provenance: MemoryRuntimeProvenance;
-  createdAt: string;
-  updatedAt?: string | null;
-  lastEventType?: string | null;
-}
-
-export interface MemoryAdminListRead {
-  items: MemoryAdminListItemRead[];
-  total: number;
+export interface WorkflowMemoryProposalListRead {
+  items: WorkflowMemoryProposalRead[];
   limit: number;
   offset: number;
-  sort: MemoryAdminSort;
+  status: WorkflowMemoryProposalStatusFilter;
+  total: number;
 }
 
-export interface MemoryAdminEntryRead {
-  memoryId: string;
-  revisionId: string;
-  visibleToWorkflow: boolean;
-  kind: string;
-  summary: string;
-  content: string;
-  subjectRefs: MemorySubjectRef[];
-  scope: MemoryScope;
-  provenance: MemoryRuntimeProvenance;
-  revision: MemoryRevisionRead;
+export interface WorkflowMemoryReviewActionRequest {
+  reason?: string | null;
+}
+
+export interface WorkflowMemoryDecisionRead {
   createdAt: string;
-  updatedAt?: string | null;
-  outcome?: MemoryOutcome | null;
-  reflections: MemoryReflection[];
+  decidedBy: WorkflowMemoryDecisionActor;
+  decision: WorkflowMemoryDecisionValue;
+  decisionId: string;
+  policySnapshot: UnknownRecord;
+  proposalId: string;
+  reason?: string | null;
+  reasonCode: string;
 }
 
-export interface MemoryAdminCreateRequest {
-  kind?: string;
-  summary?: string;
-  content?: string;
-  subjectRefs?: MemorySubjectRef[];
-  scope: MemoryScope;
-  provenance: MemoryProvenance;
-  visibleToWorkflow?: boolean;
-  idempotencyKey?: string | null;
+export interface WorkflowMemoryReviewActionRead {
+  activeMemoryId?: string | null;
+  decision: WorkflowMemoryDecisionRead;
+  proposal: WorkflowMemoryProposalRead;
 }
 
-export interface MemoryAdminRevisionCreateRequest {
-  summary: string;
-  content: string;
-  subjectRefs?: MemorySubjectRef[];
-  provenance: MemoryProvenance;
+export interface WorkflowMemoryAuditEventRead {
+  agentKey?: string | null;
+  createdAt: string;
+  event: UnknownRecord;
+  eventId: number;
+  eventType: string;
+  invocationId?: string | null;
+  packageKey: string;
+  runId?: number | null;
+  stepId?: string | null;
+  targetId: string;
+  targetType: string;
+  workflowKey: string;
 }
 
-export interface MemoryAdminWorkflowVisibilityUpdateRequest {
-  visibleToWorkflow: boolean;
-  summary?: string;
-  observedAt?: string;
+export interface WorkflowMemoryAuditEventListRead {
+  items: WorkflowMemoryAuditEventRead[];
+  limit: number;
+  offset: number;
+  total: number;
 }
 
-export type MemoryAdminRevisionListRead = MemoryApiRevisionListRead;
+export interface WorkflowMemoryQuarantineRead {
+  agentKey?: string | null;
+  createdAt: string;
+  detectors: UnknownRecord;
+  evidence: UnknownRecord;
+  invocationId?: string | null;
+  kind?: string | null;
+  memoryId?: string | null;
+  namespace?: string | null;
+  packageKey?: string | null;
+  proposalId?: string | null;
+  quarantineId: number;
+  reason?: string | null;
+  reasonCode: string;
+  resolvedAt?: string | null;
+  runId?: number | null;
+  stepId?: string | null;
+  workflowKey?: string | null;
+}
 
-export type MemoryAdminEventListRead = MemoryApiEventListRead;
+export interface WorkflowMemoryQuarantineListRead {
+  items: WorkflowMemoryQuarantineRead[];
+  limit: number;
+  offset: number;
+  total: number;
+  unresolvedOnly: boolean;
+}

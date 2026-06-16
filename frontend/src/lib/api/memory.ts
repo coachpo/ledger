@@ -1,193 +1,105 @@
-import {
-  requestPlatform,
-  toPathSegment,
-  toQueryRecord,
-  type IdParam,
-} from "../api-client";
+import { requestPlatform, toPathSegment, toQueryRecord } from "../api-client";
 import type {
-  MemoryAdminCreateRequest,
-  MemoryAdminEntryRead,
-  MemoryAdminEventListRead,
-  MemoryAdminHistoryParams,
-  MemoryAdminListParams,
-  MemoryAdminListRead,
-  MemoryAdminRevisionCreateRequest,
-  MemoryAdminRevisionListRead,
-  MemoryAdminWorkflowVisibilityUpdateRequest,
-  MemoryApiAccessRequest,
-  MemoryApiEntryRead,
-  MemoryApiListRead,
-  MemoryApiListRequest,
+  WorkflowMemoryAuditEventListRead,
+  WorkflowMemoryListParams,
+  WorkflowMemoryProposalListParams,
+  WorkflowMemoryProposalListRead,
+  WorkflowMemoryQuarantineListParams,
+  WorkflowMemoryQuarantineListRead,
+  WorkflowMemoryReviewActionRead,
+  WorkflowMemoryReviewActionRequest,
 } from "../types/memory";
 
-function memoryPath(memoryId: IdParam): string {
-  return `/memory/${toPathSegment(memoryId)}`;
-}
-
-function adminMemoryPath(memoryId: IdParam): string {
-  return `/memory/admin/entries/${toPathSegment(memoryId)}`;
-}
-
-function normalizeOptionalText(
-  value: string | null | undefined,
-): string | undefined {
-  const normalized = value?.trim();
-  return normalized ? normalized : undefined;
-}
-
-function normalizeOptionalKind(
-  value: string | null | undefined,
-): string | undefined {
-  return normalizeOptionalText(value)?.toLowerCase();
-}
-
-export function normalizeMemoryAdminListParams(
-  params: MemoryAdminListParams = {},
-): MemoryAdminListParams {
+function normalizeListParams<TParams extends WorkflowMemoryListParams>(
+  params: TParams = {} as TParams,
+): TParams {
   return {
-    agentKey: normalizeOptionalText(params.agentKey),
-    kind: normalizeOptionalKind(params.kind),
+    ...params,
     limit: params.limit ?? 50,
     offset: params.offset ?? 0,
-    packageKey: normalizeOptionalText(params.packageKey),
-    query: normalizeOptionalText(params.query),
-    runId: params.runId ?? undefined,
-    scopeType: params.scopeType ?? undefined,
-    sort: params.sort ?? "updatedAtDesc",
-    visibleToWorkflow: params.visibleToWorkflow ?? undefined,
-    workflowKey: normalizeOptionalText(params.workflowKey),
   };
 }
 
-export function normalizeMemoryAdminHistoryParams(
-  params: MemoryAdminHistoryParams = {},
-): MemoryAdminHistoryParams {
+export function normalizeWorkflowMemoryProposalParams(
+  params: WorkflowMemoryProposalListParams = {},
+): WorkflowMemoryProposalListParams {
   return {
-    limit: params.limit,
-    offset: params.offset ?? 0,
+    ...normalizeListParams(params),
+    status: params.status ?? "review_pending",
   };
 }
 
-export function listMemory(
-  payload: MemoryApiListRequest,
-  signal?: AbortSignal,
-): Promise<MemoryApiListRead> {
-  return requestPlatform<MemoryApiListRead>("/memory", {
-    body: payload,
-    method: "POST",
-    signal,
-  });
+export function normalizeWorkflowMemoryAuditParams(
+  params: WorkflowMemoryListParams = {},
+): WorkflowMemoryListParams {
+  return normalizeListParams(params);
 }
-export function getMemoryDetail(
-  memoryId: IdParam,
-  payload: MemoryApiAccessRequest,
-  signal?: AbortSignal,
-): Promise<MemoryApiEntryRead> {
-  return requestPlatform<MemoryApiEntryRead>(`${memoryPath(memoryId)}/detail`, {
-    body: payload,
-    method: "POST",
-    signal,
-  });
+
+export function normalizeWorkflowMemoryQuarantineParams(
+  params: WorkflowMemoryQuarantineListParams = {},
+): WorkflowMemoryQuarantineListParams {
+  return {
+    ...normalizeListParams(params),
+    unresolvedOnly: params.unresolvedOnly ?? true,
+  };
 }
-export function listAdminMemoryEntries(
-  params: MemoryAdminListParams = {},
+
+export function listWorkflowMemoryProposals(
+  params: WorkflowMemoryProposalListParams = {},
   signal?: AbortSignal,
-): Promise<MemoryAdminListRead> {
-  return requestPlatform<MemoryAdminListRead>("/memory/admin/entries", {
-    query: toQueryRecord(normalizeMemoryAdminListParams(params)),
+): Promise<WorkflowMemoryProposalListRead> {
+  return requestPlatform<WorkflowMemoryProposalListRead>("/memory/proposals", {
+    query: toQueryRecord(normalizeWorkflowMemoryProposalParams(params)),
     signal,
   });
 }
 
-export function createAdminMemoryEntry(
-  payload: MemoryAdminCreateRequest,
+export function approveWorkflowMemoryProposal(
+  proposalId: string,
+  payload: WorkflowMemoryReviewActionRequest = {},
   signal?: AbortSignal,
-): Promise<MemoryAdminEntryRead> {
-  return requestPlatform<MemoryAdminEntryRead>("/memory/admin/entries", {
-    body: payload,
-    method: "POST",
-    signal,
-  });
-}
-
-export function getAdminMemoryEntry(
-  memoryId: IdParam,
-  signal?: AbortSignal,
-): Promise<MemoryAdminEntryRead> {
-  return requestPlatform<MemoryAdminEntryRead>(adminMemoryPath(memoryId), {
-    signal,
-  });
-}
-
-export function listAdminMemoryRevisions(
-  memoryId: IdParam,
-  params: MemoryAdminHistoryParams = {},
-  signal?: AbortSignal,
-): Promise<MemoryAdminRevisionListRead> {
-  return requestPlatform<MemoryAdminRevisionListRead>(
-    `${adminMemoryPath(memoryId)}/revisions`,
-    { query: toQueryRecord(normalizeMemoryAdminHistoryParams(params)), signal },
-  );
-}
-export function listAdminMemoryEvents(
-  memoryId: IdParam,
-  params: MemoryAdminHistoryParams = {},
-  signal?: AbortSignal,
-): Promise<MemoryAdminEventListRead> {
-  return requestPlatform<MemoryAdminEventListRead>(
-    `${adminMemoryPath(memoryId)}/events`,
-    { query: toQueryRecord(normalizeMemoryAdminHistoryParams(params)), signal },
-  );
-}
-
-export function createAdminMemoryRevision(
-  memoryId: IdParam,
-  payload: MemoryAdminRevisionCreateRequest,
-  signal?: AbortSignal,
-): Promise<MemoryAdminEntryRead> {
-  return requestPlatform<MemoryAdminEntryRead>(
-    `${adminMemoryPath(memoryId)}/revisions`,
+): Promise<WorkflowMemoryReviewActionRead> {
+  return requestPlatform<WorkflowMemoryReviewActionRead>(
+    `/memory/proposals/${toPathSegment(proposalId)}/actions/approve`,
     { body: payload, method: "POST", signal },
   );
 }
 
-export function updateAdminMemoryWorkflowVisibility(
-  memoryId: IdParam,
-  payload: MemoryAdminWorkflowVisibilityUpdateRequest,
+export function rejectWorkflowMemoryProposal(
+  proposalId: string,
+  payload: WorkflowMemoryReviewActionRequest = {},
   signal?: AbortSignal,
-): Promise<MemoryAdminEntryRead> {
-  return requestPlatform<MemoryAdminEntryRead>(
-    `${adminMemoryPath(memoryId)}/workflow-visibility`,
-    {
-      body: payload,
-      method: "PATCH",
-      signal,
-    },
+): Promise<WorkflowMemoryReviewActionRead> {
+  return requestPlatform<WorkflowMemoryReviewActionRead>(
+    `/memory/proposals/${toPathSegment(proposalId)}/actions/reject`,
+    { body: payload, method: "POST", signal },
   );
 }
 
-export function deleteAdminMemoryEntry(
-  memoryId: IdParam,
+export function listWorkflowMemoryAuditEvents(
+  params: WorkflowMemoryListParams = {},
   signal?: AbortSignal,
-): Promise<void> {
-  return requestPlatform<void>(adminMemoryPath(memoryId), {
-    method: "DELETE",
+): Promise<WorkflowMemoryAuditEventListRead> {
+  return requestPlatform<WorkflowMemoryAuditEventListRead>(
+    "/memory/audit-events",
+    { query: toQueryRecord(normalizeWorkflowMemoryAuditParams(params)), signal },
+  );
+}
+
+export function listWorkflowMemoryQuarantine(
+  params: WorkflowMemoryQuarantineListParams = {},
+  signal?: AbortSignal,
+): Promise<WorkflowMemoryQuarantineListRead> {
+  return requestPlatform<WorkflowMemoryQuarantineListRead>("/memory/quarantine", {
+    query: toQueryRecord(normalizeWorkflowMemoryQuarantineParams(params)),
     signal,
   });
 }
+
 export const memoryApi = {
-  admin: {
-    create: createAdminMemoryEntry,
-    createRevision: createAdminMemoryRevision,
-    delete: deleteAdminMemoryEntry,
-    detail: getAdminMemoryEntry,
-    events: listAdminMemoryEvents,
-    list: listAdminMemoryEntries,
-    normalizeHistoryParams: normalizeMemoryAdminHistoryParams,
-    normalizeListParams: normalizeMemoryAdminListParams,
-    revisions: listAdminMemoryRevisions,
-    updateWorkflowVisibility: updateAdminMemoryWorkflowVisibility,
-  },
-  detail: getMemoryDetail,
-  list: listMemory,
+  approveProposal: approveWorkflowMemoryProposal,
+  auditEvents: listWorkflowMemoryAuditEvents,
+  proposals: listWorkflowMemoryProposals,
+  quarantine: listWorkflowMemoryQuarantine,
+  rejectProposal: rejectWorkflowMemoryProposal,
 } as const;

@@ -4,12 +4,9 @@ import type {
   GetMarketQuotesParams,
 } from "./types/market-data";
 import type {
-  MemoryAdminHistoryParams,
-  MemoryAdminListParams,
-  MemoryApiAccessRequest,
-  MemoryApiListRequest,
-  MemoryScope,
-  MemorySubjectRef,
+  WorkflowMemoryListParams,
+  WorkflowMemoryProposalListParams,
+  WorkflowMemoryQuarantineListParams,
 } from "./types/memory";
 import type { ModelConnectionListParams } from "./types/model-connection";
 import type { RunListParams } from "./types/run";
@@ -44,82 +41,36 @@ function normalizeOptionalText(value: string | null | undefined) {
   return normalized ? normalized : undefined;
 }
 
-function normalizeOptionalKind(value: string | null | undefined) {
-  return normalizeOptionalText(value)?.toLowerCase();
-}
-
 function omitUndefined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
   ) as Partial<T>;
 }
 
-function normalizeMemoryScope(scope: MemoryScope) {
-  return {
-    scopeKey: scope.scopeKey.trim(),
-    scopeType: scope.scopeType,
-  };
-}
-
-function normalizeMemorySubjectRefs(
-  subjectRefs: readonly MemorySubjectRef[] = [],
+function normalizeWorkflowMemoryListParams(
+  params: WorkflowMemoryListParams = {},
 ) {
-  return subjectRefs.map((subjectRef) =>
-    omitUndefined({
-      id: subjectRef.id.trim(),
-      kind: subjectRef.kind.trim().toLowerCase(),
-      label: normalizeOptionalText(subjectRef.label),
-    }),
-  );
-}
-
-function normalizeMemoryAccessRequest(payload: MemoryApiAccessRequest) {
-  return {
-    accessContext: omitUndefined({
-      agentKey: normalizeOptionalText(payload.accessContext.agentKey),
-      packageKey: payload.accessContext.packageKey.trim(),
-      runId: payload.accessContext.runId ?? undefined,
-      workflowKey: normalizeOptionalText(payload.accessContext.workflowKey),
-    }),
-  };
-}
-
-function normalizeMemoryListRequest(payload: MemoryApiListRequest) {
   return omitUndefined({
-    ...normalizeMemoryAccessRequest(payload),
-    kind: normalizeOptionalKind(payload.kind),
-    limit: payload.limit ?? 5,
-    maxCharacters: payload.maxCharacters ?? 4_000,
-    offset: payload.offset ?? 0,
-    query: normalizeOptionalText(payload.query),
-    scope: normalizeMemoryScope(payload.scope),
-    subjectRefs: normalizeMemorySubjectRefs(payload.subjectRefs),
-    visibility: payload.visibility ?? "explicit-scope",
-  });
-}
-
-function normalizeMemoryAdminListParams(params: MemoryAdminListParams = {}) {
-  return omitUndefined({
-    agentKey: normalizeOptionalText(params.agentKey),
-    kind: normalizeOptionalKind(params.kind),
     limit: params.limit ?? 50,
     offset: params.offset ?? 0,
-    packageKey: normalizeOptionalText(params.packageKey),
-    query: normalizeOptionalText(params.query),
-    runId: params.runId ?? undefined,
-    scopeType: params.scopeType ?? undefined,
-    sort: params.sort ?? "updatedAtDesc",
-    visibleToWorkflow: params.visibleToWorkflow ?? undefined,
-    workflowKey: normalizeOptionalText(params.workflowKey),
   });
 }
 
-function normalizeMemoryAdminHistoryParams(
-  params: MemoryAdminHistoryParams = {},
+function normalizeWorkflowMemoryProposalParams(
+  params: WorkflowMemoryProposalListParams = {},
 ) {
   return omitUndefined({
-    limit: params.limit,
-    offset: params.offset ?? 0,
+    ...normalizeWorkflowMemoryListParams(params),
+    status: params.status ?? "review_pending",
+  });
+}
+
+function normalizeWorkflowMemoryQuarantineParams(
+  params: WorkflowMemoryQuarantineListParams = {},
+) {
+  return omitUndefined({
+    ...normalizeWorkflowMemoryListParams(params),
+    unresolvedOnly: params.unresolvedOnly ?? true,
   });
 }
 
@@ -356,50 +307,30 @@ const workflowPackagesQueryKeys = {
   validation: () => [...workflowPackagesRoot, "validation"] as const,
 } as const;
 const memoryRoot = [...platformApiRoot, "memory"] as const;
-const memoryAdminEntriesRoot = [...memoryRoot, "admin", "entries"] as const;
 
 const memoryQueryKeys = {
-  admin: {
-    all: memoryAdminEntriesRoot,
-    detail: (memoryId: IdParam) =>
-      [...memoryAdminEntriesRoot, "detail", normalizeId(memoryId)] as const,
-    details: () => [...memoryAdminEntriesRoot, "detail"] as const,
-    events: (memoryId: IdParam, params: MemoryAdminHistoryParams = {}) =>
-      [
-        ...memoryAdminEntriesRoot,
-        "events",
-        normalizeId(memoryId),
-        normalizeMemoryAdminHistoryParams(params),
-      ] as const,
-    eventsScope: (memoryId: IdParam) =>
-      [...memoryAdminEntriesRoot, "events", normalizeId(memoryId)] as const,
-    list: (params: MemoryAdminListParams = {}) =>
-      [
-        ...memoryAdminEntriesRoot,
-        "list",
-        normalizeMemoryAdminListParams(params),
-      ] as const,
-    lists: () => [...memoryAdminEntriesRoot, "list"] as const,
-    revisions: (memoryId: IdParam, params: MemoryAdminHistoryParams = {}) =>
-      [
-        ...memoryAdminEntriesRoot,
-        "revisions",
-        normalizeId(memoryId),
-        normalizeMemoryAdminHistoryParams(params),
-      ] as const,
-    revisionsScope: (memoryId: IdParam) =>
-      [...memoryAdminEntriesRoot, "revisions", normalizeId(memoryId)] as const,
-  },
   all: memoryRoot,
-  detail: (memoryId: IdParam, payload?: MemoryApiAccessRequest) => {
-    const base = [...memoryRoot, "detail", normalizeId(memoryId)] as const;
-    if (!payload) {
-      return base;
-    }
-    return [...base, normalizeMemoryAccessRequest(payload)] as const;
-  },
-  list: (params: MemoryApiListRequest) =>
-    [...memoryRoot, "list", normalizeMemoryListRequest(params)] as const,
+  auditEvents: (params: WorkflowMemoryListParams = {}) =>
+    [
+      ...memoryRoot,
+      "auditEvents",
+      normalizeWorkflowMemoryListParams(params),
+    ] as const,
+  auditEventsScope: () => [...memoryRoot, "auditEvents"] as const,
+  proposals: (params: WorkflowMemoryProposalListParams = {}) =>
+    [
+      ...memoryRoot,
+      "proposals",
+      normalizeWorkflowMemoryProposalParams(params),
+    ] as const,
+  proposalsScope: () => [...memoryRoot, "proposals"] as const,
+  quarantine: (params: WorkflowMemoryQuarantineListParams = {}) =>
+    [
+      ...memoryRoot,
+      "quarantine",
+      normalizeWorkflowMemoryQuarantineParams(params),
+    ] as const,
+  quarantineScope: () => [...memoryRoot, "quarantine"] as const,
 } as const;
 
 const platformQueryKeys = {

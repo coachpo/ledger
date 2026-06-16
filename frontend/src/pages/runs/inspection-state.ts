@@ -4,8 +4,7 @@ export type RunInspectionTarget =
   | { type: "run" }
   | { type: "step"; stepIndex: number }
   | { type: "agentInvocation"; invocationId: number }
-  | { type: "operationInvocation"; invocationId: number }
-  | { type: "memoryArtifact"; memoryId: string };
+  | { type: "operationInvocation"; invocationId: number };
 
 export type RunInspectionPane =
   | "details"
@@ -40,7 +39,6 @@ export type RunInspectionState = {
 
 type RunInspectionIndex = {
   agentInvocationIds: Set<number>;
-  memoryIds: Set<string>;
   operationInvocationIds: Set<number>;
   stepIndexes: Set<number>;
 };
@@ -97,24 +95,16 @@ const OPERATION_INVOCATION_PANES: RunInspectionPane[] = [
   "lineage",
   "error",
 ];
-const MEMORY_ARTIFACT_PANES: RunInspectionPane[] = [
-  "details",
-  "provenance",
-  "lineage",
-];
-
 function buildInspectionIndex(
   run: RunRead,
   steps: RunStepRead[],
 ): RunInspectionIndex {
+  void run;
   return {
     agentInvocationIds: new Set(
       steps.flatMap((step) =>
         step.invocations.map((invocation) => invocation.id),
       ),
-    ),
-    memoryIds: new Set(
-      (run.memoryArtifacts ?? []).map((artifact) => artifact.memoryId),
     ),
     operationInvocationIds: new Set(
       steps.flatMap((step) =>
@@ -154,9 +144,6 @@ function modeForPane(
   target: RunInspectionTarget,
   pane: RunInspectionPane,
 ): RunInspectionMode | null {
-  if (target.type === "memoryArtifact") {
-    return "memory";
-  }
   if (target.type !== "run") {
     return pane === "error" ? "diagnostics" : "execution";
   }
@@ -213,13 +200,10 @@ export function inspectionPanesForTarget(
   if (target.type === "operationInvocation") {
     return OPERATION_INVOCATION_PANES;
   }
-  if (target.type === "memoryArtifact") {
-    return MEMORY_ARTIFACT_PANES;
-  }
   return RUN_PANES;
 }
 function defaultPaneForTarget(target: RunInspectionTarget): RunInspectionPane {
-  if (target.type === "step" || target.type === "memoryArtifact") {
+  if (target.type === "step") {
     return "details";
   }
   if (
@@ -248,10 +232,6 @@ function parseInspectionTarget(raw: string | null): RunInspectionTarget | null {
   if (type === "operation" && numericValue !== null) {
     return { type: "operationInvocation", invocationId: numericValue };
   }
-  if (type === "memory" && value) {
-    return { type: "memoryArtifact", memoryId: value };
-  }
-
   return null;
 }
 
@@ -295,7 +275,7 @@ function targetExists(
   if (target.type === "operationInvocation") {
     return index.operationInvocationIds.has(target.invocationId);
   }
-  return index.memoryIds.has(target.memoryId);
+  return false;
 }
 
 function canonicalTarget(
@@ -452,9 +432,6 @@ export function serializeInspectionTarget(target: RunInspectionTarget): string {
   if (target.type === "operationInvocation") {
     return `operation:${target.invocationId}`;
   }
-  if (target.type === "memoryArtifact") {
-    return `memory:${target.memoryId}`;
-  }
   return "run";
 }
 
@@ -468,9 +445,6 @@ export function inspectionTargetHash(target: RunInspectionTarget): string {
   if (target.type === "operationInvocation") {
     return `#operation-invocation-${target.invocationId}`;
   }
-  if (target.type === "memoryArtifact") {
-    return `#memory-${target.memoryId}`;
-  }
   return "#run-context";
 }
 
@@ -483,9 +457,6 @@ export function inspectionTargetKindLabel(target: RunInspectionTarget): string {
   }
   if (target.type === "operationInvocation") {
     return "Operation invocation";
-  }
-  if (target.type === "memoryArtifact") {
-    return "Memory artifact";
   }
   return "Run evidence";
 }

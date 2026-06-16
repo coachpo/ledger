@@ -156,9 +156,9 @@ describe("useWorkflowPackages", () => {
           description: "Read market sentiment snapshots.",
         },
         {
-          key: "signaldeck.core.memory.lookup",
-          displayName: "Memory Lookup",
-          description: "Read scoped package memory.",
+          key: "core.echo",
+          displayName: "Echo",
+          description: "Core smoke tool.",
         },
       ],
     };
@@ -174,7 +174,7 @@ describe("useWorkflowPackages", () => {
       "signaldeck.digital_oracle.prediction_markets.lookup",
       "signaldeck.digital_oracle.sec_filings.lookup",
       "signaldeck.digital_oracle.market_sentiment.lookup",
-      "signaldeck.core.memory.lookup",
+      "core.echo",
     ]);
     expect(reactQueryState.useQueryMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -204,7 +204,7 @@ describe("useWorkflowPackages", () => {
 
     expect(useTools().data?.items.map((tool) => tool.key)).toEqual([
       "signaldeck.finance.reports.lookup",
-      "signaldeck.core.memory.lookup",
+      "core.echo",
     ]);
 
     toolDiscoveryState.useExtensionsMock.mockReturnValue({
@@ -231,7 +231,7 @@ describe("useWorkflowPackages", () => {
       "signaldeck.digital_oracle.prediction_markets.lookup",
       "signaldeck.digital_oracle.sec_filings.lookup",
       "signaldeck.digital_oracle.market_sentiment.lookup",
-      "signaldeck.core.memory.lookup",
+      "core.echo",
     ]);
   });
 

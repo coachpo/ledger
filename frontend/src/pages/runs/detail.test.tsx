@@ -12,11 +12,11 @@ import type { ComponentProps, ReactNode } from "react";
 import type {
   RunAgentInvocationRead,
   RunForkDraftRead,
-  RunMemoryEventRead,
   RunPackageResolvedModelConnectionRead,
   RunRead,
   RunRerunDraftRead,
   RunStepRead,
+  RunWorkflowMemoryEvidenceRead,
 } from "@/lib/types/run";
 import type {
   ModelConnectionCapabilities,
@@ -247,9 +247,7 @@ const NOW = "2026-04-20T10:00:00Z";
 const CONTENT_VISIBILITY_AUTO_CLASS = "[content-visibility:auto]";
 const RUNTIME_DEFERRED_SECTION_SIZE_CLASS =
   "[contain-intrinsic-size:auto_960px]";
-const MEMORY_EVENT_GROUP_SIZE_CLASS = "[contain-intrinsic-size:auto_720px]";
-const MEMORY_COMPACT_ARTIFACT_SIZE_CLASS =
-  "[contain-intrinsic-size:auto_220px]";
+const WORKFLOW_MEMORY_GROUP_SIZE_CLASS = "[contain-intrinsic-size:auto_720px]";
 
 function buildInvocation(
   overrides: Partial<RunAgentInvocationRead> = {},
@@ -314,31 +312,130 @@ function buildStep(overrides: Partial<RunStepRead> = {}): RunStepRead {
   };
 }
 
-function buildMemoryEvent(
-  overrides: Partial<RunMemoryEventRead> = {},
-): RunMemoryEventRead {
+function emptyWorkflowMemoryEvidence(): RunWorkflowMemoryEvidenceRead {
   return {
-    budget: {},
-    createdAt: NOW,
-    eventType: "retrieved",
-    excerpt: null,
-    filters: {},
-    id: 9001,
-    injectedText: null,
-    invocationId: null,
-    memoryId: null,
-    resultSnapshot: {},
-    retrievalMode: null,
-    revisionId: null,
-    runAgentInvocationId: null,
-    runId: 42,
-    runOperationInvocationId: null,
-    runStepId: null,
-    statusSnapshot: {},
-    stepId: null,
-    traceSpanId: null,
+    auditEvents: [],
+    checkpoints: [],
+    decisions: [],
+    injections: [],
+    proposals: [],
+    quarantines: [],
+  };
+}
+
+function buildWorkflowMemoryEvidence(
+  overrides: Partial<RunWorkflowMemoryEvidenceRead> = {},
+): RunWorkflowMemoryEvidenceRead {
+  return {
+    ...emptyWorkflowMemoryEvidence(),
     ...overrides,
   };
+}
+
+function buildCompleteWorkflowMemoryEvidence(): RunWorkflowMemoryEvidenceRead {
+  return buildWorkflowMemoryEvidence({
+    auditEvents: [
+      {
+        agentKey: "portfolio_manager",
+        auditEventId: 5101,
+        createdAt: NOW,
+        event: { action: "proposal_decided", status: "committed" },
+        eventType: "proposal_decided",
+        invocationId: "invocation-decision",
+        packageKey: "market_review_package",
+        runId: 42,
+        stepId: "decision",
+        targetId: "proposal-safe",
+        targetType: "proposal",
+        workflowKey: "market_review",
+      },
+    ],
+    checkpoints: [
+      {
+        agentKey: "portfolio_manager",
+        checkpointId: "checkpoint-decision-1",
+        checkpointType: "agent_state",
+        createdAt: NOW,
+        invocationId: "invocation-decision",
+        metadata: { source: "middleware" },
+        packageKey: "market_review_package",
+        retention: "run",
+        runId: 42,
+        sequence: 1,
+        state: { summary: "Safe memory" },
+        stepId: "decision",
+        workflowKey: "market_review",
+      },
+    ],
+    decisions: [
+      {
+        createdAt: NOW,
+        decidedBy: "middleware",
+        decision: "commit",
+        decisionId: "decision-safe",
+        policySnapshot: { maxItems: 3 },
+        proposalId: "proposal-safe",
+        reason: "Passed workflow memory policy.",
+        reasonCode: "policy_passed",
+      },
+    ],
+    injections: [
+      {
+        agentKey: "portfolio_manager",
+        checkpointIds: ["checkpoint-decision-1"],
+        completion: { checkpointCount: 1, contextItemCount: 1 },
+        contextItemIds: ["memory-safe"],
+        invocationId: "invocation-decision",
+        policySnapshot: { maxContextItems: 4 },
+        runAgentInvocationId: 1001,
+        runStepId: 101,
+        scope: { namespace: "research" },
+        slot: "decision",
+        stepIndex: 1,
+      },
+    ],
+    proposals: [
+      {
+        activeMemoryIds: ["memory-safe"],
+        agentKey: "portfolio_manager",
+        createdAt: NOW,
+        detectors: { pii: false },
+        invocationId: "invocation-decision",
+        kind: "fact",
+        namespace: "research",
+        packageKey: "market_review_package",
+        proposalId: "proposal-safe",
+        reason: "Safe memory",
+        runId: 42,
+        sourceOutputPath: "outputs.decision.memory",
+        status: "committed",
+        stepId: "decision",
+        updatedAt: NOW,
+        workflowKey: "market_review",
+      },
+    ],
+    quarantines: [
+      {
+        agentKey: "portfolio_manager",
+        createdAt: NOW,
+        detectors: { promptInjection: true },
+        evidence: { excerpt: "unsafe instruction" },
+        invocationId: "invocation-decision",
+        kind: "fact",
+        memoryId: null,
+        namespace: "research",
+        packageKey: "market_review_package",
+        proposalId: "proposal-quarantined",
+        quarantineId: 6101,
+        reason: "Policy isolated unsafe memory evidence.",
+        reasonCode: "policy_quarantine",
+        resolvedAt: null,
+        runId: 42,
+        stepId: "decision",
+        workflowKey: "market_review",
+      },
+    ],
+  });
 }
 
 function buildPackageProvenance(
@@ -494,8 +591,7 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     inheritedTokens: 0,
     input: { ticker: "AAPL" },
     lineageRootRunId: null,
-    memoryArtifacts: [],
-    memoryEvents: [],
+    workflowMemoryEvidence: emptyWorkflowMemoryEvidence(),
     extensionDependencies: [],
     packageProvenance: null,
     progress: {
@@ -722,8 +818,6 @@ describe("RunsDetailPage", () => {
       executedTokens: 2302,
       id: 362,
       inheritedTokens: 0,
-      memoryArtifacts: [],
-      memoryEvents: [],
       packageProvenance: buildPackageProvenance({
         resolvedModelConnections: [buildResolvedModelConnection({})],
         workflowKey: "fundamentals_research",
@@ -769,8 +863,12 @@ describe("RunsDetailPage", () => {
       "runs-detail-section-evidence-availability",
     );
     expect(evidenceAvailability).toHaveTextContent(/1 provider\/model row/i);
-    expect(evidenceAvailability).toHaveTextContent(/0 memory events/i);
-    expect(evidenceAvailability).toHaveTextContent(/0 artifacts available/i);
+    expect(evidenceAvailability).toHaveTextContent(
+      /0 middleware evidence events/i,
+    );
+    expect(evidenceAvailability).toHaveTextContent(
+      /0 checkpoints; 0 audit events/i,
+    );
     expect(evidenceAvailability).toHaveTextContent(/2,302 executed tokens/i);
     overviewRender.unmount();
 
@@ -1005,28 +1103,11 @@ describe("RunsDetailPage", () => {
 
   it("scopes lower-frequency top-level tab panels to their mapped blocks", () => {
     const run = buildRun({
-      memoryArtifacts: [
-        {
-          memoryId: "memory_safe",
-          summary: "Compact safe memory",
-          visibleToWorkflow: true,
-          createdAt: NOW,
-          provenance: {
-            agentKey: "portfolio_manager",
-            agentVersion: 3,
-            createdByType: "agent",
-            runId: 42,
-            slot: "decision",
-            workflowKey: "market_review",
-          },
-          sourceGraphMetadata: null,
-        },
-      ],
-      memoryEvents: [buildMemoryEvent()],
       packageProvenance: buildPackageProvenance({
         resolvedModelConnections: [buildResolvedModelConnection({})],
       }),
       sourceRunId: 41,
+      workflowMemoryEvidence: buildCompleteWorkflowMemoryEvidence(),
     });
     const renderTab = (tab: RunDetailTabKey) => {
       searchParamsMock = new URLSearchParams(`tab=${tab}`);
@@ -1075,13 +1156,11 @@ describe("RunsDetailPage", () => {
       within(memoryPanel).getByTestId("runs-memory-workspace"),
     ).toBeVisible();
     expect(
-      within(memoryPanel).getByTestId("runs-memory-compact-artifacts"),
-    ).toHaveTextContent(/compact artifact slice/i);
+      within(memoryPanel).getByTestId("runs-workflow-memory-group-proposals"),
+    ).toHaveTextContent(/proposal-safe/i);
     expect(
-      within(memoryPanel).getByTestId(
-        "runs-memory-compact-artifact-memory_safe",
-      ),
-    ).toHaveTextContent(/Compact safe memory/i);
+      within(memoryPanel).getByTestId("runs-workflow-memory-group-checkpoints"),
+    ).toHaveTextContent(/checkpoint-decision-1/i);
     expect(
       within(memoryPanel).queryByRole("heading", { name: "Lineage" }),
     ).not.toBeInTheDocument();
@@ -1093,7 +1172,7 @@ describe("RunsDetailPage", () => {
       within(lineagePanel).getByTestId("runs-lineage-workspace"),
     ).toBeVisible();
     expect(
-      within(lineagePanel).queryByTestId("runs-memory-compact-artifacts"),
+      within(lineagePanel).queryByTestId("runs-workflow-memory-group-proposals"),
     ).not.toBeInTheDocument();
   });
 
@@ -1164,18 +1243,8 @@ describe("RunsDetailPage", () => {
       "",
       "execution",
     ],
-    [
-      "memory mode with memory inspect infers memory",
-      "mode=memory&inspect=memory%3Amemory_701",
-      "",
-      "memory",
-    ],
-    [
-      "invalid tab infers memory from raw legacy state",
-      "tab=unknown&mode=memory&inspect=memory%3Amemory_701",
-      "",
-      "memory",
-    ],
+    ["memory mode infers memory", "mode=memory", "", "memory"],
+    ["invalid tab infers memory from mode only", "tab=unknown&mode=memory", "", "memory"],
     ["metadata mode infers overview", "mode=metadata", "", "overview"],
     ["tokens mode infers usage", "mode=tokens", "", "usage"],
     ["step hash infers execution", "", "#step-2", "execution"],
@@ -1330,9 +1399,7 @@ describe("RunsDetailPage", () => {
     expect(memoryWorkspace).toBeVisible();
     expect(
       within(memoryWorkspace).getByTestId("runs-memory-empty"),
-    ).toHaveTextContent(
-      /no retrieval, write, review, audit, or compact memory artifact/i,
-    );
+    ).toHaveTextContent(/No workflow memory events/i);
     expect(
       screen.queryByTestId("runs-memory-inspector-empty"),
     ).not.toBeInTheDocument();
@@ -1399,31 +1466,6 @@ describe("RunsDetailPage", () => {
       executedTokens: 30,
       inheritedTokens: 21,
       lineageRootRunId: 40,
-      memoryArtifacts: [
-        {
-          memoryId: "memory_safe",
-          summary: "Compact safe memory",
-          visibleToWorkflow: true,
-          createdAt: NOW,
-          provenance: {
-            agentKey: "portfolio_manager",
-            agentVersion: 3,
-            createdByType: "agent",
-            runId: 42,
-            slot: "decision",
-            workflowKey: "market_review",
-          },
-          sourceGraphMetadata: null,
-        },
-      ],
-      memoryEvents: [
-        buildMemoryEvent({ id: 9101, eventType: "retrieved" }),
-        buildMemoryEvent({
-          id: 9102,
-          eventType: "written",
-          memoryId: "memory_safe",
-        }),
-      ],
       packageProvenance: buildPackageProvenance(),
       replayStepIndex: 1,
       resumeStepIndex: 2,
@@ -1443,6 +1485,7 @@ describe("RunsDetailPage", () => {
         }),
       ],
       totalTokens: 51,
+      workflowMemoryEvidence: buildCompleteWorkflowMemoryEvidence(),
     });
 
     useRunMock.mockReturnValue(queryResult(run));
@@ -1460,14 +1503,16 @@ describe("RunsDetailPage", () => {
     searchParamsMock = new URLSearchParams("mode=memory");
     const memoryRender = render(<RunsDetailPage />);
     const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
-    expect(memoryWorkspace).toHaveTextContent(/retrieved context/i);
-    expect(memoryWorkspace).toHaveTextContent(/memory written and reused/i);
+    expect(memoryWorkspace).toHaveTextContent(/Workflow memory middleware evidence/i);
+    expect(memoryWorkspace).toHaveTextContent(/Injections/i);
+    expect(memoryWorkspace).toHaveTextContent(/Proposals/i);
+    expect(memoryWorkspace).toHaveTextContent(/Decisions/i);
+    expect(memoryWorkspace).toHaveTextContent(/Quarantines/i);
+    expect(memoryWorkspace).toHaveTextContent(/Checkpoints/i);
+    expect(memoryWorkspace).toHaveTextContent(/Audit events/i);
     expect(
-      screen.getByTestId("runs-memory-compact-artifacts"),
-    ).toHaveTextContent(/compact artifact slice/i);
-    expect(
-      screen.getByTestId("runs-memory-compact-artifact-memory_safe"),
-    ).toHaveTextContent(/Compact safe memory/i);
+      screen.getByTestId("runs-workflow-memory-proposal-proposal-safe"),
+    ).toHaveTextContent(/Safe memory/i);
     memoryRender.unmount();
 
     searchParamsMock = new URLSearchParams("mode=runtime");
@@ -1623,23 +1668,7 @@ describe("RunsDetailPage", () => {
 
   it("renders selected execution evidence inline without an inspector pane", () => {
     const run = buildRun({
-      memoryArtifacts: [
-        {
-          memoryId: "memory_701",
-          summary: "AAPL decision memory",
-          visibleToWorkflow: false,
-          createdAt: NOW,
-          provenance: {
-            agentKey: "portfolio_manager",
-            agentVersion: 3,
-            createdByType: "agent",
-            runId: 42,
-            slot: "decision",
-            workflowKey: "market_review",
-          },
-          sourceGraphMetadata: null,
-        },
-      ],
+      workflowMemoryEvidence: buildCompleteWorkflowMemoryEvidence(),
     });
     useRunMock.mockReturnValue(queryResult(run));
 
@@ -1717,19 +1746,17 @@ describe("RunsDetailPage", () => {
       screen.queryByTestId("runs-step-1-trace-summary"),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByTestId("runs-memory-compact-artifact-memory_701"),
-    ).toHaveTextContent(/AAPL decision memory/i);
+      screen.getByTestId("runs-workflow-memory-proposal-proposal-safe"),
+    ).toHaveTextContent(/Safe memory/i);
     [
       "runs-audit-table",
       "runs-audit-row-payload-input",
       "runs-audit-row-payload-output",
       "runs-audit-row-memory-groups",
       "runs-audit-row-trace-agent-1001",
-      "runs-audit-row-artifact-memory_701",
       "runs-audit-row-payload-input-inline-evidence",
       "runs-audit-row-payload-output-inline-evidence",
       "runs-audit-row-trace-agent-1001-inline-evidence",
-      "runs-audit-row-artifact-memory_701-inline-evidence",
     ].forEach((testId) => {
       expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
     });
@@ -2583,33 +2610,6 @@ describe("RunsDetailPage", () => {
 
   it("defers only the long runtime, usage, and memory evidence sections", () => {
     const run = buildRun({
-      memoryArtifacts: [
-        {
-          memoryId: "memory_safe",
-          summary: "Compact safe memory",
-          visibleToWorkflow: true,
-          createdAt: NOW,
-          provenance: {
-            agentKey: "portfolio_manager",
-            agentVersion: 3,
-            createdByType: "agent",
-            runId: 42,
-            slot: "decision",
-            workflowKey: "market_review",
-          },
-          sourceGraphMetadata: null,
-        },
-      ],
-      memoryEvents: [
-        buildMemoryEvent({
-          id: 9101,
-          eventType: "retrieved",
-          resultSnapshot: {
-            resultCount: 1,
-            snippets: [{ memoryId: "memory_safe", summary: "Safe memory" }],
-          },
-        }),
-      ],
       packageProvenance: buildPackageProvenance({
         resolvedModelConnections: [buildResolvedModelConnection({})],
       }),
@@ -2638,6 +2638,7 @@ describe("RunsDetailPage", () => {
           ],
         }),
       ],
+      workflowMemoryEvidence: buildCompleteWorkflowMemoryEvidence(),
     });
     useRunMock.mockReturnValue(queryResult(run));
 
@@ -2686,32 +2687,30 @@ describe("RunsDetailPage", () => {
 
     expect(screen.getByTestId("runs-memory-evidence")).not.toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
-      MEMORY_EVENT_GROUP_SIZE_CLASS,
+      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
     );
     expect(
-      screen.getByTestId("runs-memory-group-retrievedContext"),
-    ).toHaveClass(CONTENT_VISIBILITY_AUTO_CLASS, MEMORY_EVENT_GROUP_SIZE_CLASS);
-    expect(screen.getByTestId("runs-memory-group-memoryWrites")).toHaveClass(
+      screen.getByTestId("runs-workflow-memory-group-injections"),
+    ).toHaveClass(CONTENT_VISIBILITY_AUTO_CLASS, WORKFLOW_MEMORY_GROUP_SIZE_CLASS);
+    expect(screen.getByTestId("runs-workflow-memory-group-proposals")).toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
-      MEMORY_EVENT_GROUP_SIZE_CLASS,
+      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
     );
-    expect(screen.getByTestId("runs-memory-group-reviewFollowUp")).toHaveClass(
+    expect(screen.getByTestId("runs-workflow-memory-group-decisions")).toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
-      MEMORY_EVENT_GROUP_SIZE_CLASS,
+      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
     );
-    expect(screen.getByTestId("runs-memory-group-auditTrail")).toHaveClass(
+    expect(screen.getByTestId("runs-workflow-memory-group-quarantines")).toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
-      MEMORY_EVENT_GROUP_SIZE_CLASS,
+      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
     );
-    expect(
-      screen.getByTestId("runs-memory-compact-artifact-memory_safe"),
-    ).toHaveClass(
+    expect(screen.getByTestId("runs-workflow-memory-group-checkpoints")).toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
-      MEMORY_COMPACT_ARTIFACT_SIZE_CLASS,
+      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
     );
-    expect(screen.getByTestId("runs-memory-compact-artifacts")).not.toHaveClass(
+    expect(screen.getByTestId("runs-workflow-memory-group-auditEvents")).toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
-      MEMORY_COMPACT_ARTIFACT_SIZE_CLASS,
+      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
     );
   });
 
@@ -2764,42 +2763,11 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("groups graph metadata and renders compact memory artifact report-link counts", () => {
+  it("groups graph metadata without rendering legacy memory artifact cards", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
           packageProvenance: buildPackageProvenance(),
-          memoryArtifacts: [
-            {
-              memoryId: "memory_701",
-              summary: "AAPL decision memory",
-              visibleToWorkflow: false,
-              createdAt: NOW,
-              provenance: {
-                agentKey: "portfolio_manager",
-                agentVersion: 3,
-                createdByType: "agent",
-                runId: 42,
-                slot: "decision",
-                workflowKey: "market_review",
-                workflowVersion: 2,
-              },
-              sourceGraphMetadata: {
-                nodeId: "decision",
-                nodeKind: "step",
-                loopId: "review_loop",
-                loopIteration: 2,
-              },
-              auditLinks: {
-                report: {
-                  slug: "memory_aapl_decision",
-                  name: "AAPL decision memory report",
-                  url: "/reports/memory_aapl_decision",
-                  downloadUrl: "/api/v1/reports/memory_aapl_decision/download",
-                },
-              },
-            },
-          ],
           steps: [
             buildStep({
               graphMetadata: {
@@ -2866,162 +2834,27 @@ describe("RunsDetailPage", () => {
 
     defaultRender.unmount();
     searchParamsMock = new URLSearchParams("mode=metadata&tab=memory");
-    const memoryTabRender = render(<RunsDetailPage />);
+    render(<RunsDetailPage />);
     expect(
       screen.queryByTestId("runs-detail-section-metadata"),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Metadata" }),
     ).not.toBeInTheDocument();
-    const compactArtifact = screen.getByTestId(
-      "runs-memory-compact-artifact-memory_701",
+    expect(screen.getByTestId("runs-memory-empty")).toHaveTextContent(
+      /No workflow memory events/i,
     );
-    expect(compactArtifact).toHaveTextContent("AAPL decision memory");
-    expect(compactArtifact).toHaveTextContent(/workflow hidden/i);
-    expect(compactArtifact).toHaveTextContent(/portfolio_manager@3/i);
-    expect(compactArtifact).toHaveTextContent(/workflow market_review/i);
-    expect(compactArtifact).toHaveTextContent(/slot decision/i);
-    expect(compactArtifact).toHaveTextContent(/run #42/i);
     expect(
       screen.queryByTestId("runs-memory-artifacts"),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("runs-audit-row-artifact-memory_701"),
-    ).not.toBeInTheDocument();
-    memoryTabRender.unmount();
-
-    searchParamsMock = new URLSearchParams(
-      "mode=memory&inspect=memory:memory_701&pane=details",
-    );
-    render(<RunsDetailPage />);
-    const canonicalMemoryLink = screen.getByRole("link", {
-      name: "Open canonical memory",
-    });
-    const canonicalMemoryHref = canonicalMemoryLink.getAttribute("href") ?? "";
-    expect(canonicalMemoryHref).toContain("visibleToWorkflow=false");
-    expect(canonicalMemoryHref).not.toContain("status=");
-    expect(canonicalMemoryHref).not.toContain("/status");
+    expect(screen.queryByText(/Open canonical memory/i)).not.toBeInTheDocument();
   });
 
-  it("renders memory artifacts without report actions when audit links are absent", () => {
+  it("renders workflow memory middleware evidence groups without legacy artifact actions", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
-          memoryArtifacts: [
-            {
-              memoryId: "memory_702",
-              summary: "AAPL risk memory",
-              visibleToWorkflow: true,
-              createdAt: NOW,
-              provenance: {
-                agentKey: "risk_manager",
-                agentVersion: 1,
-                createdByType: "agent",
-                runId: 42,
-                workflowKey: "market_review",
-              },
-              sourceGraphMetadata: null,
-            },
-          ],
-        }),
-      ),
-    );
-
-    searchParamsMock = new URLSearchParams("mode=metadata&tab=memory");
-    render(<RunsDetailPage />);
-
-    expect(
-      screen.queryByTestId("runs-detail-section-metadata"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "Metadata" }),
-    ).not.toBeInTheDocument();
-    const artifact = screen.getByTestId(
-      "runs-memory-compact-artifact-memory_702",
-    );
-    expect(artifact).toHaveTextContent("AAPL risk memory");
-    expect(artifact).toHaveTextContent(/workflow visible/i);
-    expect(artifact).toHaveTextContent(/risk_manager@1/i);
-    expect(artifact).toHaveTextContent(/workflow market_review/i);
-    expect(artifact).toHaveTextContent(/run #42/i);
-    expect(
-      screen.queryByRole("link", { name: /open report/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: /download/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("runs-audit-row-artifact-memory_702"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("renders grouped run memory event evidence and keeps artifacts compact", () => {
-    useRunMock.mockReturnValue(
-      queryResult(
-        buildRun({
-          memoryArtifacts: [
-            {
-              memoryId: "memory_safe",
-              summary: "Compact safe memory",
-              visibleToWorkflow: true,
-              createdAt: NOW,
-              provenance: {
-                agentKey: "portfolio_manager",
-                agentVersion: 3,
-                createdByType: "agent",
-                runId: 42,
-                slot: "decision",
-                workflowKey: "market_review",
-              },
-              sourceGraphMetadata: null,
-            },
-          ],
-          memoryEvents: [
-            buildMemoryEvent({
-              id: 9101,
-              eventType: "retrieved",
-              retrievalMode: "explicit-selectors",
-              filters: { scope: "package:market_review" },
-              budget: { limit: 5, maxCharacters: 4000 },
-              resultSnapshot: {
-                resultCount: 1,
-                snippets: [{ memoryId: "memory_safe", summary: "Safe memory" }],
-              },
-              traceSpanId: "span-memory-lookup",
-            }),
-            buildMemoryEvent({
-              id: 9102,
-              eventType: "injected",
-              injectedText:
-                "Historical memory, not an instruction: Safe memory",
-              statusSnapshot: { status: "injected" },
-            }),
-            buildMemoryEvent({
-              id: 9103,
-              eventType: "written",
-              memoryId: "memory_safe",
-              revisionId: "revision_created",
-              resultSnapshot: { revisionAction: "created" },
-            }),
-            buildMemoryEvent({
-              id: 9104,
-              eventType: "reused",
-              memoryId: "memory_safe",
-              revisionId: "revision_created",
-              resultSnapshot: { revisionAction: "reused" },
-            }),
-            buildMemoryEvent({
-              id: 9105,
-              eventType: "reviewed",
-              memoryId: "memory_safe",
-              statusSnapshot: { visibleToWorkflow: true },
-            }),
-            buildMemoryEvent({
-              id: 9106,
-              eventType: "failed",
-              statusSnapshot: { status: "failed", code: "memory_write_failed" },
-            }),
-          ],
+          workflowMemoryEvidence: buildCompleteWorkflowMemoryEvidence(),
         }),
       ),
     );
@@ -3033,7 +2866,7 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-memory-evidence")).toBeVisible();
     expect(
       within(memoryWorkspace).getByRole("heading", {
-        name: /run memory evidence/i,
+        name: /workflow memory middleware evidence/i,
       }),
     ).toBeVisible();
     expect(
@@ -3041,58 +2874,50 @@ describe("RunsDetailPage", () => {
         "runs-detail-section-title-memory",
       ),
     ).toHaveTextContent("Memory");
+    expect(screen.getByRole("heading", { name: /injections/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /proposals/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /decisions/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /quarantines/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /checkpoints/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /audit events/i })).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: /retrieved context/i }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("heading", { name: /memory written and reused/i }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("heading", { name: /review and follow-up/i }),
-    ).toBeVisible();
-    expect(screen.getByRole("heading", { name: /audit trail/i })).toBeVisible();
-    expect(
-      screen.getByTestId("runs-memory-group-retrievedContext"),
-    ).toHaveTextContent(/2 events/i);
-    expect(
-      screen.getByTestId("runs-memory-group-memoryWrites"),
-    ).toHaveTextContent(/2 events/i);
-    expect(
-      screen.getByTestId("runs-memory-group-reviewFollowUp"),
+      screen.getByTestId("runs-workflow-memory-group-injections"),
     ).toHaveTextContent(/1 event/i);
     expect(
-      screen.getByTestId("runs-memory-group-auditTrail"),
+      screen.getByTestId("runs-workflow-memory-group-proposals"),
     ).toHaveTextContent(/1 event/i);
     expect(
-      screen.getByTestId("runs-memory-event-9101-result"),
+      screen.getByTestId("runs-workflow-memory-group-decisions"),
+    ).toHaveTextContent(/1 event/i);
+    expect(
+      screen.getByTestId("runs-workflow-memory-group-quarantines"),
+    ).toHaveTextContent(/1 event/i);
+    expect(
+      screen.getByTestId("runs-workflow-memory-group-checkpoints"),
+    ).toHaveTextContent(/1 event/i);
+    expect(
+      screen.getByTestId("runs-workflow-memory-group-auditEvents"),
+    ).toHaveTextContent(/1 event/i);
+    expect(
+      screen.getByTestId("runs-workflow-memory-injection-1001"),
+    ).toHaveTextContent(/memory-safe/i);
+    expect(
+      screen.getByTestId("runs-workflow-memory-proposal-proposal-safe"),
     ).toHaveTextContent(/Safe memory/i);
     expect(
-      screen.getByTestId("runs-memory-event-9102-injected-text"),
-    ).toHaveTextContent(/Historical memory, not an instruction/i);
+      screen.getByTestId("runs-workflow-memory-decision-decision-safe"),
+    ).toHaveTextContent(/Policy passed/i);
     expect(
-      screen.getByTestId("runs-memory-event-9103-result"),
-    ).toHaveTextContent(/created/i);
+      screen.getByTestId("runs-workflow-memory-quarantine-6101"),
+    ).toHaveTextContent(/Policy quarantine/i);
     expect(
-      screen.getByTestId("runs-memory-event-9104-result"),
-    ).toHaveTextContent(/reused/i);
+      screen.getByTestId("runs-workflow-memory-checkpoint-checkpoint-decision-1"),
+    ).toHaveTextContent(/agent state/i);
     expect(
-      screen.getByTestId("runs-memory-event-9105-status"),
-    ).toHaveTextContent(/visibleToWorkflow/i);
-    expect(
-      screen.getByTestId("runs-memory-event-9105-status"),
-    ).not.toHaveTextContent(/\b(approved|pending|archived)\b/i);
-    expect(
-      screen.getByTestId("runs-memory-event-9106-status"),
-    ).toHaveTextContent(/memory_write_failed/i);
-    expect(
-      screen.getByTestId("runs-memory-compact-artifacts"),
-    ).toHaveTextContent(/compact artifact slice/i);
-    expect(
-      screen.getByTestId("runs-memory-compact-artifact-memory_safe"),
-    ).toHaveTextContent(/Compact safe memory/i);
-    expect(
-      screen.queryByTestId("runs-memory-artifacts-empty"),
-    ).not.toBeInTheDocument();
+      screen.getByTestId("runs-workflow-memory-audit-event-5101"),
+    ).toHaveTextContent(/proposal decided/i);
+    expect(screen.queryByTestId("runs-memory-artifacts")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-memory-compact-artifacts")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: /open report/i }),
     ).not.toBeInTheDocument();
@@ -3107,9 +2932,7 @@ describe("RunsDetailPage", () => {
     const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
     expect(
       within(memoryWorkspace).getByTestId("runs-memory-empty"),
-    ).toHaveTextContent(
-      /No retrieval, write, review, audit, or compact memory artifact/i,
-    );
+    ).toHaveTextContent(/No workflow memory events/i);
     expect(
       screen.queryByTestId("runs-memory-inspector-empty"),
     ).not.toBeInTheDocument();

@@ -119,8 +119,14 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     inheritedTokens: 0,
     input: { ticker: "NVDA" },
     lineageRootRunId: null,
-    memoryArtifacts: [],
-    memoryEvents: [],
+    workflowMemoryEvidence: {
+      auditEvents: [],
+      checkpoints: [],
+      decisions: [],
+      injections: [],
+      proposals: [],
+      quarantines: [],
+    },
     extensionDependencies: [],
     packageProvenance: null,
     progress: {

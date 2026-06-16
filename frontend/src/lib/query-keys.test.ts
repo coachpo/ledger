@@ -125,39 +125,6 @@ describe("query keys", () => {
       "signaldeck.finance",
     ]);
 
-    expect(queryKeys.platform.memory.detail("memory_1")).toEqual([
-      "api",
-      "platform",
-      "memory",
-      "detail",
-      "memory_1",
-    ]);
-    expect(
-      queryKeys.platform.memory.list({
-        accessContext: {
-          packageKey: " research_package ",
-          workflowKey: " daily ",
-        },
-        scope: { scopeKey: "42", scopeType: "run" },
-        visibility: "explicit-scope",
-      }),
-    ).toEqual([
-      "api",
-      "platform",
-      "memory",
-      "list",
-      {
-        accessContext: { packageKey: "research_package", workflowKey: "daily" },
-        limit: 5,
-        maxCharacters: 4000,
-        offset: 0,
-        scope: { scopeKey: "42", scopeType: "run" },
-        subjectRefs: [],
-        tags: [],
-        visibility: "explicit-scope",
-      },
-    ]);
-
     expect(Object.keys(queryKeys.platform)).toEqual([
       "all",
       "memory",
@@ -170,107 +137,54 @@ describe("query keys", () => {
     ]);
   });
 
-  it("normalizes admin memory keys separately from scoped runtime memory keys", () => {
-    expect(queryKeys.platform.memory.admin.list()).toEqual([
+  it("normalizes workflow memory review keys", () => {
+    expect(queryKeys.platform.memory.proposals()).toEqual([
       "api",
       "platform",
       "memory",
-      "admin",
-      "entries",
-      "list",
-      { limit: 50, offset: 0, sort: "updatedAtDesc" },
+      "proposals",
+      { limit: 50, offset: 0, status: "review_pending" },
     ]);
     expect(
-      queryKeys.platform.memory.admin.list({
-        agentKey: " analyst ",
-        kind: " Insight ",
-        packageKey: " research_package ",
-        query: " earnings ",
-        runId: 41,
-        scopeType: "package",
-        visibleToWorkflow: true,
-        workflowKey: " daily ",
-      }),
+      queryKeys.platform.memory.proposals({ limit: 25, status: "all" }),
     ).toEqual([
       "api",
       "platform",
       "memory",
-      "admin",
-      "entries",
-      "list",
-      {
-        agentKey: "analyst",
-        kind: "insight",
-        limit: 50,
-        offset: 0,
-        packageKey: "research_package",
-        query: "earnings",
-        runId: 41,
-        scopeType: "package",
-        sort: "updatedAtDesc",
-        visibleToWorkflow: true,
-        workflowKey: "daily",
-      },
+      "proposals",
+      { limit: 25, offset: 0, status: "all" },
+    ]);
+    expect(queryKeys.platform.memory.auditEvents({ offset: 10 })).toEqual([
+      "api",
+      "platform",
+      "memory",
+      "auditEvents",
+      { limit: 50, offset: 10 },
     ]);
     expect(
-      queryKeys.platform.memory.admin.list({ visibleToWorkflow: false }),
+      queryKeys.platform.memory.quarantine({ unresolvedOnly: false }),
     ).toEqual([
       "api",
       "platform",
       "memory",
-      "admin",
-      "entries",
-      "list",
-      {
-        limit: 50,
-        offset: 0,
-        sort: "updatedAtDesc",
-        visibleToWorkflow: false,
-      },
+      "quarantine",
+      { limit: 50, offset: 0, unresolvedOnly: false },
     ]);
-    expect(queryKeys.platform.memory.admin.detail(7)).toEqual([
+    expect(queryKeys.platform.memory.proposalsScope()).toEqual([
       "api",
       "platform",
       "memory",
-      "admin",
-      "entries",
-      "detail",
-      "7",
+      "proposals",
     ]);
-    expect(
-      queryKeys.platform.memory.admin.revisions("7", { limit: 10 }),
-    ).toEqual([
+    expect(queryKeys.platform.memory.auditEventsScope()).toEqual([
       "api",
       "platform",
       "memory",
-      "admin",
-      "entries",
-      "revisions",
-      "7",
-      { limit: 10, offset: 0 },
+      "auditEvents",
     ]);
-    expect(queryKeys.platform.memory.admin.events("7")).toEqual([
-      "api",
-      "platform",
-      "memory",
-      "admin",
-      "entries",
-      "events",
-      "7",
-      { offset: 0 },
-    ]);
-    const adminListKey = JSON.stringify(
-      queryKeys.platform.memory.admin.list({ packageKey: "research_package" }),
-    );
-    expect(adminListKey).not.toContain(["access", "Context"].join(""));
-    expect(adminListKey).not.toContain(["max", "Characters"].join(""));
-    expect(adminListKey).not.toContain("visibility");
-    expect(queryKeys.platform.memory.admin.lists()).not.toEqual(
-      queryKeys.platform.memory.list({
-        accessContext: { packageKey: "research_package" },
-        scope: { scopeKey: "research_package", scopeType: "package" },
-      }),
-    );
+    expect(queryKeys.platform.memory).not.toHaveProperty("admin");
+    expect(queryKeys.platform.memory).not.toHaveProperty("detail");
+    expect(queryKeys.platform.memory).not.toHaveProperty("list");
   });
 
   it("normalizes schedule list and fire-history filters", () => {

@@ -334,6 +334,14 @@ export function RunOverviewWorkspace({
 export function RunEvidenceAvailabilitySection({ run }: { run: RunRead }) {
   const providerCount =
     run.packageProvenance?.resolvedModelConnections.length ?? 0;
+  const workflowMemoryEvidence = run.workflowMemoryEvidence;
+  const middlewareEventCount =
+    workflowMemoryEvidence.injections.length +
+    workflowMemoryEvidence.proposals.length +
+    workflowMemoryEvidence.decisions.length +
+    workflowMemoryEvidence.quarantines.length +
+    workflowMemoryEvidence.checkpoints.length +
+    workflowMemoryEvidence.auditEvents.length;
 
   return (
     <RunDetailContentSection
@@ -354,11 +362,11 @@ export function RunEvidenceAvailabilitySection({ run }: { run: RunRead }) {
             ),
           },
           {
-            label: "Audit",
+            label: "Workflow memory",
             value: (
               <CompactDetailValue
-                description={`${run.memoryArtifacts.length} artifact${run.memoryArtifacts.length === 1 ? "" : "s"} available for audit drill-down.`}
-                value={`${run.memoryEvents.length} memory event${run.memoryEvents.length === 1 ? "" : "s"}`}
+                description={`${workflowMemoryEvidence.checkpoints.length} checkpoint${workflowMemoryEvidence.checkpoints.length === 1 ? "" : "s"}; ${workflowMemoryEvidence.auditEvents.length} audit event${workflowMemoryEvidence.auditEvents.length === 1 ? "" : "s"}.`}
+                value={`${middlewareEventCount} middleware evidence event${middlewareEventCount === 1 ? "" : "s"}`}
               />
             ),
           },

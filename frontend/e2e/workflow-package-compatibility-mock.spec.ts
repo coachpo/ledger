@@ -83,8 +83,14 @@ const runDetail = {
   inheritedTokens: 0,
   input: { ticker: "AAPL" },
   lineageRootRunId: null,
-  memoryArtifacts: [],
-  memoryEvents: [],
+  workflowMemoryEvidence: {
+    auditEvents: [],
+    checkpoints: [],
+    decisions: [],
+    injections: [],
+    proposals: [],
+    quarantines: [],
+  },
   packageProvenance: {
     compiledPlan: { workflow: { key: "market_review" } },
     currentPackage: {

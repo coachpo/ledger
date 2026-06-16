@@ -112,67 +112,108 @@ export interface RunGraphMetadata {
   sourceRefs?: unknown;
 }
 
-export interface RunMemoryProvenanceRead {
+export interface RunWorkflowMemoryInjectionRead {
+  runAgentInvocationId: number;
+  runStepId: number;
+  stepIndex: number;
+  slot: string;
   agentKey: string;
-  agentName?: string | null;
-  agentVersion: number;
-  createdByType: "agent";
-  runId: number;
-  stepId?: string | null;
-  slot?: string | null;
-  traceId?: string | null;
+  invocationId?: string | null;
+  scope: UnknownRecord;
+  policySnapshot: UnknownRecord;
+  contextItemIds: string[];
+  checkpointIds: string[];
+  completion?: Record<string, number> | null;
+}
+
+export interface RunWorkflowMemoryProposalEvidenceRead {
+  proposalId: string;
+  runId?: number | null;
+  invocationId?: string | null;
+  packageKey: string;
+  workflowKey: string;
+  agentKey: string;
+  stepId: string;
+  namespace: string;
+  kind: string;
+  status: string;
+  reason?: string | null;
+  sourceOutputPath?: string | null;
+  detectors: UnknownRecord;
+  activeMemoryIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RunWorkflowMemoryDecisionEvidenceRead {
+  decisionId: string;
+  proposalId: string;
+  decision: string;
+  reasonCode: string;
+  reason?: string | null;
+  policySnapshot: UnknownRecord;
+  decidedBy: string;
+  createdAt: string;
+}
+
+export interface RunWorkflowMemoryQuarantineEvidenceRead {
+  quarantineId: number;
+  proposalId?: string | null;
+  memoryId?: string | null;
+  runId?: number | null;
+  invocationId?: string | null;
+  packageKey?: string | null;
   workflowKey?: string | null;
-  workflowVersion?: number | null;
-}
-
-export interface RunMemoryAuditReportLinkRead {
-  slug: string;
-  name: string;
-  url: string;
-  downloadUrl: string;
-}
-
-export interface RunMemoryArtifactRead {
-  memoryId: string;
-  summary: string;
-  visibleToWorkflow: boolean;
+  agentKey?: string | null;
+  stepId?: string | null;
+  namespace?: string | null;
+  kind?: string | null;
+  evidence: UnknownRecord;
+  reasonCode: string;
+  reason?: string | null;
+  detectors: UnknownRecord;
+  resolvedAt?: string | null;
   createdAt: string;
-  provenance: RunMemoryProvenanceRead;
-  sourceGraphMetadata?: (RunGraphMetadata & UnknownRecord) | null;
-  auditLinks?: {
-    report?: RunMemoryAuditReportLinkRead | null;
-  } | null;
 }
 
-export type RunMemoryEventType =
-  | "retrieved"
-  | "injected"
-  | "written"
-  | "reused"
-  | "superseded"
-  | "reviewed"
-  | "failed";
-
-export interface RunMemoryEventRead {
-  id: number;
+export interface RunWorkflowMemoryCheckpointEvidenceRead {
+  checkpointId: string;
+  checkpointType: string;
+  sequence: number;
   runId: number;
-  runStepId: number | null;
-  runAgentInvocationId: number | null;
-  runOperationInvocationId: number | null;
-  stepId: string | null;
-  invocationId: string | null;
-  eventType: RunMemoryEventType;
-  memoryId: string | null;
-  revisionId: string | null;
-  retrievalMode: string | null;
-  filters: UnknownRecord;
-  budget: UnknownRecord;
-  excerpt: string | null;
-  injectedText: string | null;
-  resultSnapshot: UnknownRecord;
-  statusSnapshot: UnknownRecord;
-  traceSpanId: string | null;
+  packageKey: string;
+  workflowKey: string;
+  agentKey?: string | null;
+  stepId?: string | null;
+  invocationId?: string | null;
+  state: UnknownRecord;
+  retention: string;
+  metadata: UnknownRecord;
   createdAt: string;
+}
+
+export interface RunWorkflowMemoryAuditEventEvidenceRead {
+  auditEventId: number;
+  eventType: string;
+  targetType: string;
+  targetId: string;
+  runId?: number | null;
+  invocationId?: string | null;
+  packageKey: string;
+  workflowKey: string;
+  agentKey?: string | null;
+  stepId?: string | null;
+  event: UnknownRecord;
+  createdAt: string;
+}
+
+export interface RunWorkflowMemoryEvidenceRead {
+  injections: RunWorkflowMemoryInjectionRead[];
+  proposals: RunWorkflowMemoryProposalEvidenceRead[];
+  decisions: RunWorkflowMemoryDecisionEvidenceRead[];
+  quarantines: RunWorkflowMemoryQuarantineEvidenceRead[];
+  checkpoints: RunWorkflowMemoryCheckpointEvidenceRead[];
+  auditEvents: RunWorkflowMemoryAuditEventEvidenceRead[];
 }
 
 export interface RunPackageResolvedModelConnectionRead {
@@ -433,8 +474,7 @@ export interface RunRead extends RunTargetIdentityRead {
   createdAt: string;
   updatedAt: string;
   steps: RunStepRead[];
-  memoryArtifacts: RunMemoryArtifactRead[];
-  memoryEvents: RunMemoryEventRead[];
+  workflowMemoryEvidence: RunWorkflowMemoryEvidenceRead;
   extensionDependencies: RunExtensionDependencyRead[];
   packageProvenance: RunPackageProvenanceRead | null;
 }

@@ -112,9 +112,6 @@ function parseRawPaneTab(
   ) {
     return "execution";
   }
-  if (inspect && inspect.startsWith("memory:")) {
-    return "memory";
-  }
   if (pane === "error") {
     return "execution";
   }
@@ -131,7 +128,7 @@ function parseRawPaneTab(
     return "lineage";
   }
   if (pane === "details" || pane === "provenance") {
-    return inspect?.startsWith("memory:") ? "memory" : null;
+    return null;
   }
 
   return null;
