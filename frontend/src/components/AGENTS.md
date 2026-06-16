@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file covers shared components, feature-specific components, and UI primitives in `src/components/`.
 
 ## OVERVIEW
-`src/components/` contains the layout shell, theme system, shared component library, small cross-route form/dialog surfaces, platform-authoring widgets, template-editor support components, portfolio-specific UI folders, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, while `frontend/DESIGN_SYSTEM.md` defines the shared UI contract these components implement.
+`src/components/` contains the layout shell, theme system, shared component library, small cross-route form/dialog surfaces, platform-authoring widgets, template-editor support components, portfolio-specific UI folders, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, while `src/components/shared/docs/README.md` defines the shared UI contract these components implement.
 
 Extension model: statically resident extension runtime nav groups and extension state.
 
@@ -44,7 +44,7 @@ src/components/
 | App shell / navigation | `layout.tsx`, `shared/error-boundary.tsx` | sidebar shell, metadata-driven shell/width framing, and route-safe fallback UI |
 | Theme behavior | `theme-provider.tsx`, `theme-toggle.tsx`, `theme.ts` | persisted theme state and system-sync logic |
 | Shared components | `shared/AGENTS.md` | reusable inventory/workspace shells, resource chrome, evidence helpers, tables, management-list actions/selection, metrics, and field schemas |
-| Cross-route dialogs and form helpers | `forms/AGENTS.md`, `forms/portfolio-form-dialog.tsx`, `forms/generate-report-dialog.tsx`, `forms/secret-input.tsx`, `shared/confirm-delete-dialog.tsx` | small shared dialogs, destructive confirmations, and write-only secret input UI |
+| Cross-route dialogs and form helpers | `forms/AGENTS.md`, `forms/portfolio-form-dialog.tsx`, `forms/generate-report-dialog.tsx`, `forms/report-upload-dialog.tsx`, `forms/secret-input.tsx`, `shared/confirm-delete-dialog.tsx` | small shared dialogs, destructive confirmations, uploads, and write-only secret input UI |
 | Platform authoring widgets | `platform-authoring/AGENTS.md` | schema composer, generated form, workflow builder, refs, inspectors |
 | Template-editor support UI | `templates/AGENTS.md` | placeholder reference and runtime-input surfaces used by template routes |
 | Portfolio feature UI | `portfolios/AGENTS.md` | sections, dialogs, trading form, feature-specific logic |

@@ -45,6 +45,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - The list route delegates Memory Admin filter/list/card/dialog UI to `admin-components.tsx` and helper normalization to `admin-helpers.ts`; keep data fetching and mutations in `list.tsx`/`detail.tsx` through hooks.
 - The list route shows browse/filter results plus create and per-row single-entry delete controls; the detail route shows detail, revisions, events, provenance, revise, workflow visibility, and one-entry delete controls. It must not add bulk deletion, runtime/global delete behavior, browse report history, or promote report history into memory.
 - `WorkspacePageShell` is the route frame for both list and detail; do not reintroduce a route-local page shell or inline inspector selection model.
+- Route metadata includes list creating state and detail saving state; keep create/revise/workflow-visibility feedback in those route-owned states rather than generic shared shell state.
 - Keep Memory Admin in the Agent Platform nav group with platform ownership. Do not move it under extension gates or Finance Workspace ownership.
 - Tool discovery stays API and hook support for Workflow Package capability authoring. Do not add or document a standalone Tools browser route from this folder.
 - Long ids, memory content, subject refs, and event payload fragments need wrapping or internal scrolling so the route does not create mobile overflow.
