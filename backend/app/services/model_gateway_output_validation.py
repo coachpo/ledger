@@ -101,7 +101,7 @@ def validate_model_output(
             output=None,
             details=_validation_details_from_pydantic_error(exc),
         )
-    return OutputValidationResult(output=validated.model_dump(mode="json"))
+    return OutputValidationResult(output=validated.model_dump(mode="json", exclude_none=True))
 
 
 def validation_retry_input(

@@ -6,21 +6,7 @@ from functools import lru_cache
 from app.extensions import BundledServerDeclaredToolContribution as ServerDeclaredToolSpec
 from app.extensions.registry import get_bundled_extension_registry
 
-_CORE_SERVER_DECLARED_MODULE = __name__
-CORE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = (
-    ServerDeclaredToolSpec(
-        key="signaldeck.core.memory.write",
-        display_name="Memory Write",
-        description="Write platform-core memory entries through server-owned memory storage.",
-        module=_CORE_SERVER_DECLARED_MODULE,
-    ),
-    ServerDeclaredToolSpec(
-        key="signaldeck.core.memory.lookup",
-        display_name="Memory Lookup",
-        description="Read bounded, scoped platform-core memory snippets.",
-        module=_CORE_SERVER_DECLARED_MODULE,
-    ),
-)
+CORE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = ()
 
 
 def _load_server_declared_tool_specs() -> tuple[ServerDeclaredToolSpec, ...]:

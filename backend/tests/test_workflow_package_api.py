@@ -31,8 +31,6 @@ _EXPECTED_PACKAGE_TOOL_KEYS = {
     "signaldeck.finance.insider_data.lookup",
     "signaldeck.finance.positions.lookup",
     "signaldeck.finance.reports.lookup",
-    "signaldeck.core.memory.lookup",
-    "signaldeck.core.memory.write",
 }
 
 

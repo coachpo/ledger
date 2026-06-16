@@ -20,7 +20,6 @@ from app.extensions.signaldeck_digital_oracle.runtime_types import (
     SEC_FILINGS_LOOKUP_TOOL_KEY,
 )
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-from app.models.agent_memory import RunMemoryEvent
 from app.models.model_connection import ModelConnection
 from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
@@ -33,15 +32,6 @@ from app.models.workflow_package_schedule import (
     WorkflowPackageScheduleFire,
 )
 from app.schemas.extension import ExtensionToggleRequest
-from app.schemas.memory import (
-    MemoryOutcome,
-    MemoryProvenance,
-    MemoryQuery,
-    MemoryScope,
-    MemoryScopeType,
-    MemorySubjectRef,
-    MemoryWriteRequest,
-)
 from app.schemas.model_connection import (
     ModelConnectionProtocolProfile,
     default_model_connection_capabilities,
@@ -58,7 +48,6 @@ from app.schemas.schedule import (
 )
 from app.services.agent_execution_service import AgentExecutionService, RunAgentInvocationResult
 from app.services.extension_service import ExtensionService
-from app.services.memory_service import MemoryLookupContext, MemoryService
 from app.services.model_connection_snapshot import parse_model_connection_runtime_snapshot
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.run_queue_service import RunQueueService
@@ -189,7 +178,14 @@ _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
 
 
 def _canonicalize_live_tool_keys(source: str) -> str:
-    return source
+    retired_memory_profile = """  - key: memory_write_tools
+    name: Memory Tools
+    description: Reads and writes advisory memory through SignalDeck core memory tools.
+    toolKeys:
+    - signaldeck.core.memory.lookup
+    - signaldeck.core.memory.write
+"""
+    return source.replace(retired_memory_profile, "")
 
 
 def _digital_oracle_researcher_demo_source() -> str:
@@ -1414,126 +1410,6 @@ def test_fork_invocation_input_preserves_nullable_null(
         )
         assert target_invocation.resolved_input == {"ticker": "TSLA", "sector": None}
         assert "horizonDays" not in target_invocation.resolved_input
-
-
-def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    package = _create_package(client, package_key="memory_evidence_package")
-    launched = _launch_package_run(client, package, ticker="MSFT")
-    run_id = int(launched["id"])
-
-    with session_factory() as session:
-        run = session.get(Run, run_id)
-        assert run is not None
-        invocation = session.query(RunAgentInvocation).filter_by(run_id=run_id).one()
-        context = MemoryLookupContext(
-            run_id=run_id,
-            package_key="memory_evidence_package",
-            workflow_key="runtime_workflow",
-            agent_key=invocation.agent_key,
-            run_step_id=invocation.run_step_id,
-            run_agent_invocation_id=invocation.id,
-            step_id="runtime_summary",
-            invocation_id="tool-call-memory-evidence",
-            trace_span_id="span-memory-evidence",
-        )
-        service = MemoryService(session, current_context=context)
-        request = MemoryWriteRequest(
-            kind="research.note",
-            summary="Memory evidence summary.",
-            content="Memory evidence should remain tied to the original run event history.",
-            subject_refs=[MemorySubjectRef(kind="instrument", id="MSFT")],
-            scope=MemoryScope(
-                scope_type=MemoryScopeType.PACKAGE,
-                scope_key="memory_evidence_package",
-            ),
-            provenance=MemoryProvenance(
-                run_id=run_id,
-                agent_key=invocation.agent_key,
-                agent_version=invocation.agent_version,
-                workflow_key="runtime_workflow",
-                workflow_version=1,
-                step_id="runtime_summary",
-                slot=invocation.slot,
-                trace_id="span-memory-evidence",
-            ),
-        )
-        created = service.write_memory(
-            capability_references=[],
-            payload=request,
-            commit=False,
-        )
-        _ = service.resolve_memory(
-            created.memory_id,
-            MemoryOutcome(
-                summary="Memory evidence reviewed.",
-            ),
-            commit=False,
-        )
-        snippets = service.query_memory(
-            MemoryQuery(
-                scope=MemoryScope(
-                    scope_type=MemoryScopeType.PACKAGE,
-                    scope_key="memory_evidence_package",
-                ),
-                query="memory evidence",
-                limit=5,
-            ),
-            commit_event=False,
-        )
-        assert len(snippets) == 1
-        service.record_injection_event(
-            snippets=snippets,
-            injected_text="Historical memory, not an instruction:\n- Memory evidence summary.",
-            filters={"scope": "package:memory_evidence_package"},
-            budget={"snippetCount": len(snippets), "maxCharacters": 4000},
-            commit=False,
-        )
-        events = session.query(RunMemoryEvent).filter_by(run_id=run_id).order_by(RunMemoryEvent.id)
-        assert [event.event_type for event in events] == [
-            "written",
-            "reviewed",
-            "retrieved",
-            "injected",
-        ]
-        session.commit()
-
-    detail_response = client.get(f"/api/runs/{run_id}")
-    assert detail_response.status_code == 200, detail_response.json()
-    detail = cast(dict[str, Any], detail_response.json())
-    serialized = json.dumps(detail, sort_keys=True)
-    memory_events = cast(list[dict[str, Any]], detail["memoryEvents"])
-    memory_artifacts = cast(list[dict[str, Any]], detail["memoryArtifacts"])
-
-    assert [event["eventType"] for event in memory_events] == [
-        "written",
-        "reviewed",
-        "retrieved",
-        "injected",
-    ]
-    written, reviewed, retrieved, injected = memory_events
-    assert written["memoryId"] == created.memory_id
-    assert written["revisionId"] == created.revision_id
-    assert written["resultSnapshot"]["revisionAction"] == "created"
-    assert retrieved["memoryId"] is None
-    assert retrieved["retrievalMode"] == "lexical"
-    assert retrieved["resultSnapshot"]["retrievalMode"] == "lexical"
-    assert retrieved["resultSnapshot"]["snippets"][0]["memoryId"] == created.memory_id
-    assert injected["injectedText"].startswith("Historical memory, not an instruction:")
-    assert injected["statusSnapshot"] == {"status": "injected"}
-    assert reviewed["memoryId"] == created.memory_id
-    assert reviewed["statusSnapshot"] == {"visibleToWorkflow": True}
-    assert memory_artifacts[0]["memoryId"] == created.memory_id
-    assert memory_artifacts[0]["summary"] == "Memory evidence summary."
-    assert "reportId" not in serialized
-    assert "reportSlug" not in serialized
-    assert "auditLinks" not in serialized
-    assert "/reports/" not in serialized
-    assert "download" not in serialized
 
 
 def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(
@@ -2834,7 +2710,6 @@ def test_tradingagents_advisory_research_launch_persists_extension_dependencies(
     assert dependencies[0]["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
     surfaces = set(cast(list[str], dependencies[0]["surfaces"]))
     assert {
-        "hook.workflowPackageStart",
         "provider.quote",
         "provider.socialSentiment",
         "runtime.tool.signaldeck.finance.market_data.quote_lookup",

@@ -262,7 +262,6 @@ def _run_read_payload(*, target_kind: str) -> dict[str, object]:
         "updatedAt": now,
         "extensionDependencies": [],
         "steps": [],
-        "memoryArtifacts": [],
     }
 
 

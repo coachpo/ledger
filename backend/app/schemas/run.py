@@ -7,7 +7,6 @@ from typing import Any, Literal, Self
 from pydantic import Field, field_validator, model_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
-from app.schemas.memory import MemoryArtifactRead
 from app.schemas.model_connection import ModelConnectionCompatibilityResolution
 
 
@@ -89,83 +88,6 @@ class RunOperationKind(str, Enum):  # noqa: UP042
 
 class RunTargetKind(str, Enum):  # noqa: UP042
     WORKFLOW_PACKAGE = "workflowPackage"
-
-
-class RunMemoryEventType(str, Enum):  # noqa: UP042
-    RETRIEVED = "retrieved"
-    INJECTED = "injected"
-    WRITTEN = "written"
-    REUSED = "reused"
-    SUPERSEDED = "superseded"
-    REVIEWED = "reviewed"
-    FAILED = "failed"
-
-
-_MEMORY_EVENT_FORBIDDEN_KEYS = frozenset(
-    {
-        "auditlinks",
-        "downloadurl",
-        "report",
-        "reportid",
-        "reportname",
-        "reports",
-        "reportslug",
-        "url",
-    }
-)
-_MEMORY_EVENT_SECRET_KEY_FRAGMENTS = (
-    "apikey",
-    "authorization",
-    "credential",
-    "password",
-    "secret",
-    "secretpayload",
-    "token",
-)
-_MEMORY_EVENT_FORBIDDEN_TEXT_FRAGMENTS = (
-    "# agent memory",
-    "/api/v1/reports",
-    "/reports/",
-    "auditlinks",
-    "download",
-    "reportid",
-    "reportname",
-    "reportslug",
-    "secretpayload",
-)
-_MEMORY_EVENT_REDACTED_TEXT = "[redacted]"
-
-
-def _normalized_memory_event_key(value: object) -> str:
-    return str(value).replace("_", "").replace("-", "").lower()
-
-
-def _is_forbidden_memory_event_key(value: object) -> bool:
-    normalized = _normalized_memory_event_key(value)
-    if normalized in _MEMORY_EVENT_FORBIDDEN_KEYS:
-        return True
-    return any(fragment in normalized for fragment in _MEMORY_EVENT_SECRET_KEY_FRAGMENTS)
-
-
-def _redact_memory_event_text(value: str) -> str:
-    normalized = value.lower()
-    if any(fragment in normalized for fragment in _MEMORY_EVENT_FORBIDDEN_TEXT_FRAGMENTS):
-        return _MEMORY_EVENT_REDACTED_TEXT
-    return value
-
-
-def _redact_memory_event_payload(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {
-            str(key): _redact_memory_event_payload(item)
-            for key, item in value.items()
-            if not _is_forbidden_memory_event_key(key)
-        }
-    if isinstance(value, list):
-        return [_redact_memory_event_payload(item) for item in value]
-    if isinstance(value, str):
-        return _redact_memory_event_text(value)
-    return value
 
 
 def _read_schema_payload(
@@ -536,50 +458,135 @@ class RunListRead(CamelModel):
     items: list[RunListItemRead]
 
 
-class RunMemoryArtifactRead(MemoryArtifactRead):
-    pass
-
-
-class RunMemoryEventRead(CamelModel):
-    id: int
-    run_id: int
-    run_step_id: int | None = None
-    run_agent_invocation_id: int | None = None
-    run_operation_invocation_id: int | None = None
-    step_id: str | None = None
+class RunWorkflowMemoryInjectionRead(CamelModel):
+    run_agent_invocation_id: int
+    run_step_id: int
+    step_index: int = Field(ge=1)
+    slot: str
+    agent_key: str
     invocation_id: str | None = None
-    event_type: RunMemoryEventType
-    memory_id: str | None = None
-    revision_id: str | None = None
-    retrieval_mode: str | None = None
-    filters: dict[str, Any] = Field(default_factory=dict)
-    budget: dict[str, Any] = Field(default_factory=dict)
-    excerpt: str | None = None
-    injected_text: str | None = None
-    result_snapshot: dict[str, Any] = Field(default_factory=dict)
-    status_snapshot: dict[str, Any] = Field(default_factory=dict)
-    trace_span_id: str | None = None
+    scope: dict[str, Any]
+    policy_snapshot: dict[str, Any] = Field(default_factory=dict)
+    context_item_ids: list[str] = Field(default_factory=list)
+    checkpoint_ids: list[str] = Field(default_factory=list)
+    completion: dict[str, int] | None = None
+
+
+class RunWorkflowMemoryProposalEvidenceRead(CamelModel):
+    proposal_id: str
+    run_id: int | None = None
+    invocation_id: str | None = None
+    package_key: str
+    workflow_key: str
+    agent_key: str
+    step_id: str
+    namespace: str
+    kind: str
+    status: str
+    reason: str | None = None
+    source_output_path: str | None = None
+    detectors: dict[str, Any] = Field(default_factory=dict)
+    active_memory_ids: list[str] = Field(default_factory=list)
     created_at: datetime
+    updated_at: datetime
 
-    @field_validator("filters", "budget", "result_snapshot", "status_snapshot", mode="before")
+    @field_validator("created_at", "updated_at")
     @classmethod
-    def redact_snapshots(cls, value: Any) -> dict[str, Any]:
-        redacted = _redact_memory_event_payload({} if value is None else value)
-        if isinstance(redacted, dict):
-            return redacted
-        return {}
+    def validate_timestamps(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
 
-    @field_validator("excerpt", "injected_text", mode="before")
-    @classmethod
-    def redact_text_snapshots(cls, value: object) -> str | None:
-        if value is None:
-            return None
-        return _redact_memory_event_text(str(value))
+
+class RunWorkflowMemoryDecisionEvidenceRead(CamelModel):
+    decision_id: str
+    proposal_id: str
+    decision: str
+    reason_code: str
+    reason: str | None = None
+    policy_snapshot: dict[str, Any] = Field(default_factory=dict)
+    decided_by: str
+    created_at: datetime
 
     @field_validator("created_at")
     @classmethod
     def validate_created_at(cls, value: datetime) -> datetime:
         return ensure_timezone(value)
+
+
+class RunWorkflowMemoryQuarantineEvidenceRead(CamelModel):
+    quarantine_id: int
+    proposal_id: str | None = None
+    memory_id: str | None = None
+    run_id: int | None = None
+    invocation_id: str | None = None
+    package_key: str | None = None
+    workflow_key: str | None = None
+    agent_key: str | None = None
+    step_id: str | None = None
+    namespace: str | None = None
+    kind: str | None = None
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    reason_code: str
+    reason: str | None = None
+    detectors: dict[str, Any] = Field(default_factory=dict)
+    resolved_at: datetime | None = None
+    created_at: datetime
+
+    @field_validator("resolved_at", "created_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_timezone(value)
+
+
+class RunWorkflowMemoryCheckpointEvidenceRead(CamelModel):
+    checkpoint_id: str
+    checkpoint_type: str
+    sequence: int = Field(ge=1)
+    run_id: int
+    package_key: str
+    workflow_key: str
+    agent_key: str | None = None
+    step_id: str | None = None
+    invocation_id: str | None = None
+    state: dict[str, Any] = Field(default_factory=dict)
+    retention: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+class RunWorkflowMemoryAuditEventEvidenceRead(CamelModel):
+    audit_event_id: int
+    event_type: str
+    target_type: str
+    target_id: str
+    run_id: int | None = None
+    invocation_id: str | None = None
+    package_key: str
+    workflow_key: str
+    agent_key: str | None = None
+    step_id: str | None = None
+    event: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+class RunWorkflowMemoryEvidenceRead(CamelModel):
+    injections: list[RunWorkflowMemoryInjectionRead] = Field(default_factory=list)
+    proposals: list[RunWorkflowMemoryProposalEvidenceRead] = Field(default_factory=list)
+    decisions: list[RunWorkflowMemoryDecisionEvidenceRead] = Field(default_factory=list)
+    quarantines: list[RunWorkflowMemoryQuarantineEvidenceRead] = Field(default_factory=list)
+    checkpoints: list[RunWorkflowMemoryCheckpointEvidenceRead] = Field(default_factory=list)
+    audit_events: list[RunWorkflowMemoryAuditEventEvidenceRead] = Field(default_factory=list)
 
 
 class RunPackageLocalResourceRefsRead(CamelModel):
@@ -676,8 +683,9 @@ class RunRead(CamelModel):
     created_at: datetime
     updated_at: datetime
     steps: list[RunStepRead] = Field(default_factory=list)
-    memory_artifacts: list[RunMemoryArtifactRead] = Field(default_factory=list)
-    memory_events: list[RunMemoryEventRead] = Field(default_factory=list)
+    workflow_memory_evidence: RunWorkflowMemoryEvidenceRead = Field(
+        default_factory=RunWorkflowMemoryEvidenceRead
+    )
     extension_dependencies: list[RunExtensionDependencyRead] = Field(default_factory=list)
     package_provenance: RunPackageProvenanceRead | None = None
 
@@ -751,9 +759,6 @@ __all__ = [
     "RunOperationInvocationRead",
     "RunOperationKind",
     "RunListRead",
-    "RunMemoryArtifactRead",
-    "RunMemoryEventRead",
-    "RunMemoryEventType",
     "RunCurrentPackageAuditRead",
     "RunPackageLaunchSnapshotRead",
     "RunPackageLocalResourceRefsRead",
@@ -775,4 +780,11 @@ __all__ = [
     "RunStepRead",
     "RunStepStatus",
     "RunTargetKind",
+    "RunWorkflowMemoryAuditEventEvidenceRead",
+    "RunWorkflowMemoryCheckpointEvidenceRead",
+    "RunWorkflowMemoryDecisionEvidenceRead",
+    "RunWorkflowMemoryEvidenceRead",
+    "RunWorkflowMemoryInjectionRead",
+    "RunWorkflowMemoryProposalEvidenceRead",
+    "RunWorkflowMemoryQuarantineEvidenceRead",
 ]

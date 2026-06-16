@@ -11,10 +11,10 @@ from app.agents import ToolCatalog
 from app.db.session import get_db_session, get_session_factory
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.extension_service import ExtensionService, ResolvedExtensionState
-from app.services.memory_service import MemoryService
 from app.services.model_connection_probe_service import ModelConnectionProbeService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.run_service import RunService
+from app.services.workflow_memory_policy_service import WorkflowMemoryPolicyService
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
 from app.services.workflow_package_runtime_input_registry import (
     WorkflowPackageRuntimeInputRegistryService,
@@ -41,12 +41,10 @@ def get_tool_catalog(
     return extension_service.get_tool_catalog()
 
 
-def get_memory_service(
+def get_workflow_memory_policy_service(
     session: Annotated[Session, Depends(get_session)],
-) -> MemoryService:
-    from app.services.memory_service import MemoryService
-
-    return MemoryService(session)
+) -> WorkflowMemoryPolicyService:
+    return WorkflowMemoryPolicyService(session)
 
 
 def require_extension_enabled(
@@ -159,7 +157,6 @@ def get_workflow_package_schedule_service(
 __all__ = [
     "get_execution_provider_bundle",
     "get_extension_service",
-    "get_memory_service",
     "get_model_connection_probe_service",
     "get_model_connection_service",
     "get_run_service",
@@ -169,5 +166,6 @@ __all__ = [
     "get_workflow_package_runtime_input_registry_service",
     "get_workflow_package_schedule_service",
     "get_workflow_package_service",
+    "get_workflow_memory_policy_service",
     "require_extension_enabled",
 ]

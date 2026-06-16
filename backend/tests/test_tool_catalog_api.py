@@ -11,10 +11,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import ToolCatalogValidationError, get_default_tool_catalog
 from app.agents.runtime_tools import get_default_runtime_tool_registry
-from app.agents.runtime_tools.memory import (
-    MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
-    MEMORY_WRITE_OPENAI_FUNCTION_NAME,
-)
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
 from app.extensions.signaldeck_digital_oracle.ownership import (
@@ -39,7 +35,6 @@ from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES,
     FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
 )
-from app.schemas.memory import MEMORY_CORE_RUNTIME_TOOL_KEYS
 from app.services.extension_service import ExtensionService
 
 _EXPECTED_DIGITAL_ORACLE_TOOL_KEYS = (
@@ -62,10 +57,13 @@ _REQUIRED_FINANCE_TOOL_KEYS = {
     "signaldeck.finance.reports.lookup",
     *_FINANCE_PRICE_HISTORY_TOOL_KEYS,
 }
-_REQUIRED_CORE_TOOL_KEYS = {
+_REQUIRED_CORE_TOOL_KEYS: set[str] = set()
+_RETIRED_CORE_MEMORY_TOOL_KEYS = {
     "signaldeck.core.memory.write",
     "signaldeck.core.memory.lookup",
 }
+
+
 def _legacy_tool_key(suffix: str) -> str:
     return "signaldeck" + suffix
 
@@ -356,14 +354,7 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     assert not any("module" in item for item in items)
     assert _REQUIRED_FINANCE_TOOL_KEYS <= set(tools_by_key)
     assert _DIGITAL_ORACLE_TOOL_KEYS <= set(tools_by_key)
-    assert _REQUIRED_CORE_TOOL_KEYS <= set(tools_by_key)
-    assert MEMORY_CORE_RUNTIME_TOOL_KEYS == (
-        "signaldeck.core.memory.write",
-        "signaldeck.core.memory.lookup",
-    )
-    assert not set(MEMORY_CORE_RUNTIME_TOOL_KEYS) & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
-    memory_write_tool = tools_by_key["signaldeck.core.memory.write"]
-    memory_lookup_tool = tools_by_key["signaldeck.core.memory.lookup"]
+    assert not _RETIRED_CORE_MEMORY_TOOL_KEYS & set(tools_by_key)
     quote_tool = tools_by_key["signaldeck.finance.market_data.quote_lookup"]
     history_tool = tools_by_key["signaldeck.finance.market_data.history_lookup"]
     ohlcv_tool = tools_by_key["signaldeck.finance.market_data.ohlcv_lookup"]
@@ -371,16 +362,6 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     prediction_markets_tool = tools_by_key["signaldeck.digital_oracle.prediction_markets.lookup"]
     sec_filings_tool = tools_by_key["signaldeck.digital_oracle.sec_filings.lookup"]
     market_sentiment_tool = tools_by_key["signaldeck.digital_oracle.market_sentiment.lookup"]
-    assert memory_write_tool == {
-        "key": "signaldeck.core.memory.write",
-        "displayName": "Memory Write",
-        "description": "Write platform-core memory entries through server-owned memory storage.",
-    }
-    assert memory_lookup_tool == {
-        "key": "signaldeck.core.memory.lookup",
-        "displayName": "Memory Lookup",
-        "description": "Read bounded, scoped platform-core memory snippets.",
-    }
     assert quote_tool == {
         "key": "signaldeck.finance.market_data.quote_lookup",
         "displayName": "Market Data Quote Lookup",
@@ -426,8 +407,6 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         ),
     }
     for tool in (
-        memory_write_tool,
-        memory_lookup_tool,
         quote_tool,
         history_tool,
         ohlcv_tool,
@@ -541,10 +520,7 @@ def test_api_tools_keep_core_memory_visible_when_bundled_extensions_are_disabled
 
     assert catalog_keys == _REQUIRED_CORE_TOOL_KEYS
     assert runtime_keys == _REQUIRED_CORE_TOOL_KEYS
-    assert runtime_function_names == {
-        MEMORY_WRITE_OPENAI_FUNCTION_NAME,
-        MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
-    }
+    assert runtime_function_names == set()
 
 
 def test_tools_catalog_route_is_get_only(client: TestClient) -> None:

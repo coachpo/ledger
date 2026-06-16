@@ -53,6 +53,7 @@ from app.schemas.run import (
     RunStatus,
     RunTargetKind,
 )
+from app.schemas.workflow_memory import WorkflowMemoryContextPack
 from app.schemas.workflow_package import (
     WorkflowPackageLaunchCreateRequest,
     WorkflowPackageLaunchCreateResponse,
@@ -86,7 +87,6 @@ from app.services.http_operation_execution_service import (
     HttpOperationExecutionResult,
     HttpOperationExecutionService,
 )
-from app.services.memory_follow_up_service import MemoryFollowUpEvaluator, MemoryFollowUpService
 from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_openai import DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI
@@ -107,6 +107,10 @@ from app.services.package_execution_plan_builder import (
 from app.services.run_lifecycle import WorkflowPackageStartContext
 from app.services.run_read_projection import RunReadProjection
 from app.services.run_rerun_fork import PreparedRunFork, RunRerunForkPreparation
+from app.services.workflow_memory_middleware import (
+    WorkflowMemoryInvocationMetadata,
+    WorkflowMemoryMiddleware,
+)
 from app.services.workflow_package_preflight import (
     WorkflowPackagePreflightResult,
     WorkflowPackagePreflightService,
@@ -150,6 +154,8 @@ class _PreparedAgentInvocation:
     step_index: int
     slot: str
     runtime_context: _RuntimeInvocationContext
+    memory_context: WorkflowMemoryContextPack | None
+    memory_metadata: WorkflowMemoryInvocationMetadata | None
 
 
 @dataclass
@@ -234,6 +240,7 @@ class RunService:
             model_gateway=ModelExecutionGateway(client_factory=OpenAI),
         )
         self.http_operation_execution_service = HttpOperationExecutionService(session)
+        self.workflow_memory_middleware = WorkflowMemoryMiddleware(session)
         self.compatibility_resolution_service = CompatibilityResolutionService()
         self.schema_compiler = OutputSchemaCompiler()
         self._stored_schema_node_cache: dict[tuple[str, int], SchemaNode] = {}
@@ -1539,14 +1546,6 @@ class RunService:
             now=now,
         )
         hooks = self.extension_service.get_run_lifecycle_hooks(extension_keys)
-        evaluators: list[MemoryFollowUpEvaluator] = []
-        for hook in hooks:
-            if hook.memory_follow_up_evaluators is not None:
-                evaluators.extend(hook.memory_follow_up_evaluators(context))
-        _ = MemoryFollowUpService(
-            self.session,
-            evaluators=tuple(evaluators),
-        ).run_due(now)
         for hook in hooks:
             if hook.on_workflow_package_start is not None:
                 hook.on_workflow_package_start(context)
@@ -1767,6 +1766,18 @@ class RunService:
         step_slot_outputs: dict[str, Any] = {}
         fatal_error: str | None = None
         package_ownership = plan.package_ownership
+        step_id = self._memory_step_id(step=step)
+
+        if package_ownership is not None:
+            _ = self.workflow_memory_middleware.begin_step(
+                policy=step.memory_policy,
+                package_key=package_ownership.package_key,
+                workflow_key=package_ownership.workflow_key,
+                run_id=run.id,
+                step_id=step_id,
+                sequence=(step.index * 1000) + 1,
+                state={"status": "running"},
+            )
 
         for plan_agent in step.agents:
             invocation = self._get_planned_invocation_or_raise(
@@ -1792,6 +1803,7 @@ class RunService:
                 invocation=invocation,
                 initial_input=initial_input,
                 slot_outputs=slot_outputs,
+                step_id=step_id,
             )
             if prepared_agent is None:
                 assert agent_failure is not None
@@ -1889,10 +1901,19 @@ class RunService:
                 continue
 
             assert isinstance(agent_result, RunAgentInvocationResult)
+            memory_completion = self._complete_invocation_memory(
+                prepared=prepared_agent,
+                output=agent_result.output,
+                runtime_metadata=agent_result.runtime_metadata,
+            )
             step_tokens += agent_result.tokens
             self._merge_invocation_runtime_metadata(
                 prepared_agent.invocation,
                 agent_result.runtime_metadata,
+            )
+            self._merge_invocation_runtime_metadata(
+                prepared_agent.invocation,
+                memory_completion,
             )
             _ = self.run_agent_invocation_repository.persist_success(
                 prepared_agent.invocation,
@@ -1955,6 +1976,17 @@ class RunService:
             )
             step_slot_outputs[prepared_operation.slot] = operation_result.output
 
+        if package_ownership is not None:
+            _ = self.workflow_memory_middleware.finalize_step(
+                policy=step.memory_policy,
+                package_key=package_ownership.package_key,
+                workflow_key=package_ownership.workflow_key,
+                run_id=run.id,
+                step_id=step_id,
+                sequence=(step.index * 1000) + 999,
+                state={"status": "failed" if fatal_error is not None else "succeeded"},
+            )
+
         return step_slot_outputs, step_tokens, fatal_error
 
     def _prepare_agent_invocation(
@@ -1966,6 +1998,7 @@ class RunService:
         invocation: RunAgentInvocation,
         initial_input: dict[str, Any],
         slot_outputs: dict[tuple[int, str], Any],
+        step_id: str,
     ) -> tuple[_PreparedAgentInvocation | None, RunExecutionError | None]:
         try:
             agent = self._resolve_runtime_agent(plan_agent)
@@ -1994,6 +2027,12 @@ class RunService:
                     initial_input=initial_input,
                     slot_outputs=slot_outputs,
                 )
+            memory_context, memory_metadata = self._prepare_invocation_memory_context(
+                runtime_context=runtime_context,
+                plan_agent=plan_agent,
+                invocation=invocation,
+                step_id=step_id,
+            )
             return (
                 _PreparedAgentInvocation(
                     agent=agent,
@@ -2004,6 +2043,8 @@ class RunService:
                     step_index=step_index,
                     slot=plan_agent.slot,
                     runtime_context=runtime_context,
+                    memory_context=memory_context,
+                    memory_metadata=memory_metadata,
                 ),
                 None,
             )
@@ -2196,6 +2237,89 @@ class RunService:
         return payload or None
 
     @staticmethod
+    def _memory_step_id(*, step: ExecutionPlanStep) -> str:
+        if step.graph_metadata is not None and step.graph_metadata.node_id is not None:
+            return step.graph_metadata.node_id
+        return f"step_{step.index}"
+
+    def _prepare_invocation_memory_context(
+        self,
+        *,
+        runtime_context: _RuntimeInvocationContext,
+        plan_agent: ExecutionPlanAgent,
+        invocation: RunAgentInvocation,
+        step_id: str,
+    ) -> tuple[WorkflowMemoryContextPack | None, WorkflowMemoryInvocationMetadata | None]:
+        package_ownership = runtime_context.package_ownership
+        if package_ownership is None:
+            return None, None
+        preparation = self.workflow_memory_middleware.prepare_invocation(
+            policy=plan_agent.memory_policy,
+            package_key=package_ownership.package_key,
+            workflow_key=package_ownership.workflow_key,
+            run_id=runtime_context.run_id,
+            agent_key=plan_agent.agent_key,
+            step_id=step_id,
+            invocation_id=str(invocation.id),
+        )
+        metadata_payload = self._workflow_memory_metadata_payload(preparation.metadata)
+        if metadata_payload is not None:
+            self._merge_invocation_runtime_metadata(invocation, metadata_payload)
+        return preparation.context if preparation.metadata.enabled else None, preparation.metadata
+
+    def _complete_invocation_memory(
+        self,
+        *,
+        prepared: _PreparedAgentInvocation,
+        output: Any,
+        runtime_metadata: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        metadata = prepared.memory_metadata
+        if metadata is None:
+            return None
+        runtime_output = output if isinstance(output, dict) else {"output": output}
+        completion = self.workflow_memory_middleware.complete_invocation(
+            policy=prepared.agent.memory_policy,
+            scope=metadata.scope,
+            runtime_output=runtime_output,
+            runtime_metadata=runtime_metadata,
+            run_id=metadata.run_id,
+            invocation_id=metadata.invocation_id,
+            source_output_path=(
+                f"steps.{prepared.step_index}.{prepared.slot}.output.memoryProposals"
+            ),
+        )
+        payload = self._workflow_memory_metadata_payload(metadata)
+        if payload is None:
+            payload = {"workflowMemory": {}}
+        memory_payload = payload.setdefault("workflowMemory", {})
+        if isinstance(memory_payload, dict):
+            memory_payload["completion"] = {
+                "proposalCount": len(completion.proposals),
+                "decisionCount": len(completion.decisions),
+                "rejectedCount": completion.rejected_count,
+            }
+        return payload
+
+    @staticmethod
+    def _workflow_memory_metadata_payload(
+        metadata: WorkflowMemoryInvocationMetadata,
+    ) -> dict[str, Any] | None:
+        if not metadata.enabled:
+            return None
+        return {
+            "workflowMemory": {
+                "enabled": True,
+                "scope": metadata.scope.model_dump(mode="json", by_alias=True),
+                "runId": metadata.run_id,
+                "invocationId": metadata.invocation_id,
+                "policySnapshot": deepcopy(metadata.policy_snapshot),
+                "contextItemIds": list(metadata.context_item_ids),
+                "checkpointIds": list(metadata.checkpoint_ids),
+            }
+        }
+
+    @staticmethod
     def _merge_invocation_runtime_metadata(
         invocation: RunAgentInvocation,
         runtime_metadata: dict[str, Any] | None,
@@ -2339,6 +2463,7 @@ class RunService:
                     trace_span_id=trace_span_id,
                     step_index=prepared.step_index,
                     slot=prepared.slot,
+                    memory_context=prepared.memory_context,
                 )
             finally:
                 _CURRENT_RUNTIME_INVOCATION_CONTEXT.reset(context_token)
@@ -2437,6 +2562,7 @@ class RunService:
         trace_span_id: str | None,
         step_index: int,
         slot: str,
+        memory_context: WorkflowMemoryContextPack | None,
     ) -> RunAgentInvocationResult:
         runtime_context = _CURRENT_RUNTIME_INVOCATION_CONTEXT.get()
         workflow_key = None
@@ -2461,6 +2587,7 @@ class RunService:
             workflow_version=workflow_version,
             package_ownership=package_ownership,
             trace_span_id=trace_span_id,
+            memory_context=memory_context,
         )
 
     @staticmethod

@@ -22,20 +22,12 @@ if TYPE_CHECKING:
 
 
 def _load_runtime_tool_specs() -> tuple[RuntimeToolSpec, ...]:
-    memory_module = import_module("app.agents.runtime_tools.memory")
     registry_module = import_module("app.extensions.registry")
-    core_specs = cast(
-        tuple[RuntimeToolSpec, ...],
-        memory_module.__dict__["CORE_MEMORY_RUNTIME_TOOL_SPECS"],
-    )
     get_registry = cast(
         Callable[[], _RuntimeContributionRegistry],
         registry_module.__dict__["get_bundled_extension_registry"],
     )
-    return (
-        *core_specs,
-        *get_registry().list_runtime_tool_contributions(),
-    )
+    return get_registry().list_runtime_tool_contributions()
 
 
 @lru_cache

@@ -291,8 +291,6 @@ def test_run_read_rejects_non_package_target_kinds() -> None:
                 "operationInvocations": [],
             }
         ],
-        "memoryArtifacts": [],
-        "memoryEvents": [],
         "extensionDependencies": [],
         "packageProvenance": None,
     }

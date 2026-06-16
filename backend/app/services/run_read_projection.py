@@ -11,14 +11,21 @@ from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
+from app.models.workflow_checkpoint import WorkflowCheckpoint
+from app.models.workflow_memory import (
+    WorkflowMemoryAuditEvent,
+    WorkflowMemoryDecision,
+    WorkflowMemoryItem,
+    WorkflowMemoryProposal,
+    WorkflowMemoryQuarantine,
+)
 from app.models.workflow_package import WorkflowPackage
 from app.repositories.run import RunRepository
+from app.repositories.workflow_checkpoints import WorkflowCheckpointRepository
+from app.repositories.workflow_memory import WorkflowMemoryRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
-from app.schemas.memory import MemoryArtifactRead
 from app.schemas.run import (
     RunInvocationResourceScope,
-    RunMemoryArtifactRead,
-    RunMemoryEventRead,
     RunProgressRead,
     RunQueueRead,
     RunQueueReason,
@@ -28,9 +35,9 @@ from app.schemas.run import (
     RunStatus,
     RunStepStatus,
     RunTargetKind,
+    RunWorkflowMemoryEvidenceRead,
 )
 from app.services.extension_dependency_service import ExtensionDependencyService
-from app.services.memory_service import MemoryService
 
 _WorkflowPackageSnapshotResolver = Callable[[Run], RunWorkflowPackageSnapshot]
 
@@ -53,6 +60,12 @@ class RunReadProjection:
         self.session: Session = session
         self.run_repository: RunRepository = run_repository
         self.workflow_package_repository: WorkflowPackageRepository = workflow_package_repository
+        self.workflow_memory_repository: WorkflowMemoryRepository = WorkflowMemoryRepository(
+            session
+        )
+        self.workflow_checkpoint_repository: WorkflowCheckpointRepository = (
+            WorkflowCheckpointRepository(session)
+        )
         self._workflow_package_snapshot_for_run: _WorkflowPackageSnapshotResolver = (
             workflow_package_snapshot_for_run
         )
@@ -173,8 +186,7 @@ class RunReadProjection:
                         key=lambda item: (item.step_index, item.id),
                     )
                 ],
-                "memoryArtifacts": self._memory_artifact_links(run.id),
-                "memoryEvents": self._memory_event_evidence(run.id),
+                "workflowMemoryEvidence": self._workflow_memory_evidence(run),
                 "extensionDependencies": ExtensionDependencyService.normalize_dependency_payloads(
                     run.extension_dependencies
                 ),
@@ -260,27 +272,220 @@ class RunReadProjection:
             "unavailableReason": None,
         }
 
-    def _memory_artifact_links(self, run_id: int) -> list[RunMemoryArtifactRead]:
-        artifacts = MemoryService(self.session).list_run_artifacts(run_id)
+    def _workflow_memory_evidence(self, run: Run) -> RunWorkflowMemoryEvidenceRead:
+        proposals = self.workflow_memory_repository.list_proposals_for_run(run.id)
+        memory_items = self.workflow_memory_repository.list_memory_items_for_run(run.id)
+        decisions = self.workflow_memory_repository.list_decisions_for_run(run.id)
+        quarantines = self.workflow_memory_repository.list_quarantine_for_run(run.id)
+        audit_events = self.workflow_memory_repository.list_audit_events_for_run(run.id)
+        checkpoints = self._workflow_memory_checkpoints(run)
+        memory_ids_by_proposal_id = self._memory_ids_by_proposal_id(memory_items)
 
-        seen_memory_ids: set[str] = set()
-        artifact_links: list[RunMemoryArtifactRead] = []
-        for artifact in artifacts:
-            if artifact.memory_id in seen_memory_ids:
-                continue
-            seen_memory_ids.add(artifact.memory_id)
-            artifact_links.append(self._memory_artifact_link(artifact))
-        return artifact_links
-
-    def _memory_event_evidence(self, run_id: int) -> list[RunMemoryEventRead]:
-        return [
-            RunMemoryEventRead.model_validate(event)
-            for event in self.run_repository.list_memory_events_for_run(run_id)
-        ]
+        return RunWorkflowMemoryEvidenceRead.model_validate(
+            {
+                "injections": self._workflow_memory_injections(run),
+                "proposals": [
+                    self._workflow_memory_proposal_payload(
+                        proposal,
+                        active_memory_ids=memory_ids_by_proposal_id.get(proposal.id, []),
+                    )
+                    for proposal in proposals
+                ],
+                "decisions": [
+                    self._workflow_memory_decision_payload(decision, proposal=proposal)
+                    for decision, proposal in decisions
+                ],
+                "quarantines": [
+                    self._workflow_memory_quarantine_payload(quarantine)
+                    for quarantine in quarantines
+                ],
+                "checkpoints": [
+                    self._workflow_memory_checkpoint_payload(checkpoint)
+                    for checkpoint in checkpoints
+                ],
+                "auditEvents": [
+                    self._workflow_memory_audit_event_payload(event) for event in audit_events
+                ],
+            }
+        )
 
     @staticmethod
-    def _memory_artifact_link(artifact: MemoryArtifactRead) -> RunMemoryArtifactRead:
-        return RunMemoryArtifactRead.model_validate(artifact)
+    def _memory_ids_by_proposal_id(
+        memory_items: list[WorkflowMemoryItem],
+    ) -> dict[int | None, list[str]]:
+        grouped: dict[int | None, list[str]] = {}
+        for item in memory_items:
+            grouped.setdefault(item.proposal_id, []).append(item.memory_id)
+        return grouped
+
+    def _workflow_memory_checkpoints(self, run: Run) -> list[WorkflowCheckpoint]:
+        package_key = run.workflow_package_key
+        workflow_key = run.workflow_package_workflow_key
+        if (
+            package_key is None or workflow_key is None
+        ) and run.workflow_package_snapshot is not None:
+            package_key = run.workflow_package_snapshot.workflow_package_key
+            workflow_key = run.workflow_package_snapshot.workflow_key
+        if package_key is None or workflow_key is None:
+            return []
+        return self.workflow_checkpoint_repository.list_checkpoints_for_run(
+            package_key=package_key,
+            workflow_key=workflow_key,
+            run_id=run.id,
+        )
+
+    def _workflow_memory_injections(self, run: Run) -> list[dict[str, Any]]:
+        injections: list[dict[str, Any]] = []
+        for step in sorted(
+            cast(list[RunStep], run.steps),
+            key=lambda item: (item.step_index, item.id),
+        ):
+            for invocation in sorted(
+                cast(list[RunAgentInvocation], step.invocations),
+                key=lambda item: (item.position, item.id),
+            ):
+                workflow_memory = self._workflow_memory_metadata(invocation.graph_metadata)
+                if workflow_memory is None:
+                    continue
+                injections.append(
+                    {
+                        "runAgentInvocationId": invocation.id,
+                        "runStepId": invocation.run_step_id,
+                        "stepIndex": invocation.step_index,
+                        "slot": invocation.slot,
+                        "agentKey": invocation.agent_key,
+                        "invocationId": workflow_memory.get("invocationId"),
+                        "scope": deepcopy(workflow_memory.get("scope") or {}),
+                        "policySnapshot": deepcopy(workflow_memory.get("policySnapshot") or {}),
+                        "contextItemIds": list(workflow_memory.get("contextItemIds") or []),
+                        "checkpointIds": list(workflow_memory.get("checkpointIds") or []),
+                        "completion": deepcopy(workflow_memory.get("completion")),
+                    }
+                )
+        return injections
+
+    @staticmethod
+    def _workflow_memory_metadata(graph_metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not isinstance(graph_metadata, dict):
+            return None
+        model_gateway = graph_metadata.get("modelGateway")
+        if not isinstance(model_gateway, dict):
+            return None
+        workflow_memory = model_gateway.get("workflowMemory")
+        if not isinstance(workflow_memory, dict) or workflow_memory.get("enabled") is not True:
+            return None
+        return workflow_memory
+
+    @staticmethod
+    def _workflow_memory_proposal_payload(
+        proposal: WorkflowMemoryProposal,
+        *,
+        active_memory_ids: list[str],
+    ) -> dict[str, Any]:
+        return {
+            "proposalId": proposal.proposal_id,
+            "runId": proposal.run_id,
+            "invocationId": proposal.invocation_id,
+            "packageKey": proposal.package_key,
+            "workflowKey": proposal.workflow_key,
+            "agentKey": proposal.agent_key,
+            "stepId": proposal.step_id,
+            "namespace": proposal.namespace,
+            "kind": proposal.kind,
+            "status": proposal.status,
+            "reason": proposal.reason,
+            "sourceOutputPath": proposal.source_output_path,
+            "detectors": deepcopy(proposal.detectors_json),
+            "activeMemoryIds": active_memory_ids,
+            "createdAt": proposal.created_at,
+            "updatedAt": proposal.updated_at,
+        }
+
+    @staticmethod
+    def _workflow_memory_decision_payload(
+        decision: WorkflowMemoryDecision,
+        *,
+        proposal: WorkflowMemoryProposal,
+    ) -> dict[str, Any]:
+        return {
+            "decisionId": decision.decision_id,
+            "proposalId": proposal.proposal_id,
+            "decision": decision.decision,
+            "reasonCode": decision.reason_code,
+            "reason": decision.reason,
+            "policySnapshot": deepcopy(decision.policy_snapshot_json),
+            "decidedBy": decision.decided_by,
+            "createdAt": decision.created_at,
+        }
+
+    def _workflow_memory_quarantine_payload(
+        self,
+        quarantine: WorkflowMemoryQuarantine,
+    ) -> dict[str, Any]:
+        proposal = self.workflow_memory_repository.get_proposal_by_id(quarantine.proposal_id)
+        memory_item = self.workflow_memory_repository.get_memory_item_by_id(
+            quarantine.memory_item_id
+        )
+        target = proposal if proposal is not None else memory_item
+        evidence: dict[str, Any] = {}
+        if proposal is not None:
+            evidence = deepcopy(proposal.content_json)
+        elif memory_item is not None:
+            evidence = deepcopy(memory_item.content_json)
+        return {
+            "quarantineId": quarantine.id,
+            "proposalId": proposal.proposal_id if proposal is not None else None,
+            "memoryId": memory_item.memory_id if memory_item is not None else None,
+            "runId": quarantine.run_id,
+            "invocationId": quarantine.invocation_id,
+            "packageKey": target.package_key if target is not None else None,
+            "workflowKey": target.workflow_key if target is not None else None,
+            "agentKey": target.agent_key if target is not None else None,
+            "stepId": target.step_id if target is not None else None,
+            "namespace": target.namespace if target is not None else None,
+            "kind": target.kind if target is not None else None,
+            "evidence": evidence,
+            "reasonCode": quarantine.reason_code,
+            "reason": quarantine.reason,
+            "detectors": deepcopy(quarantine.detectors_json),
+            "resolvedAt": quarantine.resolved_at,
+            "createdAt": quarantine.created_at,
+        }
+
+    @staticmethod
+    def _workflow_memory_checkpoint_payload(checkpoint: WorkflowCheckpoint) -> dict[str, Any]:
+        return {
+            "checkpointId": checkpoint.checkpoint_id,
+            "checkpointType": checkpoint.checkpoint_type,
+            "sequence": checkpoint.sequence,
+            "runId": checkpoint.run_id,
+            "packageKey": checkpoint.package_key,
+            "workflowKey": checkpoint.workflow_key,
+            "agentKey": checkpoint.agent_key,
+            "stepId": checkpoint.step_id,
+            "invocationId": checkpoint.invocation_id,
+            "state": deepcopy(checkpoint.state_json),
+            "retention": checkpoint.retention,
+            "metadata": deepcopy(checkpoint.metadata_json),
+            "createdAt": checkpoint.created_at,
+        }
+
+    @staticmethod
+    def _workflow_memory_audit_event_payload(event: WorkflowMemoryAuditEvent) -> dict[str, Any]:
+        return {
+            "auditEventId": event.id,
+            "eventType": event.event_type,
+            "targetType": event.target_type,
+            "targetId": event.target_id,
+            "runId": event.run_id,
+            "invocationId": event.invocation_id,
+            "packageKey": event.package_key,
+            "workflowKey": event.workflow_key,
+            "agentKey": event.agent_key,
+            "stepId": event.step_id,
+            "event": deepcopy(event.event_json),
+            "createdAt": event.created_at,
+        }
 
     def _invocation_identity_context(self, run: Run) -> _RunInvocationIdentityContext:
         if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
