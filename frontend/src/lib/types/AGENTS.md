@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/lib/AGENTS.md`.
 
 ## OVERVIEW
-`src/lib/types/` mirrors the backend wire contracts for portfolios, balances, positions, market data, templates, reports, CSV import, trading operations, Extensions, Workflow Packages, Scheduled Tasks, Tools, Model Connections, Memory, and Runs. Treat these files as the shared schema boundary between frontend UI and backend API.
+`src/lib/types/` mirrors the backend wire contracts for portfolios, balances, positions, market data, templates, reports, CSV import, trading operations, Extensions, Workflow Packages, package-local authoring resources, Scheduled Tasks, Tools, Model Connections, Memory, and Runs. Treat these files as the shared schema boundary between frontend UI and backend API.
 
 Extension model: statically resident extension state.
 
@@ -29,7 +29,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Report contract | `report.ts` | slug-based report reads, metadata, and update input |
 | Shared helpers | `common.ts`, `csv.ts` | common ids, timestamps, and CSV preview shapes |
 | Extension state contract | `extension.ts` | statically resident extension `key`, `label`, `enabled`, and toggle payloads |
-| Workflow Package contracts | `workflow-package.ts` | package manifests, versions, diagnostics, preflight, launch, import, and export payloads |
+| Workflow Package contracts | `workflow-package.ts` | package manifests, runtime-input registry/stale state, secret bindings, versions, diagnostics, preflight, launch, import, and export payloads |
+| Package-local authoring contracts | `agent.ts`, `capability.ts`, `output-schema.ts`, `mcp-server.ts`, `workflow.ts` | package-local agent, capability profile, output schema, private MCP, and workflow graph resource shapes |
 | Scheduled Task contracts | `schedule.ts` | recurrence, status, preview, fire history, run-now, and schedule-linked run payloads |
 | Platform catalog and binding contracts | `tool.ts`, `model-connection.ts` | read-only tool metadata and saved model connection payloads |
 | Platform memory contracts | `memory.ts` | admin entries, scopes, `visibleToWorkflow`, provenance, history, write payloads, and separate scoped runtime payloads |
@@ -42,6 +43,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Use these files for API shapes only; derive view models separately when the UI needs extra formatting or enrichment.
 - Unknown report metadata keys are allowed by the backend; preserve extensibility in `report.ts` instead of narrowing metadata too aggressively.
 - Keep route forms, hook inputs, extension-state consumers, and shared type names aligned with the current backend contract.
+- Package-local authoring types are frontend wire mirrors for resources inside Workflow Packages; do not promote them back into global `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, or `/workflows*` route contracts.
 - Extension state types must stay slim. Do not add plugin-manifest fields, scaffold data, reason text, categories, version policy, or state counters to `extension.ts`.
 - Scheduled Task types use structured recurrence, IANA timezone strings, JSON object templates/vars, `scheduled` or `manual` fire reasons, and schedule-linked run metadata; do not introduce raw cron or finance-owned fields here.
 - Run memory evidence is phase-1 core memory shaped: `memoryEvents` carries the full event stream, `memoryArtifacts` is the compact artifact slice, and `memoryId` is an opaque string. Optional report actions live only under `auditLinks.report`; frontend types must not derive report slugs, report downloads, or route paths from `memoryId`.

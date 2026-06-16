@@ -22,7 +22,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## CHILD DOCS
 - `api/AGENTS.md` — resource request helpers and upload/download boundaries
 - `types/AGENTS.md` — shared TypeScript wire contracts and enum-like unions
-- `platform-authoring/AGENTS.md` — pure schema/value/ref/workflow/agent authoring helpers
+- `platform-authoring/AGENTS.md` plus child docs — pure schema/value/ref/workflow/agent authoring helpers
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -35,6 +35,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Display formatting | `format.ts` | currency, decimal, percent, date/datetime, compact numbers |
 | Markdown formatting | `markdown-format.ts` | Prettier-backed markdown normalization for the template editor |
 | Runtime input helpers | `runtime-inputs.ts` | row ids, row-to-map conversion, shared editor/report-generation helpers |
+| Workflow option helpers | `workflow-options.ts` | visible fallback option when a saved selection is missing from package workflows |
 | Platform authoring helpers | `platform-authoring/AGENTS.md` | schema/value/ref/workflow/agent IR, codecs, factories, validation |
 | Report grouping | `report-grouping.ts` | report list filtering, grouping, and sort helpers |
 | Unit coverage | `api.test.ts`, `api/schedules.test.ts`, `query-keys.test.ts`, `portfolio-analytics.test.ts`, `format.test.ts`, `markdown-format.test.ts` | contract and helper regressions |
@@ -48,6 +49,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `invalidatePortfolioScope()` is the default invalidation path for portfolio-scoped mutations; reports, extension state, and platform resources use their own namespaces.
 - Report flows use `queryKeys.reports.*`; `downloadReportUrl()` stays in the API layer because it builds the absolute file URL from the configured API base.
 - `runtime-inputs.ts` is the shared translator between editable key/value rows and trimmed `TemplateRuntimeInputs` maps for preview and report generation.
+- `workflow-options.ts` keeps package launch schedule/editor selectors stable when a previously selected workflow is absent from the latest package draft.
 - `report-grouping.ts` is frontend-only derived-view logic; backend report endpoints stay flat while grouping/search/sort are composed locally.
 - Platform flows use `requestPlatform()`-backed helpers and `queryKeys.platform.*`; keep route-specific polling, Scheduled Task invalidation, Memory access gating, extension-state filtering, or mutation policy in hooks rather than embedding it in pages.
 - Report detail queries are slug-scoped, not numeric-id scoped, even though some shared helper signatures still use generic `IdParam` naming.

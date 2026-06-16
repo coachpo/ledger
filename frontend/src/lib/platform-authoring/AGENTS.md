@@ -28,11 +28,20 @@ platform-authoring/
 └── workflow-packages/   # package manifest parser, serializer, resource assembly, and YAML workflow helpers
 ```
 
+## CHILD DOCS
+- `common/AGENTS.md` — resource refs, field paths, issue text, and safe serialization
+- `schema/AGENTS.md` — schema IR, JSON Schema codec, preview, templates, launch input state, and validation
+- `values/AGENTS.md` — generated-form value-entry model, codec, factories, and validation
+- `agents/AGENTS.md` — package-local agent manifest parsing, formatting, outline, and diagnostics
+- `workflows/AGENTS.md` — workflow graph drafts, manifest codec, wire bindings, and validation
+- `workflow-packages/AGENTS.md` — package manifest parsing/serialization, runtime-input registry, secret bindings, and private MCP transport helpers
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
 | Schema builder contract | `schema/types.ts`, `schema/codec.ts` | IR ↔ JSON Schema conversion and parser boundary |
-| Schema defaults / preview | `schema/factories.ts`, `schema/preview.ts` | initial nodes and sample values for editors |
+| Schema defaults / preview | `schema/factories.ts`, `schema/preview.ts`, `schema/schema-template.ts` | initial nodes, sample values, and schema template defaults for editors |
+| Launch input state | `schema/launch-input-state.ts` | workflow launch parameter form state and draft preservation helpers |
 | Schema validation | `schema/validation.ts` | builder issue model used by package-local output schema, agent, and workflow panels |
 | Value-entry helpers | `values/*.ts` | schema-driven form values and validation |
 | Workflow Package manifests | `workflow-packages/manifest.ts` | package draft model, local parsing/serialization, private MCP transport helpers, and workflow YAML conversion |
