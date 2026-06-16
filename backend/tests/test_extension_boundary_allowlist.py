@@ -33,16 +33,8 @@ APPROVED_FINANCE_SERVICE_GATE_IMPORTS = {
         f"{FINANCE_SERVICE_GATE_MODULE}:POSITION_SERVICE_SURFACE",
         f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
     ),
-    "app/services/reflection_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:REFLECTION_SERVICE_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
     "app/services/report_service.py": (
         f"{FINANCE_SERVICE_GATE_MODULE}:REPORT_SERVICE_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
-    "app/services/return_resolution_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:RETURN_RESOLUTION_SERVICE_SURFACE",
         f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
     ),
     "app/services/template_compiler_service.py": (

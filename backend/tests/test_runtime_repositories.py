@@ -1003,7 +1003,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                     "updatedAt": run_detail.updated_at,
                     "extensionDependencies": [],
                     "steps": [],
-                    "memoryArtifacts": [],
                     "scheduleProvenance": {
                         "scheduleId": 42,
                         "scheduleFireId": 77,
@@ -1093,8 +1092,7 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "updatedAt",
             "extensionDependencies",
             "steps",
-            "memoryArtifacts",
-            "memoryEvents",
+            "workflowMemoryEvidence",
             "scheduleProvenance",
             "packageProvenance",
         }

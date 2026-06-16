@@ -33,12 +33,26 @@ AGENT_PLATFORM_TABLE_NAMES = {
     "workflow_package_runtime_input_entries",
     "workflow_package_secret_bindings",
 }
-CORE_MEMORY_TABLE_NAMES = {
+OLD_MEMORY_TABLE_NAMES = {
     "agent_memory_entries",
     "agent_memory_revisions",
     "run_memory_events",
 }
-FINANCE_MEMORY_METADATA_TABLE_NAMES = {"signaldeck_finance_memory_metadata"}
+LEGACY_MEMORY_TABLE_NAMES = {
+    "legacy_agent_memory_entries",
+    "legacy_agent_memory_revisions",
+    "legacy_run_memory_events",
+}
+WORKFLOW_MEMORY_TABLE_NAMES = {
+    "workflow_memory_audit_events",
+    "workflow_memory_consolidation_runs",
+    "workflow_memory_decisions",
+    "workflow_memory_items",
+    "workflow_memory_proposals",
+    "workflow_memory_quarantine",
+    "workflow_memory_revisions",
+    "workflow_checkpoints",
+}
 REMOVED_CORE_MEMORY_TABLE_NAMES = {"agent_memory_chunks", "agent_memory_embeddings"}
 SCHEDULE_TABLE_NAMES = {
     "workflow_package_schedules",
@@ -69,7 +83,7 @@ LEGACY_BACKEND_TABLE_NAMES = {
     "orchestration_characters",
 }
 LIVE_AGENT_PLATFORM_TABLE_NAMES = AGENT_PLATFORM_TABLE_NAMES
-LIVE_CORE_MEMORY_TABLE_NAMES = CORE_MEMORY_TABLE_NAMES | FINANCE_MEMORY_METADATA_TABLE_NAMES
+LIVE_WORKFLOW_MEMORY_TABLE_NAMES = WORKFLOW_MEMORY_TABLE_NAMES
 LIVE_SCHEDULE_TABLE_NAMES = SCHEDULE_TABLE_NAMES
 REMOVED_RUN_PROVENANCE_COLUMNS = {
     "workflow_package_version_id",
@@ -363,7 +377,6 @@ _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES = [
             "spec.mcpServers.exa.toolKeys[0]",
         ],
         "surfaces": [
-            "hook.workflowPackageStart",
             "mcp.packagePrivate.web_search_exa",
             "provider.fallbackQuote",
             "provider.quote",
@@ -874,229 +887,235 @@ def _assert_schedule_table_shape(engine: Engine) -> None:
     assert "schedule_fire_id IS NOT NULL" in schedule_fire_index_sql
 
 
-def _assert_core_memory_table_shape(engine: Engine) -> None:
+def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
-    assert LIVE_CORE_MEMORY_TABLE_NAMES <= table_names
+    assert LIVE_WORKFLOW_MEMORY_TABLE_NAMES <= table_names
+    assert OLD_MEMORY_TABLE_NAMES.isdisjoint(table_names)
     assert REMOVED_CORE_MEMORY_TABLE_NAMES.isdisjoint(table_names)
 
-    entry_columns = {
-        column["name"]: column for column in inspector.get_columns("agent_memory_entries")
+    item_columns = {
+        column["name"]: column for column in inspector.get_columns("workflow_memory_items")
+    }
+    proposal_columns = {
+        column["name"]: column for column in inspector.get_columns("workflow_memory_proposals")
+    }
+    decision_columns = {
+        column["name"]: column for column in inspector.get_columns("workflow_memory_decisions")
+    }
+    audit_columns = {
+        column["name"]: column for column in inspector.get_columns("workflow_memory_audit_events")
     }
     revision_columns = {
-        column["name"]: column for column in inspector.get_columns("agent_memory_revisions")
+        column["name"]: column for column in inspector.get_columns("workflow_memory_revisions")
     }
-    event_columns = {
-        column["name"]: column for column in inspector.get_columns("run_memory_events")
+    quarantine_columns = {
+        column["name"]: column for column in inspector.get_columns("workflow_memory_quarantine")
     }
-    finance_metadata_columns = {
+    consolidation_columns = {
         column["name"]: column
-        for column in inspector.get_columns("signaldeck_finance_memory_metadata")
+        for column in inspector.get_columns("workflow_memory_consolidation_runs")
     }
-    entry_indexes = {index["name"] for index in inspector.get_indexes("agent_memory_entries")}
-    revision_indexes = {index["name"] for index in inspector.get_indexes("agent_memory_revisions")}
-    event_indexes = {index["name"] for index in inspector.get_indexes("run_memory_events")}
+    checkpoint_columns = {
+        column["name"]: column for column in inspector.get_columns("workflow_checkpoints")
+    }
 
     assert {
         "id",
         "memory_id",
-        "scope_type",
-        "scope_key",
+        "package_key",
+        "workflow_key",
+        "agent_key",
+        "step_id",
+        "namespace",
         "kind",
-        "visible_to_workflow",
+        "content_json",
         "summary",
-        "subject_refs",
-        "content_hash",
-        "idempotency_key",
-        "source_run_id",
-        "source_agent_key",
-        "source_agent_version",
-        "source_step_id",
-        "source_slot",
-        "source_trace_id",
+        "provenance_json",
+        "policy_status",
+        "lifecycle_status",
+        "valid_from",
+        "expires_at",
+        "superseded_by_id",
+        "deleted_at",
+        "proposal_id",
+        "decision_id",
+        "run_id",
+        "invocation_id",
         "created_at",
         "updated_at",
-    } <= set(entry_columns)
-    assert {"report_id", "report_slug", "report_name"}.isdisjoint(entry_columns)
-    assert "attributes" not in entry_columns
-    assert "status" not in entry_columns
-    assert entry_columns["content_hash"]["nullable"] is False
-    assert entry_columns["scope_type"]["nullable"] is False
-    assert entry_columns["visible_to_workflow"]["nullable"] is False
+    } <= set(item_columns)
+    assert item_columns["policy_status"]["nullable"] is False
+    assert item_columns["lifecycle_status"]["nullable"] is False
+    assert {"commit_status", "archived", "accepted", "visible_to_workflow"}.isdisjoint(item_columns)
 
     assert {
         "id",
-        "memory_entry_id",
+        "proposal_id",
+        "run_id",
+        "invocation_id",
+        "package_key",
+        "workflow_key",
+        "agent_key",
+        "step_id",
+        "namespace",
+        "kind",
+        "content_json",
+        "reason",
+        "source_output_path",
+        "detectors_json",
+        "status",
+        "created_at",
+        "updated_at",
+    } <= set(proposal_columns)
+    assert proposal_columns["content_json"]["nullable"] is False
+    assert {"accepted", "commit_status"}.isdisjoint(proposal_columns)
+
+    assert {
+        "id",
+        "decision_id",
+        "proposal_id",
+        "decision",
+        "reason_code",
+        "reason",
+        "policy_snapshot_json",
+        "decided_by",
+        "created_at",
+    } <= set(decision_columns)
+    assert decision_columns["proposal_id"]["nullable"] is False
+    assert decision_columns["policy_snapshot_json"]["nullable"] is False
+
+    assert {
+        "id",
+        "event_type",
+        "target_type",
+        "target_id",
+        "run_id",
+        "invocation_id",
+        "package_key",
+        "workflow_key",
+        "agent_key",
+        "step_id",
+        "event_json",
+        "created_at",
+    } <= set(audit_columns)
+
+    assert {
+        "id",
+        "memory_item_id",
         "revision_id",
         "version",
-        "visible_to_workflow",
+        "content_json",
         "summary",
-        "content",
-        "content_hash",
-        "subject_refs",
+        "provenance_json",
         "supersedes_revision_id",
-        "source_run_id",
-        "source_agent_key",
-        "source_step_id",
-        "source_slot",
-        "trace_span_id",
         "created_at",
     } <= set(revision_columns)
-    assert "attributes" not in revision_columns
-    assert "status" not in revision_columns
-    assert revision_columns["content_hash"]["nullable"] is False
-    assert revision_columns["memory_entry_id"]["nullable"] is False
-    assert revision_columns["visible_to_workflow"]["nullable"] is False
+    assert revision_columns["memory_item_id"]["nullable"] is False
 
     assert {
         "id",
+        "memory_item_id",
+        "proposal_id",
         "run_id",
-        "run_step_id",
-        "run_agent_invocation_id",
-        "run_operation_invocation_id",
+        "invocation_id",
+        "reason_code",
+        "reason",
+        "detectors_json",
+        "resolved_at",
+        "created_at",
+    } <= set(quarantine_columns)
+    assert quarantine_columns["detectors_json"]["nullable"] is False
+
+    assert {
+        "id",
+        "consolidation_id",
+        "package_key",
+        "workflow_key",
+        "namespace",
+        "status",
+        "started_at",
+        "finished_at",
+        "source_memory_ids_json",
+        "output_memory_ids_json",
+        "stats_json",
+        "created_at",
+    } <= set(consolidation_columns)
+
+    assert {
+        "id",
+        "checkpoint_id",
+        "run_id",
+        "package_key",
+        "workflow_key",
+        "agent_key",
         "step_id",
         "invocation_id",
-        "event_type",
-        "memory_entry_id",
-        "memory_revision_id",
-        "memory_id",
-        "revision_id",
-        "retrieval_mode",
-        "filters",
-        "budget",
-        "excerpt",
-        "injected_text",
-        "result_snapshot",
-        "status_snapshot",
-        "trace_span_id",
+        "checkpoint_type",
+        "sequence",
+        "state_json",
+        "retention",
+        "metadata_json",
         "created_at",
-    } <= set(event_columns)
-    assert event_columns["run_id"]["nullable"] is False
-    assert event_columns["event_type"]["nullable"] is False
-    assert {
-        "memory_id",
-        "ticker",
-        "action",
-        "rationale",
-        "risk_summary",
-        "execution_plan",
-        "horizon_days",
-        "benchmark_symbol",
-        "decision_summary",
-    } <= set(finance_metadata_columns)
-    assert finance_metadata_columns["memory_id"]["nullable"] is False
-    assert finance_metadata_columns["ticker"]["nullable"] is False
-    assert finance_metadata_columns["action"]["nullable"] is False
+    } <= set(checkpoint_columns)
+    assert "state" not in checkpoint_columns
+    assert checkpoint_columns["state_json"]["nullable"] is False
 
-    assert {
-        "ix_agent_memory_entries_scope",
-        "ix_agent_memory_entries_scope_visible_kind",
-        "ix_agent_memory_entries_visible_kind",
-        "ix_agent_memory_entries_visible_updated_at_id",
-        "ix_agent_memory_entries_content_hash",
-        "ix_agent_memory_entries_subject_refs_gin",
-        "ix_agent_memory_entries_source",
-        "uq_agent_memory_entries_idempotency_key",
-        "uq_agent_memory_entries_idempotency_fallback",
-    } <= entry_indexes
-    assert {
-        "ix_agent_memory_entries_attributes_gin",
-        "ix_agent_memory_entries_scope_status_kind",
-        "ix_agent_memory_entries_status_kind",
-        "ix_agent_memory_entries_status_updated_at_id",
-    }.isdisjoint(entry_indexes)
-    assert {
-        "ix_agent_memory_revisions_entry",
-        "ix_agent_memory_revisions_entry_visible",
-        "ix_agent_memory_revisions_visible_created_at",
-        "ix_agent_memory_revisions_content_hash",
-        "ix_agent_memory_revisions_created_at",
-        "ix_agent_memory_revisions_supersedes",
-    } <= revision_indexes
-    assert "ix_agent_memory_revisions_attributes_gin" not in revision_indexes
-    assert {
-        "ix_run_memory_events_run_created_at",
-        "ix_run_memory_events_run_type_created_at",
-        "ix_run_memory_events_run_step",
-        "ix_run_memory_events_agent_invocation",
-        "ix_run_memory_events_operation_invocation",
-        "ix_run_memory_events_memory_entry",
-        "ix_run_memory_events_memory_revision",
-        "ix_run_memory_events_trace_span",
-    } <= event_indexes
-
-    entry_constraints = {
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("agent_memory_entries")
-        if constraint.get("name")
+    unique_constraints_by_table = {
+        table_name: {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints(table_name)
+            if constraint.get("name")
+        }
+        for table_name in LIVE_WORKFLOW_MEMORY_TABLE_NAMES
     }
-    revision_constraints = {
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("agent_memory_revisions")
-        if constraint.get("name")
-    }
-    assert "uq_agent_memory_entries_memory_id" in entry_constraints
-    assert {
-        "uq_agent_memory_revisions_revision_id",
-        "uq_agent_memory_revisions_entry_version",
-    } <= revision_constraints
-    assert "uq_agent_memory_revisions_entry_content_hash" not in revision_constraints
-
-    entry_checks = {
-        constraint["name"]
-        for constraint in inspector.get_check_constraints("agent_memory_entries")
-        if constraint.get("name")
-    }
-    revision_checks = {
-        constraint["name"]
-        for constraint in inspector.get_check_constraints("agent_memory_revisions")
-        if constraint.get("name")
-    }
-    event_checks = {
-        constraint["name"]
-        for constraint in inspector.get_check_constraints("run_memory_events")
-        if constraint.get("name")
-    }
-    assert {
-        "ck_agent_memory_entries_scope_type",
-        "ck_agent_memory_entries_content_hash",
-    } <= entry_checks
-    assert "ck_agent_memory_entries_status" not in entry_checks
-    assert "ck_agent_memory_entries_attributes" not in entry_checks
-    assert {
-        "ck_agent_memory_revisions_content_hash",
-        "ck_agent_memory_revisions_version_positive",
-    } <= revision_checks
-    assert "ck_agent_memory_revisions_status" not in revision_checks
-    assert "ck_agent_memory_revisions_attributes" not in revision_checks
-    assert "ck_run_memory_events_event_type" in event_checks
-
-    revision_foreign_keys = {
-        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
-        for foreign_key in inspector.get_foreign_keys("agent_memory_revisions")
-    }
-    event_foreign_keys = {
-        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
-        for foreign_key in inspector.get_foreign_keys("run_memory_events")
-    }
-    finance_metadata_foreign_keys = {
-        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
-        for foreign_key in inspector.get_foreign_keys("signaldeck_finance_memory_metadata")
-    }
-    assert (("memory_entry_id",), "agent_memory_entries", "CASCADE") in revision_foreign_keys
-    assert (("run_id",), "runs", "CASCADE") in event_foreign_keys
-    assert (("run_step_id",), "run_steps", "SET NULL") in event_foreign_keys
     assert (
-        ("memory_entry_id",),
-        "agent_memory_entries",
-        "SET NULL",
-    ) in event_foreign_keys
+        "uq_workflow_memory_items_memory_id" in unique_constraints_by_table["workflow_memory_items"]
+    )
     assert (
-        ("memory_revision_id",),
-        "agent_memory_revisions",
-        "SET NULL",
-    ) in event_foreign_keys
-    assert (("memory_id",), "agent_memory_entries", "CASCADE") in finance_metadata_foreign_keys
+        "uq_workflow_memory_proposals_proposal_id"
+        in unique_constraints_by_table["workflow_memory_proposals"]
+    )
+    assert (
+        "uq_workflow_memory_decisions_decision_id"
+        in unique_constraints_by_table["workflow_memory_decisions"]
+    )
+    assert (
+        "uq_workflow_memory_revisions_revision_id"
+        in unique_constraints_by_table["workflow_memory_revisions"]
+    )
+    assert (
+        "uq_workflow_memory_consolidation_runs_consolidation_id"
+        in unique_constraints_by_table["workflow_memory_consolidation_runs"]
+    )
+    assert (
+        "uq_workflow_checkpoints_checkpoint_id"
+        in unique_constraints_by_table["workflow_checkpoints"]
+    )
+
+    item_indexes = {index["name"] for index in inspector.get_indexes("workflow_memory_items")}
+    checkpoint_indexes = {index["name"] for index in inspector.get_indexes("workflow_checkpoints")}
+    assert "ix_workflow_memory_items_retrieval_scope" in item_indexes
+    assert "ix_workflow_memory_items_run_invocation" in item_indexes
+    assert "ix_workflow_checkpoints_scope_run_sequence" in checkpoint_indexes
+    assert "ix_workflow_checkpoints_run_invocation" in checkpoint_indexes
+
+    item_foreign_keys = {
+        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
+        for foreign_key in inspector.get_foreign_keys("workflow_memory_items")
+    }
+    decision_foreign_keys = {
+        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
+        for foreign_key in inspector.get_foreign_keys("workflow_memory_decisions")
+    }
+    assert (("superseded_by_id",), "workflow_memory_items", "SET NULL") in item_foreign_keys
+    assert (("proposal_id",), "workflow_memory_proposals", "SET NULL") in item_foreign_keys
+    assert (("decision_id",), "workflow_memory_decisions", "SET NULL") in item_foreign_keys
+    assert (("proposal_id",), "workflow_memory_proposals", "CASCADE") in decision_foreign_keys
+
+
+def _assert_core_memory_table_shape(engine: Engine) -> None:
+    _assert_workflow_memory_table_shape(engine)
 
 
 def _model_connection_reasoning_effort_check_sql(engine: Engine) -> str:
@@ -1512,7 +1531,8 @@ def test_s13_current_contract_bootstrap_excludes_retired_global_authoring_tables
         run_columns = {column["name"] for column in inspector.get_columns("runs")}
 
         assert LIVE_AGENT_PLATFORM_TABLE_NAMES <= table_names
-        assert LIVE_CORE_MEMORY_TABLE_NAMES <= table_names
+        assert LIVE_WORKFLOW_MEMORY_TABLE_NAMES <= table_names
+        assert OLD_MEMORY_TABLE_NAMES.isdisjoint(table_names)
         assert LIVE_SCHEDULE_TABLE_NAMES <= table_names
         assert RETIRED_GLOBAL_AUTHORING_TABLE_NAMES.isdisjoint(table_names)
         assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
@@ -2375,7 +2395,275 @@ def test_upgrade_creates_run_forks_without_backfilling_legacy_lineage(
         engine.dispose()
 
 
-def test_init_db_maps_legacy_memory_status_to_workflow_visibility(database_url: str) -> None:
+def test_init_db_creates_workflow_memory_tables_idempotently(database_url: str) -> None:
+    init_db(database_url)
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        _assert_workflow_memory_table_shape(engine)
+        with engine.begin() as connection:
+            item_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_items (
+                        memory_id, package_key, workflow_key, agent_key, step_id, namespace,
+                        kind, content_json, summary, provenance_json, policy_status,
+                        lifecycle_status
+                    ) VALUES (
+                        'workflow-memory-upgrade-1', 'package-a', 'workflow-a', 'agent-a',
+                        'step-a', 'research', 'fact', '{"value":"alpha"}'::jsonb,
+                        'Workflow memory summary', '{}'::jsonb, 'committed', 'active'
+                    ) RETURNING id
+                    """
+                )
+            ).scalar_one()
+            proposal_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_proposals (
+                        proposal_id, package_key, workflow_key, agent_key, step_id, namespace,
+                        kind, content_json, detectors_json, status
+                    ) VALUES (
+                        'workflow-proposal-upgrade-1', 'package-a', 'workflow-a', 'agent-a',
+                        'step-a', 'research', 'fact', '{"value":"alpha"}'::jsonb,
+                        '{}'::jsonb, 'committed'
+                    ) RETURNING id
+                    """
+                )
+            ).scalar_one()
+            decision_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_decisions (
+                        decision_id, proposal_id, decision, reason_code, policy_snapshot_json,
+                        decided_by
+                    ) VALUES (
+                        'workflow-decision-upgrade-1', :proposal_id, 'commit', 'policy_match',
+                        '{}'::jsonb, 'policy'
+                    ) RETURNING id
+                    """
+                ),
+                {"proposal_id": proposal_id},
+            ).scalar_one()
+            connection.execute(
+                text(
+                    """
+                    UPDATE workflow_memory_items
+                    SET proposal_id = :proposal_id, decision_id = :decision_id
+                    WHERE id = :item_id
+                    """
+                ),
+                {"decision_id": decision_id, "item_id": item_id, "proposal_id": proposal_id},
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_revisions (
+                        memory_item_id, revision_id, version, content_json, summary,
+                        provenance_json
+                    ) VALUES (
+                        :item_id, 'workflow-memory-upgrade-1:rev-1', 1,
+                        '{"value":"alpha"}'::jsonb, 'Workflow memory summary', '{}'::jsonb
+                    )
+                    """
+                ),
+                {"item_id": item_id},
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_quarantine (
+                        memory_item_id, reason_code, detectors_json
+                    ) VALUES (:item_id, 'policy_review', '{}'::jsonb)
+                    """
+                ),
+                {"item_id": item_id},
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_audit_events (
+                        event_type, target_type, target_id, package_key, workflow_key, event_json
+                    ) VALUES (
+                        'created', 'memory_item', 'workflow-memory-upgrade-1', 'package-a',
+                        'workflow-a', '{}'::jsonb
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_consolidation_runs (
+                        consolidation_id, package_key, workflow_key, namespace, status,
+                        started_at, source_memory_ids_json, output_memory_ids_json, stats_json
+                    ) VALUES (
+                        'consolidation-upgrade-1', 'package-a', 'workflow-a', 'research',
+                        'succeeded', NOW(), '[]'::jsonb, '[]'::jsonb, '{}'::jsonb
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_checkpoints (
+                        checkpoint_id, run_id, package_key, workflow_key, checkpoint_type,
+                        sequence, state_json, retention, metadata_json
+                    ) VALUES (
+                        'checkpoint-upgrade-1', 1, 'package-a', 'workflow-a', 'resume', 1,
+                        CAST(:state_json AS jsonb), 'latest', '{}'::jsonb
+                    )
+                    """
+                ),
+                {"state_json": json.dumps({"cursor": "step-a"}, sort_keys=True)},
+            )
+
+        init_db(database_url)
+        _assert_workflow_memory_table_shape(engine)
+        with engine.connect() as connection:
+            counts = connection.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM workflow_memory_items),
+                        (SELECT COUNT(*) FROM workflow_memory_proposals),
+                        (SELECT COUNT(*) FROM workflow_memory_decisions),
+                        (SELECT COUNT(*) FROM workflow_memory_audit_events),
+                        (SELECT COUNT(*) FROM workflow_memory_revisions),
+                        (SELECT COUNT(*) FROM workflow_memory_quarantine),
+                        (SELECT COUNT(*) FROM workflow_memory_consolidation_runs),
+                        (SELECT COUNT(*) FROM workflow_checkpoints)
+                    """
+                )
+            ).one()
+
+        assert counts == (1, 1, 1, 1, 1, 1, 1, 1)
+    finally:
+        engine.dispose()
+
+
+def test_init_db_drops_empty_old_memory_tables_deterministically(database_url: str) -> None:
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE agent_memory_entries (id INTEGER)")
+            connection.exec_driver_sql("CREATE TABLE agent_memory_revisions (id INTEGER)")
+            connection.exec_driver_sql("CREATE TABLE run_memory_events (id INTEGER)")
+
+        init_db(database_url)
+        init_db(database_url)
+
+        table_names = set(inspect(engine).get_table_names())
+        assert OLD_MEMORY_TABLE_NAMES.isdisjoint(table_names)
+        assert LEGACY_MEMORY_TABLE_NAMES.isdisjoint(table_names)
+        _assert_workflow_memory_table_shape(engine)
+    finally:
+        engine.dispose()
+
+
+def test_init_db_renames_non_empty_old_memory_tables_to_legacy_names(
+    database_url: str,
+) -> None:
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE agent_memory_entries (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    memory_id VARCHAR(160) NOT NULL
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE agent_memory_revisions (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    memory_entry_id INTEGER REFERENCES agent_memory_entries(id),
+                    revision_id VARCHAR(160) NOT NULL
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE run_memory_events (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    memory_entry_id INTEGER REFERENCES agent_memory_entries(id),
+                    memory_id VARCHAR(160)
+                )
+                """
+            )
+            entry_id = connection.execute(
+                text(
+                    "INSERT INTO agent_memory_entries (memory_id) "
+                    "VALUES ('old-memory-1') RETURNING id"
+                )
+            ).scalar_one()
+            connection.execute(
+                text(
+                    "INSERT INTO agent_memory_revisions (memory_entry_id, revision_id) "
+                    "VALUES (:entry_id, 'old-memory-1:rev-1')"
+                ),
+                {"entry_id": entry_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO run_memory_events (memory_entry_id, memory_id) "
+                    "VALUES (:entry_id, 'old-memory-1')"
+                ),
+                {"entry_id": entry_id},
+            )
+
+        init_db(database_url)
+        init_db(database_url)
+
+        table_names = set(inspect(engine).get_table_names())
+        assert OLD_MEMORY_TABLE_NAMES.isdisjoint(table_names)
+        assert LEGACY_MEMORY_TABLE_NAMES <= table_names
+        _assert_workflow_memory_table_shape(engine)
+        with engine.connect() as connection:
+            counts = connection.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM legacy_agent_memory_entries),
+                        (SELECT COUNT(*) FROM legacy_agent_memory_revisions),
+                        (SELECT COUNT(*) FROM legacy_run_memory_events)
+                    """
+                )
+            ).one()
+            legacy_event = connection.execute(
+                text("SELECT memory_id FROM legacy_run_memory_events")
+            ).scalar_one()
+
+        assert counts == (1, 1, 1)
+        assert legacy_event == "old-memory-1"
+    finally:
+        engine.dispose()
+
+
+def test_init_db_drops_removed_memory_chunk_and_embedding_tables(database_url: str) -> None:
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE agent_memory_chunks (id INTEGER)")
+            connection.exec_driver_sql("CREATE TABLE agent_memory_embeddings (id INTEGER)")
+
+        init_db(database_url)
+
+        table_names = set(inspect(engine).get_table_names())
+        assert REMOVED_CORE_MEMORY_TABLE_NAMES.isdisjoint(table_names)
+        _assert_workflow_memory_table_shape(engine)
+    finally:
+        engine.dispose()
+
+
+def retired_init_db_maps_legacy_status_to_workflow_visibility(database_url: str) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
     legacy_statuses = ("approved", "pending", "archived")
@@ -2523,7 +2811,7 @@ def test_init_db_maps_legacy_memory_status_to_workflow_visibility(database_url: 
         engine.dispose()
 
 
-def test_init_db_normalizes_legacy_memory_status_event_types(database_url: str) -> None:
+def retired_init_db_normalizes_legacy_status_event_types(database_url: str) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
 
@@ -2573,7 +2861,7 @@ def test_init_db_normalizes_legacy_memory_status_event_types(database_url: str) 
         engine.dispose()
 
 
-def test_init_db_drops_obsolete_core_memory_attributes(database_url: str) -> None:
+def retired_init_db_drops_obsolete_core_attributes(database_url: str) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
 
@@ -2612,7 +2900,7 @@ def test_init_db_drops_obsolete_core_memory_attributes(database_url: str) -> Non
         engine.dispose()
 
 
-def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> None:
+def retired_init_db_creates_core_tables_idempotently(database_url: str) -> None:
     init_db(database_url)
     init_db(database_url)
     engine = create_engine(database_url, future=True)
@@ -2825,8 +3113,6 @@ def test_init_db_repairs_jsonb_and_text_indexes_on_existing_persistence_tables(
     init_db(database_url)
     engine = create_engine(database_url, future=True)
     index_names = (
-        "ix_agent_memory_entries_subject_refs_gin",
-        "ix_agent_memory_revisions_search_text",
         "ix_run_workflow_package_snapshots_compiled_plan_gin",
         "ix_run_workflow_package_snapshots_model_connections_gin",
     )
@@ -2856,11 +3142,6 @@ def test_init_db_repairs_jsonb_and_text_indexes_on_existing_persistence_tables(
             }
 
         assert set(index_definitions) == set(index_names)
-        assert "jsonb_path_ops" in index_definitions["ix_agent_memory_entries_subject_refs_gin"]
-        assert (
-            "to_tsvector('simple'::regconfig"
-            in index_definitions["ix_agent_memory_revisions_search_text"]
-        )
         assert (
             "jsonb_path_ops"
             in index_definitions["ix_run_workflow_package_snapshots_compiled_plan_gin"]
@@ -2873,7 +3154,7 @@ def test_init_db_repairs_jsonb_and_text_indexes_on_existing_persistence_tables(
         engine.dispose()
 
 
-def test_init_db_drops_removed_memory_chunk_and_embedding_tables(database_url: str) -> None:
+def retired_init_db_drops_removed_chunk_and_embedding_tables(database_url: str) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
 
@@ -2906,7 +3187,7 @@ def test_init_db_drops_removed_memory_chunk_and_embedding_tables(database_url: s
         engine.dispose()
 
 
-def test_init_db_ignores_legacy_report_backed_memory_rows(database_url: str) -> None:
+def retired_init_db_ignores_legacy_report_backed_rows(database_url: str) -> None:
     engine = create_engine(database_url, future=True)
     legacy_slug = "legacy_agent_memory_historical"
     normal_slug = "ordinary_external_report"

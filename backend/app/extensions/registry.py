@@ -286,7 +286,6 @@ def get_bundled_extension_registry() -> BundledExtensionRegistry:
                 execution_provider_bundle=_load_finance_execution_provider_bundle,
                 run_lifecycle_hooks=_load_finance_run_lifecycle_hooks,
                 runtime_dependency_surfaces=(
-                    "hook.workflowPackageStart",
                     "provider.fallbackQuote",
                     "provider.quote",
                     "provider.socialSentiment",

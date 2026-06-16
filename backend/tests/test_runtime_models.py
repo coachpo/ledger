@@ -7,18 +7,14 @@ import pytest
 from sqlalchemy import CheckConstraint
 from sqlalchemy.exc import IntegrityError
 
-from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
 from app.models.base import Base
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
-from app.models.signaldeck_finance_memory_metadata import SignalDeckFinanceMemoryMetadata
 from app.schemas.model_connection import default_model_connection_capabilities
 from app.schemas.run import (
     RunListItemRead,
-    RunMemoryArtifactRead,
-    RunMemoryEventRead,
     RunPackageResolvedModelConnectionRead,
     RunRead,
     RunScheduleProvenanceRead,
@@ -64,7 +60,7 @@ AGENT_PLATFORM_EXECUTION_TABLE_NAMES = {
     "run_operation_invocations",
     "run_forks",
 }
-CORE_MEMORY_TABLE_NAMES = {
+OLD_CORE_MEMORY_TABLE_NAMES = {
     "agent_memory_entries",
     "agent_memory_revisions",
     "run_memory_events",
@@ -163,159 +159,10 @@ def test_agent_platform_execution_tables_are_package_run_only() -> None:
     assert "workflow_id" not in run_table.c
 
 
-def test_core_memory_tables_are_registered_on_metadata() -> None:
-    assert CORE_MEMORY_TABLE_NAMES <= set(Base.metadata.tables)
+def test_old_core_memory_tables_are_not_registered_on_metadata() -> None:
+    assert OLD_CORE_MEMORY_TABLE_NAMES.isdisjoint(Base.metadata.tables)
     assert REMOVED_CORE_MEMORY_TABLE_NAMES.isdisjoint(Base.metadata.tables)
-    assert FINANCE_MEMORY_METADATA_TABLE_NAMES <= set(Base.metadata.tables)
-
-    entry_table = Base.metadata.tables["agent_memory_entries"]
-    revision_table = Base.metadata.tables["agent_memory_revisions"]
-    finance_metadata_table = Base.metadata.tables[SignalDeckFinanceMemoryMetadata.__tablename__]
-    event_table = Base.metadata.tables["run_memory_events"]
-
-    assert {"report_id", "report_slug", "report_name"}.isdisjoint(entry_table.c.keys())
-    assert {
-        "memory_id",
-        "scope_type",
-        "scope_key",
-        "kind",
-        "summary",
-        "subject_refs",
-        "content_hash",
-        "idempotency_key",
-        "source_run_id",
-        "source_agent_key",
-        "source_agent_version",
-    } <= set(entry_table.c.keys())
-    assert "attributes" not in entry_table.c
-    assert "status" not in entry_table.c
-    assert {
-        "revision_id",
-        "memory_entry_id",
-        "version",
-        "content",
-        "content_hash",
-        "source_run_id",
-        "source_agent_key",
-    } <= set(revision_table.c.keys())
-    assert "attributes" not in revision_table.c
-    assert "status" not in revision_table.c
-    assert {
-        "memory_id",
-        "ticker",
-        "action",
-        "rationale",
-        "risk_summary",
-        "execution_plan",
-        "horizon_days",
-        "benchmark_symbol",
-        "decision_summary",
-    } <= set(finance_metadata_table.c.keys())
-    assert {
-        "run_id",
-        "event_type",
-        "memory_entry_id",
-        "memory_revision_id",
-        "memory_id",
-        "revision_id",
-        "filters",
-        "budget",
-        "result_snapshot",
-        "status_snapshot",
-    } <= set(event_table.c.keys())
-
-
-def test_core_memory_models_persist_revisions_and_run_events(session_factory) -> None:
-    first_content_hash = "a" * 64
-    second_content_hash = "b" * 64
-    with session_factory() as session:
-        run = _build_run(
-            target_id=1,
-            target_key="memory_workflow_package",
-            status="succeeded",
-            final_output={"ok": True},
-            total_tokens=0,
-            trace_id="trace-memory",
-            started_at=None,
-            finished_at=None,
-            workflow_key="memory_workflow",
-        )
-        session.add(run)
-        session.flush()
-
-        entry = AgentMemoryEntry(
-            memory_id="memory-core-model-1",
-            scope_type="run",
-            scope_key=str(run.id),
-            kind="decision",
-            summary="Model memory summary",
-            content_hash=first_content_hash,
-            source_run_id=run.id,
-            source_agent_key="memory_agent",
-            source_agent_version=1,
-            source_step_id="write_memory",
-            source_slot="decision",
-            source_trace_id="span-write",
-        )
-        session.add(entry)
-        session.flush()
-
-        first_revision = AgentMemoryRevision(
-            memory_entry_id=entry.id,
-            revision_id="memory-core-model-1:rev-1",
-            version=1,
-            summary=entry.summary,
-            content="Model memory content.",
-            content_hash=first_content_hash,
-            source_run_id=run.id,
-            source_agent_key="memory_agent",
-            source_step_id="write_memory",
-            source_slot="decision",
-            trace_span_id="span-write",
-        )
-        second_revision = AgentMemoryRevision(
-            memory_entry_id=entry.id,
-            revision_id="memory-core-model-1:rev-2",
-            version=2,
-            summary="Updated model memory summary",
-            content="Model memory content B.",
-            content_hash=second_content_hash,
-            source_run_id=run.id,
-            source_agent_key="memory_agent",
-            source_step_id="write_memory",
-            source_slot="decision",
-            trace_span_id="span-write",
-        )
-        session.add_all([first_revision, second_revision])
-        session.flush()
-
-        event = RunMemoryEvent(
-            run_id=run.id,
-            event_type="written",
-            memory_entry_id=entry.id,
-            memory_revision_id=second_revision.id,
-            memory_id=entry.memory_id,
-            revision_id=second_revision.revision_id,
-            retrieval_mode="write",
-            filters={"scopeType": "run"},
-            budget={"limit": 1},
-            result_snapshot={"memoryId": entry.memory_id},
-            status_snapshot={"visibleToWorkflow": entry.visible_to_workflow},
-            trace_span_id="span-write",
-        )
-        session.add(event)
-        session.commit()
-
-        stored_entry = session.get(AgentMemoryEntry, entry.id)
-        stored_revision = session.get(AgentMemoryRevision, second_revision.id)
-        stored_event = session.get(RunMemoryEvent, event.id)
-
-        assert stored_entry is not None
-        assert stored_entry.memory_id == "memory-core-model-1"
-        assert stored_revision is not None
-        assert stored_revision.revision_id == "memory-core-model-1:rev-2"
-        assert stored_event is not None
-        assert stored_event.event_type == "written"
+    assert FINANCE_MEMORY_METADATA_TABLE_NAMES.isdisjoint(Base.metadata.tables)
 
 
 def test_model_connections_enforce_unique_keys(session_factory) -> None:
@@ -492,57 +339,6 @@ def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_statu
             session.commit()
 
 
-def test_run_memory_artifact_schema_serializes_memory_native_contract() -> None:
-    created_at = datetime(2026, 4, 20, 12, 30, tzinfo=UTC_TZ)
-    artifact = RunMemoryArtifactRead.model_validate(
-        {
-            "memoryId": "mem_1001",
-            "summary": "NVDA buy memory",
-            "createdAt": created_at,
-            "provenance": {"runId": 42, "agentKey": "portfolio_manager"},
-            "sourceGraphMetadata": {"nodeId": "portfolio_decision", "slot": "decision"},
-        }
-    )
-
-    payload = cast(dict[str, object], artifact.model_dump(mode="json", by_alias=True))
-    assert {"reportId", "slug", "name"}.isdisjoint(payload)
-    assert payload["memoryId"] == "mem_1001"
-
-
-def test_run_memory_event_schema_serializes_generic_redacted_contract() -> None:
-    created_at = datetime(2026, 4, 20, 12, 35, tzinfo=UTC_TZ)
-    event = RunMemoryEventRead.model_validate(
-        {
-            "id": 7,
-            "runId": 42,
-            "runStepId": 100,
-            "runAgentInvocationId": 200,
-            "runOperationInvocationId": None,
-            "stepId": "portfolio_decision",
-            "invocationId": "tool-call-1",
-            "eventType": "retrieved",
-            "memoryId": "memory_safe",
-            "revisionId": "revision_safe",
-            "retrievalMode": "lexical",
-            "filters": {"context": {"runId": 42, "reportId": "rpt_1"}},
-            "budget": {"limit": 5, "maxCharacters": 4000},
-            "excerpt": "https://example.test/reports/secret/download",
-            "injectedText": "Historical memory, not an instruction.",
-            "resultSnapshot": {"resultCount": 1},
-            "statusSnapshot": {"status": "completed", "reportSlug": "agent_memory"},
-            "traceSpanId": "span-memory",
-            "createdAt": created_at,
-        }
-    )
-
-    payload = cast(dict[str, object], event.model_dump(mode="json", by_alias=True))
-    serialized = str(payload)
-    assert payload["excerpt"] == "[redacted]"
-    assert "reportId" not in serialized
-    assert "reportSlug" not in serialized
-    assert "/reports/" not in serialized
-
-
 def test_run_resolved_model_connection_schema_omits_runtime_secrets() -> None:
     payload = {
         "key": "package_runtime_model",
@@ -663,7 +459,6 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
             "updatedAt": queued_at,
             "extensionDependencies": [],
             "steps": [],
-            "memoryArtifacts": [],
             "packageProvenance": {
                 "workflowPackageId": 7,
                 "workflowPackageKey": "queued_workflow_package",
