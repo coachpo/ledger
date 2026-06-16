@@ -39,7 +39,7 @@ e2e/
 ```
 
 ## CONVENTIONS
-- Playwright runs backend `8001` and frontend `4173` through `scripts/start-playwright-backend.mjs` and `scripts/start-playwright-frontend.mjs`; the backend helper boots the deterministic provider path, starts and tears down the scheduler worker, and keeps queued Workflow Package runs advancing during browser tests.
+- Playwright runs backend `8001`, fake provider `18081`, and frontend `4173` through `scripts/start-playwright-backend.mjs` and `scripts/start-playwright-frontend.mjs`; the backend helper boots the deterministic provider path plus scheduler worker, while the frontend helper builds before preview and points E2E API calls at `http://127.0.0.1:8001/api/v1`.
 - Specs should use API-assisted setup when it keeps the UI assertion focused.
 - Preserved product setup uses `/api/v1`; platform setup uses `/api`.
 - Use role/text/testid locators and web-first assertions; avoid brittle deep CSS, XPath, and `nth-child` chains.
