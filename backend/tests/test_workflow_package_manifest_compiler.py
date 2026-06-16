@@ -35,12 +35,11 @@ spec:
     required: [ticker]
   capabilityProfiles:
     - key: report_context_tools
-      name: Report Context and Memory Tools
-      description: Reads persisted SignalDeck reports and core memory for research context.
+      name: Report Context Tools
+      description: Reads persisted SignalDeck reports and quotes for research context.
       toolKeys:
         - signaldeck.finance.reports.lookup
-        - signaldeck.core.memory.lookup
-        - signaldeck.core.memory.write
+        - signaldeck.finance.market_data.quote_lookup
   outputSchemas:
     - key: decision
       name: Decision
@@ -163,6 +162,13 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
                     "slot": "decision",
                     "wiring": {"ticker": {"from": "input", "path": "ticker"}},
                     "optional": False,
+                    "memoryPolicy": {
+                        "enabled": False,
+                        "retrieval": None,
+                        "writes": None,
+                        "policy": None,
+                        "checkpoints": None,
+                    },
                 }
             ],
         }
@@ -171,7 +177,7 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
     assert graph["rootNodeId"] == "market_analysis"
 
 
-def test_compile_inline_private_mcp_preserves_report_lookup_memory_keys() -> None:
+def test_compile_inline_private_mcp_preserves_report_and_quote_tool_keys() -> None:
     compiled = compile_workflow_package_manifest(_inline_private_mcp_manifest_source())
     roundtrip = decompile_workflow_package_manifest(compiled)
     recompiled = compile_workflow_package_manifest(roundtrip.source)
@@ -183,8 +189,7 @@ def test_compile_inline_private_mcp_preserves_report_lookup_memory_keys() -> Non
 
     assert cast(list[str], profiles_by_key["report_context_tools"]["toolKeys"]) == [
         "signaldeck.finance.reports.lookup",
-        "signaldeck.core.memory.lookup",
-        "signaldeck.core.memory.write",
+        "signaldeck.finance.market_data.quote_lookup",
     ]
     assert mcp_server["headers"] == {"Authorization": "Bearer test-token"}
     assert mcp_server["query"] == {"api_key": "test-api-key"}
@@ -193,8 +198,7 @@ def test_compile_inline_private_mcp_preserves_report_lookup_memory_keys() -> Non
     assert "secretRefs" not in roundtrip.source
     assert "requiredBindings" not in roundtrip.source
     assert "signaldeck.finance.reports.lookup" in roundtrip.source
-    assert "signaldeck.core.memory.lookup" in roundtrip.source
-    assert "signaldeck.core.memory.write" in roundtrip.source
+    assert "signaldeck.finance.market_data.quote_lookup" in roundtrip.source
     assert "signaldeck.finance.reports.write" not in roundtrip.source
     assert _canonical_json(compiled) == _canonical_json(recompiled)
 
@@ -202,7 +206,10 @@ def test_compile_inline_private_mcp_preserves_report_lookup_memory_keys() -> Non
 def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:
     source = _valid_package_manifest_source().replace(
         "        - signaldeck.finance.market_data.quote_lookup\n",
-        "        - signaldeck.finance.reports.lookup\n        - signaldeck.finance.reports.lookup\n",
+        (
+            "        - signaldeck.finance.reports.lookup\n"
+            "        - signaldeck.finance.reports.lookup\n"
+        ),
         1,
     )
 
@@ -211,26 +218,26 @@ def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:
 
     assert any(
         diagnostic.path == "spec.capabilityProfiles.market_research_tools.toolKeys[1]"
-        and "Duplicate tool key 'signaldeck.finance.reports.lookup' is not allowed" in diagnostic.message
+        and "Duplicate tool key 'signaldeck.finance.reports.lookup' is not allowed"
+        in diagnostic.message
         for diagnostic in excinfo.value.diagnostics
     )
 
 
-def test_compile_package_manifest_accepts_core_memory_tool_keys() -> None:
+def test_compile_package_manifest_rejects_core_memory_tool_keys() -> None:
     source = _valid_package_manifest_source().replace(
         "        - signaldeck.finance.market_data.quote_lookup\n",
         "        - signaldeck.core.memory.lookup\n",
         1,
     )
 
-    compiled = compile_workflow_package_manifest(source)
-    package_definition = cast(dict[str, object], compiled["packageDefinition"])
-    spec = cast(dict[str, object], package_definition["spec"])
-    profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
-    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
+    with pytest.raises(WorkflowPackageManifestCompilerError) as excinfo:
+        _ = compile_workflow_package_manifest(source)
 
-    assert cast(list[str], profiles_by_key["market_research_tools"]["toolKeys"])[0] == (
-        "signaldeck.core.memory.lookup"
+    assert any(
+        diagnostic.path == "spec.capabilityProfiles.market_research_tools.toolKeys[0]"
+        and "Unknown server-declared tool 'signaldeck.core.memory.lookup'" in diagnostic.message
+        for diagnostic in excinfo.value.diagnostics
     )
 
 

@@ -23,7 +23,7 @@ spec:
       name: Tool Required
       description: Requires native tool calls.
       toolKeys:
-        - signaldeck.core.memory.lookup
+        - signaldeck.finance.market_data.quote_lookup
   outputSchemas:
     - key: report
       name: Report

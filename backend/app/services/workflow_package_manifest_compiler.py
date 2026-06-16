@@ -24,6 +24,7 @@ from app.schemas.workflow_package_manifest import (
     WorkflowPackageManifestDiagnostic,
     WorkflowPackageManifestDiagnosticSeverity,
     WorkflowPackageMcpServer,
+    WorkflowPackageMemoryConfig,
     WorkflowPackageNode,
     WorkflowPackageReference,
     WorkflowPackageSecretReference,
@@ -41,6 +42,9 @@ _REF_EXPR_RE = re.compile(r"^\$\{\{\s*(?P<body>[^{}]+?)\s*\}\}$")
 _MCP_INLINE_SECRET_FIELDS = {"env", "headers", "query"}
 _MCP_SECRET_REDACTION_VALUE = "[REDACTED]"
 _REMOVED_SCHEMA_KEYWORDS = {"additionalProperties", "allowAdditionalProperties"}
+_OLD_CORE_MEMORY_TOOL_KEYS = {
+    ".".join(("signaldeck", "core", "memory", action)) for action in ("lookup", "write")
+}
 
 type McpSecretProjectionMode = Literal["authoring", "redacted"]
 MCP_SECRET_PROJECTION_AUTHORING: McpSecretProjectionMode = "authoring"
@@ -83,6 +87,7 @@ def compile_workflow_package_manifest(
     source: str | WorkflowPackageManifest,
     *,
     tool_catalog: ToolCatalog | None = None,
+    reject_retired_memory_tools: bool = False,
 ) -> dict[str, object]:
     manifest, source_text = _resolve_manifest(source)
     resolved_tool_catalog = tool_catalog or get_default_tool_catalog()
@@ -90,6 +95,7 @@ def compile_workflow_package_manifest(
         manifest,
         source_text,
         tool_catalog=resolved_tool_catalog,
+        reject_retired_memory_tools=reject_retired_memory_tools,
     )
     if diagnostics:
         raise WorkflowPackageManifestCompilerError(diagnostics)
@@ -323,6 +329,7 @@ def _compile_plan(
     return {
         "packageKey": manifest.metadata.key,
         "inputs": manifest.spec.inputs,
+        "memoryPolicy": _compile_memory_policy((manifest.spec.memory,)),
         "capabilityProfiles": [
             {
                 "key": profile.key,
@@ -346,11 +353,15 @@ def _compile_plan(
             for server in sorted(manifest.spec.mcp_servers, key=lambda item: item.key)
         ],
         "agents": [
-            _compile_agent(agent)
+            _compile_agent(agent, package_memory=manifest.spec.memory)
             for agent in sorted(manifest.spec.agents, key=lambda item: item.key)
         ],
         "workflows": [
-            _compile_workflow(workflow)
+            _compile_workflow(
+                workflow,
+                agents_by_key={agent.key: agent for agent in manifest.spec.agents},
+                package_memory=manifest.spec.memory,
+            )
             for workflow in sorted(manifest.spec.workflows, key=lambda item: item.key)
         ],
     }
@@ -407,7 +418,11 @@ def _compile_package_private_mcp_tool_descriptors(
     return descriptors
 
 
-def _compile_agent(agent: WorkflowPackageAgent) -> dict[str, object]:
+def _compile_agent(
+    agent: WorkflowPackageAgent,
+    *,
+    package_memory: WorkflowPackageMemoryConfig | None,
+) -> dict[str, object]:
     return {
         "key": agent.key,
         "name": agent.name,
@@ -418,17 +433,31 @@ def _compile_agent(agent: WorkflowPackageAgent) -> dict[str, object]:
         "outputSchema": agent.output_schema,
         "capabilityProfiles": sorted(agent.capability_profiles),
         "mcpServers": sorted(agent.mcp_servers),
+        "memoryPolicy": _compile_memory_policy((package_memory, agent.memory)),
     }
 
 
-def _compile_workflow(workflow: WorkflowPackageWorkflow) -> dict[str, object]:
+def _compile_workflow(
+    workflow: WorkflowPackageWorkflow,
+    *,
+    agents_by_key: Mapping[str, WorkflowPackageAgent],
+    package_memory: WorkflowPackageMemoryConfig | None,
+) -> dict[str, object]:
     context = _WorkflowCompileContext()
-    _ = _compile_node(workflow.flow, context=context, graph_path=workflow.flow.id)
+    _ = _compile_node(
+        workflow.flow,
+        context=context,
+        graph_path=workflow.flow.id,
+        agents_by_key=agents_by_key,
+        package_memory=package_memory,
+        workflow_memory=workflow.memory,
+    )
     return {
         "key": workflow.key,
         "name": workflow.name,
         "description": workflow.description,
         "inputSchema": workflow.input_schema,
+        "memoryPolicy": _compile_memory_policy((package_memory, workflow.memory)),
         "steps": context.steps,
         "outputSpec": _compile_output(workflow.output.from_, context),
         "compiledGraph": {
@@ -441,10 +470,23 @@ def _compile_workflow(workflow: WorkflowPackageWorkflow) -> dict[str, object]:
 
 
 def _compile_node(
-    node: WorkflowPackageNode, *, context: _WorkflowCompileContext, graph_path: str
+    node: WorkflowPackageNode,
+    *,
+    context: _WorkflowCompileContext,
+    graph_path: str,
+    agents_by_key: Mapping[str, WorkflowPackageAgent],
+    package_memory: WorkflowPackageMemoryConfig | None,
+    workflow_memory: WorkflowPackageMemoryConfig | None,
 ) -> dict[str, tuple[int, str]]:
     if isinstance(node, WorkflowPackageStepNode):
-        return _compile_step_node(node, context=context, graph_path=graph_path)
+        return _compile_step_node(
+            node,
+            context=context,
+            graph_path=graph_path,
+            agents_by_key=agents_by_key,
+            package_memory=package_memory,
+            workflow_memory=workflow_memory,
+        )
     if isinstance(node, WorkflowPackageHttpNode):
         return _compile_http_node(node, context=context, graph_path=graph_path)
     if isinstance(node, WorkflowPackageSequenceNode):
@@ -459,7 +501,14 @@ def _compile_node(
         )
         for child in node.nodes:
             sequence_outputs.update(
-                _compile_node(child, context=context, graph_path=f"{graph_path}.{child.id}")
+                _compile_node(
+                    child,
+                    context=context,
+                    graph_path=f"{graph_path}.{child.id}",
+                    agents_by_key=agents_by_key,
+                    package_memory=package_memory,
+                    workflow_memory=workflow_memory,
+                )
             )
         context.register_outputs(node.id, sequence_outputs)
         return sequence_outputs
@@ -481,6 +530,9 @@ def _compile_node(
                 branch.node,
                 context=context,
                 graph_path=f"{graph_path}.{branch.id}.{branch.node.id}",
+                agents_by_key=agents_by_key,
+                package_memory=package_memory,
+                workflow_memory=workflow_memory,
             )
             fanout_outputs.update(branch_outputs)
             if branch_outputs:
@@ -511,14 +563,27 @@ def _compile_node(
             node.sequence,
             context=context,
             graph_path=f"{graph_path}.iteration_{iteration}.{node.sequence.id}",
+            agents_by_key=agents_by_key,
+            package_memory=package_memory,
+            workflow_memory=workflow_memory,
         )
     context.register_outputs(node.id, loop_outputs)
     return loop_outputs
 
 
 def _compile_step_node(
-    node: WorkflowPackageStepNode, *, context: _WorkflowCompileContext, graph_path: str
+    node: WorkflowPackageStepNode,
+    *,
+    context: _WorkflowCompileContext,
+    graph_path: str,
+    agents_by_key: Mapping[str, WorkflowPackageAgent],
+    package_memory: WorkflowPackageMemoryConfig | None,
+    workflow_memory: WorkflowPackageMemoryConfig | None,
 ) -> dict[str, tuple[int, str]]:
+    agent_memory = agents_by_key[node.uses].memory if node.uses in agents_by_key else None
+    memory_policy = _compile_memory_policy(
+        (package_memory, agent_memory, workflow_memory, node.memory)
+    )
     agent: dict[str, object] = {
         "agentKey": node.uses,
         "slot": node.slot,
@@ -527,6 +592,7 @@ def _compile_step_node(
             for field_name, reference in node.inputs.items()
         },
         "optional": node.optional,
+        "memoryPolicy": memory_policy,
     }
     step_index, slot = context.create_step(agent)
     output = {node.slot: (step_index, slot)}
@@ -544,9 +610,117 @@ def _compile_step_node(
                 for field_name, reference in node.inputs.items()
             },
             "optional": node.optional,
+            "memoryPolicy": memory_policy,
         }
     )
     return output
+
+
+def _compile_memory_policy(
+    configs: Sequence[WorkflowPackageMemoryConfig | None],
+) -> dict[str, object]:
+    merged: dict[str, object] = {}
+    for config in configs:
+        _deep_update(merged, _memory_config_overlay(config))
+    if not bool(merged.get("enabled", False)):
+        return {
+            "enabled": False,
+            "retrieval": None,
+            "writes": None,
+            "policy": None,
+            "checkpoints": None,
+        }
+
+    retrieval = _active_memory_retrieval(merged.get("retrieval"))
+    writes = _active_memory_block(merged.get("writes"))
+    policy = _active_memory_block(merged.get("policy"))
+    checkpoints = _active_memory_checkpoints(merged.get("checkpoints"))
+    return {
+        "enabled": True,
+        "retrieval": retrieval,
+        "writes": writes,
+        "policy": policy,
+        "checkpoints": checkpoints,
+    }
+
+
+def _memory_config_overlay(config: WorkflowPackageMemoryConfig | None) -> dict[str, object]:
+    if config is None:
+        return {}
+    overlay: dict[str, object] = {}
+    if "enabled" in config.model_fields_set:
+        overlay["enabled"] = config.enabled
+    for field_name, alias in (
+        ("retrieval", "retrieval"),
+        ("writes", "writes"),
+        ("policy", "policy"),
+        ("checkpoints", "checkpoints"),
+    ):
+        if field_name not in config.model_fields_set:
+            continue
+        value = getattr(config, field_name)
+        if value is not None:
+            overlay[alias] = {
+                str(field.alias or name): item
+                for name, field in value.__class__.model_fields.items()
+                if name in value.model_fields_set
+                for item in [getattr(value, name)]
+            }
+    return overlay
+
+
+def _deep_update(target: dict[str, object], source: Mapping[str, object]) -> None:
+    for key, value in source.items():
+        existing = target.get(key)
+        if isinstance(existing, dict) and isinstance(value, Mapping):
+            _deep_update(existing, value)
+            continue
+        target[key] = deepcopy(value)
+
+
+def _active_memory_retrieval(value: object) -> dict[str, object] | None:
+    if not isinstance(value, Mapping) or not bool(value.get("enabled", False)):
+        return None
+    return {
+        "enabled": True,
+        "namespaces": list(cast(Sequence[object], value.get("namespaces") or [])),
+        "maxItems": int(str(value.get("maxItems") or 0)),
+        "relevanceThreshold": value.get("relevanceThreshold"),
+        "includeKinds": list(cast(Sequence[object], value.get("includeKinds") or [])),
+    }
+
+
+def _active_memory_checkpoints(value: object) -> dict[str, object] | None:
+    if not isinstance(value, Mapping) or not bool(value.get("enabled", False)):
+        return None
+    return {
+        "enabled": True,
+        "retention": str(value.get("retention") or "none"),
+    }
+
+
+def _active_memory_block(value: object) -> dict[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    if (
+        "defaultDecision" in value
+        or "autoCommitKinds" in value
+        or "allowedKinds" in value
+        or "proposals" in value
+    ):
+        return {
+            "proposals": bool(value.get("proposals", False)),
+            "allowedKinds": list(cast(Sequence[object], value.get("allowedKinds") or [])),
+            "defaultDecision": str(value.get("defaultDecision") or "review"),
+            "autoCommitKinds": list(cast(Sequence[object], value.get("autoCommitKinds") or [])),
+        }
+    return {
+        "secrets": str(value.get("secrets") or "quarantine"),
+        "sensitiveData": str(value.get("sensitiveData") or "review"),
+        "expirationDays": value.get("expirationDays"),
+        "unauthorized": str(value.get("unauthorized") or "reject"),
+        "consolidation": str(value.get("consolidation") or "disabled"),
+    }
 
 
 def _compile_http_node(
@@ -687,6 +861,7 @@ def _validate_package_refs(
     source: str | None,
     *,
     tool_catalog: ToolCatalog,
+    reject_retired_memory_tools: bool,
 ) -> list[WorkflowPackageManifestDiagnostic]:
     diagnostics: list[WorkflowPackageManifestDiagnostic] = []
     output_schemas = {schema.key for schema in manifest.spec.output_schemas}
@@ -695,7 +870,14 @@ def _validate_package_refs(
     agents = {agent.key for agent in manifest.spec.agents}
 
     for profile in manifest.spec.capability_profiles:
-        diagnostics.extend(_validate_capability_profile_tools(profile, tool_catalog, source))
+        diagnostics.extend(
+            _validate_capability_profile_tools(
+                profile,
+                tool_catalog,
+                source,
+                reject_retired_memory_tools=reject_retired_memory_tools,
+            )
+        )
 
     for index, agent in enumerate(manifest.spec.agents):
         if agent.output_schema not in output_schemas:
@@ -741,19 +923,39 @@ def _validate_capability_profile_tools(
     profile: WorkflowPackageCapabilityProfile,
     tool_catalog: ToolCatalog,
     source: str | None,
+    *,
+    reject_retired_memory_tools: bool,
 ) -> list[WorkflowPackageManifestDiagnostic]:
+    diagnostics: list[WorkflowPackageManifestDiagnostic] = []
+    if reject_retired_memory_tools:
+        diagnostics.extend(_retired_memory_tool_diagnostics(profile, source))
     try:
         _ = tool_catalog.resolve_tool_keys(profile.tool_keys)
     except ToolCatalogValidationError as exc:
-        return [
+        diagnostics.extend(
             _diagnostic(
                 str(detail.get("issue", "Invalid canonical server-declared tool key")),
                 path=_profile_tool_key_path(profile.key, str(detail.get("field", "toolKeys"))),
                 source=source,
             )
             for detail in exc.details
-        ]
-    return []
+        )
+    return diagnostics
+
+
+def _retired_memory_tool_diagnostics(
+    profile: WorkflowPackageCapabilityProfile,
+    source: str | None,
+) -> list[WorkflowPackageManifestDiagnostic]:
+    return [
+        _diagnostic(
+            f"Unknown server-declared tool {tool_key!r}",
+            path=f"spec.capabilityProfiles.{profile.key}.toolKeys[{index}]",
+            source=source,
+        )
+        for index, tool_key in enumerate(profile.tool_keys)
+        if tool_key in _OLD_CORE_MEMORY_TOOL_KEYS
+    ]
 
 
 def _profile_tool_key_path(profile_key: str, field: str) -> str:

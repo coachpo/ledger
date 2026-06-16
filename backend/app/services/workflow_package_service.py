@@ -391,6 +391,7 @@ class WorkflowPackageService:
             compiled = compile_workflow_package_manifest(
                 parsed.manifest,
                 tool_catalog=self.tool_catalog,
+                reject_retired_memory_tools=True,
             )
         except WorkflowPackageManifestCompilerError as exc:
             raise _WorkflowPackageDiagnosticsError(exc.diagnostics) from exc

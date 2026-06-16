@@ -314,6 +314,7 @@ def test_parse_digital_oracle_demo_preserves_methodology_tools_graph_and_private
             "asOfDate": "${{ inputs.asOfDate }}",
             "horizonDays": "${{ inputs.horizonDays }}",
         },
+        "memory": None,
         "optional": False,
     }
     assert output["from"] == "${{ nodes.synthesis.outputs.report }}"

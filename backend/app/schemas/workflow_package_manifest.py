@@ -289,6 +289,100 @@ class WorkflowPackageMcpServer(CamelModel):
         return self
 
 
+type WorkflowPackageMemoryKind = Literal[
+    "fact",
+    "observation",
+    "preference",
+    "decision",
+    "artifact",
+]
+type WorkflowPackageMemoryDefaultDecision = Literal["review", "commit", "reject"]
+type WorkflowPackageMemoryPolicyAction = Literal["review", "quarantine", "reject"]
+type WorkflowPackageMemoryConsolidation = Literal["disabled", "run_end"]
+type WorkflowPackageMemoryCheckpointRetention = Literal["none", "run_lifecycle"]
+
+_WORKFLOW_PACKAGE_SAFE_AUTO_COMMIT_KINDS = {"fact", "observation", "preference"}
+
+
+class WorkflowPackageMemoryRetrieval(CamelModel):
+    enabled: StrictBool = False
+    namespaces: list[str] = Field(default_factory=list)
+    max_items: StrictInt = Field(default=0, alias="maxItems", ge=0)
+    relevance_threshold: float | None = Field(default=None, alias="relevanceThreshold", ge=0, le=1)
+    include_kinds: list[WorkflowPackageMemoryKind] = Field(
+        default_factory=list,
+        alias="includeKinds",
+    )
+
+    @field_validator("namespaces", mode="before")
+    @classmethod
+    def validate_namespaces(cls, value: object) -> list[str]:
+        return _ref_list(value, field_name="memory.retrieval.namespaces")
+
+
+class WorkflowPackageMemoryWrites(CamelModel):
+    proposals: StrictBool = False
+    allowed_kinds: list[WorkflowPackageMemoryKind] = Field(
+        default_factory=list,
+        alias="allowedKinds",
+    )
+    default_decision: WorkflowPackageMemoryDefaultDecision = Field(
+        default="review",
+        alias="defaultDecision",
+    )
+    auto_commit_kinds: list[WorkflowPackageMemoryKind] = Field(
+        default_factory=list,
+        alias="autoCommitKinds",
+    )
+
+    @model_validator(mode="after")
+    def validate_commit_policy(self) -> WorkflowPackageMemoryWrites:
+        if self.default_decision != "commit":
+            return self
+        if not self.auto_commit_kinds:
+            raise ValueError(
+                "commit memory policy requires at least one safe autoCommitKinds value"
+            )
+        disallowed_kinds = sorted(set(self.auto_commit_kinds).difference(self.allowed_kinds))
+        if disallowed_kinds:
+            raise ValueError(
+                "autoCommitKinds must be included in allowedKinds: " + ", ".join(disallowed_kinds)
+            )
+        unsafe_kinds = sorted(
+            set(self.auto_commit_kinds).difference(_WORKFLOW_PACKAGE_SAFE_AUTO_COMMIT_KINDS)
+        )
+        if unsafe_kinds:
+            raise ValueError(
+                "autoCommitKinds contains values that are not safe for automatic commits: "
+                + ", ".join(unsafe_kinds)
+            )
+        return self
+
+
+class WorkflowPackageMemoryPolicy(CamelModel):
+    secrets: WorkflowPackageMemoryPolicyAction = "quarantine"
+    sensitive_data: WorkflowPackageMemoryPolicyAction = Field(
+        default="review",
+        alias="sensitiveData",
+    )
+    expiration_days: StrictInt | None = Field(default=None, alias="expirationDays", ge=0)
+    unauthorized: Literal["reject"] = "reject"
+    consolidation: WorkflowPackageMemoryConsolidation = "disabled"
+
+
+class WorkflowPackageMemoryCheckpoints(CamelModel):
+    enabled: StrictBool = False
+    retention: WorkflowPackageMemoryCheckpointRetention = "none"
+
+
+class WorkflowPackageMemoryConfig(CamelModel):
+    enabled: StrictBool = False
+    retrieval: WorkflowPackageMemoryRetrieval | None = None
+    writes: WorkflowPackageMemoryWrites | None = None
+    policy: WorkflowPackageMemoryPolicy | None = None
+    checkpoints: WorkflowPackageMemoryCheckpoints | None = None
+
+
 class WorkflowPackageAgent(CamelModel):
     key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
@@ -299,6 +393,7 @@ class WorkflowPackageAgent(CamelModel):
     output_schema: str = Field(alias="outputSchema", min_length=1, max_length=120)
     capability_profiles: list[str] = Field(default_factory=list, alias="capabilityProfiles")
     mcp_servers: list[str] = Field(default_factory=list, alias="mcpServers")
+    memory: WorkflowPackageMemoryConfig | None = None
 
     @field_validator("key", mode="before")
     @classmethod
@@ -524,6 +619,7 @@ class WorkflowPackageStepNode(CamelModel):
     uses: str = Field(min_length=1, max_length=120)
     inputs: dict[str, WorkflowPackageReference] = Field(default_factory=dict, alias="with")
     optional: StrictBool = False
+    memory: WorkflowPackageMemoryConfig | None = None
 
     @field_validator("id", "slot", mode="before")
     @classmethod
@@ -609,6 +705,7 @@ class WorkflowPackageWorkflow(CamelModel):
     input_schema: dict[str, JsonValue] = Field(alias="inputSchema")
     flow: WorkflowPackageNode
     output: WorkflowPackageWorkflowOutput
+    memory: WorkflowPackageMemoryConfig | None = None
 
     @field_validator("key", mode="before")
     @classmethod
@@ -633,6 +730,7 @@ class WorkflowPackageWorkflow(CamelModel):
 
 class WorkflowPackageManifestSpec(CamelModel):
     inputs: dict[str, JsonValue]
+    memory: WorkflowPackageMemoryConfig | None = None
     capability_profiles: list[WorkflowPackageCapabilityProfile] = Field(
         default_factory=list, alias="capabilityProfiles"
     )
@@ -687,6 +785,11 @@ __all__ = [
     "WorkflowPackageManifestMetadata",
     "WorkflowPackageManifestParseResult",
     "WorkflowPackageManifestSpec",
+    "WorkflowPackageMemoryCheckpoints",
+    "WorkflowPackageMemoryConfig",
+    "WorkflowPackageMemoryPolicy",
+    "WorkflowPackageMemoryRetrieval",
+    "WorkflowPackageMemoryWrites",
     "WorkflowPackageMcpServer",
     "WorkflowPackageNode",
     "WorkflowPackageOutputSchema",

@@ -52,8 +52,6 @@ EXPECTED_TOOL_KEYS = {
     "signaldeck.finance.insider_data.lookup",
     "signaldeck.finance.positions.lookup",
     "signaldeck.finance.reports.lookup",
-    "signaldeck.core.memory.lookup",
-    "signaldeck.core.memory.write",
 }
 FORBIDDEN_EXPORT_FIELDS = {
     "secretPayload",
@@ -154,7 +152,7 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
     assert any(cast(list[str], agent["capabilityProfiles"]) for agent in compiled_agents)
 
 
-def test_tradingagents_fixture_keeps_report_lookup_and_core_memory_profile() -> None:
+def test_tradingagents_fixture_keeps_report_lookup_without_core_memory_profile() -> None:
     compiled = compile_workflow_package_manifest(_fixture_source())
     package_definition = cast(dict[str, object], compiled["packageDefinition"])
     spec = cast(dict[str, object], package_definition["spec"])
@@ -164,10 +162,7 @@ def test_tradingagents_fixture_keeps_report_lookup_and_core_memory_profile() -> 
     assert cast(list[str], profiles_by_key["report_context_tools"]["toolKeys"]) == [
         "signaldeck.finance.reports.lookup"
     ]
-    assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
-        "signaldeck.core.memory.lookup",
-        "signaldeck.core.memory.write",
-    ]
+    assert "memory_write_tools" not in profiles_by_key
 
 
 def test_fixture_compile_does_not_create_global_authoring_rows(
