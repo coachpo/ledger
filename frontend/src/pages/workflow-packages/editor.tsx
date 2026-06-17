@@ -4,7 +4,6 @@ import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { PageContextBar } from "@/components/shared/page-context-bar";
-import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -219,26 +218,6 @@ export function WorkflowPackageEditorPage() {
   const isEditorBlocked = editorBlocker !== null;
   const manifestHash = workflowPackage?.manifestHash?.slice(0, 12) ?? "Draft";
   const compiledHash = workflowPackage?.compiledHash?.slice(0, 12) ?? "Pending";
-  const contextStatusItems = [
-    {
-      label: "Mode",
-      tone: isNew ? ("warning" as const) : ("success" as const),
-      value: isNew ? "New draft" : "Saved package",
-    },
-    {
-      label: "Draft",
-      tone: isDirty ? ("warning" as const) : ("neutral" as const),
-      value: isDirty ? "Unsaved" : "Clean",
-    },
-    {
-      label: "Diagnostics",
-      tone:
-        combinedIssues.length > 0 ? ("danger" as const) : ("success" as const),
-      value:
-        combinedIssues.length > 0 ? String(combinedIssues.length) : "Clear",
-    },
-  ];
-
   const updateDraft = (nextDraft: WorkflowPackageDraft) => {
     setIsDirty(true);
     setDraft(nextDraft);
@@ -485,15 +464,6 @@ export function WorkflowPackageEditorPage() {
                 />
               </div>
               <div
-                className="min-w-0"
-                data-testid="workflow-package-editor-header-status-row"
-              >
-                <ResourceStatusStrip
-                  density="toolbar"
-                  items={contextStatusItems}
-                />
-              </div>
-              <div
                 aria-label="Workflow package editor actions"
                 className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap lg:items-center lg:justify-end"
                 data-testid="workflow-package-editor-actions-row"
@@ -538,45 +508,32 @@ export function WorkflowPackageEditorPage() {
           }
           leftRail={
             editorBlocker ? undefined : (
-              <div
-                className="flex max-h-64 min-w-0 flex-col gap-2 overflow-y-auto rounded-xl border border-border/70 bg-card/90 p-2 shadow-ui-xs lg:max-h-full"
+              <TabsList
+                aria-label="Workflow package editor sections"
+                className="h-auto max-h-64 min-w-0 flex-col justify-start overflow-y-auto rounded-xl border border-border/70 bg-card/90 p-2 shadow-ui-xs lg:max-h-full"
                 data-testid="workflow-package-section-nav"
               >
-                <div className="px-2 py-1">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Authoring Sections
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Package-local resources only; import and launch stay on their
-                    dedicated routes.
-                  </p>
-                </div>
-                <TabsList
-                  aria-label="Workflow package editor sections"
-                  className="h-auto w-full justify-start bg-transparent p-0"
-                >
-                  {editorTabs.map((tab) => {
-                    const Icon = tab.icon;
-                    return (
-                      <TabsTrigger
-                        key={tab.value}
-                        value={tab.value}
-                        aria-label={`${tab.label} tab`}
-                        className="h-auto justify-start gap-3 whitespace-normal px-3 py-2 text-left"
-                        onClick={() => selectEditorTab(tab.value)}
-                      >
-                        <Icon aria-hidden="true" />
-                        <span className="flex min-w-0 flex-col gap-0.5">
-                          <span>{tab.label}</span>
-                          <span className="line-clamp-2 text-[11px] font-normal leading-4 text-muted-foreground">
-                            {tab.description}
-                          </span>
+                {editorTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      aria-label={`${tab.label} tab`}
+                      className="h-auto justify-start gap-3 whitespace-normal px-3 py-2 text-left"
+                      onClick={() => selectEditorTab(tab.value)}
+                    >
+                      <Icon aria-hidden="true" />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span>{tab.label}</span>
+                        <span className="line-clamp-2 text-[11px] font-normal leading-4 text-muted-foreground">
+                          {tab.description}
                         </span>
-                      </TabsTrigger>
-                    );
-                  })}
-                </TabsList>
-              </div>
+                      </span>
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
             )
           }
           leftRailAriaLabel="Workflow package authoring sections"

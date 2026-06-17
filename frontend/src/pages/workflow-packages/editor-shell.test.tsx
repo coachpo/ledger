@@ -192,18 +192,8 @@ describe("WorkflowPackageEditorPage", () => {
     expect(headerMetaRow).toHaveTextContent("Compiled compiled-has");
     expect(headerMetaRow).toHaveTextContent("Updated");
 
-    const headerStatusRow = screen.getByTestId(
-      "workflow-package-editor-header-status-row",
-    );
-    expect(headerStatusRow).toHaveTextContent("Mode");
-    expect(headerStatusRow).toHaveTextContent("Saved package");
-    expect(headerStatusRow).toHaveTextContent("Draft");
-    expect(headerStatusRow).toHaveTextContent("Clean");
-    expect(headerStatusRow).toHaveTextContent("Diagnostics");
-    expect(headerStatusRow).toHaveTextContent("Clear");
     expect(contextBar).toContainElement(headerTopRow);
     expect(contextBar).toContainElement(headerMetaRow);
-    expect(contextBar).toContainElement(headerStatusRow);
     expect(contextBar).toContainElement(actionsRow);
 
     for (const tabName of [
@@ -254,17 +244,12 @@ describe("WorkflowPackageEditorPage", () => {
   it("renders explicit sticky section navigation beside the active panel", () => {
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
-    const contextBar = screen.getByTestId("workflow-package-context-bar");
     expect(screen.getByTestId("workspace-page-shell-context")).toHaveClass(
       "sticky",
       "top-0",
     );
-    expect(contextBar).toHaveTextContent("Draft");
-    expect(contextBar).toHaveTextContent("Diagnostics");
 
     const sectionNav = screen.getByTestId("workflow-package-section-nav");
-    expect(sectionNav).toHaveTextContent("Authoring Sections");
-    expect(sectionNav).toHaveTextContent("Package-local resources only");
     expect(screen.getByTestId("workspace-page-shell-left-rail")).toHaveClass(
       "lg:sticky",
       "lg:top-3",
@@ -273,6 +258,7 @@ describe("WorkflowPackageEditorPage", () => {
     const tabList = screen.getByRole("tablist", {
       name: "Workflow package editor sections",
     });
+    expect(sectionNav).toBe(tabList);
     expect(tabList).toHaveAttribute("aria-orientation", "vertical");
     expect(tabList).toHaveTextContent(
       "Package-private agent definitions stay local",
