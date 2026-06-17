@@ -235,6 +235,36 @@ function renderMemoryRoute(initialEntry: string) {
   );
 }
 
+function expectCanonicalGateLayout(testId: string) {
+  const gate = screen.getByTestId(testId);
+  const content = screen.getByTestId("extension-gate-content");
+  const status = screen.getByTestId("extension-gate-status");
+  const statusStrip = status.querySelector("[role='list']");
+  const meta = screen.getByTestId("extension-gate-meta");
+  const panel = screen.getByTestId("extension-gate-panel");
+
+  expect(gate).toHaveClass(
+    "min-h-full",
+    "px-4",
+    "py-8",
+    "sm:px-6",
+    "sm:py-10",
+    "lg:px-8",
+  );
+  expect(gate).not.toHaveClass("items-center", "justify-center", "p-4");
+  expect(content).toHaveClass("w-full", "max-w-6xl", "flex-col", "gap-6");
+  expect(content).not.toHaveClass("max-w-2xl");
+  expect(status).toHaveClass("w-full", "min-w-0");
+  expect(statusStrip).toHaveClass(
+    "w-full",
+    "max-w-none",
+    "justify-start",
+    "flex-wrap",
+  );
+  expect(meta).toHaveClass("w-full", "min-w-0", "flex-wrap", "gap-2");
+  expect(panel).toHaveClass("w-full", "max-w-none");
+}
+
 function isMetadataVisibleForExtensions(
   metadata: RouteMetadata,
   extensions: ExtensionListRead | undefined,
@@ -1173,6 +1203,56 @@ describe("router", () => {
     expect(toolKeysForState(false, false)).toEqual(["core.echo"]);
   });
 
+  it("renders the root finance gate unavailable state through the wide responsive error layout", async () => {
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            code: "extension_state_unavailable",
+            details: [],
+            message: "Extension state unavailable",
+          }),
+          {
+            headers: { "Content-Type": "application/json" },
+            status: 503,
+          },
+        ),
+      ),
+    );
+    const testRouter = createMemoryRouter(router.routes, {
+      initialEntries: ["/"],
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    try {
+      render(
+        <ThemeProvider>
+          <QueryClientProvider client={queryClient}>
+            <RouterProvider router={testRouter} />
+          </QueryClientProvider>
+        </ThemeProvider>,
+      );
+
+      const unavailableState = await screen.findByTestId(
+        "extension-state-unavailable",
+      );
+      expect(unavailableState).toHaveTextContent("Extension state unavailable");
+      expect(unavailableState).toHaveTextContent(
+        "SignalDeck could not load backend extension state, so extension-owned routes are paused until the state read succeeds.",
+      );
+      expect(
+        screen.getByRole("button", { name: "Retry extension state" }),
+      ).toBeVisible();
+      expectCanonicalGateLayout("extension-state-unavailable");
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+    }
+  });
+
   it("renders a deterministic disabled state for direct finance route links", async () => {
     const testRouter = createMemoryRouter(router.routes, {
       initialEntries: ["/reports"],
@@ -1200,6 +1280,7 @@ describe("router", () => {
     );
     expect(disabledState).toHaveTextContent("Blast radius");
     expect(disabledState).not.toHaveTextContent("signaldeck.finance");
+    expectCanonicalGateLayout("extension-disabled-state");
     expect(
       screen.getByRole("link", { name: "Open core workflow packages" }),
     ).toHaveAttribute("href", "/workflow-packages");

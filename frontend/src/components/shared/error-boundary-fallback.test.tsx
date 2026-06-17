@@ -16,15 +16,24 @@ describe("ErrorBoundaryFallback", () => {
 
     const page = container.firstElementChild;
     const content = screen.getByTestId("error-boundary-fallback-content");
-    const card = screen
-      .getByRole("heading", { level: 1, name: "Something went wrong" })
-      .closest("[data-testid='error-boundary-fallback-card']");
+    const status = screen.getByTestId("error-boundary-fallback-status");
+    const statusStrip = status.querySelector("[role='list']");
+    const meta = screen.getByTestId("error-boundary-fallback-meta");
+    const panel = screen.getByTestId("error-boundary-fallback-panel");
     const message = screen.getByTestId("error-boundary-fallback-error");
 
     expect(page).toHaveClass("min-h-screen", "px-4", "py-8");
     expect(page).not.toHaveClass("items-center", "justify-center", "p-6");
-    expect(content).toHaveClass("w-full", "max-w-6xl", "flex-col");
-    expect(card).toHaveClass("w-full", "max-w-none");
+    expect(content).toHaveClass("w-full", "max-w-6xl", "flex-col", "gap-6");
+    expect(status).toHaveClass("w-full", "min-w-0");
+    expect(statusStrip).toHaveClass(
+      "w-full",
+      "max-w-none",
+      "justify-start",
+      "flex-wrap",
+    );
+    expect(meta).toHaveClass("w-full", "min-w-0", "flex-wrap", "gap-2");
+    expect(panel).toHaveClass("w-full", "max-w-none");
     expect(message).toHaveClass("w-full", "max-w-4xl", "break-words");
     expect(screen.getByText(error.message)).toBeVisible();
     expect(screen.getByRole("button", { name: "Try again" })).toBeVisible();

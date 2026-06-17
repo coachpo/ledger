@@ -2,13 +2,9 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { AlertCircle, RefreshCw } from "lucide-react";
 
-import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
-import { PageContextBar } from "@/components/shared/page-context-bar";
+import { CanonicalErrorPage } from "@/components/shared/canonical-error-page";
 import { ProvenanceBadge } from "@/components/shared/provenance-badge";
-import {
-  ResourceStatusStrip,
-  type ResourceStatusStripItem,
-} from "@/components/shared/resource-status-strip";
+import type { ResourceStatusStripItem } from "@/components/shared/resource-status-strip";
 import { Button } from "@/components/ui/button";
 import { useExtension } from "@/hooks/use-extensions";
 import type { ExtensionRead } from "@/lib/types/extension";
@@ -36,31 +32,34 @@ function GateStateShell({
   tone?: "neutral" | "warning" | "danger";
 }) {
   return (
-    <div
-      className="flex min-h-full items-center justify-center p-4"
-      data-testid={testId}
-    >
-      <div className="flex w-full max-w-2xl flex-col gap-3">
-        <PageContextBar
-          description="Extension-owned routes render only after backend state confirms the bundled workspace is enabled."
-          meta={
-            <div className="flex flex-wrap items-center gap-2">
-              <ProvenanceBadge detail="runtime gate" label="Surface" />
-              <ProvenanceBadge detail="bundled extension" label={FINANCE_WORKSPACE_LABEL} />
-            </div>
-          }
-          status={<ResourceStatusStrip items={statusItems} />}
-          title="Finance Workspace gate"
-        />
-        <EmptyStatePanel
-          action={action}
-          description={description}
-          icon={icon}
-          title={title}
-          tone={tone}
-        />
-      </div>
-    </div>
+    <CanonicalErrorPage
+      action={action}
+      contentClassName="min-h-0"
+      contentTestId="extension-gate-content"
+      description="Extension-owned routes render only after backend state confirms the bundled workspace is enabled."
+      descriptionTestId="extension-gate-description"
+      icon={icon}
+      meta={
+        <>
+          <ProvenanceBadge detail="runtime gate" label="Surface" />
+          <ProvenanceBadge
+            detail="bundled extension"
+            label={FINANCE_WORKSPACE_LABEL}
+          />
+        </>
+      }
+      metaTestId="extension-gate-meta"
+      panelDescription={description}
+      panelTestId="extension-gate-panel"
+      panelTitle={title}
+      rootClassName="min-h-full"
+      rootElement="div"
+      statusItems={statusItems}
+      statusTestId="extension-gate-status"
+      testId={testId}
+      title="Finance Workspace gate"
+      tone={tone}
+    />
   );
 }
 
