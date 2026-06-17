@@ -13,6 +13,10 @@ FRONTEND_PORT="${FRONTEND_PORT:-$APP_PORT}"
 RUN_SCHEDULER="${RUN_SCHEDULER:-true}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-signaldeck}"
 DEFAULT_DATABASE_URL="postgresql+psycopg://signaldeck:${POSTGRES_PASSWORD}@localhost:25432/signaldeck"
+LOCAL_POSTGRES_CONTAINER="signaldeck-local-postgres"
+LOCAL_POSTGRES_IMAGE="pgvector/pgvector:pg16"
+LOCAL_POSTGRES_PORT="25432"
+LOCAL_POSTGRES_VOLUME="signaldeck-postgres-data"
 
 export DATABASE_URL="${DATABASE_URL:-$DEFAULT_DATABASE_URL}"
 export AGENT_PLATFORM_ENCRYPTION_KEY="${AGENT_PLATFORM_ENCRYPTION_KEY:-signaldeck-agent-platform-dev-key}"
@@ -29,6 +33,7 @@ FRONTEND_LOG="$LOG_DIR/frontend.log"
 CHILD_PIDS=()
 CHILD_LABELS=()
 CHILD_LOGS=()
+MANAGED_DATABASE_STARTED=false
 STOPPING=false
 
 status() {
@@ -89,6 +94,81 @@ scheduler_enabled() {
   esac
 }
 
+using_managed_local_database() {
+  [[ "$DATABASE_URL" == "$DEFAULT_DATABASE_URL" ]]
+}
+
+docker_container_running() {
+  local container_name="$1"
+
+  [[ "$(docker inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null || true)" == "true" ]]
+}
+
+docker_container_exists() {
+  local container_name="$1"
+
+  docker inspect "$container_name" >/dev/null 2>&1
+}
+
+port_listener_pids() {
+  local port="$1"
+
+  lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u || true
+}
+
+stop_port_listeners() {
+  local port="$1"
+  local label="$2"
+  local pids=()
+  local remaining_pids=()
+  local deadline
+  local pid
+
+  mapfile -t pids < <(port_listener_pids "$port")
+  if ((${#pids[@]} == 0)); then
+    return 0
+  fi
+
+  status "Freeing $label port $port from listener pid(s): ${pids[*]}"
+  for pid in "${pids[@]}"; do
+    kill -TERM "$pid" >/dev/null 2>&1 || true
+  done
+
+  deadline=$((SECONDS + 5))
+  while (( SECONDS < deadline )); do
+    mapfile -t remaining_pids < <(port_listener_pids "$port")
+    if ((${#remaining_pids[@]} == 0)); then
+      return 0
+    fi
+    sleep 1
+  done
+
+  mapfile -t remaining_pids < <(port_listener_pids "$port")
+  for pid in "${remaining_pids[@]}"; do
+    status "Force-stopping $label listener pid $pid on port $port."
+    kill -KILL "$pid" >/dev/null 2>&1 || true
+  done
+
+  sleep 1
+  mapfile -t remaining_pids < <(port_listener_pids "$port")
+  if ((${#remaining_pids[@]} > 0)); then
+    die "Could not free $label port $port; listener pid(s) remain: ${remaining_pids[*]}"
+  fi
+}
+
+free_application_ports() {
+  local seen_ports=" "
+  local port
+
+  for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
+    if [[ "$seen_ports" == *" $port "* ]]; then
+      continue
+    fi
+    seen_ports+="$port "
+    stop_port_listeners "$port" "application"
+  done
+}
+
 show_log_tail() {
   local log_file="$1"
 
@@ -96,6 +176,16 @@ show_log_tail() {
     printf '[start-local] Last 30 lines from %s:\n' "$log_file" >&2
     tail -n 30 "$log_file" >&2 || true
   fi
+}
+
+stop_managed_database() {
+  if [[ "$MANAGED_DATABASE_STARTED" != "true" ]]; then
+    return 0
+  fi
+
+  status "Stopping local PostgreSQL container $LOCAL_POSTGRES_CONTAINER."
+  docker stop "$LOCAL_POSTGRES_CONTAINER" >/dev/null 2>&1 || true
+  MANAGED_DATABASE_STARTED=false
 }
 
 stop_children() {
@@ -106,6 +196,7 @@ stop_children() {
   trap - EXIT
 
   if ((${#CHILD_PIDS[@]} == 0)); then
+    stop_managed_database
     return 0
   fi
 
@@ -140,6 +231,8 @@ stop_children() {
   for pid in "${CHILD_PIDS[@]}"; do
     wait "$pid" >/dev/null 2>&1 || true
   done
+
+  stop_managed_database
 }
 
 on_interrupt() {
@@ -215,10 +308,14 @@ check_dependencies() {
 
   require_command bash
   require_command curl
+  require_command lsof
   require_command node
   require_command pnpm
   require_command setsid
   require_command uv
+  if using_managed_local_database; then
+    require_command docker
+  fi
 
   node_version="$(node --version)"
   require_numeric_major_at_least "Node" "${node_version#v}" 24
@@ -231,6 +328,65 @@ prepare_dependencies() {
 
   status "Preparing frontend dependencies with pnpm install --frozen-lockfile."
   (cd "$FRONTEND_DIR" && pnpm install --frozen-lockfile)
+}
+
+wait_for_local_database() {
+  local timeout_seconds="${1:-60}"
+  local deadline=$((SECONDS + timeout_seconds))
+
+  status "Waiting for local PostgreSQL at 127.0.0.1:${LOCAL_POSTGRES_PORT}."
+  while (( SECONDS < deadline )); do
+    if ! docker_container_running "$LOCAL_POSTGRES_CONTAINER"; then
+      docker logs --tail 30 "$LOCAL_POSTGRES_CONTAINER" >&2 || true
+      die "Local PostgreSQL container exited before becoming ready."
+    fi
+
+    if docker exec "$LOCAL_POSTGRES_CONTAINER" pg_isready -U signaldeck -d signaldeck >/dev/null 2>&1; then
+      status "Local PostgreSQL is ready."
+      return 0
+    fi
+
+    sleep 1
+  done
+
+  docker logs --tail 30 "$LOCAL_POSTGRES_CONTAINER" >&2 || true
+  die "Local PostgreSQL did not become ready within ${timeout_seconds}s."
+}
+
+start_local_database() {
+  if ! using_managed_local_database; then
+    status "Using DATABASE_URL override; skipping managed local PostgreSQL startup."
+    return 0
+  fi
+
+  if docker_container_running "$LOCAL_POSTGRES_CONTAINER"; then
+    status "Local PostgreSQL container $LOCAL_POSTGRES_CONTAINER is already running."
+    wait_for_local_database 60
+    return 0
+  fi
+
+  stop_port_listeners "$LOCAL_POSTGRES_PORT" "local PostgreSQL"
+
+  if docker_container_exists "$LOCAL_POSTGRES_CONTAINER"; then
+    status "Starting existing local PostgreSQL container $LOCAL_POSTGRES_CONTAINER."
+    docker start "$LOCAL_POSTGRES_CONTAINER" >/dev/null
+  else
+    status "Creating local PostgreSQL container $LOCAL_POSTGRES_CONTAINER."
+    docker volume create "$LOCAL_POSTGRES_VOLUME" >/dev/null
+    docker run -d \
+      --name "$LOCAL_POSTGRES_CONTAINER" \
+      --label io.signaldeck.support=local-demo-only \
+      --label io.signaldeck.production-artifact=false \
+      -e POSTGRES_DB=signaldeck \
+      -e POSTGRES_USER=signaldeck \
+      -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+      -p "127.0.0.1:${LOCAL_POSTGRES_PORT}:5432" \
+      -v "${LOCAL_POSTGRES_VOLUME}:/var/lib/postgresql/data" \
+      "$LOCAL_POSTGRES_IMAGE" >/dev/null
+  fi
+
+  MANAGED_DATABASE_STARTED=true
+  wait_for_local_database 60
 }
 
 preflight_database() {
@@ -287,7 +443,9 @@ main() {
   validate_boolean
   check_dependencies
   prepare_dependencies
+  start_local_database
   preflight_database
+  free_application_ports
   print_startup_summary
 
   start_child "backend" "$BACKEND_LOG" "$BACKEND_DIR" \
