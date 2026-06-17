@@ -181,20 +181,48 @@ describe("MemoryListPage", () => {
   });
 
   it("renders the review-only workflow memory surface", () => {
-    renderPage();
+    const { container } = renderPage();
+    const page = screen.getByTestId("memory-list-page");
+    const inventoryRegions = Array.from(
+      container.querySelectorAll("[data-inventory-shell-region]"),
+    ).map((region) => region.getAttribute("data-inventory-shell-region"));
 
-    expect(screen.getByTestId("memory-list-page")).toBeVisible();
+    expect(page).toBeVisible();
+    expect(inventoryRegions).toEqual(["context", "toolbar", "content"]);
+    expect(
+      page.querySelector('[data-inventory-shell-region="context"]'),
+    ).toBeVisible();
+    expect(
+      page.querySelector('[data-inventory-shell-region="toolbar"]'),
+    ).toBeVisible();
+    expect(
+      page.querySelector('[data-inventory-shell-region="content"]'),
+    ).toBeVisible();
     expect(
       screen.getByRole("heading", { level: 1, name: "Workflow Memory Review" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("combobox", { name: "Proposal status" }),
     ).toBeVisible();
     expect(screen.getByRole("tab", { name: "Proposals" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Audit events" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Quarantine" })).toBeVisible();
     expect(screen.getByText("No proposals to review")).toBeVisible();
+    expect(screen.queryByText("Proposal queue")).not.toBeInTheDocument();
     expect(useWorkflowMemoryProposalsMock).toHaveBeenLastCalledWith(
       { status: "review_pending" },
     );
+    expect(
+      screen.queryByRole("textbox", { name: /search/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: /select/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete selected/i }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Create memory")).not.toBeInTheDocument();
+    expect(screen.queryByText("New memory")).not.toBeInTheDocument();
     expect(screen.queryByText("Memory Admin")).not.toBeInTheDocument();
     expect(screen.queryByText("Workflow visibility")).not.toBeInTheDocument();
   });
@@ -207,6 +235,17 @@ describe("MemoryListPage", () => {
     await waitFor(() =>
       expect(useWorkflowMemoryProposalsMock).toHaveBeenLastCalledWith({
         status: "all",
+      }),
+    );
+    expect(screen.getByTestId("memory-review-active-filters")).toHaveTextContent(
+      /Status\s*All/,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+
+    await waitFor(() =>
+      expect(useWorkflowMemoryProposalsMock).toHaveBeenLastCalledWith({
+        status: "review_pending",
       }),
     );
   });

@@ -2,9 +2,12 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyStatePanel } from "@/components/shared/empty-state-panel";
+import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
-import { PageContextBar } from "@/components/shared/page-context-bar";
-import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
+import {
+  ResourceStatusBadge,
+  type ResourceStatusTone,
+} from "@/components/shared/resource-status-strip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -40,6 +44,9 @@ import type {
   WorkflowMemoryQuarantineRead,
 } from "@/lib/types/memory";
 
+const DEFAULT_PROPOSAL_STATUS: WorkflowMemoryProposalStatusFilter =
+  "review_pending";
+
 const PROPOSAL_STATUS_OPTIONS: readonly {
   label: string;
   value: WorkflowMemoryProposalStatusFilter;
@@ -52,6 +59,17 @@ const PROPOSAL_STATUS_OPTIONS: readonly {
   { label: "All", value: "all" },
 ];
 
+const WORKFLOW_MEMORY_STATUS_TONES: Record<
+  WorkflowMemoryPolicyStatus,
+  ResourceStatusTone
+> = {
+  committed: "success",
+  proposed: "neutral",
+  quarantined: "danger",
+  rejected: "danger",
+  review_pending: "warning",
+};
+
 function titleCase(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
 }
@@ -60,20 +78,64 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-function StatusBadge({ status }: { status: WorkflowMemoryPolicyStatus }) {
-  const variant =
-    status === "committed"
-      ? "default"
-      : status === "rejected" || status === "quarantined"
-        ? "destructive"
-        : "secondary";
+function getProposalStatusLabel(status: WorkflowMemoryProposalStatusFilter) {
+  return (
+    PROPOSAL_STATUS_OPTIONS.find((option) => option.value === status)?.label ??
+    titleCase(status)
+  );
+}
 
-  return <Badge variant={variant}>{titleCase(status)}</Badge>;
+function WorkflowMemoryStatusBadge({
+  status,
+}: {
+  status: WorkflowMemoryPolicyStatus;
+}) {
+  return (
+    <ResourceStatusBadge
+      label={titleCase(status)}
+      tone={WORKFLOW_MEMORY_STATUS_TONES[status]}
+    />
+  );
+}
+
+function ProposalStatusFilterControl({
+  status,
+  onStatusChange,
+}: {
+  status: WorkflowMemoryProposalStatusFilter;
+  onStatusChange: (status: WorkflowMemoryProposalStatusFilter) => void;
+}) {
+  return (
+    <div className="flex min-w-52 flex-col gap-1.5 sm:w-56">
+      <Label className="text-xs font-medium" htmlFor="memory-proposal-status">
+        Proposal status
+      </Label>
+      <Select
+        onValueChange={(value) =>
+          onStatusChange(value as WorkflowMemoryProposalStatusFilter)
+        }
+        value={status}
+      >
+        <SelectTrigger id="memory-proposal-status">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {PROPOSAL_STATUS_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </div>
+  );
 }
 
 function JsonBlock({ label, value }: { label: string; value: unknown }) {
   return (
-    <section className="min-w-0 space-y-2">
+    <section className="flex min-w-0 flex-col gap-2">
       <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </h4>
@@ -115,7 +177,7 @@ function ProposalCard({ proposal }: { proposal: WorkflowMemoryProposalRead }) {
     <Card data-testid={`memory-proposal-${proposal.proposalId}`}>
       <CardHeader className="gap-3">
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 space-y-1">
+          <div className="flex min-w-0 flex-col gap-1">
             <CardTitle className="break-words text-base font-semibold">
               {proposal.kind} in {proposal.namespace}
             </CardTitle>
@@ -124,12 +186,12 @@ function ProposalCard({ proposal }: { proposal: WorkflowMemoryProposalRead }) {
             </CardDescription>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <StatusBadge status={proposal.status} />
+            <WorkflowMemoryStatusBadge status={proposal.status} />
             <Badge variant="outline">Proposal {proposal.proposalId}</Badge>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex flex-col gap-4">
         <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <Detail label="Run" value={proposal.runId ? `#${proposal.runId}` : "No run"} />
           <Detail label="Invocation" value={proposal.invocationId ?? "No invocation"} />
@@ -146,7 +208,7 @@ function ProposalCard({ proposal }: { proposal: WorkflowMemoryProposalRead }) {
           <JsonBlock label="Policy detectors" value={proposal.detectors} />
         </div>
         {canReview ? (
-          <div className="space-y-2 rounded-xl border border-border/70 bg-ui-surface-elevated/50 p-3">
+          <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-ui-surface-elevated/50 p-3">
             <Label htmlFor={reasonId}>Review reason</Label>
             <Textarea
               id={reasonId}
@@ -214,6 +276,10 @@ function AuditEventCard({ event }: { event: WorkflowMemoryAuditEventRead }) {
 }
 
 function QuarantineCard({ item }: { item: WorkflowMemoryQuarantineRead }) {
+  const quarantineStatus = item.resolvedAt
+    ? ({ label: "Resolved", tone: "success" } as const)
+    : ({ label: "Unresolved", tone: "danger" } as const);
+
   return (
     <Card data-testid={`memory-quarantine-${item.quarantineId}`}>
       <CardHeader className="gap-2">
@@ -227,14 +293,15 @@ function QuarantineCard({ item }: { item: WorkflowMemoryQuarantineRead }) {
             </CardDescription>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Badge variant={item.resolvedAt ? "outline" : "destructive"}>
-              {item.resolvedAt ? "Resolved" : "Unresolved"}
-            </Badge>
+            <ResourceStatusBadge
+              label={quarantineStatus.label}
+              tone={quarantineStatus.tone}
+            />
             <Badge variant="outline">Quarantine {item.quarantineId}</Badge>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex flex-col gap-4">
         {item.reason ? (
           <p className="rounded-lg border border-border/70 bg-ui-surface-grouped/60 px-3 py-2 text-sm text-muted-foreground">
             {item.reason}
@@ -279,7 +346,7 @@ function SectionState({
 
 export function MemoryListPage() {
   const [status, setStatus] = useState<WorkflowMemoryProposalStatusFilter>(
-    "review_pending",
+    DEFAULT_PROPOSAL_STATUS,
   );
   const proposalParams = useMemo(() => ({ status }), [status]);
   const proposalsQuery = useWorkflowMemoryProposals(proposalParams);
@@ -288,55 +355,53 @@ export function MemoryListPage() {
   const proposals = proposalsQuery.data?.items ?? [];
   const auditEvents = auditEventsQuery.data?.items ?? [];
   const quarantineItems = quarantineQuery.data?.items ?? [];
+  const proposalTotal = proposalsQuery.data?.total ?? proposals.length;
+  const hasActiveStatusFilter = status !== DEFAULT_PROPOSAL_STATUS;
 
   return (
-    <WorkspacePageShell
-      bodyAriaLabel="Workflow memory review workspace"
-      bodyClassName="gap-4"
-      className="min-h-full"
-      contextBar={
-        <PageContextBar
-          description="Review workflow-generated memory proposals, inspect audit events, and monitor quarantined memory evidence."
-          title="Workflow Memory Review"
-        />
+    <InventoryPageShell
+      contentClassName="flex flex-col gap-4"
+      filterBar={
+        hasActiveStatusFilter
+          ? {
+              items: [
+                {
+                  active: true,
+                  clearLabel: "Reset proposal status filter",
+                  id: "proposal-status",
+                  label: "Status",
+                  value: getProposalStatusLabel(status),
+                  onClear: () => setStatus(DEFAULT_PROPOSAL_STATUS),
+                },
+              ],
+              onClearAll: () => setStatus(DEFAULT_PROPOSAL_STATUS),
+              testId: "memory-review-active-filters",
+            }
+          : null
       }
+      pageContext={{
+        description:
+          "Review workflow-generated memory proposals, inspect audit events, and monitor quarantined memory evidence.",
+        title: "Workflow Memory Review",
+      }}
       testId="memory-list-page"
+      toolbar={{
+        filters: (
+          <ProposalStatusFilterControl
+            status={status}
+            onStatusChange={setStatus}
+          />
+        ),
+        resultSummary: `${proposalTotal} ${proposalTotal === 1 ? "proposal" : "proposals"} shown`,
+      }}
     >
-      <Tabs defaultValue="proposals" className="min-h-0">
+      <Tabs defaultValue="proposals" className="flex min-h-0 flex-col gap-3">
         <TabsList aria-label="Workflow memory review sections">
           <TabsTrigger value="proposals">Proposals</TabsTrigger>
           <TabsTrigger value="audit">Audit events</TabsTrigger>
           <TabsTrigger value="quarantine">Quarantine</TabsTrigger>
         </TabsList>
-        <TabsContent className="space-y-4" value="proposals">
-          <Card data-testid="memory-review-filters">
-            <CardHeader>
-              <CardTitle>Proposal queue</CardTitle>
-              <CardDescription>
-                Filter proposals by policy status before approving or rejecting review-pending items.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="max-w-xs space-y-2">
-              <Label htmlFor="memory-proposal-status">Proposal status</Label>
-              <Select
-                onValueChange={(value) =>
-                  setStatus(value as WorkflowMemoryProposalStatusFilter)
-                }
-                value={status}
-              >
-                <SelectTrigger id="memory-proposal-status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROPOSAL_STATUS_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </CardContent>
-          </Card>
+        <TabsContent className="flex flex-col gap-4" value="proposals">
           {proposals.length > 0 ? (
             proposals.map((proposal) => (
               <ProposalCard key={proposal.proposalId} proposal={proposal} />
@@ -351,7 +416,7 @@ export function MemoryListPage() {
             />
           )}
         </TabsContent>
-        <TabsContent className="space-y-4" value="audit">
+        <TabsContent className="flex flex-col gap-4" value="audit">
           {auditEvents.length > 0 ? (
             auditEvents.map((event) => (
               <AuditEventCard event={event} key={event.eventId} />
@@ -366,7 +431,7 @@ export function MemoryListPage() {
             />
           )}
         </TabsContent>
-        <TabsContent className="space-y-4" value="quarantine">
+        <TabsContent className="flex flex-col gap-4" value="quarantine">
           {quarantineItems.length > 0 ? (
             quarantineItems.map((item) => (
               <QuarantineCard item={item} key={item.quarantineId} />
@@ -382,6 +447,6 @@ export function MemoryListPage() {
           )}
         </TabsContent>
       </Tabs>
-    </WorkspacePageShell>
+    </InventoryPageShell>
   );
 }
