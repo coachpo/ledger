@@ -49,9 +49,6 @@ test.describe("workflow memory review workspace", () => {
     await expect(
       page.getByRole("heading", { name: "Workflow Memory Review" }),
     ).toBeVisible();
-    await expect(page.getByTestId("memory-review-contract")).toContainText(
-      "Review-only surface",
-    );
     await expect(page.getByRole("tab", { name: "Proposals" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Audit events" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Quarantine" })).toBeVisible();

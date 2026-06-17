@@ -187,9 +187,6 @@ describe("MemoryListPage", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Workflow Memory Review" }),
     ).toBeVisible();
-    expect(screen.getByTestId("memory-review-contract")).toHaveTextContent(
-      "Review-only surface",
-    );
     expect(screen.getByRole("tab", { name: "Proposals" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Audit events" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Quarantine" })).toBeVisible();

@@ -297,11 +297,6 @@ export function MemoryListPage() {
       contextBar={
         <PageContextBar
           description="Review workflow-generated memory proposals, inspect audit events, and monitor quarantined memory evidence."
-          meta={
-            <span data-testid="memory-review-contract">
-              Review-only surface: proposals, audit events, and quarantine records.
-            </span>
-          }
           title="Workflow Memory Review"
         />
       }
