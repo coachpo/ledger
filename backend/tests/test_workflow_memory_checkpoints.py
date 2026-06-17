@@ -33,6 +33,8 @@ def test_workflow_checkpoints_table_uses_plan_fields_and_is_separate() -> None:
     assert memory_tables.isdisjoint({WorkflowCheckpoint.__tablename__})
     assert {
         "checkpoint_id",
+        "owner_type",
+        "owner_id",
         "run_id",
         "package_key",
         "workflow_key",
@@ -124,6 +126,21 @@ def test_checkpoint_repository_persists_and_reads_only_checkpoint_rows(
             state_json={"cursor": "other"},
             retention="run_lifecycle",
         )
+        _ = checkpoint_repo.create_checkpoint(
+            checkpoint_id="checkpoint-other-owner",
+            owner_type="local_user",
+            owner_id="other",
+            run_id=301,
+            package_key="research_pkg",
+            workflow_key="due_diligence",
+            agent_key="analyst",
+            step_id="summarize",
+            invocation_id="invoke-checkpoint-other-owner",
+            checkpoint_type="step_state",
+            sequence=4,
+            state_json={"cursor": "other-owner"},
+            retention="run_lifecycle",
+        )
         session.commit()
 
         latest = checkpoint_repo.get_latest_checkpoint(
@@ -204,3 +221,77 @@ def test_checkpoint_service_records_run_local_state_without_long_term_memory(
         assert checkpoint_rows[0].state_json == {"cursor": 10}
         assert checkpoint_rows[0].retention == "run_lifecycle"
         assert memory_rows == []
+
+
+def test_checkpoint_repository_filters_run_reads_by_owner(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        checkpoint_repo = WorkflowCheckpointRepository(session)
+        default_checkpoint = checkpoint_repo.create_checkpoint(
+            checkpoint_id="checkpoint-default-owner",
+            run_id=901,
+            package_key="research_pkg",
+            workflow_key="due_diligence",
+            agent_key="analyst",
+            step_id="summarize",
+            invocation_id="invoke-default-owner",
+            checkpoint_type="step_state",
+            sequence=1,
+            state_json={"cursor": "default"},
+            retention="run_lifecycle",
+        )
+        _ = checkpoint_repo.create_checkpoint(
+            checkpoint_id="checkpoint-hidden-owner",
+            owner_type="local_user",
+            owner_id="other",
+            run_id=901,
+            package_key="research_pkg",
+            workflow_key="due_diligence",
+            agent_key="analyst",
+            step_id="summarize",
+            invocation_id="invoke-hidden-owner",
+            checkpoint_type="step_state",
+            sequence=2,
+            state_json={"cursor": "other"},
+            retention="run_lifecycle",
+        )
+        _ = checkpoint_repo.create_checkpoint(
+            checkpoint_id="checkpoint-hidden-finalize",
+            owner_type="local_user",
+            owner_id="other",
+            run_id=901,
+            package_key="research_pkg",
+            workflow_key="due_diligence",
+            checkpoint_type="run_finalize",
+            sequence=3,
+            state_json={"status": "other"},
+            retention="run_lifecycle",
+        )
+        session.commit()
+
+        latest = checkpoint_repo.get_latest_checkpoint(
+            package_key="research_pkg",
+            workflow_key="due_diligence",
+            run_id=901,
+            agent_key="analyst",
+            step_id="summarize",
+            checkpoint_type="step_state",
+        )
+        run_checkpoints = checkpoint_repo.list_checkpoints_for_run(
+            package_key="research_pkg",
+            workflow_key="due_diligence",
+            run_id=901,
+        )
+        run_finalize = checkpoint_repo.get_run_finalize_checkpoint(
+            package_key="research_pkg",
+            workflow_key="due_diligence",
+            run_id=901,
+        )
+
+        assert latest is not None
+        assert latest.checkpoint_id == default_checkpoint.checkpoint_id
+        assert [checkpoint.checkpoint_id for checkpoint in run_checkpoints] == [
+            default_checkpoint.checkpoint_id
+        ]
+        assert run_finalize is None

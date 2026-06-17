@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.models.workflow_checkpoint import WorkflowCheckpoint
 from app.repositories.workflow_checkpoints import WorkflowCheckpointRepository
 from app.schemas.workflow_memory import (
+    DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
     WorkflowCheckpointRead,
     WorkflowCheckpointRecord,
     WorkflowCheckpointScope,
@@ -23,9 +25,13 @@ class WorkflowCheckpointService:
         *,
         scope: WorkflowCheckpointScope,
         checkpoint: WorkflowCheckpointRecord,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
     ) -> WorkflowCheckpointRead:
         row = self.repository.create_checkpoint(
             checkpoint_id=f"workflow_checkpoint_{uuid4().hex}",
+            owner_type=owner_type,
+            owner_id=owner_id,
             run_id=scope.run_id,
             package_key=scope.package_key,
             workflow_key=scope.workflow_key,
@@ -47,6 +53,8 @@ class WorkflowCheckpointService:
         package_key: str,
         workflow_key: str,
         run_id: int,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
     ) -> list[WorkflowCheckpointRead]:
         return [
             self._read(row)
@@ -54,6 +62,8 @@ class WorkflowCheckpointService:
                 package_key=package_key,
                 workflow_key=workflow_key,
                 run_id=run_id,
+                owner_type=owner_type,
+                owner_id=owner_id,
             )
         ]
 

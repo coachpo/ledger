@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Iterable, Mapping
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
@@ -75,7 +76,13 @@ from app.services.execution_plan import (
     ExecutionPlanSource,
     ExecutionPlanStep,
     ExecutionPlanTarget,
+    MemoryCheckpointRetention,
+    MemoryConsolidation,
+    MemoryPolicyAction,
     PackageLocalOutputSchemaSpec,
+    PackageMemoryCheckpointPolicy,
+    PackageMemoryDetectorPolicy,
+    PackageResolvedMemoryPolicy,
     PackageResolvedModelBinding,
     PackageRuntimeAgentSpec,
 )
@@ -107,6 +114,7 @@ from app.services.package_execution_plan_builder import (
 from app.services.run_lifecycle import WorkflowPackageStartContext
 from app.services.run_read_projection import RunReadProjection
 from app.services.run_rerun_fork import PreparedRunFork, RunRerunForkPreparation
+from app.services.workflow_memory_consolidation_service import WorkflowMemoryConsolidationService
 from app.services.workflow_memory_middleware import (
     WorkflowMemoryInvocationMetadata,
     WorkflowMemoryMiddleware,
@@ -125,6 +133,9 @@ _RUN_STATUS_QUEUED = "queued"
 _RUN_STATUS_RUNNING = "running"
 _RUN_STATUS_SUCCEEDED = "succeeded"
 _RUN_STATUS_FAILED = "failed"
+_WORKFLOW_MEMORY_QUERY_TERM_RE: re.Pattern[str] = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9_-]{2,}"
+)
 
 
 @dataclass(frozen=True)
@@ -167,6 +178,14 @@ class _PreparedOperationInvocation:
     step_index: int
     slot: str
     package_ownership: PackageExecutionOwnership | None
+
+
+@dataclass(frozen=True)
+class _RunMemoryFinalizeScope:
+    policy: PackageResolvedMemoryPolicy
+    package_key: str
+    workflow_key: str
+    sequence: int
 
 
 _CURRENT_RUNTIME_INVOCATION_CONTEXT: ContextVar[_RuntimeInvocationContext | None] = ContextVar(
@@ -1504,7 +1523,20 @@ class RunService:
         current.inherited_tokens = inherited_tokens
         current.executed_tokens = executed_tokens
         current.finished_at = utcnow()
+        finalize_scope = self._resolve_run_memory_finalize_scope(current)
+        self._finalize_run_memory_checkpoint(
+            current,
+            state={"status": _RUN_STATUS_FAILED, "error": error},
+            metadata={"phase": "finalize_run", "terminalStatus": _RUN_STATUS_FAILED},
+            scope=finalize_scope,
+        )
+        run_id = current.id
+        run_consolidation = self._run_memory_consolidation_enabled(finalize_scope)
         self.session.commit()
+        self._run_workflow_memory_consolidation_after_terminal_commit(
+            run_id=run_id,
+            enabled=run_consolidation,
+        )
         return True
 
     def _finalize_run_succeeded(
@@ -1533,8 +1565,193 @@ class RunService:
         current.inherited_tokens = inherited_tokens
         current.executed_tokens = executed_tokens
         current.finished_at = utcnow()
+        finalize_scope = self._resolve_run_memory_finalize_scope(current)
+        self._finalize_run_memory_checkpoint(
+            current,
+            state={"status": _RUN_STATUS_SUCCEEDED},
+            metadata={"phase": "finalize_run", "terminalStatus": _RUN_STATUS_SUCCEEDED},
+            scope=finalize_scope,
+        )
+        run_id = current.id
+        run_consolidation = self._run_memory_consolidation_enabled(finalize_scope)
         self.session.commit()
+        self._run_workflow_memory_consolidation_after_terminal_commit(
+            run_id=run_id,
+            enabled=run_consolidation,
+        )
         return True
+
+    def _run_workflow_memory_consolidation_after_terminal_commit(
+        self,
+        *,
+        run_id: int,
+        enabled: bool,
+    ) -> None:
+        if not enabled:
+            return
+        try:
+            with self.session_factory() as session:
+                _ = WorkflowMemoryConsolidationService(session).consolidate_run_end(run_id)
+        except Exception:
+            logger.exception("Workflow memory consolidation failed after terminal run %d", run_id)
+
+    def _finalize_run_memory_checkpoint(
+        self,
+        run: Run,
+        *,
+        state: dict[str, Any],
+        metadata: dict[str, Any] | None = None,
+        scope: _RunMemoryFinalizeScope | None = None,
+    ) -> None:
+        try:
+            scope = scope or self._resolve_run_memory_finalize_scope(run)
+            if scope is None:
+                return
+            with self.session.begin_nested():
+                _ = self.workflow_memory_middleware.finalize_run(
+                    policy=scope.policy,
+                    package_key=scope.package_key,
+                    workflow_key=scope.workflow_key,
+                    run_id=run.id,
+                    sequence=scope.sequence,
+                    state=state,
+                    metadata=metadata,
+                )
+        except Exception:
+            logger.exception("Workflow memory run-final checkpoint failed for run %d", run.id)
+
+    def _run_finalize_checkpoint_sequence(
+        self,
+        run: Run,
+        *,
+        plan: ExecutionPlan | None = None,
+    ) -> int:
+        if plan is not None and plan.steps:
+            return (max(step.index for step in plan.steps) * 1000) + 1000
+        max_step_index = max(
+            (step.step_index for step in self.run_step_repository.list_by_run(run.id)),
+            default=0,
+        )
+        return (max_step_index * 1000) + 1000 if max_step_index > 0 else 1
+
+    def _resolve_run_memory_finalize_scope(self, run: Run) -> _RunMemoryFinalizeScope | None:
+        if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
+            return None
+        snapshot = run.workflow_package_snapshot
+        package_key = run.workflow_package_key or (
+            snapshot.workflow_package_key if snapshot is not None else None
+        )
+        workflow_key = run.workflow_package_workflow_key or (
+            snapshot.workflow_key if snapshot is not None else None
+        )
+        if package_key is None or workflow_key is None:
+            return None
+        plan: ExecutionPlan | None = None
+        try:
+            plan = self._build_plan_for_run(run)
+            policy = self._run_finalize_memory_policy(plan)
+        except Exception:
+            logger.exception("Workflow memory run-final plan rebuild failed for run %d", run.id)
+            policy = self._run_finalize_memory_policy_from_snapshot(run)
+        return _RunMemoryFinalizeScope(
+            policy=policy,
+            package_key=package_key,
+            workflow_key=workflow_key,
+            sequence=self._run_finalize_checkpoint_sequence(run, plan=plan),
+        )
+
+    def _run_finalize_memory_policy_from_snapshot(
+        self,
+        run: Run,
+    ) -> PackageResolvedMemoryPolicy:
+        snapshot = run.workflow_package_snapshot
+        compiled_plan = snapshot.compiled_plan if snapshot is not None else None
+        if not isinstance(compiled_plan, dict):
+            return PackageResolvedMemoryPolicy()
+        compiled_plan_payload = cast(dict[str, object], compiled_plan)
+        package_policy = self._memory_policy_from_compiled_value(
+            compiled_plan_payload.get("memoryPolicy")
+        )
+        if package_policy.enabled:
+            return package_policy
+        workflow_key = run.workflow_package_workflow_key or (
+            snapshot.workflow_key if snapshot is not None else None
+        )
+        raw_workflows = compiled_plan_payload.get("workflows")
+        if not isinstance(raw_workflows, list):
+            return PackageResolvedMemoryPolicy()
+        workflows = cast(list[object], raw_workflows)
+        for raw_workflow in workflows:
+            if not isinstance(raw_workflow, dict):
+                continue
+            workflow = cast(dict[str, object], raw_workflow)
+            if workflow.get("key") != workflow_key:
+                continue
+            return self._memory_policy_from_compiled_value(workflow.get("memoryPolicy"))
+        return PackageResolvedMemoryPolicy()
+
+    @staticmethod
+    def _memory_policy_from_compiled_value(value: object) -> PackageResolvedMemoryPolicy:
+        if not isinstance(value, dict):
+            return PackageResolvedMemoryPolicy()
+        policy_payload = cast(dict[str, object], value)
+        if not bool(policy_payload.get("enabled", False)):
+            return PackageResolvedMemoryPolicy()
+        raw_policy = policy_payload.get("policy")
+        detector_policy = None
+        if isinstance(raw_policy, dict):
+            raw_policy_payload = cast(dict[str, object], raw_policy)
+            expiration_value = raw_policy_payload.get("expirationDays")
+            detector_policy = PackageMemoryDetectorPolicy(
+                secrets=cast(MemoryPolicyAction, raw_policy_payload.get("secrets") or "quarantine"),
+                sensitive_data=cast(
+                    MemoryPolicyAction,
+                    raw_policy_payload.get("sensitiveData") or "review",
+                ),
+                expiration_days=(
+                    None
+                    if expiration_value is None
+                    else int(cast(str | int | float, expiration_value))
+                ),
+                unauthorized=cast(
+                    Literal["reject"], raw_policy_payload.get("unauthorized") or "reject"
+                ),
+                consolidation=cast(
+                    MemoryConsolidation,
+                    raw_policy_payload.get("consolidation") or "disabled",
+                ),
+            )
+        raw_checkpoints = policy_payload.get("checkpoints")
+        checkpoint_policy = None
+        if isinstance(raw_checkpoints, dict):
+            raw_checkpoint_payload = cast(dict[str, object], raw_checkpoints)
+            checkpoint_policy = PackageMemoryCheckpointPolicy(
+                enabled=bool(raw_checkpoint_payload.get("enabled", False)),
+                retention=cast(
+                    MemoryCheckpointRetention,
+                    raw_checkpoint_payload.get("retention") or "none",
+                ),
+            )
+        return PackageResolvedMemoryPolicy(
+            enabled=True,
+            policy=detector_policy,
+            checkpoints=checkpoint_policy,
+        )
+
+    @staticmethod
+    def _run_memory_consolidation_enabled(scope: _RunMemoryFinalizeScope | None) -> bool:
+        if scope is None or not scope.policy.enabled or scope.policy.policy is None:
+            return False
+        return scope.policy.policy.consolidation == "run_end"
+
+    @staticmethod
+    def _run_finalize_memory_policy(plan: ExecutionPlan) -> PackageResolvedMemoryPolicy:
+        if plan.memory_policy.enabled:
+            return plan.memory_policy
+        for step in plan.steps:
+            if step.memory_policy.enabled:
+                return step.memory_policy
+        return PackageResolvedMemoryPolicy()
 
     def _run_workflow_package_start_lifecycle(self, run: Run, *, now: datetime) -> None:
         if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
@@ -2032,6 +2249,7 @@ class RunService:
                 plan_agent=plan_agent,
                 invocation=invocation,
                 step_id=step_id,
+                resolved_input=resolved_input,
             )
             return (
                 _PreparedAgentInvocation(
@@ -2249,6 +2467,7 @@ class RunService:
         plan_agent: ExecutionPlanAgent,
         invocation: RunAgentInvocation,
         step_id: str,
+        resolved_input: dict[str, Any],
     ) -> tuple[WorkflowMemoryContextPack | None, WorkflowMemoryInvocationMetadata | None]:
         package_ownership = runtime_context.package_ownership
         if package_ownership is None:
@@ -2261,6 +2480,7 @@ class RunService:
             agent_key=plan_agent.agent_key,
             step_id=step_id,
             invocation_id=str(invocation.id),
+            query_terms=self._workflow_memory_query_terms(resolved_input),
         )
         metadata_payload = self._workflow_memory_metadata_payload(preparation.metadata)
         if metadata_payload is not None:
@@ -2316,8 +2536,39 @@ class RunService:
                 "policySnapshot": deepcopy(metadata.policy_snapshot),
                 "contextItemIds": list(metadata.context_item_ids),
                 "checkpointIds": list(metadata.checkpoint_ids),
+                "safetyScan": deepcopy(metadata.safety_scan),
+                "ranking": deepcopy(metadata.ranking),
             }
         }
+
+    @staticmethod
+    def _workflow_memory_query_terms(value: object) -> tuple[str, ...]:
+        terms: set[str] = set()
+
+        def collect(current: object) -> None:
+            if isinstance(current, str):
+                terms.update(
+                    match.group(0).lower()
+                    for match in _WORKFLOW_MEMORY_QUERY_TERM_RE.finditer(current)
+                )
+                return
+            if isinstance(current, Mapping):
+                current_mapping = cast(Mapping[object, object], current)
+                for raw_key, raw_value in current_mapping.items():
+                    if isinstance(raw_key, str):
+                        terms.update(
+                            match.group(0).lower()
+                            for match in _WORKFLOW_MEMORY_QUERY_TERM_RE.finditer(raw_key)
+                        )
+                    collect(raw_value)
+                return
+            if isinstance(current, list | tuple):
+                current_items = cast(Iterable[object], current)
+                for item in current_items:
+                    collect(item)
+
+        collect(value)
+        return tuple(sorted(terms))[:32]
 
     @staticmethod
     def _merge_invocation_runtime_metadata(
@@ -2771,7 +3022,30 @@ class RunService:
             run.status = _RUN_STATUS_FAILED
             run.error = message
             run.finished_at = utcnow()
+            run_memory_service = RunService(
+                session,
+                self.session_factory,
+                provider_bundle=self.provider_bundle,
+            )
+            finalize_scope = run_memory_service._resolve_run_memory_finalize_scope(run)
+            run_memory_service._finalize_run_memory_checkpoint(
+                run,
+                state={"status": _RUN_STATUS_FAILED, "error": message},
+                metadata={
+                    "phase": "finalize_run",
+                    "terminalStatus": _RUN_STATUS_FAILED,
+                    "source": "fresh_failure_session",
+                },
+                scope=finalize_scope,
+            )
+            run_consolidation = run_memory_service._run_memory_consolidation_enabled(
+                finalize_scope
+            )
             session.commit()
+            self._run_workflow_memory_consolidation_after_terminal_commit(
+                run_id=run_id,
+                enabled=run_consolidation,
+            )
 
     @staticmethod
     def _start_trace_session(*, run: Run, plan: ExecutionPlan) -> Any:

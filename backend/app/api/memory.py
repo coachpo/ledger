@@ -26,6 +26,8 @@ class WorkflowMemoryReviewService(Protocol):
         status: WorkflowMemoryPolicyStatus | None,
         limit: int,
         offset: int,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkflowMemoryProposalListRead: ...
 
     def approve_review_pending_proposal(
@@ -33,6 +35,8 @@ class WorkflowMemoryReviewService(Protocol):
         *,
         proposal_id: str,
         reason: str | None,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkflowMemoryReviewActionRead: ...
 
     def reject_review_pending_proposal(
@@ -40,6 +44,8 @@ class WorkflowMemoryReviewService(Protocol):
         *,
         proposal_id: str,
         reason: str | None,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkflowMemoryReviewActionRead: ...
 
     def list_audit_events(
@@ -47,6 +53,8 @@ class WorkflowMemoryReviewService(Protocol):
         *,
         limit: int,
         offset: int,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkflowMemoryAuditEventListRead: ...
 
     def list_quarantine(
@@ -55,6 +63,8 @@ class WorkflowMemoryReviewService(Protocol):
         unresolved_only: bool,
         limit: int,
         offset: int,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkflowMemoryQuarantineListRead: ...
 
 

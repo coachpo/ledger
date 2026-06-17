@@ -10,6 +10,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.formatting import utcnow
 from app.models.base import Base, IdMixin
+from app.models.workflow_memory import (
+    DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+)
 
 
 class WorkflowCheckpoint(IdMixin, Base):
@@ -19,6 +23,8 @@ class WorkflowCheckpoint(IdMixin, Base):
         UniqueConstraint("checkpoint_id", name="uq_workflow_checkpoints_checkpoint_id"),
         Index(
             "ix_workflow_checkpoints_scope_run_sequence",
+            "owner_type",
+            "owner_id",
             "package_key",
             "workflow_key",
             "run_id",
@@ -28,10 +34,28 @@ class WorkflowCheckpoint(IdMixin, Base):
             "sequence",
             "id",
         ),
-        Index("ix_workflow_checkpoints_run_invocation", "run_id", "invocation_id"),
+        Index(
+            "ix_workflow_checkpoints_owner_run_invocation",
+            "owner_type",
+            "owner_id",
+            "run_id",
+            "invocation_id",
+        ),
     )
 
     checkpoint_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    owner_type: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default=DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        server_default=DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+    )
+    owner_id: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+        default=DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+        server_default=DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    )
     run_id: Mapped[int] = mapped_column(nullable=False)
     package_key: Mapped[str] = mapped_column(String(120), nullable=False)
     workflow_key: Mapped[str] = mapped_column(String(120), nullable=False)

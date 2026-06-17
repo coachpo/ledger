@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import logging
 import os
 import socket
 from collections.abc import Callable
@@ -19,6 +21,8 @@ from app.models.run_step import RunStep
 from app.repositories.run import RunRepository
 from app.services.execution_providers import ExecutionProviderBundle
 
+logger = logging.getLogger(__name__)
+
 _STALE_LEASE_FAILURE_MESSAGE = (
     "Run marked as failed because its scheduler lease expired before the worker completed it."
 )
@@ -30,6 +34,28 @@ _PENDING_LEASE_SKIP_MESSAGE = (
 
 class RunExecutor(Protocol):
     def execute_claimed_run(self, run_id: int, *, lease_owner: str | None = None) -> None: ...
+
+
+class StaleMemoryRunService(Protocol):
+    def _resolve_run_memory_finalize_scope(self, run: Run) -> object: ...
+
+    def _finalize_run_memory_checkpoint(
+        self,
+        run: Run,
+        *,
+        state: dict[str, object],
+        metadata: dict[str, object],
+        scope: object,
+    ) -> None: ...
+
+    def _run_memory_consolidation_enabled(self, scope: object) -> bool: ...
+
+    def _run_workflow_memory_consolidation_after_terminal_commit(
+        self,
+        *,
+        run_id: int,
+        enabled: bool,
+    ) -> None: ...
 
 
 def default_run_executor_factory(
@@ -151,6 +177,7 @@ class RunQueueService:
                 self.session.rollback()
                 return 0
             run_ids = [run.id for run in stale_runs]
+            consolidation_run_ids: list[int] = []
             for run in stale_runs:
                 run.status = "failed"
                 run.error = run.error or _STALE_LEASE_FAILURE_MESSAGE
@@ -158,8 +185,12 @@ class RunQueueService:
                 run.lease_owner = None
                 run.lease_expires_at = None
                 run.heartbeat_at = None
+                if self._best_effort_finalize_stale_run_memory(run, recovered_at=recovered_at):
+                    consolidation_run_ids.append(run.id)
             self._mark_running_children_terminal(run_ids, now=recovered_at)
             self.session.commit()
+            for run_id in consolidation_run_ids:
+                self._best_effort_consolidate_stale_run_memory(run_id)
             return len(stale_runs)
         except Exception:
             self.session.rollback()
@@ -225,6 +256,64 @@ class RunQueueService:
                     finished_at=now,
                 )
             )
+
+    def _best_effort_finalize_stale_run_memory(
+        self,
+        run: Run,
+        *,
+        recovered_at: datetime,
+    ) -> bool:
+        try:
+            run_service_class = importlib.import_module("app.services.run_service").__dict__[
+                "RunService"
+            ]
+            run_service = cast(
+                StaleMemoryRunService,
+                run_service_class(
+                    self.session,
+                    self.session_factory,
+                    provider_bundle=self.provider_bundle,
+                ),
+            )
+            finalize_scope = run_service._resolve_run_memory_finalize_scope(run)
+            run_service._finalize_run_memory_checkpoint(
+                run,
+                state={
+                    "status": "failed",
+                    "error": run.error or _STALE_LEASE_FAILURE_MESSAGE,
+                    "recoveredAt": recovered_at.isoformat(),
+                },
+                metadata={
+                    "phase": "finalize_run",
+                    "terminalStatus": "failed",
+                    "source": "stale_lease_recovery",
+                },
+                scope=finalize_scope,
+            )
+            return bool(run_service._run_memory_consolidation_enabled(finalize_scope))
+        except Exception:
+            logger.exception("Workflow memory stale run finalization failed for run %d", run.id)
+            return False
+
+    def _best_effort_consolidate_stale_run_memory(self, run_id: int) -> None:
+        try:
+            run_service_class = importlib.import_module("app.services.run_service").__dict__[
+                "RunService"
+            ]
+            run_service = cast(
+                StaleMemoryRunService,
+                run_service_class(
+                    self.session,
+                    self.session_factory,
+                    provider_bundle=self.provider_bundle,
+                ),
+            )
+            run_service._run_workflow_memory_consolidation_after_terminal_commit(
+                run_id=run_id,
+                enabled=True,
+            )
+        except Exception:
+            logger.exception("Workflow memory stale run consolidation failed for run %d", run_id)
 
     def _build_executor(self, session: Session) -> RunExecutor:
         return self.executor_factory(session, self.session_factory, self.provider_bundle)

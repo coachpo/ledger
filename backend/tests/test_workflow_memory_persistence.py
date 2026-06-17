@@ -37,6 +37,7 @@ def test_workflow_memory_tables_match_plan_columns_and_states() -> None:
     item_table = Base.metadata.tables["workflow_memory_items"]
     proposal_table = Base.metadata.tables["workflow_memory_proposals"]
     decision_table = Base.metadata.tables["workflow_memory_decisions"]
+    consolidation_table = Base.metadata.tables["workflow_memory_consolidation_runs"]
 
     assert {
         "id",
@@ -46,6 +47,7 @@ def test_workflow_memory_tables_match_plan_columns_and_states() -> None:
         "step_id",
         "namespace",
         "kind",
+        "content_fingerprint",
         "content_json",
         "summary",
         "provenance_json",
@@ -65,7 +67,10 @@ def test_workflow_memory_tables_match_plan_columns_and_states() -> None:
         "workflow_key",
         "agent_key",
         "step_id",
+        "namespace",
         "kind",
+        "content_fingerprint",
+        "idempotency_key",
         "content_json",
         "reason",
         "source_output_path",
@@ -81,6 +86,20 @@ def test_workflow_memory_tables_match_plan_columns_and_states() -> None:
         "decided_by",
         "created_at",
     } <= set(decision_table.c.keys())
+    assert {
+        "consolidation_id",
+        "owner_type",
+        "owner_id",
+        "package_key",
+        "workflow_key",
+        "namespace",
+        "status",
+        "started_at",
+        "finished_at",
+        "source_memory_ids_json",
+        "output_memory_ids_json",
+        "stats_json",
+    } <= set(consolidation_table.c.keys())
     constraints = "\n".join(
         str(constraint.sqltext)
         for table in (item_table, proposal_table, decision_table)
@@ -314,6 +333,8 @@ def test_plan_lifecycle_persistence_records_are_separate_from_retrieval(
         session.commit()
 
         assert proposal.status == "review_pending"
+        assert len(proposal.content_fingerprint) == 64
+        assert len(proposal.idempotency_key) == 64
         assert proposal.content_json == {"recommendation": "increase_allocation"}
         assert proposal.source_output_path == "steps.summarize.output.recommendation"
         assert decision.decision == "review"
@@ -321,6 +342,7 @@ def test_plan_lifecycle_persistence_records_are_separate_from_retrieval(
         assert decision.policy_snapshot_json == {"defaultDecision": "review"}
         assert decision.decided_by == "policy"
         assert item.policy_status == "committed"
+        assert item.content_fingerprint == proposal.content_fingerprint
         assert revision.content_json == {"recommendation": "increase_after_review"}
         assert revision.provenance_json == {"change": "supersession"}
         assert audit_event.event_json == {"decisionId": "decision-1"}

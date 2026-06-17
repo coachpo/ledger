@@ -1,7 +1,9 @@
+# pyright: reportImplicitStringConcatenation=false, reportUnnecessaryCast=false
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from importlib import import_module
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -15,6 +17,9 @@ _manifest_parser_module = import_module("tests.test_workflow_package_manifest_pa
 _valid_package_manifest_source = cast(
     Callable[[], str],
     _manifest_parser_module.__dict__["_valid_package_manifest_source"],
+)
+_MEMORY_DEMO_FIXTURE = (
+    Path(__file__).resolve().parents[2] / "demo" / "signaldeck_advisory_research_memory.yaml"
 )
 
 
@@ -543,3 +548,66 @@ def test_compile_manifest_resolves_memory_precedence_into_step_policy() -> None:
     assert runtime_policy.writes is not None
     assert runtime_policy.writes.default_decision == "commit"
     assert runtime_policy.checkpoints is None
+
+
+def test_demo_memory_manifest_preserves_yaml_and_runtime_memory_contract() -> None:
+    source = _MEMORY_DEMO_FIXTURE.read_text()
+
+    manifest = _parse_manifest(source)
+    compiled = compile_workflow_package_manifest(manifest)
+    compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
+    workflow = cast(list[dict[str, object]], compiled_plan["workflows"])[0]
+    step = cast(list[dict[str, object]], workflow["steps"])[0]
+    agent = cast(list[dict[str, object]], step["agents"])[0]
+    policy = cast(dict[str, object], agent["memoryPolicy"])
+
+    assert policy["retrieval"] == {
+        "enabled": True,
+        "namespaces": ["advisory_research"],
+        "maxItems": 4,
+        "relevanceThreshold": 0.7,
+        "includeKinds": ["fact", "observation", "preference"],
+    }
+    assert policy["policy"] == {
+        "secrets": "quarantine",
+        "sensitiveData": "review",
+        "expirationDays": 180,
+        "unauthorized": "reject",
+        "consolidation": "run_end",
+    }
+
+    execution_plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
+        compiled_plan,
+        "advisory_research",
+    )
+    runtime_policy = execution_plan.steps[0].agents[0].memory_policy
+    assert runtime_policy.retrieval is not None
+    assert runtime_policy.retrieval.relevance_threshold == 0.7
+    assert runtime_policy.policy is not None
+    assert runtime_policy.policy.consolidation == "run_end"
+
+
+@pytest.mark.parametrize(
+    ("memory", "expected_path"),
+    [
+        ("owner: local_user", "spec.memory.owner"),
+        ("ownerType: local_user", "spec.memory.ownerType"),
+        ("ownerId: default", "spec.memory.ownerId"),
+        ("retrieval:\n      ownerId: default", "spec.memory.retrieval.ownerId"),
+        ("policy:\n      ownership: platform", "spec.memory.policy.ownership"),
+    ],
+)
+def test_parse_manifest_rejects_memory_ownership_config(
+    memory: str,
+    expected_path: str,
+) -> None:
+    source = _valid_package_manifest_source().replace(
+        "  capabilityProfiles:\n",
+        f"  memory:\n    {memory}\n  capabilityProfiles:\n",
+        1,
+    )
+
+    diagnostic = _single_diagnostic(source)
+
+    assert diagnostic.path == expected_path
+    assert diagnostic.message == "Extra inputs are not permitted"

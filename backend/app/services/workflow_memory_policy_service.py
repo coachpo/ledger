@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import business_rule_error, not_found_error
@@ -47,6 +48,12 @@ class WorkflowMemoryPolicyService:
         proposal: WorkflowMemoryProposal,
         policy: PackageResolvedMemoryPolicy,
     ) -> WorkflowMemoryDecision:
+        existing_decision = self.repository.latest_decision_for_proposal(proposal)
+        if proposal.status != "proposed" and existing_decision is not None:
+            if proposal.status != "committed":
+                return existing_decision
+            if self.repository.get_memory_item_for_proposal(proposal) is not None:
+                return existing_decision
         detectors_json = merge_detector_hits(
             proposal.detectors_json,
             detect_workflow_memory_policy_hits(proposal.content_json),
@@ -73,11 +80,17 @@ class WorkflowMemoryPolicyService:
                 detectors_json=detectors_json,
             )
         if decision == "commit":
-            self._activate_committed_memory(proposal=proposal, decision=decision_row, policy=policy)
+            _ = self._activate_committed_memory(
+                proposal=proposal,
+                decision=decision_row,
+                policy=policy,
+            )
         _ = self.repository.record_audit_event(
             event_type=f"memory_policy_{decision}",
             target_type="proposal",
             target_id=proposal.proposal_id,
+            owner_type=proposal.owner_type,
+            owner_id=proposal.owner_id,
             package_key=proposal.package_key,
             workflow_key=proposal.workflow_key,
             agent_key=proposal.agent_key,
@@ -95,11 +108,15 @@ class WorkflowMemoryPolicyService:
         status: WorkflowMemoryPolicyStatus | None,
         limit: int,
         offset: int,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkflowMemoryProposalListRead:
         proposals, total = self.repository.list_proposals(
             status=status.value if status is not None else None,
             limit=limit,
             offset=offset,
+            owner_type=owner_type or self.repository.default_owner_type(),
+            owner_id=owner_id or self.repository.default_owner_id(),
         )
         return WorkflowMemoryProposalListRead(
             items=[self._proposal_read(proposal) for proposal in proposals],
@@ -109,8 +126,20 @@ class WorkflowMemoryPolicyService:
             status=status or "all",
         )
 
-    def list_audit_events(self, *, limit: int, offset: int) -> WorkflowMemoryAuditEventListRead:
-        events, total = self.repository.list_audit_events(limit=limit, offset=offset)
+    def list_audit_events(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
+    ) -> WorkflowMemoryAuditEventListRead:
+        events, total = self.repository.list_audit_events(
+            limit=limit,
+            offset=offset,
+            owner_type=owner_type or self.repository.default_owner_type(),
+            owner_id=owner_id or self.repository.default_owner_id(),
+        )
         return WorkflowMemoryAuditEventListRead(
             items=[self._audit_event_read(event) for event in events],
             total=total,
@@ -124,11 +153,15 @@ class WorkflowMemoryPolicyService:
         unresolved_only: bool,
         limit: int,
         offset: int,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkflowMemoryQuarantineListRead:
         quarantines, total = self.repository.list_quarantine(
             unresolved_only=unresolved_only,
             limit=limit,
             offset=offset,
+            owner_type=owner_type or self.repository.default_owner_type(),
+            owner_id=owner_id or self.repository.default_owner_id(),
         )
         return WorkflowMemoryQuarantineListRead(
             items=[self._quarantine_read(quarantine) for quarantine in quarantines],
@@ -143,16 +176,32 @@ class WorkflowMemoryPolicyService:
         *,
         proposal_id: str,
         reason: str | None,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkflowMemoryReviewActionRead:
-        return self._review_proposal(proposal_id=proposal_id, approve=True, reason=reason)
+        return self._review_proposal(
+            proposal_id=proposal_id,
+            approve=True,
+            reason=reason,
+            owner_type=owner_type,
+            owner_id=owner_id,
+        )
 
     def reject_review_pending_proposal(
         self,
         *,
         proposal_id: str,
         reason: str | None,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkflowMemoryReviewActionRead:
-        return self._review_proposal(proposal_id=proposal_id, approve=False, reason=reason)
+        return self._review_proposal(
+            proposal_id=proposal_id,
+            approve=False,
+            reason=reason,
+            owner_type=owner_type,
+            owner_id=owner_id,
+        )
 
     def _review_proposal(
         self,
@@ -160,8 +209,14 @@ class WorkflowMemoryPolicyService:
         proposal_id: str,
         approve: bool,
         reason: str | None,
+        owner_type: str | None,
+        owner_id: str | None,
     ) -> WorkflowMemoryReviewActionRead:
-        proposal = self.repository.get_proposal_by_public_id(proposal_id)
+        proposal = self.repository.get_proposal_by_public_id(
+            proposal_id,
+            owner_type=owner_type or self.repository.default_owner_type(),
+            owner_id=owner_id or self.repository.default_owner_id(),
+        )
         if proposal is None:
             raise not_found_error("Workflow memory proposal")
         if proposal.status != "review_pending":
@@ -196,6 +251,8 @@ class WorkflowMemoryPolicyService:
             event_type=f"memory_review_{decision_value}",
             target_type="proposal",
             target_id=proposal.proposal_id,
+            owner_type=proposal.owner_type,
+            owner_id=proposal.owner_id,
             package_key=proposal.package_key,
             workflow_key=proposal.workflow_key,
             agent_key=proposal.agent_key,
@@ -278,42 +335,24 @@ class WorkflowMemoryPolicyService:
         proposal: WorkflowMemoryProposal,
         decision: WorkflowMemoryDecision,
         policy: PackageResolvedMemoryPolicy,
-    ) -> None:
+    ) -> WorkflowMemoryItem:
+        existing = self.repository.get_memory_item_for_proposal(proposal)
+        if existing is not None:
+            return existing
         now = utcnow()
         expires_at = None
         if policy.policy is not None and policy.policy.expiration_days is not None:
             expires_at = now + timedelta(days=policy.policy.expiration_days)
-        item = self.repository.create_memory_item(
-            memory_id=f"workflow_memory_{uuid4().hex}",
-            package_key=proposal.package_key,
-            workflow_key=proposal.workflow_key,
-            agent_key=proposal.agent_key,
-            step_id=proposal.step_id,
-            namespace=proposal.namespace,
-            kind=proposal.kind,
-            content_json=proposal.content_json,
-            summary=self._summary(proposal.content_json),
+        return self._create_memory_item_for_proposal(
+            proposal=proposal,
+            decision=decision,
+            expires_at=expires_at,
+            valid_from=now,
             provenance_json={
                 "proposalId": proposal.proposal_id,
                 "runId": proposal.run_id,
                 "invocationId": proposal.invocation_id,
             },
-            policy_status="committed",
-            lifecycle_status="active",
-            valid_from=now,
-            expires_at=expires_at,
-            proposal_id=proposal.id,
-            decision_id=decision.id,
-            run_id=proposal.run_id,
-            invocation_id=proposal.invocation_id,
-        )
-        _ = self.repository.record_revision(
-            memory_item=item,
-            revision_id=f"{item.memory_id}:rev-1",
-            version=1,
-            content_json=proposal.content_json,
-            summary=item.summary,
-            provenance_json=item.provenance_json,
         )
 
     def _activate_review_committed_memory(
@@ -323,6 +362,9 @@ class WorkflowMemoryPolicyService:
         decision: WorkflowMemoryDecision,
         policy_snapshot: dict[str, Any],
     ) -> WorkflowMemoryItem:
+        existing = self.repository.get_memory_item_for_proposal(proposal)
+        if existing is not None:
+            return existing
         now = utcnow()
         expires_at = None
         detector_policy = policy_snapshot.get("policy")
@@ -330,40 +372,68 @@ class WorkflowMemoryPolicyService:
             expiration_days = detector_policy.get("expiration_days")
             if isinstance(expiration_days, int):
                 expires_at = now + timedelta(days=expiration_days)
-        item = self.repository.create_memory_item(
-            memory_id=f"workflow_memory_{uuid4().hex}",
-            package_key=proposal.package_key,
-            workflow_key=proposal.workflow_key,
-            agent_key=proposal.agent_key,
-            step_id=proposal.step_id,
-            namespace=proposal.namespace,
-            kind=proposal.kind,
-            content_json=proposal.content_json,
-            summary=self._summary(proposal.content_json),
+        return self._create_memory_item_for_proposal(
+            proposal=proposal,
+            decision=decision,
+            expires_at=expires_at,
+            valid_from=now,
             provenance_json={
                 "proposalId": proposal.proposal_id,
                 "runId": proposal.run_id,
                 "invocationId": proposal.invocation_id,
                 "reviewDecisionId": decision.decision_id,
             },
-            policy_status="committed",
-            lifecycle_status="active",
-            valid_from=now,
-            expires_at=expires_at,
-            proposal_id=proposal.id,
-            decision_id=decision.id,
-            run_id=proposal.run_id,
-            invocation_id=proposal.invocation_id,
         )
-        _ = self.repository.record_revision(
-            memory_item=item,
-            revision_id=f"{item.memory_id}:rev-1",
-            version=1,
-            content_json=proposal.content_json,
-            summary=item.summary,
-            provenance_json=item.provenance_json,
-        )
-        return item
+
+    def _create_memory_item_for_proposal(
+        self,
+        *,
+        proposal: WorkflowMemoryProposal,
+        decision: WorkflowMemoryDecision,
+        expires_at: datetime | None,
+        valid_from: datetime,
+        provenance_json: dict[str, Any],
+    ) -> WorkflowMemoryItem:
+        try:
+            with self.session.begin_nested():
+                item = self.repository.create_memory_item(
+                    memory_id=f"workflow_memory_{uuid4().hex}",
+                    owner_type=proposal.owner_type,
+                    owner_id=proposal.owner_id,
+                    package_key=proposal.package_key,
+                    workflow_key=proposal.workflow_key,
+                    agent_key=proposal.agent_key,
+                    step_id=proposal.step_id,
+                    namespace=proposal.namespace,
+                    kind=proposal.kind,
+                    content_fingerprint=proposal.content_fingerprint,
+                    content_json=proposal.content_json,
+                    summary=self._summary(proposal.content_json),
+                    provenance_json=provenance_json,
+                    policy_status="committed",
+                    lifecycle_status="active",
+                    valid_from=valid_from,
+                    expires_at=expires_at,
+                    proposal_id=proposal.id,
+                    decision_id=decision.id,
+                    run_id=proposal.run_id,
+                    invocation_id=proposal.invocation_id,
+                )
+                _ = self.repository.record_revision(
+                    memory_item=item,
+                    revision_id=f"{item.memory_id}:rev-1",
+                    version=1,
+                    content_json=proposal.content_json,
+                    summary=item.summary,
+                    provenance_json=item.provenance_json,
+                )
+                self.session.flush()
+                return item
+        except IntegrityError:
+            existing = self.repository.get_memory_item_for_proposal(proposal)
+            if existing is None:
+                raise
+            return existing
 
     def _proposal_read(self, proposal: WorkflowMemoryProposal) -> WorkflowMemoryProposalRead:
         return WorkflowMemoryProposalRead(
@@ -422,8 +492,16 @@ class WorkflowMemoryPolicyService:
         self,
         quarantine: WorkflowMemoryQuarantine,
     ) -> WorkflowMemoryQuarantineRead:
-        proposal = self.repository.get_proposal_by_id(quarantine.proposal_id)
-        memory_item = self.repository.get_memory_item_by_id(quarantine.memory_item_id)
+        proposal = self.repository.get_proposal_by_id(
+            quarantine.proposal_id,
+            owner_type=quarantine.owner_type,
+            owner_id=quarantine.owner_id,
+        )
+        memory_item = self.repository.get_memory_item_by_id(
+            quarantine.memory_item_id,
+            owner_type=quarantine.owner_type,
+            owner_id=quarantine.owner_id,
+        )
         evidence: dict[str, Any] = {}
         if proposal is not None:
             evidence = proposal.content_json

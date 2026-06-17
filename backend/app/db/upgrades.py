@@ -1,6 +1,7 @@
 # ruff: noqa: E501
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Mapping
@@ -154,10 +155,165 @@ _DIGITAL_ORACLE_PRESET_PACKAGE_COMPILED_HASH = (
 )
 _DB_UPGRADE_MARKER_TABLE = "db_upgrade_markers"
 _WORKFLOW_PACKAGE_STARTUP_CUTOVER_MARKER_KEY = "workflow_package_artifact_cutover_v1"
+_WORKFLOW_MEMORY_DEFAULT_OWNER_TYPE = "local_user"
+_WORKFLOW_MEMORY_DEFAULT_OWNER_ID = "default"
+_WORKFLOW_MEMORY_PROPOSAL_GLOBAL_IDEMPOTENCY_CONSTRAINT = (
+    "uq_workflow_memory_proposals_idempotency_key"
+)
+_WORKFLOW_MEMORY_PROPOSAL_OWNER_IDEMPOTENCY_CONSTRAINT = (
+    "uq_workflow_memory_proposals_owner_idempotency_key"
+)
+_WORKFLOW_MEMORY_OWNER_ROOT_TABLES = (
+    "workflow_memory_items",
+    "workflow_memory_proposals",
+    "workflow_memory_audit_events",
+    "workflow_memory_quarantine",
+    "workflow_memory_consolidation_runs",
+    "workflow_checkpoints",
+)
+_WORKFLOW_MEMORY_OWNER_INDEXES = (
+    (
+        "ix_workflow_memory_items_retrieval_scope",
+        "workflow_memory_items",
+        "owner_type, owner_id, package_key, workflow_key, agent_key, step_id, namespace, "
+        "policy_status, lifecycle_status, expires_at, deleted_at",
+    ),
+    (
+        "ix_workflow_memory_items_owner_retrieval_scope",
+        "workflow_memory_items",
+        "owner_type, owner_id, package_key, workflow_key, agent_key, step_id, namespace, "
+        "policy_status, lifecycle_status, expires_at, deleted_at",
+    ),
+    (
+        "ix_workflow_memory_items_owner_run_invocation",
+        "workflow_memory_items",
+        "owner_type, owner_id, run_id, invocation_id",
+    ),
+    (
+        "ix_workflow_memory_proposals_owner_scope",
+        "workflow_memory_proposals",
+        "owner_type, owner_id, package_key, workflow_key, agent_key, step_id",
+    ),
+    (
+        "ix_workflow_memory_proposals_scope",
+        "workflow_memory_proposals",
+        "owner_type, owner_id, package_key, workflow_key, agent_key, step_id",
+    ),
+    (
+        "ix_workflow_memory_proposals_owner_run_invocation",
+        "workflow_memory_proposals",
+        "owner_type, owner_id, run_id, invocation_id",
+    ),
+    (
+        "ix_workflow_memory_audit_events_owner_scope",
+        "workflow_memory_audit_events",
+        "owner_type, owner_id, package_key, workflow_key",
+    ),
+    (
+        "ix_workflow_memory_audit_events_scope",
+        "workflow_memory_audit_events",
+        "owner_type, owner_id, package_key, workflow_key",
+    ),
+    (
+        "ix_workflow_memory_audit_events_owner_run_invocation",
+        "workflow_memory_audit_events",
+        "owner_type, owner_id, run_id, invocation_id",
+    ),
+    (
+        "ix_workflow_memory_quarantine_owner_run_invocation",
+        "workflow_memory_quarantine",
+        "owner_type, owner_id, run_id, invocation_id",
+    ),
+    (
+        "ix_workflow_memory_consolidation_runs_owner_scope",
+        "workflow_memory_consolidation_runs",
+        "owner_type, owner_id, package_key, workflow_key",
+    ),
+    (
+        "ix_workflow_memory_consolidation_runs_scope",
+        "workflow_memory_consolidation_runs",
+        "owner_type, owner_id, package_key, workflow_key",
+    ),
+    (
+        "ix_workflow_checkpoints_scope_run_sequence",
+        "workflow_checkpoints",
+        "owner_type, owner_id, package_key, workflow_key, run_id, agent_key, step_id, "
+        "checkpoint_type, sequence, id",
+    ),
+    (
+        "ix_workflow_checkpoints_owner_scope_run_sequence",
+        "workflow_checkpoints",
+        "owner_type, owner_id, package_key, workflow_key, run_id, agent_key, step_id, "
+        "checkpoint_type, sequence, id",
+    ),
+    (
+        "ix_workflow_checkpoints_owner_run_invocation",
+        "workflow_checkpoints",
+        "owner_type, owner_id, run_id, invocation_id",
+    ),
+)
 
 
 def _sql_string_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def _canonicalize_workflow_memory_value(value: object) -> object:
+    if isinstance(value, str):
+        return value.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if isinstance(value, list):
+        return [_canonicalize_workflow_memory_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: canonicalized
+            for key, raw_value in sorted(value.items())
+            if (canonicalized := _canonicalize_workflow_memory_value(raw_value)) is not None
+        }
+    return value
+
+
+def _workflow_memory_content_fingerprint(
+    *,
+    kind: object,
+    namespace: object,
+    content: object,
+) -> str:
+    payload = {
+        "kind": str(kind or "").strip().lower(),
+        "namespace": str(namespace or "").strip().lower(),
+        "content": _canonicalize_workflow_memory_value(content if isinstance(content, dict) else {}),
+    }
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _workflow_memory_proposal_idempotency_key(
+    *,
+    package_key: object,
+    workflow_key: object,
+    agent_key: object,
+    step_id: object,
+    run_id: object,
+    invocation_id: object,
+    source_output_path: object,
+    namespace: object,
+    kind: object,
+    content_fingerprint: str,
+) -> str:
+    payload = [
+        _canonicalize_workflow_memory_value(package_key),
+        _canonicalize_workflow_memory_value(workflow_key),
+        _canonicalize_workflow_memory_value(agent_key),
+        _canonicalize_workflow_memory_value(step_id),
+        run_id,
+        _canonicalize_workflow_memory_value(invocation_id),
+        _canonicalize_workflow_memory_value(source_output_path),
+        str(namespace or "").strip().lower(),
+        str(kind or "").strip().lower(),
+        content_fingerprint,
+    ]
+    serialized = json.dumps(payload, separators=(",", ":"), default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 _MODEL_CONNECTION_DEFAULT_CAPABILITIES_SQL = (
@@ -2604,6 +2760,255 @@ def _ensure_agent_platform_tables(engine: Engine, table_names: set[str]) -> None
             table_names.add(table_name)
 
 
+def _ensure_workflow_memory_idempotency_support(engine: Engine, table_names: set[str]) -> None:
+    if not {"workflow_memory_items", "workflow_memory_proposals"} <= table_names:
+        return
+
+    inspector = inspect(engine)
+    item_columns = {column["name"] for column in inspector.get_columns("workflow_memory_items")}
+    proposal_columns = {
+        column["name"] for column in inspector.get_columns("workflow_memory_proposals")
+    }
+    item_unique_constraints = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("workflow_memory_items")
+        if constraint.get("name")
+    }
+    proposal_unique_constraints = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("workflow_memory_proposals")
+        if constraint.get("name")
+    }
+
+    with engine.begin() as connection:
+        if "content_fingerprint" not in item_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_items ADD COLUMN content_fingerprint VARCHAR(64)"
+            )
+            item_columns.add("content_fingerprint")
+        if "content_fingerprint" not in proposal_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals ADD COLUMN content_fingerprint VARCHAR(64)"
+            )
+            proposal_columns.add("content_fingerprint")
+        if "idempotency_key" not in proposal_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals ADD COLUMN idempotency_key VARCHAR(64)"
+            )
+            proposal_columns.add("idempotency_key")
+
+        item_rows = connection.execute(
+            text(
+                """
+                SELECT id, kind, namespace, content_json
+                FROM workflow_memory_items
+                WHERE content_fingerprint IS NULL OR btrim(content_fingerprint) = ''
+                ORDER BY id
+                """
+            )
+        ).mappings()
+        for row in item_rows:
+            connection.execute(
+                text(
+                    """
+                    UPDATE workflow_memory_items
+                    SET content_fingerprint = :content_fingerprint,
+                        updated_at = NOW()
+                    WHERE id = :row_id
+                    """
+                ),
+                {
+                    "content_fingerprint": _workflow_memory_content_fingerprint(
+                        kind=row["kind"],
+                        namespace=row["namespace"],
+                        content=row["content_json"],
+                    ),
+                    "row_id": row["id"],
+                },
+            )
+
+        proposal_rows = connection.execute(
+            text(
+                """
+                SELECT id, package_key, workflow_key, agent_key, step_id, run_id,
+                       invocation_id, source_output_path, namespace, kind, content_json
+                FROM workflow_memory_proposals
+                WHERE content_fingerprint IS NULL
+                   OR btrim(content_fingerprint) = ''
+                   OR idempotency_key IS NULL
+                   OR btrim(idempotency_key) = ''
+                ORDER BY id
+                """
+            )
+        ).mappings()
+        for row in proposal_rows:
+            content_fingerprint = _workflow_memory_content_fingerprint(
+                kind=row["kind"],
+                namespace=row["namespace"],
+                content=row["content_json"],
+            )
+            connection.execute(
+                text(
+                    """
+                    UPDATE workflow_memory_proposals
+                    SET content_fingerprint = :content_fingerprint,
+                        idempotency_key = :idempotency_key,
+                        updated_at = NOW()
+                    WHERE id = :row_id
+                    """
+                ),
+                {
+                    "content_fingerprint": content_fingerprint,
+                    "idempotency_key": _workflow_memory_proposal_idempotency_key(
+                        package_key=row["package_key"],
+                        workflow_key=row["workflow_key"],
+                        agent_key=row["agent_key"],
+                        step_id=row["step_id"],
+                        run_id=row["run_id"],
+                        invocation_id=row["invocation_id"],
+                        source_output_path=row["source_output_path"],
+                        namespace=row["namespace"],
+                        kind=row["kind"],
+                        content_fingerprint=content_fingerprint,
+                    ),
+                    "row_id": row["id"],
+                },
+            )
+
+        duplicate_item_links = connection.execute(
+            text(
+                """
+                SELECT proposal_id, array_agg(id ORDER BY created_at ASC, id ASC) AS item_ids
+                FROM workflow_memory_items
+                WHERE proposal_id IS NOT NULL
+                GROUP BY proposal_id
+                HAVING COUNT(*) > 1
+                """
+            )
+        ).mappings()
+        for row in duplicate_item_links:
+            item_ids = list(cast(list[int], row["item_ids"]))
+            duplicate_ids = item_ids[1:]
+            if duplicate_ids:
+                connection.execute(
+                    text(
+                        """
+                        UPDATE workflow_memory_items
+                        SET proposal_id = NULL,
+                            updated_at = NOW()
+                        WHERE id IN :item_ids
+                        """
+                    ).bindparams(bindparam("item_ids", expanding=True)),
+                    {"item_ids": duplicate_ids},
+                )
+
+        connection.exec_driver_sql(
+            "ALTER TABLE workflow_memory_items ALTER COLUMN content_fingerprint SET NOT NULL"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE workflow_memory_proposals ALTER COLUMN content_fingerprint SET NOT NULL"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE workflow_memory_proposals ALTER COLUMN idempotency_key SET NOT NULL"
+        )
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_workflow_memory_items_content_fingerprint "
+            "ON workflow_memory_items (content_fingerprint)"
+        )
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_workflow_memory_proposals_content_fingerprint "
+            "ON workflow_memory_proposals (content_fingerprint)"
+        )
+
+        if _WORKFLOW_MEMORY_PROPOSAL_GLOBAL_IDEMPOTENCY_CONSTRAINT in proposal_unique_constraints:
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals "
+                f"DROP CONSTRAINT {_WORKFLOW_MEMORY_PROPOSAL_GLOBAL_IDEMPOTENCY_CONSTRAINT}"
+            )
+            proposal_unique_constraints.discard(
+                _WORKFLOW_MEMORY_PROPOSAL_GLOBAL_IDEMPOTENCY_CONSTRAINT
+            )
+
+        duplicate_proposal_keys = connection.execute(
+            text(
+                """
+                SELECT owner_type, owner_id, idempotency_key
+                FROM workflow_memory_proposals
+                GROUP BY owner_type, owner_id, idempotency_key
+                HAVING COUNT(*) > 1
+                LIMIT 1
+                """
+            )
+        ).first()
+        if (
+            duplicate_proposal_keys is None
+            and _WORKFLOW_MEMORY_PROPOSAL_OWNER_IDEMPOTENCY_CONSTRAINT
+            not in proposal_unique_constraints
+        ):
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals "
+                f"ADD CONSTRAINT {_WORKFLOW_MEMORY_PROPOSAL_OWNER_IDEMPOTENCY_CONSTRAINT} "
+                "UNIQUE (owner_type, owner_id, idempotency_key)"
+            )
+        if "uq_workflow_memory_items_proposal_id" not in item_unique_constraints:
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_items "
+                "ADD CONSTRAINT uq_workflow_memory_items_proposal_id UNIQUE (proposal_id)"
+            )
+
+
+def _ensure_workflow_memory_owner_support(engine: Engine, table_names: set[str]) -> None:
+    existing_root_tables = [
+        table_name for table_name in _WORKFLOW_MEMORY_OWNER_ROOT_TABLES if table_name in table_names
+    ]
+    if not existing_root_tables:
+        return
+
+    inspector = inspect(engine)
+    columns_by_table = {
+        table_name: {column["name"] for column in inspector.get_columns(table_name)}
+        for table_name in existing_root_tables
+    }
+    with engine.begin() as connection:
+        for table_name, columns in columns_by_table.items():
+            if "owner_type" not in columns:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {table_name} ADD COLUMN owner_type VARCHAR(40) "
+                    f"DEFAULT '{_WORKFLOW_MEMORY_DEFAULT_OWNER_TYPE}'"
+                )
+                columns.add("owner_type")
+            if "owner_id" not in columns:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {table_name} ADD COLUMN owner_id VARCHAR(120) "
+                    f"DEFAULT '{_WORKFLOW_MEMORY_DEFAULT_OWNER_ID}'"
+                )
+                columns.add("owner_id")
+            connection.exec_driver_sql(
+                f"UPDATE {table_name} SET owner_type = '{_WORKFLOW_MEMORY_DEFAULT_OWNER_TYPE}' "
+                "WHERE owner_type IS NULL OR btrim(owner_type) = ''"
+            )
+            connection.exec_driver_sql(
+                f"UPDATE {table_name} SET owner_id = '{_WORKFLOW_MEMORY_DEFAULT_OWNER_ID}' "
+                "WHERE owner_id IS NULL OR btrim(owner_id) = ''"
+            )
+            connection.exec_driver_sql(
+                f"ALTER TABLE {table_name} ALTER COLUMN owner_type "
+                f"SET DEFAULT '{_WORKFLOW_MEMORY_DEFAULT_OWNER_TYPE}'"
+            )
+            connection.exec_driver_sql(
+                f"ALTER TABLE {table_name} ALTER COLUMN owner_id "
+                f"SET DEFAULT '{_WORKFLOW_MEMORY_DEFAULT_OWNER_ID}'"
+            )
+            connection.exec_driver_sql(f"ALTER TABLE {table_name} ALTER COLUMN owner_type SET NOT NULL")
+            connection.exec_driver_sql(f"ALTER TABLE {table_name} ALTER COLUMN owner_id SET NOT NULL")
+
+        for index_name, table_name, columns_sql in _WORKFLOW_MEMORY_OWNER_INDEXES:
+            if table_name in table_names:
+                connection.exec_driver_sql(
+                    f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({columns_sql})"
+                )
+
+
 def _table_has_rows(connection: Connection, table_name: str) -> bool:
     return bool(connection.exec_driver_sql(f'SELECT 1 FROM "{table_name}" LIMIT 1').first())
 
@@ -3641,6 +4046,8 @@ def upgrade_legacy_schema(engine: Engine) -> None:
         _ensure_agent_platform_tables(engine, table_names)
         _ensure_run_workflow_package_provenance_support(engine, table_names)
         _remove_run_cost_columns(engine, table_names)
+    _ensure_workflow_memory_owner_support(engine, table_names)
+    _ensure_workflow_memory_idempotency_support(engine, table_names)
     _ensure_workflow_package_schedule_tables(engine, table_names)
     _ensure_runtime_input_registry_table(engine, table_names)
     _ensure_browser_proven_package_preset(engine, table_names)

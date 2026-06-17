@@ -11,6 +11,27 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.formatting import utcnow
 from app.models.base import Base, IdMixin
 
+DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE = "local_user"
+DEFAULT_WORKFLOW_MEMORY_OWNER_ID = "default"
+
+
+def _owner_type_column() -> Mapped[str]:
+    return mapped_column(
+        String(40),
+        nullable=False,
+        default=DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        server_default=DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+    )
+
+
+def _owner_id_column() -> Mapped[str]:
+    return mapped_column(
+        String(120),
+        nullable=False,
+        default=DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+        server_default=DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    )
+
 
 class WorkflowMemoryItem(IdMixin, Base):
     __tablename__ = "workflow_memory_items"
@@ -25,8 +46,11 @@ class WorkflowMemoryItem(IdMixin, Base):
             name="ck_workflow_memory_items_lifecycle_status",
         ),
         UniqueConstraint("memory_id", name="uq_workflow_memory_items_memory_id"),
+        UniqueConstraint("proposal_id", name="uq_workflow_memory_items_proposal_id"),
         Index(
             "ix_workflow_memory_items_retrieval_scope",
+            "owner_type",
+            "owner_id",
             "package_key",
             "workflow_key",
             "agent_key",
@@ -38,16 +62,26 @@ class WorkflowMemoryItem(IdMixin, Base):
             "deleted_at",
         ),
         Index("ix_workflow_memory_items_superseded_by", "superseded_by_id"),
-        Index("ix_workflow_memory_items_run_invocation", "run_id", "invocation_id"),
+        Index(
+            "ix_workflow_memory_items_owner_run_invocation",
+            "owner_type",
+            "owner_id",
+            "run_id",
+            "invocation_id",
+        ),
+        Index("ix_workflow_memory_items_content_fingerprint", "content_fingerprint"),
     )
 
     memory_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    owner_type: Mapped[str] = _owner_type_column()
+    owner_id: Mapped[str] = _owner_id_column()
     package_key: Mapped[str] = mapped_column(String(120), nullable=False)
     workflow_key: Mapped[str] = mapped_column(String(120), nullable=False)
     agent_key: Mapped[str] = mapped_column(String(120), nullable=False)
     step_id: Mapped[str] = mapped_column(String(160), nullable=False)
     namespace: Mapped[str] = mapped_column(String(120), nullable=False)
     kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    content_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     content_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
@@ -106,17 +140,34 @@ class WorkflowMemoryProposal(IdMixin, Base):
             name="ck_workflow_memory_proposals_status",
         ),
         UniqueConstraint("proposal_id", name="uq_workflow_memory_proposals_proposal_id"),
+        UniqueConstraint(
+            "owner_type",
+            "owner_id",
+            "idempotency_key",
+            name="uq_workflow_memory_proposals_owner_idempotency_key",
+        ),
         Index(
             "ix_workflow_memory_proposals_scope",
+            "owner_type",
+            "owner_id",
             "package_key",
             "workflow_key",
             "agent_key",
             "step_id",
         ),
-        Index("ix_workflow_memory_proposals_run_invocation", "run_id", "invocation_id"),
+        Index(
+            "ix_workflow_memory_proposals_owner_run_invocation",
+            "owner_type",
+            "owner_id",
+            "run_id",
+            "invocation_id",
+        ),
+        Index("ix_workflow_memory_proposals_content_fingerprint", "content_fingerprint"),
     )
 
     proposal_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    owner_type: Mapped[str] = _owner_type_column()
+    owner_id: Mapped[str] = _owner_id_column()
     run_id: Mapped[int | None] = mapped_column(nullable=True)
     invocation_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
     package_key: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -125,6 +176,8 @@ class WorkflowMemoryProposal(IdMixin, Base):
     step_id: Mapped[str] = mapped_column(String(160), nullable=False)
     namespace: Mapped[str] = mapped_column(String(120), nullable=False)
     kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    content_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
     content_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
@@ -193,10 +246,24 @@ class WorkflowMemoryAuditEvent(IdMixin, Base):
     __tablename__ = "workflow_memory_audit_events"
     __table_args__ = (
         Index("ix_workflow_memory_audit_events_target", "target_type", "target_id"),
-        Index("ix_workflow_memory_audit_events_scope", "package_key", "workflow_key"),
-        Index("ix_workflow_memory_audit_events_run_invocation", "run_id", "invocation_id"),
+        Index(
+            "ix_workflow_memory_audit_events_scope",
+            "owner_type",
+            "owner_id",
+            "package_key",
+            "workflow_key",
+        ),
+        Index(
+            "ix_workflow_memory_audit_events_owner_run_invocation",
+            "owner_type",
+            "owner_id",
+            "run_id",
+            "invocation_id",
+        ),
     )
 
+    owner_type: Mapped[str] = _owner_type_column()
+    owner_id: Mapped[str] = _owner_id_column()
     event_type: Mapped[str] = mapped_column(String(120), nullable=False)
     target_type: Mapped[str] = mapped_column(String(80), nullable=False)
     target_id: Mapped[str] = mapped_column(String(160), nullable=False)
@@ -264,9 +331,17 @@ class WorkflowMemoryQuarantine(IdMixin, Base):
         ),
         Index("ix_workflow_memory_quarantine_memory_item", "memory_item_id"),
         Index("ix_workflow_memory_quarantine_proposal", "proposal_id"),
-        Index("ix_workflow_memory_quarantine_run_invocation", "run_id", "invocation_id"),
+        Index(
+            "ix_workflow_memory_quarantine_owner_run_invocation",
+            "owner_type",
+            "owner_id",
+            "run_id",
+            "invocation_id",
+        ),
     )
 
+    owner_type: Mapped[str] = _owner_type_column()
+    owner_id: Mapped[str] = _owner_id_column()
     memory_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("workflow_memory_items.id", ondelete="CASCADE"),
         nullable=True,
@@ -302,10 +377,18 @@ class WorkflowMemoryConsolidationRun(IdMixin, Base):
             "consolidation_id",
             name="uq_workflow_memory_consolidation_runs_consolidation_id",
         ),
-        Index("ix_workflow_memory_consolidation_runs_scope", "package_key", "workflow_key"),
+        Index(
+            "ix_workflow_memory_consolidation_runs_scope",
+            "owner_type",
+            "owner_id",
+            "package_key",
+            "workflow_key",
+        ),
     )
 
     consolidation_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    owner_type: Mapped[str] = _owner_type_column()
+    owner_id: Mapped[str] = _owner_id_column()
     package_key: Mapped[str] = mapped_column(String(120), nullable=False)
     workflow_key: Mapped[str] = mapped_column(String(120), nullable=False)
     namespace: Mapped[str] = mapped_column(String(120), nullable=False)

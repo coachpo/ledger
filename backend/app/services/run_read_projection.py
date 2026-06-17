@@ -359,6 +359,8 @@ class RunReadProjection:
                         "policySnapshot": deepcopy(workflow_memory.get("policySnapshot") or {}),
                         "contextItemIds": list(workflow_memory.get("contextItemIds") or []),
                         "checkpointIds": list(workflow_memory.get("checkpointIds") or []),
+                        "safetyScan": deepcopy(workflow_memory.get("safetyScan") or {}),
+                        "ranking": deepcopy(workflow_memory.get("ranking") or {}),
                         "completion": deepcopy(workflow_memory.get("completion")),
                     }
                 )
@@ -422,9 +424,15 @@ class RunReadProjection:
         self,
         quarantine: WorkflowMemoryQuarantine,
     ) -> dict[str, Any]:
-        proposal = self.workflow_memory_repository.get_proposal_by_id(quarantine.proposal_id)
+        proposal = self.workflow_memory_repository.get_proposal_by_id(
+            quarantine.proposal_id,
+            owner_type=quarantine.owner_type,
+            owner_id=quarantine.owner_id,
+        )
         memory_item = self.workflow_memory_repository.get_memory_item_by_id(
-            quarantine.memory_item_id
+            quarantine.memory_item_id,
+            owner_type=quarantine.owner_type,
+            owner_id=quarantine.owner_id,
         )
         target = proposal if proposal is not None else memory_item
         evidence: dict[str, Any] = {}

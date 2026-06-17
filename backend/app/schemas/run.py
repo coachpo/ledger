@@ -469,6 +469,8 @@ class RunWorkflowMemoryInjectionRead(CamelModel):
     policy_snapshot: dict[str, Any] = Field(default_factory=dict)
     context_item_ids: list[str] = Field(default_factory=list)
     checkpoint_ids: list[str] = Field(default_factory=list)
+    safety_scan: dict[str, Any] = Field(default_factory=dict)
+    ranking: dict[str, Any] = Field(default_factory=dict)
     completion: dict[str, int] | None = None
 
 

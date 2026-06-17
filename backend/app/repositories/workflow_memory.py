@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, ClassVar
@@ -8,6 +10,8 @@ from sqlalchemy import func, or_, select
 
 from app.core.formatting import utcnow
 from app.models.workflow_memory import (
+    DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
     WorkflowMemoryAuditEvent,
     WorkflowMemoryConsolidationRun,
     WorkflowMemoryDecision,
@@ -20,13 +24,76 @@ from app.repositories.base import BaseRepository
 from app.schemas.workflow_memory import WORKFLOW_MEMORY_ACTIVE_LIMIT_MAX
 
 
+def _canonicalize_workflow_memory_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if isinstance(value, list):
+        return [_canonicalize_workflow_memory_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: canonicalized
+            for key, raw_value in sorted(value.items())
+            if (canonicalized := _canonicalize_workflow_memory_value(raw_value)) is not None
+        }
+    return value
+
+
+def _content_fingerprint(*, kind: str, namespace: str, content_json: dict[str, Any]) -> str:
+    payload = {
+        "kind": kind.strip().lower(),
+        "namespace": namespace.strip().lower(),
+        "content": _canonicalize_workflow_memory_value(content_json),
+    }
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _proposal_idempotency_key(
+    *,
+    package_key: str,
+    workflow_key: str,
+    agent_key: str,
+    step_id: str,
+    run_id: int | None,
+    invocation_id: str | None,
+    source_output_path: str | None,
+    namespace: str,
+    kind: str,
+    content_fingerprint: str,
+) -> str:
+    payload = [
+        _canonicalize_workflow_memory_value(package_key),
+        _canonicalize_workflow_memory_value(workflow_key),
+        _canonicalize_workflow_memory_value(agent_key),
+        _canonicalize_workflow_memory_value(step_id),
+        run_id,
+        _canonicalize_workflow_memory_value(invocation_id),
+        _canonicalize_workflow_memory_value(source_output_path),
+        namespace.strip().lower(),
+        kind.strip().lower(),
+        content_fingerprint,
+    ]
+    serialized = json.dumps(payload, separators=(",", ":"), default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
 class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
     model: ClassVar[type[WorkflowMemoryItem]] = WorkflowMemoryItem
+
+    @staticmethod
+    def default_owner_type() -> str:
+        return DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE
+
+    @staticmethod
+    def default_owner_id() -> str:
+        return DEFAULT_WORKFLOW_MEMORY_OWNER_ID
 
     def create_memory_item(
         self,
         *,
         memory_id: str,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
         package_key: str,
         workflow_key: str,
         agent_key: str,
@@ -35,6 +102,7 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         kind: str,
         content_json: dict[str, Any],
         summary: str,
+        content_fingerprint: str | None = None,
         provenance_json: dict[str, Any] | None = None,
         policy_status: str = "committed",
         lifecycle_status: str = "active",
@@ -49,12 +117,16 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
     ) -> WorkflowMemoryItem:
         item = self.model(
             memory_id=memory_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
             package_key=package_key,
             workflow_key=workflow_key,
             agent_key=agent_key,
             step_id=step_id,
             namespace=namespace,
             kind=kind,
+            content_fingerprint=content_fingerprint
+            or _content_fingerprint(kind=kind, namespace=namespace, content_json=content_json),
             content_json=content_json,
             summary=summary,
             provenance_json=provenance_json or {},
@@ -81,6 +153,8 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         namespaces: Sequence[str],
         now: datetime,
         limit: int,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
     ) -> list[WorkflowMemoryItem]:
         resolved_namespaces = tuple(dict.fromkeys(namespaces))
         if not resolved_namespaces or limit <= 0:
@@ -89,6 +163,8 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
             select(WorkflowMemoryQuarantine.id)
             .where(
                 WorkflowMemoryQuarantine.memory_item_id == self.model.id,
+                WorkflowMemoryQuarantine.owner_type == owner_type,
+                WorkflowMemoryQuarantine.owner_id == owner_id,
                 WorkflowMemoryQuarantine.resolved_at.is_(None),
             )
             .exists()
@@ -97,6 +173,8 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
             select(self.model)
             .where(
                 self.model.package_key == package_key,
+                self.model.owner_type == owner_type,
+                self.model.owner_id == owner_id,
                 self.model.workflow_key == workflow_key,
                 self.model.agent_key == agent_key,
                 self.model.step_id == step_id,
@@ -122,6 +200,8 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         self,
         *,
         proposal_id: str,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
         run_id: int | None,
         invocation_id: str | None,
         package_key: str,
@@ -131,13 +211,22 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         namespace: str,
         kind: str,
         content_json: dict[str, Any],
+        content_fingerprint: str | None = None,
+        idempotency_key: str | None = None,
         reason: str | None = None,
         source_output_path: str | None = None,
         detectors_json: dict[str, Any] | None = None,
         status: str = "proposed",
     ) -> WorkflowMemoryProposal:
+        resolved_content_fingerprint = content_fingerprint or _content_fingerprint(
+            kind=kind,
+            namespace=namespace,
+            content_json=content_json,
+        )
         proposal = WorkflowMemoryProposal(
             proposal_id=proposal_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
             run_id=run_id,
             invocation_id=invocation_id,
             package_key=package_key,
@@ -146,6 +235,20 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
             step_id=step_id,
             namespace=namespace,
             kind=kind,
+            content_fingerprint=resolved_content_fingerprint,
+            idempotency_key=idempotency_key
+            or _proposal_idempotency_key(
+                package_key=package_key,
+                workflow_key=workflow_key,
+                agent_key=agent_key,
+                step_id=step_id,
+                run_id=run_id,
+                invocation_id=invocation_id,
+                source_output_path=source_output_path,
+                namespace=namespace,
+                kind=kind,
+                content_fingerprint=resolved_content_fingerprint,
+            ),
             content_json=content_json,
             reason=reason,
             source_output_path=source_output_path,
@@ -154,6 +257,20 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         )
         self.session.add(proposal)
         return proposal
+
+    def get_proposal_by_idempotency_key(
+        self,
+        idempotency_key: str,
+        *,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    ) -> WorkflowMemoryProposal | None:
+        statement = select(WorkflowMemoryProposal).where(
+            WorkflowMemoryProposal.idempotency_key == idempotency_key,
+            WorkflowMemoryProposal.owner_type == owner_type,
+            WorkflowMemoryProposal.owner_id == owner_id,
+        )
+        return self.session.scalar(statement)
 
     def record_decision(
         self,
@@ -187,6 +304,8 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         event_type: str,
         target_type: str,
         target_id: str,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
         package_key: str,
         workflow_key: str,
         agent_key: str | None = None,
@@ -197,6 +316,8 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
     ) -> WorkflowMemoryAuditEvent:
         event = WorkflowMemoryAuditEvent(
             event_type=event_type,
+            owner_type=owner_type,
+            owner_id=owner_id,
             target_type=target_type,
             target_id=target_id,
             run_id=run_id,
@@ -248,6 +369,8 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         if memory_item.id is None:
             self.session.flush()
         quarantine = WorkflowMemoryQuarantine(
+            owner_type=memory_item.owner_type,
+            owner_id=memory_item.owner_id,
             memory_item_id=memory_item.id,
             proposal_id=None,
             run_id=run_id,
@@ -272,6 +395,8 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         if proposal.id is None:
             self.session.flush()
         quarantine = WorkflowMemoryQuarantine(
+            owner_type=proposal.owner_type,
+            owner_id=proposal.owner_id,
             memory_item_id=None,
             proposal_id=proposal.id,
             run_id=run_id,
@@ -287,6 +412,8 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         self,
         *,
         consolidation_id: str,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
         package_key: str,
         workflow_key: str,
         namespace: str,
@@ -299,6 +426,8 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
     ) -> WorkflowMemoryConsolidationRun:
         consolidation = WorkflowMemoryConsolidationRun(
             consolidation_id=consolidation_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
             package_key=package_key,
             workflow_key=workflow_key,
             namespace=namespace,
@@ -312,9 +441,116 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         self.session.add(consolidation)
         return consolidation
 
-    def get_proposal_by_public_id(self, proposal_id: str) -> WorkflowMemoryProposal | None:
+    def get_consolidation_run_by_public_id(
+        self,
+        consolidation_id: str,
+        *,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    ) -> WorkflowMemoryConsolidationRun | None:
+        statement = select(WorkflowMemoryConsolidationRun).where(
+            WorkflowMemoryConsolidationRun.consolidation_id == consolidation_id,
+            WorkflowMemoryConsolidationRun.owner_type == owner_type,
+            WorkflowMemoryConsolidationRun.owner_id == owner_id,
+        )
+        return self.session.scalar(statement)
+
+    def list_run_end_consolidation_sources(
+        self,
+        run_id: int,
+        *,
+        now: datetime,
+    ) -> list[WorkflowMemoryItem]:
+        unresolved_quarantine_exists = (
+            select(WorkflowMemoryQuarantine.id)
+            .where(
+                WorkflowMemoryQuarantine.memory_item_id == self.model.id,
+                WorkflowMemoryQuarantine.owner_type == self.model.owner_type,
+                WorkflowMemoryQuarantine.owner_id == self.model.owner_id,
+                WorkflowMemoryQuarantine.resolved_at.is_(None),
+            )
+            .exists()
+        )
+        statement = (
+            select(self.model)
+            .where(
+                self.model.run_id == run_id,
+                self.model.policy_status == "committed",
+                self.model.lifecycle_status == "active",
+                self.model.valid_from <= now,
+                or_(self.model.expires_at.is_(None), self.model.expires_at > now),
+                self.model.deleted_at.is_(None),
+                self.model.superseded_by_id.is_(None),
+                ~unresolved_quarantine_exists,
+            )
+            .order_by(
+                self.model.owner_type.asc(),
+                self.model.owner_id.asc(),
+                self.model.package_key.asc(),
+                self.model.workflow_key.asc(),
+                self.model.namespace.asc(),
+                self.model.kind.asc(),
+                self.model.content_fingerprint.asc(),
+                self.model.id.asc(),
+            )
+        )
+        return self._list(statement)
+
+    def list_active_committed_exact_duplicate_peers(
+        self,
+        *,
+        owner_type: str,
+        owner_id: str,
+        package_key: str,
+        workflow_key: str,
+        namespace: str,
+        kind: str,
+        content_fingerprint: str,
+        now: datetime,
+    ) -> list[WorkflowMemoryItem]:
+        unresolved_quarantine_exists = (
+            select(WorkflowMemoryQuarantine.id)
+            .where(
+                WorkflowMemoryQuarantine.memory_item_id == self.model.id,
+                WorkflowMemoryQuarantine.owner_type == owner_type,
+                WorkflowMemoryQuarantine.owner_id == owner_id,
+                WorkflowMemoryQuarantine.resolved_at.is_(None),
+            )
+            .exists()
+        )
+        statement = (
+            select(self.model)
+            .where(
+                self.model.owner_type == owner_type,
+                self.model.owner_id == owner_id,
+                self.model.package_key == package_key,
+                self.model.workflow_key == workflow_key,
+                self.model.namespace == namespace,
+                self.model.kind == kind,
+                self.model.content_fingerprint == content_fingerprint,
+                self.model.policy_status == "committed",
+                self.model.lifecycle_status == "active",
+                self.model.valid_from <= now,
+                or_(self.model.expires_at.is_(None), self.model.expires_at > now),
+                self.model.deleted_at.is_(None),
+                self.model.superseded_by_id.is_(None),
+                ~unresolved_quarantine_exists,
+            )
+            .order_by(self.model.id.asc())
+        )
+        return self._list(statement)
+
+    def get_proposal_by_public_id(
+        self,
+        proposal_id: str,
+        *,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    ) -> WorkflowMemoryProposal | None:
         statement = select(WorkflowMemoryProposal).where(
-            WorkflowMemoryProposal.proposal_id == proposal_id
+            WorkflowMemoryProposal.proposal_id == proposal_id,
+            WorkflowMemoryProposal.owner_type == owner_type,
+            WorkflowMemoryProposal.owner_id == owner_id,
         )
         return self.session.scalar(statement)
 
@@ -324,8 +560,15 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         status: str | None,
         limit: int,
         offset: int,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
     ) -> tuple[list[WorkflowMemoryProposal], int]:
-        filters = [] if status is None else [WorkflowMemoryProposal.status == status]
+        filters = [
+            WorkflowMemoryProposal.owner_type == owner_type,
+            WorkflowMemoryProposal.owner_id == owner_id,
+        ]
+        if status is not None:
+            filters.append(WorkflowMemoryProposal.status == status)
         total = self.session.scalar(
             select(func.count()).select_from(WorkflowMemoryProposal).where(*filters)
         )
@@ -338,10 +581,20 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         )
         return list(self.session.scalars(statement)), int(total or 0)
 
-    def list_proposals_for_run(self, run_id: int) -> list[WorkflowMemoryProposal]:
+    def list_proposals_for_run(
+        self,
+        run_id: int,
+        *,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    ) -> list[WorkflowMemoryProposal]:
         statement = (
             select(WorkflowMemoryProposal)
-            .where(WorkflowMemoryProposal.run_id == run_id)
+            .where(
+                WorkflowMemoryProposal.run_id == run_id,
+                WorkflowMemoryProposal.owner_type == owner_type,
+                WorkflowMemoryProposal.owner_id == owner_id,
+            )
             .order_by(WorkflowMemoryProposal.created_at.asc(), WorkflowMemoryProposal.id.asc())
         )
         return list(self.session.scalars(statement))
@@ -349,6 +602,9 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
     def list_decisions_for_run(
         self,
         run_id: int,
+        *,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
     ) -> list[tuple[WorkflowMemoryDecision, WorkflowMemoryProposal]]:
         statement = (
             select(WorkflowMemoryDecision, WorkflowMemoryProposal)
@@ -356,31 +612,65 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
                 WorkflowMemoryProposal,
                 WorkflowMemoryProposal.id == WorkflowMemoryDecision.proposal_id,
             )
-            .where(WorkflowMemoryProposal.run_id == run_id)
+            .where(
+                WorkflowMemoryProposal.run_id == run_id,
+                WorkflowMemoryProposal.owner_type == owner_type,
+                WorkflowMemoryProposal.owner_id == owner_id,
+            )
             .order_by(WorkflowMemoryDecision.created_at.asc(), WorkflowMemoryDecision.id.asc())
         )
         return list(self.session.execute(statement).tuples())
 
-    def list_memory_items_for_run(self, run_id: int) -> list[WorkflowMemoryItem]:
+    def list_memory_items_for_run(
+        self,
+        run_id: int,
+        *,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    ) -> list[WorkflowMemoryItem]:
         statement = (
             select(WorkflowMemoryItem)
-            .where(WorkflowMemoryItem.run_id == run_id)
+            .where(
+                WorkflowMemoryItem.run_id == run_id,
+                WorkflowMemoryItem.owner_type == owner_type,
+                WorkflowMemoryItem.owner_id == owner_id,
+            )
             .order_by(WorkflowMemoryItem.created_at.asc(), WorkflowMemoryItem.id.asc())
         )
         return list(self.session.scalars(statement))
 
-    def list_audit_events_for_run(self, run_id: int) -> list[WorkflowMemoryAuditEvent]:
+    def list_audit_events_for_run(
+        self,
+        run_id: int,
+        *,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    ) -> list[WorkflowMemoryAuditEvent]:
         statement = (
             select(WorkflowMemoryAuditEvent)
-            .where(WorkflowMemoryAuditEvent.run_id == run_id)
+            .where(
+                WorkflowMemoryAuditEvent.run_id == run_id,
+                WorkflowMemoryAuditEvent.owner_type == owner_type,
+                WorkflowMemoryAuditEvent.owner_id == owner_id,
+            )
             .order_by(WorkflowMemoryAuditEvent.created_at.asc(), WorkflowMemoryAuditEvent.id.asc())
         )
         return list(self.session.scalars(statement))
 
-    def list_quarantine_for_run(self, run_id: int) -> list[WorkflowMemoryQuarantine]:
+    def list_quarantine_for_run(
+        self,
+        run_id: int,
+        *,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    ) -> list[WorkflowMemoryQuarantine]:
         statement = (
             select(WorkflowMemoryQuarantine)
-            .where(WorkflowMemoryQuarantine.run_id == run_id)
+            .where(
+                WorkflowMemoryQuarantine.run_id == run_id,
+                WorkflowMemoryQuarantine.owner_type == owner_type,
+                WorkflowMemoryQuarantine.owner_id == owner_id,
+            )
             .order_by(WorkflowMemoryQuarantine.created_at.asc(), WorkflowMemoryQuarantine.id.asc())
         )
         return list(self.session.scalars(statement))
@@ -404,10 +694,19 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         *,
         limit: int,
         offset: int,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
     ) -> tuple[list[WorkflowMemoryAuditEvent], int]:
-        total = self.session.scalar(select(func.count()).select_from(WorkflowMemoryAuditEvent))
+        filters = [
+            WorkflowMemoryAuditEvent.owner_type == owner_type,
+            WorkflowMemoryAuditEvent.owner_id == owner_id,
+        ]
+        total = self.session.scalar(
+            select(func.count()).select_from(WorkflowMemoryAuditEvent).where(*filters)
+        )
         statement = (
             select(WorkflowMemoryAuditEvent)
+            .where(*filters)
             .order_by(
                 WorkflowMemoryAuditEvent.created_at.desc(),
                 WorkflowMemoryAuditEvent.id.desc(),
@@ -423,8 +722,15 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         unresolved_only: bool,
         limit: int,
         offset: int,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
     ) -> tuple[list[WorkflowMemoryQuarantine], int]:
-        filters = [WorkflowMemoryQuarantine.resolved_at.is_(None)] if unresolved_only else []
+        filters = [
+            WorkflowMemoryQuarantine.owner_type == owner_type,
+            WorkflowMemoryQuarantine.owner_id == owner_id,
+        ]
+        if unresolved_only:
+            filters.append(WorkflowMemoryQuarantine.resolved_at.is_(None))
         total = self.session.scalar(
             select(func.count()).select_from(WorkflowMemoryQuarantine).where(*filters)
         )
@@ -440,15 +746,51 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
         )
         return list(self.session.scalars(statement)), int(total or 0)
 
-    def get_proposal_by_id(self, proposal_id: int | None) -> WorkflowMemoryProposal | None:
+    def get_proposal_by_id(
+        self,
+        proposal_id: int | None,
+        *,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
+    ) -> WorkflowMemoryProposal | None:
         if proposal_id is None:
             return None
-        return self.session.get(WorkflowMemoryProposal, proposal_id)
+        statement = select(WorkflowMemoryProposal).where(WorkflowMemoryProposal.id == proposal_id)
+        if owner_type is not None:
+            statement = statement.where(WorkflowMemoryProposal.owner_type == owner_type)
+        if owner_id is not None:
+            statement = statement.where(WorkflowMemoryProposal.owner_id == owner_id)
+        return self.session.scalar(statement)
 
-    def get_memory_item_by_id(self, memory_item_id: int | None) -> WorkflowMemoryItem | None:
+    def get_memory_item_by_id(
+        self,
+        memory_item_id: int | None,
+        *,
+        owner_type: str | None = None,
+        owner_id: str | None = None,
+    ) -> WorkflowMemoryItem | None:
         if memory_item_id is None:
             return None
-        return self.session.get(WorkflowMemoryItem, memory_item_id)
+        statement = select(WorkflowMemoryItem).where(WorkflowMemoryItem.id == memory_item_id)
+        if owner_type is not None:
+            statement = statement.where(WorkflowMemoryItem.owner_type == owner_type)
+        if owner_id is not None:
+            statement = statement.where(WorkflowMemoryItem.owner_id == owner_id)
+        return self.session.scalar(statement)
+
+    def get_memory_item_by_public_id(
+        self,
+        memory_id: str,
+        *,
+        owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE,
+        owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID,
+    ) -> WorkflowMemoryItem | None:
+        statement = select(WorkflowMemoryItem).where(
+            WorkflowMemoryItem.memory_id == memory_id,
+            WorkflowMemoryItem.owner_type == owner_type,
+            WorkflowMemoryItem.owner_id == owner_id,
+        )
+        return self.session.scalar(statement)
 
     def get_memory_item_for_proposal(
         self,
@@ -458,7 +800,11 @@ class WorkflowMemoryRepository(BaseRepository[WorkflowMemoryItem]):
             return None
         statement = (
             select(WorkflowMemoryItem)
-            .where(WorkflowMemoryItem.proposal_id == proposal.id)
+            .where(
+                WorkflowMemoryItem.proposal_id == proposal.id,
+                WorkflowMemoryItem.owner_type == proposal.owner_type,
+                WorkflowMemoryItem.owner_id == proposal.owner_id,
+            )
             .order_by(WorkflowMemoryItem.created_at.desc(), WorkflowMemoryItem.id.desc())
             .limit(1)
         )

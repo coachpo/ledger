@@ -56,7 +56,11 @@ def _memory_scope(namespace: str = "research") -> WorkflowMemoryScope:
     )
 
 
-def _memory_context(content: str = HOSTILE_MEMORY_CONTENT) -> WorkflowMemoryContextPack:
+def _memory_context(
+    content: str = HOSTILE_MEMORY_CONTENT,
+    *,
+    safety_scan: dict[str, object] | None = None,
+) -> WorkflowMemoryContextPack:
     timestamp = datetime(2026, 6, 16, 12, 0, tzinfo=UTC)
     return WorkflowMemoryContextPack(
         items=[
@@ -78,6 +82,7 @@ def _memory_context(content: str = HOSTILE_MEMORY_CONTENT) -> WorkflowMemoryCont
         ],
         policy_scope=_memory_scope(),
         authoritative=False,
+        safety_scan=safety_scan or {},
     )
 
 
@@ -88,8 +93,17 @@ def _json_payload_from_input(model_input: str) -> dict[str, object]:
     return cast(dict[str, object], payload)
 
 
-def test_hostile_memory_not_instruction_and_input_only_non_authoritative() -> None:
-    memory_context = _memory_context()
+def test_scanned_memory_not_instruction_and_input_only_non_authoritative() -> None:
+    safe_content = "Approved scanned context for the analyst."
+    memory_context = _memory_context(
+        safe_content,
+        safety_scan={
+            "preInjectionScan": True,
+            "scannedItemIds": ["mem-hostile-001"],
+            "contextItemIds": ["mem-hostile-001"],
+            "excludedItemIds": [],
+        },
+    )
 
     instructions = AgentExecutionService._build_model_instructions(
         _agent(),
@@ -103,16 +117,20 @@ def test_hostile_memory_not_instruction_and_input_only_non_authoritative() -> No
     )
     input_payload = _json_payload_from_input(model_input)
 
-    assert HOSTILE_MEMORY_CONTENT not in instructions
+    assert safe_content not in instructions
     assert "non-authoritative reference data" in instructions
     assert "Workflow Package YAML" in instructions
-    assert HOSTILE_MEMORY_CONTENT in model_input
+    assert safe_content in model_input
     assert input_payload["input"] == {"ticker": "NVDA"}
 
     serialized_context = cast(dict[str, object], input_payload["memoryContext"])
     assert serialized_context["authoritative"] is False
     assert serialized_context["nonAuthoritative"] is True
     assert "not instructions" in str(serialized_context["label"])
+    safety_scan = cast(dict[str, object], serialized_context["safetyScan"])
+    pre_prompt_guard = cast(dict[str, object], serialized_context["prePromptGuard"])
+    assert safety_scan["preInjectionScan"] is True
+    assert pre_prompt_guard["memoryContextDropped"] is False
     assert serialized_context["policyScope"] == _memory_scope().model_dump(
         mode="json",
         by_alias=True,
@@ -121,7 +139,7 @@ def test_hostile_memory_not_instruction_and_input_only_non_authoritative() -> No
     items = cast(list[dict[str, object]], serialized_context["items"])
     item = items[0]
     assert item["itemId"] == "mem-hostile-001"
-    assert item["content"] == {"text": HOSTILE_MEMORY_CONTENT}
+    assert item["content"] == {"text": safe_content}
     assert item["kind"] == "fact"
     assert item["namespace"] == "research"
     assert item["provenance"] == {
@@ -132,6 +150,22 @@ def test_hostile_memory_not_instruction_and_input_only_non_authoritative() -> No
     assert item["scope"] == _memory_scope().model_dump(mode="json", by_alias=True)
     assert item["authoritative"] is False
     assert item["nonAuthoritative"] is True
+
+
+def test_unscanned_hostile_memory_dropped_by_pre_prompt_guard() -> None:
+    model_input = AgentExecutionService._build_model_input(
+        {"ticker": "NVDA"},
+        memory_context=_memory_context(),
+    )
+    input_payload = _json_payload_from_input(model_input)
+
+    assert HOSTILE_MEMORY_CONTENT not in model_input
+    assert "memoryContext" not in input_payload
+    guard = cast(dict[str, object], input_payload["memoryContextGuard"])
+    assert guard["memoryContextDropped"] is True
+    reason_codes = cast(list[str], guard["reasonCodes"])
+    assert "memory_context_not_safety_scanned" in reason_codes
+    assert "unsafe_memory_survived" in reason_codes
 
 
 def test_proposal_protocol_static_contains_no_runtime_memory_content() -> None:

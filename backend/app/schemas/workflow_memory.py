@@ -10,6 +10,9 @@ from pydantic import Field
 from app.schemas.common import CamelModel
 from app.services.execution_plan import PackageResolvedMemoryPolicy
 
+DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE: Final = "local_user"
+DEFAULT_WORKFLOW_MEMORY_OWNER_ID: Final = "default"
+
 
 class WorkflowMemoryPolicyStatus(str, Enum):  # noqa: UP042
     PROPOSED = "proposed"
@@ -69,6 +72,9 @@ class WorkflowMemoryProposalCandidate(CamelModel):
 class WorkflowMemoryContextRequest:
     scope: WorkflowMemoryScope
     policy: PackageResolvedMemoryPolicy
+    query_terms: tuple[str, ...] = ()
+    owner_type: str = DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE
+    owner_id: str = DEFAULT_WORKFLOW_MEMORY_OWNER_ID
 
 
 class WorkflowMemoryContextItem(CamelModel):
@@ -88,6 +94,8 @@ class WorkflowMemoryContextPack(CamelModel):
     items: list[WorkflowMemoryContextItem]
     policy_scope: WorkflowMemoryScope
     authoritative: bool = False
+    safety_scan: dict[str, Any] = Field(default_factory=dict)
+    ranking: dict[str, Any] = Field(default_factory=dict)
 
 
 class WorkflowCheckpointScope(CamelModel):
@@ -218,6 +226,8 @@ class WorkflowMemoryQuarantineListRead(CamelModel):
 
 __all__ = [
     "WORKFLOW_MEMORY_ACTIVE_LIMIT_MAX",
+    "DEFAULT_WORKFLOW_MEMORY_OWNER_ID",
+    "DEFAULT_WORKFLOW_MEMORY_OWNER_TYPE",
     "WORKFLOW_MEMORY_REVIEW_LIST_DEFAULT_LIMIT",
     "WORKFLOW_MEMORY_REVIEW_LIST_MAX_LIMIT",
     "WorkflowCheckpointRead",

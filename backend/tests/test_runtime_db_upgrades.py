@@ -923,12 +923,15 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     assert {
         "id",
         "memory_id",
+        "owner_type",
+        "owner_id",
         "package_key",
         "workflow_key",
         "agent_key",
         "step_id",
         "namespace",
         "kind",
+        "content_fingerprint",
         "content_json",
         "summary",
         "provenance_json",
@@ -947,11 +950,16 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     } <= set(item_columns)
     assert item_columns["policy_status"]["nullable"] is False
     assert item_columns["lifecycle_status"]["nullable"] is False
+    assert item_columns["content_fingerprint"]["nullable"] is False
+    assert item_columns["owner_type"]["nullable"] is False
+    assert item_columns["owner_id"]["nullable"] is False
     assert {"commit_status", "archived", "accepted", "visible_to_workflow"}.isdisjoint(item_columns)
 
     assert {
         "id",
         "proposal_id",
+        "owner_type",
+        "owner_id",
         "run_id",
         "invocation_id",
         "package_key",
@@ -960,6 +968,8 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
         "step_id",
         "namespace",
         "kind",
+        "content_fingerprint",
+        "idempotency_key",
         "content_json",
         "reason",
         "source_output_path",
@@ -969,6 +979,10 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
         "updated_at",
     } <= set(proposal_columns)
     assert proposal_columns["content_json"]["nullable"] is False
+    assert proposal_columns["content_fingerprint"]["nullable"] is False
+    assert proposal_columns["idempotency_key"]["nullable"] is False
+    assert proposal_columns["owner_type"]["nullable"] is False
+    assert proposal_columns["owner_id"]["nullable"] is False
     assert {"accepted", "commit_status"}.isdisjoint(proposal_columns)
 
     assert {
@@ -984,9 +998,12 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     } <= set(decision_columns)
     assert decision_columns["proposal_id"]["nullable"] is False
     assert decision_columns["policy_snapshot_json"]["nullable"] is False
+    assert {"owner_type", "owner_id"}.isdisjoint(decision_columns)
 
     assert {
         "id",
+        "owner_type",
+        "owner_id",
         "event_type",
         "target_type",
         "target_id",
@@ -999,6 +1016,8 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
         "event_json",
         "created_at",
     } <= set(audit_columns)
+    assert audit_columns["owner_type"]["nullable"] is False
+    assert audit_columns["owner_id"]["nullable"] is False
 
     assert {
         "id",
@@ -1012,9 +1031,12 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
         "created_at",
     } <= set(revision_columns)
     assert revision_columns["memory_item_id"]["nullable"] is False
+    assert {"owner_type", "owner_id"}.isdisjoint(revision_columns)
 
     assert {
         "id",
+        "owner_type",
+        "owner_id",
         "memory_item_id",
         "proposal_id",
         "run_id",
@@ -1026,10 +1048,14 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
         "created_at",
     } <= set(quarantine_columns)
     assert quarantine_columns["detectors_json"]["nullable"] is False
+    assert quarantine_columns["owner_type"]["nullable"] is False
+    assert quarantine_columns["owner_id"]["nullable"] is False
 
     assert {
         "id",
         "consolidation_id",
+        "owner_type",
+        "owner_id",
         "package_key",
         "workflow_key",
         "namespace",
@@ -1041,10 +1067,14 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
         "stats_json",
         "created_at",
     } <= set(consolidation_columns)
+    assert consolidation_columns["owner_type"]["nullable"] is False
+    assert consolidation_columns["owner_id"]["nullable"] is False
 
     assert {
         "id",
         "checkpoint_id",
+        "owner_type",
+        "owner_id",
         "run_id",
         "package_key",
         "workflow_key",
@@ -1060,6 +1090,8 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     } <= set(checkpoint_columns)
     assert "state" not in checkpoint_columns
     assert checkpoint_columns["state_json"]["nullable"] is False
+    assert checkpoint_columns["owner_type"]["nullable"] is False
+    assert checkpoint_columns["owner_id"]["nullable"] is False
 
     unique_constraints_by_table = {
         table_name: {
@@ -1073,8 +1105,29 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
         "uq_workflow_memory_items_memory_id" in unique_constraints_by_table["workflow_memory_items"]
     )
     assert (
+        "uq_workflow_memory_items_proposal_id" in unique_constraints_by_table["workflow_memory_items"]
+    )
+    assert (
         "uq_workflow_memory_proposals_proposal_id"
         in unique_constraints_by_table["workflow_memory_proposals"]
+    )
+    assert (
+        "uq_workflow_memory_proposals_owner_idempotency_key"
+        in unique_constraints_by_table["workflow_memory_proposals"]
+    )
+    assert (
+        "uq_workflow_memory_proposals_idempotency_key"
+        not in unique_constraints_by_table["workflow_memory_proposals"]
+    )
+    proposal_unique_columns = {
+        constraint["name"]: tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("workflow_memory_proposals")
+        if constraint.get("name")
+    }
+    assert proposal_unique_columns["uq_workflow_memory_proposals_owner_idempotency_key"] == (
+        "owner_type",
+        "owner_id",
+        "idempotency_key",
     )
     assert (
         "uq_workflow_memory_decisions_decision_id"
@@ -1094,11 +1147,18 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     )
 
     item_indexes = {index["name"] for index in inspector.get_indexes("workflow_memory_items")}
+    proposal_indexes = {index["name"] for index in inspector.get_indexes("workflow_memory_proposals")}
     checkpoint_indexes = {index["name"] for index in inspector.get_indexes("workflow_checkpoints")}
     assert "ix_workflow_memory_items_retrieval_scope" in item_indexes
-    assert "ix_workflow_memory_items_run_invocation" in item_indexes
+    assert "ix_workflow_memory_items_owner_retrieval_scope" in item_indexes
+    assert "ix_workflow_memory_items_owner_run_invocation" in item_indexes
+    assert "ix_workflow_memory_items_content_fingerprint" in item_indexes
+    assert "ix_workflow_memory_proposals_owner_scope" in proposal_indexes
+    assert "ix_workflow_memory_proposals_owner_run_invocation" in proposal_indexes
+    assert "ix_workflow_memory_proposals_content_fingerprint" in proposal_indexes
     assert "ix_workflow_checkpoints_scope_run_sequence" in checkpoint_indexes
-    assert "ix_workflow_checkpoints_run_invocation" in checkpoint_indexes
+    assert "ix_workflow_checkpoints_owner_scope_run_sequence" in checkpoint_indexes
+    assert "ix_workflow_checkpoints_owner_run_invocation" in checkpoint_indexes
 
     item_foreign_keys = {
         _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
@@ -2408,12 +2468,14 @@ def test_init_db_creates_workflow_memory_tables_idempotently(database_url: str) 
                     """
                     INSERT INTO workflow_memory_items (
                         memory_id, package_key, workflow_key, agent_key, step_id, namespace,
-                        kind, content_json, summary, provenance_json, policy_status,
-                        lifecycle_status
+                        kind, content_fingerprint, content_json, summary, provenance_json,
+                        policy_status, lifecycle_status
                     ) VALUES (
                         'workflow-memory-upgrade-1', 'package-a', 'workflow-a', 'agent-a',
-                        'step-a', 'research', 'fact', '{"value":"alpha"}'::jsonb,
-                        'Workflow memory summary', '{}'::jsonb, 'committed', 'active'
+                        'step-a', 'research', 'fact',
+                        '1111111111111111111111111111111111111111111111111111111111111111',
+                        '{"value":"alpha"}'::jsonb, 'Workflow memory summary', '{}'::jsonb,
+                        'committed', 'active'
                     ) RETURNING id
                     """
                 )
@@ -2423,11 +2485,14 @@ def test_init_db_creates_workflow_memory_tables_idempotently(database_url: str) 
                     """
                     INSERT INTO workflow_memory_proposals (
                         proposal_id, package_key, workflow_key, agent_key, step_id, namespace,
-                        kind, content_json, detectors_json, status
+                        kind, content_fingerprint, idempotency_key, content_json, detectors_json,
+                        status
                     ) VALUES (
                         'workflow-proposal-upgrade-1', 'package-a', 'workflow-a', 'agent-a',
-                        'step-a', 'research', 'fact', '{"value":"alpha"}'::jsonb,
-                        '{}'::jsonb, 'committed'
+                        'step-a', 'research', 'fact',
+                        '1111111111111111111111111111111111111111111111111111111111111111',
+                        '2222222222222222222222222222222222222222222222222222222222222222',
+                        '{"value":"alpha"}'::jsonb, '{}'::jsonb, 'committed'
                     ) RETURNING id
                     """
                 )
@@ -2540,6 +2605,367 @@ def test_init_db_creates_workflow_memory_tables_idempotently(database_url: str) 
             ).one()
 
         assert counts == (1, 1, 1, 1, 1, 1, 1, 1)
+    finally:
+        engine.dispose()
+
+
+def test_init_db_backfills_workflow_memory_idempotency_columns_safely(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_items "
+                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_items_proposal_id"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals "
+                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_proposals_idempotency_key"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals "
+                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_proposals_owner_idempotency_key"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_items DROP COLUMN IF EXISTS content_fingerprint"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals DROP COLUMN IF EXISTS content_fingerprint"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals DROP COLUMN IF EXISTS idempotency_key"
+            )
+            proposal_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_proposals (
+                        proposal_id, run_id, invocation_id, package_key, workflow_key, agent_key,
+                        step_id, namespace, kind, content_json, reason, source_output_path,
+                        detectors_json, status
+                    ) VALUES (
+                        'legacy-proposal-1', 991, 'invoke-legacy', 'package-a', 'workflow-a',
+                        'agent-a', 'step-a', 'research', 'fact', '{"value":"alpha"}'::jsonb,
+                        'legacy reason one', 'steps.output.memory[0]', '{}'::jsonb, 'committed'
+                    ) RETURNING id
+                    """
+                )
+            ).scalar_one()
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_proposals (
+                        proposal_id, run_id, invocation_id, package_key, workflow_key, agent_key,
+                        step_id, namespace, kind, content_json, reason, source_output_path,
+                        detectors_json, status
+                    ) VALUES (
+                        'legacy-proposal-2', 991, 'invoke-legacy', 'package-a', 'workflow-a',
+                        'agent-a', 'step-a', 'research', 'fact', '{"value":"alpha"}'::jsonb,
+                        'legacy reason two', 'steps.output.memory[0]', '{}'::jsonb, 'committed'
+                    )
+                    """
+                )
+            )
+            for memory_id in ("legacy-memory-1", "legacy-memory-2"):
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO workflow_memory_items (
+                            memory_id, package_key, workflow_key, agent_key, step_id, namespace,
+                            kind, content_json, summary, provenance_json, policy_status,
+                            lifecycle_status, proposal_id
+                        ) VALUES (
+                            :memory_id, 'package-a', 'workflow-a', 'agent-a', 'step-a',
+                            'research', 'fact', '{"value":"alpha"}'::jsonb,
+                            'Legacy memory', '{}'::jsonb, 'committed', 'active', :proposal_id
+                        )
+                        """
+                    ),
+                    {"memory_id": memory_id, "proposal_id": proposal_id},
+                )
+
+        init_db(database_url)
+        inspector = inspect(engine)
+        proposal_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints("workflow_memory_proposals")
+            if constraint.get("name")
+        }
+        item_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints("workflow_memory_items")
+            if constraint.get("name")
+        }
+        with engine.connect() as connection:
+            proposal_backfill = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*), COUNT(DISTINCT idempotency_key),
+                           bool_and(content_fingerprint IS NOT NULL),
+                           bool_and(idempotency_key IS NOT NULL)
+                    FROM workflow_memory_proposals
+                    """
+                )
+            ).one()
+            linked_items = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_memory_items
+                    WHERE proposal_id = :proposal_id
+                    """
+                ),
+                {"proposal_id": proposal_id},
+            ).scalar_one()
+
+        assert proposal_backfill == (2, 1, True, True)
+        assert linked_items == 1
+        assert "uq_workflow_memory_items_proposal_id" in item_constraints
+        assert "uq_workflow_memory_proposals_idempotency_key" not in proposal_constraints
+        assert "uq_workflow_memory_proposals_owner_idempotency_key" not in proposal_constraints
+    finally:
+        engine.dispose()
+
+
+def test_init_db_replaces_global_proposal_idempotency_constraint_with_owner_scope(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals "
+                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_proposals_owner_idempotency_key"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals "
+                "ADD CONSTRAINT uq_workflow_memory_proposals_idempotency_key "
+                "UNIQUE (idempotency_key)"
+            )
+
+        init_db(database_url)
+        proposal_constraints = {
+            constraint["name"]: tuple(constraint["column_names"])
+            for constraint in inspect(engine).get_unique_constraints("workflow_memory_proposals")
+            if constraint.get("name")
+        }
+        assert "uq_workflow_memory_proposals_idempotency_key" not in proposal_constraints
+        assert proposal_constraints["uq_workflow_memory_proposals_owner_idempotency_key"] == (
+            "owner_type",
+            "owner_id",
+            "idempotency_key",
+        )
+    finally:
+        engine.dispose()
+
+
+def test_init_db_allows_duplicate_proposal_idempotency_keys_across_owners(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        duplicate_key = "8" * 64
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals "
+                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_proposals_idempotency_key"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_memory_proposals "
+                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_proposals_owner_idempotency_key"
+            )
+            for owner_id in ("default", "other"):
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO workflow_memory_proposals (
+                            proposal_id, owner_type, owner_id, package_key, workflow_key,
+                            agent_key, step_id, namespace, kind, content_fingerprint,
+                            idempotency_key, content_json, detectors_json, status
+                        ) VALUES (
+                            :proposal_id, 'local_user', :owner_id, 'package-a', 'workflow-a',
+                            'agent-a', 'step-a', 'research', 'fact', :fingerprint,
+                            :idempotency_key, '{"value":"owner"}'::jsonb, '{}'::jsonb,
+                            'proposed'
+                        )
+                        """
+                    ),
+                    {
+                        "fingerprint": "7" * 64,
+                        "idempotency_key": duplicate_key,
+                        "owner_id": owner_id,
+                        "proposal_id": f"owner-idempotency-{owner_id}",
+                    },
+                )
+
+        init_db(database_url)
+        proposal_constraints = {
+            constraint["name"]: tuple(constraint["column_names"])
+            for constraint in inspect(engine).get_unique_constraints("workflow_memory_proposals")
+            if constraint.get("name")
+        }
+        assert "uq_workflow_memory_proposals_idempotency_key" not in proposal_constraints
+        assert proposal_constraints["uq_workflow_memory_proposals_owner_idempotency_key"] == (
+            "owner_type",
+            "owner_id",
+            "idempotency_key",
+        )
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO workflow_memory_proposals (
+                            proposal_id, owner_type, owner_id, package_key, workflow_key,
+                            agent_key, step_id, namespace, kind, content_fingerprint,
+                            idempotency_key, content_json, detectors_json, status
+                        ) VALUES (
+                            'owner-idempotency-default-duplicate', 'local_user', 'default',
+                            'package-a', 'workflow-a', 'agent-a', 'step-a', 'research', 'fact',
+                            :fingerprint, :idempotency_key, '{"value":"owner"}'::jsonb,
+                            '{}'::jsonb, 'proposed'
+                        )
+                        """
+                    ),
+                    {"fingerprint": "9" * 64, "idempotency_key": duplicate_key},
+                )
+    finally:
+        engine.dispose()
+
+
+def test_init_db_backfills_workflow_memory_owner_columns_safely(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            for table_name in (
+                "workflow_memory_items",
+                "workflow_memory_proposals",
+                "workflow_memory_audit_events",
+                "workflow_memory_quarantine",
+                "workflow_memory_consolidation_runs",
+                "workflow_checkpoints",
+            ):
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {table_name} DROP COLUMN IF EXISTS owner_type CASCADE"
+                )
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {table_name} DROP COLUMN IF EXISTS owner_id CASCADE"
+                )
+            item_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_items (
+                        memory_id, package_key, workflow_key, agent_key, step_id, namespace,
+                        kind, content_fingerprint, content_json, summary, provenance_json,
+                        policy_status, lifecycle_status
+                    ) VALUES (
+                        'legacy-owner-memory', 'package-a', 'workflow-a', 'agent-a', 'step-a',
+                        'research', 'fact',
+                        '3333333333333333333333333333333333333333333333333333333333333333',
+                        '{"value":"owner"}'::jsonb, 'Owner backfill', '{}'::jsonb,
+                        'committed', 'active'
+                    ) RETURNING id
+                    """
+                )
+            ).scalar_one()
+            proposal_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_proposals (
+                        proposal_id, package_key, workflow_key, agent_key, step_id, namespace,
+                        kind, content_fingerprint, idempotency_key, content_json, detectors_json,
+                        status
+                    ) VALUES (
+                        'legacy-owner-proposal', 'package-a', 'workflow-a', 'agent-a', 'step-a',
+                        'research', 'fact',
+                        '3333333333333333333333333333333333333333333333333333333333333333',
+                        '4444444444444444444444444444444444444444444444444444444444444444',
+                        '{"value":"owner"}'::jsonb, '{}'::jsonb, 'review_pending'
+                    ) RETURNING id
+                    """
+                )
+            ).scalar_one()
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_quarantine (
+                        memory_item_id, proposal_id, reason_code, detectors_json
+                    ) VALUES (:item_id, :proposal_id, 'owner_backfill', '{}'::jsonb)
+                    """
+                ),
+                {"item_id": item_id, "proposal_id": proposal_id},
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_audit_events (
+                        event_type, target_type, target_id, package_key, workflow_key, event_json
+                    ) VALUES (
+                        'created', 'proposal', 'legacy-owner-proposal', 'package-a',
+                        'workflow-a', '{}'::jsonb
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_memory_consolidation_runs (
+                        consolidation_id, package_key, workflow_key, namespace, status,
+                        started_at, source_memory_ids_json, output_memory_ids_json, stats_json
+                    ) VALUES (
+                        'legacy-owner-consolidation', 'package-a', 'workflow-a', 'research',
+                        'succeeded', NOW(), '[]'::jsonb, '[]'::jsonb, '{}'::jsonb
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_checkpoints (
+                        checkpoint_id, run_id, package_key, workflow_key, checkpoint_type,
+                        sequence, state_json, retention, metadata_json
+                    ) VALUES (
+                        'legacy-owner-checkpoint', 1, 'package-a', 'workflow-a', 'resume', 1,
+                        '{}'::jsonb, 'latest', '{}'::jsonb
+                    )
+                    """
+                )
+            )
+
+        init_db(database_url)
+        _assert_workflow_memory_table_shape(engine)
+        with engine.connect() as connection:
+            owner_counts = connection.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM workflow_memory_items
+                         WHERE owner_type = 'local_user' AND owner_id = 'default'),
+                        (SELECT COUNT(*) FROM workflow_memory_proposals
+                         WHERE owner_type = 'local_user' AND owner_id = 'default'),
+                        (SELECT COUNT(*) FROM workflow_memory_audit_events
+                         WHERE owner_type = 'local_user' AND owner_id = 'default'),
+                        (SELECT COUNT(*) FROM workflow_memory_quarantine
+                         WHERE owner_type = 'local_user' AND owner_id = 'default'),
+                        (SELECT COUNT(*) FROM workflow_memory_consolidation_runs
+                         WHERE owner_type = 'local_user' AND owner_id = 'default'),
+                        (SELECT COUNT(*) FROM workflow_checkpoints
+                         WHERE owner_type = 'local_user' AND owner_id = 'default')
+                    """
+                )
+            ).one()
+
+        assert owner_counts == (1, 1, 1, 1, 1, 1)
     finally:
         engine.dispose()
 
