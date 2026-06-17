@@ -11,6 +11,7 @@ export type EmptyStatePanelProps = {
   className?: string;
   description?: ReactNode;
   icon?: ReactNode;
+  testId?: string;
   title: ReactNode;
   tone?: EmptyStatePanelTone;
 };
@@ -32,11 +33,12 @@ export function EmptyStatePanel({
   className,
   description,
   icon,
+  testId,
   title,
   tone = "neutral",
 }: EmptyStatePanelProps) {
   return (
-    <Card className={cn(panelClassByTone[tone], className)}>
+    <Card className={cn(panelClassByTone[tone], className)} data-testid={testId}>
       <CardContent className="p-4">
         <Alert
           className={cn(
