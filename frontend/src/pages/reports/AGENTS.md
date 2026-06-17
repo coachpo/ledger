@@ -29,6 +29,9 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 
+- `frontend/DESIGN.md` is the source of truth for this route family's page layout, shared shells, tokens, and management UI patterns.
+- Because `/reports` is metadata `inventory`, `list.tsx` must use the `DESIGN.md` inventory-page pattern: `InventoryPageShell`, `PageContextBar`, `ResourceToolbar`, optional `ResourceFilterBar`, shared state panels, `ResourceTableFrame` or approved shared list/card primitives, selection/bulk/action/delete helpers, and `ResourceStatusBadge`/`ResourceStatusStrip` for statuses.
+- Inventory chrome must not be replaced with `WorkspacePageShell`, route-local page wrappers, custom toolbar/filter cards, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
 - Reports stay slug-addressed end to end. Route params, download links, and hook invalidation should all key off `slug`, not numeric ids.
 - `list.tsx` owns search text, group/sort/collapse state, and selected slugs; request policy stays in `use-reports.ts`.
 - Use `downloadReportUrl()` for downloads and `getReportSourceLabel()` for source badges instead of rebuilding either concern in the route.
@@ -36,6 +39,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - The detail page may edit only report content; immutable report identity stays in the route header and badges.
 - Keep source badges aligned with the shared grouping helpers so list and detail surfaces agree on labels such as Agent and Uploaded.
 - The report list and detail are extension-owned routes. The list has loading/ready/error/empty/filtered-empty/disabled-extension states, while the slug detail route must also respect disabled Finance Workspace state through the runtime gate.
+- The slug detail route stays metadata `detail` and follows the non-inventory `DESIGN.md` route guidance instead of inventory shell rules.
 - Report table navigation must stay as visible links. Sorting, selection, menus, upload, generate, edit, save, and delete remain buttons or form controls.
 - Browser coverage must include a seeded report flow plus representative empty and API-error list states so finance inventory failures stay user-owned.
 

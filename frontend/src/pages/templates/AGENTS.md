@@ -32,12 +32,16 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 
+- `frontend/DESIGN.md` is the source of truth for this route family's page layout, shared shells, tokens, and management UI patterns.
+- Because `/templates` is metadata `inventory`, `list.tsx` must use the `DESIGN.md` inventory-page pattern: `InventoryPageShell`, `PageContextBar`, `ResourceToolbar`, optional `ResourceFilterBar`, shared state panels, `ResourceTableFrame` or approved shared list/card primitives, selection/bulk/action/delete helpers, and `ResourceStatusBadge`/`ResourceStatusStrip` for statuses.
+- The `/templates/new` and `/templates/:templateId/edit` metadata `editor` routes are full-height editors and must use the `DESIGN.md` `WorkspacePageShell` guidance, not inventory shell chrome.
 - `list.tsx` owns search text, table selection state, bulk delete, and delete confirmation state; request policy stays in hooks.
 - `editor.tsx` stays route-owned and full-height; inline preview uses `useDebounce()` plus `useCompileInline()` instead of moving debounce or compile orchestration into shared components.
 - Runtime input rows use `src/lib/runtime-inputs.ts` and stay aligned with `GenerateReportDialog`; do not fork row semantics between preview and report generation.
 - Generate Report is a saved-template flow only. Keep it behind the shared dialog plus `useCompileReport()` instead of ad-hoc page fetch logic.
 - Placeholder browsing, exact JSON preview, and markdown formatting stay in shared helpers/components; the page composes them but does not reimplement their parsing or serialization logic.
 - Route metadata owns `/templates` as a scroll inventory and `/templates/new` plus `/templates/:templateId/edit` as full-height editor routes. Keep the editor shell labeled and mobile contained.
+- Inventory chrome must not be replaced with `WorkspacePageShell`, route-local page wrappers, custom toolbar/filter cards, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
 - Finance runtime gates own disabled-extension states for list, new, and edit routes; do not fork extension-disabled rendering inside the route pages.
 - Template table navigation must stay as visible links. The table owns row checkboxes, select-all for shown rows, the bottom bulk-action bar, and clear selection. Formatting, preview, close, save, generate, delete, and runtime-input row actions remain buttons or form controls.
 

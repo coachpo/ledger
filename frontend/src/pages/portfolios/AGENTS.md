@@ -29,6 +29,9 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 
+- `frontend/DESIGN.md` is the source of truth for this route family's page layout, shared shells, tokens, and management UI patterns.
+- Because `/portfolios` is metadata `inventory`, `list.tsx` must use the `DESIGN.md` inventory-page pattern: `InventoryPageShell`, `PageContextBar`, `ResourceToolbar`, optional `ResourceFilterBar`, shared state panels, `ResourceTableFrame` or approved shared list/card primitives, selection/bulk/action/delete helpers, and `ResourceStatusBadge`/`ResourceStatusStrip` for statuses.
+- Inventory chrome must not be replaced with `WorkspacePageShell`, route-local page wrappers, custom toolbar/filter cards, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
 - `list.tsx` owns route-level modal state, navigation, ResourceToolbar search, table selection state, and bulk delete; request/dialog policy stays in hooks and shared dialogs.
 - New portfolio creation should navigate into the created detail route after success; edit/delete stay list-local until the mutation settles.
 - `detail.tsx` is the orchestration hub for the workspace. Keep quote enrichment, allocation math, and signed balance helpers in shared analytics utilities instead of reimplementing them inline.
@@ -36,6 +39,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - The detail route stays tabbed across Positions, Balances, and Trades; section-specific write logic belongs in the portfolio components and hooks, not in ad-hoc page helpers.
 - Portfolio detail pages are routable but not sidebar destinations; keep back-navigation explicit and route-safe.
 - Route metadata marks portfolio list as an extension-owned inventory route and portfolio detail as an extension-owned detail route. Disabled Finance Workspace state comes from the runtime gate, not from list or detail special cases.
+- The portfolio detail route stays metadata `detail` and follows the non-inventory `DESIGN.md` route guidance instead of inventory shell rules.
 - Portfolio table navigation must remain explicit links. The table owns row checkboxes, select-all for shown rows, the bottom bulk-action bar, and clear selection. Create, edit, delete, trade, and dialog controls remain buttons or form controls.
 
 ## ANTI-PATTERNS
