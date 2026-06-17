@@ -34,6 +34,10 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 
+- `frontend/DESIGN.md` is the source of truth for this route family's page layout, shared shells, tokens, and management UI patterns.
+- Because `/workflow-packages` is metadata `inventory`, `list.tsx` must use the `DESIGN.md` inventory-page pattern: `InventoryPageShell`, `PageContextBar`, `ResourceToolbar`, optional `ResourceFilterBar`, shared state panels, `ResourceTableFrame` or approved shared list/card primitives, selection/bulk/action/delete helpers, and `ResourceStatusBadge`/`ResourceStatusStrip` for statuses.
+- Import/new/detail metadata `editor` routes and the launch metadata `console` route are full-height routes and must use the `DESIGN.md` `WorkspacePageShell` guidance, not inventory shell chrome.
+- Inventory chrome must not be replaced with `WorkspacePageShell`, route-local page wrappers, custom toolbar/filter cards, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
 - `editor.tsx` is the authoring hotspot; keep request policy in hooks and local draft/resource editing in the page.
 - Package-private resources stay tabbed inside the editor and never call retired global authoring APIs.
 - Capability profile tool pickers use extension-filtered `useTools()` data from hooks; disabled-extension tools must not appear as selectable package capability keys.

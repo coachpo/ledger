@@ -18,7 +18,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 | Task                    | Location                                  | Notes                                                                                                   |
 | ----------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Inventory list          | `list.tsx`                                | sorted compact platform cards, delete flow, last-test summary                                           |
+| Inventory list          | `list.tsx`                                | sorted inventory surface, delete flow, last-test summary                                                |
 | Shared editor route     | `editor.tsx`                              | create/edit, key immutability, API style, reasoning effort, secret rotation, inline connection feedback |
 | Query + mutation policy | `../../hooks/use-model-connections.ts`    | list/detail invalidation, delete flow, persisted test invalidation                                      |
 | Secret field UI         | `../../components/forms/secret-input.tsx` | write-only credential input behavior                                                                    |
@@ -27,7 +27,10 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 
-- `list.tsx` is inventory-only: sort by `name` then `modelId`, render `PlatformResourceCard density="compactPlus"`, and keep feedback in toasts plus compact metadata rows.
+- `frontend/DESIGN.md` is the source of truth for this route family's page layout, shared shells, tokens, and management UI patterns.
+- Because `/model-connections` is metadata `inventory`, `list.tsx` must use the `DESIGN.md` inventory-page pattern: `InventoryPageShell`, `PageContextBar`, `ResourceToolbar`, optional `ResourceFilterBar`, shared state panels, `ResourceTableFrame` or approved shared list/card primitives, selection/bulk/action/delete helpers, and `ResourceStatusBadge`/`ResourceStatusStrip` for statuses.
+- Inventory chrome must not be replaced with `WorkspacePageShell`, route-local page wrappers, custom toolbar/filter cards, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
+- `list.tsx` is inventory-only: sort by `name` then `modelId`, and keep feedback in toasts plus compact metadata rows.
 - `editor.tsx` is the single create/edit surface. The saved `key` is editable on create and immutable on edit.
 - Keep Base URL at the provider `/v1` root and let the API-style selector carry Responses vs Chat Completions semantics.
 - Blank edit submissions must preserve the stored API key. Only newly entered values rotate the secret.
@@ -35,6 +38,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Reasoning-effort handling supports omit, preset, and custom values. Omit sends no reasoning parameter; literal `"none"` stays a string value.
 - `deterministic_smoke` connections are the offline/smoke path; API keys remain optional there.
 - Route metadata owns the split between the scroll inventory and full-height create/edit editor routes. Keep `route-model-connections-list`, `route-model-connection-new`, and `route-model-connection-edit` aligned with their metadata state variants.
+- The create/edit metadata `editor` routes are full-height editors and must use the `DESIGN.md` `WorkspacePageShell` guidance, not inventory shell chrome.
 - Inventory navigation, edit, delete, and connection-test actions must remain explicit links or buttons. Never expose saved secrets while testing semantics or error states.
 
 ## ANTI-PATTERNS

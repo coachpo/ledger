@@ -32,6 +32,9 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 
+- `frontend/DESIGN.md` is the source of truth for this route family's page layout, shared shells, tokens, and management UI patterns.
+- Because `/memory` is metadata `inventory`, `list.tsx` must use the `DESIGN.md` inventory-page pattern: `InventoryPageShell`, `PageContextBar`, `ResourceToolbar`, optional `ResourceFilterBar`, shared state panels, `ResourceTableFrame` or approved shared list/card primitives, action/delete helpers where present, and `ResourceStatusBadge`/`ResourceStatusStrip` for statuses.
+- Inventory chrome must not be replaced with `WorkspacePageShell`, route-local page wrappers, custom toolbar/filter cards, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
 - `/memory` is the live browser route for workflow memory proposal review, audit events, and quarantine evidence.
 - The page queries review endpoints only. Cross-package review visibility is intended local operator visibility, not a package-private browser gate.
 - Review filters narrow proposal, audit, and quarantine lists for operator triage; they do not authorize workflow memory retrieval.
@@ -39,7 +42,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Shared namespace declarations and grants are not browser-authored here. Do not accept namespace declarations or grants from route JSON.
 - The route keeps review data fetching and proposal decisions in `list.tsx` through hooks.
 - The route shows proposal, audit-event, and quarantine evidence only. It must not add memory CRUD, global search, report-history browsing, or report-history promotion to workflow memory.
-- `WorkspacePageShell` is the route frame; do not reintroduce detail pages, route-local page shells, or inline inspector selection models.
+- `InventoryPageShell` is the route frame; do not reintroduce detail pages, route-local page shells, or inline inspector selection models.
 - Route metadata includes list loading/error/empty/review states; keep proposal decision feedback in route-owned states rather than generic shared shell state.
 - Keep workflow memory review in the Agent Platform nav group with platform ownership. Do not move it under extension gates or Finance Workspace ownership.
 - Tool discovery stays API and hook support for Workflow Package capability authoring. Do not add or document a standalone Tools browser route from this folder.
