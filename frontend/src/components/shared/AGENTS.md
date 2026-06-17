@@ -30,12 +30,15 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Shared field logic | `form-schemas.ts` | reusable Zod validation snippets for portfolio, balance, position, and trading forms |
 | Search/select UI | `searchable-select.tsx` | command-style picker used by feature forms |
 | Row-card inventory UI | `resource-row-card.tsx` | compact resource cards used by platform and memory inventories when a card surface is still warranted |
+| Design-system source | `../../../DESIGN.md` | source of truth for page layout, shared shells, tokens, and management UI patterns |
 | UI/UX standards and examples | `docs/README.md` | shared UI standards, component specs, page blueprints, and migration guide |
 
 ## CONVENTIONS
 - Keep components generic enough to serve multiple features; pass feature-specific labels, callbacks, and columns from callers.
+- `frontend/DESIGN.md` is the source of truth for shared shell composition, tokens, route states, status chrome, management-list actions, selection, and destructive confirmation patterns.
 - Route-shell components stay presentational; pages and hooks own data loading, URL state, navigation, and mutations.
 - Inventory/workspace shells preserve consistent region order, inspector behavior, and mobile containment; do not fork context/toolbar/filter/action/selection/inspector scaffolding per route.
+- Shared status components (`ResourceStatusBadge` and `ResourceStatusStrip`) own reusable status presentation; do not recreate route-local colored badge spans in routed pages.
 - Shared action, bulk-action, selection, and confirmation components stay presentational. Routes still own selected ids, mutation sequencing, toasts, navigation, and domain-specific labels.
 - Shared validation snippets belong in `form-schemas.ts` when they are reused across preserved product forms or dialogs.
 - Error-boundary components stay UI-focused; logging or recovery policy belongs in higher-level app code.
