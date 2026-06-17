@@ -31,6 +31,10 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 
+- `frontend/DESIGN.md` is the source of truth for this route family's page layout, shared shells, tokens, and management UI patterns.
+- Because `/runs` is metadata `inventory`, `list.tsx` must use the `DESIGN.md` inventory-page pattern: `InventoryPageShell`, `PageContextBar`, `ResourceToolbar`, optional `ResourceFilterBar`, shared state panels, `ResourceTableFrame` or approved shared list/card primitives, action helpers where present, and `ResourceStatusBadge`/`ResourceStatusStrip` for statuses.
+- The `/runs/:runId` metadata `console` route is full-height and must use the `DESIGN.md` `WorkspacePageShell` guidance, not inventory shell chrome.
+- Inventory chrome must not be replaced with `WorkspacePageShell`, route-local page wrappers, custom toolbar/filter cards, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
 - `list.tsx` keeps target-kind, target-key, and status filters local to the page and refetches on a timer while any run is queued or running.
 - Run list and detail render backend `run.progress` and nullable `run.queue`; do not recreate status-to-percent or queued-reason heuristics in the page layer. Keep trace linkage visible even when the top-level trace id is missing.
 - Run detail renders backend `workflowMemoryEvidence` as the canonical run-scoped memory evidence surface. Keep injections, proposals, decisions, quarantines, checkpoints, and audit events grouped in route-owned panes instead of flattening everything into one raw event list.

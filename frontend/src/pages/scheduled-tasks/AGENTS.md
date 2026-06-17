@@ -38,6 +38,10 @@ scheduled-tasks/
 | Coverage | `list.test.tsx`, `detail.test.tsx`, `../../hooks/use-scheduled-tasks.test.ts`, `../../lib/api/schedules.test.ts` | route behavior, hook invalidation, and API endpoint contracts |
 
 ## CONVENTIONS
+- `frontend/DESIGN.md` is the source of truth for this route family's page layout, shared shells, tokens, and management UI patterns.
+- Because `/scheduled-tasks` is metadata `inventory`, `list.tsx` must use the `DESIGN.md` inventory-page pattern: `InventoryPageShell`, `PageContextBar`, `ResourceToolbar`, optional `ResourceFilterBar`, shared state panels, `ResourceTableFrame` or approved shared list/card primitives, selection/bulk/action/delete helpers, and `ResourceStatusBadge`/`ResourceStatusStrip` for statuses.
+- The create metadata `editor` route and detail metadata `console` route are full-height routes and must use the `DESIGN.md` `WorkspacePageShell` guidance, not inventory shell chrome.
+- Inventory chrome must not be replaced with `WorkspacePageShell`, route-local page wrappers, custom toolbar/filter cards, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
 - Structured recurrence only: interval, daily, weekly, or monthly. Do not introduce raw cron strings in this route family.
 - IANA timezone and backend occurrence calculation are authoritative; UI helpers may format local hints but must not fork DST or monthly-date semantics.
 - Scheduled input templates and template vars are JSON objects. Allow placeholders only from `schedule.*`, `fire.*`, `window.*`, `lastRun.*`, and `vars.<key>`.

@@ -24,6 +24,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Export guard | `../detail-sections.exports.test.ts` | public export contract for route tests |
 
 ## CONVENTIONS
+- `frontend/DESIGN.md` is the source of truth for status chrome, state panels, tokens, and management UI patterns inside the parent run-detail console.
+- The parent `/runs/:runId` route is metadata `console` and must keep `WorkspacePageShell`; detail sections must not introduce nested page shells, route-local colored status badges, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
 - Keep `detail.tsx` as the route orchestrator; do not move route params, polling, or URL-state parsing here.
 - Keep the fork dialog invocation-specific. It edits full replacement `invocationInput` for one source invocation and leaves root parameters to rerun.
 - Treat `memoryId` as opaque. Human audit report links come only from `artifact.auditLinks.report`, never from derived memory identifiers.
