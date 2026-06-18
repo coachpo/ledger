@@ -248,7 +248,7 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     assert "requiredBindings" not in mcp_servers[0]
 
 
-def test_parse_digital_oracle_demo_preserves_methodology_tools_graph_and_private_exa() -> None:
+def test_parse_digital_oracle_demo_preserves_methodology_tools_and_graph() -> None:
     demo_source = _DIGITAL_ORACLE_RESEARCHER_DEMO.read_text()
     result = parse_workflow_package_manifest(demo_source)
     compiled = compile_workflow_package_manifest(demo_source)
@@ -260,7 +260,6 @@ def test_parse_digital_oracle_demo_preserves_methodology_tools_graph_and_private
     spec = cast(dict[str, object], dumped["spec"])
     profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
     profile_tool_keys = {str(profile["key"]): profile["toolKeys"] for profile in profiles}
-    mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
     agents = cast(list[dict[str, object]], spec["agents"])
     workflows = cast(list[dict[str, object]], spec["workflows"])
     workflow = workflows[0]
@@ -276,21 +275,12 @@ def test_parse_digital_oracle_demo_preserves_methodology_tools_graph_and_private
             "signaldeck.digital_oracle.prediction_markets.lookup",
             "signaldeck.digital_oracle.sec_filings.lookup",
             "signaldeck.digital_oracle.market_sentiment.lookup",
-        ],
-        "finance_price_history_tools": [
-            "signaldeck.finance.market_data.history_lookup",
-            "signaldeck.finance.market_data.ohlcv_lookup",
-        ],
+        ]
     }
-    assert mcp_servers[0]["key"] == "exa"
-    assert mcp_servers[0]["transport"] == "http-sse"
-    assert mcp_servers[0]["url"] == "https://mcp.exa.ai/mcp?tools=web_search_exa"
-    assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
-    assert mcp_servers[0]["headers"] == {}
-    assert mcp_servers[0]["query"] == {}
-    assert "market-data-only reasoning" in str(agents[0]["systemPrompt"])
-    assert "price-to-judgment reasoning" in str(agents[1]["systemPrompt"])
-    assert "Never invent prices" in str(agents[0]["systemPrompt"])
+    assert spec["mcpServers"] == []
+    assert "Use only the granted Digital Oracle" in str(agents[0]["systemPrompt"])
+    assert "Synthesize only from the supplied signal reports" in str(agents[1]["systemPrompt"])
+    assert "Never invent filing facts" in str(agents[0]["systemPrompt"])
     assert flow["kind"] == "sequence"
     assert flow["id"] == "research_sequence"
     assert [node["kind"] for node in nodes] == ["fanout", "step"]

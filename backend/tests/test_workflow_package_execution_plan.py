@@ -383,7 +383,7 @@ spec:
 """
 
 
-def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis_with_private_exa() -> None:
+def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None:
     plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
         _compiled_plan(_DIGITAL_ORACLE_RESEARCHER_DEMO.read_text()),
         "research",
@@ -515,60 +515,14 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis_with_priv
                 "signaldeck.digital_oracle.prediction_markets.lookup",
                 "signaldeck.digital_oracle.sec_filings.lookup",
             ),
-        ),
-        (
-            "finance_price_history_tools",
-            (
-                "signaldeck.finance.market_data.history_lookup",
-                "signaldeck.finance.market_data.ohlcv_lookup",
-            ),
-        ),
+        )
     ]
     for runtime_agent in runtime_agents:
         assert [
             (profile.key, profile.tool_keys) for profile in runtime_agent.capability_profiles
         ] == expected_profile_tools
-
-    expected_mcp_descriptor = {
-        "kind": "mcp",
-        "toolKey": "exa@1:mcp_exa_web_search_exa",
-        "openaiFunctionName": "mcp_exa_web_search_exa",
-        "description": "External MCP tool web_search_exa",
-        "strictSchema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query for the MCP tool.",
-                }
-            },
-            "required": ["query"],
-            "additionalProperties": False,
-        },
-        "schemaHash": "sha256:849614f78f3762b3a6b32a9a679ab329f168723548e69d23dade86a07914ee8f",
-        "redactionPolicy": "mcp.output.redact_text",
-        "ownerExtensionKey": "signaldeck.finance",
-        "mcpServerKey": "exa",
-        "mcpServerVersion": 1,
-        "originalToolName": "web_search_exa",
-    }
-    expected_mcp_ref = {
-        "packagePrivate": True,
-        "key": "exa",
-        "name": "Exa Web Search",
-        "description": "Package-private Exa MCP server for web search context.",
-        "transport": "http-sse",
-        "command": None,
-        "args": [],
-        "url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
-        "env": {},
-        "headers": {},
-        "query": {},
-        "toolKeys": ["web_search_exa"],
-        "toolDescriptors": [expected_mcp_descriptor],
-    }
     for runtime_agent in runtime_agents:
-        assert AgentExecutionService._runtime_mcp_server_refs(runtime_agent) == [expected_mcp_ref]
+        assert AgentExecutionService._runtime_mcp_server_refs(runtime_agent) == []
 
 
 def test_package_execution_plan_preserves_fanout_loop_and_source_metadata() -> None:
