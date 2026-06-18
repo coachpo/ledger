@@ -384,7 +384,9 @@ def test_invoke_responses_agent_provider_retry_keeps_completed_tool_dispatch_sin
         instructions="Return only valid JSON.",
         response_input="Need tool usage first.",
         text_format=service._build_responses_text_format(_SummaryOutput),
-        available_tools=tool_registry.get_openai_tools({"signaldeck.finance.market_data.quote_lookup"}),
+        available_tools=tool_registry.get_openai_tools(
+            {"signaldeck.finance.market_data.quote_lookup"}
+        ),
         granted_tool_keys={"signaldeck.finance.market_data.quote_lookup"},
         runtime_tool_registry=tool_registry,
         runtime_tool_context=RuntimeToolContext(

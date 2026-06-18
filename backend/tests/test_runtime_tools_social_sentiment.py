@@ -195,7 +195,8 @@ def test_social_sentiment_parser_validation_normalizes_inputs_separately_from_ne
                 "endDate": "2026-01-03",
                 "itemLimit": 2,
             },
-            "signaldeck_finance_social_sentiment_lookup startDate must be before or equal to endDate.",
+            "signaldeck_finance_social_sentiment_lookup startDate must be before or "
+            + "equal to endDate.",
         ),
         (
             {
