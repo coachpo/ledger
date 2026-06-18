@@ -74,6 +74,7 @@ spec:
       name: Quote Tools
       toolKeys:
         - signaldeck.finance.market_data.quote_lookup
+        - signaldeck.finance.indicators.lookup
   outputSchemas:
     - key: summary_output
       name: Summary Output
@@ -181,6 +182,79 @@ spec:
 """
 
 
+def _mixed_extension_tool_package_source(package_key: str) -> str:
+    return f"""apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: {package_key}
+  name: Mixed Extension Matrix Package
+  description: Lifecycle matrix fixture for mixed Finance and Digital Oracle grants.
+spec:
+  inputs:
+    type: object
+    properties:
+      ticker:
+        type: string
+      researchQuestion:
+        type: string
+    required: [ticker, researchQuestion]
+  capabilityProfiles:
+    - key: finance_tools
+      name: Finance Tools
+      toolKeys:
+        - signaldeck.finance.market_data.quote_lookup
+    - key: digital_oracle_tools
+      name: Digital Oracle Tools
+      toolKeys:
+        - signaldeck.digital_oracle.prediction_markets.lookup
+  outputSchemas:
+    - key: summary_output
+      name: Summary Output
+      jsonSchema:
+        type: object
+        properties:
+          summary:
+            type: string
+        required: [summary]
+  agents:
+    - key: mixed_analyst
+      name: Mixed Analyst
+      modelConnection: package_runtime_model
+      systemPrompt: Return a short JSON summary.
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+          researchQuestion:
+            type: string
+        required: [ticker, researchQuestion]
+      outputSchema: summary_output
+      capabilityProfiles: [finance_tools, digital_oracle_tools]
+  workflows:
+    - key: mixed_matrix_flow
+      name: Mixed Matrix Flow
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+          researchQuestion:
+            type: string
+        required: [ticker, researchQuestion]
+      flow:
+        kind: step
+        id: mixed_analysis
+        slot: analysis
+        uses: mixed_analyst
+        with:
+          ticker: ${{{{ inputs.ticker }}}}
+          researchQuestion: ${{{{ inputs.researchQuestion }}}}
+      output:
+        from: ${{{{ nodes.mixed_analysis.outputs.analysis }}}}
+"""
+
+
 def _tool_keys(client: TestClient) -> list[str]:
     response = client.get("/api/tools")
     assert response.status_code == 200, response.json()
@@ -202,6 +276,18 @@ def _create_digital_oracle_tool_package(client: TestClient, package_key: str) ->
     response = client.post(
         "/api/workflow-packages",
         json={"manifestSource": _digital_oracle_tool_package_source(package_key)},
+    )
+    assert response.status_code == 201, response.json()
+    return cast(dict[str, object], response.json())
+
+
+def _create_mixed_extension_tool_package(
+    client: TestClient,
+    package_key: str,
+) -> dict[str, object]:
+    response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _mixed_extension_tool_package_source(package_key)},
     )
     assert response.status_code == 201, response.json()
     return cast(dict[str, object], response.json())
@@ -305,11 +391,12 @@ class _LifecycleQuoteProvider:
         *,
         symbols: list[str],
         query: str | None,
+        scope: str,
         start_date: datetime | None,
         end_date: datetime | None,
         limit: int,
     ) -> ProviderNewsResult:
-        del symbols, query, start_date, end_date, limit
+        del symbols, query, scope, start_date, end_date, limit
         raise NotImplementedError
 
     def fetch_insider_transactions(
@@ -348,6 +435,10 @@ def test_finance_and_digital_oracle_mixed_states_are_independent(
         client,
         "digital_oracle_mixed_state_package",
     )
+    mixed_package = _create_mixed_extension_tool_package(
+        client,
+        "finance_digital_oracle_mixed_state_package",
+    )
 
     initial_states = _extension_state_by_key(client)
     assert initial_states[FINANCE_WORKSPACE_EXTENSION_KEY]["enabled"] is True
@@ -384,6 +475,32 @@ def test_finance_and_digital_oracle_mixed_states_are_independent(
     assert {error["surface"] for error in digital_oracle_errors} == {
         f"tool.{tool_key}" for tool_key in DIGITAL_ORACLE_RUNTIME_TOOL_KEYS
     }
+    mixed_preflight = client.post(
+        f"/api/workflow-packages/{mixed_package['id']}/preflight",
+        json={
+            "workflowKey": "mixed_matrix_flow",
+            "parameters": {
+                "ticker": "MSFT",
+                "researchQuestion": "Will demand improve?",
+            },
+        },
+    )
+    assert mixed_preflight.status_code == 200, mixed_preflight.json()
+    mixed_body = cast(dict[str, object], mixed_preflight.json())
+    mixed_errors = _blocking_extension_errors(mixed_body)
+    assert mixed_body["ready"] is False
+    assert mixed_errors == [
+        {
+            "field": "spec.capabilityProfiles.digital_oracle_tools.toolKeys[0]",
+            "issue": (
+                "Server-declared tool 'signaldeck.digital_oracle.prediction_markets.lookup' "
+                "is disabled because extension 'signaldeck.digital_oracle' is disabled"
+            ),
+            "code": "extension_disabled",
+            "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
+            "surface": "tool.signaldeck.digital_oracle.prediction_markets.lookup",
+        }
+    ]
 
     _ = _set_digital_oracle_extension(client, enabled=True)
     disabled_finance = _set_finance_extension(client, enabled=False)
@@ -416,13 +533,32 @@ def test_finance_and_digital_oracle_mixed_states_are_independent(
     assert finance_preflight.status_code == 200, finance_preflight.json()
     finance_body = cast(dict[str, object], finance_preflight.json())
     finance_errors = _blocking_extension_errors(finance_body)
-    assert finance_errors == [
+    assert any(
+        error["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
+        and error["surface"] == "tool.signaldeck.finance.indicators.lookup"
+        and "signaldeck.finance.indicators.lookup" in str(error["issue"])
+        for error in finance_errors
+    )
+    mixed_preflight = client.post(
+        f"/api/workflow-packages/{mixed_package['id']}/preflight",
+        json={
+            "workflowKey": "mixed_matrix_flow",
+            "parameters": {
+                "ticker": "MSFT",
+                "researchQuestion": "Will demand improve?",
+            },
+        },
+    )
+    assert mixed_preflight.status_code == 200, mixed_preflight.json()
+    mixed_body = cast(dict[str, object], mixed_preflight.json())
+    mixed_errors = _blocking_extension_errors(mixed_body)
+    assert mixed_body["ready"] is False
+    assert mixed_errors == [
         {
-            "field": "spec.capabilityProfiles.quote_tools.toolKeys[0]",
+            "field": "spec.capabilityProfiles.finance_tools.toolKeys[0]",
             "issue": (
                 "Server-declared tool 'signaldeck.finance.market_data.quote_lookup' "
-                "is disabled because "
-                "extension 'signaldeck.finance' is disabled"
+                "is disabled because extension 'signaldeck.finance' is disabled"
             ),
             "code": "extension_disabled",
             "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
@@ -493,7 +629,9 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     assert enabled_dependency["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
     assert {
         "tool.signaldeck.finance.market_data.quote_lookup",
+        "tool.signaldeck.finance.indicators.lookup",
         "runtime.tool.signaldeck.finance.market_data.quote_lookup",
+        "runtime.tool.signaldeck.finance.indicators.lookup",
     } <= set(cast(list[str], enabled_dependency["surfaces"]))
 
     disabled_extension = _set_finance_extension(client, enabled=False)
@@ -521,19 +659,12 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     disabled_preflight_body = cast(dict[str, object], disabled_preflight.json())
     assert disabled_preflight_body["ready"] is False
     disabled_preflight_errors = _blocking_extension_errors(disabled_preflight_body)
-    assert disabled_preflight_errors == [
-        {
-            "field": "spec.capabilityProfiles.quote_tools.toolKeys[0]",
-            "issue": (
-                "Server-declared tool 'signaldeck.finance.market_data.quote_lookup' "
-                "is disabled because "
-                "extension 'signaldeck.finance' is disabled"
-            ),
-            "code": "extension_disabled",
-            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": "tool.signaldeck.finance.market_data.quote_lookup",
-        }
-    ]
+    assert any(
+        error["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
+        and error["surface"] == "tool.signaldeck.finance.indicators.lookup"
+        and "signaldeck.finance.indicators.lookup" in str(error["issue"])
+        for error in disabled_preflight_errors
+    )
 
     disabled_launch = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
@@ -565,7 +696,9 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     assert set(failed_dependency) == {"extensionKey", "surfaces", "fields"}
     assert {
         "tool.signaldeck.finance.market_data.quote_lookup",
+        "tool.signaldeck.finance.indicators.lookup",
         "runtime.tool.signaldeck.finance.market_data.quote_lookup",
+        "runtime.tool.signaldeck.finance.indicators.lookup",
     } <= set(cast(list[str], failed_dependency["surfaces"]))
 
     with session_factory() as session:

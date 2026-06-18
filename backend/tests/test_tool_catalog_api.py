@@ -52,9 +52,13 @@ _FINANCE_PRICE_HISTORY_TOOL_KEYS = {
     "signaldeck.finance.market_data.history_lookup",
     "signaldeck.finance.market_data.ohlcv_lookup",
 }
+_FINANCE_INDICATOR_TOOL_KEYS = {"signaldeck.finance.indicators.lookup"}
+_FINANCE_NEWS_TOOL_KEYS = {"signaldeck.finance.news.lookup"}
 _REQUIRED_FINANCE_TOOL_KEYS = {
     "signaldeck.finance.market_data.quote_lookup",
     "signaldeck.finance.reports.lookup",
+    *_FINANCE_INDICATOR_TOOL_KEYS,
+    *_FINANCE_NEWS_TOOL_KEYS,
     *_FINANCE_PRICE_HISTORY_TOOL_KEYS,
 }
 _REQUIRED_CORE_TOOL_KEYS: set[str] = set()
@@ -167,8 +171,16 @@ def test_extension_tool_inventories_match_catalog_and_runtime() -> None:
     assert set(FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES) == finance_runtime_function_names
     assert _FINANCE_PRICE_HISTORY_TOOL_KEYS <= finance_server_declared_keys
     assert _FINANCE_PRICE_HISTORY_TOOL_KEYS <= finance_runtime_keys
+    assert _FINANCE_INDICATOR_TOOL_KEYS <= finance_server_declared_keys
+    assert _FINANCE_INDICATOR_TOOL_KEYS <= finance_runtime_keys
+    assert _FINANCE_NEWS_TOOL_KEYS <= finance_server_declared_keys
+    assert _FINANCE_NEWS_TOOL_KEYS <= finance_runtime_keys
     assert _FINANCE_PRICE_HISTORY_TOOL_KEYS.isdisjoint(digital_oracle_server_declared_keys)
     assert _FINANCE_PRICE_HISTORY_TOOL_KEYS.isdisjoint(digital_oracle_runtime_keys)
+    assert _FINANCE_INDICATOR_TOOL_KEYS.isdisjoint(digital_oracle_server_declared_keys)
+    assert _FINANCE_INDICATOR_TOOL_KEYS.isdisjoint(digital_oracle_runtime_keys)
+    assert _FINANCE_NEWS_TOOL_KEYS.isdisjoint(digital_oracle_server_declared_keys)
+    assert _FINANCE_NEWS_TOOL_KEYS.isdisjoint(digital_oracle_runtime_keys)
     assert set(_EXPECTED_DIGITAL_ORACLE_TOOL_KEYS) == digital_oracle_server_declared_keys
     assert set(_EXPECTED_DIGITAL_ORACLE_TOOL_KEYS) == digital_oracle_runtime_keys
     assert set(_EXPECTED_DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES) == (
@@ -207,9 +219,12 @@ def test_digital_oracle_runtime_response_aliases_and_warnings_are_stable() -> No
     assert set(sec_filings) == {
         "toolKey",
         "ticker",
+        "query",
         "cik",
         "entityName",
         "filings",
+        "searchHits",
+        "ownershipTransactions",
         "warnings",
     }
     assert sec_filings["toolKey"] == "signaldeck.digital_oracle.sec_filings.lookup"
@@ -358,6 +373,8 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     quote_tool = tools_by_key["signaldeck.finance.market_data.quote_lookup"]
     history_tool = tools_by_key["signaldeck.finance.market_data.history_lookup"]
     ohlcv_tool = tools_by_key["signaldeck.finance.market_data.ohlcv_lookup"]
+    indicator_tool = tools_by_key["signaldeck.finance.indicators.lookup"]
+    news_tool = tools_by_key["signaldeck.finance.news.lookup"]
     report_lookup_tool = tools_by_key["signaldeck.finance.reports.lookup"]
     prediction_markets_tool = tools_by_key["signaldeck.digital_oracle.prediction_markets.lookup"]
     sec_filings_tool = tools_by_key["signaldeck.digital_oracle.sec_filings.lookup"]
@@ -377,6 +394,22 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         "displayName": "OHLCV Lookup",
         "description": "Read server-owned OHLCV market data for supported symbols and ranges.",
     }
+    assert indicator_tool == {
+        "key": "signaldeck.finance.indicators.lookup",
+        "displayName": "Indicators Lookup",
+        "description": (
+            "Read server-owned technical indicators, including moving averages, "
+            "MACD, RSI, Bollinger bands, ATR, and VWMA."
+        ),
+    }
+    assert news_tool == {
+        "key": "signaldeck.finance.news.lookup",
+        "displayName": "News Lookup",
+        "description": (
+            "Read server-owned symbol, market, and global finance news with structured "
+            "warnings for provider, empty, truncated, or bounded global coverage."
+        ),
+    }
     assert report_lookup_tool == {
         "key": "signaldeck.finance.reports.lookup",
         "displayName": "Report Lookup",
@@ -387,15 +420,16 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         "displayName": "Prediction Markets Lookup",
         "description": (
             "Read normalized prediction-market signals from Digital Oracle market "
-            "lookups with structured warnings for partial coverage."
+            "lookups, including optional orderbook depth, with structured warnings "
+            "for partial coverage."
         ),
     }
     assert sec_filings_tool == {
         "key": "signaldeck.digital_oracle.sec_filings.lookup",
         "displayName": "SEC Filings Lookup",
         "description": (
-            "Read normalized SEC filing signals from Digital Oracle filing lookups "
-            "with structured warnings for partial coverage."
+            "Read normalized SEC filing summaries, EDGAR search hits, and Form 4 "
+            "ownership summaries with structured warnings for partial coverage."
         ),
     }
     assert market_sentiment_tool == {
@@ -410,6 +444,8 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         quote_tool,
         history_tool,
         ohlcv_tool,
+        indicator_tool,
+        news_tool,
         report_lookup_tool,
         prediction_markets_tool,
         sec_filings_tool,
@@ -570,6 +606,7 @@ def test_tool_catalog_hides_disabled_extension_tools_and_validation_stays_artifa
     visible_keys = {str(item["key"]) for item in visible_items}
     assert not visible_keys & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
     assert not visible_keys & _FINANCE_PRICE_HISTORY_TOOL_KEYS
+    assert not visible_keys & _FINANCE_NEWS_TOOL_KEYS
     assert _DIGITAL_ORACLE_TOOL_KEYS <= visible_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= visible_keys
 
@@ -584,6 +621,8 @@ def test_tool_catalog_hides_disabled_extension_tools_and_validation_stays_artifa
 
     assert not disabled_catalog_keys & _FINANCE_PRICE_HISTORY_TOOL_KEYS
     assert not disabled_runtime_keys & _FINANCE_PRICE_HISTORY_TOOL_KEYS
+    assert not disabled_catalog_keys & _FINANCE_NEWS_TOOL_KEYS
+    assert not disabled_runtime_keys & _FINANCE_NEWS_TOOL_KEYS
     assert _DIGITAL_ORACLE_TOOL_KEYS <= disabled_catalog_keys
     assert _DIGITAL_ORACLE_TOOL_KEYS <= disabled_runtime_keys
     assert _REQUIRED_CORE_TOOL_KEYS <= disabled_catalog_keys

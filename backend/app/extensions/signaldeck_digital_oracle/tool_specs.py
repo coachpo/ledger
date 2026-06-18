@@ -11,7 +11,8 @@ DIGITAL_ORACLE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = 
         display_name="Prediction Markets Lookup",
         description=(
             "Read normalized prediction-market signals from Digital Oracle market "
-            "lookups with structured warnings for partial coverage."
+            "lookups, including optional orderbook depth, with structured warnings "
+            "for partial coverage."
         ),
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
@@ -20,8 +21,8 @@ DIGITAL_ORACLE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = 
         key="signaldeck.digital_oracle.sec_filings.lookup",
         display_name="SEC Filings Lookup",
         description=(
-            "Read normalized SEC filing signals from Digital Oracle filing lookups "
-            "with structured warnings for partial coverage."
+            "Read normalized SEC filing summaries, EDGAR search hits, and Form 4 "
+            "ownership summaries with structured warnings for partial coverage."
         ),
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
