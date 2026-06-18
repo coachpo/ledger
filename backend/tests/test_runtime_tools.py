@@ -1593,8 +1593,6 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
         PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
         SEC_FILINGS_LOOKUP_TOOL_KEY,
         MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
-        MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
-        MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY,
     }
     assert "Package-ready draft" not in manifest_source
     assert "spec.skills" not in manifest_source
@@ -5943,6 +5941,27 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
         "depth_limit": 4,
     }
 
+    strict_nullable_payload = parse_prediction_markets_lookup_arguments(
+        json.dumps(
+            {
+                "query": "AAPL next 30 days stock price and major company events",
+                "venues": ["polymarket", "kalshi"],
+                "itemLimit": 10,
+                "includeResolved": True,
+                "includeOrderBook": False,
+                "depthLimit": 5,
+            }
+        )
+    )
+    assert strict_nullable_payload == {
+        "query": "AAPL next 30 days stock price and major company events",
+        "venues": ("polymarket", "kalshi"),
+        "item_limit": 10,
+        "include_resolved": True,
+        "include_order_book": False,
+        "depth_limit": None,
+    }
+
     with pytest.raises(RuntimeToolError) as invalid_venue:
         _ = parse_prediction_markets_lookup_arguments('{"query":"Fed","venues":["predictit"]}')
     assert invalid_venue.value.message == (
@@ -5963,12 +5982,11 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
         "signaldeck_digital_oracle_prediction_markets_lookup depthLimit must be at most 10."
     )
 
-    with pytest.raises(RuntimeToolError) as depth_without_order_book:
-        _ = parse_prediction_markets_lookup_arguments('{"query":"Fed","depthLimit":3}')
-    assert depth_without_order_book.value.message == (
-        "signaldeck_digital_oracle_prediction_markets_lookup depthLimit requires "
-        "includeOrderBook to be true."
+    inactive_depth_limit = parse_prediction_markets_lookup_arguments(
+        '{"query":"Fed","depthLimit":3}'
     )
+    assert inactive_depth_limit["include_order_book"] is False
+    assert inactive_depth_limit["depth_limit"] is None
 
 
 def test_prediction_markets_providers_map_requested_order_book_depth_and_warnings() -> None:

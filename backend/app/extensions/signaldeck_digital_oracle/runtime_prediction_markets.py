@@ -271,14 +271,8 @@ def parse_prediction_markets_lookup_arguments(arguments_json: str) -> dict[str, 
         minimum=1,
         maximum=_PREDICTION_MARKETS_MAX_DEPTH_LIMIT,
     )
-    if depth_limit is not None and not include_order_book:
-        raise RuntimeToolError(
-            code="agent_tool_call_invalid",
-            message=(
-                f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} depthLimit requires "
-                "includeOrderBook to be true."
-            ),
-        )
+    if not include_order_book:
+        depth_limit = None
     return {
         "query": _parse_required_query_argument(raw_arguments.get("query")),
         "venues": _parse_venues_argument(raw_arguments.get("venues")),
