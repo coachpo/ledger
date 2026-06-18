@@ -54,7 +54,7 @@ Use this as an executable checklist. For each item, inspect the cited file, symb
 ## Tools/Runtime Tool Dispatch
 
 - [ ] Confirm `/api/tools` in `backend/app/api/tools.py::list_tools` returns only `key`, `displayName`, and `description`.
-- [ ] Confirm platform-core tools in `backend/app/agents/tool_catalog/server_declared.py` are `signaldeck.core.memory.write` and `signaldeck.core.memory.lookup` and remain visible when bundled extensions are disabled.
+- [ ] Historical audit note: earlier baselines expected platform-core direct memory tool entries. Current live docs require declarative Workflow Package `spec.memory` middleware instead, so confirm `/api/tools` does not expose direct memory runtime grants and extension-owned tools remain filtered by enabled extension state.
 - [ ] Confirm extension-owned server-declared tools are filtered through `enabled_server_declared_tool_registry` and `ExtensionService.get_tool_catalog`.
 - [ ] Confirm `backend/app/agents/runtime_tools/registry.py::RuntimeToolRegistry.dispatch` enforces enabled-extension state and granted tool keys before executor dispatch.
 - [ ] Confirm runtime and catalog coverage in `backend/tests/test_runtime_tools.py`, `backend/tests/test_tool_catalog_api.py`, and `backend/tests/test_workflow_package_preflight.py`.
@@ -64,7 +64,7 @@ Use this as an executable checklist. For each item, inspect the cited file, symb
 - [ ] Confirm `backend/app/api/memory.py` exposes platform-core memory through POST routes requiring access-context payloads, not public global CRUD.
 - [ ] Confirm `backend/app/schemas/memory.py` requires package context, concrete private scope, opaque `memoryId`, and grant-aware access models.
 - [ ] Confirm `backend/app/services/memory_service.py` keeps canonical memory separate from report-domain history.
-- [ ] Confirm platform-owned runtime memory tools live in `backend/app/agents/runtime_tools/memory.py`, not Finance report tooling.
+- [ ] Confirm workflow memory lives as declarative middleware and `/api/memory` review infrastructure, not as direct runtime tool grants or Finance report tooling.
 - [ ] Confirm memory coverage in `backend/tests/test_memory_service.py`, `backend/tests/test_memory_domain_schemas.py`, `backend/tests/test_memory_layer_static_contracts.py`, `frontend/src/pages/memory/list.test.tsx`, and `frontend/e2e/memory.spec.ts`.
 
 ## Extensions

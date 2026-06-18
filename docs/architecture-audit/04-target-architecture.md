@@ -87,13 +87,13 @@ Future persistence changes should enter through typed model/repository/infrastru
 
 `/api/tools` remains a read-only metadata surface. It exposes server-declared tool keys, display names, and descriptions after extension-state filtering. It does not expose runtime dispatch details, provider credentials, package-private MCP configuration, or extension-private registrars.
 
-Runtime tool dispatch remains separate from catalog metadata. Dispatch checks enabled extension state, package grants, and tool arguments before executing. Platform-core memory tools stay platform-owned. Finance tools stay Finance-owned. Digital Oracle tools stay Digital Oracle-owned with no route or nav surface.
+Runtime tool dispatch remains separate from catalog metadata. Dispatch checks enabled extension state, package grants, and tool arguments before executing. Workflow memory stays declarative middleware rather than a direct runtime tool grant. Finance tools stay Finance-owned. Digital Oracle tools stay Digital Oracle-owned with no route or nav surface.
 
 ## Memory Access Model
 
 Memory remains platform core and explicit-scope only. API and runtime callers must provide or derive a package-contextual access context before reads or writes. The browser keeps a single `/memory` route with no child detail routes. Public global memory CRUD, unscoped search, namespace-grant authoring, report-backed memory storage, and vector retrieval requirements remain out of scope.
 
-The target keeps `signaldeck.core.memory.write` and `signaldeck.core.memory.lookup` as platform-owned runtime tools. Model-visible, API-visible, and UI-visible projections stay separate so runtime grants do not accidentally become public browse access. Historical agent reports and `signaldeck.finance.reports.lookup` stay Finance/report history, not canonical memory storage.
+The target keeps workflow memory as declarative Workflow Package `spec.memory` middleware plus `/api/memory` review infrastructure. Model-visible, API-visible, and UI-visible projections stay separate so workflow memory evidence does not accidentally become public browse access. Historical agent reports and `signaldeck.finance.reports.lookup` stay Finance/report history, not canonical memory storage.
 
 ## Extension Model
 
