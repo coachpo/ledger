@@ -527,6 +527,14 @@ def _delete_existing_package(client: TestClient, key: str) -> None:
         break
 
 
+def _bind_package_secret(client: TestClient, package_id: int, key: str) -> None:
+    response = client.put(
+        f"/api/workflow-packages/{package_id}/secret-bindings/{key}",
+        json={"value": f"{key}-test-value"},
+    )
+    assert response.status_code == 200, response.json()
+
+
 def _delete_existing_tradingagents_package(client: TestClient) -> None:
     _delete_existing_package(client, "tradingagents_advisory_research")
 
@@ -1236,6 +1244,7 @@ def test_digital_oracle_researcher_demo_validates_compiles_and_preflights(
     _delete_existing_package(client, "digital_oracle_researcher")
     created = client.post("/api/workflow-packages", json={"manifestSource": manifest_source})
     assert created.status_code == 201, created.json()
+    _bind_package_secret(client, int(created.json()["id"]), "fred_api_key")
     preflight = client.post(
         f"/api/workflow-packages/{created.json()['id']}/preflight",
         json={"workflowKey": "research", "parameters": _digital_oracle_demo_parameters()},

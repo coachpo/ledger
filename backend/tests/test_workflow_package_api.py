@@ -20,6 +20,13 @@ _FIXTURE = (
     / "workflow_packages"
     / "tradingagents_advisory_research.yaml"
 )
+_DEMO_ROOT = Path(__file__).resolve().parents[2] / "demo"
+_BUNDLED_PRESET_KEYS = {
+    "tradingagents_advisory_research",
+    "digital_oracle_researcher",
+    "tradingagents_advisory_research_macro",
+    "tradingagents_advisory_research_mixed_signals",
+}
 _EXPECTED_PACKAGE_TOOL_KEYS = {
     "signaldeck.finance.market_data.quote_lookup",
     "signaldeck.finance.market_data.history_lookup",
@@ -36,6 +43,10 @@ _EXPECTED_PACKAGE_TOOL_KEYS = {
 
 def _package_source() -> str:
     return _FIXTURE.read_text()
+
+
+def _demo_source(package_key: str) -> str:
+    return (_DEMO_ROOT / f"{package_key}.yaml").read_text(encoding="utf-8")
 
 
 def _advisory_research_parameters() -> dict[str, object]:
@@ -85,11 +96,15 @@ def _seed_model_connection(
 
 
 def _delete_existing_tradingagents_package(client: TestClient) -> None:
+    _delete_existing_package(client, "tradingagents_advisory_research")
+
+
+def _delete_existing_package(client: TestClient, package_key: str) -> None:
     packages_response = client.get("/api/workflow-packages")
     assert packages_response.status_code == 200, packages_response.json()
     package_items = cast(list[dict[str, object]], packages_response.json()["items"])
     for package in package_items:
-        if package["key"] != "tradingagents_advisory_research":
+        if package["key"] != package_key:
             continue
         deleted = client.delete(f"/api/workflow-packages/{package['id']}")
         assert deleted.status_code == 204, deleted.text
@@ -227,6 +242,48 @@ def test_workflow_package_list_rejects_removed_status_query(client: TestClient) 
     }
 
 
+def test_workflow_package_list_includes_browser_proven_presets(client: TestClient) -> None:
+    response = client.get("/api/workflow-packages")
+
+    assert response.status_code == 200, response.json()
+    package_items = cast(list[dict[str, object]], response.json()["items"])
+    package_keys = {str(package["key"]) for package in package_items}
+    assert _BUNDLED_PRESET_KEYS <= package_keys
+
+
+def test_validate_manifest_accepts_private_mcp_and_http_demo_variants(
+    client: TestClient,
+) -> None:
+    expected_hashes = {
+        "digital_oracle_researcher": (
+            "3745b83eadefe2974081b231b2907a0ca04e2188be339895a595eb473a454bf6",
+            "ff38846a3ab0eda32f2c57dc89b99abbe2d9e1a95c02be65071de320b4d1c353",
+        ),
+        "tradingagents_advisory_research_macro": (
+            "776d1d0984c11943800cb6e11873350d4b5155eb956f3a4b95fd6d5361001edc",
+            "ff83de867b7c43ce76753e54d16793b50e9aac22030893016cc6a69d979e9bd9",
+        ),
+        "tradingagents_advisory_research_mixed_signals": (
+            "705a85499b1a559ce6ff5c73f79c4a1d982cb76bc4ae213af8b79cbbb8ca153d",
+            "dca62a71471b322fdd2c20292c49467aff2c47f6b6d7794e5cc6dc8bf6be2939",
+        ),
+    }
+
+    for package_key, (manifest_hash, compiled_hash) in expected_hashes.items():
+        response = client.post(
+            "/api/workflow-packages/validate-manifest",
+            json={"manifestSource": _demo_source(package_key)},
+        )
+
+        assert response.status_code == 200, response.json()
+        body = cast(dict[str, object], response.json())
+        assert body["diagnostics"] == []
+        assert body["manifestHash"] == manifest_hash
+        assert body["compiledHash"] == compiled_hash
+        metadata = cast(dict[str, object], body["metadata"])
+        assert metadata["key"] == package_key
+
+
 def test_default_enabled_finance_extension_keeps_smoke_package_tools_unchanged(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -309,6 +366,34 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
     )
     assert conflict.status_code == 409, conflict.json()
     assert conflict.json()["code"] == "workflow_package_import_conflict"
+
+
+def test_manifest_read_keeps_private_mcp_safe_and_package_local(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    _delete_existing_package(client, "tradingagents_advisory_research_macro")
+    response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _demo_source("tradingagents_advisory_research_macro")},
+    )
+    assert response.status_code == 201, response.json()
+    created = cast(dict[str, object], response.json())
+
+    manifest = client.get(f"/api/workflow-packages/{created['id']}/manifest")
+    assert manifest.status_code == 200, manifest.json()
+    manifest_body = cast(dict[str, object], manifest.json())
+    package_definition = cast(dict[str, object], manifest_body["packageDefinition"])
+    spec = cast(dict[str, object], package_definition["spec"])
+    mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
+    payload_text = json.dumps(manifest_body, sort_keys=True)
+
+    assert mcp_servers[0]["key"] == "web_research"
+    assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
+    assert "mcpServerId" not in payload_text
+    assert "workflow_package_secret_bindings" not in payload_text
+    assert "sk-package-api-secret" not in payload_text
 
 
 def test_manifest_round_trip_save_updates_current_package_in_place(

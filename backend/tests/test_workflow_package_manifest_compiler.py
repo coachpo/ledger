@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -14,9 +15,36 @@ from app.services.workflow_package_manifest_compiler import (
 from app.services.workflow_package_manifest_decompiler import decompile_workflow_package_manifest
 from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
 
+_DEMO_ROOT = Path(__file__).resolve().parents[2] / "demo"
+_EXPECTED_DEMO_HASHES = {
+    "digital_oracle_researcher": (
+        "3745b83eadefe2974081b231b2907a0ca04e2188be339895a595eb473a454bf6",
+        "ff38846a3ab0eda32f2c57dc89b99abbe2d9e1a95c02be65071de320b4d1c353",
+    ),
+    "tradingagents_advisory_research_macro": (
+        "776d1d0984c11943800cb6e11873350d4b5155eb956f3a4b95fd6d5361001edc",
+        "ff83de867b7c43ce76753e54d16793b50e9aac22030893016cc6a69d979e9bd9",
+    ),
+    "tradingagents_advisory_research_mixed_signals": (
+        "705a85499b1a559ce6ff5c73f79c4a1d982cb76bc4ae213af8b79cbbb8ca153d",
+        "dca62a71471b322fdd2c20292c49467aff2c47f6b6d7794e5cc6dc8bf6be2939",
+    ),
+}
+
 
 def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _demo_source(package_key: str) -> str:
+    return (_DEMO_ROOT / f"{package_key}.yaml").read_text(encoding="utf-8")
+
+
+def _compiled_tool_keys(compiled: dict[str, object]) -> set[str]:
+    package_definition = cast(dict[str, object], compiled["packageDefinition"])
+    spec = cast(dict[str, object], package_definition["spec"])
+    profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
+    return {tool_key for profile in profiles for tool_key in cast(list[str], profile["toolKeys"])}
 
 
 def _inline_private_mcp_manifest_source() -> str:
@@ -201,6 +229,121 @@ def test_compile_inline_private_mcp_preserves_report_and_quote_tool_keys() -> No
     assert "signaldeck.finance.market_data.quote_lookup" in roundtrip.source
     assert "signaldeck.finance.reports.write" not in roundtrip.source
     assert _canonical_json(compiled) == _canonical_json(recompiled)
+
+
+@pytest.mark.parametrize(
+    ("package_key", "expected_tool_keys", "expected_http_ids"),
+    [
+        (
+            "digital_oracle_researcher",
+            {
+                "signaldeck.digital_oracle.prediction_markets.lookup",
+                "signaldeck.digital_oracle.sec_filings.lookup",
+                "signaldeck.digital_oracle.market_sentiment.lookup",
+            },
+            {
+                "fred_fedfunds_observations",
+                "fred_unrate_observations",
+                "fred_cpiaucsl_observations",
+                "fred_t10y2y_observations",
+                "treasury_rates_snapshot_json",
+                "sec_submissions_json",
+            },
+        ),
+        (
+            "tradingagents_advisory_research_macro",
+            {
+                "signaldeck.finance.fundamentals.lookup",
+                "signaldeck.finance.indicators.lookup",
+                "signaldeck.finance.insider_data.lookup",
+                "signaldeck.finance.market_data.history_lookup",
+                "signaldeck.finance.market_data.ohlcv_lookup",
+                "signaldeck.finance.market_data.quote_lookup",
+                "signaldeck.finance.news.lookup",
+                "signaldeck.finance.positions.lookup",
+                "signaldeck.finance.reports.lookup",
+                "signaldeck.finance.social_sentiment.lookup",
+            },
+            {
+                "fred_fedfunds_observations",
+                "fred_unrate_observations",
+                "fred_cpiaucsl_observations",
+                "fred_t10y2y_observations",
+                "treasury_rates_snapshot_json",
+            },
+        ),
+        (
+            "tradingagents_advisory_research_mixed_signals",
+            {
+                "signaldeck.digital_oracle.prediction_markets.lookup",
+                "signaldeck.finance.fundamentals.lookup",
+                "signaldeck.finance.indicators.lookup",
+                "signaldeck.finance.insider_data.lookup",
+                "signaldeck.finance.market_data.history_lookup",
+                "signaldeck.finance.market_data.ohlcv_lookup",
+                "signaldeck.finance.market_data.quote_lookup",
+                "signaldeck.finance.news.lookup",
+                "signaldeck.finance.positions.lookup",
+                "signaldeck.finance.reports.lookup",
+                "signaldeck.finance.social_sentiment.lookup",
+            },
+            {
+                "fred_fedfunds_observations",
+                "fred_unrate_observations",
+                "fred_cpiaucsl_observations",
+                "fred_t10y2y_observations",
+                "treasury_rates_snapshot_json",
+            },
+        ),
+    ],
+)
+def test_compile_demo_presets_lock_hashes_tools_and_private_operations(
+    package_key: str,
+    expected_tool_keys: set[str],
+    expected_http_ids: set[str],
+) -> None:
+    compiled = compile_workflow_package_manifest(_demo_source(package_key))
+    expected_manifest_hash, expected_compiled_hash = _EXPECTED_DEMO_HASHES[package_key]
+    package_definition = cast(dict[str, object], compiled["packageDefinition"])
+    compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
+    spec = cast(dict[str, object], package_definition["spec"])
+    mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
+    operation_ids = {
+        str(operation["operationKey"])
+        for workflow in cast(list[dict[str, object]], compiled_plan["workflows"])
+        for step in cast(list[dict[str, object]], workflow["steps"])
+        for operation in cast(list[dict[str, object]], step.get("operations", []))
+    }
+
+    assert compiled["manifestHash"] == expected_manifest_hash
+    assert compiled["compiledHash"] == expected_compiled_hash
+    assert compiled["diagnostics"] == []
+    assert _compiled_tool_keys(compiled) == expected_tool_keys
+    assert expected_http_ids <= operation_ids
+    assert all(
+        operation_id.startswith(("fred_", "treasury_", "sec_")) for operation_id in operation_ids
+    )
+    if package_key == "digital_oracle_researcher":
+        extension_dependencies = cast(list[dict[str, object]], compiled["extensionDependencies"])
+        assert {dependency["extensionKey"] for dependency in extension_dependencies} == {
+            "signaldeck.digital_oracle",
+            "signaldeck.finance",
+        }
+    else:
+        assert mcp_servers and mcp_servers[0]["key"] == "web_research"
+        assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
+    if package_key == "tradingagents_advisory_research_macro":
+        assert not any(
+            tool_key.startswith("signaldeck.digital_oracle.") for tool_key in expected_tool_keys
+        )
+    if package_key == "tradingagents_advisory_research_mixed_signals":
+        assert (
+            not {
+                "signaldeck.digital_oracle.sec_filings.lookup",
+                "signaldeck.digital_oracle.market_sentiment.lookup",
+            }
+            & expected_tool_keys
+        )
 
 
 def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:

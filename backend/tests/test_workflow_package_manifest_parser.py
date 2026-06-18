@@ -11,6 +11,14 @@ from app.services.workflow_package_manifest_parser import parse_workflow_package
 _DIGITAL_ORACLE_RESEARCHER_DEMO = (
     Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
 )
+_TRADINGAGENTS_MACRO_DEMO = (
+    Path(__file__).resolve().parents[2] / "demo" / "tradingagents_advisory_research_macro.yaml"
+)
+_TRADINGAGENTS_MIXED_SIGNALS_DEMO = (
+    Path(__file__).resolve().parents[2]
+    / "demo"
+    / "tradingagents_advisory_research_mixed_signals.yaml"
+)
 
 
 def _valid_package_manifest_source() -> str:
@@ -220,6 +228,21 @@ spec:
 """
 
 
+def _flow_http_node_ids(node: dict[str, object]) -> list[str]:
+    ids: list[str] = []
+    if node.get("kind") == "http":
+        ids.append(str(node["id"]))
+    for child in cast(list[dict[str, object]], node.get("nodes", [])):
+        ids.extend(_flow_http_node_ids(child))
+    for branch in cast(list[dict[str, object]], node.get("branches", [])):
+        ids.extend(_flow_http_node_ids(cast(dict[str, object], branch["node"])))
+    body = node.get("body")
+    if isinstance(body, dict):
+        for child in cast(list[dict[str, object]], body.get("nodes", [])):
+            ids.extend(_flow_http_node_ids(child))
+    return ids
+
+
 def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     result = parse_workflow_package_manifest(_valid_package_manifest_source())
 
@@ -261,13 +284,16 @@ def test_parse_digital_oracle_demo_preserves_methodology_tools_and_graph() -> No
     profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
     profile_tool_keys = {str(profile["key"]): profile["toolKeys"] for profile in profiles}
     agents = cast(list[dict[str, object]], spec["agents"])
+    agents_by_key = {str(agent["key"]): agent for agent in agents}
+    mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
     workflows = cast(list[dict[str, object]], spec["workflows"])
     workflow = workflows[0]
     flow = cast(dict[str, object], workflow["flow"])
     nodes = cast(list[dict[str, object]], flow["nodes"])
-    fanout = nodes[0]
-    synthesis = nodes[1]
-    branches = cast(list[dict[str, object]], fanout["branches"])
+    evidence_fanout = nodes[0]
+    sec_metadata_collect = nodes[1]
+    synthesis = nodes[2]
+    evidence_branches = cast(list[dict[str, object]], evidence_fanout["branches"])
     output = cast(dict[str, object], workflow["output"])
 
     assert profile_tool_keys == {
@@ -277,37 +303,78 @@ def test_parse_digital_oracle_demo_preserves_methodology_tools_and_graph() -> No
             "signaldeck.digital_oracle.market_sentiment.lookup",
         ]
     }
-    assert spec["mcpServers"] == []
-    assert "Use only the granted Digital Oracle" in str(agents[0]["systemPrompt"])
-    assert "Synthesize only from the supplied signal reports" in str(agents[1]["systemPrompt"])
-    assert "Never invent filing facts" in str(agents[0]["systemPrompt"])
+    assert mcp_servers[0]["key"] == "web_research"
+    assert mcp_servers[0]["transport"] == "http-sse"
+    assert mcp_servers[0]["url"] == "https://mcp.exa.ai/mcp"
+    assert mcp_servers[0]["headers"] == {"Authorization": "Bearer IMPLEMENTATION_TIME_VALUE"}
+    assert mcp_servers[0]["query"] == {"api_key": "IMPLEMENTATION_TIME_VALUE"}
+    assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
+    signal_researcher = agents_by_key["digital_oracle_signal_researcher"]
+    synthesizer = agents_by_key["digital_oracle_synthesizer"]
+    assert "Use only the granted Digital Oracle" in str(signal_researcher["systemPrompt"])
+    assert "Synthesize only from the supplied signal reports" in str(synthesizer["systemPrompt"])
+    assert "Never invent filing facts" in str(signal_researcher["systemPrompt"])
     assert flow["kind"] == "sequence"
     assert flow["id"] == "research_sequence"
-    assert [node["kind"] for node in nodes] == ["fanout", "step"]
-    assert fanout["id"] == "signal_fanout"
-    assert [branch["id"] for branch in branches] == [
+    assert [node["kind"] for node in nodes] == ["fanout", "step", "step"]
+    assert evidence_fanout["id"] == "evidence_fanout"
+    assert [branch["id"] for branch in evidence_branches] == [
         "market_signals",
         "filing_signals",
         "sentiment_search_signals",
+        "macro_evidence",
+        "web_evidence",
+        "sec_metadata",
     ]
-    assert synthesis == {
-        "kind": "step",
-        "id": "synthesis",
-        "slot": "report",
-        "uses": "digital_oracle_synthesizer",
-        "with": {
-            "researchQuestion": "${{ inputs.researchQuestion }}",
-            "outputLanguage": "${{ inputs.outputLanguage }}",
-            "marketSignals": "${{ nodes.signal_fanout.outputs.market_signals }}",
-            "filingSignals": "${{ nodes.signal_fanout.outputs.filing_signals }}",
-            "sentimentSearchSignals": "${{ nodes.signal_fanout.outputs.sentiment_search_signals }}",
-            "asOfDate": "${{ inputs.asOfDate }}",
-            "horizonDays": "${{ inputs.horizonDays }}",
-        },
-        "memory": None,
-        "optional": False,
-    }
+    assert sec_metadata_collect["id"] == "sec_metadata_collect"
+    assert sec_metadata_collect["uses"] == "sec_metadata_collector"
+    synthesis_with = cast(dict[str, object], synthesis["with"])
+    assert synthesis["id"] == "synthesis"
+    assert synthesis["uses"] == "digital_oracle_synthesizer"
+    assert synthesis_with["marketSignals"] == "${{ nodes.market_signals.outputs.market_signals }}"
+    assert synthesis_with["filingSignals"] == "${{ nodes.filing_signals.outputs.filing_signals }}"
+    assert synthesis_with["sentimentSearchSignals"] == (
+        "${{ nodes.sentiment_search_signals.outputs.sentiment_search_signals }}"
+    )
+    assert synthesis_with["macroEvidence"] == (
+        "${{ nodes.macro_evidence_collect.outputs.macro_evidence }}"
+    )
+    assert synthesis_with["webEvidence"] == (
+        "${{ nodes.web_evidence_collect.outputs.web_evidence }}"
+    )
+    assert synthesis_with["secMetadataEvidence"] == (
+        "${{ nodes.sec_metadata_collect.outputs.sec_metadata }}"
+    )
     assert output["from"] == "${{ nodes.synthesis.outputs.report }}"
+
+
+def test_parse_tradingagents_macro_and_mixed_variants_preserve_private_mcp_and_http() -> None:
+    for manifest_path, package_key in (
+        (_TRADINGAGENTS_MACRO_DEMO, "tradingagents_advisory_research_macro"),
+        (_TRADINGAGENTS_MIXED_SIGNALS_DEMO, "tradingagents_advisory_research_mixed_signals"),
+    ):
+        result = parse_workflow_package_manifest(manifest_path.read_text())
+
+        assert result.diagnostics == []
+        assert result.manifest is not None
+        dumped = result.manifest.model_dump(mode="json", by_alias=True)
+        spec = cast(dict[str, object], dumped["spec"])
+        assert cast(dict[str, object], dumped["metadata"])["key"] == package_key
+        mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
+        workflows = cast(list[dict[str, object]], spec["workflows"])
+        advisory_flow = cast(dict[str, object], workflows[0]["flow"])
+        http_node_ids = _flow_http_node_ids(advisory_flow)
+
+        assert mcp_servers[0]["key"] == "web_research"
+        assert mcp_servers[0]["transport"] == "http-sse"
+        assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
+        assert http_node_ids == [
+            "fred_fedfunds_observations",
+            "fred_unrate_observations",
+            "fred_cpiaucsl_observations",
+            "fred_t10y2y_observations",
+            "treasury_rates_snapshot_json",
+        ]
 
 
 def test_parse_rejects_package_schema_additional_properties_keyword() -> None:
