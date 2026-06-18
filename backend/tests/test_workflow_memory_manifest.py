@@ -18,8 +18,11 @@ _valid_package_manifest_source = cast(
     Callable[[], str],
     _manifest_parser_module.__dict__["_valid_package_manifest_source"],
 )
-_MEMORY_DEMO_FIXTURE = (
-    Path(__file__).resolve().parents[2] / "demo" / "signaldeck_advisory_research_memory.yaml"
+_MEMORY_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "workflow_packages"
+    / "advisory_research_memory.yaml"
 )
 
 
@@ -550,8 +553,8 @@ def test_compile_manifest_resolves_memory_precedence_into_step_policy() -> None:
     assert runtime_policy.checkpoints is None
 
 
-def test_demo_memory_manifest_preserves_yaml_and_runtime_memory_contract() -> None:
-    source = _MEMORY_DEMO_FIXTURE.read_text()
+def test_memory_fixture_preserves_yaml_and_runtime_memory_contract() -> None:
+    source = _MEMORY_FIXTURE.read_text()
 
     manifest = _parse_manifest(source)
     compiled = compile_workflow_package_manifest(manifest)

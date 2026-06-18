@@ -31,8 +31,11 @@ from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 from app.services.workflow_memory_consolidation_service import WorkflowMemoryConsolidationService
 
-_MEMORY_DEMO_FIXTURE = (
-    Path(__file__).resolve().parents[2] / "demo" / "signaldeck_advisory_research_memory.yaml"
+_MEMORY_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "workflow_packages"
+    / "advisory_research_memory.yaml"
 )
 _OLD_MEMORY_TOOL_KEYS = {
     "signaldeck.core.memory.write",
@@ -117,7 +120,7 @@ def _seed_model_connection(session_factory: sessionmaker[Session]) -> None:
         session.commit()
 
 
-def _create_memory_demo_package(
+def _create_memory_fixture_package(
     client: TestClient,
     *,
     manifest_source: str | None = None,
@@ -132,7 +135,7 @@ def _create_memory_demo_package(
 
 
 def _memory_integration_manifest_source() -> str:
-    manifest_source = _MEMORY_DEMO_FIXTURE.read_text()
+    manifest_source = _MEMORY_FIXTURE.read_text()
     assert _OLD_MEMORY_TOOL_KEYS.isdisjoint(manifest_source)
     return manifest_source.replace(
         "                content:\n                  type: object",
@@ -141,7 +144,7 @@ def _memory_integration_manifest_source() -> str:
     )
 
 
-def _preflight_memory_demo(client: TestClient, package_id: int) -> None:
+def _preflight_memory_fixture(client: TestClient, package_id: int) -> None:
     response = client.post(
         f"/api/workflow-packages/{package_id}/preflight",
         json={"workflowKey": "advisory_research", "parameters": _launch_parameters()},
@@ -153,7 +156,7 @@ def _preflight_memory_demo(client: TestClient, package_id: int) -> None:
     assert _OLD_MEMORY_TOOL_KEYS.isdisjoint(str(body))
 
 
-def _launch_memory_demo(client: TestClient, package_id: int) -> int:
+def _launch_memory_fixture(client: TestClient, package_id: int) -> int:
     response = client.post(
         f"/api/workflow-packages/{package_id}/launches",
         json={"workflowKey": "advisory_research", "parameters": _launch_parameters()},
@@ -319,11 +322,11 @@ def test_memory_enabled_workflow_happy_path_projects_middleware_evidence(
         session_factory,
         content="Approved context says AAPL prefers long-form risk notes.",
     )
-    created = _create_memory_demo_package(client)
+    created = _create_memory_fixture_package(client)
     package_id = int(created["id"])
 
-    _preflight_memory_demo(client, package_id)
-    run_id = _launch_memory_demo(client, package_id)
+    _preflight_memory_fixture(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     _drain_run_queue(session_factory)
     detail = _wait_for_run(client, run_id)
 
@@ -417,19 +420,19 @@ def test_memory_enabled_workflow_happy_path_projects_middleware_evidence(
     _assert_no_old_memory_runtime_path(client)
 
 
-def test_exact_demo_memory_yaml_validates_preflights_and_launches(
+def test_exact_memory_fixture_validates_preflights_and_launches(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_model_connection(session_factory)
-    created = _create_memory_demo_package(
+    created = _create_memory_fixture_package(
         client,
-        manifest_source=_MEMORY_DEMO_FIXTURE.read_text(),
+        manifest_source=_MEMORY_FIXTURE.read_text(),
     )
     package_id = int(created["id"])
 
-    _preflight_memory_demo(client, package_id)
-    run_id = _launch_memory_demo(client, package_id)
+    _preflight_memory_fixture(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     detail_response = client.get(f"/api/runs/{run_id}")
 
     assert detail_response.status_code == 200, detail_response.json()
@@ -462,11 +465,11 @@ def test_memory_enabled_workflow_failure_path_writes_one_run_finalize_checkpoint
     _RuntimeRecordingOpenAIClient.output_text = '{"summary":"missing required fields"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
     _seed_model_connection(session_factory)
-    created = _create_memory_demo_package(client)
+    created = _create_memory_fixture_package(client)
     package_id = int(created["id"])
 
-    _preflight_memory_demo(client, package_id)
-    run_id = _launch_memory_demo(client, package_id)
+    _preflight_memory_fixture(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     _drain_run_queue(session_factory)
     detail = _wait_for_run(client, run_id)
 
@@ -491,11 +494,11 @@ def test_memory_disabled_workflow_writes_no_run_finalize_checkpoint(
         "  memory:\n    enabled: false",
         1,
     )
-    created = _create_memory_demo_package(client, manifest_source=manifest_source)
+    created = _create_memory_fixture_package(client, manifest_source=manifest_source)
     package_id = int(created["id"])
 
-    _preflight_memory_demo(client, package_id)
-    run_id = _launch_memory_demo(client, package_id)
+    _preflight_memory_fixture(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     _drain_run_queue(session_factory)
     detail = _wait_for_run(client, run_id)
 
@@ -517,11 +520,11 @@ def test_consolidation_disabled_policy_skips_post_run_consolidation(
         "      consolidation: disabled",
         1,
     )
-    created = _create_memory_demo_package(client, manifest_source=manifest_source)
+    created = _create_memory_fixture_package(client, manifest_source=manifest_source)
     package_id = int(created["id"])
 
-    _preflight_memory_demo(client, package_id)
-    run_id = _launch_memory_demo(client, package_id)
+    _preflight_memory_fixture(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     _drain_run_queue(session_factory)
     detail = _wait_for_run(client, run_id)
 
@@ -539,9 +542,9 @@ def test_run_finalize_sequence_uses_persisted_steps_when_plan_rebuild_fails(
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_model_connection(session_factory)
-    created = _create_memory_demo_package(client)
+    created = _create_memory_fixture_package(client)
     package_id = int(created["id"])
-    run_id = _launch_memory_demo(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
 
     def fail_plan_rebuild(self: RunService, run: Run) -> object:
         _ = self, run
@@ -577,11 +580,11 @@ def test_run_finalize_checkpoint_failure_does_not_block_terminal_commit(
 
     monkeypatch.setattr(WorkflowCheckpointRepository, "create_checkpoint", fail_run_finalize)
     _seed_model_connection(session_factory)
-    created = _create_memory_demo_package(client)
+    created = _create_memory_fixture_package(client)
     package_id = int(created["id"])
 
-    _preflight_memory_demo(client, package_id)
-    run_id = _launch_memory_demo(client, package_id)
+    _preflight_memory_fixture(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     _drain_run_queue(session_factory)
     detail = _wait_for_run(client, run_id)
 
@@ -619,11 +622,11 @@ def test_run_end_consolidation_failure_happens_after_terminal_commit(
         fail_after_terminal_commit,
     )
     _seed_model_connection(session_factory)
-    created = _create_memory_demo_package(client)
+    created = _create_memory_fixture_package(client)
     package_id = int(created["id"])
 
-    _preflight_memory_demo(client, package_id)
-    run_id = _launch_memory_demo(client, package_id)
+    _preflight_memory_fixture(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     _drain_run_queue(session_factory)
     detail = _wait_for_run(client, run_id)
 
@@ -640,9 +643,9 @@ def test_fresh_failure_session_writes_one_run_finalize_checkpoint(
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_model_connection(session_factory)
-    created = _create_memory_demo_package(client)
+    created = _create_memory_fixture_package(client)
     package_id = int(created["id"])
-    run_id = _launch_memory_demo(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     worker = "fresh-failure-worker"
     with session_factory() as session:
         claimed_id = RunQueueService(session, session_factory, lease_owner=worker).claim_next_run()
@@ -671,9 +674,9 @@ def test_stale_lease_recovery_writes_one_run_finalize_checkpoint(
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_model_connection(session_factory)
-    created = _create_memory_demo_package(client)
+    created = _create_memory_fixture_package(client)
     package_id = int(created["id"])
-    run_id = _launch_memory_demo(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     source_memory_id = _seed_run_memory_source(session_factory, run_id=run_id)
     worker = "stale-memory-worker"
     recovery_worker = "stale-memory-recovery-worker"
@@ -733,9 +736,9 @@ def test_stale_lease_consolidation_failure_does_not_block_terminal_commit(
         fail_after_terminal_commit,
     )
     _seed_model_connection(session_factory)
-    created = _create_memory_demo_package(client)
+    created = _create_memory_fixture_package(client)
     package_id = int(created["id"])
-    run_id = _launch_memory_demo(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     _ = _seed_run_memory_source(session_factory, run_id=run_id)
     worker = "stale-memory-failing-consolidation-worker"
     recovery_worker = "stale-memory-failing-consolidation-recovery-worker"
@@ -775,9 +778,9 @@ def test_stale_lease_recovery_preserves_consolidation_disabled_policy(
         "      consolidation: disabled",
         1,
     )
-    created = _create_memory_demo_package(client, manifest_source=manifest_source)
+    created = _create_memory_fixture_package(client, manifest_source=manifest_source)
     package_id = int(created["id"])
-    run_id = _launch_memory_demo(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     _ = _seed_run_memory_source(session_factory, run_id=run_id)
     worker = "stale-memory-disabled-worker"
     recovery_worker = "stale-memory-disabled-recovery-worker"
@@ -821,11 +824,11 @@ def test_forbidden_states_not_injected_into_workflow_runtime_input(
     allowed_content = "Allowed active memory should be injected."
     allowed_memory_id = _seed_active_memory(session_factory, content=allowed_content)
     forbidden_markers = _seed_forbidden_memory_states(session_factory)
-    created = _create_memory_demo_package(client)
+    created = _create_memory_fixture_package(client)
     package_id = int(created["id"])
 
-    _preflight_memory_demo(client, package_id)
-    run_id = _launch_memory_demo(client, package_id)
+    _preflight_memory_fixture(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     _drain_run_queue(session_factory)
     detail = _wait_for_run(client, run_id)
 
@@ -863,11 +866,11 @@ def test_unsafe_active_memory_is_scanned_and_excluded_before_provider_input(
         content=unsafe_content,
         memory_id="mem-unsafe-scanned-context",
     )
-    created = _create_memory_demo_package(client)
+    created = _create_memory_fixture_package(client)
     package_id = int(created["id"])
 
-    _preflight_memory_demo(client, package_id)
-    run_id = _launch_memory_demo(client, package_id)
+    _preflight_memory_fixture(client, package_id)
+    run_id = _launch_memory_fixture(client, package_id)
     _drain_run_queue(session_factory)
     detail = _wait_for_run(client, run_id)
 
