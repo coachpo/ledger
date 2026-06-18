@@ -30,7 +30,10 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
     ServerDeclaredToolSpec(
         key="signaldeck.finance.indicators.lookup",
         display_name="Indicators Lookup",
-        description="Read server-owned market indicators for supported symbols and ranges.",
+        description=(
+            "Read server-owned technical indicators, including moving averages, "
+            "MACD, RSI, Bollinger bands, ATR, and VWMA."
+        ),
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
@@ -38,8 +41,8 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         key="signaldeck.finance.fundamentals.lookup",
         display_name="Fundamentals Lookup",
         description=(
-            "Read server-owned fundamentals data when provider support is "
-            "available; otherwise return structured warnings."
+            "Read server-owned fundamentals metrics and financial statements "
+            "when provider support is available; otherwise return structured warnings."
         ),
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
@@ -48,8 +51,8 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         key="signaldeck.finance.news.lookup",
         display_name="News Lookup",
         description=(
-            "Read server-owned news data when provider support is "
-            "available; otherwise return structured warnings."
+            "Read server-owned symbol, market, and global finance news with structured "
+            "warnings for provider, empty, truncated, or bounded global coverage."
         ),
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,

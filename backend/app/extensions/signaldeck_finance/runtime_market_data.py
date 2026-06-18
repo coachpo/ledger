@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, date, datetime, time
+from decimal import Decimal, InvalidOperation
 from typing import cast
 
 from app.agents.runtime_tools.types import (
@@ -43,7 +44,13 @@ from app.extensions.signaldeck_finance.runtime_types import (
     RuntimeSocialSentimentLookupResult,
 )
 from app.schemas.market_data import MarketHistorySeriesRead, MarketQuoteRead
-from app.services.market_data_service import MarketDataService, QuoteProvider, QuoteProviderError
+from app.services.market_data_service import (
+    MarketDataService,
+    MarketIndicatorSelection,
+    QuoteProvider,
+    QuoteProviderError,
+)
+from app.services.quote_provider import NewsScope
 
 MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_market_data_quote_lookup"
 MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_market_data_history_lookup"
@@ -79,10 +86,12 @@ _OHLCV_DEFAULT_ROW_LIMIT = 250
 _OHLCV_MAX_ROW_LIMIT = 500
 _INDICATOR_DEFAULT_ROW_LIMIT = 250
 _INDICATOR_MAX_ROW_LIMIT = 500
+_INDICATOR_MAX_SELECTIONS = 24
 _FUNDAMENTALS_DEFAULT_STATEMENT_LIMIT = 6
 _FUNDAMENTALS_MAX_STATEMENT_LIMIT = 12
 _NEWS_DEFAULT_ITEM_LIMIT = 25
 _NEWS_MAX_ITEM_LIMIT = 50
+_NEWS_SCOPES = {"symbol", "market", "global"}
 _SOCIAL_SENTIMENT_DEFAULT_ITEM_LIMIT = 25
 _SOCIAL_SENTIMENT_MAX_ITEM_LIMIT = 50
 _SOCIAL_SENTIMENT_SOURCES = {"reddit", "stocktwits"}
@@ -90,6 +99,36 @@ _INSIDER_DEFAULT_TRANSACTION_LIMIT = 50
 _INSIDER_MAX_TRANSACTION_LIMIT = 100
 _FINANCIAL_STATEMENT_TYPES = {"income_statement", "balance_sheet", "cash_flow"}
 _FINANCIAL_STATEMENT_PERIODS = {"annual", "quarterly", "trailing_twelve_months"}
+_FUNDAMENTAL_METRIC_NAMES = {
+    "beta",
+    "current_ratio",
+    "debt_to_equity",
+    "dividend_yield",
+    "earnings_growth",
+    "enterprise_value",
+    "ev_to_ebitda",
+    "forward_pe",
+    "free_cash_flow_margin",
+    "gross_margin",
+    "market_cap",
+    "net_margin",
+    "operating_margin",
+    "price_to_book",
+    "price_to_sales",
+    "return_on_assets",
+    "return_on_equity",
+    "revenue_growth",
+    "trailing_pe",
+}
+_INDICATOR_TYPES = {
+    "sma",
+    "ema",
+    "rsi",
+    "macd",
+    "bollinger_bands",
+    "atr",
+    "vwma",
+}
 MARKET_DATA_OHLCV_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
     MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY
 ]
@@ -109,8 +148,9 @@ INSIDER_DATA_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
 
 _QUOTE_LOOKUP_DESCRIPTION = "Read trusted market quote snapshots for up to 10 symbols."
 _QUOTE_LOOKUP_GUIDANCE = (
-    "When you need current or delayed market quotes, call the signaldeck_finance_market_data_quote_lookup "
-    "tool instead of inventing prices. Disclose returned warnings or empty payloads as "
+    "When you need current or delayed market quotes, call the "
+    "signaldeck_finance_market_data_quote_lookup tool instead of inventing prices. "
+    "Disclose returned warnings or empty payloads as "
     "data quality or provider limitations."
 )
 _QUOTE_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
@@ -131,9 +171,10 @@ _HISTORY_LOOKUP_DESCRIPTION = (
     "Read trusted historical close-price series for up to 5 symbols and a bounded point count."
 )
 _HISTORY_LOOKUP_GUIDANCE = (
-    "When you need historical market prices, call the signaldeck_finance_market_data_history_lookup "
-    "tool instead of inventing price history. Disclose returned warnings or empty payloads "
-    "as data quality or provider limitations."
+    "When you need historical market prices, call the "
+    "signaldeck_finance_market_data_history_lookup tool instead of inventing price "
+    "history. Disclose returned warnings or empty payloads as data quality or "
+    "provider limitations."
 )
 _HISTORY_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -159,10 +200,10 @@ _OHLCV_LOOKUP_DESCRIPTION = (
     "Read provider-backed daily OHLCV rows for up to 5 symbols and bounded dates."
 )
 _OHLCV_LOOKUP_GUIDANCE = (
-    "When you need daily OHLCV bars, call signaldeck_finance_market_data_ohlcv_lookup with explicit "
-    "date bounds instead of inventing bars. Disclose returned warnings or empty payloads "
-    "as data quality or provider limitations, and do not claim coverage beyond the rows "
-    "returned by SignalDeck."
+    "When you need daily OHLCV bars, call signaldeck_finance_market_data_ohlcv_lookup "
+    "with explicit date bounds instead of inventing bars. Disclose returned warnings "
+    "or empty payloads as data quality or provider limitations, and do not claim "
+    "coverage beyond the rows returned by SignalDeck."
 )
 _OHLCV_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -186,13 +227,13 @@ _OHLCV_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
 }
 
 _INDICATORS_LOOKUP_DESCRIPTION = (
-    "Read close-price and SMA indicator rows for one symbol over bounded dates."
+    "Read close-price and technical-analysis indicator rows for one symbol over bounded dates."
 )
 _INDICATORS_LOOKUP_GUIDANCE = (
-    "When you need close-price or SMA indicators, call signaldeck_finance_indicators_lookup with "
-    "currentDate, startDate, and endDate. Treat null SMA values as warmup or insufficient "
-    "history, disclose warnings or empty payloads as data quality or provider limitations, "
-    "and do not infer unsupported indicators."
+    "When you need technical indicators, call signaldeck_finance_indicators_lookup with "
+    "currentDate, startDate, endDate, and explicit indicators. Treat null values as warmup, "
+    "insufficient history, or provider gaps, disclose warnings or empty payloads as data "
+    "quality or provider limitations, and do not infer unsupported indicators."
 )
 _INDICATORS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -201,9 +242,54 @@ _INDICATORS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
         "currentDate": {"type": "string"},
         "startDate": {"type": "string"},
         "endDate": {"type": "string"},
-        "smaWindows": {
-            "type": ["array", "null"],
-            "items": {"type": "integer", "minimum": 1, "maximum": _INDICATOR_MAX_ROW_LIMIT},
+        "indicators": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "sma",
+                            "ema",
+                            "rsi",
+                            "macd",
+                            "bollinger_bands",
+                            "atr",
+                            "vwma",
+                        ],
+                    },
+                    "window": {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                        "maximum": _INDICATOR_MAX_ROW_LIMIT,
+                    },
+                    "fastWindow": {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                        "maximum": _INDICATOR_MAX_ROW_LIMIT,
+                    },
+                    "slowWindow": {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                        "maximum": _INDICATOR_MAX_ROW_LIMIT,
+                    },
+                    "signalWindow": {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                        "maximum": _INDICATOR_MAX_ROW_LIMIT,
+                    },
+                    "standardDeviations": {
+                        "type": ["number", "string", "null"],
+                        "minimum": 0,
+                        "maximum": 10,
+                    },
+                },
+                "required": ["type"],
+                "additionalProperties": False,
+            },
+            "minItems": 1,
+            "maxItems": _INDICATOR_MAX_SELECTIONS,
         },
         "rowLimit": {
             "type": ["integer", "null"],
@@ -211,7 +297,7 @@ _INDICATORS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
             "maximum": _INDICATOR_MAX_ROW_LIMIT,
         },
     },
-    "required": ["symbol", "currentDate", "startDate", "endDate", "smaWindows", "rowLimit"],
+    "required": ["symbol", "currentDate", "startDate", "endDate", "indicators", "rowLimit"],
     "additionalProperties": False,
 }
 
@@ -227,6 +313,13 @@ _FUNDAMENTALS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
         "symbol": {"type": "string"},
+        "metricNames": {
+            "type": ["array", "null"],
+            "items": {
+                "type": "string",
+                "enum": sorted(_FUNDAMENTAL_METRIC_NAMES),
+            },
+        },
         "statementTypes": {
             "type": ["array", "null"],
             "items": {
@@ -247,18 +340,20 @@ _FUNDAMENTALS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
             "maximum": _FUNDAMENTALS_MAX_STATEMENT_LIMIT,
         },
     },
-    "required": ["symbol", "statementTypes", "periods", "statementLimit"],
+    "required": ["symbol", "metricNames", "statementTypes", "periods", "statementLimit"],
     "additionalProperties": False,
 }
 
 _NEWS_LOOKUP_DESCRIPTION = (
-    "Read provider-backed market news for optional symbols, query text, and bounded dates."
+    "Read provider-backed symbol, market, or global finance news for optional symbols, "
+    "query text, and bounded dates."
 )
 _NEWS_LOOKUP_GUIDANCE = (
-    "When you need market news, call signaldeck_finance_news_lookup with symbols, query, or both "
-    "instead of inventing articles. Disclose warnings or empty results as data quality "
-    "or provider limitations, and do not present unsupported provider coverage as if "
-    "it were available."
+    "When you need market or global finance news, call signaldeck_finance_news_lookup "
+    "with scope, symbols, query, or a combination instead of inventing articles. Use "
+    "signaldeck_finance_social_sentiment_lookup separately for retail/social sentiment. "
+    "Disclose warnings or empty results as data quality or provider limitations, and "
+    "do not present unsupported provider coverage as if it were available."
 )
 _NEWS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -268,7 +363,11 @@ _NEWS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
             "items": {"type": "string"},
             "maxItems": _MARKET_DATA_SYMBOL_LIMIT,
         },
-        "query": {"type": ["string", "null"]},
+        "query": {"type": ["string", "null"], "maxLength": 240},
+        "scope": {
+            "type": ["string", "null"],
+            "enum": ["symbol", "market", "global", None],
+        },
         "startDate": {"type": ["string", "null"]},
         "endDate": {"type": ["string", "null"]},
         "itemLimit": {
@@ -277,7 +376,7 @@ _NEWS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
             "maximum": _NEWS_MAX_ITEM_LIMIT,
         },
     },
-    "required": ["symbols", "query", "startDate", "endDate", "itemLimit"],
+    "required": ["symbols", "query", "scope", "startDate", "endDate", "itemLimit"],
     "additionalProperties": False,
 }
 
@@ -285,10 +384,11 @@ _SOCIAL_SENTIMENT_LOOKUP_DESCRIPTION = (
     "Read provider-backed social sentiment source blocks for one symbol and optional sources."
 )
 _SOCIAL_SENTIMENT_LOOKUP_GUIDANCE = (
-    "When you need retail or social sentiment, call signaldeck_finance_social_sentiment_lookup with a "
-    "symbol instead of treating news as social data. Use only returned source blocks and "
-    "metrics, disclose warnings or empty payloads as data quality or provider limitations, "
-    "and keep this output separate from signaldeck_finance_news_lookup results."
+    "When you need retail or social sentiment, call "
+    "signaldeck_finance_social_sentiment_lookup with a symbol instead of treating news "
+    "as social data. Use only returned source blocks and metrics, disclose warnings or "
+    "empty payloads as data quality or provider limitations, and keep this output "
+    "separate from signaldeck_finance_news_lookup results."
 )
 _SOCIAL_SENTIMENT_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -317,9 +417,9 @@ _INSIDER_DATA_LOOKUP_DESCRIPTION = (
     "Read provider-backed insider transactions for one symbol and optional bounded dates."
 )
 _INSIDER_DATA_LOOKUP_GUIDANCE = (
-    "When you need insider transactions, call signaldeck_finance_insider_data_lookup with a symbol and "
-    "optional date bounds. Disclose warnings or empty payloads as data quality or provider "
-    "limitations, and do not fabricate transaction coverage."
+    "When you need insider transactions, call signaldeck_finance_insider_data_lookup "
+    "with a symbol and optional date bounds. Disclose warnings or empty payloads as "
+    "data quality or provider limitations, and do not fabricate transaction coverage."
 )
 _INSIDER_DATA_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -436,7 +536,7 @@ def parse_indicators_lookup_arguments(arguments_json: str) -> dict[str, object]:
     )
     _reject_unexpected_keys(
         raw_arguments,
-        allowed_keys={"symbol", "currentDate", "startDate", "endDate", "smaWindows", "rowLimit"},
+        allowed_keys={"symbol", "currentDate", "startDate", "endDate", "indicators", "rowLimit"},
         function_name=INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME,
     )
     current_date = _parse_required_datetime_argument(
@@ -475,13 +575,7 @@ def parse_indicators_lookup_arguments(arguments_json: str) -> dict[str, object]:
         "current_date": current_date,
         "start_date": start_date,
         "end_date": end_date,
-        "sma_windows": _parse_optional_integer_list_argument(
-            raw_arguments.get("smaWindows"),
-            function_name=INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME,
-            field_name="smaWindows",
-            minimum=1,
-            maximum=_INDICATOR_MAX_ROW_LIMIT,
-        ),
+        "indicators": _parse_indicator_selection_argument(raw_arguments.get("indicators")),
         "row_limit": _parse_optional_integer_argument(
             raw_arguments.get("rowLimit"),
             function_name=INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -500,7 +594,7 @@ def parse_fundamentals_lookup_arguments(arguments_json: str) -> dict[str, object
     )
     _reject_unexpected_keys(
         raw_arguments,
-        allowed_keys={"symbol", "statementTypes", "periods", "statementLimit"},
+        allowed_keys={"symbol", "metricNames", "statementTypes", "periods", "statementLimit"},
         function_name=FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME,
     )
     return {
@@ -508,6 +602,12 @@ def parse_fundamentals_lookup_arguments(arguments_json: str) -> dict[str, object
             raw_arguments.get("symbol"),
             function_name=FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME,
             field_name="symbol",
+        ),
+        "metric_names": _parse_optional_string_list_argument(
+            raw_arguments.get("metricNames"),
+            function_name=FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME,
+            field_name="metricNames",
+            allowed_values=_FUNDAMENTAL_METRIC_NAMES,
         ),
         "statement_types": _parse_optional_string_list_argument(
             raw_arguments.get("statementTypes"),
@@ -539,7 +639,7 @@ def parse_news_lookup_arguments(arguments_json: str) -> dict[str, object]:
     )
     _reject_unexpected_keys(
         raw_arguments,
-        allowed_keys={"symbols", "query", "startDate", "endDate", "itemLimit"},
+        allowed_keys={"symbols", "query", "scope", "startDate", "endDate", "itemLimit"},
         function_name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
     )
     start_date = _parse_optional_datetime_argument(
@@ -554,17 +654,26 @@ def parse_news_lookup_arguments(arguments_json: str) -> dict[str, object]:
     )
     if start_date is not None and end_date is not None:
         _validate_date_bounds(start_date, end_date, function_name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME)
+    symbols = _parse_optional_symbols_argument(
+        raw_arguments.get("symbols"),
+        function_name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
+        maximum=_MARKET_DATA_SYMBOL_LIMIT,
+    )
+    query = _parse_optional_string_argument(
+        raw_arguments.get("query"),
+        function_name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
+        field_name="query",
+    )
+    if query is not None and len(query) > 240:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{NEWS_LOOKUP_OPENAI_FUNCTION_NAME} query must be at most 240 characters.",
+        )
+    scope = _parse_news_scope_argument(raw_arguments.get("scope"), symbols=symbols)
     return {
-        "symbols": _parse_optional_symbols_argument(
-            raw_arguments.get("symbols"),
-            function_name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
-            maximum=_MARKET_DATA_SYMBOL_LIMIT,
-        ),
-        "query": _parse_optional_string_argument(
-            raw_arguments.get("query"),
-            function_name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
-            field_name="query",
-        ),
+        "symbols": symbols,
+        "query": query,
+        "scope": scope,
         "start_date": start_date,
         "end_date": end_date,
         "item_limit": _parse_optional_integer_argument(
@@ -789,7 +898,7 @@ def execute_indicators_lookup(
             current_date=cast(datetime, arguments["current_date"]),
             start_date=cast(datetime, arguments["start_date"]),
             end_date=cast(datetime, arguments["end_date"]),
-            sma_windows=cast(tuple[int, ...] | None, arguments["sma_windows"]),
+            indicators=cast(tuple[MarketIndicatorSelection, ...], arguments["indicators"]),
             row_limit=cast(int, arguments["row_limit"]),
         )
     runtime_result = RuntimeIndicatorLookupResult.model_validate(result.model_dump(mode="python"))
@@ -809,6 +918,14 @@ def execute_fundamentals_lookup(
             session=session,
             quote_provider=quote_provider,
         ).get_fundamentals_snapshot(cast(str, arguments["symbol"]))
+    filtered_metrics = [
+        metric
+        for metric in result.metrics
+        if _metric_matches_filters(
+            name=metric.name,
+            metric_names=cast(tuple[str, ...] | None, arguments["metric_names"]),
+        )
+    ]
     filtered_statements = [
         statement
         for statement in result.statements
@@ -820,7 +937,9 @@ def execute_fundamentals_lookup(
         )
     ][: cast(int, arguments["statement_limit"])]
     runtime_result = RuntimeFundamentalsLookupResult.model_validate(
-        result.model_copy(update={"statements": filtered_statements}).model_dump(mode="python")
+        result.model_copy(
+            update={"metrics": filtered_metrics, "statements": filtered_statements}
+        ).model_dump(mode="python")
     )
     return cast(dict[str, object], runtime_result.model_dump(mode="json", by_alias=True))
 
@@ -838,6 +957,7 @@ def execute_news_lookup(
         result = service.get_news_snapshot(
             symbols=cast(list[str], arguments["symbols"]),
             query=cast(str | None, arguments["query"]),
+            scope=cast(NewsScope, arguments["scope"]),
             start_date=cast(datetime | None, arguments["start_date"]),
             end_date=cast(datetime | None, arguments["end_date"]),
             item_limit=cast(int, arguments["item_limit"]),
@@ -1039,6 +1159,35 @@ def _parse_optional_string_argument(
     return normalized or None
 
 
+def _parse_news_scope_argument(
+    value: object,
+    *,
+    symbols: list[str],
+) -> str:
+    if value is None:
+        return "symbol" if symbols else "market"
+    if not isinstance(value, str):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{NEWS_LOOKUP_OPENAI_FUNCTION_NAME} scope must be a string.",
+        )
+    normalized = value.strip().lower()
+    if normalized not in _NEWS_SCOPES:
+        allowed_values_text = ", ".join(sorted(_NEWS_SCOPES))
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{NEWS_LOOKUP_OPENAI_FUNCTION_NAME} scope must use: " f"{allowed_values_text}."
+            ),
+        )
+    if normalized == "symbol" and not symbols:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{NEWS_LOOKUP_OPENAI_FUNCTION_NAME} scope symbol requires symbols.",
+        )
+    return normalized
+
+
 def _parse_history_range(value: object) -> str:
     if value is None:
         return "3mo"
@@ -1087,46 +1236,188 @@ def _parse_optional_integer_argument(
     return int(value)
 
 
-def _parse_optional_integer_list_argument(
-    value: object,
-    *,
-    function_name: str,
-    field_name: str,
-    minimum: int,
-    maximum: int,
-) -> tuple[int, ...] | None:
-    if value is None:
-        return None
+def _parse_indicator_selection_argument(value: object) -> tuple[MarketIndicatorSelection, ...]:
     if not isinstance(value, list):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"{function_name} {field_name} must be an array of integers.",
+            message=f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} indicators must be an array.",
         )
-    values: list[int] = []
-    seen_values: set[int] = set()
-    for raw_value in cast(list[object], value):
-        parsed_value = _parse_optional_integer_argument(
-            raw_value,
-            function_name=function_name,
-            field_name=field_name,
-            minimum=minimum,
-            maximum=maximum,
-        )
-        if parsed_value is None:
-            raise RuntimeToolError(
-                code="agent_tool_call_invalid",
-                message=f"{function_name} {field_name} must be an array of integers.",
-            )
-        if parsed_value in seen_values:
-            continue
-        values.append(parsed_value)
-        seen_values.add(parsed_value)
-    if not values:
+    raw_selections = cast(list[object], value)
+    if len(raw_selections) > _INDICATOR_MAX_SELECTIONS:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"{function_name} {field_name} must contain at least one value.",
+            message=(
+                f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} indicators must contain "
+                f"at most {_INDICATOR_MAX_SELECTIONS} selections."
+            ),
         )
-    return tuple(values)
+    selections: list[MarketIndicatorSelection] = []
+    seen_keys: set[tuple[object, ...]] = set()
+    for raw_selection in raw_selections:
+        if not isinstance(raw_selection, dict):
+            raise RuntimeToolError(
+                code="agent_tool_call_invalid",
+                message=(
+                    f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} indicators must be "
+                    "an array of objects."
+                ),
+            )
+        selection = _parse_indicator_selection(cast(dict[str, object], raw_selection))
+        key = _indicator_selection_key(selection)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        selections.append(selection)
+    if not selections:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} indicators must not be empty.",
+        )
+    return tuple(selections)
+
+
+def _parse_indicator_selection(raw_selection: dict[str, object]) -> MarketIndicatorSelection:
+    _reject_unexpected_keys(
+        raw_selection,
+        allowed_keys={
+            "type",
+            "window",
+            "fastWindow",
+            "slowWindow",
+            "signalWindow",
+            "standardDeviations",
+        },
+        function_name=INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME,
+    )
+    indicator_type = _parse_indicator_type(raw_selection.get("type"))
+    if indicator_type in {"sma", "ema", "rsi", "atr", "vwma"}:
+        return MarketIndicatorSelection(
+            indicator=indicator_type,
+            window=_parse_required_indicator_integer(raw_selection.get("window"), "window"),
+        )
+    if indicator_type == "macd":
+        fast_window = _parse_required_indicator_integer(
+            raw_selection.get("fastWindow"), "fastWindow"
+        )
+        slow_window = _parse_required_indicator_integer(
+            raw_selection.get("slowWindow"), "slowWindow"
+        )
+        signal_window = _parse_required_indicator_integer(
+            raw_selection.get("signalWindow"),
+            "signalWindow",
+        )
+        if fast_window >= slow_window:
+            raise RuntimeToolError(
+                code="agent_tool_call_invalid",
+                message=(
+                    f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} MACD fastWindow must be "
+                    "less than slowWindow."
+                ),
+            )
+        return MarketIndicatorSelection(
+            indicator="macd",
+            fast_window=fast_window,
+            slow_window=slow_window,
+            signal_window=signal_window,
+        )
+    if indicator_type == "bollinger_bands":
+        return MarketIndicatorSelection(
+            indicator="bollinger_bands",
+            window=_parse_required_indicator_integer(raw_selection.get("window"), "window"),
+            standard_deviations=_parse_standard_deviations(raw_selection.get("standardDeviations")),
+        )
+    raise RuntimeToolError(
+        code="agent_tool_call_invalid",
+        message=f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} indicator type is unsupported.",
+    )
+
+
+def _parse_indicator_type(value: object) -> str:
+    if not isinstance(value, str):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} indicator type is required.",
+        )
+    normalized = value.strip().lower()
+    if normalized not in _INDICATOR_TYPES:
+        allowed_values_text = ", ".join(sorted(_INDICATOR_TYPES))
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} indicator type must use: "
+                f"{allowed_values_text}."
+            ),
+        )
+    return normalized
+
+
+def _parse_required_indicator_integer(value: object, field_name: str) -> int:
+    parsed_value = _parse_optional_integer_argument(
+        value,
+        function_name=INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME,
+        field_name=field_name,
+        minimum=1,
+        maximum=_INDICATOR_MAX_ROW_LIMIT,
+    )
+    if parsed_value is None:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} is required.",
+        )
+    return parsed_value
+
+
+def _parse_standard_deviations(value: object) -> Decimal:
+    if value is None:
+        return Decimal("2")
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} standardDeviations must be "
+                "a number or numeric string."
+            ),
+        )
+    try:
+        parsed_value = Decimal(str(value).strip())
+    except InvalidOperation as exc:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} standardDeviations must be "
+                "a finite positive number."
+            ),
+        ) from exc
+    if not parsed_value.is_finite() or parsed_value <= 0:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} standardDeviations must be "
+                "a finite positive number."
+            ),
+        )
+    if parsed_value > Decimal("10"):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} standardDeviations "
+                "must be at most 10."
+            ),
+        )
+    return parsed_value
+
+
+def _indicator_selection_key(selection: MarketIndicatorSelection) -> tuple[object, ...]:
+    if selection.indicator in {"sma", "ema", "rsi", "atr", "vwma"}:
+        return (selection.indicator, selection.window)
+    if selection.indicator == "macd":
+        return (
+            selection.indicator,
+            selection.fast_window,
+            selection.slow_window,
+            selection.signal_window,
+        )
+    return (selection.indicator, selection.window, selection.standard_deviations)
 
 
 def _parse_optional_string_list_argument(
@@ -1251,6 +1542,14 @@ def _statement_matches_filters(
     if periods is not None and period not in periods:
         return False
     return True
+
+
+def _metric_matches_filters(
+    *,
+    name: str,
+    metric_names: tuple[str, ...] | None,
+) -> bool:
+    return metric_names is None or name in metric_names
 
 
 def _require_quote_provider(context: RuntimeToolContext, *, function_name: str) -> QuoteProvider:

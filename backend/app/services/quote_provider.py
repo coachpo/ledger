@@ -38,6 +38,9 @@ class QuoteProviderRateLimitError(QuoteProviderError):
         super().__init__(message, code="provider_rate_limited", details=details)
 
 
+NewsScope = Literal["symbol", "market", "global"]
+
+
 @dataclass(slots=True)
 class ProviderQuote:
     symbol: str
@@ -171,6 +174,7 @@ class QuoteProvider(Protocol):
         *,
         symbols: list[str],
         query: str | None,
+        scope: NewsScope,
         start_date: datetime | None,
         end_date: datetime | None,
         limit: int,
@@ -378,6 +382,7 @@ class YahooFinanceQuoteProvider:
         *,
         symbols: list[str],
         query: str | None,
+        scope: NewsScope,
         start_date: datetime | None,
         end_date: datetime | None,
         limit: int,
@@ -385,7 +390,7 @@ class YahooFinanceQuoteProvider:
         normalized_symbols = _normalize_symbols(symbols)
         normalized_start = to_utc(start_date) if start_date is not None else None
         normalized_end = to_utc(end_date) if end_date is not None else None
-        query_text = _build_news_query(normalized_symbols, query)
+        query_text = _build_news_query(normalized_symbols, query, scope=scope)
         payload = self._fetch_news_payload(query_text, limit=limit)
         news_items = _as_object_list(
             payload.get("news", []),
@@ -616,7 +621,53 @@ class DeterministicQuoteProvider:
                     currency="USD",
                     period="ttm",
                     as_of=as_of,
-                )
+                ),
+                ProviderFundamentalMetric(
+                    name="enterprise_value",
+                    value=Decimal("1200000000"),
+                    currency="USD",
+                    period="ttm",
+                    as_of=as_of,
+                ),
+                ProviderFundamentalMetric(
+                    name="trailing_pe", value=Decimal("28.5"), period="ttm", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="price_to_sales", value=Decimal("9.4"), period="ttm", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="gross_margin", value=Decimal("0.62"), period="ttm", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="operating_margin", value=Decimal("0.31"), period="ttm", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="net_margin", value=Decimal("0.24"), period="ttm", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="return_on_equity", value=Decimal("0.34"), period="ttm", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="revenue_growth", value=Decimal("0.18"), period="ttm", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="earnings_growth", value=Decimal("0.21"), period="ttm", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="free_cash_flow_margin", value=Decimal("0.19"), period="ttm", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="debt_to_equity", value=Decimal("0.42"), period="mrq", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="current_ratio", value=Decimal("1.80"), period="mrq", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="dividend_yield", value=Decimal("0.006"), period="ttm", as_of=as_of
+                ),
+                ProviderFundamentalMetric(
+                    name="beta", value=Decimal("1.20"), period="5y", as_of=as_of
+                ),
             ],
             statements=[
                 ProviderFinancialStatement(
@@ -628,9 +679,97 @@ class DeterministicQuoteProvider:
                             name="revenue",
                             value=Decimal("100000000"),
                             currency="USD",
-                        )
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="gross_profit",
+                            value=Decimal("62000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="operating_income",
+                            value=Decimal("31000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="ebitda",
+                            value=Decimal("36000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="net_income",
+                            value=Decimal("24000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="eps_diluted",
+                            value=Decimal("4.20"),
+                            currency="USD",
+                        ),
                     ],
-                )
+                ),
+                ProviderFinancialStatement(
+                    statement_type="balance_sheet",
+                    period="annual",
+                    period_end=as_of,
+                    lines=[
+                        ProviderFinancialStatementLine(
+                            name="cash_and_equivalents",
+                            value=Decimal("12000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="total_assets",
+                            value=Decimal("240000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="total_liabilities",
+                            value=Decimal("96000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="total_debt",
+                            value=Decimal("42000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="total_equity",
+                            value=Decimal("144000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="shares_outstanding",
+                            value=Decimal("10000000"),
+                        ),
+                    ],
+                ),
+                ProviderFinancialStatement(
+                    statement_type="cash_flow",
+                    period="annual",
+                    period_end=as_of,
+                    lines=[
+                        ProviderFinancialStatementLine(
+                            name="operating_cash_flow",
+                            value=Decimal("28000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="capital_expenditures",
+                            value=Decimal("-9000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="free_cash_flow",
+                            value=Decimal("19000000"),
+                            currency="USD",
+                        ),
+                        ProviderFinancialStatementLine(
+                            name="dividends_paid",
+                            value=Decimal("-1200000"),
+                            currency="USD",
+                        ),
+                    ],
+                ),
             ],
         )
 
@@ -639,11 +778,29 @@ class DeterministicQuoteProvider:
         *,
         symbols: list[str],
         query: str | None,
+        scope: NewsScope,
         start_date: datetime | None,
         end_date: datetime | None,
         limit: int,
     ) -> ProviderNewsResult:
-        del query, start_date, end_date
+        del start_date, end_date
+        normalized_symbols = _normalize_symbols(symbols)
+        if not normalized_symbols:
+            query_label = (query or scope).strip().replace("_", " ")
+            return ProviderNewsResult(
+                provider=self.provider_name,
+                items=[
+                    ProviderNewsItem(
+                        title=f"{query_label} deterministic news update",
+                        source="deterministic_test",
+                        published_at=datetime.combine(
+                            date(2024, 3, 29), datetime.min.time(), tzinfo=UTC
+                        ),
+                        symbols=[],
+                        sentiment="neutral",
+                    )
+                ][:limit],
+            )
         items = [
             ProviderNewsItem(
                 title=f"{normalize_symbol(symbol)} deterministic market update",
@@ -652,7 +809,7 @@ class DeterministicQuoteProvider:
                 symbols=[normalize_symbol(symbol)],
                 sentiment="neutral",
             )
-            for symbol in symbols[:limit]
+            for symbol in normalized_symbols[:limit]
         ]
         return ProviderNewsResult(provider=self.provider_name, items=items)
 
@@ -734,8 +891,11 @@ def _as_object_list(value: object, *, context: str) -> list[object]:
     return cast(list[object], value)
 
 
-def _build_news_query(symbols: list[str], query: str | None) -> str:
-    parts = [symbol for symbol in symbols]
+def _build_news_query(symbols: list[str], query: str | None, *, scope: NewsScope) -> str:
+    parts: list[str] = []
+    if scope == "global":
+        parts.extend(["global", "financial", "markets", "economy"])
+    parts.extend(symbol for symbol in symbols)
     normalized_query = query.strip() if query is not None else ""
     if normalized_query:
         parts.append(normalized_query)

@@ -5,7 +5,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import TypeVar
+from typing import Literal, TypeVar, cast
 
 from sqlalchemy.orm import Session
 
@@ -60,7 +60,9 @@ from app.services.market_data_snapshots import MarketDataOhlcvRow as RuntimeOhlc
 from app.services.market_data_snapshots import MarketDataOhlcvSeries as RuntimeOhlcvSeries
 from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import (
+    NewsScope,
     ProviderFinancialStatement,
+    ProviderFinancialStatementLine,
     ProviderFundamentalMetric,
     ProviderFundamentals,
     ProviderHistoryPoint,
@@ -80,11 +82,81 @@ from app.services.runtime_tool_grants import RuntimeToolGrantPolicy, RuntimeTool
 
 _ProviderResultT = TypeVar("_ProviderResultT")
 
+_FUNDAMENTAL_METRIC_ORDER = {
+    name: index
+    for index, name in enumerate(
+        (
+            "market_cap",
+            "enterprise_value",
+            "trailing_pe",
+            "forward_pe",
+            "price_to_sales",
+            "price_to_book",
+            "ev_to_ebitda",
+            "gross_margin",
+            "operating_margin",
+            "net_margin",
+            "return_on_equity",
+            "return_on_assets",
+            "revenue_growth",
+            "earnings_growth",
+            "free_cash_flow_margin",
+            "debt_to_equity",
+            "current_ratio",
+            "dividend_yield",
+            "beta",
+        )
+    )
+}
+_FINANCIAL_STATEMENT_TYPE_ORDER = {
+    "income_statement": 0,
+    "balance_sheet": 1,
+    "cash_flow": 2,
+}
+_FINANCIAL_STATEMENT_PERIOD_ORDER = {
+    "annual": 0,
+    "quarterly": 1,
+    "trailing_twelve_months": 2,
+}
+_FINANCIAL_STATEMENT_LINE_ORDER = {
+    name: index
+    for index, name in enumerate(
+        (
+            "revenue",
+            "gross_profit",
+            "operating_income",
+            "ebitda",
+            "net_income",
+            "eps_diluted",
+            "cash_and_equivalents",
+            "total_assets",
+            "total_liabilities",
+            "total_debt",
+            "total_equity",
+            "shares_outstanding",
+            "operating_cash_flow",
+            "capital_expenditures",
+            "free_cash_flow",
+            "dividends_paid",
+        )
+    )
+}
+
 
 @dataclass(frozen=True, slots=True)
 class MarketClosePoint:
     at: datetime
     close: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class MarketIndicatorSelection:
+    indicator: str
+    window: int | None = None
+    fast_window: int | None = None
+    slow_window: int | None = None
+    signal_window: int | None = None
+    standard_deviations: Decimal | None = None
 
 
 _SECRET_ASSIGNMENT_RE = re.compile(
@@ -101,6 +173,7 @@ _WARNING_DETAIL_KEY_TOKEN_RE = re.compile(r"[^A-Za-z0-9]+")
 __all__ = [
     "MarketClosePoint",
     "MarketDataService",
+    "MarketIndicatorSelection",
     "ProviderFinancialStatement",
     "ProviderFundamentalMetric",
     "ProviderFundamentals",
@@ -130,7 +203,6 @@ class MarketDataService:
     ohlcv_interval: str = "1d"
     ohlcv_default_row_limit: int = 250
     ohlcv_max_row_limit: int = 500
-    indicator_default_sma_windows: tuple[int, ...] = (20,)
     provider_fallback_max_attempts: int = 3
     news_default_item_limit: int = 25
     news_max_item_limit: int = 50
@@ -337,7 +409,7 @@ class MarketDataService:
         current_date: datetime,
         start_date: datetime,
         end_date: datetime,
-        sma_windows: Sequence[int] | None = None,
+        indicators: Sequence[MarketIndicatorSelection],
         row_limit: int | None = None,
     ) -> RuntimeIndicatorLookupResult:
         self._require_enabled()
@@ -353,7 +425,7 @@ class MarketDataService:
         if normalized_end > normalized_current:
             raise QuoteProviderError("endDate cannot be after currentDate")
 
-        normalized_windows = self._normalize_indicator_sma_windows(sma_windows)
+        normalized_indicators = self._normalize_indicator_selections(indicators)
         ohlcv_result = self.get_ohlcv_snapshot(
             [normalized_symbol],
             start_date=normalized_start,
@@ -381,7 +453,7 @@ class MarketDataService:
             rows=self._build_indicator_rows(
                 ohlcv_series.rows,
                 current_date=normalized_current,
-                sma_windows=normalized_windows,
+                indicators=normalized_indicators,
             ),
             warnings=ohlcv_result.warnings,
         )
@@ -424,10 +496,10 @@ class MarketDataService:
                         value=line.value,
                         currency=line.currency,
                     )
-                    for line in statement.lines
+                    for line in self._sort_fundamental_statement_lines(statement.lines)
                 ],
             )
-            for statement in provider_result.statements
+            for statement in self._sort_fundamental_statements(provider_result.statements)
         ]
         if not metrics and not statements:
             warnings.append(
@@ -451,6 +523,7 @@ class MarketDataService:
         *,
         symbols: list[str] | None = None,
         query: str | None = None,
+        scope: NewsScope | None = None,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         item_limit: int | None = None,
@@ -458,6 +531,11 @@ class MarketDataService:
     ) -> RuntimeNewsLookupResult:
         self._require_enabled()
         normalized_symbols = self._normalize_optional_symbols(symbols or [])
+        normalized_query = query.strip() if query is not None and query.strip() else None
+        normalized_scope = self._normalize_news_scope(
+            scope,
+            symbols=normalized_symbols,
+        )
         normalized_start = to_utc(start_date) if start_date is not None else None
         normalized_end = to_utc(end_date) if end_date is not None else None
         if (
@@ -478,20 +556,36 @@ class MarketDataService:
             operation="news",
             call=lambda provider: provider.fetch_news(
                 symbols=normalized_symbols,
-                query=query.strip() if query is not None else None,
+                query=normalized_query,
+                scope=normalized_scope,
                 start_date=normalized_start,
                 end_date=normalized_end,
                 limit=effective_limit + 1,
             ),
         )
-        items = self._build_news_items(provider_result.items if provider_result is not None else [])
+        items = self._build_news_items(
+            provider_result.items if provider_result is not None else [],
+            start_date=normalized_start,
+            end_date=normalized_end,
+        )
         if len(items) > effective_limit:
             items = items[:effective_limit]
             warnings.append(
                 self._runtime_warning(
                     code="news_truncated",
                     message=f"News results were truncated to {effective_limit} items",
-                    details={"limit": str(effective_limit)},
+                    details={"limit": str(effective_limit), "scope": normalized_scope},
+                )
+            )
+        if provider_result is not None and normalized_scope == "global":
+            warnings.append(
+                self._runtime_warning(
+                    code="news_global_coverage_limited",
+                    message="Global news coverage is bounded by the configured finance provider",
+                    details={
+                        "scope": normalized_scope,
+                        "provider": provider_result.provider,
+                    },
                 )
             )
         if provider_result is not None and not items:
@@ -499,11 +593,16 @@ class MarketDataService:
                 self._runtime_warning(
                     code="news_empty",
                     message="No news returned for the request",
-                    details={"symbols": ",".join(normalized_symbols)},
+                    details={
+                        "symbols": ",".join(normalized_symbols),
+                        "query": normalized_query or "",
+                        "scope": normalized_scope,
+                        "provider": provider_result.provider,
+                    },
                 )
             )
         return RuntimeNewsLookupResult(
-            query=query.strip() if query is not None and query.strip() else None,
+            query=normalized_query,
             symbols=normalized_symbols,
             start_date=normalized_start,
             end_date=normalized_end,
@@ -675,10 +774,10 @@ class MarketDataService:
         rows: list[RuntimeOhlcvRow],
         *,
         current_date: datetime,
-        sma_windows: tuple[int, ...],
+        indicators: tuple[MarketIndicatorSelection, ...],
     ) -> list[RuntimeIndicatorRow]:
         closes = [row.close for row in rows]
-        has_enough_history = {window: len(closes) >= window for window in sma_windows}
+        computed = self._compute_indicator_series(rows, indicators)
         indicator_rows: list[RuntimeIndicatorRow] = []
         for row_index, row in enumerate(rows):
             row_time = to_utc(row.at)
@@ -686,32 +785,433 @@ class MarketDataService:
                 raise QuoteProviderError("Indicator OHLCV rows cannot be after currentDate")
 
             values = [RuntimeIndicatorValue(name="close", value=row.close)]
-            for window in sma_windows:
-                name = f"sma_{window}"
-                available_count = row_index + 1
-                if available_count < window:
-                    values.append(
-                        RuntimeIndicatorValue(
-                            name=name,
-                            value=None,
-                            null_reason=(
-                                "warmup" if has_enough_history[window] else "insufficient_history"
-                            ),
-                        )
-                    )
-                    continue
-
-                window_closes = closes[available_count - window : available_count]
-                values.append(
-                    RuntimeIndicatorValue(
-                        name=name,
-                        value=sum(window_closes, Decimal("0")) / Decimal(window),
+            for indicator in indicators:
+                values.extend(
+                    self._indicator_values_for_row(
+                        indicator,
+                        row_index=row_index,
+                        row_count=len(closes),
+                        computed=computed,
                     )
                 )
 
             indicator_rows.append(RuntimeIndicatorRow(at=row_time, values=values))
 
         return indicator_rows
+
+    def _compute_indicator_series(
+        self,
+        rows: list[RuntimeOhlcvRow],
+        indicators: tuple[MarketIndicatorSelection, ...],
+    ) -> dict[tuple[object, ...], list[Decimal | None] | dict[str, list[Decimal | None]]]:
+        closes = [row.close for row in rows]
+        computed: dict[
+            tuple[object, ...], list[Decimal | None] | dict[str, list[Decimal | None]]
+        ] = {}
+        for indicator in indicators:
+            key = self._indicator_selection_key(indicator)
+            if key in computed:
+                continue
+            if indicator.indicator == "sma" and indicator.window is not None:
+                computed[key] = self._compute_sma_series(closes, indicator.window)
+            elif indicator.indicator == "ema" and indicator.window is not None:
+                computed[key] = self._compute_ema_series(closes, indicator.window)
+            elif indicator.indicator == "rsi" and indicator.window is not None:
+                computed[key] = self._compute_rsi_series(closes, indicator.window)
+            elif indicator.indicator == "macd":
+                computed[key] = self._compute_macd_series(closes, indicator)
+            elif indicator.indicator == "bollinger_bands" and indicator.window is not None:
+                computed[key] = self._compute_bollinger_series(closes, indicator)
+            elif indicator.indicator == "atr" and indicator.window is not None:
+                computed[key] = self._compute_atr_series(rows, indicator.window)
+            elif indicator.indicator == "vwma" and indicator.window is not None:
+                computed[key] = self._compute_vwma_series(rows, indicator.window)
+        return computed
+
+    def _indicator_values_for_row(
+        self,
+        indicator: MarketIndicatorSelection,
+        *,
+        row_index: int,
+        row_count: int,
+        computed: dict[tuple[object, ...], list[Decimal | None] | dict[str, list[Decimal | None]]],
+    ) -> list[RuntimeIndicatorValue]:
+        key = self._indicator_selection_key(indicator)
+        series = computed[key]
+        if indicator.indicator in {"sma", "ema", "rsi", "atr", "vwma"}:
+            window = self._required_indicator_window(indicator)
+            value = cast(list[Decimal | None], series)[row_index]
+            null_reason = self._indicator_null_reason(
+                row_index=row_index,
+                row_count=row_count,
+                required_index=self._required_indicator_index(indicator),
+                required_count=self._required_indicator_count(indicator),
+                value=value,
+                provider_gap=indicator.indicator == "vwma",
+            )
+            return [
+                RuntimeIndicatorValue(
+                    name=f"{indicator.indicator}_{window}",
+                    value=value,
+                    null_reason=null_reason,
+                )
+            ]
+        if indicator.indicator == "macd":
+            macd_series = cast(dict[str, list[Decimal | None]], series)
+            suffix = self._macd_suffix(indicator)
+            return [
+                RuntimeIndicatorValue(
+                    name=f"macd_{suffix}",
+                    value=macd_series["line"][row_index],
+                    null_reason=self._indicator_null_reason(
+                        row_index=row_index,
+                        row_count=row_count,
+                        required_index=self._required_indicator_index(indicator),
+                        required_count=self._required_indicator_count(indicator),
+                        value=macd_series["line"][row_index],
+                    ),
+                ),
+                RuntimeIndicatorValue(
+                    name=f"macd_signal_{suffix}",
+                    value=macd_series["signal"][row_index],
+                    null_reason=self._indicator_null_reason(
+                        row_index=row_index,
+                        row_count=row_count,
+                        required_index=self._required_macd_signal_index(indicator),
+                        required_count=self._required_macd_signal_count(indicator),
+                        value=macd_series["signal"][row_index],
+                    ),
+                ),
+                RuntimeIndicatorValue(
+                    name=f"macd_histogram_{suffix}",
+                    value=macd_series["histogram"][row_index],
+                    null_reason=self._indicator_null_reason(
+                        row_index=row_index,
+                        row_count=row_count,
+                        required_index=self._required_macd_signal_index(indicator),
+                        required_count=self._required_macd_signal_count(indicator),
+                        value=macd_series["histogram"][row_index],
+                    ),
+                ),
+            ]
+        if indicator.indicator == "bollinger_bands":
+            band_series = cast(dict[str, list[Decimal | None]], series)
+            suffix = self._bollinger_suffix(indicator)
+            return [
+                RuntimeIndicatorValue(
+                    name=f"bollinger_upper_{suffix}",
+                    value=band_series["upper"][row_index],
+                    null_reason=self._indicator_null_reason(
+                        row_index=row_index,
+                        row_count=row_count,
+                        required_index=self._required_indicator_index(indicator),
+                        required_count=self._required_indicator_count(indicator),
+                        value=band_series["upper"][row_index],
+                    ),
+                ),
+                RuntimeIndicatorValue(
+                    name=f"bollinger_middle_{suffix}",
+                    value=band_series["middle"][row_index],
+                    null_reason=self._indicator_null_reason(
+                        row_index=row_index,
+                        row_count=row_count,
+                        required_index=self._required_indicator_index(indicator),
+                        required_count=self._required_indicator_count(indicator),
+                        value=band_series["middle"][row_index],
+                    ),
+                ),
+                RuntimeIndicatorValue(
+                    name=f"bollinger_lower_{suffix}",
+                    value=band_series["lower"][row_index],
+                    null_reason=self._indicator_null_reason(
+                        row_index=row_index,
+                        row_count=row_count,
+                        required_index=self._required_indicator_index(indicator),
+                        required_count=self._required_indicator_count(indicator),
+                        value=band_series["lower"][row_index],
+                    ),
+                ),
+            ]
+        raise QuoteProviderError(f"Unsupported indicator {indicator.indicator}")
+
+    def _compute_sma_series(self, values: list[Decimal], window: int) -> list[Decimal | None]:
+        series: list[Decimal | None] = []
+        for index in range(len(values)):
+            if index + 1 < window:
+                series.append(None)
+                continue
+            window_values = values[index + 1 - window : index + 1]
+            series.append(sum(window_values, Decimal("0")) / Decimal(window))
+        return series
+
+    def _compute_ema_series(self, values: list[Decimal], window: int) -> list[Decimal | None]:
+        series: list[Decimal | None] = [None] * len(values)
+        if len(values) < window:
+            return series
+        multiplier = Decimal("2") / Decimal(window + 1)
+        previous = sum(values[:window], Decimal("0")) / Decimal(window)
+        series[window - 1] = previous
+        for index in range(window, len(values)):
+            previous = (values[index] - previous) * multiplier + previous
+            series[index] = previous
+        return series
+
+    def _compute_rsi_series(self, closes: list[Decimal], window: int) -> list[Decimal | None]:
+        series: list[Decimal | None] = [None] * len(closes)
+        if len(closes) <= window:
+            return series
+        gains: list[Decimal] = []
+        losses: list[Decimal] = []
+        for index in range(1, len(closes)):
+            change = closes[index] - closes[index - 1]
+            gains.append(max(change, Decimal("0")))
+            losses.append(max(-change, Decimal("0")))
+        average_gain = sum(gains[:window], Decimal("0")) / Decimal(window)
+        average_loss = sum(losses[:window], Decimal("0")) / Decimal(window)
+        series[window] = self._rsi_value(average_gain, average_loss)
+        for index in range(window + 1, len(closes)):
+            average_gain = ((average_gain * Decimal(window - 1)) + gains[index - 1]) / Decimal(
+                window
+            )
+            average_loss = ((average_loss * Decimal(window - 1)) + losses[index - 1]) / Decimal(
+                window
+            )
+            series[index] = self._rsi_value(average_gain, average_loss)
+        return series
+
+    def _compute_macd_series(
+        self,
+        closes: list[Decimal],
+        indicator: MarketIndicatorSelection,
+    ) -> dict[str, list[Decimal | None]]:
+        fast_window = self._required_indicator_int(indicator.fast_window, "MACD fast window")
+        slow_window = self._required_indicator_int(indicator.slow_window, "MACD slow window")
+        signal_window = self._required_indicator_int(
+            indicator.signal_window,
+            "MACD signal window",
+        )
+        fast_ema = self._compute_ema_series(closes, fast_window)
+        slow_ema = self._compute_ema_series(closes, slow_window)
+        line: list[Decimal | None] = []
+        for fast_value, slow_value in zip(fast_ema, slow_ema, strict=True):
+            line.append(
+                fast_value - slow_value
+                if fast_value is not None and slow_value is not None
+                else None
+            )
+        signal: list[Decimal | None] = [None] * len(closes)
+        macd_entries = [(index, value) for index, value in enumerate(line) if value is not None]
+        if len(macd_entries) >= signal_window:
+            multiplier = Decimal("2") / Decimal(signal_window + 1)
+            previous = sum(
+                (value for _, value in macd_entries[:signal_window]),
+                Decimal("0"),
+            ) / Decimal(signal_window)
+            signal[macd_entries[signal_window - 1][0]] = previous
+            for index, value in macd_entries[signal_window:]:
+                previous = (value - previous) * multiplier + previous
+                signal[index] = previous
+        histogram = [
+            (
+                line_value - signal_value
+                if line_value is not None and signal_value is not None
+                else None
+            )
+            for line_value, signal_value in zip(line, signal, strict=True)
+        ]
+        return {"line": line, "signal": signal, "histogram": histogram}
+
+    def _compute_bollinger_series(
+        self,
+        closes: list[Decimal],
+        indicator: MarketIndicatorSelection,
+    ) -> dict[str, list[Decimal | None]]:
+        window = self._required_indicator_window(indicator)
+        deviations = indicator.standard_deviations or Decimal("2")
+        upper: list[Decimal | None] = []
+        middle: list[Decimal | None] = []
+        lower: list[Decimal | None] = []
+        for index in range(len(closes)):
+            if index + 1 < window:
+                upper.append(None)
+                middle.append(None)
+                lower.append(None)
+                continue
+            window_values = closes[index + 1 - window : index + 1]
+            average = sum(window_values, Decimal("0")) / Decimal(window)
+            variance = sum(
+                ((value - average) * (value - average) for value in window_values),
+                Decimal("0"),
+            ) / Decimal(window)
+            width = variance.sqrt() * deviations
+            upper.append(average + width)
+            middle.append(average)
+            lower.append(average - width)
+        return {"upper": upper, "middle": middle, "lower": lower}
+
+    def _compute_atr_series(
+        self,
+        rows: list[RuntimeOhlcvRow],
+        window: int,
+    ) -> list[Decimal | None]:
+        true_ranges: list[Decimal] = []
+        for index, row in enumerate(rows):
+            high_low = row.high - row.low
+            if index == 0:
+                true_ranges.append(high_low)
+                continue
+            previous_close = rows[index - 1].close
+            true_ranges.append(
+                max(
+                    high_low,
+                    abs(row.high - previous_close),
+                    abs(row.low - previous_close),
+                )
+            )
+        series: list[Decimal | None] = [None] * len(rows)
+        if len(true_ranges) < window:
+            return series
+        previous = sum(true_ranges[:window], Decimal("0")) / Decimal(window)
+        series[window - 1] = previous
+        for index in range(window, len(true_ranges)):
+            previous = ((previous * Decimal(window - 1)) + true_ranges[index]) / Decimal(window)
+            series[index] = previous
+        return series
+
+    def _compute_vwma_series(
+        self,
+        rows: list[RuntimeOhlcvRow],
+        window: int,
+    ) -> list[Decimal | None]:
+        series: list[Decimal | None] = []
+        for index in range(len(rows)):
+            if index + 1 < window:
+                series.append(None)
+                continue
+            window_rows = rows[index + 1 - window : index + 1]
+            volumes = [row.volume for row in window_rows]
+            if any(volume is None for volume in volumes):
+                series.append(None)
+                continue
+            total_volume = sum(Decimal(volume or 0) for volume in volumes)
+            if total_volume <= 0:
+                series.append(None)
+                continue
+            weighted_close = sum(
+                (row.close * Decimal(row.volume or 0) for row in window_rows),
+                Decimal("0"),
+            )
+            series.append(weighted_close / total_volume)
+        return series
+
+    @staticmethod
+    def _rsi_value(average_gain: Decimal, average_loss: Decimal) -> Decimal:
+        if average_loss == 0:
+            return Decimal("50") if average_gain == 0 else Decimal("100")
+        relative_strength = average_gain / average_loss
+        return Decimal("100") - (Decimal("100") / (Decimal("1") + relative_strength))
+
+    def _indicator_null_reason(
+        self,
+        *,
+        row_index: int,
+        row_count: int,
+        required_index: int,
+        required_count: int,
+        value: Decimal | None,
+        provider_gap: bool = False,
+    ) -> Literal["warmup", "insufficient_history", "provider_gap"] | None:
+        if value is not None:
+            return None
+        if row_count < required_count:
+            return "insufficient_history"
+        if row_index < required_index:
+            return "warmup"
+        return "provider_gap" if provider_gap else "insufficient_history"
+
+    def _normalize_indicator_selections(
+        self,
+        indicators: Sequence[MarketIndicatorSelection],
+    ) -> tuple[MarketIndicatorSelection, ...]:
+        normalized: list[MarketIndicatorSelection] = []
+        seen: set[tuple[object, ...]] = set()
+        for indicator in indicators:
+            key = self._indicator_selection_key(indicator)
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(indicator)
+        if not normalized:
+            raise QuoteProviderError("At least one indicator is required")
+        return tuple(normalized)
+
+    def _indicator_selection_key(self, indicator: MarketIndicatorSelection) -> tuple[object, ...]:
+        if indicator.indicator in {"sma", "ema", "rsi", "atr", "vwma"}:
+            return (indicator.indicator, self._required_indicator_window(indicator))
+        if indicator.indicator == "macd":
+            return (
+                indicator.indicator,
+                self._required_indicator_int(indicator.fast_window, "MACD fast window"),
+                self._required_indicator_int(indicator.slow_window, "MACD slow window"),
+                self._required_indicator_int(indicator.signal_window, "MACD signal window"),
+            )
+        if indicator.indicator == "bollinger_bands":
+            return (
+                indicator.indicator,
+                self._required_indicator_window(indicator),
+                indicator.standard_deviations or Decimal("2"),
+            )
+        raise QuoteProviderError(f"Unsupported indicator {indicator.indicator}")
+
+    def _required_indicator_window(self, indicator: MarketIndicatorSelection) -> int:
+        return self._required_indicator_int(indicator.window, f"{indicator.indicator} window")
+
+    @staticmethod
+    def _required_indicator_int(value: int | None, label: str) -> int:
+        if value is None:
+            raise QuoteProviderError(f"{label} is required")
+        return value
+
+    def _required_indicator_index(self, indicator: MarketIndicatorSelection) -> int:
+        if indicator.indicator == "rsi":
+            return self._required_indicator_window(indicator)
+        if indicator.indicator == "macd":
+            return self._required_indicator_int(indicator.slow_window, "MACD slow window") - 1
+        return self._required_indicator_window(indicator) - 1
+
+    def _required_indicator_count(self, indicator: MarketIndicatorSelection) -> int:
+        return self._required_indicator_index(indicator) + 1
+
+    def _required_macd_signal_index(self, indicator: MarketIndicatorSelection) -> int:
+        slow_window = self._required_indicator_int(indicator.slow_window, "MACD slow window")
+        signal_window = self._required_indicator_int(
+            indicator.signal_window,
+            "MACD signal window",
+        )
+        return slow_window + signal_window - 2
+
+    def _required_macd_signal_count(self, indicator: MarketIndicatorSelection) -> int:
+        return self._required_macd_signal_index(indicator) + 1
+
+    def _macd_suffix(self, indicator: MarketIndicatorSelection) -> str:
+        fast_window = self._required_indicator_int(indicator.fast_window, "MACD fast window")
+        slow_window = self._required_indicator_int(indicator.slow_window, "MACD slow window")
+        signal_window = self._required_indicator_int(
+            indicator.signal_window,
+            "MACD signal window",
+        )
+        return f"{fast_window}_{slow_window}_{signal_window}"
+
+    def _bollinger_suffix(self, indicator: MarketIndicatorSelection) -> str:
+        window = self._required_indicator_window(indicator)
+        deviations = self._decimal_name_token(indicator.standard_deviations or Decimal("2"))
+        return f"{window}_{deviations}"
+
+    @staticmethod
+    def _decimal_name_token(value: Decimal) -> str:
+        normalized = value.normalize()
+        text = format(normalized, "f")
+        return text.replace("-", "minus_").replace(".", "_")
 
     def _resolve_with_provider_fallback(
         self,
@@ -767,16 +1267,60 @@ class MarketDataService:
     ) -> list[RuntimeFundamentalMetric]:
         return [
             RuntimeFundamentalMetric(
-                name=metric.name,
+                name=metric.name.strip().lower(),
                 value=metric.value,
                 currency=metric.currency,
                 period=metric.period,
                 as_of=to_utc(metric.as_of) if metric.as_of is not None else None,
             )
-            for metric in metrics
+            for metric in sorted(metrics, key=self._fundamental_metric_sort_key)
         ]
 
-    def _build_news_items(self, items: list[ProviderNewsItem]) -> list[RuntimeNewsItem]:
+    @staticmethod
+    def _fundamental_metric_sort_key(metric: ProviderFundamentalMetric) -> tuple[object, ...]:
+        metric_name = metric.name.strip().lower()
+        as_of_timestamp = to_utc(metric.as_of).timestamp() if metric.as_of is not None else 0.0
+        return (
+            _FUNDAMENTAL_METRIC_ORDER.get(metric_name, len(_FUNDAMENTAL_METRIC_ORDER)),
+            metric_name,
+            metric.period or "",
+            -as_of_timestamp,
+        )
+
+    @staticmethod
+    def _sort_fundamental_statements(
+        statements: list[ProviderFinancialStatement],
+    ) -> list[ProviderFinancialStatement]:
+        return sorted(
+            statements,
+            key=lambda statement: (
+                _FINANCIAL_STATEMENT_TYPE_ORDER.get(statement.statement_type, 99),
+                _FINANCIAL_STATEMENT_PERIOD_ORDER.get(statement.period, 99),
+                -to_utc(statement.period_end).timestamp(),
+            ),
+        )
+
+    @staticmethod
+    def _sort_fundamental_statement_lines(
+        lines: list[ProviderFinancialStatementLine],
+    ) -> list[ProviderFinancialStatementLine]:
+        return sorted(
+            lines,
+            key=lambda line: (
+                _FINANCIAL_STATEMENT_LINE_ORDER.get(
+                    line.name, len(_FINANCIAL_STATEMENT_LINE_ORDER)
+                ),
+                line.name,
+            ),
+        )
+
+    def _build_news_items(
+        self,
+        items: list[ProviderNewsItem],
+        *,
+        start_date: datetime | None,
+        end_date: datetime | None,
+    ) -> list[RuntimeNewsItem]:
         sorted_items = sorted(items, key=lambda item: to_utc(item.published_at), reverse=True)
         return [
             RuntimeNewsItem(
@@ -789,7 +1333,26 @@ class MarketDataService:
                 sentiment=item.sentiment,
             )
             for item in sorted_items
+            if self._news_item_within_bounds(
+                item,
+                start_date=start_date,
+                end_date=end_date,
+            )
         ]
+
+    @staticmethod
+    def _news_item_within_bounds(
+        item: ProviderNewsItem,
+        *,
+        start_date: datetime | None,
+        end_date: datetime | None,
+    ) -> bool:
+        published_at = to_utc(item.published_at)
+        if start_date is not None and published_at < start_date:
+            return False
+        if end_date is not None and published_at > end_date:
+            return False
+        return True
 
     def _build_insider_transactions(
         self, transactions: list[ProviderInsiderTransaction]
@@ -825,6 +1388,21 @@ class MarketDataService:
             seen_symbols.add(symbol)
             normalized_symbols.append(symbol)
         return normalized_symbols
+
+    @staticmethod
+    def _normalize_news_scope(
+        scope: NewsScope | None,
+        *,
+        symbols: list[str],
+    ) -> NewsScope:
+        if scope is None:
+            return "symbol" if symbols else "market"
+        normalized_scope = scope.strip().lower()
+        if normalized_scope not in {"symbol", "market", "global"}:
+            raise QuoteProviderError("News scope must be symbol, market, or global")
+        if normalized_scope == "symbol" and not symbols:
+            raise QuoteProviderError("News scope symbol requires symbols")
+        return cast(NewsScope, normalized_scope)
 
     def _normalize_result_limit(
         self,
@@ -889,30 +1467,6 @@ class MarketDataService:
                 continue
             public_details[to_camel(key_tokens)] = cls._public_warning_message(value)
         return public_details
-
-    def _normalize_indicator_sma_windows(
-        self, sma_windows: Sequence[int] | None
-    ) -> tuple[int, ...]:
-        if sma_windows is None:
-            return self.indicator_default_sma_windows
-
-        normalized_windows: list[int] = []
-        seen_windows: set[int] = set()
-        for window in sma_windows:
-            if window < 1:
-                raise QuoteProviderError("Indicator SMA window must be at least 1")
-            if window > self.ohlcv_max_row_limit:
-                raise QuoteProviderError(
-                    f"Indicator SMA window must be at most {self.ohlcv_max_row_limit}"
-                )
-            if window in seen_windows:
-                continue
-            seen_windows.add(window)
-            normalized_windows.append(window)
-
-        if not normalized_windows:
-            raise QuoteProviderError("At least one indicator SMA window is required")
-        return tuple(normalized_windows)
 
     def _normalize_ohlcv_row_limit(self, row_limit: int | None) -> int:
         if row_limit is None:

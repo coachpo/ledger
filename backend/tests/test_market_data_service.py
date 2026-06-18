@@ -49,7 +49,7 @@ class _NewsProvider:
         self.items: list[ProviderNewsItem] = list(items or [])
         self.failure: QuoteProviderError | None = failure
         self.news_calls: list[
-            tuple[list[str], str | None, datetime | None, datetime | None, int]
+            tuple[list[str], str | None, str, datetime | None, datetime | None, int]
         ] = []
 
     def fetch_news(
@@ -57,11 +57,12 @@ class _NewsProvider:
         *,
         symbols: list[str],
         query: str | None,
+        scope: str,
         start_date: datetime | None,
         end_date: datetime | None,
         limit: int,
     ) -> ProviderNewsResult:
-        self.news_calls.append((symbols, query, start_date, end_date, limit))
+        self.news_calls.append((symbols, query, scope, start_date, end_date, limit))
         if self.failure is not None:
             raise self.failure
         return ProviderNewsResult(provider=self.provider_name, items=self.items[:limit])
@@ -121,6 +122,7 @@ def test_news_adapter_yahoo_normalizes_company_and_macro_news(
     result = provider.fetch_news(
         symbols=[" nvda ", "NVDA"],
         query=" earnings ",
+        scope="symbol",
         start_date=datetime(2026, 1, 1, tzinfo=UTC),
         end_date=datetime(2026, 1, 3, tzinfo=UTC),
         limit=5,
@@ -128,6 +130,7 @@ def test_news_adapter_yahoo_normalizes_company_and_macro_news(
     macro_result = provider.fetch_news(
         symbols=[],
         query=None,
+        scope="market",
         start_date=None,
         end_date=None,
         limit=2,
@@ -195,7 +198,12 @@ def test_news_adapter_empty_result_returns_structured_warning(
         {
             "code": "news_empty",
             "message": "No news returned for the request",
-            "details": {"symbols": "NVDA"},
+            "details": {
+                "symbols": "NVDA",
+                "query": "",
+                "scope": "symbol",
+                "provider": "news_test",
+            },
         }
     ]
 
