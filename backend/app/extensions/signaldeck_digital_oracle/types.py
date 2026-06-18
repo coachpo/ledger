@@ -34,6 +34,8 @@ class DigitalOraclePredictionMarketsQuery:
     venues: tuple[PredictionMarketVenue, ...] | None = None
     item_limit: int | None = None
     include_resolved: bool = False
+    include_order_book: bool = False
+    depth_limit: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +45,22 @@ class DigitalOraclePredictionMarketsProviderQuery:
     item_limit: int
     include_resolved: bool
     timeout_seconds: float
+    include_order_book: bool = False
+    depth_limit: int = 5
+
+
+@dataclass(frozen=True, slots=True)
+class DigitalOraclePredictionMarketOrderBookLevel:
+    price: Decimal
+    size: Decimal | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DigitalOraclePredictionMarketOrderBook:
+    bids: tuple[DigitalOraclePredictionMarketOrderBookLevel, ...] = field(default_factory=tuple)
+    asks: tuple[DigitalOraclePredictionMarketOrderBookLevel, ...] = field(default_factory=tuple)
+    spread: Decimal | None = None
+    depth_limit: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +72,7 @@ class DigitalOraclePredictionMarketContract:
     no_price: Decimal | None = None
     volume: Decimal | None = None
     open_interest: Decimal | None = None
+    order_book: DigitalOraclePredictionMarketOrderBook | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,22 +102,28 @@ class DigitalOraclePredictionMarketsResult:
 
 @dataclass(frozen=True, slots=True)
 class DigitalOracleSecFilingsQuery:
-    ticker: str
+    ticker: str | None = None
+    query: str | None = None
+    cik: str | None = None
     form_types: tuple[str, ...] | None = None
     start_date: date | None = None
     end_date: date | None = None
     item_limit: int | None = None
+    include_ownership_transactions: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class DigitalOracleSecFilingsProviderQuery:
-    ticker: str
+    ticker: str | None
     form_types: tuple[str, ...]
     start_date: date | None
     end_date: date | None
     item_limit: int
     edgar_contact_email: str
     timeout_seconds: float
+    query: str | None = None
+    cik: str | None = None
+    include_ownership_transactions: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,21 +138,58 @@ class DigitalOracleSecFiling:
 
 
 @dataclass(frozen=True, slots=True)
+class DigitalOracleSecSearchHit:
+    accession_number: str
+    form_type: str
+    filing_date: date
+    cik: str | None = None
+    ticker: str | None = None
+    entity_name: str | None = None
+    primary_document: str | None = None
+    url: str | None = None
+    description: str | None = None
+    matched_text: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DigitalOracleSecOwnershipTransaction:
+    accession_number: str
+    filing_date: date
+    issuer_name: str | None = None
+    issuer_ticker: str | None = None
+    reporting_owner_name: str | None = None
+    transaction_date: date | None = None
+    transaction_code: str | None = None
+    acquired_disposed_code: str | None = None
+    shares: Decimal | None = None
+    price: Decimal | None = None
+    ownership_nature: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class DigitalOracleSecFilingsProviderResult:
     provider: str
-    ticker: str
+    ticker: str | None
     cik: str | None = None
     entity_name: str | None = None
     filings: tuple[DigitalOracleSecFiling, ...] = field(default_factory=tuple)
+    ownership_transactions: tuple[DigitalOracleSecOwnershipTransaction, ...] = field(
+        default_factory=tuple
+    )
     warnings: tuple[RuntimeToolWarning, ...] = field(default_factory=_empty_warnings)
 
 
 @dataclass(frozen=True, slots=True)
 class DigitalOracleSecFilingsResult:
-    ticker: str
+    ticker: str | None = None
+    query: str | None = None
     cik: str | None = None
     entity_name: str | None = None
     filings: tuple[DigitalOracleSecFiling, ...] = field(default_factory=tuple)
+    search_hits: tuple[DigitalOracleSecSearchHit, ...] = field(default_factory=tuple)
+    ownership_transactions: tuple[DigitalOracleSecOwnershipTransaction, ...] = field(
+        default_factory=tuple
+    )
     warnings: tuple[RuntimeToolWarning, ...] = field(default_factory=_empty_warnings)
 
 
@@ -209,6 +271,8 @@ __all__ = [
     "DigitalOracleMarketSentimentResult",
     "DigitalOraclePredictionMarketContract",
     "DigitalOraclePredictionMarketEvent",
+    "DigitalOraclePredictionMarketOrderBook",
+    "DigitalOraclePredictionMarketOrderBookLevel",
     "DigitalOraclePredictionMarketProvider",
     "DigitalOraclePredictionMarketsProviderQuery",
     "DigitalOraclePredictionMarketsProviderResult",
@@ -221,4 +285,6 @@ __all__ = [
     "DigitalOracleSecFilingsProviderResult",
     "DigitalOracleSecFilingsQuery",
     "DigitalOracleSecFilingsResult",
+    "DigitalOracleSecOwnershipTransaction",
+    "DigitalOracleSecSearchHit",
 ]

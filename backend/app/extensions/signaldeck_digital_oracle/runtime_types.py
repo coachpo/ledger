@@ -26,6 +26,18 @@ def _validate_datetime(value: datetime | None) -> datetime | None:
     return ensure_timezone(value)
 
 
+class RuntimePredictionMarketOrderBookLevel(CamelModel):
+    price: Decimal
+    size: Decimal | None = None
+
+
+class RuntimePredictionMarketOrderBook(CamelModel):
+    bids: list[RuntimePredictionMarketOrderBookLevel] = Field(default_factory=list)
+    asks: list[RuntimePredictionMarketOrderBookLevel] = Field(default_factory=list)
+    spread: Decimal | None = None
+    depth_limit: int | None = Field(default=None, ge=1)
+
+
 class RuntimePredictionMarketContract(CamelModel):
     contract_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
@@ -34,6 +46,7 @@ class RuntimePredictionMarketContract(CamelModel):
     no_price: Decimal | None = None
     volume: Decimal | None = None
     open_interest: Decimal | None = None
+    order_book: RuntimePredictionMarketOrderBook | None = None
 
 
 class RuntimePredictionMarketEvent(CamelModel):
@@ -75,14 +88,44 @@ class RuntimeSecFiling(CamelModel):
         return _validate_datetime(value)
 
 
+class RuntimeSecSearchHit(CamelModel):
+    accession_number: str = Field(min_length=1)
+    form_type: str = Field(min_length=1)
+    filing_date: date
+    cik: str | None = None
+    ticker: str | None = None
+    entity_name: str | None = None
+    primary_document: str | None = None
+    url: str | None = None
+    description: str | None = None
+    matched_text: str | None = None
+
+
+class RuntimeSecOwnershipTransaction(CamelModel):
+    accession_number: str = Field(min_length=1)
+    filing_date: date
+    issuer_name: str | None = None
+    issuer_ticker: str | None = None
+    reporting_owner_name: str | None = None
+    transaction_date: date | None = None
+    transaction_code: str | None = None
+    acquired_disposed_code: str | None = None
+    shares: Decimal | None = None
+    price: Decimal | None = None
+    ownership_nature: str | None = None
+
+
 class RuntimeSecFilingsLookupResult(CamelModel):
     tool_key: Literal["signaldeck.digital_oracle.sec_filings.lookup"] = (
         "signaldeck.digital_oracle.sec_filings.lookup"
     )
-    ticker: str = Field(min_length=1)
+    ticker: str | None = Field(default=None, min_length=1)
+    query: str | None = Field(default=None, min_length=1)
     cik: str | None = None
     entity_name: str | None = None
     filings: list[RuntimeSecFiling]
+    search_hits: list[RuntimeSecSearchHit] = Field(default_factory=list)
+    ownership_transactions: list[RuntimeSecOwnershipTransaction] = Field(default_factory=list)
     warnings: list[RuntimeToolWarning] = Field(default_factory=list)
 
 
@@ -111,7 +154,11 @@ __all__ = [
     "RuntimeMarketSentimentLookupResult",
     "RuntimePredictionMarketContract",
     "RuntimePredictionMarketEvent",
+    "RuntimePredictionMarketOrderBook",
+    "RuntimePredictionMarketOrderBookLevel",
     "RuntimePredictionMarketsLookupResult",
     "RuntimeSecFiling",
     "RuntimeSecFilingsLookupResult",
+    "RuntimeSecOwnershipTransaction",
+    "RuntimeSecSearchHit",
 ]
