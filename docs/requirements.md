@@ -1,6 +1,6 @@
 # Requirements Document
 
-> Status: Live requirements reference for branch `main` at `6c40d44`.
+> Status: Live requirements reference for branch `main` at `89f60ce`.
 
 ## Purpose
 
@@ -69,7 +69,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Public Model Connection create/update payloads must reject client-authored capabilities, runtime policy fields, probe cache TTL, derived API style, `compatibilityProfile`, and other compatibility truth that is not part of the write DTO.
 - Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles.
 - Finance-owned tool entries must be hidden while `signaldeck.finance` is disabled; workflow memory is middleware declared by package YAML, not a server-declared runtime tool.
-- Workflow Package demos must use canonical owner-qualified `toolKeys`: TradingAgents prediction-market research must grant `signaldeck.digital_oracle.prediction_markets.lookup`, Finance price/news/sentiment/fundamental/position/report research must stay on `signaldeck.finance.*` keys, and combined news-plus-sentiment behavior must remain package-level composition over `signaldeck.finance.news.lookup` plus `signaldeck.finance.social_sentiment.lookup`.
+- Workflow Package demos must use canonical owner-qualified `toolKeys`: the TradingAgents advisory demo must stay Finance-only on `signaldeck.finance.*` keys, the Digital Oracle Researcher demo must stay Digital-Oracle-only on `signaldeck.digital_oracle.*` keys, and any mixed-extension research behavior must be explicit package-level composition rather than a bundled demo contract.
 - `signaldeck.finance.indicators.lookup` must remain the single Finance-owned indicators key and must accept an `indicators[]` selection shape for SMA, EMA, RSI, MACD, Bollinger bands, ATR, and VWMA. Results must preserve `rows[].values[]`, deterministic indicator value names, camelCase fields, and `nullReason` values for warmup, insufficient history, or provider gaps without exposing raw provider payloads.
 - `signaldeck.finance.fundamentals.lookup` must remain the single Finance-owned fundamentals key and must keep `signaldeck_finance_fundamentals_lookup` as the OpenAI function name. It must support bounded `metricNames`, `statementTypes`, `periods`, and `statementLimit` filters while preserving `metrics[]`, `statements[]`, `warnings[]`, camelCase serialization, provider-unavailable warnings, and no raw provider payloads or private provider configuration leakage.
 - `signaldeck.finance.news.lookup` must remain the only Finance-owned news key and must keep `signaldeck_finance_news_lookup` as the OpenAI function name. It must support existing `symbols`, `query`, `startDate`, `endDate`, and `itemLimit` fields plus bounded `scope` values of `symbol`, `market`, and `global`, while preserving `items[]`, `symbols`, `query`, bounded dates, `warnings[]`, camelCase serialization, provider-empty/truncated/global-coverage warnings, and no raw provider payloads or combined social-sentiment mutation.
@@ -123,7 +123,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - A user can manage portfolio records, templates, and reports without provider availability.
 - A local operator can author Workflow Packages, declare optional workflow memory middleware, configure Model Connections, select server-declared Tools metadata during package authoring, launch saved package runs from `/workflow-packages/:packageId/run`, schedule recurring package runs, hard-delete Scheduled Tasks, inspect Runs, and review workflow memory proposals, audit events, and quarantine evidence.
 - The Digital Oracle researcher demo path is `demo/digital_oracle_researcher.yaml`; it must grant the three phase-1 `signaldeck.digital_oracle` tools through package-local capability profiles and keep methodology in `systemPrompt`, not a global skill.
-- The TradingAgents advisory demo path is `demo/tradingagents_advisory_research.yaml`; it must exercise the Digital Oracle-owned prediction-market grant independently from the Digital Oracle demo without adding Finance-owned or ownerless prediction-market aliases.
+- The TradingAgents advisory demo path is `demo/tradingagents_advisory_research.yaml`; it must grant only Finance-owned tools and must not add Digital Oracle, Finance-owned prediction-market, or ownerless prediction-market aliases.
 - Package HTTP operations can be authored, bound to package-local secrets, launched, and inspected without exposing raw secret values.
 - Run detail exposes backend-owned progress, queue state, agent invocations, operation invocations, package provenance, extension dependencies, `workflowMemoryEvidence`, typed failure taxonomy, and bounded retry evidence.
 - Old direct memory runtime tools are removed, not deprecated-but-available. Declarative workflow memory stays scoped by package/workflow/agent/step policy, and `/api/memory` review surfaces do not act as global memory search or direct runtime write APIs.
