@@ -281,7 +281,9 @@ def _workflow_memory_content_fingerprint(
     payload = {
         "kind": str(kind or "").strip().lower(),
         "namespace": str(namespace or "").strip().lower(),
-        "content": _canonicalize_workflow_memory_value(content if isinstance(content, dict) else {}),
+        "content": _canonicalize_workflow_memory_value(
+            content if isinstance(content, dict) else {}
+        ),
     }
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
@@ -2999,8 +3001,12 @@ def _ensure_workflow_memory_owner_support(engine: Engine, table_names: set[str])
                 f"ALTER TABLE {table_name} ALTER COLUMN owner_id "
                 f"SET DEFAULT '{_WORKFLOW_MEMORY_DEFAULT_OWNER_ID}'"
             )
-            connection.exec_driver_sql(f"ALTER TABLE {table_name} ALTER COLUMN owner_type SET NOT NULL")
-            connection.exec_driver_sql(f"ALTER TABLE {table_name} ALTER COLUMN owner_id SET NOT NULL")
+            connection.exec_driver_sql(
+                f"ALTER TABLE {table_name} ALTER COLUMN owner_type SET NOT NULL"
+            )
+            connection.exec_driver_sql(
+                f"ALTER TABLE {table_name} ALTER COLUMN owner_id SET NOT NULL"
+            )
 
         for index_name, table_name, columns_sql in _WORKFLOW_MEMORY_OWNER_INDEXES:
             if table_name in table_names:

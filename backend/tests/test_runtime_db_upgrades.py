@@ -1105,7 +1105,8 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
         "uq_workflow_memory_items_memory_id" in unique_constraints_by_table["workflow_memory_items"]
     )
     assert (
-        "uq_workflow_memory_items_proposal_id" in unique_constraints_by_table["workflow_memory_items"]
+        "uq_workflow_memory_items_proposal_id"
+        in unique_constraints_by_table["workflow_memory_items"]
     )
     assert (
         "uq_workflow_memory_proposals_proposal_id"
@@ -1147,7 +1148,9 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     )
 
     item_indexes = {index["name"] for index in inspector.get_indexes("workflow_memory_items")}
-    proposal_indexes = {index["name"] for index in inspector.get_indexes("workflow_memory_proposals")}
+    proposal_indexes = {
+        index["name"] for index in inspector.get_indexes("workflow_memory_proposals")
+    }
     checkpoint_indexes = {index["name"] for index in inspector.get_indexes("workflow_checkpoints")}
     assert "ix_workflow_memory_items_retrieval_scope" in item_indexes
     assert "ix_workflow_memory_items_owner_retrieval_scope" in item_indexes
