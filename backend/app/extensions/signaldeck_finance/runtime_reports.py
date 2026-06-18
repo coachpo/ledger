@@ -63,7 +63,8 @@ def parse_report_lookup_arguments(arguments_json: str) -> dict[str, object]:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                "OpenAI response requested signaldeck_finance_reports_lookup with invalid JSON arguments."
+                "OpenAI response requested signaldeck_finance_reports_lookup with invalid "
+                "JSON arguments."
             ),
         ) from exc
     if not isinstance(raw_payload, dict):
@@ -92,8 +93,8 @@ def parse_report_lookup_arguments(arguments_json: str) -> dict[str, object]:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                "signaldeck_finance_reports_lookup source must be one of compiled, uploaded, external, "
-                "or agent."
+                "signaldeck_finance_reports_lookup source must be one of compiled, uploaded, "
+                "external, or agent."
             ),
         )
     return {
