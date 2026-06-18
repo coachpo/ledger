@@ -166,6 +166,7 @@ def test_social_sentiment_parser_validation_normalizes_inputs_separately_from_ne
     assert news_arguments == {
         "symbols": ["NVDA"],
         "query": "social chatter",
+        "scope": "symbol",
         "start_date": None,
         "end_date": None,
         "item_limit": 25,

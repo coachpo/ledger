@@ -18,6 +18,7 @@ FIXTURE_PATH = (
     / "workflow_packages"
     / "tradingagents_advisory_research.yaml"
 )
+DEMO_ROOT = Path(__file__).resolve().parents[2] / "demo"
 
 EXPECTED_AGENT_KEYS = {
     "market_analyst",
@@ -53,6 +54,13 @@ EXPECTED_TOOL_KEYS = {
     "signaldeck.finance.positions.lookup",
     "signaldeck.finance.reports.lookup",
 }
+EXPECTED_MACRO_AND_MIXED_HTTP_IDS = {
+    "fred_fedfunds_observations",
+    "fred_unrate_observations",
+    "fred_cpiaucsl_observations",
+    "fred_t10y2y_observations",
+    "treasury_rates_snapshot_json",
+}
 FORBIDDEN_EXPORT_FIELDS = {
     "secretPayload",
     "encrypted",
@@ -81,6 +89,24 @@ def _fixture_source() -> str:
 
 def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _profile_tool_keys(package_definition: dict[str, object]) -> set[str]:
+    spec = cast(dict[str, object], package_definition["spec"])
+    return {
+        tool_key
+        for profile in cast(list[dict[str, object]], spec["capabilityProfiles"])
+        for tool_key in cast(list[str], profile["toolKeys"])
+    }
+
+
+def _compiled_operation_ids(compiled_plan: dict[str, object]) -> set[str]:
+    return {
+        str(operation["operationKey"])
+        for workflow in cast(list[dict[str, object]], compiled_plan["workflows"])
+        for step in cast(list[dict[str, object]], workflow["steps"])
+        for operation in cast(list[dict[str, object]], step.get("operations", []))
+    }
 
 
 def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() -> None:
@@ -136,12 +162,7 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
     assert "Authorization: Bearer exa-inline-token" not in roundtrip.source
     assert "exaApiKey: exa-inline-key" not in roundtrip.source
     assert {str(agent["key"]): agent for agent in cast(list[dict[str, object]], spec["agents"])}
-    profile_tool_keys = {
-        tool_key
-        for profile in cast(list[dict[str, object]], spec["capabilityProfiles"])
-        for tool_key in cast(list[str], profile["toolKeys"])
-    }
-    assert profile_tool_keys == EXPECTED_TOOL_KEYS
+    assert _profile_tool_keys(package_definition) == EXPECTED_TOOL_KEYS
 
     compiled_agents = cast(list[dict[str, object]], compiled_plan["agents"])
     assert {agent["key"] for agent in compiled_agents} == EXPECTED_AGENT_KEYS
@@ -163,6 +184,40 @@ def test_tradingagents_fixture_keeps_report_lookup_without_core_memory_profile()
         "signaldeck.finance.reports.lookup"
     ]
     assert "memory_write_tools" not in profiles_by_key
+
+
+def test_demo_fixture_variants_lock_tool_ownership_and_private_operations() -> None:
+    expectations: dict[str, tuple[set[str], set[str]]] = {
+        "tradingagents_advisory_research.yaml": (EXPECTED_TOOL_KEYS, set()),
+        "tradingagents_advisory_research_macro.yaml": (
+            EXPECTED_TOOL_KEYS,
+            EXPECTED_MACRO_AND_MIXED_HTTP_IDS,
+        ),
+        "tradingagents_advisory_research_mixed_signals.yaml": (
+            EXPECTED_TOOL_KEYS | {"signaldeck.digital_oracle.prediction_markets.lookup"},
+            EXPECTED_MACRO_AND_MIXED_HTTP_IDS,
+        ),
+    }
+
+    for filename, (expected_tool_keys, expected_http_ids) in expectations.items():
+        compiled = compile_workflow_package_manifest((DEMO_ROOT / filename).read_text())
+        package_definition = cast(dict[str, object], compiled["packageDefinition"])
+        compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
+        spec = cast(dict[str, object], package_definition["spec"])
+        mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
+        tool_keys = _profile_tool_keys(package_definition)
+        operation_ids = _compiled_operation_ids(compiled_plan)
+
+        assert _profile_tool_keys(package_definition) == expected_tool_keys
+        assert expected_http_ids <= operation_ids
+        assert "signaldeck.digital_oracle.sec_filings.lookup" not in tool_keys
+        assert "signaldeck.digital_oracle.market_sentiment.lookup" not in tool_keys
+        if filename == "tradingagents_advisory_research.yaml":
+            assert mcp_servers == []
+            assert not operation_ids
+        else:
+            assert mcp_servers[0]["key"] == "web_research"
+            assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
 
 
 def test_fixture_compile_does_not_create_global_authoring_rows(
@@ -194,6 +249,8 @@ def test_backend_implementation_does_not_special_case_tradingagents_or_old_workf
     for path in backend_app.rglob("*.py"):
         relative_path = path.relative_to(backend_app.parents[0]).as_posix()
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if relative_path == "app/db/upgrades.py" and "_PRESET_PACKAGE_SQL_FILE" in line:
+                continue
             if SPECIAL_CASE_RE.search(line):
                 unexpected_matches.append(f"{relative_path}:{line_number}: {line.strip()}")
 

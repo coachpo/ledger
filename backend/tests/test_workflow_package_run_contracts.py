@@ -996,16 +996,16 @@ def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local
         runtime_tool_guidance=guidance,
     )
 
-    expected_tool_keys = set(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS) | {
-        "signaldeck.finance.market_data.history_lookup",
-        "signaldeck.finance.market_data.ohlcv_lookup",
-    }
+    expected_tool_keys = set(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
 
-    assert len(plan.steps) == 4
-    assert [step.agents[0].agent_key for step in plan.steps] == [
+    assert len(plan.steps) == 13
+    assert [step.agents[0].agent_key for step in plan.steps if step.agents] == [
         "digital_oracle_signal_researcher",
         "digital_oracle_signal_researcher",
         "digital_oracle_signal_researcher",
+        "macro_evidence_collector",
+        "web_evidence_collector",
+        "sec_metadata_collector",
         "digital_oracle_synthesizer",
     ]
     assert runtime_agent.output_schema.key == "digital_oracle_report"
@@ -1017,10 +1017,9 @@ def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local
     assert "secrets:" not in manifest_source
     assert "Digital Oracle methodology is package-local for this agent." in instructions
     assert "Decompose each research question" in instructions
-    assert "Use market-data-only reasoning" in instructions
-    assert "Seek at least three independent signal dimensions" in instructions
+    assert "granted evidence sources" in instructions
     assert "Disclose warnings" in instructions
-    assert "Never invent prices" in instructions
+    assert "Never invent filing facts" in instructions
     assert "call signaldeck_digital_oracle_prediction_markets_lookup" in instructions
     assert "call signaldeck_digital_oracle_sec_filings_lookup" in instructions
     assert "call signaldeck_digital_oracle_market_sentiment_lookup" in instructions

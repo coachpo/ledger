@@ -392,14 +392,38 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         },
     )
 
-    assert [step.index for step in plan.steps] == [1, 2, 3, 4]
+    assert [step.index for step in plan.steps] == list(range(1, 14))
     assert [[agent.slot for agent in step.agents] for step in plan.steps] == [
         ["market_signals"],
         ["filing_signals"],
         ["sentiment_search_signals"],
+        [],
+        [],
+        [],
+        [],
+        [],
+        ["macro_evidence"],
+        ["web_evidence"],
+        [],
+        ["sec_metadata"],
         ["report"],
     ]
-    assert plan.final_output.step_index == 4
+    assert [[operation.slot for operation in step.operations] for step in plan.steps] == [
+        [],
+        [],
+        [],
+        ["fred_fedfunds_observations"],
+        ["fred_unrate_observations"],
+        ["fred_cpiaucsl_observations"],
+        ["fred_t10y2y_observations"],
+        ["treasury_rates_snapshot_json"],
+        [],
+        [],
+        ["sec_submissions_json"],
+        [],
+        [],
+    ]
+    assert plan.final_output.step_index == 13
     assert plan.final_output.slot == "report"
     fanout_metadata = [plan.steps[index].agents[0].graph_metadata for index in range(3)]
     assert all(metadata is not None for metadata in fanout_metadata)
@@ -409,11 +433,11 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         "sentiment_search_signals",
     ]
     assert [metadata.fanout_id for metadata in fanout_metadata if metadata is not None] == [
-        "signal_fanout",
-        "signal_fanout",
-        "signal_fanout",
+        "evidence_fanout",
+        "evidence_fanout",
+        "evidence_fanout",
     ]
-    synthesis = plan.steps[3].agents[0]
+    synthesis = plan.steps[12].agents[0]
     assert synthesis.agent_key == "digital_oracle_synthesizer"
     assert synthesis.graph_metadata is not None
     assert synthesis.graph_metadata.source_refs == {
@@ -421,25 +445,49 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         "outputLanguage": {"source": "inputs", "path": "outputLanguage"},
         "marketSignals": {
             "source": "nodes",
-            "nodeId": "signal_fanout",
+            "nodeId": "market_signals",
             "slot": "market_signals",
             "stepIndex": 1,
             "compiledSlot": "market_signals",
         },
         "filingSignals": {
             "source": "nodes",
-            "nodeId": "signal_fanout",
+            "nodeId": "filing_signals",
             "slot": "filing_signals",
             "stepIndex": 2,
             "compiledSlot": "filing_signals",
         },
         "sentimentSearchSignals": {
             "source": "nodes",
-            "nodeId": "signal_fanout",
+            "nodeId": "sentiment_search_signals",
             "slot": "sentiment_search_signals",
             "stepIndex": 3,
             "compiledSlot": "sentiment_search_signals",
         },
+        "macroEvidence": {
+            "source": "nodes",
+            "nodeId": "macro_evidence_collect",
+            "slot": "macro_evidence",
+            "stepIndex": 9,
+            "compiledSlot": "macro_evidence",
+        },
+        "webEvidence": {
+            "source": "nodes",
+            "nodeId": "web_evidence_collect",
+            "slot": "web_evidence",
+            "stepIndex": 10,
+            "compiledSlot": "web_evidence",
+        },
+        "secMetadataEvidence": {
+            "source": "nodes",
+            "nodeId": "sec_metadata_collect",
+            "slot": "sec_metadata",
+            "stepIndex": 12,
+            "compiledSlot": "sec_metadata",
+        },
+        "ticker": {"source": "inputs", "path": "ticker"},
+        "cik": {"source": "inputs", "path": "cik"},
+        "secSubmissionsUrl": {"source": "inputs", "path": "secSubmissionsUrl"},
         "asOfDate": {"source": "inputs", "path": "asOfDate"},
         "horizonDays": {"source": "inputs", "path": "horizonDays"},
     }
@@ -457,24 +505,44 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         "step",
         "step",
         "step",
+        "sequence",
+        "fanout",
+        "http",
+        "http",
+        "http",
+        "http",
+        "http",
+        "step",
+        "step",
+        "http",
+        "step",
         "step",
     ]
 
-    runtime_agents = [step.agents[0].package_runtime_agent for step in plan.steps]
+    runtime_agents = [step.agents[0].package_runtime_agent for step in plan.steps if step.agents]
     assert [agent.key for agent in runtime_agents] == [
         "digital_oracle_signal_researcher",
         "digital_oracle_signal_researcher",
         "digital_oracle_signal_researcher",
+        "macro_evidence_collector",
+        "web_evidence_collector",
+        "sec_metadata_collector",
         "digital_oracle_synthesizer",
     ]
-    assert [agent.local_id for agent in runtime_agents] == [1, 1, 1, 2]
+    assert [agent.local_id for agent in runtime_agents] == [1, 1, 1, 3, 5, 4, 2]
     assert [agent.name for agent in runtime_agents] == [
         "Digital Oracle Signal Researcher",
         "Digital Oracle Signal Researcher",
         "Digital Oracle Signal Researcher",
+        "Macro Evidence Collector",
+        "Web Evidence Collector",
+        "SEC Metadata Collector",
         "Digital Oracle Synthesizer",
     ]
     assert [agent.model_binding for agent in runtime_agents] == [
+        _model_binding("digital_oracle_primary_model"),
+        _model_binding("digital_oracle_primary_model"),
+        _model_binding("digital_oracle_primary_model"),
         _model_binding("digital_oracle_primary_model"),
         _model_binding("digital_oracle_primary_model"),
         _model_binding("digital_oracle_primary_model"),
@@ -484,6 +552,9 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         "digital_oracle_report",
         "digital_oracle_report",
         "digital_oracle_report",
+        "macro_evidence_packet",
+        "web_evidence_packet",
+        "sec_metadata_packet",
         "digital_oracle_report",
     ]
     assert runtime_agents[0].output_schema.json_schema["required"] == [
@@ -499,12 +570,15 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         "outputLanguage",
         "signalFocus",
     ]
-    assert runtime_agents[3].input_schema["required"] == [
+    assert runtime_agents[6].input_schema["required"] == [
         "researchQuestion",
         "outputLanguage",
         "marketSignals",
         "filingSignals",
         "sentimentSearchSignals",
+        "macroEvidence",
+        "webEvidence",
+        "secMetadataEvidence",
     ]
 
     expected_profile_tools = [
@@ -517,11 +591,27 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
             ),
         )
     ]
-    for runtime_agent in runtime_agents:
+    for runtime_agent in (
+        runtime_agents[0],
+        runtime_agents[1],
+        runtime_agents[2],
+        runtime_agents[6],
+    ):
         assert [
             (profile.key, profile.tool_keys) for profile in runtime_agent.capability_profiles
         ] == expected_profile_tools
-    for runtime_agent in runtime_agents:
+    assert [
+        mcp_server["key"]
+        for mcp_server in AgentExecutionService._runtime_mcp_server_refs(runtime_agents[4])
+    ] == ["web_research"]
+    for runtime_agent in (
+        runtime_agents[0],
+        runtime_agents[1],
+        runtime_agents[2],
+        runtime_agents[3],
+        runtime_agents[5],
+        runtime_agents[6],
+    ):
         assert AgentExecutionService._runtime_mcp_server_refs(runtime_agent) == []
 
 

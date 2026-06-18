@@ -14,6 +14,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SQL_SEED_PATHS = (
     _REPO_ROOT / "backend" / "app" / "db" / "tradingagents_advisory_research.sql",
     _REPO_ROOT / "backend" / "app" / "db" / "digital_oracle_researcher.sql",
+    _REPO_ROOT / "backend" / "app" / "db" / "tradingagents_advisory_research_macro.sql",
+    _REPO_ROOT / "backend" / "app" / "db" / "tradingagents_advisory_research_mixed_signals.sql",
 )
 _DEMO_PRESET_OWNER_EXPECTATIONS = (
     {
@@ -22,15 +24,48 @@ _DEMO_PRESET_OWNER_EXPECTATIONS = (
         "sql_seed_path": (
             _REPO_ROOT / "backend" / "app" / "db" / "tradingagents_advisory_research.sql"
         ),
-        "owned_tool_prefix": "signaldeck.finance.",
-        "forbidden_fragments": ("signaldeck.digital_oracle",),
+        "allowed_tool_prefixes": ("signaldeck.finance.",),
+        "forbidden_tool_keys": (
+            "signaldeck.digital_oracle.prediction_markets.lookup",
+            "signaldeck.digital_oracle.sec_filings.lookup",
+            "signaldeck.digital_oracle.market_sentiment.lookup",
+        ),
     },
     {
         "name": "Digital Oracle researcher demo preset",
         "manifest_path": _REPO_ROOT / "demo" / "digital_oracle_researcher.yaml",
         "sql_seed_path": _REPO_ROOT / "backend" / "app" / "db" / "digital_oracle_researcher.sql",
-        "owned_tool_prefix": "signaldeck.digital_oracle.",
-        "forbidden_fragments": ("signaldeck.finance", "web_search_exa"),
+        "allowed_tool_prefixes": ("signaldeck.digital_oracle.",),
+        "forbidden_tool_keys": (),
+    },
+    {
+        "name": "TradingAgents macro demo preset",
+        "manifest_path": _REPO_ROOT / "demo" / "tradingagents_advisory_research_macro.yaml",
+        "sql_seed_path": (
+            _REPO_ROOT / "backend" / "app" / "db" / "tradingagents_advisory_research_macro.sql"
+        ),
+        "allowed_tool_prefixes": ("signaldeck.finance.",),
+        "forbidden_tool_keys": (
+            "signaldeck.digital_oracle.prediction_markets.lookup",
+            "signaldeck.digital_oracle.sec_filings.lookup",
+            "signaldeck.digital_oracle.market_sentiment.lookup",
+        ),
+    },
+    {
+        "name": "TradingAgents mixed-signals demo preset",
+        "manifest_path": _REPO_ROOT / "demo" / "tradingagents_advisory_research_mixed_signals.yaml",
+        "sql_seed_path": (
+            _REPO_ROOT
+            / "backend"
+            / "app"
+            / "db"
+            / "tradingagents_advisory_research_mixed_signals.sql"
+        ),
+        "allowed_tool_prefixes": ("signaldeck.finance.", "signaldeck.digital_oracle."),
+        "forbidden_tool_keys": (
+            "signaldeck.digital_oracle.sec_filings.lookup",
+            "signaldeck.digital_oracle.market_sentiment.lookup",
+        ),
     },
 )
 _SQL_BASE64_DECODE_RE: re.Pattern[str] = re.compile(
@@ -74,18 +109,20 @@ def _assert_owner_scoped_tool_usage(
     source: str,
     *,
     context: str,
-    owned_tool_prefix: str,
-    forbidden_fragments: tuple[str, ...],
+    allowed_tool_prefixes: tuple[str, ...],
+    forbidden_tool_keys: tuple[str, ...],
 ) -> None:
-    forbidden_hits = sorted(fragment for fragment in forbidden_fragments if fragment in source)
+    forbidden_hits = sorted(tool_key for tool_key in forbidden_tool_keys if tool_key in source)
     assert not forbidden_hits, f"{context} contains non-owner tool references: {forbidden_hits}"
     tool_keys = sorted(set(cast(list[str], _SIGNALDECK_TOOL_KEY_RE.findall(source))))
     non_owner_tool_keys = [
-        tool_key for tool_key in tool_keys if not tool_key.startswith(owned_tool_prefix)
+        tool_key
+        for tool_key in tool_keys
+        if not any(tool_key.startswith(prefix) for prefix in allowed_tool_prefixes)
     ]
     assert (
         not non_owner_tool_keys
-    ), f"{context} contains tool keys outside {owned_tool_prefix}: {non_owner_tool_keys}"
+    ), f"{context} contains tool keys outside {allowed_tool_prefixes}: {non_owner_tool_keys}"
 
 
 def test_openapi_workflow_package_contracts_exclude_removed_tokens(app: FastAPI) -> None:
@@ -129,15 +166,15 @@ def test_demo_presets_and_sql_seeds_use_only_their_extension_tools() -> None:
         name = cast(str, expectation["name"])
         manifest_path = cast(Path, expectation["manifest_path"])
         sql_seed_path = cast(Path, expectation["sql_seed_path"])
-        owned_tool_prefix = cast(str, expectation["owned_tool_prefix"])
-        forbidden_fragments = cast(tuple[str, ...], expectation["forbidden_fragments"])
+        allowed_tool_prefixes = cast(tuple[str, ...], expectation["allowed_tool_prefixes"])
+        forbidden_tool_keys = cast(tuple[str, ...], expectation["forbidden_tool_keys"])
 
         manifest_source = manifest_path.read_text(encoding="utf-8")
         _assert_owner_scoped_tool_usage(
             manifest_source,
             context=f"{name} manifest",
-            owned_tool_prefix=owned_tool_prefix,
-            forbidden_fragments=forbidden_fragments,
+            allowed_tool_prefixes=allowed_tool_prefixes,
+            forbidden_tool_keys=forbidden_tool_keys,
         )
 
         decoded_payloads = _decoded_sql_payloads(sql_seed_path)
@@ -146,6 +183,6 @@ def test_demo_presets_and_sql_seeds_use_only_their_extension_tools() -> None:
             _assert_owner_scoped_tool_usage(
                 decoded_payload,
                 context=f"{name} SQL seed payload",
-                owned_tool_prefix=owned_tool_prefix,
-                forbidden_fragments=forbidden_fragments,
+                allowed_tool_prefixes=allowed_tool_prefixes,
+                forbidden_tool_keys=forbidden_tool_keys,
             )
