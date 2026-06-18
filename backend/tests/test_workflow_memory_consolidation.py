@@ -87,9 +87,7 @@ def test_run_end_consolidation_supersedes_exact_duplicates_within_owner_scope(
         assert non_exact.lifecycle_status == "active"
 
         default_owner_run = (
-            session.query(WorkflowMemoryConsolidationRun)
-            .filter_by(owner_id="default")
-            .one()
+            session.query(WorkflowMemoryConsolidationRun).filter_by(owner_id="default").one()
         )
         assert set(default_owner_run.source_memory_ids_json) == {
             "mem-run-duplicate-survivor",
@@ -101,9 +99,9 @@ def test_run_end_consolidation_supersedes_exact_duplicates_within_owner_scope(
         ]
         assert default_owner_run.stats_json["duplicateSetCount"] == 1
         assert default_owner_run.stats_json["supersededMemoryIds"] == [prior.memory_id]
-        audit_events = session.query(WorkflowMemoryAuditEvent).order_by(
-            WorkflowMemoryAuditEvent.id
-        ).all()
+        audit_events = (
+            session.query(WorkflowMemoryAuditEvent).order_by(WorkflowMemoryAuditEvent.id).all()
+        )
         assert [event.event_type for event in audit_events] == [
             "memory_consolidation_supersede",
             "memory_consolidation_run",

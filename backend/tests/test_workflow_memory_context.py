@@ -386,7 +386,6 @@ def test_proposal_staging_allows_same_idempotency_key_across_owners(
         assert default_owner.proposals[0].id == same_owner_retry.proposals[0].id
         assert default_owner.proposals[0].id != other_owner.proposals[0].id
         assert (
-            default_owner.proposals[0].idempotency_key
-            == other_owner.proposals[0].idempotency_key
+            default_owner.proposals[0].idempotency_key == other_owner.proposals[0].idempotency_key
         )
         assert [proposal.owner_id for proposal in proposals] == ["default", "other"]

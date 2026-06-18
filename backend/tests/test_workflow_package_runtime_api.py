@@ -1203,9 +1203,9 @@ def test_workflow_package_runtime_memory_run_end_consolidation_emits_audit(
 
     assert detail["status"] == "succeeded"
     with session_factory() as session:
-        audit_events = session.query(WorkflowMemoryAuditEvent).order_by(
-            WorkflowMemoryAuditEvent.id
-        ).all()
+        audit_events = (
+            session.query(WorkflowMemoryAuditEvent).order_by(WorkflowMemoryAuditEvent.id).all()
+        )
         assert [event.event_type for event in audit_events] == [
             "memory_policy_commit",
             "memory_consolidation_run",
