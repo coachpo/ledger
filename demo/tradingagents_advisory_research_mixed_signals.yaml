@@ -1,0 +1,2430 @@
+apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: tradingagents_advisory_research_mixed_signals
+  name: TradingAgents Advisory Research Mixed Signals
+  description: Mixed-extension TradingAgents advisory research with Finance-owned
+    macro/news breadth plus prediction-market evidence through package semantics.
+spec:
+  inputs:
+    type: object
+    title: TradingAgents advisory research inputs
+    required:
+      - ticker
+      - asOfDate
+      - horizonDays
+      - benchmarkSymbol
+    properties:
+      ticker:
+        type: string
+        title: Ticker symbol
+        description: Required equity or asset symbol to research, such as AAPL.
+      asOfDate:
+        type: string
+        title: As-of date
+        description: Required research date in YYYY-MM-DD format for
+          point-in-time context.
+      horizonDays:
+        type: integer
+        title: Horizon in days
+        default: 30
+        description: Required advisory horizon, in calendar days, for the
+          research and risk framing.
+      portfolioId:
+        type: string
+        title: Portfolio ID
+        default: ""
+        description: Optional SignalDeck portfolio identifier used to include
+          current positions when available. Leave blank for standalone research.
+      outputLanguage:
+        type: string
+        title: Output language
+        default: English
+        description: Optional language for generated advisory reports.
+      benchmarkSymbol:
+        type: string
+        title: Benchmark symbol
+        default: SPY
+        description: Required benchmark symbol used for relative market and risk
+          context.
+      maxRiskDebateRounds:
+        type: integer
+        title: Risk debate rounds
+        default: 2
+        description: Optional cap for risk debate iterations; defaults to a
+          short, operator-friendly review.
+      maxInvestmentDebateRounds:
+        type: integer
+        title: Investment debate rounds
+        default: 2
+        description: Optional cap for investment debate iterations; defaults to
+          a short, operator-friendly review.
+    description: Operator inputs for a neutral advisory research run. Defaults
+      are safe placeholders and do not contain credentials or provider
+      configuration.
+  capabilityProfiles:
+    - key: market_research_tools
+      name: Market Research Tools
+      description: Reads market prices, history, OHLCV, and indicators from
+        SignalDeck native tools.
+      toolKeys:
+        - signaldeck.finance.indicators.lookup
+        - signaldeck.finance.market_data.history_lookup
+        - signaldeck.finance.market_data.ohlcv_lookup
+        - signaldeck.finance.market_data.quote_lookup
+    - key: fundamentals_tools
+      name: Fundamentals Tools
+      description: Reads fundamentals data exposed by the SignalDeck server
+        catalog.
+      toolKeys:
+        - signaldeck.finance.fundamentals.lookup
+    - key: news_research_tools
+      name: News Research Tools
+      description: Reads Finance-owned company news and insider-data context from
+        SignalDeck native tools.
+      toolKeys:
+        - signaldeck.finance.insider_data.lookup
+        - signaldeck.finance.news.lookup
+    - key: social_sentiment_tools
+      name: Social Sentiment Tools
+      description: Reads normalized social sentiment source blocks from
+        SignalDeck native tools.
+      toolKeys:
+        - signaldeck.finance.social_sentiment.lookup
+    - key: report_context_tools
+      name: Report Context Tools
+      description: Reads persisted SignalDeck reports for advisory research
+        context.
+      toolKeys:
+        - signaldeck.finance.reports.lookup
+    - key: portfolio_context_tools
+      name: Portfolio Context Tools
+      description: Reads persisted SignalDeck positions for portfolio context.
+      toolKeys:
+        - signaldeck.finance.positions.lookup
+    - key: prediction_market_tools
+      name: Prediction Market Tools
+      description: Reads Digital Oracle prediction-market evidence only for
+        mixed-signal advisory context.
+      toolKeys:
+        - signaldeck.digital_oracle.prediction_markets.lookup
+  outputSchemas:
+    - key: analyst_report
+      name: Analyst Report
+      description: Structured analyst research note.
+      jsonSchema:
+        type: object
+        required:
+          - summary
+          - evidence
+          - limitations
+        properties:
+          summary:
+            type: string
+          evidence:
+            type: array
+            items:
+              type: string
+          limitations:
+            type: array
+            items:
+              type: string
+    - key: fred_observations_raw
+      name: FRED Observations Raw
+      description: Raw FRED series observation response for fixed macro series.
+      jsonSchema:
+        type: object
+        required:
+          - observations
+        properties:
+          realtime_start:
+            type: string
+          realtime_end:
+            type: string
+          observation_start:
+            type: string
+          observation_end:
+            type: string
+          units:
+            type: string
+          output_type:
+            type: integer
+          file_type:
+            type: string
+          order_by:
+            type: string
+          sort_order:
+            type: string
+          count:
+            type: integer
+          offset:
+            type: integer
+          limit:
+            type: integer
+          observations:
+            type: array
+            items:
+              type: object
+              required:
+                - date
+                - value
+              properties:
+                realtime_start:
+                  type: string
+                realtime_end:
+                  type: string
+                date:
+                  type: string
+                value:
+                  type: string
+    - key: treasury_rates_raw
+      name: Treasury Rates Raw
+      description: Raw Treasury average interest rates API response.
+      jsonSchema:
+        type: object
+        required:
+          - data
+        properties:
+          data:
+            type: array
+            items:
+              type: object
+              required: []
+              properties:
+                record_date:
+                  type: string
+                security_type_desc:
+                  type: string
+                security_desc:
+                  type: string
+                avg_interest_rate_amt:
+                  type: string
+                src_line_nbr:
+                  type: string
+                record_fiscal_year:
+                  type: string
+                record_fiscal_quarter:
+                  type: string
+                record_calendar_year:
+                  type: string
+                record_calendar_quarter:
+                  type: string
+                record_calendar_month:
+                  type: string
+                record_calendar_day:
+                  type: string
+          meta:
+            type: object
+            required: []
+            properties:
+              count:
+                type: integer
+              labels:
+                type: object
+                required: []
+                properties: {}
+              dataTypes:
+                type: object
+                required: []
+                properties: {}
+              dataFormats:
+                type: object
+                required: []
+                properties: {}
+              total-count:
+                type: integer
+              total-pages:
+                type: integer
+          links:
+            type: object
+            required: []
+            properties:
+              self:
+                type: string
+              first:
+                type: string
+              prev:
+                type: string
+              next:
+                type: string
+              last:
+                type: string
+    - key: macro_context_packet
+      name: Macro Context Packet
+      description: Bounded macro and rates evidence packet with provenance.
+      jsonSchema:
+        type: object
+        required:
+          - summary
+          - findings
+          - limitations
+          - warnings
+          - sourceType
+          - sourceUrl
+          - fetchedAt
+          - query
+          - stableSourceId
+        properties:
+          summary:
+            type: string
+          findings:
+            type: array
+            items:
+              type: string
+          limitations:
+            type: array
+            items:
+              type: string
+          warnings:
+            type: array
+            items:
+              type: string
+          sourceType:
+            type: string
+          sourceUrl:
+            type: string
+          fetchedAt:
+            type: string
+          query:
+            type: string
+          stableSourceId:
+            type: string
+    - key: web_news_breadth_packet
+      name: Web News Breadth Packet
+      description: Bounded public web/news breadth packet with provenance and
+        explicit limitations.
+      jsonSchema:
+        type: object
+        required:
+          - summary
+          - findings
+          - limitations
+          - warnings
+          - sourceType
+          - sourceUrl
+          - fetchedAt
+          - query
+          - stableSourceId
+        properties:
+          summary:
+            type: string
+          findings:
+            type: array
+            items:
+              type: string
+          limitations:
+            type: array
+            items:
+              type: string
+          warnings:
+            type: array
+            items:
+              type: string
+          sourceType:
+            type: string
+          sourceUrl:
+            type: string
+          fetchedAt:
+            type: string
+          query:
+            type: string
+          stableSourceId:
+            type: string
+    - key: prediction_market_packet
+      name: Prediction Market Packet
+      description: Bounded prediction-market evidence packet with provenance,
+        uncertainty, and explicit limitations.
+      jsonSchema:
+        type: object
+        required:
+          - summary
+          - findings
+          - limitations
+          - warnings
+          - sourceType
+          - sourceUrl
+          - fetchedAt
+          - query
+          - stableSourceId
+        properties:
+          summary:
+            type: string
+          findings:
+            type: array
+            items:
+              type: string
+          limitations:
+            type: array
+            items:
+              type: string
+          warnings:
+            type: array
+            items:
+              type: string
+          sourceType:
+            type: string
+          sourceUrl:
+            type: string
+          fetchedAt:
+            type: string
+          query:
+            type: string
+          stableSourceId:
+            type: string
+    - key: investment_debate_transition
+      name: Investment Debate Transition
+      description: Complete investment debate state transition.
+      jsonSchema:
+        type: object
+        required:
+          - nextState
+        properties:
+          nextState:
+            type: object
+            required:
+              - latestSpeaker
+              - summary
+              - supportingPoints
+              - opposingPoints
+              - openQuestions
+            properties:
+              summary:
+                type: string
+              latestSpeaker:
+                type: string
+              openQuestions:
+                type: array
+                items:
+                  type: string
+              opposingPoints:
+                type: array
+                items:
+                  type: string
+              supportingPoints:
+                type: array
+                items:
+                  type: string
+    - key: research_plan
+      name: Research Plan
+      description: Research manager advisory plan.
+      jsonSchema:
+        type: object
+        required:
+          - thesis
+          - debateSummary
+          - recommendation
+        properties:
+          thesis:
+            type: string
+          debateSummary:
+            type: string
+          recommendation:
+            type: string
+    - key: trader_proposal
+      name: Trader Proposal
+      description: Advisory portfolio exposure proposal.
+      jsonSchema:
+        type: object
+        required:
+          - posture
+          - rationale
+          - sizingNotes
+        properties:
+          posture:
+            type: string
+          rationale:
+            type: string
+          sizingNotes:
+            type: string
+    - key: risk_debate_transition
+      name: Risk Debate Transition
+      description: Complete risk debate state transition.
+      jsonSchema:
+        type: object
+        required:
+          - nextState
+        properties:
+          nextState:
+            type: object
+            required:
+              - latestSpeaker
+              - summary
+              - supportingPoints
+              - opposingPoints
+              - openQuestions
+            properties:
+              summary:
+                type: string
+              latestSpeaker:
+                type: string
+              openQuestions:
+                type: array
+                items:
+                  type: string
+              opposingPoints:
+                type: array
+                items:
+                  type: string
+              supportingPoints:
+                type: array
+                items:
+                  type: string
+    - key: portfolio_decision
+      name: Portfolio Decision
+      description: Final advisory portfolio decision.
+      jsonSchema:
+        type: object
+        required:
+          - posture
+          - rationale
+          - riskSummary
+          - implementationNotes
+        properties:
+          posture:
+            type: string
+          rationale:
+            type: string
+          riskSummary:
+            type: string
+          implementationNotes:
+            type: string
+  mcpServers:
+    - key: web_research
+      name: Web Research
+      description: Package-private web evidence search for bounded advisory context.
+      transport: http-sse
+      url: https://mcp.exa.ai/mcp
+      headers:
+        Authorization: Bearer IMPLEMENTATION_TIME_VALUE
+      query:
+        api_key: IMPLEMENTATION_TIME_VALUE
+      toolKeys:
+        - web_search_exa
+  agents:
+    - key: macro_context_collector
+      name: Macro Context Collector
+      description: Normalizes fixed FRED series and Treasury rate snapshots into
+        bounded macro context.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You collect package-private macro and rates evidence for a Finance-only TradingAgents advisory run. Use only the provided FRED and US Treasury HTTP outputs; do not call tools or infer missing values.
+
+        Normalize FEDFUNDS, UNRATE, CPIAUCSL, T10Y2Y, and Treasury average interest-rate snapshots into concise public macro context. Include provenance, warnings, and limitations for stale, missing, partial, or failed optional HTTP responses. Do not fabricate observations, rates, revisions, or economic conclusions unsupported by the raw inputs.
+
+        Return only the bounded macro_context_packet schema.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          ticker:
+            type: string
+          asOfDate:
+            type: string
+          horizonDays:
+            type: integer
+          fredFedfundsObservations:
+            type: object
+            required: []
+            properties: {}
+          fredUnrateObservations:
+            type: object
+            required: []
+            properties: {}
+          fredCpiaucslObservations:
+            type: object
+            required: []
+            properties: {}
+          fredT10y2yObservations:
+            type: object
+            required: []
+            properties: {}
+          treasuryRatesSnapshot:
+            type: object
+            required: []
+            properties: {}
+      outputSchema: macro_context_packet
+      capabilityProfiles: []
+      mcpServers: []
+    - key: news_breadth_collector
+      name: News Breadth Collector
+      description: Uses package-private web research to summarize public
+        news and sentiment breadth as bounded evidence.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You collect supplementary public web/news breadth for a mixed-signals TradingAgents advisory run. Use the package-private web_research MCP only for broad public news/page evidence related to ticker, asOfDate, horizonDays, and macro context.
+
+        Summarize findings as bounded evidence statements with provenance, warnings, limitations, source fields, and explicit uncertainty. Do not fabricate articles, posts, usernames, engagement counts, social metrics, provider scores, or community narratives. Treat web-derived breadth as supplementary context, not authoritative SignalDeck social sentiment telemetry.
+
+        Return only the bounded web_news_breadth_packet schema.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          ticker:
+            type: string
+          asOfDate:
+            type: string
+          horizonDays:
+            type: integer
+          outputLanguage:
+            type: string
+          macroContext:
+            type: object
+            required: []
+            properties: {}
+      outputSchema: web_news_breadth_packet
+      capabilityProfiles: []
+      mcpServers:
+        - web_research
+    - key: prediction_market_analyst
+      name: Prediction Market Analyst
+      description: Normalizes Digital Oracle prediction-market evidence into
+        bounded advisory context for mixed-signal research.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You collect prediction-market evidence for the mixed-signals TradingAgents advisory run. Use only the granted Digital Oracle prediction-market tool and the provided run inputs; do not use SEC filings, market sentiment, or package-private web research.
+
+        Normalize any available market probabilities, event definitions, horizons, liquidity caveats, and disagreements into bounded evidence statements. Treat prediction markets as supplementary public expectations, not authoritative price, sentiment, or filing evidence. Do not fabricate contracts, probabilities, odds, volumes, source URLs, or event outcomes when the tool does not provide them.
+
+        Return only the bounded prediction_market_packet schema.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          ticker:
+            type: string
+          asOfDate:
+            type: string
+          horizonDays:
+            type: integer
+          outputLanguage:
+            type: string
+          macroContext:
+            type: object
+            required: []
+            properties: {}
+          newsBreadth:
+            type: object
+            required: []
+            properties: {}
+      outputSchema: prediction_market_packet
+      capabilityProfiles:
+        - prediction_market_tools
+      mcpServers: []
+    - key: market_analyst
+      name: Market Analyst
+      description: Tool-first market technician for TradingAgents-style advisory
+        research.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the TradingAgents market analyst translated into SignalDeck package semantics. Use only the granted SignalDeck market research tools and the provided run inputs for ticker, asOfDate, horizonDays, benchmarkSymbol, and outputLanguage.
+
+        Gather quote, historical price, OHLCV, and indicator evidence before writing conclusions. Select no more than eight indicators, request them by exact supported indicator names when a tool requires names, and explain why each selected signal matters for the requested horizon. Do not invent prices, indicators, liquidity, or benchmark behavior; if a tool returns warnings, stale data, or empty payloads, disclose that limitation.
+
+        Produce a concise market report in the requested language. Emphasize trend, momentum, volatility, volume, support/resistance, and benchmark-relative context. End with a Markdown table summarizing each tool-backed signal, its reading, and its implication. This is research only, not a recommendation to trade.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          ticker:
+            type: string
+          asOfDate:
+            type: string
+          horizonDays:
+            type: integer
+          outputLanguage:
+            type: string
+          benchmarkSymbol:
+            type: string
+      outputSchema: analyst_report
+      capabilityProfiles:
+        - market_research_tools
+      mcpServers: []
+    - key: sentiment_analyst
+      name: Sentiment Analyst
+      description: Single-shot sentiment synthesizer using SignalDeck social
+        sentiment payloads.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the canonical TradingAgents sentiment analyst, replacing the deprecated social-media analyst role. In SignalDeck, treat social sentiment as pre-normalized source blocks from the granted social sentiment tool and any provided prefetched sentiment context.
+
+        Perform a single-shot synthesis rather than fabricating posts, usernames, engagement counts, or community narratives. Use the granted social sentiment capability only for the requested ticker/date context, and treat provided newsBreadth as supplementary public context rather than social telemetry. Explain directional sentiment, intensity, notable disagreements, and coverage gaps. If source coverage is stale, sparse, unavailable, or warning-bearing, say so plainly.
+
+        Produce an advisory sentiment report in the requested outputLanguage. Keep the report evidence-based and research-only; do not recommend order placement, execution timing, or trade-operation drafting.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          ticker:
+            type: string
+          asOfDate:
+            type: string
+          horizonDays:
+            type: integer
+          outputLanguage:
+            type: string
+          prefetchedSentiment:
+            type: object
+            required: []
+            properties: {}
+          newsBreadth:
+            type: object
+            required: []
+            properties: {}
+      outputSchema: analyst_report
+      capabilityProfiles:
+        - social_sentiment_tools
+      mcpServers: []
+    - key: news_analyst
+      name: News Analyst
+      description: Tool-first news and insider-data analyst for the advisory
+        research packet.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the TradingAgents news analyst translated into SignalDeck package semantics. Use only the granted SignalDeck news research tools for company news and insider-data context around ticker and asOfDate.
+
+        Ground every catalyst, event, insider signal, and macro or sector reference in returned tool evidence, provided macroContext, provided newsBreadth, or run inputs. Treat macroContext and newsBreadth as supplementary bounded evidence, not as direct SignalDeck tool output. Do not invent articles, headlines, dates, filings, sources, insider activity, social metrics, or event probabilities. Disclose missing provider coverage, stale data, empty payloads, and tool warnings as data-quality limitations.
+
+        Produce a concise news report in outputLanguage that separates confirmed catalysts, possible second-order effects, and uncertainties for the requested horizon. Keep the framing advisory and research-only.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          ticker:
+            type: string
+          asOfDate:
+            type: string
+          horizonDays:
+            type: integer
+          outputLanguage:
+            type: string
+          macroContext:
+            type: object
+            required: []
+            properties: {}
+          newsBreadth:
+            type: object
+            required: []
+            properties: {}
+      outputSchema: analyst_report
+      capabilityProfiles:
+        - news_research_tools
+      mcpServers: []
+    - key: fundamentals_analyst
+      name: Fundamentals Analyst
+      description: Tool-first fundamentals analyst for valuation, quality, and
+        financial context.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the TradingAgents fundamentals analyst translated into SignalDeck package semantics. Use only the granted SignalDeck fundamentals tool and provided run inputs; never invent financial statements, ratios, filing facts, margins, growth rates, or valuation multiples.
+
+        Analyze the returned fundamentals for quality, growth, profitability, leverage, valuation, and horizon-relevant risks. When data is incomplete, stale, warning-bearing, or absent, disclose the limitation and avoid overconfidence.
+
+        Produce a concise fundamentals report in outputLanguage with evidence-backed positives, negatives, and watch items. Keep the framing advisory and research-only.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          ticker:
+            type: string
+          asOfDate:
+            type: string
+          horizonDays:
+            type: integer
+          outputLanguage:
+            type: string
+      outputSchema: analyst_report
+      capabilityProfiles:
+        - fundamentals_tools
+      mcpServers: []
+    - key: bull_researcher
+      name: Bull Researcher
+      description: Bullish investment-debate advocate using analyst reports, not
+        direct tools.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the TradingAgents bull researcher in a bounded investment debate. Use the provided market, sentiment, news, and fundamentals reports plus prior debate state; you do not have direct tools.
+
+        Build the strongest evidence-based bullish case for the ticker over the requested horizon. Address upside catalysts, supportive technical or fundamental evidence, sentiment/news tailwinds, and why bearish objections may be overstated. Do not fabricate new evidence beyond the supplied reports.
+
+        Return a debate-stage response in outputLanguage that can update bullCase and debateHistory. Keep the posture analytical and advisory-only; do not issue execution instructions.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          newsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          priorState:
+            type: object
+            required: []
+            properties:
+              nextState:
+                type: object
+                required:
+                  - latestSpeaker
+                  - summary
+                  - supportingPoints
+                  - opposingPoints
+                  - openQuestions
+                properties:
+                  summary:
+                    type: string
+                  latestSpeaker:
+                    type: string
+                  openQuestions:
+                    type: array
+                    items:
+                      type: string
+                  opposingPoints:
+                    type: array
+                    items:
+                      type: string
+                  supportingPoints:
+                    type: array
+                    items:
+                      type: string
+          marketReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          outputLanguage:
+            type: string
+          macroContext:
+            type: object
+            required: []
+            properties: {}
+          newsBreadth:
+            type: object
+            required: []
+            properties: {}
+          sentimentReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          fundamentalsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+      outputSchema: investment_debate_transition
+      capabilityProfiles: []
+      mcpServers: []
+    - key: bear_researcher
+      name: Bear Researcher
+      description: Bearish investment-debate advocate using analyst reports, not
+        direct tools.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the TradingAgents bear researcher in a bounded investment debate. Use the provided analyst reports and prior debate state; you do not have direct tools.
+
+        Build the strongest evidence-based bearish case for the ticker over the requested horizon. Highlight downside catalysts, deteriorating signals, valuation or balance-sheet concerns, sentiment/news risks, and why bullish arguments may be fragile. Do not fabricate new evidence beyond the supplied reports.
+
+        Return a debate-stage response in outputLanguage that can update bearCase and debateHistory. Keep the posture analytical and advisory-only; do not issue execution instructions.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          newsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          priorState:
+            type: object
+            required: []
+            properties:
+              nextState:
+                type: object
+                required:
+                  - latestSpeaker
+                  - summary
+                  - supportingPoints
+                  - opposingPoints
+                  - openQuestions
+                properties:
+                  summary:
+                    type: string
+                  latestSpeaker:
+                    type: string
+                  openQuestions:
+                    type: array
+                    items:
+                      type: string
+                  opposingPoints:
+                    type: array
+                    items:
+                      type: string
+                  supportingPoints:
+                    type: array
+                    items:
+                      type: string
+          marketReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          outputLanguage:
+            type: string
+          sentimentReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          fundamentalsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+      outputSchema: investment_debate_transition
+      capabilityProfiles: []
+      mcpServers: []
+    - key: research_manager
+      name: Research Manager
+      description: Structured arbiter of the investment debate and research
+        plan.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the TradingAgents research manager translated into SignalDeck package semantics. Review the full analyst packet and bull/bear debate state; you do not have direct tools.
+
+        Weigh the competing evidence, including bounded macroContext, newsBreadth, and predictionMarketContext when provided, identify the decisive uncertainties, and choose a balanced advisory recommendation for the requested horizon. Preserve nuance: a recommendation may be bullish, bearish, neutral, or conditional when evidence is mixed. Treat macro, web breadth, and prediction-market packets as non-authoritative supplementary evidence, and do not introduce facts that are absent from the supplied reports, packets, and debate.
+
+        Return only structured content matching the local research_plan schema: recommendation, thesis, and debateSummary. Keep it advisory-only and do not present live trading instructions.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          ticker:
+            type: string
+          newsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          debateState:
+            type: object
+            required: []
+            properties:
+              nextState:
+                type: object
+                required:
+                  - latestSpeaker
+                  - summary
+                  - supportingPoints
+                  - opposingPoints
+                  - openQuestions
+                properties:
+                  summary:
+                    type: string
+                  latestSpeaker:
+                    type: string
+                  openQuestions:
+                    type: array
+                    items:
+                      type: string
+                  opposingPoints:
+                    type: array
+                    items:
+                      type: string
+                  supportingPoints:
+                    type: array
+                    items:
+                      type: string
+          horizonDays:
+            type: integer
+          marketReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          analystReports:
+            type: object
+            required: []
+            properties:
+              newsReport:
+                type: object
+                required:
+                  - summary
+                  - evidence
+                  - limitations
+                properties:
+                  summary:
+                    type: string
+                  evidence:
+                    type: array
+                    items:
+                      type: string
+                  limitations:
+                    type: array
+                    items:
+                      type: string
+              marketReport:
+                type: object
+                required:
+                  - summary
+                  - evidence
+                  - limitations
+                properties:
+                  summary:
+                    type: string
+                  evidence:
+                    type: array
+                    items:
+                      type: string
+                  limitations:
+                    type: array
+                    items:
+                      type: string
+              sentimentReport:
+                type: object
+                required:
+                  - summary
+                  - evidence
+                  - limitations
+                properties:
+                  summary:
+                    type: string
+                  evidence:
+                    type: array
+                    items:
+                      type: string
+                  limitations:
+                    type: array
+                    items:
+                      type: string
+              fundamentalsReport:
+                type: object
+                required:
+                  - summary
+                  - evidence
+                  - limitations
+                properties:
+                  summary:
+                    type: string
+                  evidence:
+                    type: array
+                    items:
+                      type: string
+                  limitations:
+                    type: array
+                    items:
+                      type: string
+          outputLanguage:
+            type: string
+          predictionMarketContext:
+            type: object
+            required: []
+            properties: {}
+          sentimentReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          fundamentalsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+      outputSchema: research_plan
+      capabilityProfiles: []
+      mcpServers: []
+    - key: trader
+      name: Trader
+      description: Structured advisory exposure proposer, with no execution
+        authority.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the TradingAgents trader role translated into SignalDeck advisory semantics. Use the research plan, supplied bounded context, predictionMarketContext, and granted SignalDeck portfolio position lookup when portfolioId is present.
+
+        Convert the research plan into an advisory exposure posture for the requested horizon, considering current holdings and prediction-market context when available. Disclose missing or unavailable portfolio and prediction-market context. Do not place orders, imply live execution, draft trade operations, create order tickets, or instruct an operator to execute immediately.
+
+        Return only structured content matching the local trader_proposal schema: posture, rationale, and sizingNotes. The sizingNotes field must be educational and risk-aware, not an executable trade instruction.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          ticker:
+            type: string
+          newsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          horizonDays:
+            type: integer
+          portfolioId:
+            type: string
+          marketReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          researchPlan:
+            type: object
+            required:
+              - thesis
+              - debateSummary
+              - recommendation
+            properties:
+              thesis:
+                type: string
+              debateSummary:
+                type: string
+              recommendation:
+                type: string
+          outputLanguage:
+            type: string
+          predictionMarketContext:
+            type: object
+            required: []
+            properties: {}
+          sentimentReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          fundamentalsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+      outputSchema: trader_proposal
+      capabilityProfiles:
+        - portfolio_context_tools
+      mcpServers: []
+    - key: aggressive_risk_analyst
+      name: Aggressive Risk Analyst
+      description: Pro-risk debater focused on opportunity cost and upside
+        participation.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the TradingAgents aggressive risk analyst in a bounded risk debate. Use the provided research plan, trader proposal, analyst reports, predictionMarketContext, and prior risk debate state; you do not have direct tools.
+
+        Argue from an opportunity-seeking risk perspective. Stress upside asymmetry, opportunity cost of inaction, and conditions where a larger advisory exposure could be justified. Use prediction-market context only as bounded supplementary evidence about public expectations. Confront neutral and conservative objections using only supplied evidence.
+
+        Return a debate-stage response in outputLanguage suitable for updating aggressiveCase and debateHistory. Keep it advisory-only and do not provide executable trade instructions.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          newsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          priorState:
+            type: object
+            required: []
+            properties:
+              nextState:
+                type: object
+                required:
+                  - latestSpeaker
+                  - summary
+                  - supportingPoints
+                  - opposingPoints
+                  - openQuestions
+                properties:
+                  summary:
+                    type: string
+                  latestSpeaker:
+                    type: string
+                  openQuestions:
+                    type: array
+                    items:
+                      type: string
+                  opposingPoints:
+                    type: array
+                    items:
+                      type: string
+                  supportingPoints:
+                    type: array
+                    items:
+                      type: string
+          marketReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          researchPlan:
+            type: object
+            required:
+              - thesis
+              - debateSummary
+              - recommendation
+            properties:
+              thesis:
+                type: string
+              debateSummary:
+                type: string
+              recommendation:
+                type: string
+          outputLanguage:
+            type: string
+          predictionMarketContext:
+            type: object
+            required: []
+            properties: {}
+          traderProposal:
+            type: object
+            required:
+              - posture
+              - rationale
+              - sizingNotes
+            properties:
+              posture:
+                type: string
+              rationale:
+                type: string
+              sizingNotes:
+                type: string
+          sentimentReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          fundamentalsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+      outputSchema: risk_debate_transition
+      capabilityProfiles: []
+      mcpServers: []
+    - key: neutral_risk_analyst
+      name: Neutral Risk Analyst
+      description: Balanced risk debater focused on proportionality and evidence
+        quality.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the TradingAgents neutral risk analyst in a bounded risk debate. Use the provided research plan, trader proposal, analyst reports, predictionMarketContext, and prior risk debate state; you do not have direct tools.
+
+        Argue from a balanced risk perspective. Test whether the proposed exposure is proportional to evidence quality, uncertainty, horizon, prediction-market context, and portfolio context. Identify compromise postures and monitoring conditions when aggressive or conservative views overreach.
+
+        Return a debate-stage response in outputLanguage suitable for updating neutralCase and debateHistory. Keep it advisory-only and do not provide executable trade instructions.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          newsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          priorState:
+            type: object
+            required: []
+            properties:
+              nextState:
+                type: object
+                required:
+                  - latestSpeaker
+                  - summary
+                  - supportingPoints
+                  - opposingPoints
+                  - openQuestions
+                properties:
+                  summary:
+                    type: string
+                  latestSpeaker:
+                    type: string
+                  openQuestions:
+                    type: array
+                    items:
+                      type: string
+                  opposingPoints:
+                    type: array
+                    items:
+                      type: string
+                  supportingPoints:
+                    type: array
+                    items:
+                      type: string
+          marketReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          researchPlan:
+            type: object
+            required:
+              - thesis
+              - debateSummary
+              - recommendation
+            properties:
+              thesis:
+                type: string
+              debateSummary:
+                type: string
+              recommendation:
+                type: string
+          outputLanguage:
+            type: string
+          predictionMarketContext:
+            type: object
+            required: []
+            properties: {}
+          traderProposal:
+            type: object
+            required:
+              - posture
+              - rationale
+              - sizingNotes
+            properties:
+              posture:
+                type: string
+              rationale:
+                type: string
+              sizingNotes:
+                type: string
+          sentimentReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          fundamentalsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+      outputSchema: risk_debate_transition
+      capabilityProfiles: []
+      mcpServers: []
+    - key: conservative_risk_analyst
+      name: Conservative Risk Analyst
+      description: Defensive risk debater focused on drawdown, uncertainty, and
+        capital preservation.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the TradingAgents conservative risk analyst in a bounded risk debate. Use the provided research plan, trader proposal, analyst reports, predictionMarketContext, and prior risk debate state; you do not have direct tools.
+
+        Argue from a capital-preservation perspective. Stress downside scenarios, data limitations, liquidity or volatility risks, adverse news/fundamental evidence, prediction-market uncertainty, and conditions where exposure should be reduced, delayed, or avoided. Challenge aggressive and neutral claims using only supplied evidence.
+
+        Return a debate-stage response in outputLanguage suitable for updating conservativeCase and debateHistory. Keep it advisory-only and do not provide executable trade instructions.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          newsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          priorState:
+            type: object
+            required: []
+            properties:
+              nextState:
+                type: object
+                required:
+                  - latestSpeaker
+                  - summary
+                  - supportingPoints
+                  - opposingPoints
+                  - openQuestions
+                properties:
+                  summary:
+                    type: string
+                  latestSpeaker:
+                    type: string
+                  openQuestions:
+                    type: array
+                    items:
+                      type: string
+                  opposingPoints:
+                    type: array
+                    items:
+                      type: string
+                  supportingPoints:
+                    type: array
+                    items:
+                      type: string
+          marketReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          researchPlan:
+            type: object
+            required:
+              - thesis
+              - debateSummary
+              - recommendation
+            properties:
+              thesis:
+                type: string
+              debateSummary:
+                type: string
+              recommendation:
+                type: string
+          outputLanguage:
+            type: string
+          predictionMarketContext:
+            type: object
+            required: []
+            properties: {}
+          traderProposal:
+            type: object
+            required:
+              - posture
+              - rationale
+              - sizingNotes
+            properties:
+              posture:
+                type: string
+              rationale:
+                type: string
+              sizingNotes:
+                type: string
+          sentimentReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          fundamentalsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+      outputSchema: risk_debate_transition
+      capabilityProfiles: []
+      mcpServers: []
+    - key: portfolio_manager
+      name: Portfolio Manager
+      description: Final structured advisory decision maker for the package.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |-
+        You are the TradingAgents portfolio manager translated into SignalDeck advisory semantics. Use the final risk debate state, trader proposal, research plan, bounded predictionMarketContext, and granted SignalDeck report/portfolio context tools only when needed for final synthesis.
+
+        Act as the final arbiter. Weigh the aggressive, neutral, and conservative risk arguments; incorporate current position/report and prediction-market context when available; and produce a final advisory posture for the requested horizon. Disclose unavailable context and key limitations. Do not place orders, imply live execution, draft trade operations, or create implementation artifacts.
+
+        Return only structured content matching the local portfolio_decision schema: posture, rationale, riskSummary, and implementationNotes. The implementationNotes field must describe advisory considerations and follow-up checks, not executable instructions.
+      inputSchema:
+        type: object
+        required: []
+        properties:
+          ticker:
+            type: string
+          riskState:
+            type: object
+            required: []
+            properties:
+              nextState:
+                type: object
+                required:
+                  - latestSpeaker
+                  - summary
+                  - supportingPoints
+                  - opposingPoints
+                  - openQuestions
+                properties:
+                  summary:
+                    type: string
+                  latestSpeaker:
+                    type: string
+                  openQuestions:
+                    type: array
+                    items:
+                      type: string
+                  opposingPoints:
+                    type: array
+                    items:
+                      type: string
+                  supportingPoints:
+                    type: array
+                    items:
+                      type: string
+          newsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          horizonDays:
+            type: integer
+          portfolioId:
+            type: string
+          marketReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          researchPlan:
+            type: object
+            required:
+              - thesis
+              - debateSummary
+              - recommendation
+            properties:
+              thesis:
+                type: string
+              debateSummary:
+                type: string
+              recommendation:
+                type: string
+          outputLanguage:
+            type: string
+          predictionMarketContext:
+            type: object
+            required: []
+            properties: {}
+          traderProposal:
+            type: object
+            required:
+              - posture
+              - rationale
+              - sizingNotes
+            properties:
+              posture:
+                type: string
+              rationale:
+                type: string
+              sizingNotes:
+                type: string
+          sentimentReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+          fundamentalsReport:
+            type: object
+            required:
+              - summary
+              - evidence
+              - limitations
+            properties:
+              summary:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                items:
+                  type: string
+      outputSchema: portfolio_decision
+      capabilityProfiles:
+        - portfolio_context_tools
+        - report_context_tools
+      mcpServers: []
+  workflows:
+    - key: advisory_research
+      name: Advisory Research
+      description: Canonical TradingAgents advisory research topology using
+        SignalDeck sequence and bounded loop semantics only.
+      inputSchema:
+        type: object
+        title: TradingAgents advisory research inputs
+        required:
+          - ticker
+          - asOfDate
+          - horizonDays
+          - benchmarkSymbol
+        properties:
+          ticker:
+            type: string
+            title: Ticker symbol
+            description: Required equity or asset symbol to research, such as
+              AAPL.
+          asOfDate:
+            type: string
+            title: As-of date
+            description: Required research date in YYYY-MM-DD format for
+              point-in-time context.
+          horizonDays:
+            type: integer
+            title: Horizon in days
+            default: 30
+            description: Required advisory horizon, in calendar days, for the
+              research and risk framing.
+          portfolioId:
+            type: string
+            title: Portfolio ID
+            default: ""
+            description: Optional SignalDeck portfolio identifier used to
+              include current positions when available. Leave blank for
+              standalone research.
+          outputLanguage:
+            type: string
+            title: Output language
+            default: English
+            description: Optional language for generated advisory reports.
+          benchmarkSymbol:
+            type: string
+            title: Benchmark symbol
+            default: SPY
+            description: Required benchmark symbol used for relative market and
+              risk context.
+          maxRiskDebateRounds:
+            type: integer
+            title: Risk debate rounds
+            default: 2
+            description: Optional cap retained for operator context; the package
+              workflow uses the static bounded loop cap required by the manifest
+              format.
+          maxInvestmentDebateRounds:
+            type: integer
+            title: Investment debate rounds
+            default: 2
+            description: Optional cap retained for operator context; the package
+              workflow uses the static bounded loop cap required by the manifest
+              format.
+        description: Operator inputs for a neutral advisory research run.
+          Defaults are safe placeholders and do not contain credentials or
+          provider configuration.
+      flow:
+        kind: sequence
+        id: root_sequence
+        nodes:
+          - kind: sequence
+            id: macro_context_sequence
+            nodes:
+              - kind: http
+                id: fred_fedfunds_observations
+                slot: fred_fedfunds_observations
+                method: GET
+                url: https://api.stlouisfed.org/fred/series/observations
+                query:
+                  series_id: FEDFUNDS
+                  api_key: ${{ secrets.fred_api_key }}
+                  file_type: json
+                  sort_order: desc
+                  limit: "24"
+                response:
+                  outputSchema: fred_observations_raw
+                timeoutSeconds: 20
+                optional: true
+              - kind: http
+                id: fred_unrate_observations
+                slot: fred_unrate_observations
+                method: GET
+                url: https://api.stlouisfed.org/fred/series/observations
+                query:
+                  series_id: UNRATE
+                  api_key: ${{ secrets.fred_api_key }}
+                  file_type: json
+                  sort_order: desc
+                  limit: "24"
+                response:
+                  outputSchema: fred_observations_raw
+                timeoutSeconds: 20
+                optional: true
+              - kind: http
+                id: fred_cpiaucsl_observations
+                slot: fred_cpiaucsl_observations
+                method: GET
+                url: https://api.stlouisfed.org/fred/series/observations
+                query:
+                  series_id: CPIAUCSL
+                  api_key: ${{ secrets.fred_api_key }}
+                  file_type: json
+                  sort_order: desc
+                  limit: "24"
+                response:
+                  outputSchema: fred_observations_raw
+                timeoutSeconds: 20
+                optional: true
+              - kind: http
+                id: fred_t10y2y_observations
+                slot: fred_t10y2y_observations
+                method: GET
+                url: https://api.stlouisfed.org/fred/series/observations
+                query:
+                  series_id: T10Y2Y
+                  api_key: ${{ secrets.fred_api_key }}
+                  file_type: json
+                  sort_order: desc
+                  limit: "24"
+                response:
+                  outputSchema: fred_observations_raw
+                timeoutSeconds: 20
+                optional: true
+              - kind: http
+                id: treasury_rates_snapshot_json
+                slot: treasury_rates_snapshot_json
+                method: GET
+                url: https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/avg_interest_rates
+                query:
+                  sort: -record_date
+                  page[size]: "30"
+                  format: json
+                response:
+                  outputSchema: treasury_rates_raw
+                timeoutSeconds: 20
+                optional: true
+              - kind: step
+                id: macro_context_collection
+                slot: macro_context
+                uses: macro_context_collector
+                with:
+                  ticker: ${{ inputs.ticker }}
+                  asOfDate: ${{ inputs.asOfDate }}
+                  horizonDays: ${{ inputs.horizonDays }}
+                  fredFedfundsObservations: ${{ nodes.fred_fedfunds_observations.outputs.fred_fedfunds_observations }}
+                  fredUnrateObservations: ${{ nodes.fred_unrate_observations.outputs.fred_unrate_observations }}
+                  fredCpiaucslObservations: ${{ nodes.fred_cpiaucsl_observations.outputs.fred_cpiaucsl_observations }}
+                  fredT10y2yObservations: ${{ nodes.fred_t10y2y_observations.outputs.fred_t10y2y_observations }}
+                  treasuryRatesSnapshot: ${{ nodes.treasury_rates_snapshot_json.outputs.treasury_rates_snapshot_json }}
+                optional: false
+              - kind: step
+                id: news_breadth_collection
+                slot: news_breadth
+                uses: news_breadth_collector
+                with:
+                  ticker: ${{ inputs.ticker }}
+                  asOfDate: ${{ inputs.asOfDate }}
+                  horizonDays: ${{ inputs.horizonDays }}
+                  outputLanguage: ${{ inputs.outputLanguage }}
+                  macroContext: ${{ nodes.macro_context_collection.outputs.macro_context }}
+                optional: false
+          - kind: step
+            id: prediction_market_collection
+            slot: prediction_market_context
+            uses: prediction_market_analyst
+            with:
+              ticker: ${{ inputs.ticker }}
+              asOfDate: ${{ inputs.asOfDate }}
+              horizonDays: ${{ inputs.horizonDays }}
+              outputLanguage: ${{ inputs.outputLanguage }}
+              macroContext: ${{ nodes.macro_context_sequence.outputs.macro_context }}
+              newsBreadth: ${{ nodes.macro_context_sequence.outputs.news_breadth }}
+            optional: false
+          - kind: sequence
+            id: analyst_research
+            nodes:
+              - kind: step
+                id: market_analysis
+                slot: market_report
+                uses: market_analyst
+                with:
+                  ticker: ${{ inputs.ticker }}
+                  asOfDate: ${{ inputs.asOfDate }}
+                  horizonDays: ${{ inputs.horizonDays }}
+                  outputLanguage: ${{ inputs.outputLanguage }}
+                  benchmarkSymbol: ${{ inputs.benchmarkSymbol }}
+                optional: false
+              - kind: step
+                id: sentiment_analysis
+                slot: sentiment_report
+                uses: sentiment_analyst
+                with:
+                  ticker: ${{ inputs.ticker }}
+                  asOfDate: ${{ inputs.asOfDate }}
+                  horizonDays: ${{ inputs.horizonDays }}
+                  outputLanguage: ${{ inputs.outputLanguage }}
+                  newsBreadth: ${{ nodes.macro_context_sequence.outputs.news_breadth }}
+                optional: false
+              - kind: step
+                id: news_analysis
+                slot: news_report
+                uses: news_analyst
+                with:
+                  ticker: ${{ inputs.ticker }}
+                  asOfDate: ${{ inputs.asOfDate }}
+                  horizonDays: ${{ inputs.horizonDays }}
+                  outputLanguage: ${{ inputs.outputLanguage }}
+                  macroContext: ${{ nodes.macro_context_sequence.outputs.macro_context }}
+                  newsBreadth: ${{ nodes.macro_context_sequence.outputs.news_breadth }}
+                optional: false
+              - kind: step
+                id: fundamentals_analysis
+                slot: fundamentals_report
+                uses: fundamentals_analyst
+                with:
+                  ticker: ${{ inputs.ticker }}
+                  asOfDate: ${{ inputs.asOfDate }}
+                  horizonDays: ${{ inputs.horizonDays }}
+                  outputLanguage: ${{ inputs.outputLanguage }}
+                optional: false
+          - kind: loop
+            id: investment_debate
+            maxIterations: 2
+            sequence:
+              kind: sequence
+              id: investment_debate_round
+              nodes:
+                - kind: step
+                  id: bull_research
+                  slot: bull_case
+                  uses: bull_researcher
+                  with:
+                    newsReport: ${{ nodes.analyst_research.outputs.news_report
+                      }}
+                    marketReport: ${{
+                      nodes.analyst_research.outputs.market_report }}
+                    outputLanguage: ${{ inputs.outputLanguage }}
+                    sentimentReport: ${{
+                      nodes.analyst_research.outputs.sentiment_report }}
+                    fundamentalsReport: ${{
+                      nodes.analyst_research.outputs.fundamentals_report }}
+                  optional: false
+                - kind: step
+                  id: bear_research
+                  slot: investment_debate_state
+                  uses: bear_researcher
+                  with:
+                    newsReport: ${{ nodes.analyst_research.outputs.news_report
+                      }}
+                    priorState: ${{ nodes.bull_research.outputs.bull_case }}
+                    marketReport: ${{
+                      nodes.analyst_research.outputs.market_report }}
+                    outputLanguage: ${{ inputs.outputLanguage }}
+                    sentimentReport: ${{
+                      nodes.analyst_research.outputs.sentiment_report }}
+                    fundamentalsReport: ${{
+                      nodes.analyst_research.outputs.fundamentals_report }}
+                  optional: false
+            state: {}
+          - kind: step
+            id: research_management
+            slot: research_plan
+            uses: research_manager
+            with:
+              ticker: ${{ inputs.ticker }}
+              newsReport: ${{ nodes.analyst_research.outputs.news_report }}
+              debateState: ${{
+                nodes.investment_debate.outputs.investment_debate_state }}
+              horizonDays: ${{ inputs.horizonDays }}
+              marketReport: ${{ nodes.analyst_research.outputs.market_report }}
+              outputLanguage: ${{ inputs.outputLanguage }}
+              macroContext: ${{ nodes.macro_context_sequence.outputs.macro_context }}
+              newsBreadth: ${{ nodes.macro_context_sequence.outputs.news_breadth }}
+              predictionMarketContext: ${{
+                nodes.prediction_market_collection.outputs.prediction_market_context
+                }}
+              sentimentReport: ${{
+                nodes.analyst_research.outputs.sentiment_report }}
+              fundamentalsReport: ${{
+                nodes.analyst_research.outputs.fundamentals_report }}
+            optional: false
+          - kind: step
+            id: trader_advisory
+            slot: trader_proposal
+            uses: trader
+            with:
+              ticker: ${{ inputs.ticker }}
+              horizonDays: ${{ inputs.horizonDays }}
+              portfolioId: ${{ inputs.portfolioId }}
+              researchPlan: ${{ nodes.research_management.outputs.research_plan
+                }}
+              outputLanguage: ${{ inputs.outputLanguage }}
+              predictionMarketContext: ${{
+                nodes.prediction_market_collection.outputs.prediction_market_context
+                }}
+            optional: false
+          - kind: loop
+            id: risk_debate
+            maxIterations: 2
+            sequence:
+              kind: sequence
+              id: risk_debate_round
+              nodes:
+                - kind: step
+                  id: aggressive_risk_review
+                  slot: aggressive_risk_case
+                  uses: aggressive_risk_analyst
+                  with:
+                    newsReport: ${{ nodes.analyst_research.outputs.news_report
+                      }}
+                    marketReport: ${{
+                      nodes.analyst_research.outputs.market_report }}
+                    researchPlan: ${{
+                      nodes.research_management.outputs.research_plan }}
+                    outputLanguage: ${{ inputs.outputLanguage }}
+                    predictionMarketContext: ${{
+                      nodes.prediction_market_collection.outputs.prediction_market_context
+                      }}
+                    traderProposal: ${{
+                      nodes.trader_advisory.outputs.trader_proposal }}
+                    sentimentReport: ${{
+                      nodes.analyst_research.outputs.sentiment_report }}
+                    fundamentalsReport: ${{
+                      nodes.analyst_research.outputs.fundamentals_report }}
+                  optional: false
+                - kind: step
+                  id: neutral_risk_review
+                  slot: neutral_risk_case
+                  uses: neutral_risk_analyst
+                  with:
+                    newsReport: ${{ nodes.analyst_research.outputs.news_report
+                      }}
+                    priorState: ${{
+                      nodes.aggressive_risk_review.outputs.aggressive_risk_case
+                      }}
+                    marketReport: ${{
+                      nodes.analyst_research.outputs.market_report }}
+                    researchPlan: ${{
+                      nodes.research_management.outputs.research_plan }}
+                    outputLanguage: ${{ inputs.outputLanguage }}
+                    predictionMarketContext: ${{
+                      nodes.prediction_market_collection.outputs.prediction_market_context
+                      }}
+                    traderProposal: ${{
+                      nodes.trader_advisory.outputs.trader_proposal }}
+                    sentimentReport: ${{
+                      nodes.analyst_research.outputs.sentiment_report }}
+                    fundamentalsReport: ${{
+                      nodes.analyst_research.outputs.fundamentals_report }}
+                  optional: false
+                - kind: step
+                  id: conservative_risk_review
+                  slot: risk_debate_state
+                  uses: conservative_risk_analyst
+                  with:
+                    newsReport: ${{ nodes.analyst_research.outputs.news_report
+                      }}
+                    priorState: ${{
+                      nodes.neutral_risk_review.outputs.neutral_risk_case }}
+                    marketReport: ${{
+                      nodes.analyst_research.outputs.market_report }}
+                    researchPlan: ${{
+                      nodes.research_management.outputs.research_plan }}
+                    outputLanguage: ${{ inputs.outputLanguage }}
+                    predictionMarketContext: ${{
+                      nodes.prediction_market_collection.outputs.prediction_market_context
+                      }}
+                    traderProposal: ${{
+                      nodes.trader_advisory.outputs.trader_proposal }}
+                    sentimentReport: ${{
+                      nodes.analyst_research.outputs.sentiment_report }}
+                    fundamentalsReport: ${{
+                      nodes.analyst_research.outputs.fundamentals_report }}
+                  optional: false
+            state: {}
+          - kind: step
+            id: portfolio_management
+            slot: portfolio_decision
+            uses: portfolio_manager
+            with:
+              ticker: ${{ inputs.ticker }}
+              riskState: ${{ nodes.risk_debate.outputs.risk_debate_state }}
+              horizonDays: ${{ inputs.horizonDays }}
+              portfolioId: ${{ inputs.portfolioId }}
+              researchPlan: ${{ nodes.research_management.outputs.research_plan
+                }}
+              outputLanguage: ${{ inputs.outputLanguage }}
+              predictionMarketContext: ${{
+                nodes.prediction_market_collection.outputs.prediction_market_context
+                }}
+              traderProposal: ${{ nodes.trader_advisory.outputs.trader_proposal
+                }}
+            optional: false
+      output:
+        from: ${{ nodes.root_sequence.outputs.portfolio_decision }}
+    - key: market_research
+      name: Market Research
+      description: Single-step market research entry point for TradingAgents.
+      inputSchema:
+        type: object
+        title: TradingAgents market research inputs
+        required:
+          - ticker
+          - asOfDate
+        properties:
+          ticker:
+            type: string
+            title: Ticker symbol
+            description: Required equity or asset symbol to research, such as AAPL.
+          asOfDate:
+            type: string
+            title: As-of date
+            description: Required research date in YYYY-MM-DD format for point-in-time context.
+          horizonDays:
+            type: integer
+            title: Horizon in days
+            default: 30
+            description: Optional market research horizon in calendar days.
+          outputLanguage:
+            type: string
+            title: Output language
+            default: English
+            description: Optional language for generated market research reports.
+          benchmarkSymbol:
+            type: string
+            title: Benchmark symbol
+            default: SPY
+            description: Optional benchmark symbol used for relative market context.
+        description: Operator inputs for a focused market research run.
+      flow:
+        kind: sequence
+        id: root_sequence
+        nodes:
+          - kind: step
+            id: market_analysis
+            slot: market_report
+            uses: market_analyst
+            with:
+              ticker: ${{ inputs.ticker }}
+              asOfDate: ${{ inputs.asOfDate }}
+              horizonDays: ${{ inputs.horizonDays }}
+              outputLanguage: ${{ inputs.outputLanguage }}
+              benchmarkSymbol: ${{ inputs.benchmarkSymbol }}
+            optional: false
+      output:
+        from: ${{ nodes.root_sequence.outputs.market_report }}
+    - key: news_research
+      name: News Research
+      description: Single-step news research entry point for TradingAgents.
+      inputSchema:
+        type: object
+        title: TradingAgents news research inputs
+        required:
+          - ticker
+          - asOfDate
+        properties:
+          ticker:
+            type: string
+            title: Ticker symbol
+            description: Required equity or asset symbol to research, such as AAPL.
+          asOfDate:
+            type: string
+            title: As-of date
+            description: Required research date in YYYY-MM-DD format for point-in-time context.
+          horizonDays:
+            type: integer
+            title: Horizon in days
+            default: 30
+            description: Optional news research horizon in calendar days.
+          outputLanguage:
+            type: string
+            title: Output language
+            default: English
+            description: Optional language for generated news research reports.
+        description: Operator inputs for a focused news research run.
+      flow:
+        kind: sequence
+        id: root_sequence
+        nodes:
+          - kind: step
+            id: news_analysis
+            slot: news_report
+            uses: news_analyst
+            with:
+              ticker: ${{ inputs.ticker }}
+              asOfDate: ${{ inputs.asOfDate }}
+              horizonDays: ${{ inputs.horizonDays }}
+              outputLanguage: ${{ inputs.outputLanguage }}
+            optional: false
+      output:
+        from: ${{ nodes.root_sequence.outputs.news_report }}
+    - key: fundamentals_research
+      name: Fundamentals Research
+      description: Single-step fundamentals research entry point for TradingAgents.
+      inputSchema:
+        type: object
+        title: TradingAgents fundamentals research inputs
+        required:
+          - ticker
+          - asOfDate
+        properties:
+          ticker:
+            type: string
+            title: Ticker symbol
+            description: Required equity or asset symbol to research, such as AAPL.
+          asOfDate:
+            type: string
+            title: As-of date
+            description: Required research date in YYYY-MM-DD format for point-in-time context.
+          horizonDays:
+            type: integer
+            title: Horizon in days
+            default: 30
+            description: Optional fundamentals research horizon in calendar days.
+          outputLanguage:
+            type: string
+            title: Output language
+            default: English
+            description: Optional language for generated fundamentals research reports.
+        description: Operator inputs for a focused fundamentals research run.
+      flow:
+        kind: sequence
+        id: root_sequence
+        nodes:
+          - kind: step
+            id: fundamentals_analysis
+            slot: fundamentals_report
+            uses: fundamentals_analyst
+            with:
+              ticker: ${{ inputs.ticker }}
+              asOfDate: ${{ inputs.asOfDate }}
+              horizonDays: ${{ inputs.horizonDays }}
+              outputLanguage: ${{ inputs.outputLanguage }}
+            optional: false
+      output:
+        from: ${{ nodes.root_sequence.outputs.fundamentals_report }}
