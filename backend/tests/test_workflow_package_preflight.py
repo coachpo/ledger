@@ -51,6 +51,9 @@ _FIXTURE = (
     / "workflow_packages"
     / "tradingagents_advisory_research.yaml"
 )
+_TRADINGAGENTS_DEMO_FIXTURE = (
+    Path(__file__).resolve().parents[2] / "demo" / "tradingagents_advisory_research.yaml"
+)
 _TOOL_REQUIRED_FIXTURE = (
     Path(__file__).resolve().parent
     / "fixtures"
@@ -71,6 +74,9 @@ _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
 _FINANCE_PRICE_HISTORY_TOOL_KEYS = (
     "signaldeck.finance.market_data.history_lookup",
     "signaldeck.finance.market_data.ohlcv_lookup",
+)
+_TRADINGAGENTS_PREDICTION_MARKET_TOOL_KEYS = (
+    "signaldeck.digital_oracle.prediction_markets.lookup",
 )
 _CROSS_EXTENSION_RESEARCH_TOOL_KEYS = tuple(
     sorted([*_DIGITAL_ORACLE_PHASE1_TOOL_KEYS, *_FINANCE_PRICE_HISTORY_TOOL_KEYS])
@@ -110,6 +116,10 @@ def _canonicalize_live_tool_keys(source: str) -> str:
 
 def _package_source() -> str:
     return _canonicalize_live_tool_keys(_FIXTURE.read_text())
+
+
+def _tradingagents_demo_source() -> str:
+    return _canonicalize_live_tool_keys(_TRADINGAGENTS_DEMO_FIXTURE.read_text())
 
 
 def _tool_required_package_source() -> str:
@@ -155,6 +165,22 @@ def _expected_finance_price_history_disabled_tool_errors() -> list[dict[str, obj
             "surface": f"tool.{tool_key}",
         }
         for index, tool_key in enumerate(sorted(_FINANCE_PRICE_HISTORY_TOOL_KEYS))
+    ]
+
+
+def _expected_tradingagents_prediction_market_disabled_tool_errors() -> list[dict[str, object]]:
+    return [
+        {
+            "field": f"spec.capabilityProfiles.prediction_market_tools.toolKeys[{index}]",
+            "issue": (
+                f"Server-declared tool {tool_key!r} is disabled because extension "
+                f"{DIGITAL_ORACLE_EXTENSION_KEY!r} is disabled"
+            ),
+            "code": "extension_disabled",
+            "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
+            "surface": f"tool.{tool_key}",
+        }
+        for index, tool_key in enumerate(sorted(_TRADINGAGENTS_PREDICTION_MARKET_TOOL_KEYS))
     ]
 
 
@@ -2153,6 +2179,71 @@ def test_preflight_allows_digital_oracle_toolKeys_when_finance_extension_disable
     assert body["ready"] is True
     assert body["blockingErrors"] == []
     assert body["warnings"] == []
+
+
+def test_tradingagents_demo_grants_digital_oracle_prediction_markets_without_finance_duplicate() -> (  # noqa: E501
+    None
+):
+    compiled = compile_workflow_package_manifest(_tradingagents_demo_source())
+    compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
+    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
+    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
+    agents = cast(list[dict[str, Any]], compiled_plan["agents"])
+    agents_by_key = {str(agent["key"]): agent for agent in agents}
+
+    assert cast(list[str], profiles_by_key["prediction_market_tools"]["toolKeys"]) == [
+        "signaldeck.digital_oracle.prediction_markets.lookup"
+    ]
+    assert "prediction_market_tools" in cast(
+        list[str],
+        agents_by_key["news_analyst"]["capabilityProfiles"],
+    )
+    finance_tool_keys = {
+        tool_key
+        for profile in profiles
+        for tool_key in cast(list[str], profile["toolKeys"])
+        if tool_key.startswith("signaldeck.finance.")
+    }
+    assert "signaldeck.finance.prediction_markets.lookup" not in finance_tool_keys
+
+
+def test_preflight_tradingagents_demo_mixed_grants_respect_digital_oracle_disable(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(
+        session_factory,
+        protocol_profile="openai_chat_completions",
+        capabilities=_capabilities_with_statuses(),
+        last_test_ok=True,
+    )
+    _delete_existing_tradingagents_package(client)
+    response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _tradingagents_demo_source()},
+    )
+    assert response.status_code == 201, response.json()
+    _disable_digital_oracle_extension(session_factory)
+
+    preflight = client.post(
+        f"/api/workflow-packages/{response.json()['id']}/preflight",
+        json={
+            "workflowKey": "advisory_research",
+            "parameters": {
+                "ticker": "NVDA",
+                "asOfDate": "2026-01-02",
+                "horizonDays": 30,
+                "benchmarkSymbol": "SPY",
+            },
+        },
+    )
+
+    assert preflight.status_code == 200, preflight.json()
+    body = cast(dict[str, object], preflight.json())
+    errors = cast(list[dict[str, object]], body["blockingErrors"])
+    assert body["ready"] is False
+    assert errors == _expected_tradingagents_prediction_market_disabled_tool_errors()
+    assert not any(error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY for error in errors)
 
 
 def test_preflight_blocks_only_finance_price_history_toolKeys_when_finance_disabled(

@@ -127,6 +127,39 @@ spec:
   packageKey: "market_review_package",
 };
 
+const ownerQualifiedToolItems = [
+  {
+    key: "signaldeck.finance.news.lookup",
+    displayName: "Finance News Lookup",
+    description: "Read Finance-owned news context.",
+  },
+  {
+    key: "signaldeck.finance.social_sentiment.lookup",
+    displayName: "Finance Social Sentiment Lookup",
+    description: "Read Finance-owned social sentiment context.",
+  },
+  {
+    key: "signaldeck.finance.reports.lookup",
+    displayName: "Finance Report Lookup",
+    description: "Read Finance-owned reports.",
+  },
+  {
+    key: "signaldeck.digital_oracle.prediction_markets.lookup",
+    displayName: "Digital Oracle Prediction Markets",
+    description: "Find Digital Oracle prediction-market signals.",
+  },
+  {
+    key: "signaldeck.digital_oracle.sec_filings.lookup",
+    displayName: "Digital Oracle SEC Filings",
+    description: "Find Digital Oracle SEC filing summaries.",
+  },
+  {
+    key: "signaldeck.digital_oracle.market_sentiment.lookup",
+    displayName: "Digital Oracle Market Sentiment",
+    description: "Read Digital Oracle market sentiment snapshots.",
+  },
+];
+
 function renderEditor(initialEntry = "/workflow-packages/42") {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -219,28 +252,7 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     });
     useToolsMock.mockReturnValue({
       data: {
-        items: [
-          {
-            key: "signaldeck.finance.reports.lookup",
-            displayName: "Report Lookup",
-            description: "Read reports",
-          },
-          {
-            key: "signaldeck.digital_oracle.prediction_markets.lookup",
-            displayName: "Prediction Markets",
-            description: "Find prediction-market signals.",
-          },
-          {
-            key: "signaldeck.digital_oracle.sec_filings.lookup",
-            displayName: "SEC Filings",
-            description: "Find SEC filing summaries.",
-          },
-          {
-            key: "signaldeck.digital_oracle.market_sentiment.lookup",
-            displayName: "Market Sentiment",
-            description: "Read market sentiment snapshots.",
-          },
-        ],
+        items: ownerQualifiedToolItems,
       },
       error: null,
       isError: false,
@@ -272,16 +284,28 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     clickTab("Capability Profiles");
     fireEvent.click(screen.getByRole("button", { name: "Add Profile" }));
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
-      "Report Lookup",
+      "Finance Report Lookup",
     );
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
-      "Prediction Markets",
+      "signaldeck.finance.news.lookup",
     );
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
-      "SEC Filings",
+      "signaldeck.finance.social_sentiment.lookup",
     );
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
-      "Market Sentiment",
+      "signaldeck.finance.reports.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "Digital Oracle Prediction Markets",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "signaldeck.digital_oracle.prediction_markets.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "signaldeck.digital_oracle.sec_filings.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "signaldeck.digital_oracle.market_sentiment.lookup",
     );
 
     clickTab("Private MCP");
@@ -292,7 +316,7 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     expect(screen.getByText(/Package-local transport values/i)).toBeVisible();
   });
 
-  it("hides disabled finance tools from authoring discovery and restores them", () => {
+  it("hides disabled extension-owned tools from authoring discovery and restores them", () => {
     useToolsMock.mockReturnValue({
       data: { items: [] },
       error: null,
@@ -303,43 +327,22 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     clickTab("Capability Profiles");
     fireEvent.click(screen.getByRole("button", { name: "Add Profile" }));
     expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
-      "Report Lookup",
+      "signaldeck.finance.reports.lookup",
     );
     expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
-      "Prediction Markets",
+      "signaldeck.digital_oracle.prediction_markets.lookup",
     );
     expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
-      "SEC Filings",
+      "signaldeck.digital_oracle.sec_filings.lookup",
     );
     expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
-      "Market Sentiment",
+      "signaldeck.digital_oracle.market_sentiment.lookup",
     );
     disabledView.unmount();
 
     useToolsMock.mockReturnValue({
       data: {
-        items: [
-          {
-            key: "signaldeck.finance.reports.lookup",
-            displayName: "Report Lookup",
-            description: "Read reports",
-          },
-          {
-            key: "signaldeck.digital_oracle.prediction_markets.lookup",
-            displayName: "Prediction Markets",
-            description: "Find prediction-market signals.",
-          },
-          {
-            key: "signaldeck.digital_oracle.sec_filings.lookup",
-            displayName: "SEC Filings",
-            description: "Find SEC filing summaries.",
-          },
-          {
-            key: "signaldeck.digital_oracle.market_sentiment.lookup",
-            displayName: "Market Sentiment",
-            description: "Read market sentiment snapshots.",
-          },
-        ],
+        items: ownerQualifiedToolItems,
       },
       error: null,
       isError: false,
@@ -349,16 +352,16 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     clickTab("Capability Profiles");
     fireEvent.click(screen.getByRole("button", { name: "Add Profile" }));
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
-      "Report Lookup",
+      "signaldeck.finance.reports.lookup",
     );
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
-      "Prediction Markets",
+      "signaldeck.digital_oracle.prediction_markets.lookup",
     );
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
-      "SEC Filings",
+      "signaldeck.digital_oracle.sec_filings.lookup",
     );
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
-      "Market Sentiment",
+      "signaldeck.digital_oracle.market_sentiment.lookup",
     );
   });
 
