@@ -334,10 +334,7 @@ _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
 _DIGITAL_ORACLE_PRESET_KEY = "digital_oracle_researcher"
 _TRADINGAGENTS_MODEL_CONNECTION_KEY = "tradingagents_primary_model"
 _TRADINGAGENTS_FIXTURE_PATH = (
-    Path(__file__).parent
-    / "fixtures"
-    / "workflow_packages"
-    / "tradingagents_advisory_research.yaml"
+    Path(__file__).parents[2] / "demo" / "tradingagents_advisory_research.yaml"
 )
 _DIGITAL_ORACLE_FIXTURE_PATH = Path(__file__).parents[2] / "demo" / "digital_oracle_researcher.yaml"
 _DIGITAL_ORACLE_DRAFT_FIXTURE_PATH = (
@@ -368,25 +365,7 @@ _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES = [
             "tool.signaldeck.digital_oracle.prediction_markets.lookup",
             "tool.signaldeck.digital_oracle.sec_filings.lookup",
         ],
-    },
-    {
-        "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-        "fields": [
-            "spec.capabilityProfiles.finance_price_history_tools.toolKeys[0]",
-            "spec.capabilityProfiles.finance_price_history_tools.toolKeys[1]",
-            "spec.mcpServers.exa.toolKeys[0]",
-        ],
-        "surfaces": [
-            "mcp.packagePrivate.web_search_exa",
-            "provider.fallbackQuote",
-            "provider.quote",
-            "provider.socialSentiment",
-            "runtime.tool.signaldeck.finance.market_data.history_lookup",
-            "runtime.tool.signaldeck.finance.market_data.ohlcv_lookup",
-            "tool.signaldeck.finance.market_data.history_lookup",
-            "tool.signaldeck.finance.market_data.ohlcv_lookup",
-        ],
-    },
+    }
 ]
 
 

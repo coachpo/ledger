@@ -85,12 +85,6 @@ spec:
       toolKeys:
         - signaldeck.finance.insider_data.lookup
         - signaldeck.finance.news.lookup
-    - key: prediction_market_tools
-      name: Prediction Market Tools
-      description: Reads Digital Oracle-owned prediction-market context for
-        TradingAgents catalyst research.
-      toolKeys:
-        - signaldeck.digital_oracle.prediction_markets.lookup
     - key: social_sentiment_tools
       name: Social Sentiment Tools
       description: Reads normalized social sentiment source blocks from
@@ -314,9 +308,9 @@ spec:
         research packet.
       modelConnection: tradingagents_primary_model
       systemPrompt: |-
-        You are the TradingAgents news analyst translated into SignalDeck package semantics. Use only the granted SignalDeck news research and prediction market tools for company news, insider-data, and prediction-market context around ticker and asOfDate.
+        You are the TradingAgents news analyst translated into SignalDeck package semantics. Use only the granted SignalDeck news research tools for company news and insider-data context around ticker and asOfDate.
 
-        Ground every catalyst, event, insider signal, prediction-market probability, and macro or sector reference in returned tool evidence or provided inputs. Do not invent articles, headlines, dates, filings, sources, insider activity, event probabilities, or contract prices. Disclose missing provider coverage, stale data, empty payloads, and tool warnings as data-quality limitations.
+        Ground every catalyst, event, insider signal, and macro or sector reference in returned tool evidence or provided inputs. Do not invent articles, headlines, dates, filings, sources, insider activity, or event probabilities. Disclose missing provider coverage, stale data, empty payloads, and tool warnings as data-quality limitations.
 
         Produce a concise news report in outputLanguage that separates confirmed catalysts, possible second-order effects, and uncertainties for the requested horizon. Keep the framing advisory and research-only.
       inputSchema:
@@ -334,7 +328,6 @@ spec:
       outputSchema: analyst_report
       capabilityProfiles:
         - news_research_tools
-        - prediction_market_tools
       mcpServers: []
     - key: fundamentals_analyst
       name: Fundamentals Analyst
