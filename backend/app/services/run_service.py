@@ -133,9 +133,7 @@ _RUN_STATUS_QUEUED = "queued"
 _RUN_STATUS_RUNNING = "running"
 _RUN_STATUS_SUCCEEDED = "succeeded"
 _RUN_STATUS_FAILED = "failed"
-_WORKFLOW_MEMORY_QUERY_TERM_RE: re.Pattern[str] = re.compile(
-    r"[A-Za-z0-9][A-Za-z0-9_-]{2,}"
-)
+_WORKFLOW_MEMORY_QUERY_TERM_RE: re.Pattern[str] = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{2,}")
 
 
 @dataclass(frozen=True)
@@ -3038,9 +3036,7 @@ class RunService:
                 },
                 scope=finalize_scope,
             )
-            run_consolidation = run_memory_service._run_memory_consolidation_enabled(
-                finalize_scope
-            )
+            run_consolidation = run_memory_service._run_memory_consolidation_enabled(finalize_scope)
             session.commit()
             self._run_workflow_memory_consolidation_after_terminal_commit(
                 run_id=run_id,

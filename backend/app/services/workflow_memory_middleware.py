@@ -218,9 +218,7 @@ class WorkflowMemoryMiddleware:
             "quarantinedItemIds": [
                 item["itemId"] for item in excluded if item["action"] == "quarantine"
             ],
-            "auditOnlyItemIds": [
-                item["itemId"] for item in excluded if item["action"] == "audit"
-            ],
+            "auditOnlyItemIds": [item["itemId"] for item in excluded if item["action"] == "audit"],
             "excluded": excluded,
         }
         scanned_context = context.model_copy(
