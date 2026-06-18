@@ -32,6 +32,8 @@ from app.extensions.signaldeck_digital_oracle.service import DigitalOraclePhase1
 from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOraclePredictionMarketContract,
     DigitalOraclePredictionMarketEvent,
+    DigitalOraclePredictionMarketOrderBook,
+    DigitalOraclePredictionMarketOrderBookLevel,
     DigitalOraclePredictionMarketProvider,
     DigitalOraclePredictionMarketsProviderQuery,
     DigitalOraclePredictionMarketsProviderResult,
@@ -39,13 +41,16 @@ from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleProviderError,
 )
 
-PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_digital_oracle_prediction_markets_lookup"
+PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME = (
+    "signaldeck_digital_oracle_prediction_markets_lookup"
+)
 PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_CODE = DIGITAL_ORACLE_DENIED_CODE
 PREDICTION_MARKETS_LOOKUP_ACCESS_DENIED_MESSAGE = DIGITAL_ORACLE_DENIED_MESSAGES[
     PREDICTION_MARKETS_LOOKUP_TOOL_KEY
 ]
 
 _PREDICTION_MARKETS_MAX_ITEM_LIMIT = 20
+_PREDICTION_MARKETS_MAX_DEPTH_LIMIT = 10
 _PREDICTION_MARKET_VENUES = set(PREDICTION_MARKET_VENUES)
 _POLYMARKET_EVENTS_URL = "https://gamma-api.polymarket.com/events"
 _KALSHI_MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
@@ -56,8 +61,9 @@ _PREDICTION_MARKETS_LOOKUP_DESCRIPTION = (
     "Read normalized prediction-market events and contracts across supported venues."
 )
 _PREDICTION_MARKETS_LOOKUP_GUIDANCE = (
-    "When you need prediction-market signals, call signaldeck_digital_oracle_prediction_markets_lookup "
-    "with a plain-language query and optional venue filters. Use only returned event "
+    "When you need prediction-market signals, call "
+    "signaldeck_digital_oracle_prediction_markets_lookup with a plain-language query "
+    "and optional venue filters. Use only returned event "
     "and contract probabilities/prices, disclose all warnings as coverage limitations, "
     "and never invent probabilities for unavailable markets."
 )
@@ -77,6 +83,12 @@ _PREDICTION_MARKETS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
             "maximum": _PREDICTION_MARKETS_MAX_ITEM_LIMIT,
         },
         "includeResolved": {"type": "boolean"},
+        "includeOrderBook": {"type": "boolean"},
+        "depthLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": _PREDICTION_MARKETS_MAX_DEPTH_LIMIT,
+        },
     },
     "required": ["query"],
     "additionalProperties": False,
@@ -238,9 +250,35 @@ def parse_prediction_markets_lookup_arguments(arguments_json: str) -> dict[str, 
     )
     _reject_unexpected_keys(
         raw_arguments,
-        allowed_keys={"query", "venues", "itemLimit", "includeResolved"},
+        allowed_keys={
+            "query",
+            "venues",
+            "itemLimit",
+            "includeResolved",
+            "includeOrderBook",
+            "depthLimit",
+        },
         function_name=PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
     )
+    include_order_book = _parse_optional_boolean_argument(
+        raw_arguments.get("includeOrderBook"),
+        field_name="includeOrderBook",
+    )
+    depth_limit = _parse_optional_integer_argument(
+        raw_arguments.get("depthLimit"),
+        function_name=PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
+        field_name="depthLimit",
+        minimum=1,
+        maximum=_PREDICTION_MARKETS_MAX_DEPTH_LIMIT,
+    )
+    if depth_limit is not None and not include_order_book:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME} depthLimit requires "
+                "includeOrderBook to be true."
+            ),
+        )
     return {
         "query": _parse_required_query_argument(raw_arguments.get("query")),
         "venues": _parse_venues_argument(raw_arguments.get("venues")),
@@ -255,6 +293,8 @@ def parse_prediction_markets_lookup_arguments(arguments_json: str) -> dict[str, 
             raw_arguments.get("includeResolved"),
             field_name="includeResolved",
         ),
+        "include_order_book": include_order_book,
+        "depth_limit": depth_limit,
     }
 
 
@@ -272,6 +312,8 @@ def execute_prediction_markets_lookup(
             venues=cast(tuple[PredictionMarketVenue, ...] | None, arguments["venues"]),
             item_limit=cast(int | None, arguments["item_limit"]),
             include_resolved=cast(bool, arguments["include_resolved"]),
+            include_order_book=cast(bool, arguments["include_order_book"]),
+            depth_limit=cast(int | None, arguments["depth_limit"]),
         )
     )
     runtime_result = map_prediction_markets_result(result)
@@ -445,6 +487,7 @@ def _map_polymarket_event(
             cast(Mapping[str, object], raw_market),
             event_id=event_id,
             event_open_interest=open_interest,
+            query=query,
             warnings=warnings,
         )
         if contract is not None:
@@ -469,6 +512,7 @@ def _map_polymarket_market(
     *,
     event_id: str,
     event_open_interest: Decimal | None,
+    query: DigitalOraclePredictionMarketsProviderQuery,
     warnings: list[RuntimeToolWarning],
 ) -> DigitalOraclePredictionMarketContract | None:
     try:
@@ -501,6 +545,16 @@ def _map_polymarket_market(
     if contract_id is None or title is None:
         warnings.append(_malformed_warning("polymarket", "market identity", event_id=event_id))
         return None
+    order_book = None
+    if query.include_order_book:
+        order_book = _map_provider_order_book(
+            raw_market,
+            provider="polymarket",
+            event_id=event_id,
+            contract_id=contract_id,
+            depth_limit=query.depth_limit,
+            warnings=warnings,
+        )
     return DigitalOraclePredictionMarketContract(
         contract_id=contract_id,
         title=title,
@@ -513,6 +567,7 @@ def _map_polymarket_market(
         ),
         open_interest=_first_decimal(raw_market, ("openInterest", "open_interest"))
         or event_open_interest,
+        order_book=order_book,
     )
 
 
@@ -559,6 +614,18 @@ def _map_kalshi_market(
     probability = _midpoint(yes_bid, yes_ask)
     if probability is None:
         probability = last_price
+    order_book = None
+    if query.include_order_book:
+        order_book = _map_provider_order_book(
+            raw_market,
+            provider="kalshi",
+            event_id=event_ticker or ticker,
+            contract_id=ticker,
+            depth_limit=query.depth_limit,
+            fallback_bid=yes_bid,
+            fallback_ask=yes_ask,
+            warnings=warnings,
+        )
     contract = DigitalOraclePredictionMarketContract(
         contract_id=ticker,
         title=_first_text(raw_market, ("yes_sub_title", "yesSubTitle", "subtitle")) or title,
@@ -567,6 +634,7 @@ def _map_kalshi_market(
         no_price=no_ask,
         volume=_decimal(raw_market.get("volume")),
         open_interest=_first_decimal(raw_market, ("open_interest", "openInterest")),
+        order_book=order_book,
     )
     close_time = _first_text(
         raw_market,
@@ -730,6 +798,142 @@ def _midpoint(left: Decimal | None, right: Decimal | None) -> Decimal | None:
     return (left + right) / Decimal("2")
 
 
+def _map_provider_order_book(
+    raw_market: Mapping[str, object],
+    *,
+    provider: PredictionMarketVenue,
+    event_id: str,
+    contract_id: str,
+    depth_limit: int,
+    warnings: list[RuntimeToolWarning],
+    fallback_bid: Decimal | None = None,
+    fallback_ask: Decimal | None = None,
+) -> DigitalOraclePredictionMarketOrderBook | None:
+    source = _order_book_source(raw_market)
+    bids: tuple[DigitalOraclePredictionMarketOrderBookLevel, ...] = ()
+    asks: tuple[DigitalOraclePredictionMarketOrderBookLevel, ...] = ()
+    if source is not None:
+        bids = _order_book_levels(
+            _first_value(source, ("bids", "yesBids", "yes_bids", "buy")),
+            depth_limit=depth_limit,
+        )
+        asks = _order_book_levels(
+            _first_value(source, ("asks", "yesAsks", "yes_asks", "sell", "offers")),
+            depth_limit=depth_limit,
+        )
+        if not bids and not asks:
+            warnings.append(
+                _order_book_warning(
+                    provider,
+                    "prediction_markets_order_book_malformed",
+                    "returned malformed prediction-market orderbook depth",
+                    event_id=event_id,
+                    contract_id=contract_id,
+                )
+            )
+            return None
+    elif fallback_bid is not None or fallback_ask is not None:
+        bids = _fallback_order_book_levels(fallback_bid)
+        asks = _fallback_order_book_levels(fallback_ask)
+    else:
+        warnings.append(
+            _order_book_warning(
+                provider,
+                "prediction_markets_order_book_unavailable",
+                "did not return prediction-market orderbook depth",
+                event_id=event_id,
+                contract_id=contract_id,
+            )
+        )
+        return None
+
+    if not bids or not asks:
+        warnings.append(
+            _order_book_warning(
+                provider,
+                "prediction_markets_order_book_partial",
+                "returned partial prediction-market orderbook depth",
+                event_id=event_id,
+                contract_id=contract_id,
+            )
+        )
+    return DigitalOraclePredictionMarketOrderBook(
+        bids=bids,
+        asks=asks,
+        spread=_order_book_spread(bids, asks),
+        depth_limit=depth_limit,
+    )
+
+
+def _order_book_source(raw_market: Mapping[str, object]) -> Mapping[str, object] | None:
+    for key in ("orderBook", "orderbook", "order_book", "book", "depth"):
+        value = raw_market.get(key)
+        if isinstance(value, Mapping):
+            return cast(Mapping[str, object], value)
+    order_book_keys = ("bids", "asks", "yesBids", "yesAsks", "yes_bids", "yes_asks")
+    if any(key in raw_market for key in order_book_keys):
+        return raw_market
+    return None
+
+
+def _order_book_levels(
+    value: object,
+    *,
+    depth_limit: int,
+) -> tuple[DigitalOraclePredictionMarketOrderBookLevel, ...]:
+    levels: list[DigitalOraclePredictionMarketOrderBookLevel] = []
+    for raw_level in _object_list(value):
+        level = _order_book_level(raw_level)
+        if level is not None:
+            levels.append(level)
+        if len(levels) == depth_limit:
+            break
+    return tuple(levels)
+
+
+def _order_book_level(value: object) -> DigitalOraclePredictionMarketOrderBookLevel | None:
+    if isinstance(value, Mapping):
+        payload = cast(Mapping[str, object], value)
+        price = _first_decimal(payload, ("price", "p", "yesPrice", "yes_price"))
+        size = _first_decimal(payload, ("size", "quantity", "qty", "volume"))
+    elif isinstance(value, (list, tuple)) and value:
+        raw_values = list(cast(tuple[object, ...] | list[object], value))
+        price = _decimal(raw_values[0])
+        size = _decimal(raw_values[1]) if len(raw_values) > 1 else None
+    else:
+        return None
+    if price is None:
+        return None
+    return DigitalOraclePredictionMarketOrderBookLevel(price=price, size=size)
+
+
+def _fallback_order_book_levels(
+    price: Decimal | None,
+) -> tuple[DigitalOraclePredictionMarketOrderBookLevel, ...]:
+    if price is None:
+        return ()
+    return (DigitalOraclePredictionMarketOrderBookLevel(price=price),)
+
+
+def _order_book_spread(
+    bids: tuple[DigitalOraclePredictionMarketOrderBookLevel, ...],
+    asks: tuple[DigitalOraclePredictionMarketOrderBookLevel, ...],
+) -> Decimal | None:
+    if not bids or not asks:
+        return None
+    highest_bid = max(level.price for level in bids)
+    lowest_ask = min(level.price for level in asks)
+    return lowest_ask - highest_bid
+
+
+def _first_value(payload: Mapping[str, object], keys: tuple[str, ...]) -> object:
+    for key in keys:
+        value = payload.get(key)
+        if value is not None:
+            return value
+    return None
+
+
 def _iso_datetime(value: str | None) -> datetime | None:
     if value is None:
         return None
@@ -790,6 +994,26 @@ def _malformed_warning(
         code="prediction_markets_malformed_payload",
         message=f"{provider} returned malformed prediction-market {field}.",
         details=details,
+    )
+
+
+def _order_book_warning(
+    provider: PredictionMarketVenue,
+    code: str,
+    message_fragment: str,
+    *,
+    event_id: str,
+    contract_id: str,
+) -> RuntimeToolWarning:
+    return RuntimeToolWarning(
+        code=code,
+        message=f"{provider} {message_fragment}.",
+        details={
+            "operation": "prediction_markets",
+            "provider": provider,
+            "eventId": event_id,
+            "contractId": contract_id,
+        },
     )
 
 
