@@ -29,6 +29,8 @@ from .types import (
     DigitalOracleSecFilingsProviderQuery,
     DigitalOracleSecFilingsQuery,
     DigitalOracleSecFilingsResult,
+    DigitalOracleSecOwnershipTransaction,
+    DigitalOracleSecSearchHit,
 )
 from .warnings import (
     empty_result_warning,
@@ -42,6 +44,7 @@ from .warnings import (
 )
 
 _PREDICTION_MARKETS_MAX_ITEM_LIMIT = 20
+_PREDICTION_MARKETS_MAX_DEPTH_LIMIT = 10
 _SEC_FILINGS_MAX_ITEM_LIMIT = 50
 _PREDICTION_MARKETS_OPERATION = "prediction_markets"
 _SEC_FILINGS_OPERATION = "sec_filings"
@@ -116,6 +119,7 @@ class DigitalOraclePhase1Service:
             max_limit=_PREDICTION_MARKETS_MAX_ITEM_LIMIT,
             field_name="itemLimit",
         )
+        depth_limit = _normalize_prediction_market_depth_limit(query.depth_limit)
         warnings: list[RuntimeToolWarning] = []
         uncovered_providers: set[str] = set()
         calls: list[_ProviderCall[DigitalOraclePredictionMarketsProviderResult]] = []
@@ -138,6 +142,8 @@ class DigitalOraclePhase1Service:
                 venue=venue,
                 item_limit=item_limit,
                 include_resolved=query.include_resolved,
+                include_order_book=query.include_order_book,
+                depth_limit=depth_limit,
                 timeout_seconds=descriptor.timeout_seconds,
             )
             calls.append(
@@ -200,11 +206,17 @@ class DigitalOraclePhase1Service:
         self,
         query: DigitalOracleSecFilingsQuery,
     ) -> DigitalOracleSecFilingsResult:
-        ticker = _normalize_symbol_query(query.ticker, field_name="ticker")
+        ticker = _normalize_optional_symbol_query(query.ticker, field_name="ticker")
+        cik = _normalize_optional_cik_query(query.cik)
+        search_query = _normalize_optional_text(query.query, field_name="query")
+        if ticker is None and cik is None:
+            raise ValueError("ticker or cik is required")
         construction = self._provider_bundle.sec_filings
         if construction.failure is not None:
             return DigitalOracleSecFilingsResult(
                 ticker=ticker,
+                query=search_query,
+                cik=cik,
                 warnings=(
                     warning_from_provider_failure(
                         construction.failure,
@@ -216,6 +228,8 @@ class DigitalOraclePhase1Service:
         if provider_bundle is None or self._sec_filings_provider is None:
             return DigitalOracleSecFilingsResult(
                 ticker=ticker,
+                query=search_query,
+                cik=cik,
                 warnings=(
                     provider_unavailable_warning(
                         operation=_SEC_FILINGS_OPERATION,
@@ -235,12 +249,15 @@ class DigitalOraclePhase1Service:
         )
         provider_query = DigitalOracleSecFilingsProviderQuery(
             ticker=ticker,
+            query=search_query,
+            cik=cik,
             form_types=form_types,
             start_date=query.start_date,
             end_date=query.end_date,
             item_limit=item_limit,
             edgar_contact_email=provider_bundle.edgar_contact_email,
             timeout_seconds=provider_bundle.provider.timeout_seconds,
+            include_ownership_transactions=query.include_ownership_transactions,
         )
         warnings: list[RuntimeToolWarning] = []
         try:
@@ -254,7 +271,12 @@ class DigitalOraclePhase1Service:
                 )
             )
             warnings.append(unavailable_result_warning(operation=_SEC_FILINGS_OPERATION))
-            return DigitalOracleSecFilingsResult(ticker=ticker, warnings=tuple(warnings))
+            return DigitalOracleSecFilingsResult(
+                ticker=ticker,
+                query=search_query,
+                cik=cik,
+                warnings=tuple(warnings),
+            )
         except Exception as exc:
             warnings.append(
                 warning_from_unhandled_provider_error(
@@ -264,7 +286,12 @@ class DigitalOraclePhase1Service:
                 )
             )
             warnings.append(unavailable_result_warning(operation=_SEC_FILINGS_OPERATION))
-            return DigitalOracleSecFilingsResult(ticker=ticker, warnings=tuple(warnings))
+            return DigitalOracleSecFilingsResult(
+                ticker=ticker,
+                query=search_query,
+                cik=cik,
+                warnings=tuple(warnings),
+            )
 
         warnings.extend(provider_result.warnings)
         filtered_filings = _filter_sec_filings(
@@ -282,11 +309,28 @@ class DigitalOraclePhase1Service:
             warnings.append(
                 empty_result_warning(operation=_SEC_FILINGS_OPERATION, provider="edgar")
             )
+        search_hits = _search_sec_filings(
+            filtered_filings,
+            query=search_query,
+            cik=provider_result.cik,
+            ticker=provider_result.ticker or ticker,
+            entity_name=provider_result.entity_name,
+        )
+        if search_query is not None and not search_hits:
+            warnings.append(empty_result_warning(operation="sec_filings_search", provider="edgar"))
         return DigitalOracleSecFilingsResult(
-            ticker=ticker,
+            ticker=provider_result.ticker or ticker,
+            query=search_query,
             cik=provider_result.cik,
             entity_name=provider_result.entity_name,
             filings=tuple(filtered_filings),
+            search_hits=tuple(search_hits),
+            ownership_transactions=tuple(
+                _ownership_transactions_for_filings(
+                    provider_result.ownership_transactions,
+                    filtered_filings,
+                )
+            ),
             warnings=tuple(warnings),
         )
 
@@ -498,6 +542,80 @@ def _filter_sec_filings(
     return sorted(filtered, key=lambda filing: filing.filing_date, reverse=True)
 
 
+def _search_sec_filings(
+    filings: Sequence[DigitalOracleSecFiling],
+    *,
+    query: str | None,
+    cik: str | None,
+    ticker: str | None,
+    entity_name: str | None,
+) -> list[DigitalOracleSecSearchHit]:
+    if query is None:
+        return []
+    needle = query.casefold()
+    hits: list[DigitalOracleSecSearchHit] = []
+    for filing in filings:
+        matched_text = _sec_filing_matched_text(
+            filing,
+            needle=needle,
+            cik=cik,
+            ticker=ticker,
+            entity_name=entity_name,
+        )
+        if matched_text is None:
+            continue
+        hits.append(
+            DigitalOracleSecSearchHit(
+                accession_number=filing.accession_number,
+                form_type=filing.form_type,
+                filing_date=filing.filing_date,
+                cik=cik,
+                ticker=ticker,
+                entity_name=entity_name,
+                primary_document=filing.primary_document,
+                url=filing.url,
+                description=filing.description,
+                matched_text=matched_text,
+            )
+        )
+    return hits
+
+
+def _ownership_transactions_for_filings(
+    transactions: Sequence[DigitalOracleSecOwnershipTransaction],
+    filings: Sequence[DigitalOracleSecFiling],
+) -> list[DigitalOracleSecOwnershipTransaction]:
+    allowed_accessions = {filing.accession_number for filing in filings}
+    return [
+        transaction
+        for transaction in transactions
+        if transaction.accession_number in allowed_accessions
+    ]
+
+
+def _sec_filing_matched_text(
+    filing: DigitalOracleSecFiling,
+    *,
+    needle: str,
+    cik: str | None,
+    ticker: str | None,
+    entity_name: str | None,
+) -> str | None:
+    candidates = (
+        filing.accession_number,
+        filing.form_type,
+        filing.primary_document,
+        filing.description,
+        cik,
+        ticker,
+        entity_name,
+    )
+    for candidate in candidates:
+        if candidate is not None and needle in candidate.casefold():
+            return candidate
+    return None
+
+
 def _append_coverage_warning(
     warnings: list[RuntimeToolWarning],
     *,
@@ -545,6 +663,15 @@ def _normalize_limit(
     return value
 
 
+def _normalize_prediction_market_depth_limit(value: int | None) -> int:
+    return _normalize_limit(
+        value,
+        default_limit=5,
+        max_limit=_PREDICTION_MARKETS_MAX_DEPTH_LIMIT,
+        field_name="depthLimit",
+    )
+
+
 def _normalize_text(value: str, *, field_name: str) -> str:
     normalized = " ".join(value.split()).strip()
     if not normalized:
@@ -552,11 +679,35 @@ def _normalize_text(value: str, *, field_name: str) -> str:
     return normalized
 
 
+def _normalize_optional_text(value: str | None, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _normalize_text(value, field_name=field_name)
+
+
 def _normalize_symbol_query(value: str, *, field_name: str) -> str:
     normalized = normalize_symbol(value)
     if not normalized:
         raise ValueError(f"{field_name} is required")
     return normalized
+
+
+def _normalize_optional_symbol_query(value: str | None, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _normalize_symbol_query(value, field_name=field_name)
+
+
+def _normalize_optional_cik_query(value: str | None) -> str | None:
+    if value is None:
+        return None
+    raw_value = value.strip().upper()
+    if raw_value.startswith("CIK"):
+        raw_value = raw_value[3:]
+    digits = "".join(character for character in raw_value if character.isdigit())
+    if not digits or len(digits) > 10 or digits != raw_value:
+        raise ValueError("cik must contain 1 to 10 digits")
+    return digits.zfill(10)
 
 
 def _validate_date_bounds(start_date: date | None, end_date: date | None) -> None:

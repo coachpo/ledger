@@ -4,7 +4,9 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Protocol, cast
+from xml.etree import ElementTree
 
 import httpx
 
@@ -35,6 +37,7 @@ from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleSecFilingsProviderQuery,
     DigitalOracleSecFilingsProviderResult,
     DigitalOracleSecFilingsQuery,
+    DigitalOracleSecOwnershipTransaction,
 )
 
 SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_digital_oracle_sec_filings_lookup"
@@ -48,19 +51,21 @@ _COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _SUBMISSIONS_URL_TEMPLATE = "https://data.sec.gov/submissions/CIK{cik}.json"
 _ARCHIVES_DOCUMENT_URL_TEMPLATE = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}"
 _SEC_FILINGS_LOOKUP_DESCRIPTION = (
-    "Read normalized SEC EDGAR filing summaries for one ticker with optional filters."
+    "Read normalized SEC EDGAR filing summaries, search hits, and Form 4 summaries."
 )
 _SEC_FILINGS_LOOKUP_GUIDANCE = (
     "When you need SEC filing facts, call signaldeck_digital_oracle_sec_filings_lookup "
-    "with a ticker and optional form/date filters. Use only returned filing summaries, "
-    "disclose warnings "
-    "for empty, stale, or config-blocked EDGAR coverage, and never invent filing facts "
-    "or ask the model/user for the configured EDGAR contact email."
+    "with a ticker or CIK and optional form/date/query filters. Use only returned "
+    "filing summaries, search hits, and Form 4 ownership summaries; disclose warnings "
+    "for empty, stale, partial, or config-blocked EDGAR coverage; never invent filing "
+    "facts or ask for the configured EDGAR contact email."
 )
 _SEC_FILINGS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
         "ticker": {"type": "string", "minLength": 1},
+        "query": {"type": "string", "minLength": 1, "maxLength": 200},
+        "cik": {"type": "string", "minLength": 1, "maxLength": 13},
         "formTypes": {
             "type": "array",
             "items": {"type": "string", "minLength": 1},
@@ -69,8 +74,9 @@ _SEC_FILINGS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
         "startDate": {"type": "string"},
         "endDate": {"type": "string"},
         "itemLimit": {"type": "integer", "minimum": 1, "maximum": _SEC_FILINGS_MAX_ITEM_LIMIT},
+        "includeOwnershipTransactions": {"type": "boolean"},
     },
-    "required": ["ticker"],
+    "required": [],
     "additionalProperties": False,
 }
 
@@ -83,6 +89,14 @@ class _EdgarJsonClient(Protocol):
         timeout: float,
         contact_email: str,
     ) -> object: ...
+
+    def get_text(
+        self,
+        url: str,
+        *,
+        timeout: float,
+        contact_email: str,
+    ) -> str: ...
 
 
 class _HttpxEdgarJsonClient:
@@ -122,6 +136,37 @@ class _HttpxEdgarJsonClient:
                 details={"provider": "edgar"},
             ) from exc
 
+    def get_text(
+        self,
+        url: str,
+        *,
+        timeout: float,
+        contact_email: str,
+    ) -> str:
+        headers = {
+            "Accept": "application/xml,text/xml,text/plain",
+            "User-Agent": f"signaldeck-backend/0.1 sec-filings ({contact_email})",
+        }
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                response = client.get(url, headers=headers)
+                _ = response.raise_for_status()
+                return response.text
+        except httpx.TimeoutException as exc:
+            raise DigitalOracleProviderError(
+                "SEC EDGAR timed out while fetching ownership filing summary",
+                code="provider_timeout",
+                details={"provider": "edgar"},
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise _http_status_provider_error(exc) from exc
+        except httpx.HTTPError as exc:
+            raise DigitalOracleProviderError(
+                "SEC EDGAR is unavailable for ownership filing lookup",
+                code="provider_unavailable",
+                details={"provider": "edgar"},
+            ) from exc
+
 
 class EdgarSecFilingsProvider:
     provider_name: str = "edgar"
@@ -129,36 +174,67 @@ class EdgarSecFilingsProvider:
     def __init__(self, http_client: _EdgarJsonClient | None = None) -> None:
         self._http_client: _EdgarJsonClient = http_client or _HttpxEdgarJsonClient()
         self._ticker_cik_cache: dict[str, tuple[str, str | None]] = {}
+        self._cik_company_cache: dict[str, tuple[str | None, str | None]] = {}
 
     def lookup_sec_filings(
         self,
         query: DigitalOracleSecFilingsProviderQuery,
     ) -> DigitalOracleSecFilingsProviderResult:
-        cached_company = self._ticker_cik_cache.get(query.ticker)
-        if cached_company is None:
-            company_payload = self._http_client.get_json(
-                _COMPANY_TICKERS_URL,
-                timeout=query.timeout_seconds,
-                contact_email=query.edgar_contact_email,
-            )
-            company = _company_for_ticker(company_payload, query.ticker)
-            if company is None:
-                return DigitalOracleSecFilingsProviderResult(
-                    provider=self.provider_name,
-                    ticker=query.ticker,
-                    warnings=(_ticker_not_found_warning(query.ticker),),
+        ticker = query.ticker
+        cik = query.cik
+        entity_name: str | None = None
+        if cik is None and ticker is not None:
+            cached_company = self._ticker_cik_cache.get(ticker)
+            if cached_company is None:
+                company_payload = self._http_client.get_json(
+                    _COMPANY_TICKERS_URL,
+                    timeout=query.timeout_seconds,
+                    contact_email=query.edgar_contact_email,
                 )
+                company = _company_for_ticker(company_payload, ticker)
+                if company is None:
+                    return DigitalOracleSecFilingsProviderResult(
+                        provider=self.provider_name,
+                        ticker=ticker,
+                        warnings=(_ticker_not_found_warning(ticker),),
+                    )
 
-            cik = _company_cik(company)
-            if cik is None:
-                raise DigitalOracleProviderError(
-                    "SEC EDGAR returned malformed ticker mapping",
-                    details={"provider": self.provider_name, "ticker": query.ticker},
+                cik = _company_cik(company)
+                if cik is None:
+                    raise DigitalOracleProviderError(
+                        "SEC EDGAR returned malformed ticker mapping",
+                        details={"provider": self.provider_name, "ticker": ticker},
+                    )
+                entity_name = _text(company.get("title"))
+                self._ticker_cik_cache[ticker] = (cik, entity_name)
+                self._cik_company_cache[cik] = (ticker, entity_name)
+            else:
+                cik, entity_name = cached_company
+        elif cik is not None:
+            cached_cik_company = self._cik_company_cache.get(cik)
+            if cached_cik_company is None:
+                company_payload = self._http_client.get_json(
+                    _COMPANY_TICKERS_URL,
+                    timeout=query.timeout_seconds,
+                    contact_email=query.edgar_contact_email,
                 )
-            entity_name = _text(company.get("title"))
-            self._ticker_cik_cache[query.ticker] = (cik, entity_name)
-        else:
-            cik, entity_name = cached_company
+                company = _company_for_cik(company_payload, cik)
+                if company is not None:
+                    ticker = _text(company.get("ticker")) or ticker
+                    entity_name = _text(company.get("title"))
+                    self._cik_company_cache[cik] = (ticker, entity_name)
+                    if ticker is not None:
+                        self._ticker_cik_cache[ticker] = (cik, entity_name)
+                else:
+                    self._cik_company_cache[cik] = (ticker, None)
+            else:
+                cached_ticker, entity_name = cached_cik_company
+                ticker = cached_ticker or ticker
+        if cik is None:
+            raise DigitalOracleProviderError(
+                "SEC EDGAR lookup requires a ticker or CIK",
+                details={"provider": self.provider_name},
+            )
         submissions_payload = self._http_client.get_json(
             _SUBMISSIONS_URL_TEMPLATE.format(cik=cik),
             timeout=query.timeout_seconds,
@@ -170,14 +246,27 @@ class EdgarSecFilingsProvider:
         warnings: list[RuntimeToolWarning] = []
         filings = _map_recent_filings(recent, cik=cik, warnings=warnings)
         if not filings and _has_archived_filings(submissions):
-            warnings.append(_stale_archive_warning(query.ticker, cik=cik))
+            warnings.append(_stale_archive_warning(ticker or cik, cik=cik))
+        ownership_transactions: tuple[DigitalOracleSecOwnershipTransaction, ...] = ()
+        if query.include_ownership_transactions:
+            ownership_transactions = tuple(
+                _ownership_transactions_from_filings(
+                    _ownership_candidate_filings(filings, query),
+                    http_client=self._http_client,
+                    timeout=query.timeout_seconds,
+                    contact_email=query.edgar_contact_email,
+                    warnings=warnings,
+                    warn_when_no_form4=_should_warn_for_missing_ownership_forms(query),
+                )
+            )
 
         return DigitalOracleSecFilingsProviderResult(
             provider=self.provider_name,
-            ticker=query.ticker,
+            ticker=ticker,
             cik=cik,
             entity_name=entity_name,
             filings=tuple(filings),
+            ownership_transactions=ownership_transactions,
             warnings=tuple(warnings),
         )
 
@@ -208,14 +297,32 @@ def parse_sec_filings_lookup_arguments(arguments_json: str) -> dict[str, object]
     )
     _reject_unexpected_keys(
         raw_arguments,
-        allowed_keys={"ticker", "formTypes", "startDate", "endDate", "itemLimit"},
+        allowed_keys={
+            "ticker",
+            "query",
+            "cik",
+            "formTypes",
+            "startDate",
+            "endDate",
+            "itemLimit",
+            "includeOwnershipTransactions",
+        },
         function_name=SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME,
     )
     start_date = _parse_optional_date_argument(raw_arguments.get("startDate"), "startDate")
     end_date = _parse_optional_date_argument(raw_arguments.get("endDate"), "endDate")
     _validate_date_bounds(start_date, end_date)
+    ticker = _parse_optional_ticker_argument(raw_arguments.get("ticker"))
+    cik = _parse_optional_cik_argument(raw_arguments.get("cik"))
+    if ticker is None and cik is None:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} ticker or cik is required.",
+        )
     return {
-        "ticker": _parse_required_ticker_argument(raw_arguments.get("ticker")),
+        "ticker": ticker,
+        "query": _parse_optional_text_argument(raw_arguments.get("query"), "query"),
+        "cik": cik,
         "form_types": _parse_form_types_argument(raw_arguments.get("formTypes")),
         "start_date": start_date,
         "end_date": end_date,
@@ -224,6 +331,10 @@ def parse_sec_filings_lookup_arguments(arguments_json: str) -> dict[str, object]
             field_name="itemLimit",
             minimum=1,
             maximum=_SEC_FILINGS_MAX_ITEM_LIMIT,
+        ),
+        "include_ownership_transactions": _parse_optional_bool_argument(
+            raw_arguments.get("includeOwnershipTransactions"),
+            "includeOwnershipTransactions",
         ),
     }
 
@@ -236,11 +347,17 @@ def execute_sec_filings_lookup(
     service = create_sec_filings_service()
     result = service.lookup_sec_filings(
         DigitalOracleSecFilingsQuery(
-            ticker=cast(str, arguments["ticker"]),
+            ticker=cast(str | None, arguments["ticker"]),
+            query=cast(str | None, arguments["query"]),
+            cik=cast(str | None, arguments["cik"]),
             form_types=cast(tuple[str, ...] | None, arguments["form_types"]),
             start_date=cast(date | None, arguments["start_date"]),
             end_date=cast(date | None, arguments["end_date"]),
             item_limit=cast(int | None, arguments["item_limit"]),
+            include_ownership_transactions=cast(
+                bool,
+                arguments["include_ownership_transactions"],
+            ),
         )
     )
     runtime_result = map_sec_filings_result(result)
@@ -280,11 +397,13 @@ def _reject_unexpected_keys(
         )
 
 
-def _parse_required_ticker_argument(value: object) -> str:
+def _parse_optional_ticker_argument(value: object) -> str | None:
+    if value is None:
+        return None
     if not isinstance(value, str):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} ticker is required.",
+            message=f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} ticker must be a string.",
         )
     normalized = normalize_symbol(value)
     if not normalized:
@@ -293,6 +412,62 @@ def _parse_required_ticker_argument(value: object) -> str:
             message=f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} ticker must not be empty.",
         )
     return normalized
+
+
+def _parse_optional_text_argument(value: object, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} must be a string.",
+        )
+    normalized = " ".join(value.split()).strip()
+    if not normalized:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} must not be empty.",
+        )
+    if len(normalized) > 200:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=(
+                f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} "
+                "must be at most 200 characters."
+            ),
+        )
+    return normalized
+
+
+def _parse_optional_cik_argument(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} cik must be a string.",
+        )
+    raw_value = value.strip().upper()
+    if raw_value.startswith("CIK"):
+        raw_value = raw_value[3:]
+    digits = "".join(character for character in raw_value if character.isdigit())
+    if not digits or len(digits) > 10 or digits != raw_value:
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} cik must contain 1 to 10 digits.",
+        )
+    return digits.zfill(10)
+
+
+def _parse_optional_bool_argument(value: object, field_name: str) -> bool:
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise RuntimeToolError(
+            code="agent_tool_call_invalid",
+            message=f"{SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME} {field_name} must be a boolean.",
+        )
+    return value
 
 
 def _parse_form_types_argument(value: object) -> tuple[str, ...] | None:
@@ -420,6 +595,15 @@ def _company_for_ticker(payload: object, ticker: str) -> Mapping[str, object] | 
     return None
 
 
+def _company_for_cik(payload: object, cik: str) -> Mapping[str, object] | None:
+    rows = _company_rows(payload)
+    for row in rows:
+        row_cik = _company_cik(row)
+        if row_cik == cik:
+            return row
+    return None
+
+
 def _company_rows(payload: object) -> tuple[Mapping[str, object], ...]:
     if isinstance(payload, Mapping):
         values = cast(Mapping[str, object], payload).values()
@@ -512,6 +696,182 @@ def _map_recent_filings(
     return filings
 
 
+def _ownership_transactions_from_filings(
+    filings: Sequence[DigitalOracleSecFiling],
+    *,
+    http_client: _EdgarJsonClient,
+    timeout: float,
+    contact_email: str,
+    warnings: list[RuntimeToolWarning],
+    warn_when_no_form4: bool = True,
+) -> list[DigitalOracleSecOwnershipTransaction]:
+    form4_filings = [
+        filing for filing in filings if filing.form_type.strip().upper() in {"4", "4/A"}
+    ]
+    if not form4_filings:
+        if warn_when_no_form4:
+            warnings.append(
+                _ownership_unavailable_warning("No Form 4 filing summaries were available.")
+            )
+        return []
+
+    transactions: list[DigitalOracleSecOwnershipTransaction] = []
+    for filing in form4_filings:
+        if filing.url is None:
+            warnings.append(_malformed_warning("ownership document url"))
+            continue
+        try:
+            xml_payload = http_client.get_text(
+                filing.url,
+                timeout=timeout,
+                contact_email=contact_email,
+            )
+            transactions.extend(_parse_form4_ownership_transactions(filing, xml_payload))
+        except DigitalOracleProviderError as exc:
+            warnings.append(
+                _ownership_unavailable_warning(
+                    str(exc),
+                    accession_number=filing.accession_number,
+                )
+            )
+        except ElementTree.ParseError:
+            warnings.append(_malformed_warning("ownership document"))
+    if not transactions:
+        warnings.append(_ownership_unavailable_warning("No Form 4 transactions were parsed."))
+    return transactions
+
+
+def _ownership_candidate_filings(
+    filings: Sequence[DigitalOracleSecFiling],
+    query: DigitalOracleSecFilingsProviderQuery,
+) -> list[DigitalOracleSecFiling]:
+    form_type_filter = set(query.form_types)
+    candidates: list[DigitalOracleSecFiling] = []
+    for filing in filings:
+        if form_type_filter and filing.form_type.strip().upper() not in form_type_filter:
+            continue
+        if query.start_date is not None and filing.filing_date < query.start_date:
+            continue
+        if query.end_date is not None and filing.filing_date > query.end_date:
+            continue
+        candidates.append(filing)
+    return sorted(candidates, key=lambda filing: filing.filing_date, reverse=True)[
+        : query.item_limit
+    ]
+
+
+def _should_warn_for_missing_ownership_forms(query: DigitalOracleSecFilingsProviderQuery) -> bool:
+    form_type_filter = set(query.form_types)
+    return not form_type_filter or bool(form_type_filter & {"4", "4/A"})
+
+
+def _parse_form4_ownership_transactions(
+    filing: DigitalOracleSecFiling,
+    xml_payload: str,
+) -> list[DigitalOracleSecOwnershipTransaction]:
+    root = ElementTree.fromstring(xml_payload)
+    issuer_name = _first_xml_text(root, ("issuer", "issuerName"))
+    issuer_ticker = _first_xml_text(root, ("issuer", "issuerTradingSymbol"))
+    owner_name = _first_xml_text(root, ("reportingOwner", "reportingOwnerId", "rptOwnerName"))
+    root_ownership_nature = _first_xml_text(
+        root,
+        ("ownershipNature", "directOrIndirectOwnership", "value"),
+    )
+    transaction_nodes = _xml_descendants(root, "nonDerivativeTransaction")
+    if not transaction_nodes:
+        return [
+            DigitalOracleSecOwnershipTransaction(
+                accession_number=filing.accession_number,
+                filing_date=filing.filing_date,
+                issuer_name=issuer_name,
+                issuer_ticker=issuer_ticker,
+                reporting_owner_name=owner_name,
+                ownership_nature=root_ownership_nature,
+            )
+        ]
+    return [
+        DigitalOracleSecOwnershipTransaction(
+            accession_number=filing.accession_number,
+            filing_date=filing.filing_date,
+            issuer_name=issuer_name,
+            issuer_ticker=issuer_ticker,
+            reporting_owner_name=owner_name,
+            transaction_date=_optional_date_text(
+                _first_xml_text(transaction, ("transactionDate", "value"))
+            ),
+            transaction_code=_first_xml_text(
+                transaction,
+                ("transactionCoding", "transactionCode"),
+            ),
+            acquired_disposed_code=_first_xml_text(
+                transaction,
+                ("transactionAmounts", "transactionAcquiredDisposedCode", "value"),
+            ),
+            shares=_optional_decimal_text(
+                _first_xml_text(transaction, ("transactionAmounts", "transactionShares", "value"))
+            ),
+            price=_optional_decimal_text(
+                _first_xml_text(
+                    transaction,
+                    ("transactionAmounts", "transactionPricePerShare", "value"),
+                )
+            ),
+            ownership_nature=(
+                _first_xml_text(
+                    transaction,
+                    ("ownershipNature", "directOrIndirectOwnership", "value"),
+                )
+                or root_ownership_nature
+            ),
+        )
+        for transaction in transaction_nodes
+    ]
+
+
+def _xml_descendants(root: ElementTree.Element, local_name: str) -> list[ElementTree.Element]:
+    return [element for element in root.iter() if _xml_local_name(element.tag) == local_name]
+
+
+def _first_xml_text(root: ElementTree.Element, path: tuple[str, ...]) -> str | None:
+    current_nodes = [root]
+    for local_name in path:
+        next_nodes: list[ElementTree.Element] = []
+        for node in current_nodes:
+            next_nodes.extend(
+                child for child in list(node) if _xml_local_name(child.tag) == local_name
+            )
+        current_nodes = next_nodes
+        if not current_nodes:
+            return None
+    for node in current_nodes:
+        text = _text(node.text)
+        if text is not None:
+            return text
+    return None
+
+
+def _xml_local_name(tag: str) -> str:
+    return tag.rsplit("}", maxsplit=1)[-1]
+
+
+def _optional_date_text(value: str | None) -> date | None:
+    if value is None:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _optional_decimal_text(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(value)
+    except InvalidOperation:
+        return None
+
+
 def _sequence_values(value: object) -> tuple[object, ...]:
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return tuple(value)
@@ -597,6 +957,21 @@ def _stale_archive_warning(ticker: str, *, cik: str) -> RuntimeToolWarning:
             "are not loaded by this lookup."
         ),
         details={"operation": "sec_filings", "provider": "edgar", "ticker": ticker, "cik": cik},
+    )
+
+
+def _ownership_unavailable_warning(
+    message: str,
+    *,
+    accession_number: str | None = None,
+) -> RuntimeToolWarning:
+    details = {"operation": "sec_filings", "provider": "edgar"}
+    if accession_number is not None:
+        details["accessionNumber"] = accession_number
+    return RuntimeToolWarning(
+        code="sec_filings_ownership_unavailable",
+        message=message,
+        details=details,
     )
 
 
