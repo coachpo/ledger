@@ -12,10 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import ApiError
 from app.core.formatting import utcnow
 from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
-from app.extensions.signaldeck_finance.ownership import (
-    FINANCE_WORKSPACE_EXTENSION_KEY,
-    FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
-)
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.model_connection import ModelConnection
 from app.models.workflow_package import WorkflowPackage
 from app.repositories.workflow_package import WorkflowPackageRepository
@@ -63,23 +60,20 @@ _TOOL_REQUIRED_FIXTURE = (
 _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
     Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
 )
-_SIGNALDECK_ADVISORY_RESEARCH_MEMORY_DEMO_FIXTURE = (
-    Path(__file__).resolve().parents[2] / "demo" / "signaldeck_advisory_research_memory.yaml"
+_MEMORY_RESEARCH_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "workflow_packages"
+    / "advisory_research_memory.yaml"
 )
 _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
     "signaldeck.digital_oracle.prediction_markets.lookup",
     "signaldeck.digital_oracle.sec_filings.lookup",
     "signaldeck.digital_oracle.market_sentiment.lookup",
 )
-_FINANCE_PRICE_HISTORY_TOOL_KEYS = (
+_FINANCE_MARKET_CONTEXT_TOOL_KEYS = (
     "signaldeck.finance.market_data.history_lookup",
     "signaldeck.finance.market_data.ohlcv_lookup",
-)
-_TRADINGAGENTS_PREDICTION_MARKET_TOOL_KEYS = (
-    "signaldeck.digital_oracle.prediction_markets.lookup",
-)
-_CROSS_EXTENSION_RESEARCH_TOOL_KEYS = tuple(
-    sorted([*_DIGITAL_ORACLE_PHASE1_TOOL_KEYS, *_FINANCE_PRICE_HISTORY_TOOL_KEYS])
 )
 
 
@@ -130,10 +124,8 @@ def _digital_oracle_researcher_demo_source() -> str:
     return _canonicalize_live_tool_keys(_DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text())
 
 
-def _signaldeck_advisory_research_memory_demo_source() -> str:
-    return _canonicalize_live_tool_keys(
-        _SIGNALDECK_ADVISORY_RESEARCH_MEMORY_DEMO_FIXTURE.read_text()
-    )
+def _memory_research_package_source() -> str:
+    return _canonicalize_live_tool_keys(_MEMORY_RESEARCH_FIXTURE.read_text())
 
 
 def _expected_digital_oracle_disabled_tool_errors() -> list[dict[str, object]]:
@@ -152,10 +144,10 @@ def _expected_digital_oracle_disabled_tool_errors() -> list[dict[str, object]]:
     ]
 
 
-def _expected_finance_price_history_disabled_tool_errors() -> list[dict[str, object]]:
+def _expected_finance_market_context_disabled_tool_errors() -> list[dict[str, object]]:
     return [
         {
-            "field": f"spec.capabilityProfiles.finance_price_history_tools.toolKeys[{index}]",
+            "field": f"spec.capabilityProfiles.finance_market_context_tools.toolKeys[{index}]",
             "issue": (
                 f"Server-declared tool {tool_key!r} is disabled because extension "
                 f"{FINANCE_WORKSPACE_EXTENSION_KEY!r} is disabled"
@@ -164,23 +156,7 @@ def _expected_finance_price_history_disabled_tool_errors() -> list[dict[str, obj
             "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
             "surface": f"tool.{tool_key}",
         }
-        for index, tool_key in enumerate(sorted(_FINANCE_PRICE_HISTORY_TOOL_KEYS))
-    ]
-
-
-def _expected_tradingagents_prediction_market_disabled_tool_errors() -> list[dict[str, object]]:
-    return [
-        {
-            "field": f"spec.capabilityProfiles.prediction_market_tools.toolKeys[{index}]",
-            "issue": (
-                f"Server-declared tool {tool_key!r} is disabled because extension "
-                f"{DIGITAL_ORACLE_EXTENSION_KEY!r} is disabled"
-            ),
-            "code": "extension_disabled",
-            "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
-            "surface": f"tool.{tool_key}",
-        }
-        for index, tool_key in enumerate(sorted(_TRADINGAGENTS_PREDICTION_MARKET_TOOL_KEYS))
+        for index, tool_key in enumerate(sorted(_FINANCE_MARKET_CONTEXT_TOOL_KEYS))
     ]
 
 
@@ -219,7 +195,7 @@ spec:
     - key: digital_oracle_researcher
       name: Digital Oracle Researcher
       modelConnection: tradingagents_primary_model
-      systemPrompt: Use the granted finance tools and return JSON.
+      systemPrompt: Use the granted Digital Oracle tools and return JSON.
       inputSchema:
         type: object
         required: [researchQuestion]
@@ -328,13 +304,13 @@ def _tool_required_parameters() -> dict[str, object]:
     return {"topic": "market structure"}
 
 
-def _digital_oracle_research_with_finance_price_history_package_source() -> str:
+def _mixed_extension_research_package_source() -> str:
     return """apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
-  key: digital_oracle_finance_history_fixture
-  name: Digital Oracle Finance History Fixture
-  description: Package-level composition of Finance price history and Digital Oracle tools.
+  key: mixed_extension_research_fixture
+  name: Mixed Extension Research Fixture
+  description: Package-level composition of Finance market context and Digital Oracle tools.
 spec:
   inputs:
     type: object
@@ -343,9 +319,9 @@ spec:
       researchQuestion:
         type: string
   capabilityProfiles:
-    - key: finance_price_history_tools
-      name: Finance Price History Tools
-      description: Grants Finance-owned price-history tools for package-level research context.
+    - key: finance_market_context_tools
+      name: Finance Market Context Tools
+      description: Grants Finance-owned market-context tools for package-level research.
       toolKeys:
         - signaldeck.finance.market_data.history_lookup
         - signaldeck.finance.market_data.ohlcv_lookup
@@ -366,10 +342,10 @@ spec:
           summary:
             type: string
   agents:
-    - key: digital_oracle_researcher
-      name: Digital Oracle Researcher
-      modelConnection: digital_oracle_primary_model
-      systemPrompt: Use package-level Finance price history and Digital Oracle tools; return JSON.
+    - key: mixed_extension_researcher
+      name: Mixed Extension Researcher
+      modelConnection: mixed_extension_primary_model
+      systemPrompt: Use package-level Finance market context and Digital Oracle tools; return JSON.
       inputSchema:
         type: object
         required: [researchQuestion]
@@ -377,7 +353,7 @@ spec:
           researchQuestion:
             type: string
       outputSchema: digital_oracle_report
-      capabilityProfiles: [finance_price_history_tools, digital_oracle_phase1_tools]
+      capabilityProfiles: [finance_market_context_tools, digital_oracle_phase1_tools]
   workflows:
     - key: research
       name: Research
@@ -391,7 +367,7 @@ spec:
         kind: step
         id: research_step
         slot: report
-        uses: digital_oracle_researcher
+        uses: mixed_extension_researcher
         with:
           researchQuestion: ${{ inputs.researchQuestion }}
       output:
@@ -555,7 +531,7 @@ def _delete_existing_tradingagents_package(client: TestClient) -> None:
     _delete_existing_package(client, "tradingagents_advisory_research")
 
 
-def _delete_existing_memory_demo_package(client: TestClient) -> None:
+def _delete_existing_memory_research_package(client: TestClient) -> None:
     _delete_existing_package(client, "signaldeck_advisory_research_memory")
 
 
@@ -1130,11 +1106,11 @@ def test_preflight_accepts_digital_oracle_server_declared_toolKeys(
     ]
 
 
-def test_preflight_accepts_digital_oracle_research_package_with_finance_price_history_tools(
+def test_preflight_accepts_mixed_extension_research_package_with_finance_market_context(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
-    manifest_source = _digital_oracle_research_with_finance_price_history_package_source()
+    manifest_source = _mixed_extension_research_package_source()
     compiled = compile_workflow_package_manifest(manifest_source)
     compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
     profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
@@ -1153,8 +1129,8 @@ def test_preflight_accepts_digital_oracle_research_package_with_finance_price_hi
 
     _seed_model_connection(
         session_factory,
-        key="digital_oracle_primary_model",
-        name="Digital Oracle Primary Model",
+        key="mixed_extension_primary_model",
+        name="Mixed Extension Primary Model",
         protocol_profile="openai_chat_completions",
         capabilities=_capabilities_with_statuses(),
         last_test_ok=True,
@@ -1172,24 +1148,23 @@ def test_preflight_accepts_digital_oracle_research_package_with_finance_price_hi
     assert preflight_body["ready"] is True
     assert preflight_body["blockingErrors"] == []
     assert preflight_body["warnings"] == []
-    assert profiles_by_key["finance_price_history_tools"]["toolKeys"] == sorted(
-        _FINANCE_PRICE_HISTORY_TOOL_KEYS
+    assert profiles_by_key["finance_market_context_tools"]["toolKeys"] == sorted(
+        _FINANCE_MARKET_CONTEXT_TOOL_KEYS
     )
     assert profiles_by_key["digital_oracle_phase1_tools"]["toolKeys"] == sorted(
         _DIGITAL_ORACLE_PHASE1_TOOL_KEYS
     )
     assert set(requirements.native_tool_sources) == {
-        "spec.capabilityProfiles.finance_price_history_tools.toolKeys",
+        "spec.capabilityProfiles.finance_market_context_tools.toolKeys",
         "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys",
     }
     agent_profiles_by_key = {profile.key: profile for profile in runtime_agent.capability_profiles}
-    assert agent_profiles_by_key["finance_price_history_tools"].tool_keys == tuple(
-        sorted(_FINANCE_PRICE_HISTORY_TOOL_KEYS)
+    assert agent_profiles_by_key["finance_market_context_tools"].tool_keys == tuple(
+        sorted(_FINANCE_MARKET_CONTEXT_TOOL_KEYS)
     )
     assert agent_profiles_by_key["digital_oracle_phase1_tools"].tool_keys == tuple(
         sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
     )
-    assert set(_FINANCE_PRICE_HISTORY_TOOL_KEYS) <= set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
     dependencies_by_extension = {
         str(dependency["extensionKey"]): dependency for dependency in extension_dependencies
     }
@@ -1210,12 +1185,12 @@ def test_preflight_accepts_digital_oracle_research_package_with_finance_price_hi
     finance_dependency = dependencies_by_extension[FINANCE_WORKSPACE_EXTENSION_KEY]
     assert finance_dependency["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
     assert set(cast(list[str], finance_dependency["fields"])) == {
-        "spec.capabilityProfiles.finance_price_history_tools.toolKeys[0]",
-        "spec.capabilityProfiles.finance_price_history_tools.toolKeys[1]",
+        "spec.capabilityProfiles.finance_market_context_tools.toolKeys[0]",
+        "spec.capabilityProfiles.finance_market_context_tools.toolKeys[1]",
     }
     assert {
-        *[f"runtime.tool.{tool_key}" for tool_key in _FINANCE_PRICE_HISTORY_TOOL_KEYS],
-        *[f"tool.{tool_key}" for tool_key in _FINANCE_PRICE_HISTORY_TOOL_KEYS],
+        *[f"runtime.tool.{tool_key}" for tool_key in _FINANCE_MARKET_CONTEXT_TOOL_KEYS],
+        *[f"tool.{tool_key}" for tool_key in _FINANCE_MARKET_CONTEXT_TOOL_KEYS],
     } <= set(cast(list[str], finance_dependency["surfaces"]))
 
 
@@ -1277,10 +1252,9 @@ def test_digital_oracle_researcher_demo_validates_compiles_and_preflights(
     assert profiles_by_key["digital_oracle_phase1_tools"]["toolKeys"] == sorted(
         _DIGITAL_ORACLE_PHASE1_TOOL_KEYS
     )
-    assert set(requirements.native_tool_sources) == {
+    assert requirements.native_tool_sources == (
         "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys",
-        "spec.capabilityProfiles.finance_price_history_tools.toolKeys",
-    }
+    )
     assert runtime_agent.key == "digital_oracle_signal_researcher"
     assert runtime_agent.system_prompt.startswith(
         "Digital Oracle methodology is package-local for this agent."
@@ -1289,19 +1263,17 @@ def test_digital_oracle_researcher_demo_validates_compiles_and_preflights(
     assert agent_profiles_by_key["digital_oracle_phase1_tools"].tool_keys == tuple(
         sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
     )
-    assert agent_profiles_by_key["finance_price_history_tools"].tool_keys == tuple(
-        sorted(_FINANCE_PRICE_HISTORY_TOOL_KEYS)
-    )
+    assert set(agent_profiles_by_key) == {"digital_oracle_phase1_tools"}
     assert "Package-ready draft" not in manifest_source
     assert "spec.skills" not in manifest_source
     assert "secrets:" not in manifest_source
 
 
-def test_demo_memory_yaml_validates_compiles_and_preflights(
+def test_memory_research_fixture_validates_compiles_and_preflights(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
-    manifest_source = _signaldeck_advisory_research_memory_demo_source()
+    manifest_source = _memory_research_package_source()
     parsed = parse_workflow_package_manifest(manifest_source)
     assert parsed.diagnostics == []
     assert parsed.manifest is not None
@@ -1340,7 +1312,7 @@ def test_demo_memory_yaml_validates_compiles_and_preflights(
         capabilities=_capabilities_with_statuses(),
         last_test_ok=True,
     )
-    _delete_existing_memory_demo_package(client)
+    _delete_existing_memory_research_package(client)
     created = client.post("/api/workflow-packages", json={"manifestSource": manifest_source})
     assert created.status_code == 201, created.json()
     preflight = client.post(
@@ -2181,33 +2153,23 @@ def test_preflight_allows_digital_oracle_toolKeys_when_finance_extension_disable
     assert body["warnings"] == []
 
 
-def test_tradingagents_demo_grants_digital_oracle_prediction_markets_without_finance_duplicate() -> (  # noqa: E501
-    None
-):
+def test_tradingagents_demo_uses_only_finance_owned_tool_keys() -> None:
     compiled = compile_workflow_package_manifest(_tradingagents_demo_source())
     compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
     profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
     profiles_by_key = {str(profile["key"]): profile for profile in profiles}
-    agents = cast(list[dict[str, Any]], compiled_plan["agents"])
-    agents_by_key = {str(agent["key"]): agent for agent in agents}
 
-    assert cast(list[str], profiles_by_key["prediction_market_tools"]["toolKeys"]) == [
-        "signaldeck.digital_oracle.prediction_markets.lookup"
-    ]
-    assert "prediction_market_tools" in cast(
-        list[str],
-        agents_by_key["news_analyst"]["capabilityProfiles"],
-    )
-    finance_tool_keys = {
-        tool_key
-        for profile in profiles
-        for tool_key in cast(list[str], profile["toolKeys"])
-        if tool_key.startswith("signaldeck.finance.")
+    all_tool_keys = {
+        tool_key for profile in profiles for tool_key in cast(list[str], profile["toolKeys"])
     }
-    assert "signaldeck.finance.prediction_markets.lookup" not in finance_tool_keys
+    assert all_tool_keys
+    assert all(tool_key.startswith("signaldeck.finance.") for tool_key in all_tool_keys)
+    assert "prediction_market_tools" not in profiles_by_key
+    assert "signaldeck.digital_oracle.prediction_markets.lookup" not in all_tool_keys
+    assert "signaldeck.finance.prediction_markets.lookup" not in all_tool_keys
 
 
-def test_preflight_tradingagents_demo_mixed_grants_respect_digital_oracle_disable(
+def test_preflight_tradingagents_demo_stays_ready_when_digital_oracle_disabled(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -2241,27 +2203,26 @@ def test_preflight_tradingagents_demo_mixed_grants_respect_digital_oracle_disabl
     assert preflight.status_code == 200, preflight.json()
     body = cast(dict[str, object], preflight.json())
     errors = cast(list[dict[str, object]], body["blockingErrors"])
-    assert body["ready"] is False
-    assert errors == _expected_tradingagents_prediction_market_disabled_tool_errors()
+    assert body["ready"] is True
+    assert errors == []
+    assert body["warnings"] == []
     assert not any(error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY for error in errors)
 
 
-def test_preflight_blocks_only_finance_price_history_toolKeys_when_finance_disabled(
+def test_preflight_blocks_only_finance_market_context_toolKeys_when_finance_disabled(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_model_connection(
         session_factory,
-        key="digital_oracle_primary_model",
+        key="mixed_extension_primary_model",
         protocol_profile="openai_chat_completions",
         capabilities=_capabilities_with_statuses(),
         last_test_ok=True,
     )
     response = client.post(
         "/api/workflow-packages",
-        json={
-            "manifestSource": _digital_oracle_research_with_finance_price_history_package_source()
-        },
+        json={"manifestSource": _mixed_extension_research_package_source()},
     )
     assert response.status_code == 201, response.json()
     _disable_finance_extension(session_factory)
@@ -2275,7 +2236,7 @@ def test_preflight_blocks_only_finance_price_history_toolKeys_when_finance_disab
     body = cast(dict[str, object], preflight.json())
     errors = cast(list[dict[str, object]], body["blockingErrors"])
     assert body["ready"] is False
-    assert errors == _expected_finance_price_history_disabled_tool_errors()
+    assert errors == _expected_finance_market_context_disabled_tool_errors()
     assert not any(error.get("extensionKey") == DIGITAL_ORACLE_EXTENSION_KEY for error in errors)
 
 
@@ -2308,16 +2269,14 @@ def test_preflight_blocks_only_digital_oracle_toolKeys_when_digital_oracle_disab
 ) -> None:
     _seed_model_connection(
         session_factory,
-        key="digital_oracle_primary_model",
+        key="mixed_extension_primary_model",
         protocol_profile="openai_chat_completions",
         capabilities=_capabilities_with_statuses(),
         last_test_ok=True,
     )
     response = client.post(
         "/api/workflow-packages",
-        json={
-            "manifestSource": _digital_oracle_research_with_finance_price_history_package_source()
-        },
+        json={"manifestSource": _mixed_extension_research_package_source()},
     )
     assert response.status_code == 201, response.json()
     _disable_digital_oracle_extension(session_factory)
