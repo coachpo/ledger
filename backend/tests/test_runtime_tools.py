@@ -95,9 +95,13 @@ from app.extensions.signaldeck_digital_oracle.runtime_types import (
     RuntimeMarketSentimentLookupResult,
     RuntimePredictionMarketContract,
     RuntimePredictionMarketEvent,
+    RuntimePredictionMarketOrderBook,
+    RuntimePredictionMarketOrderBookLevel,
     RuntimePredictionMarketsLookupResult,
     RuntimeSecFiling,
     RuntimeSecFilingsLookupResult,
+    RuntimeSecOwnershipTransaction,
+    RuntimeSecSearchHit,
 )
 from app.extensions.signaldeck_digital_oracle.service import DigitalOraclePhase1Service
 from app.extensions.signaldeck_digital_oracle.types import (
@@ -106,6 +110,8 @@ from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleMarketSentimentQuery,
     DigitalOraclePredictionMarketContract,
     DigitalOraclePredictionMarketEvent,
+    DigitalOraclePredictionMarketOrderBook,
+    DigitalOraclePredictionMarketOrderBookLevel,
     DigitalOraclePredictionMarketsProviderQuery,
     DigitalOraclePredictionMarketsProviderResult,
     DigitalOraclePredictionMarketsQuery,
@@ -114,6 +120,7 @@ from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleSecFilingsProviderQuery,
     DigitalOracleSecFilingsProviderResult,
     DigitalOracleSecFilingsQuery,
+    DigitalOracleSecOwnershipTransaction,
 )
 from app.extensions.signaldeck_finance.execution_dependencies import (
     finance_execution_provider_bundle_from_parts,
@@ -213,7 +220,7 @@ from app.schemas.report import ReportRead
 from app.services.agent_execution_service import AgentExecutionService
 from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_providers import ExecutionProviderBundle
-from app.services.market_data_service import MarketDataService
+from app.services.market_data_service import MarketDataService, MarketIndicatorSelection
 from app.services.model_gateway_dto import ModelGatewayError, ModelToolCall
 from app.services.model_gateway_tool_retry import ModelToolCallRetryState
 from app.services.model_gateway_tool_strategy import build_model_tool_call
@@ -398,9 +405,13 @@ class _FakeDigitalOracleSecFilingsProvider:
         self,
         filings: Sequence[DigitalOracleSecFiling],
         *,
+        ownership_transactions: Sequence[DigitalOracleSecOwnershipTransaction] = (),
         failure: DigitalOracleProviderError | None = None,
     ) -> None:
         self.filings: tuple[DigitalOracleSecFiling, ...] = tuple(filings)
+        self.ownership_transactions: tuple[DigitalOracleSecOwnershipTransaction, ...] = tuple(
+            ownership_transactions
+        )
         self.failure: DigitalOracleProviderError | None = failure
         self.calls: list[DigitalOracleSecFilingsProviderQuery] = []
 
@@ -417,6 +428,7 @@ class _FakeDigitalOracleSecFilingsProvider:
             cik="0001045810",
             entity_name="NVIDIA CORP",
             filings=self.filings,
+            ownership_transactions=self.ownership_transactions,
         )
 
 
@@ -473,9 +485,15 @@ class _FakePredictionMarketsJsonClient:
 
 
 class _FakeEdgarJsonClient:
-    def __init__(self, payloads_by_url_fragment: Mapping[str, object]) -> None:
+    def __init__(
+        self,
+        payloads_by_url_fragment: Mapping[str, object],
+        text_by_url_fragment: Mapping[str, str] | None = None,
+    ) -> None:
         self.payloads_by_url_fragment: dict[str, object] = dict(payloads_by_url_fragment)
+        self.text_by_url_fragment: dict[str, str] = dict(text_by_url_fragment or {})
         self.calls: list[dict[str, object]] = []
+        self.text_calls: list[dict[str, object]] = []
 
     def get_json(self, url: str, *, timeout: float, contact_email: str) -> object:
         self.calls.append({"url": url, "timeout": timeout, "contactEmail": contact_email})
@@ -483,6 +501,13 @@ class _FakeEdgarJsonClient:
             if fragment in url:
                 return payload
         raise AssertionError(f"No fake EDGAR payload configured for {url}")
+
+    def get_text(self, url: str, *, timeout: float, contact_email: str) -> str:
+        self.text_calls.append({"url": url, "timeout": timeout, "contactEmail": contact_email})
+        for fragment, payload in self.text_by_url_fragment.items():
+            if fragment in url:
+                return payload
+        raise AssertionError(f"No fake EDGAR text payload configured for {url}")
 
 
 class _FakeFearGreedJsonClient:
@@ -605,6 +630,10 @@ class _DigitalOracleFixtureReplayJsonClient:
                 details=cast(Mapping[str, object], details if isinstance(details, dict) else {}),
             )
         return fixture["response"]
+
+    def get_text(self, url: str, *, timeout: float, contact_email: str) -> str:
+        del timeout, contact_email
+        raise AssertionError(f"No Digital Oracle text fixture configured for {url}")
 
 
 class _SessionScope:
@@ -1164,11 +1193,12 @@ class _RecordingQuoteProvider:
         *,
         symbols: list[str],
         query: str | None,
+        scope: str,
         start_date: datetime | None,
         end_date: datetime | None,
         limit: int,
     ) -> ProviderNewsResult:
-        del symbols, query, start_date, end_date, limit
+        del symbols, query, scope, start_date, end_date, limit
         return ProviderNewsResult(provider="fake_runtime_provider", items=[])
 
     def fetch_insider_transactions(
@@ -1205,7 +1235,7 @@ class _FinancialContractProvider(_RecordingQuoteProvider):
         self.insider_count: int = insider_count
         self.fundamental_calls: list[str] = []
         self.news_calls: list[
-            tuple[list[str], str | None, datetime | None, datetime | None, int]
+            tuple[list[str], str | None, str, datetime | None, datetime | None, int]
         ] = []
         self.insider_calls: list[tuple[str, datetime | None, datetime | None, int]] = []
 
@@ -1234,7 +1264,19 @@ class _FinancialContractProvider(_RecordingQuoteProvider):
                     currency="USD",
                     period="ttm",
                     as_of=datetime(2026, 1, 1, 21, tzinfo=timezone(timedelta(hours=-5))),
-                )
+                ),
+                ProviderFundamentalMetric(
+                    name="revenue_growth",
+                    value=Decimal("0.18"),
+                    period="ttm",
+                    as_of=datetime(2026, 1, 1, 21, tzinfo=timezone(timedelta(hours=-5))),
+                ),
+                ProviderFundamentalMetric(
+                    name="free_cash_flow_margin",
+                    value=Decimal("0.19"),
+                    period="ttm",
+                    as_of=datetime(2026, 1, 1, 21, tzinfo=timezone(timedelta(hours=-5))),
+                ),
             ],
             statements=[
                 ProviderFinancialStatement(
@@ -1282,11 +1324,12 @@ class _FinancialContractProvider(_RecordingQuoteProvider):
         *,
         symbols: list[str],
         query: str | None,
+        scope: str,
         start_date: datetime | None,
         end_date: datetime | None,
         limit: int,
     ) -> ProviderNewsResult:
-        self.news_calls.append((symbols, query, start_date, end_date, limit))
+        self.news_calls.append((symbols, query, scope, start_date, end_date, limit))
         if self.failure is not None:
             raise self.failure
         return ProviderNewsResult(
@@ -1599,7 +1642,22 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
                 url="https://www.sec.gov/Archives/edgar/data/1045810/fixture.htm",
                 description="Annual report",
             ),
-        )
+        ),
+        ownership_transactions=(
+            DigitalOracleSecOwnershipTransaction(
+                accession_number="0001045810-26-000020",
+                filing_date=date(2026, 2, 21),
+                issuer_name="NVIDIA CORP",
+                issuer_ticker="NVDA",
+                reporting_owner_name="Ada Lovelace",
+                transaction_date=date(2026, 2, 20),
+                transaction_code="P",
+                acquired_disposed_code="A",
+                shares=Decimal("10"),
+                price=Decimal("120.25"),
+                ownership_nature="D",
+            ),
+        ),
     )
     sentiment_provider = _FakeDigitalOracleMarketSentimentProvider(
         DigitalOracleMarketSentimentProviderResult(
@@ -1644,8 +1702,17 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
         )[0]
         prediction_schema = cast(dict[str, object], prediction_declaration.input_schema)
         prediction_properties = cast(dict[str, dict[str, object]], prediction_schema["properties"])
-        assert prediction_schema["required"] == ["includeResolved", "itemLimit", "query", "venues"]
+        assert prediction_schema["required"] == [
+            "depthLimit",
+            "includeOrderBook",
+            "includeResolved",
+            "itemLimit",
+            "query",
+            "venues",
+        ]
         assert prediction_schema["additionalProperties"] is False
+        assert prediction_properties["depthLimit"]["type"] == ["integer", "null"]
+        assert prediction_properties["includeOrderBook"]["type"] == ["boolean", "null"]
         assert prediction_properties["query"]["type"] == "string"
         assert prediction_properties["venues"]["type"] == ["array", "null"]
         assert prediction_properties["itemLimit"]["type"] == ["integer", "null"]
@@ -1658,6 +1725,8 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
                     "venues": ["polymarket", "kalshi"],
                     "itemLimit": 3,
                     "includeResolved": False,
+                    "includeOrderBook": True,
+                    "depthLimit": 2,
                 }
             ),
             granted_tool_keys=granted_tool_keys,
@@ -1689,6 +1758,8 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
     assert {declaration.tool_key for declaration in declarations} == granted_tool_keys
     assert polymarket_provider.calls[0].query == "NVDA earnings"
     assert kalshi_provider.calls[0].include_resolved is False
+    assert polymarket_provider.calls[0].include_order_book is True
+    assert kalshi_provider.calls[0].depth_limit == 2
     assert prediction_payload["toolKey"] == PREDICTION_MARKETS_LOOKUP_TOOL_KEY
     prediction_events = cast(list[dict[str, object]], prediction_payload["events"])
     assert [event["venue"] for event in prediction_events] == ["polymarket", "kalshi"]
@@ -1924,6 +1995,22 @@ def test_digital_oracle_service_returns_normalized_phase1_dtos() -> None:
                         no_price=Decimal("0.38"),
                         volume=Decimal("125000.5"),
                         open_interest=Decimal("2500"),
+                        order_book=DigitalOraclePredictionMarketOrderBook(
+                            bids=(
+                                DigitalOraclePredictionMarketOrderBookLevel(
+                                    price=Decimal("0.63"),
+                                    size=Decimal("120"),
+                                ),
+                            ),
+                            asks=(
+                                DigitalOraclePredictionMarketOrderBookLevel(
+                                    price=Decimal("0.65"),
+                                    size=Decimal("90"),
+                                ),
+                            ),
+                            spread=Decimal("0.02"),
+                            depth_limit=2,
+                        ),
                     ),
                 ),
             ),
@@ -1965,7 +2052,22 @@ def test_digital_oracle_service_returns_normalized_phase1_dtos() -> None:
                 form_type="8-K",
                 filing_date=date(2026, 3, 1),
             ),
-        )
+        ),
+        ownership_transactions=(
+            DigitalOracleSecOwnershipTransaction(
+                accession_number="0001045810-26-000020",
+                filing_date=date(2026, 2, 21),
+                issuer_name="NVIDIA CORP",
+                issuer_ticker="NVDA",
+                reporting_owner_name="Ada Lovelace",
+                transaction_date=date(2026, 2, 20),
+                transaction_code="P",
+                acquired_disposed_code="A",
+                shares=Decimal("10"),
+                price=Decimal("120.25"),
+                ownership_nature="D",
+            ),
+        ),
     )
     sentiment_provider = _FakeDigitalOracleMarketSentimentProvider(
         DigitalOracleMarketSentimentProviderResult(
@@ -1996,6 +2098,8 @@ def test_digital_oracle_service_returns_normalized_phase1_dtos() -> None:
             query="  NVDA   earnings ",
             venues=("polymarket", "kalshi"),
             item_limit=3,
+            include_order_book=True,
+            depth_limit=2,
         )
     )
     prediction_payload = map_prediction_markets_result(prediction_result).model_dump(
@@ -2013,34 +2117,49 @@ def test_digital_oracle_service_returns_normalized_phase1_dtos() -> None:
     }
     assert provider_item_limits == [3, 3]
     assert provider_timeouts == {2.5}
+    assert polymarket_provider.calls[0].include_order_book is True
+    assert kalshi_provider.calls[0].depth_limit == 2
     assert prediction_payload["toolKey"] == PREDICTION_MARKETS_LOOKUP_TOOL_KEY
     prediction_events = cast(list[dict[str, object]], prediction_payload["events"])
     assert [event["venue"] for event in prediction_events] == ["polymarket", "kalshi"]
     assert prediction_events[0]["eventId"] == "pm-nvda-earnings"
     prediction_contracts = cast(list[dict[str, object]], prediction_events[0]["contracts"])
     assert prediction_contracts[0]["yesPrice"] == "0.64"
+    assert prediction_contracts[0]["orderBook"] == {
+        "bids": [{"price": "0.63", "size": "120"}],
+        "asks": [{"price": "0.65", "size": "90"}],
+        "spread": "0.02",
+        "depthLimit": 2,
+    }
     assert prediction_payload["warnings"] == []
 
     sec_result = service.lookup_sec_filings(
         DigitalOracleSecFilingsQuery(
             ticker=" nvda ",
+            query="annual report",
             form_types=("10-k",),
             start_date=date(2026, 1, 1),
             end_date=date(2026, 12, 31),
             item_limit=1,
+            include_ownership_transactions=True,
         )
     )
     sec_payload = map_sec_filings_result(sec_result).model_dump(mode="json", by_alias=True)
 
     _assert_native_runtime_payload_is_json_safe_and_camel(sec_payload)
     assert sec_provider.calls[0].ticker == "NVDA"
+    assert sec_provider.calls[0].query == "annual report"
     assert sec_provider.calls[0].form_types == ("10-K",)
+    assert sec_provider.calls[0].include_ownership_transactions is True
     assert sec_provider.calls[0].edgar_contact_email == "sec-contact@example.test"
     assert sec_provider.calls[0].timeout_seconds == 2.5
     assert sec_payload["toolKey"] == SEC_FILINGS_LOOKUP_TOOL_KEY
     assert sec_payload["ticker"] == "NVDA"
     sec_filings = cast(list[dict[str, object]], sec_payload["filings"])
     assert [filing["formType"] for filing in sec_filings] == ["10-K"]
+    sec_search_hits = cast(list[dict[str, object]], sec_payload["searchHits"])
+    assert sec_search_hits[0]["matchedText"] == "Annual report"
+    assert sec_payload["ownershipTransactions"] == []
     assert sec_payload["warnings"] == []
 
     sentiment_result = service.lookup_market_sentiment(
@@ -2189,6 +2308,22 @@ def test_runtime_types_digital_oracle_results_serialize_normalized_contracts() -
                         no_price=Decimal("0.38"),
                         volume=Decimal("125000.5"),
                         open_interest=Decimal("2500"),
+                        order_book=RuntimePredictionMarketOrderBook(
+                            bids=[
+                                RuntimePredictionMarketOrderBookLevel(
+                                    price=Decimal("0.63"),
+                                    size=Decimal("250"),
+                                )
+                            ],
+                            asks=[
+                                RuntimePredictionMarketOrderBookLevel(
+                                    price=Decimal("0.66"),
+                                    size=Decimal("175"),
+                                )
+                            ],
+                            spread=Decimal("0.03"),
+                            depth_limit=1,
+                        ),
                     )
                 ],
             )
@@ -2225,10 +2360,17 @@ def test_runtime_types_digital_oracle_results_serialize_normalized_contracts() -
         "noPrice": "0.38",
         "volume": "125000.5",
         "openInterest": "2500",
+        "orderBook": {
+            "bids": [{"price": "0.63", "size": "250"}],
+            "asks": [{"price": "0.66", "size": "175"}],
+            "spread": "0.03",
+            "depthLimit": 1,
+        },
     }
 
     sec_payload = RuntimeSecFilingsLookupResult(
         ticker="NVDA",
+        query="Annual report",
         cik="0001045810",
         entity_name="NVIDIA CORP",
         filings=[
@@ -2242,14 +2384,46 @@ def test_runtime_types_digital_oracle_results_serialize_normalized_contracts() -
                 description="Annual report",
             )
         ],
+        search_hits=[
+            RuntimeSecSearchHit(
+                accession_number="0001045810-26-000010",
+                form_type="10-K",
+                filing_date=date(2026, 2, 20),
+                cik="0001045810",
+                ticker="NVDA",
+                entity_name="NVIDIA CORP",
+                primary_document="nvda-20260131.htm",
+                url="https://www.sec.gov/Archives/edgar/data/1045810/fixture.htm",
+                description="Annual report",
+                matched_text="Annual report",
+            )
+        ],
+        ownership_transactions=[
+            RuntimeSecOwnershipTransaction(
+                accession_number="0001045810-26-000020",
+                filing_date=date(2026, 2, 21),
+                issuer_name="NVIDIA CORP",
+                issuer_ticker="NVDA",
+                reporting_owner_name="Ada Lovelace",
+                transaction_date=date(2026, 2, 20),
+                transaction_code="P",
+                acquired_disposed_code="A",
+                shares=Decimal("10"),
+                price=Decimal("120.25"),
+                ownership_nature="D",
+            )
+        ],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(sec_payload)
     assert set(sec_payload) == {
         "toolKey",
         "ticker",
+        "query",
         "cik",
         "entityName",
         "filings",
+        "searchHits",
+        "ownershipTransactions",
         "warnings",
     }
     assert sec_payload["toolKey"] == SEC_FILINGS_LOOKUP_TOOL_KEY
@@ -2263,6 +2437,33 @@ def test_runtime_types_digital_oracle_results_serialize_normalized_contracts() -
         "primaryDocument": "nvda-20260131.htm",
         "url": "https://www.sec.gov/Archives/edgar/data/1045810/fixture.htm",
         "description": "Annual report",
+    }
+    sec_search_hits = cast(list[dict[str, object]], sec_payload["searchHits"])
+    assert sec_search_hits[0] == {
+        "accessionNumber": "0001045810-26-000010",
+        "formType": "10-K",
+        "filingDate": "2026-02-20",
+        "cik": "0001045810",
+        "ticker": "NVDA",
+        "entityName": "NVIDIA CORP",
+        "primaryDocument": "nvda-20260131.htm",
+        "url": "https://www.sec.gov/Archives/edgar/data/1045810/fixture.htm",
+        "description": "Annual report",
+        "matchedText": "Annual report",
+    }
+    sec_ownership = cast(list[dict[str, object]], sec_payload["ownershipTransactions"])
+    assert sec_ownership[0] == {
+        "accessionNumber": "0001045810-26-000020",
+        "filingDate": "2026-02-21",
+        "issuerName": "NVIDIA CORP",
+        "issuerTicker": "NVDA",
+        "reportingOwnerName": "Ada Lovelace",
+        "transactionDate": "2026-02-20",
+        "transactionCode": "P",
+        "acquiredDisposedCode": "A",
+        "shares": "10",
+        "price": "120.25",
+        "ownershipNature": "D",
     }
 
     sentiment_warning = RuntimeToolWarning(
@@ -2650,8 +2851,21 @@ def test_news_lookup_contract_remains_news_only_and_backward_compatible() -> Non
 
     assert NEWS_LOOKUP_TOOL_SPEC.key == NEWS_LOOKUP_TOOL_KEY
     assert NEWS_LOOKUP_TOOL_SPEC.openai_function_name == NEWS_LOOKUP_OPENAI_FUNCTION_NAME
-    assert list(properties) == ["symbols", "query", "startDate", "endDate", "itemLimit"]
-    assert parameters["required"] == ["symbols", "query", "startDate", "endDate", "itemLimit"]
+    assert list(properties) == ["symbols", "query", "scope", "startDate", "endDate", "itemLimit"]
+    assert parameters["required"] == [
+        "symbols",
+        "query",
+        "scope",
+        "startDate",
+        "endDate",
+        "itemLimit",
+    ]
+    assert cast(dict[str, object], properties["scope"])["enum"] == [
+        "symbol",
+        "market",
+        "global",
+        None,
+    ]
     assert "sources" not in properties
     assert "sourceBlocks" not in properties
 
@@ -2660,6 +2874,7 @@ def test_news_lookup_contract_remains_news_only_and_backward_compatible() -> Non
             {
                 "symbols": [" nvda ", "NVDA"],
                 "query": " earnings ",
+                "scope": "symbol",
                 "startDate": None,
                 "endDate": None,
                 "itemLimit": None,
@@ -2669,6 +2884,7 @@ def test_news_lookup_contract_remains_news_only_and_backward_compatible() -> Non
     assert parsed == {
         "symbols": ["NVDA"],
         "query": "earnings",
+        "scope": "symbol",
         "start_date": None,
         "end_date": None,
         "item_limit": 25,
@@ -2691,6 +2907,70 @@ def test_news_lookup_contract_remains_news_only_and_backward_compatible() -> Non
     }
     assert "sourceBlocks" not in payload
     assert "metrics" not in payload
+
+
+def test_news_lookup_parser_supports_bounded_global_scope_without_social_mutation() -> None:
+    parsed = parse_news_lookup_arguments(
+        json.dumps(
+            {
+                "symbols": None,
+                "query": "macro liquidity and export controls",
+                "scope": " global ",
+                "startDate": "2026-01-01T00:00:00Z",
+                "endDate": "2026-01-03T00:00:00Z",
+                "itemLimit": 10,
+            }
+        )
+    )
+
+    assert parsed == {
+        "symbols": [],
+        "query": "macro liquidity and export controls",
+        "scope": "global",
+        "start_date": datetime(2026, 1, 1, tzinfo=UTC),
+        "end_date": datetime(2026, 1, 3, tzinfo=UTC),
+        "item_limit": 10,
+    }
+
+    with pytest.raises(RuntimeToolError, match="scope must use: global, market, symbol"):
+        _ = parse_news_lookup_arguments(
+            json.dumps(
+                {
+                    "symbols": None,
+                    "query": "markets",
+                    "scope": "combined_sentiment",
+                    "startDate": None,
+                    "endDate": None,
+                    "itemLimit": None,
+                }
+            )
+        )
+    with pytest.raises(RuntimeToolError, match="scope symbol requires symbols"):
+        _ = parse_news_lookup_arguments(
+            json.dumps(
+                {
+                    "symbols": None,
+                    "query": "markets",
+                    "scope": "symbol",
+                    "startDate": None,
+                    "endDate": None,
+                    "itemLimit": None,
+                }
+            )
+        )
+    with pytest.raises(RuntimeToolError, match="query must be at most 240 characters"):
+        _ = parse_news_lookup_arguments(
+            json.dumps(
+                {
+                    "symbols": None,
+                    "query": "x" * 241,
+                    "scope": "global",
+                    "startDate": None,
+                    "endDate": None,
+                    "itemLimit": None,
+                }
+            )
+        )
 
 
 def test_indicator_contract_requires_warmup_reasons_and_rejects_lookahead() -> None:
@@ -2945,7 +3225,7 @@ def test_market_data_news_snapshot_truncates_results_and_normalizes_dates(
     payload = result.model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(payload)
     assert provider.news_calls == [
-        (["NVDA"], "earnings", start_date.astimezone(UTC), end_date.astimezone(UTC), 3)
+        (["NVDA"], "earnings", "symbol", start_date.astimezone(UTC), end_date.astimezone(UTC), 3)
     ]
     assert payload["query"] == "earnings"
     assert payload["symbols"] == ["NVDA"]
@@ -2957,8 +3237,77 @@ def test_market_data_news_snapshot_truncates_results_and_normalizes_dates(
         {
             "code": "news_truncated",
             "message": "News results were truncated to 2 items",
-            "details": {"limit": "2"},
+            "details": {"limit": "2", "scope": "symbol"},
         }
+    ]
+
+
+def test_market_data_news_snapshot_supports_global_scope_with_bounded_warning_and_dates(
+    session_factory: sessionmaker[Session],
+) -> None:
+    provider = _FinancialContractProvider(provider_name="global_news", news_count=4)
+    start_date = datetime(2026, 1, 2, 1, tzinfo=UTC)
+    end_date = datetime(2026, 1, 2, 2, tzinfo=UTC)
+
+    with session_factory() as session:
+        service = MarketDataService(session=session, quote_provider=provider)
+        result = service.get_news_snapshot(
+            symbols=[],
+            query="macro liquidity",
+            scope="global",
+            start_date=start_date,
+            end_date=end_date,
+            item_limit=10,
+            providers=[provider],
+        )
+
+    payload = result.model_dump(mode="json", by_alias=True)
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert provider.news_calls == [([], "macro liquidity", "global", start_date, end_date, 11)]
+    assert payload["query"] == "macro liquidity"
+    assert payload["symbols"] == []
+    item_payload = cast(list[dict[str, object]], payload["items"])
+    assert [item["title"] for item in item_payload] == ["News 2", "News 1"]
+    assert payload["warnings"] == [
+        {
+            "code": "news_global_coverage_limited",
+            "message": "Global news coverage is bounded by the configured finance provider",
+            "details": {"scope": "global", "provider": "global_news"},
+        }
+    ]
+
+
+def test_market_data_news_snapshot_warns_for_empty_global_coverage(
+    session_factory: sessionmaker[Session],
+) -> None:
+    provider = _FinancialContractProvider(provider_name="empty_global_news", news_count=0)
+
+    with session_factory() as session:
+        service = MarketDataService(session=session, quote_provider=provider)
+        result = service.get_news_snapshot(
+            query="macro liquidity",
+            scope="global",
+            providers=[provider],
+        )
+
+    payload = result.model_dump(mode="json", by_alias=True)
+    assert payload["items"] == []
+    assert payload["warnings"] == [
+        {
+            "code": "news_global_coverage_limited",
+            "message": "Global news coverage is bounded by the configured finance provider",
+            "details": {"scope": "global", "provider": "empty_global_news"},
+        },
+        {
+            "code": "news_empty",
+            "message": "No news returned for the request",
+            "details": {
+                "symbols": "",
+                "query": "macro liquidity",
+                "scope": "global",
+                "provider": "empty_global_news",
+            },
+        },
     ]
 
 
@@ -3042,7 +3391,7 @@ def test_market_data_indicator_snapshot_uses_bounded_ohlcv_without_lookahead(
             current_date=current_date,
             start_date=start_date,
             end_date=current_date,
-            sma_windows=(2,),
+            indicators=(MarketIndicatorSelection(indicator="sma", window=2),),
             row_limit=3,
         )
 
@@ -3061,10 +3410,9 @@ def test_market_data_indicator_snapshot_uses_bounded_ohlcv_without_lookahead(
         "2026-01-02T17:00:00Z",
         "2026-01-03T16:00:00Z",
     ]
-    assert rows[0]["values"] == [
-        {"name": "close", "value": "119.75", "nullReason": None},
-        {"name": "sma_2", "value": None, "nullReason": "warmup"},
-    ]
+    row_1_values = {item["name"]: item for item in cast(list[dict[str, object]], rows[0]["values"])}
+    assert row_1_values["close"] == {"name": "close", "value": "119.75", "nullReason": None}
+    assert row_1_values["sma_2"] == {"name": "sma_2", "value": None, "nullReason": "warmup"}
     assert rows[1]["values"] == [
         {"name": "close", "value": "120.00", "nullReason": None},
         {"name": "sma_2", "value": "119.875", "nullReason": None},
@@ -3088,7 +3436,7 @@ def test_market_data_indicator_snapshot_marks_insufficient_history_nulls(
             current_date=datetime(2026, 1, 3, 16, tzinfo=UTC),
             start_date=datetime(2026, 1, 1, tzinfo=UTC),
             end_date=datetime(2026, 1, 3, 16, tzinfo=UTC),
-            sma_windows=(5,),
+            indicators=(MarketIndicatorSelection(indicator="sma", window=5),),
             row_limit=3,
         )
 
@@ -3117,6 +3465,7 @@ def test_market_data_indicator_snapshot_rejects_invalid_bounds_and_future_rows(
                 current_date=datetime(2026, 1, 4, tzinfo=UTC),
                 start_date=datetime(2026, 1, 4, tzinfo=UTC),
                 end_date=datetime(2026, 1, 3, tzinfo=UTC),
+                indicators=(MarketIndicatorSelection(indicator="sma", window=2),),
             )
         with pytest.raises(QuoteProviderError, match="endDate cannot be after currentDate"):
             _ = service.get_indicator_snapshot(
@@ -3124,6 +3473,7 @@ def test_market_data_indicator_snapshot_rejects_invalid_bounds_and_future_rows(
                 current_date=datetime(2026, 1, 2, tzinfo=UTC),
                 start_date=datetime(2026, 1, 1, tzinfo=UTC),
                 end_date=datetime(2026, 1, 3, tzinfo=UTC),
+                indicators=(MarketIndicatorSelection(indicator="sma", window=2),),
             )
 
     assert provider.ohlcv_calls == []
@@ -3170,7 +3520,7 @@ def test_market_data_indicator_snapshot_rejects_invalid_bounds_and_future_rows(
                 current_date=current_date,
                 start_date=current_date,
                 end_date=current_date,
-                sma_windows=(2,),
+                indicators=(MarketIndicatorSelection(indicator="sma", window=2),),
             )
 
 
@@ -3467,16 +3817,19 @@ def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typ
     registry = RuntimeToolRegistry(RUNTIME_TOOL_SPECS, enabled_extension_keys=set())
     context = _runtime_context(fail_on_session=True)
 
-    assert registry.get_openai_tools({REPORT_LOOKUP_TOOL_KEY}) == []
+    assert registry.get_openai_tools({REPORT_LOOKUP_TOOL_KEY, NEWS_LOOKUP_TOOL_KEY}) == []
     assert registry.get_guidance({REPORT_LOOKUP_TOOL_KEY}) == ""
     assert registry.get_openai_tools(set(_OLD_CORE_MEMORY_TOOL_KEYS)) == []
     assert registry.get_guidance(set(_OLD_CORE_MEMORY_TOOL_KEYS)) == ""
 
     with pytest.raises(RuntimeToolError) as finance_exc_info:
         _ = registry.dispatch(
-            name=REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
-            arguments_json='{"limit":50}',
-            granted_tool_keys={REPORT_LOOKUP_TOOL_KEY},
+            name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json=(
+                '{"symbols":null,"query":"macro","scope":"global",'
+                '"startDate":null,"endDate":null,"itemLimit":5}'
+            ),
+            granted_tool_keys={NEWS_LOOKUP_TOOL_KEY},
             context=context,
         )
 
@@ -3485,7 +3838,7 @@ def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typ
     assert finance_exc_info.value.details == [
         {
             "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": f"runtime.tool.{REPORT_LOOKUP_TOOL_KEY}",
+            "surface": f"runtime.tool.{NEWS_LOOKUP_TOOL_KEY}",
         }
     ]
 
@@ -3497,7 +3850,7 @@ def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typ
         (
             PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
             PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
-            '{"query":"NVDA earnings"}',
+            '{"query":"NVDA earnings","includeOrderBook":true,"depthLimit":2}',
         ),
         (
             SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -4261,7 +4614,11 @@ def test_market_data_history_lookup_parser_preserves_validation_messages(
                     "currentDate": "2026-01-03T16:00:00Z",
                     "startDate": "2026-01-01",
                     "endDate": "2026-01-03T12:00:00-04:00",
-                    "smaWindows": [20, 5, 20],
+                    "indicators": [
+                        {"type": "SMA", "window": 20},
+                        {"type": "ema", "window": 5},
+                        {"type": "sma", "window": 20},
+                    ],
                     "rowLimit": None,
                 }
             ),
@@ -4270,7 +4627,10 @@ def test_market_data_history_lookup_parser_preserves_validation_messages(
                 "current_date": datetime(2026, 1, 3, 16, tzinfo=UTC),
                 "start_date": datetime(2026, 1, 1, tzinfo=UTC),
                 "end_date": datetime(2026, 1, 3, 16, tzinfo=UTC),
-                "sma_windows": (20, 5),
+                "indicators": (
+                    MarketIndicatorSelection(indicator="sma", window=20),
+                    MarketIndicatorSelection(indicator="ema", window=5),
+                ),
                 "row_limit": 250,
             },
         ),
@@ -4279,6 +4639,7 @@ def test_market_data_history_lookup_parser_preserves_validation_messages(
             json.dumps(
                 {
                     "symbol": " nvda ",
+                    "metricNames": [" Revenue_Growth ", "market_cap", "market_cap"],
                     "statementTypes": [" Income_Statement ", "cash_flow", "cash_flow"],
                     "periods": ["ANNUAL", "trailing_twelve_months"],
                     "statementLimit": 2,
@@ -4286,6 +4647,7 @@ def test_market_data_history_lookup_parser_preserves_validation_messages(
             ),
             {
                 "symbol": "NVDA",
+                "metric_names": ("revenue_growth", "market_cap"),
                 "statement_types": ("income_statement", "cash_flow"),
                 "periods": ("annual", "trailing_twelve_months"),
                 "statement_limit": 2,
@@ -4305,6 +4667,7 @@ def test_market_data_history_lookup_parser_preserves_validation_messages(
             {
                 "symbols": ["NVDA", "AAPL"],
                 "query": "earnings",
+                "scope": "symbol",
                 "start_date": datetime(2026, 1, 1, tzinfo=UTC),
                 "end_date": None,
                 "item_limit": 2,
@@ -4356,6 +4719,86 @@ def test_generic_platform_market_data_runtime_tool_parsers_normalize_happy_paths
     assert parser(arguments_json) == expected_arguments
 
 
+def test_indicators_lookup_runtime_tool_spec_uses_expanded_selection_schema() -> None:
+    assert INDICATORS_LOOKUP_TOOL_SPEC.key == INDICATORS_LOOKUP_TOOL_KEY
+    assert (
+        INDICATORS_LOOKUP_TOOL_SPEC.openai_function_name == INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME
+    )
+    assert INDICATORS_LOOKUP_TOOL_SPEC.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert INDICATORS_LOOKUP_TOOL_SPEC.parser is parse_indicators_lookup_arguments
+
+    schema = INDICATORS_LOOKUP_TOOL_SPEC.parameters_schema
+    properties = cast(dict[str, object], schema["properties"])
+    indicators_property = cast(dict[str, object], properties["indicators"])
+    indicator_items = cast(dict[str, object], indicators_property["items"])
+    indicator_item_properties = cast(dict[str, object], indicator_items["properties"])
+    indicator_type_property = cast(dict[str, object], indicator_item_properties["type"])
+    assert schema["required"] == [
+        "symbol",
+        "currentDate",
+        "startDate",
+        "endDate",
+        "indicators",
+        "rowLimit",
+    ]
+    assert "smaWindows" not in properties
+    assert indicators_property["type"] == "array"
+    assert indicators_property["maxItems"] == 24
+    assert indicator_type_property["enum"] == [
+        "sma",
+        "ema",
+        "rsi",
+        "macd",
+        "bollinger_bands",
+        "atr",
+        "vwma",
+    ]
+
+
+def test_fundamentals_lookup_runtime_tool_spec_uses_metric_selection_schema() -> None:
+    assert FUNDAMENTALS_LOOKUP_TOOL_SPEC.key == FUNDAMENTALS_LOOKUP_TOOL_KEY
+    assert (
+        FUNDAMENTALS_LOOKUP_TOOL_SPEC.openai_function_name
+        == FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME
+    )
+    assert FUNDAMENTALS_LOOKUP_TOOL_SPEC.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert FUNDAMENTALS_LOOKUP_TOOL_SPEC.parser is parse_fundamentals_lookup_arguments
+
+    schema = FUNDAMENTALS_LOOKUP_TOOL_SPEC.parameters_schema
+    properties = cast(dict[str, object], schema["properties"])
+    metric_names_property = cast(dict[str, object], properties["metricNames"])
+    metric_name_items = cast(dict[str, object], metric_names_property["items"])
+    assert schema["required"] == [
+        "symbol",
+        "metricNames",
+        "statementTypes",
+        "periods",
+        "statementLimit",
+    ]
+    assert metric_names_property["type"] == ["array", "null"]
+    assert metric_name_items["enum"] == [
+        "beta",
+        "current_ratio",
+        "debt_to_equity",
+        "dividend_yield",
+        "earnings_growth",
+        "enterprise_value",
+        "ev_to_ebitda",
+        "forward_pe",
+        "free_cash_flow_margin",
+        "gross_margin",
+        "market_cap",
+        "net_margin",
+        "operating_margin",
+        "price_to_book",
+        "price_to_sales",
+        "return_on_assets",
+        "return_on_equity",
+        "revenue_growth",
+        "trailing_pe",
+    ]
+
+
 @pytest.mark.parametrize(
     ("parser", "function_name", "valid_arguments"),
     [
@@ -4377,7 +4820,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_normalize_happy_paths
                 "currentDate": "2026-01-03",
                 "startDate": "2026-01-01",
                 "endDate": "2026-01-03",
-                "smaWindows": [2],
+                "indicators": [{"type": "sma", "window": 2}],
                 "rowLimit": 3,
             },
         ),
@@ -4386,6 +4829,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_normalize_happy_paths
             FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME,
             {
                 "symbol": "NVDA",
+                "metricNames": None,
                 "statementTypes": None,
                 "periods": None,
                 "statementLimit": 3,
@@ -4492,7 +4936,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "currentDate": "2026-01-02",
                 "startDate": "2026-01-01",
                 "endDate": "2026-01-03",
-                "smaWindows": [2],
+                "indicators": [{"type": "sma", "window": 2}],
                 "rowLimit": 3,
             },
             "signaldeck_finance_indicators_lookup endDate cannot be after currentDate.",
@@ -4504,15 +4948,43 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "currentDate": "2026-01-03",
                 "startDate": "2026-01-01",
                 "endDate": "2026-01-03",
-                "smaWindows": [2],
+                "indicators": [{"type": "sma", "window": 2}],
                 "rowLimit": 501,
             },
             "signaldeck_finance_indicators_lookup rowLimit must be at most 500.",
         ),
         (
+            parse_indicators_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "currentDate": "2026-01-03",
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03",
+                "indicators": [{"type": "stochastic", "window": 2}],
+                "rowLimit": 3,
+            },
+            "signaldeck_finance_indicators_lookup indicator type must use: atr, "
+            + "bollinger_bands, ema, macd, rsi, sma, vwma.",
+        ),
+        (
+            parse_indicators_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "currentDate": "2026-01-03",
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03",
+                "indicators": [
+                    {"type": "macd", "fastWindow": 12, "slowWindow": 12, "signalWindow": 9}
+                ],
+                "rowLimit": 3,
+            },
+            "signaldeck_finance_indicators_lookup MACD fastWindow must be less than slowWindow.",
+        ),
+        (
             parse_fundamentals_lookup_arguments,
             {
                 "symbol": "NVDA",
+                "metricNames": None,
                 "statementTypes": ["statement"],
                 "periods": None,
                 "statementLimit": 3,
@@ -4524,6 +4996,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
             parse_fundamentals_lookup_arguments,
             {
                 "symbol": "NVDA",
+                "metricNames": None,
                 "statementTypes": None,
                 "periods": ["daily"],
                 "statementLimit": 3,
@@ -4535,11 +5008,28 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
             parse_fundamentals_lookup_arguments,
             {
                 "symbol": "NVDA",
+                "metricNames": None,
                 "statementTypes": None,
                 "periods": None,
                 "statementLimit": 13,
             },
             "signaldeck_finance_fundamentals_lookup statementLimit must be at most 12.",
+        ),
+        (
+            parse_fundamentals_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "metricNames": ["unsupported_metric"],
+                "statementTypes": None,
+                "periods": None,
+                "statementLimit": 3,
+            },
+            "signaldeck_finance_fundamentals_lookup metricNames must use: beta, "
+            + "current_ratio, debt_to_equity, dividend_yield, earnings_growth, "
+            + "enterprise_value, ev_to_ebitda, forward_pe, free_cash_flow_margin, "
+            + "gross_margin, market_cap, net_margin, operating_margin, price_to_book, "
+            + "price_to_sales, return_on_assets, return_on_equity, revenue_growth, "
+            + "trailing_pe.",
         ),
         (
             parse_news_lookup_arguments,
@@ -5022,7 +5512,17 @@ def test_indicators_lookup_dispatches_success_and_insufficient_history_nulls(
                 "currentDate": "2026-01-03T16:00:00Z",
                 "startDate": "2026-01-01",
                 "endDate": "2026-01-03T16:00:00Z",
-                "smaWindows": [2, 5],
+                "indicators": [
+                    {"type": "sma", "window": 2},
+                    {"type": "ema", "window": 2},
+                    {"type": "rsi", "window": 2},
+                    {"type": "macd", "fastWindow": 1, "slowWindow": 2, "signalWindow": 2},
+                    {"type": "bollinger_bands", "window": 2, "standardDeviations": 2},
+                    {"type": "atr", "window": 2},
+                    {"type": "vwma", "window": 2},
+                    {"type": "sma", "window": 5},
+                    {"type": "sma", "window": 2},
+                ],
                 "rowLimit": 3,
             }
         ),
@@ -5046,21 +5546,46 @@ def test_indicators_lookup_dispatches_success_and_insufficient_history_nulls(
     assert payload["symbol"] == "NVDA"
     assert payload["provider"] == "fake_runtime_provider"
     rows = cast(list[dict[str, object]], payload["rows"])
-    assert rows[0]["values"] == [
-        {"name": "close", "value": "119.75", "nullReason": None},
-        {"name": "sma_2", "value": None, "nullReason": "warmup"},
-        {"name": "sma_5", "value": None, "nullReason": "insufficient_history"},
-    ]
-    assert rows[1]["values"] == [
-        {"name": "close", "value": "120.00", "nullReason": None},
-        {"name": "sma_2", "value": "119.875", "nullReason": None},
-        {"name": "sma_5", "value": None, "nullReason": "insufficient_history"},
-    ]
-    assert rows[2]["values"] == [
-        {"name": "close", "value": "120.25", "nullReason": None},
-        {"name": "sma_2", "value": "120.125", "nullReason": None},
-        {"name": "sma_5", "value": None, "nullReason": "insufficient_history"},
-    ]
+    row_1_values = {item["name"]: item for item in cast(list[dict[str, object]], rows[0]["values"])}
+    assert row_1_values["close"] == {"name": "close", "value": "119.75", "nullReason": None}
+    assert row_1_values["sma_2"] == {"name": "sma_2", "value": None, "nullReason": "warmup"}
+    row_2_values = {item["name"]: item for item in cast(list[dict[str, object]], rows[1]["values"])}
+    assert row_2_values["ema_2"] == {"name": "ema_2", "value": "119.875", "nullReason": None}
+    assert row_2_values["atr_2"] == {"name": "atr_2", "value": "4.00", "nullReason": None}
+    assert row_2_values["sma_5"] == {
+        "name": "sma_5",
+        "value": None,
+        "nullReason": "insufficient_history",
+    }
+    row_3_values = {item["name"]: item for item in cast(list[dict[str, object]], rows[2]["values"])}
+    assert row_3_values["sma_2"] == {"name": "sma_2", "value": "120.125", "nullReason": None}
+    assert row_3_values["ema_2"]["nullReason"] is None
+    assert Decimal(cast(str, row_3_values["ema_2"]["value"])) == Decimal("120.125")
+    assert row_3_values["rsi_2"] == {"name": "rsi_2", "value": "100", "nullReason": None}
+    assert row_3_values["macd_1_2_2"]["nullReason"] is None
+    assert Decimal(cast(str, row_3_values["macd_1_2_2"]["value"])) == Decimal("0.125")
+    assert row_3_values["macd_signal_1_2_2"]["nullReason"] is None
+    assert Decimal(cast(str, row_3_values["macd_signal_1_2_2"]["value"])) == Decimal("0.125")
+    assert row_3_values["macd_histogram_1_2_2"]["nullReason"] is None
+    assert Decimal(cast(str, row_3_values["macd_histogram_1_2_2"]["value"])) == Decimal("0")
+    assert row_3_values["bollinger_upper_2_2"]["nullReason"] is None
+    assert Decimal(cast(str, row_3_values["bollinger_upper_2_2"]["value"])) == Decimal("120.375")
+    assert row_3_values["bollinger_middle_2_2"] == {
+        "name": "bollinger_middle_2_2",
+        "value": "120.125",
+        "nullReason": None,
+    }
+    assert row_3_values["bollinger_lower_2_2"] == {
+        "name": "bollinger_lower_2_2",
+        "value": "119.875",
+        "nullReason": None,
+    }
+    assert row_3_values["atr_2"]["nullReason"] is None
+    assert Decimal(cast(str, row_3_values["atr_2"]["value"])) == Decimal("3.25")
+    assert row_3_values["vwma_2"]["nullReason"] is None
+    assert Decimal(cast(str, row_3_values["vwma_2"]["value"])) == Decimal(
+        "120.1304347826086956521739130"
+    )
     assert payload["warnings"] == []
 
 
@@ -5079,6 +5604,7 @@ def test_fundamentals_lookup_dispatches_success_filters_and_limits_statements(
         arguments_json=json.dumps(
             {
                 "symbol": " nvda ",
+                "metricNames": None,
                 "statementTypes": None,
                 "periods": None,
                 "statementLimit": 3,
@@ -5092,6 +5618,7 @@ def test_fundamentals_lookup_dispatches_success_filters_and_limits_statements(
         arguments_json=json.dumps(
             {
                 "symbol": "NVDA",
+                "metricNames": ["free_cash_flow_margin", "revenue_growth"],
                 "statementTypes": ["cash_flow", "balance_sheet"],
                 "periods": ["quarterly", "trailing_twelve_months"],
                 "statementLimit": 1,
@@ -5108,15 +5635,18 @@ def test_fundamentals_lookup_dispatches_success_filters_and_limits_statements(
     assert payload["symbol"] == "NVDA"
     assert payload["provider"] == "fundamentals_primary"
     metrics = cast(list[dict[str, object]], payload["metrics"])
-    assert metrics == [
-        {
-            "name": "market_cap",
-            "value": "1000000.50",
-            "currency": "USD",
-            "period": "ttm",
-            "asOf": "2026-01-02T02:00:00Z",
-        }
+    assert [metric["name"] for metric in metrics] == [
+        "market_cap",
+        "revenue_growth",
+        "free_cash_flow_margin",
     ]
+    assert metrics[0] == {
+        "name": "market_cap",
+        "value": "1000000.50",
+        "currency": "USD",
+        "period": "ttm",
+        "asOf": "2026-01-02T02:00:00Z",
+    }
     statements = cast(list[dict[str, object]], payload["statements"])
     assert [statement["statementType"] for statement in statements] == [
         "income_statement",
@@ -5129,6 +5659,11 @@ def test_fundamentals_lookup_dispatches_success_filters_and_limits_statements(
         "trailing_twelve_months",
     ]
     filtered_statements = cast(list[dict[str, object]], filtered_payload["statements"])
+    filtered_metrics = cast(list[dict[str, object]], filtered_payload["metrics"])
+    assert [metric["name"] for metric in filtered_metrics] == [
+        "revenue_growth",
+        "free_cash_flow_margin",
+    ]
     assert filtered_statements == [
         {
             "statementType": "balance_sheet",
@@ -5153,6 +5688,7 @@ def test_news_lookup_dispatches_success_and_truncates(
             {
                 "symbols": [" nvda ", "AAPL", "NVDA"],
                 "query": " earnings ",
+                "scope": "symbol",
                 "startDate": "2026-01-01T19:00:00-05:00",
                 "endDate": "2026-01-02T19:00:00-05:00",
                 "itemLimit": 2,
@@ -5170,6 +5706,7 @@ def test_news_lookup_dispatches_success_and_truncates(
         (
             ["NVDA", "AAPL"],
             "earnings",
+            "symbol",
             datetime(2026, 1, 2, tzinfo=UTC),
             datetime(2026, 1, 3, tzinfo=UTC),
             3,
@@ -5184,7 +5721,7 @@ def test_news_lookup_dispatches_success_and_truncates(
         {
             "code": "news_truncated",
             "message": "News results were truncated to 2 items",
-            "details": {"limit": "2"},
+            "details": {"limit": "2", "scope": "symbol"},
         }
     ]
 
@@ -5256,6 +5793,7 @@ def test_fundamentals_lookup_provider_unavailable_returns_typed_empty_payload(
         arguments_json=json.dumps(
             {
                 "symbol": "NVDA",
+                "metricNames": None,
                 "statementTypes": None,
                 "periods": None,
                 "statementLimit": 3,
@@ -5301,6 +5839,7 @@ def test_news_lookup_provider_unavailable_returns_typed_empty_payload(
             {
                 "symbols": ["NVDA"],
                 "query": "earnings",
+                "scope": "symbol",
                 "startDate": None,
                 "endDate": None,
                 "itemLimit": 2,
@@ -5314,7 +5853,7 @@ def test_news_lookup_provider_unavailable_returns_typed_empty_payload(
     )
 
     _assert_native_runtime_payload_is_json_safe_and_camel(payload)
-    assert quote_provider.news_calls == [(["NVDA"], "earnings", None, None, 3)]
+    assert quote_provider.news_calls == [(["NVDA"], "earnings", "symbol", None, None, 3)]
     assert payload["toolKey"] == NEWS_LOOKUP_TOOL_KEY
     assert payload["symbols"] == ["NVDA"]
     assert payload["items"] == []
@@ -5390,6 +5929,8 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
                 "venues": [" Kalshi ", "polymarket", "kalshi"],
                 "itemLimit": 2,
                 "includeResolved": True,
+                "includeOrderBook": True,
+                "depthLimit": 4,
             }
         )
     )
@@ -5398,6 +5939,8 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
         "venues": ("kalshi", "polymarket"),
         "item_limit": 2,
         "include_resolved": True,
+        "include_order_book": True,
+        "depth_limit": 4,
     }
 
     with pytest.raises(RuntimeToolError) as invalid_venue:
@@ -5411,6 +5954,122 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
     assert invalid_limit.value.message == (
         "signaldeck_digital_oracle_prediction_markets_lookup itemLimit must be at most 20."
     )
+
+    with pytest.raises(RuntimeToolError) as invalid_depth:
+        _ = parse_prediction_markets_lookup_arguments(
+            '{"query":"Fed","includeOrderBook":true,"depthLimit":11}'
+        )
+    assert invalid_depth.value.message == (
+        "signaldeck_digital_oracle_prediction_markets_lookup depthLimit must be at most 10."
+    )
+
+    with pytest.raises(RuntimeToolError) as depth_without_order_book:
+        _ = parse_prediction_markets_lookup_arguments('{"query":"Fed","depthLimit":3}')
+    assert depth_without_order_book.value.message == (
+        "signaldeck_digital_oracle_prediction_markets_lookup depthLimit requires "
+        "includeOrderBook to be true."
+    )
+
+
+def test_prediction_markets_providers_map_requested_order_book_depth_and_warnings() -> None:
+    client = _FakePredictionMarketsJsonClient(
+        {
+            "gamma-api.polymarket.com/events": [
+                {
+                    "id": "pm-fed-event",
+                    "slug": "fed-cut",
+                    "title": "Fed cut odds",
+                    "active": True,
+                    "markets": json.dumps(
+                        [
+                            {
+                                "id": "pm-fed-yes",
+                                "question": "Will the Fed cut rates?",
+                                "outcomes": json.dumps(["Yes", "No"]),
+                                "outcomePrices": json.dumps(["0.61", "0.40"]),
+                                "orderBook": {
+                                    "bids": [
+                                        {"price": "0.60", "size": "100"},
+                                        {"price": "0.59", "size": "50"},
+                                    ],
+                                    "asks": [{"price": "0.62", "size": "70"}],
+                                },
+                            },
+                            {
+                                "id": "pm-fed-no-depth",
+                                "question": "Will the Fed pause?",
+                                "outcomes": json.dumps(["Yes", "No"]),
+                                "outcomePrices": json.dumps(["0.35", "0.65"]),
+                            },
+                        ]
+                    ),
+                }
+            ],
+            "api.elections.kalshi.com": {
+                "markets": [
+                    {
+                        "ticker": "KXFEDCUT-26",
+                        "event_ticker": "KXFEDCUT",
+                        "title": "Fed cut odds",
+                        "status": "open",
+                        "yes_bid": 55,
+                        "yes_ask": 57,
+                    }
+                ]
+            },
+        }
+    )
+    query = DigitalOraclePredictionMarketsProviderQuery(
+        query="Fed cut",
+        venue="polymarket",
+        item_limit=5,
+        include_resolved=False,
+        timeout_seconds=1.5,
+        include_order_book=True,
+        depth_limit=1,
+    )
+
+    polymarket_result = PolymarketPredictionMarketsProvider(client).lookup_prediction_markets(query)
+    kalshi_result = KalshiPredictionMarketsProvider(client).lookup_prediction_markets(
+        replace(query, venue="kalshi")
+    )
+
+    polymarket_payload = map_prediction_markets_result(
+        DigitalOraclePhase1Service(
+            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
+            prediction_market_providers=(
+                _FakeDigitalOraclePredictionProvider("polymarket", events=polymarket_result.events),
+            ),
+        ).lookup_prediction_markets(
+            DigitalOraclePredictionMarketsQuery(
+                query="Fed cut",
+                venues=("polymarket",),
+                include_order_book=True,
+                depth_limit=1,
+            )
+        )
+    ).model_dump(mode="json", by_alias=True)
+    polymarket_contracts = cast(
+        list[dict[str, object]],
+        cast(list[dict[str, object]], polymarket_payload["events"])[0]["contracts"],
+    )
+    kalshi_order_book = kalshi_result.events[0].contracts[0].order_book
+
+    assert polymarket_contracts[0]["orderBook"] == {
+        "bids": [{"price": "0.60", "size": "100"}],
+        "asks": [{"price": "0.62", "size": "70"}],
+        "spread": "0.02",
+        "depthLimit": 1,
+    }
+    assert "orderBook" in polymarket_contracts[1]
+    assert polymarket_contracts[1]["orderBook"] is None
+    assert [warning.code for warning in polymarket_result.warnings] == [
+        "prediction_markets_order_book_unavailable"
+    ]
+    assert kalshi_order_book is not None
+    assert kalshi_order_book.spread == Decimal("0.02")
+    assert [level.price for level in kalshi_order_book.bids] == [Decimal("0.55")]
+    assert [level.price for level in kalshi_order_book.asks] == [Decimal("0.57")]
 
 
 @pytest.mark.parametrize(
@@ -6262,9 +6921,19 @@ def test_sec_filings_runtime_tool_spec_uses_approved_parameters_schema() -> None
 
     schema = SEC_FILINGS_LOOKUP_TOOL_SPEC.parameters_schema
     properties = cast(dict[str, object], schema["properties"])
-    assert schema["required"] == ["ticker"]
-    assert set(properties) == {"ticker", "formTypes", "startDate", "endDate", "itemLimit"}
+    assert schema["required"] == []
+    assert set(properties) == {
+        "ticker",
+        "query",
+        "cik",
+        "formTypes",
+        "startDate",
+        "endDate",
+        "itemLimit",
+        "includeOwnershipTransactions",
+    }
     assert "edgarContactEmail" not in properties
+    assert cast(dict[str, object], properties["query"])["maxLength"] == 200
     assert cast(dict[str, object], properties["itemLimit"])["maximum"] == 50
 
 
@@ -6273,24 +6942,51 @@ def test_sec_filings_parser_normalizes_ticker_form_types_and_dates() -> None:
         json.dumps(
             {
                 "ticker": " nvda ",
+                "query": "  Annual   report  ",
+                "cik": "CIK1045810",
                 "formTypes": [" 10-k ", "8-K", "10-K"],
                 "startDate": "2026-01-01",
                 "endDate": "2026-12-31",
                 "itemLimit": 3,
+                "includeOwnershipTransactions": True,
             }
         )
     )
 
     assert arguments == {
         "ticker": "NVDA",
+        "query": "Annual report",
+        "cik": "0001045810",
         "form_types": ("10-K", "8-K"),
         "start_date": date(2026, 1, 1),
         "end_date": date(2026, 12, 31),
         "item_limit": 3,
+        "include_ownership_transactions": True,
+    }
+
+    assert parse_sec_filings_lookup_arguments(json.dumps({"cik": "320193"})) == {
+        "ticker": None,
+        "query": None,
+        "cik": "0000320193",
+        "form_types": None,
+        "start_date": None,
+        "end_date": None,
+        "item_limit": None,
+        "include_ownership_transactions": False,
     }
 
     with pytest.raises(RuntimeToolError, match="unsupported fields"):
         _ = parse_sec_filings_lookup_arguments(json.dumps({"ticker": "NVDA", "contactEmail": "x"}))
+    with pytest.raises(RuntimeToolError, match="ticker or cik is required"):
+        _ = parse_sec_filings_lookup_arguments(json.dumps({"query": "annual report"}))
+    with pytest.raises(RuntimeToolError, match="query must not be empty"):
+        _ = parse_sec_filings_lookup_arguments(json.dumps({"ticker": "NVDA", "query": "   "}))
+    with pytest.raises(RuntimeToolError, match="cik must contain 1 to 10 digits"):
+        _ = parse_sec_filings_lookup_arguments(json.dumps({"cik": "12-34"}))
+    with pytest.raises(RuntimeToolError, match="includeOwnershipTransactions must be a boolean"):
+        _ = parse_sec_filings_lookup_arguments(
+            json.dumps({"ticker": "NVDA", "includeOwnershipTransactions": "yes"})
+        )
     with pytest.raises(RuntimeToolError, match="startDate must be before or equal to endDate"):
         _ = parse_sec_filings_lookup_arguments(
             json.dumps(
@@ -6304,6 +7000,52 @@ def test_sec_filings_parser_normalizes_ticker_form_types_and_dates() -> None:
 
 
 def test_edgar_sec_filings_provider_maps_company_submissions_to_normalized_filings() -> None:
+    form4_xml = """
+<ownershipDocument>
+  <issuer>
+    <issuerName>NVIDIA CORP</issuerName>
+    <issuerTradingSymbol>NVDA</issuerTradingSymbol>
+  </issuer>
+  <reportingOwner>
+    <reportingOwnerId><rptOwnerName>Ada Lovelace</rptOwnerName></reportingOwnerId>
+  </reportingOwner>
+  <nonDerivativeTable>
+    <nonDerivativeTransaction>
+      <transactionDate><value>2026-02-21</value></transactionDate>
+      <transactionCoding><transactionCode>P</transactionCode></transactionCoding>
+      <transactionAmounts>
+        <transactionShares><value>10</value></transactionShares>
+        <transactionPricePerShare><value>120.25</value></transactionPricePerShare>
+        <transactionAcquiredDisposedCode><value>A</value></transactionAcquiredDisposedCode>
+      </transactionAmounts>
+      <ownershipNature><directOrIndirectOwnership><value>D</value></directOrIndirectOwnership></ownershipNature>
+    </nonDerivativeTransaction>
+  </nonDerivativeTable>
+</ownershipDocument>
+"""
+    newer_form4_xml = """
+<ownershipDocument>
+  <issuer>
+    <issuerName>NVIDIA CORP</issuerName>
+    <issuerTradingSymbol>NVDA</issuerTradingSymbol>
+  </issuer>
+  <reportingOwner>
+    <reportingOwnerId><rptOwnerName>Grace Hopper</rptOwnerName></reportingOwnerId>
+  </reportingOwner>
+  <nonDerivativeTable>
+    <nonDerivativeTransaction>
+      <transactionDate><value>2026-03-04</value></transactionDate>
+      <transactionCoding><transactionCode>S</transactionCode></transactionCoding>
+      <transactionAmounts>
+        <transactionShares><value>5</value></transactionShares>
+        <transactionPricePerShare><value>130.50</value></transactionPricePerShare>
+        <transactionAcquiredDisposedCode><value>D</value></transactionAcquiredDisposedCode>
+      </transactionAmounts>
+      <ownershipNature><directOrIndirectOwnership><value>I</value></directOrIndirectOwnership></ownershipNature>
+    </nonDerivativeTransaction>
+  </nonDerivativeTable>
+</ownershipDocument>
+"""
     client = _FakeEdgarJsonClient(
         {
             "company_tickers": {
@@ -6313,16 +7055,42 @@ def test_edgar_sec_filings_provider_maps_company_submissions_to_normalized_filin
                 "name": "NVIDIA CORP",
                 "filings": {
                     "recent": {
-                        "accessionNumber": ["0001045810-26-000010", "0001045810-26-000011"],
-                        "form": ["10-K", "8-K"],
-                        "filingDate": ["2026-02-20", "2026-03-01"],
-                        "acceptanceDateTime": ["2026-02-20T16:30:01.000Z", "20260301120000"],
-                        "primaryDocument": ["nvda-20260131.htm", "nvda-8k.htm"],
-                        "primaryDocDescription": ["Annual report", "Current report"],
+                        "accessionNumber": [
+                            "0001045810-26-000010",
+                            "0001045810-26-000011",
+                            "0001045810-26-000020",
+                            "0001045810-26-000021",
+                        ],
+                        "form": ["10-K", "8-K", "4", "4"],
+                        "filingDate": [
+                            "2026-02-20",
+                            "2026-03-01",
+                            "2026-02-22",
+                            "2026-03-05",
+                        ],
+                        "acceptanceDateTime": [
+                            "2026-02-20T16:30:01.000Z",
+                            "20260301120000",
+                            "2026-02-22T12:00:00Z",
+                            "2026-03-05T12:00:00Z",
+                        ],
+                        "primaryDocument": [
+                            "nvda-20260131.htm",
+                            "nvda-8k.htm",
+                            "form4.xml",
+                            "form4-new.xml",
+                        ],
+                        "primaryDocDescription": [
+                            "Annual report",
+                            "Current report",
+                            "Statement of changes in beneficial ownership",
+                            "Statement of changes in beneficial ownership",
+                        ],
                     }
                 },
             },
-        }
+        },
+        text_by_url_fragment={"form4.xml": form4_xml, "form4-new.xml": newer_form4_xml},
     )
     provider = EdgarSecFilingsProvider(http_client=client)
 
@@ -6332,9 +7100,10 @@ def test_edgar_sec_filings_provider_maps_company_submissions_to_normalized_filin
             form_types=(),
             start_date=None,
             end_date=None,
-            item_limit=10,
+            item_limit=2,
             edgar_contact_email="sec-contact@example.test",
             timeout_seconds=2.5,
+            include_ownership_transactions=True,
         )
     )
 
@@ -6346,12 +7115,30 @@ def test_edgar_sec_filings_provider_maps_company_submissions_to_normalized_filin
     assert result.cik == "0001045810"
     assert result.entity_name == "NVIDIA CORP"
     assert result.warnings == ()
-    assert [filing.form_type for filing in result.filings] == ["10-K", "8-K"]
+    assert [filing.form_type for filing in result.filings] == ["10-K", "8-K", "4", "4"]
     assert result.filings[0].accepted_at == datetime(2026, 2, 20, 16, 30, 1, tzinfo=UTC)
     assert result.filings[0].url == (
         "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000010/nvda-20260131.htm"
     )
     assert result.filings[0].description == "Annual report"
+    assert len(client.text_calls) == 1
+    assert client.text_calls[0]["contactEmail"] == "sec-contact@example.test"
+    assert "form4-new.xml" in str(client.text_calls[0]["url"])
+    assert result.ownership_transactions == (
+        DigitalOracleSecOwnershipTransaction(
+            accession_number="0001045810-26-000021",
+            filing_date=date(2026, 3, 5),
+            issuer_name="NVIDIA CORP",
+            issuer_ticker="NVDA",
+            reporting_owner_name="Grace Hopper",
+            transaction_date=date(2026, 3, 4),
+            transaction_code="S",
+            acquired_disposed_code="D",
+            shares=Decimal("5"),
+            price=Decimal("130.50"),
+            ownership_nature="I",
+        ),
+    )
 
 
 def test_edgar_sec_filings_provider_uses_first_exact_ticker_when_mapping_is_ambiguous() -> None:
@@ -6394,6 +7181,49 @@ def test_edgar_sec_filings_provider_uses_first_exact_ticker_when_mapping_is_ambi
     assert result.entity_name == "FIRST NVDA CORP"
     assert result.filings[0].accession_number == "0001111111-26-000010"
     assert result.warnings == ()
+
+
+def test_edgar_sec_filings_provider_supports_cik_lookup_without_ticker() -> None:
+    client = _FakeEdgarJsonClient(
+        {
+            "company_tickers": {
+                "0": {"cik_str": 320193, "ticker": "AAPL", "title": "APPLE INC"},
+            },
+            "CIK0000320193": {
+                "name": "APPLE INC",
+                "filings": {
+                    "recent": {
+                        "accessionNumber": ["0000320193-26-000010"],
+                        "form": ["10-K"],
+                        "filingDate": ["2026-02-20"],
+                    }
+                },
+            },
+        }
+    )
+
+    result = EdgarSecFilingsProvider(http_client=client).lookup_sec_filings(
+        DigitalOracleSecFilingsProviderQuery(
+            ticker=None,
+            query=None,
+            cik="0000320193",
+            form_types=(),
+            start_date=None,
+            end_date=None,
+            item_limit=10,
+            edgar_contact_email="sec-contact@example.test",
+            timeout_seconds=2.5,
+        )
+    )
+
+    assert [call["url"] for call in client.calls] == [
+        "https://www.sec.gov/files/company_tickers.json",
+        "https://data.sec.gov/submissions/CIK0000320193.json",
+    ]
+    assert result.ticker == "AAPL"
+    assert result.cik == "0000320193"
+    assert result.entity_name == "APPLE INC"
+    assert result.filings[0].accession_number == "0000320193-26-000010"
 
 
 def test_edgar_sec_filings_provider_tolerates_optional_arrays_and_reuses_cik_cache() -> None:
@@ -6587,10 +7417,13 @@ def test_sec_filings_runtime_executor_filters_forms_dates_and_returns_normalized
                 json.dumps(
                     {
                         "ticker": " nvda ",
+                        "query": "annual report",
+                        "cik": "1045810",
                         "formTypes": ["10-k", "8-k"],
                         "startDate": "2026-01-01",
                         "endDate": "2026-12-31",
                         "itemLimit": 5,
+                        "includeOwnershipTransactions": True,
                     }
                 )
             ),
@@ -6599,11 +7432,14 @@ def test_sec_filings_runtime_executor_filters_forms_dates_and_returns_normalized
         reset_settings_cache()
 
     assert provider.calls[0].ticker == "NVDA"
+    assert provider.calls[0].query == "annual report"
+    assert provider.calls[0].cik == "0001045810"
     assert provider.calls[0].form_types == ("10-K", "8-K")
     assert provider.calls[0].start_date == date(2026, 1, 1)
     assert provider.calls[0].end_date == date(2026, 12, 31)
     assert provider.calls[0].item_limit == 5
     assert provider.calls[0].edgar_contact_email == "sec-contact@example.test"
+    assert provider.calls[0].include_ownership_transactions is True
     _assert_native_runtime_payload_is_json_safe_and_camel(payload)
     assert payload["toolKey"] == SEC_FILINGS_LOOKUP_TOOL_KEY
     assert payload["ticker"] == "NVDA"
@@ -6621,6 +7457,22 @@ def test_sec_filings_runtime_executor_filters_forms_dates_and_returns_normalized
             "description": "Annual report",
         }
     ]
+    search_hits = cast(list[dict[str, object]], payload["searchHits"])
+    assert search_hits == [
+        {
+            "accessionNumber": "0001045810-26-000010",
+            "formType": "10-K",
+            "filingDate": "2026-02-20",
+            "cik": "0001045810",
+            "ticker": "NVDA",
+            "entityName": "NVIDIA CORP",
+            "primaryDocument": "nvda-20260131.htm",
+            "url": "https://www.sec.gov/Archives/edgar/data/1045810/fixture.htm",
+            "description": "Annual report",
+            "matchedText": "Annual report",
+        }
+    ]
+    assert payload["ownershipTransactions"] == []
     assert payload["warnings"] == []
 
 
