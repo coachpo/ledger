@@ -143,15 +143,57 @@ _EXTENSION_STATE_CREATE_CANONICAL_TABLE_SQL = f"""
     """
 _PRESET_PACKAGE_SQL_FILE = "".join(("trading", "agents", "_", "advisory", "_", "research", ".sql"))
 _DIGITAL_ORACLE_PRESET_PACKAGE_SQL_FILE = "digital_oracle_researcher.sql"
+_MACRO_PRESET_PACKAGE_SQL_FILE = "tradingagents_advisory_research_macro.sql"
+_MIXED_SIGNALS_PRESET_PACKAGE_SQL_FILE = "tradingagents_advisory_research_mixed_signals.sql"
 _PRESET_PACKAGE_KEY = _PRESET_PACKAGE_SQL_FILE.removesuffix(".sql")
 _DIGITAL_ORACLE_PRESET_PACKAGE_KEY = _DIGITAL_ORACLE_PRESET_PACKAGE_SQL_FILE.removesuffix(".sql")
+_MACRO_PRESET_PACKAGE_KEY = _MACRO_PRESET_PACKAGE_SQL_FILE.removesuffix(".sql")
+_MIXED_SIGNALS_PRESET_PACKAGE_KEY = _MIXED_SIGNALS_PRESET_PACKAGE_SQL_FILE.removesuffix(".sql")
 _PRESET_PACKAGE_MANIFEST_HASH = "c58db1b4bb8e66dcd95b479e238dda0d5a2f894d03c8986c0787f6638c31dc62"
 _PRESET_PACKAGE_COMPILED_HASH = "31d873e55180536aa501fc7b77d47e2ac2c42f489e8214a19748aacb3553b96a"
 _DIGITAL_ORACLE_PRESET_PACKAGE_MANIFEST_HASH = (
-    "263ec8b41685921dbc8c1b70554f6d1c6c5076abd778c9ad7f67fad4424ee64c"
+    "3745b83eadefe2974081b231b2907a0ca04e2188be339895a595eb473a454bf6"
 )
 _DIGITAL_ORACLE_PRESET_PACKAGE_COMPILED_HASH = (
-    "42d5928ae714a814d0753fa4f9e9e2097b4d808063bd25a62ed253a9ad4b2163"
+    "ff38846a3ab0eda32f2c57dc89b99abbe2d9e1a95c02be65071de320b4d1c353"
+)
+_MACRO_PRESET_PACKAGE_MANIFEST_HASH = (
+    "776d1d0984c11943800cb6e11873350d4b5155eb956f3a4b95fd6d5361001edc"
+)
+_MACRO_PRESET_PACKAGE_COMPILED_HASH = (
+    "ff83de867b7c43ce76753e54d16793b50e9aac22030893016cc6a69d979e9bd9"
+)
+_MIXED_SIGNALS_PRESET_PACKAGE_MANIFEST_HASH = (
+    "705a85499b1a559ce6ff5c73f79c4a1d982cb76bc4ae213af8b79cbbb8ca153d"
+)
+_MIXED_SIGNALS_PRESET_PACKAGE_COMPILED_HASH = (
+    "dca62a71471b322fdd2c20292c49467aff2c47f6b6d7794e5cc6dc8bf6be2939"
+)
+_BROWSER_PROVEN_PACKAGE_PRESETS = (
+    (
+        _PRESET_PACKAGE_SQL_FILE,
+        _PRESET_PACKAGE_KEY,
+        _PRESET_PACKAGE_MANIFEST_HASH,
+        _PRESET_PACKAGE_COMPILED_HASH,
+    ),
+    (
+        _DIGITAL_ORACLE_PRESET_PACKAGE_SQL_FILE,
+        _DIGITAL_ORACLE_PRESET_PACKAGE_KEY,
+        _DIGITAL_ORACLE_PRESET_PACKAGE_MANIFEST_HASH,
+        _DIGITAL_ORACLE_PRESET_PACKAGE_COMPILED_HASH,
+    ),
+    (
+        _MACRO_PRESET_PACKAGE_SQL_FILE,
+        _MACRO_PRESET_PACKAGE_KEY,
+        _MACRO_PRESET_PACKAGE_MANIFEST_HASH,
+        _MACRO_PRESET_PACKAGE_COMPILED_HASH,
+    ),
+    (
+        _MIXED_SIGNALS_PRESET_PACKAGE_SQL_FILE,
+        _MIXED_SIGNALS_PRESET_PACKAGE_KEY,
+        _MIXED_SIGNALS_PRESET_PACKAGE_MANIFEST_HASH,
+        _MIXED_SIGNALS_PRESET_PACKAGE_COMPILED_HASH,
+    ),
 )
 _DB_UPGRADE_MARKER_TABLE = "db_upgrade_markers"
 _WORKFLOW_PACKAGE_STARTUP_CUTOVER_MARKER_KEY = "workflow_package_artifact_cutover_v1"
@@ -2531,9 +2573,8 @@ def _ensure_browser_proven_package_preset(engine: Engine, table_names: set[str])
     if "workflow_packages" not in table_names:
         return
 
-    preset_sql_paths = (
-        _preset_package_sql_path(_PRESET_PACKAGE_SQL_FILE),
-        _preset_package_sql_path(_DIGITAL_ORACLE_PRESET_PACKAGE_SQL_FILE),
+    preset_sql_paths = tuple(
+        _preset_package_sql_path(preset[0]) for preset in _BROWSER_PROVEN_PACKAGE_PRESETS
     )
     if not any(path.exists() for path in preset_sql_paths):
         return
@@ -2558,22 +2599,15 @@ def _ensure_browser_proven_package_preset(engine: Engine, table_names: set[str])
                 run_columns=run_columns,
             )
 
-        _ensure_browser_proven_package_preset_row(
-            connection,
-            sql_file=_PRESET_PACKAGE_SQL_FILE,
-            package_key=_PRESET_PACKAGE_KEY,
-            manifest_hash=_PRESET_PACKAGE_MANIFEST_HASH,
-            compiled_hash=_PRESET_PACKAGE_COMPILED_HASH,
-            marker_applied=marker_applied,
-        )
-        _ensure_browser_proven_package_preset_row(
-            connection,
-            sql_file=_DIGITAL_ORACLE_PRESET_PACKAGE_SQL_FILE,
-            package_key=_DIGITAL_ORACLE_PRESET_PACKAGE_KEY,
-            manifest_hash=_DIGITAL_ORACLE_PRESET_PACKAGE_MANIFEST_HASH,
-            compiled_hash=_DIGITAL_ORACLE_PRESET_PACKAGE_COMPILED_HASH,
-            marker_applied=marker_applied,
-        )
+        for sql_file, package_key, manifest_hash, compiled_hash in _BROWSER_PROVEN_PACKAGE_PRESETS:
+            _ensure_browser_proven_package_preset_row(
+                connection,
+                sql_file=sql_file,
+                package_key=package_key,
+                manifest_hash=manifest_hash,
+                compiled_hash=compiled_hash,
+                marker_applied=marker_applied,
+            )
 
         if not marker_applied:
             _mark_upgrade_applied(
