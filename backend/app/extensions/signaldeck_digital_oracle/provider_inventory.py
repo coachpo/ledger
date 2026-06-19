@@ -5,13 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .runtime_types import (
+    CFTC_POSITIONING_LOOKUP_TOOL_KEY,
+    CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY,
+    MACRO_RATES_LOOKUP_TOOL_KEY,
     MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+    OPTIONS_LOOKUP_TOOL_KEY,
     PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
     SEC_FILINGS_LOOKUP_TOOL_KEY,
 )
 
 RATES_LOOKUP_DEFERRED_TOOL_KEY = "signaldeck.rates.lookup"
-NO_NEW_RUNTIME_KEYS_REGISTERED = True
+NO_NEW_RUNTIME_KEYS_REGISTERED = False
 UPSTREAM_LICENSE = "MIT, Copyright (c) 2026 komako-workshop"
 UPSTREAM_ATTRIBUTION_NOTE = (
     "Inventory is based on upstream module names and provider ownership only. "
@@ -64,6 +68,86 @@ IN_SCOPE_PROVIDER_INVENTORY: tuple[DigitalOracleProviderInventoryItem, ...] = (
         note="CNN Fear and Greed data feeds the preserved sentiment lookup key.",
     ),
     DigitalOracleProviderInventoryItem(
+        upstream_module="digital_oracle.providers.treasury",
+        upstream_provider="USTreasuryProvider",
+        capability_family="rates/macro",
+        migration_status="phase_1_in_scope",
+        signaldeck_tool_key=MACRO_RATES_LOOKUP_TOOL_KEY,
+        note="US Treasury signals map to the approved macro rates key.",
+    ),
+    DigitalOracleProviderInventoryItem(
+        upstream_module="digital_oracle.providers.bis",
+        upstream_provider="BisProvider",
+        capability_family="rates/macro",
+        migration_status="phase_1_in_scope",
+        signaldeck_tool_key=MACRO_RATES_LOOKUP_TOOL_KEY,
+        note="Central-bank policy rates and credit-gap signals map to macro rates.",
+    ),
+    DigitalOracleProviderInventoryItem(
+        upstream_module="digital_oracle.providers.worldbank",
+        upstream_provider="WorldBankProvider",
+        capability_family="rates/macro",
+        migration_status="phase_1_in_scope",
+        signaldeck_tool_key=MACRO_RATES_LOOKUP_TOOL_KEY,
+        note="Macro indicators map to the approved macro rates key.",
+    ),
+    DigitalOracleProviderInventoryItem(
+        upstream_module="digital_oracle.providers.cme_fedwatch",
+        upstream_provider="CMEFedWatchProvider",
+        capability_family="rates/macro",
+        migration_status="phase_1_in_scope",
+        signaldeck_tool_key=MACRO_RATES_LOOKUP_TOOL_KEY,
+        note="Fed-implied probabilities map to the approved macro rates key.",
+    ),
+    DigitalOracleProviderInventoryItem(
+        upstream_module="digital_oracle.providers.fred",
+        upstream_provider="FredProvider",
+        capability_family="rates/macro",
+        migration_status="phase_1_in_scope",
+        signaldeck_tool_key=MACRO_RATES_LOOKUP_TOOL_KEY,
+        note="FRED macro series map to the approved macro rates key.",
+    ),
+    DigitalOracleProviderInventoryItem(
+        upstream_module="digital_oracle.providers.deribit",
+        upstream_provider="DeribitProvider",
+        capability_family="derivatives/crypto",
+        migration_status="phase_1_in_scope",
+        signaldeck_tool_key=CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY,
+        note="Crypto option and futures signals map to the approved derivatives key.",
+    ),
+    DigitalOracleProviderInventoryItem(
+        upstream_module="digital_oracle.providers.coingecko",
+        upstream_provider="CoinGeckoProvider",
+        capability_family="derivatives/crypto",
+        migration_status="phase_1_in_scope",
+        signaldeck_tool_key=CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY,
+        note="Crypto spot and market-cap signals map to the approved derivatives key.",
+    ),
+    DigitalOracleProviderInventoryItem(
+        upstream_module="digital_oracle.providers.yahoo",
+        upstream_provider="YahooPriceProvider",
+        capability_family="options",
+        migration_status="phase_1_in_scope",
+        signaldeck_tool_key=OPTIONS_LOOKUP_TOOL_KEY,
+        note="Options-adjacent Yahoo signals map to the approved options key.",
+    ),
+    DigitalOracleProviderInventoryItem(
+        upstream_module="digital_oracle.providers.yfinance_provider",
+        upstream_provider="YFinanceProvider",
+        capability_family="options",
+        migration_status="phase_1_in_scope",
+        signaldeck_tool_key=OPTIONS_LOOKUP_TOOL_KEY,
+        note="Option-chain migration stays import-safe and maps to the approved options key.",
+    ),
+    DigitalOracleProviderInventoryItem(
+        upstream_module="digital_oracle.providers.cftc",
+        upstream_provider="CftcCotProvider",
+        capability_family="CFTC positioning",
+        migration_status="phase_1_unavailable_skeleton",
+        signaldeck_tool_key=CFTC_POSITIONING_LOOKUP_TOOL_KEY,
+        note="Futures positioning maps to the approved CFTC positioning key.",
+    ),
+    DigitalOracleProviderInventoryItem(
         upstream_module="SKILL.md and README methodology",
         upstream_provider="methodology/package patterns",
         capability_family="Workflow Package methodology",
@@ -77,78 +161,6 @@ IN_SCOPE_PROVIDER_INVENTORY: tuple[DigitalOracleProviderInventoryItem, ...] = (
 )
 
 DEFERRED_PROVIDER_INVENTORY: tuple[DigitalOracleProviderInventoryItem, ...] = (
-    DigitalOracleProviderInventoryItem(
-        upstream_module="digital_oracle.providers.treasury",
-        upstream_provider="USTreasuryProvider",
-        capability_family="rates/macro",
-        migration_status="deferred_first_candidate",
-        signaldeck_tool_key=RATES_LOOKUP_DEFERRED_TOOL_KEY,
-        note="First deferred follow-up candidate; no runtime key is registered now.",
-    ),
-    DigitalOracleProviderInventoryItem(
-        upstream_module="digital_oracle.providers.bis",
-        upstream_provider="BisProvider",
-        capability_family="rates/macro",
-        migration_status="deferred",
-        signaldeck_tool_key=None,
-        note="Central-bank policy rates and credit-gap signals need a future schema.",
-    ),
-    DigitalOracleProviderInventoryItem(
-        upstream_module="digital_oracle.providers.worldbank",
-        upstream_provider="WorldBankProvider",
-        capability_family="rates/macro",
-        migration_status="deferred",
-        signaldeck_tool_key=None,
-        note="Macro indicators need a future rates or macro capability decision.",
-    ),
-    DigitalOracleProviderInventoryItem(
-        upstream_module="digital_oracle.providers.cme_fedwatch",
-        upstream_provider="CMEFedWatchProvider",
-        capability_family="rates/macro",
-        migration_status="deferred",
-        signaldeck_tool_key=None,
-        note="Fed-implied probabilities stay deferred with the rates family.",
-    ),
-    DigitalOracleProviderInventoryItem(
-        upstream_module="digital_oracle.providers.deribit",
-        upstream_provider="DeribitProvider",
-        capability_family="derivatives/crypto",
-        migration_status="deferred",
-        signaldeck_tool_key=None,
-        note="Crypto derivatives need stable option and futures result schemas first.",
-    ),
-    DigitalOracleProviderInventoryItem(
-        upstream_module="digital_oracle.providers.coingecko",
-        upstream_provider="CoinGeckoProvider",
-        capability_family="derivatives/crypto",
-        migration_status="deferred",
-        signaldeck_tool_key=None,
-        note="Crypto spot and market-cap signals stay outside phase 1.",
-    ),
-    DigitalOracleProviderInventoryItem(
-        upstream_module="digital_oracle.providers.yahoo",
-        upstream_provider="YahooPriceProvider",
-        capability_family="derivatives/crypto",
-        migration_status="deferred_optional_dependency",
-        signaldeck_tool_key=None,
-        note="Options-adjacent use remains optional and must not require yfinance.",
-    ),
-    DigitalOracleProviderInventoryItem(
-        upstream_module="digital_oracle.providers.yfinance_provider",
-        upstream_provider="YFinanceProvider",
-        capability_family="derivatives/crypto",
-        migration_status="deferred_optional_dependency",
-        signaldeck_tool_key=None,
-        note="Option-chain migration requires lazy optional imports and tests first.",
-    ),
-    DigitalOracleProviderInventoryItem(
-        upstream_module="digital_oracle.providers.cftc",
-        upstream_provider="CftcCotProvider",
-        capability_family="CFTC positioning",
-        migration_status="deferred",
-        signaldeck_tool_key=None,
-        note="Futures positioning needs a separate capability-family contract.",
-    ),
     DigitalOracleProviderInventoryItem(
         upstream_module="digital_oracle.providers.web",
         upstream_provider="WebSearchProvider",

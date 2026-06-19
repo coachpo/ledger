@@ -41,6 +41,18 @@ class Settings(BaseSettings):
         default=True,
         alias="DIGITAL_ORACLE_MARKET_SENTIMENT_ENABLED",
     )
+    digital_oracle_macro_rates_enabled: bool = Field(
+        default=True, alias="DIGITAL_ORACLE_MACRO_RATES_ENABLED"
+    )
+    digital_oracle_crypto_derivatives_enabled: bool = Field(
+        default=True, alias="DIGITAL_ORACLE_CRYPTO_DERIVATIVES_ENABLED"
+    )
+    digital_oracle_cftc_positioning_enabled: bool = Field(
+        default=True, alias="DIGITAL_ORACLE_CFTC_POSITIONING_ENABLED"
+    )
+    digital_oracle_options_enabled: bool = Field(
+        default=True, alias="DIGITAL_ORACLE_OPTIONS_ENABLED"
+    )
     digital_oracle_prediction_markets_default_item_limit: int = Field(
         default=10,
         alias="DIGITAL_ORACLE_PREDICTION_MARKETS_DEFAULT_ITEM_LIMIT",
@@ -53,9 +65,27 @@ class Settings(BaseSettings):
         ge=1,
         le=50,
     )
+    digital_oracle_macro_rates_default_item_limit: int = Field(
+        default=10, alias="DIGITAL_ORACLE_MACRO_RATES_DEFAULT_ITEM_LIMIT", ge=1, le=50
+    )
+    digital_oracle_crypto_derivatives_default_item_limit: int = Field(
+        default=10,
+        alias="DIGITAL_ORACLE_CRYPTO_DERIVATIVES_DEFAULT_ITEM_LIMIT",
+        ge=1,
+        le=50,
+    )
+    digital_oracle_cftc_positioning_default_item_limit: int = Field(
+        default=10, alias="DIGITAL_ORACLE_CFTC_POSITIONING_DEFAULT_ITEM_LIMIT", ge=1, le=50
+    )
+    digital_oracle_options_default_item_limit: int = Field(
+        default=10, alias="DIGITAL_ORACLE_OPTIONS_DEFAULT_ITEM_LIMIT", ge=1, le=50
+    )
     digital_oracle_edgar_contact_email: str | None = Field(
         default=None,
         alias="DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL",
+    )
+    digital_oracle_fred_api_key: str | None = Field(
+        default=None, alias="DIGITAL_ORACLE_FRED_API_KEY"
     )
     agent_platform_encryption_key: str = Field(
         default=DEFAULT_AGENT_PLATFORM_ENCRYPTION_KEY,
@@ -176,15 +206,17 @@ class Settings(BaseSettings):
             return None
         return normalized.rstrip("/")
 
-    @field_validator("digital_oracle_edgar_contact_email", mode="before")
+    @field_validator(
+        "digital_oracle_edgar_contact_email",
+        "digital_oracle_fred_api_key",
+        mode="before",
+    )
     @classmethod
-    def normalize_digital_oracle_edgar_contact_email(cls, value: object) -> str | None:
+    def normalize_optional_digital_oracle_secret(cls, value: object) -> str | None:
         if value is None:
             return None
         normalized = str(value).strip()
-        if not normalized:
-            return None
-        return normalized
+        return normalized or None
 
     @field_validator("runtime_mode", mode="before")
     @classmethod

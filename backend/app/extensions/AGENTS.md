@@ -45,6 +45,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Extension-owned public runtime tool keys must use the canonical `signaldeck.<owner>.<tool_collection>.<tool>` scheme listed above; do not define ownerless aliases.
 - `ExtensionService` is the authority for persisted state, `/api/extensions` toggles, and enabled ToolCatalog/runtime views.
 - Public extension state stays slim: `key`, `label`, and `enabled` only. Keep registrar paths, owner keys, scaffold details, and plugin-manifest-style fields private.
+- During upstream migrations, provider/data lookup functions belong in the owning extension's provider wrappers, runtime tool specs/executors, and ToolCatalog metadata. Same or similar lookup functions from different upstream repos stay separate obligations unless a product decision intentionally narrows or merges them.
 
 ## ANTI-PATTERNS
 - Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.

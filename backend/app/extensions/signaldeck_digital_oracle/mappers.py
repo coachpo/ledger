@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from app.extensions.signaldeck_digital_oracle.runtime_types import (
+    RuntimeCftcPositioningLookupResult,
+    RuntimeCryptoDerivativesLookupResult,
+    RuntimeMacroRatesLookupResult,
     RuntimeMarketSentimentLookupResult,
+    RuntimeOptionsLookupResult,
     RuntimePredictionMarketContract,
     RuntimePredictionMarketEvent,
     RuntimePredictionMarketOrderBook,
@@ -14,7 +18,11 @@ from app.extensions.signaldeck_digital_oracle.runtime_types import (
 )
 
 from .types import (
+    DigitalOracleCftcPositioningResult,
+    DigitalOracleCryptoDerivativesResult,
+    DigitalOracleMacroRatesResult,
     DigitalOracleMarketSentimentResult,
+    DigitalOracleOptionsResult,
     DigitalOraclePredictionMarketContract,
     DigitalOraclePredictionMarketEvent,
     DigitalOraclePredictionMarketOrderBook,
@@ -71,6 +79,26 @@ def map_market_sentiment_result(
         source_url=result.source_url,
         warnings=list(result.warnings),
     )
+
+
+def map_macro_rates_result(result: DigitalOracleMacroRatesResult) -> RuntimeMacroRatesLookupResult:
+    return RuntimeMacroRatesLookupResult.model_validate(result)
+
+
+def map_crypto_derivatives_result(
+    result: DigitalOracleCryptoDerivativesResult,
+) -> RuntimeCryptoDerivativesLookupResult:
+    return RuntimeCryptoDerivativesLookupResult.model_validate(result)
+
+
+def map_cftc_positioning_result(
+    result: DigitalOracleCftcPositioningResult,
+) -> RuntimeCftcPositioningLookupResult:
+    return RuntimeCftcPositioningLookupResult.model_validate(result)
+
+
+def map_options_result(result: DigitalOracleOptionsResult) -> RuntimeOptionsLookupResult:
+    return RuntimeOptionsLookupResult.model_validate(result)
 
 
 def _map_prediction_market_event(
@@ -172,7 +200,11 @@ def _map_sec_ownership_transaction(
 
 
 __all__ = [
+    "map_cftc_positioning_result",
+    "map_crypto_derivatives_result",
+    "map_macro_rates_result",
     "map_market_sentiment_result",
+    "map_options_result",
     "map_prediction_markets_result",
     "map_sec_filings_result",
 ]

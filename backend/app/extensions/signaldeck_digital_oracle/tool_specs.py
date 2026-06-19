@@ -37,6 +37,46 @@ DIGITAL_ORACLE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = 
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
     ),
+    ServerDeclaredToolSpec(
+        key="signaldeck.digital_oracle.macro_rates.lookup",
+        display_name="Macro Rates Lookup",
+        description=(
+            "Read normalized macro, yield, policy-rate, and Fed-implied rates "
+            "series with structured warnings for partial provider coverage."
+        ),
+        module=_SERVER_DECLARED_MODULE,
+        owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
+    ),
+    ServerDeclaredToolSpec(
+        key="signaldeck.digital_oracle.crypto_derivatives.lookup",
+        display_name="Crypto Derivatives Lookup",
+        description=(
+            "Read normalized CoinGecko spot/global-market and Deribit futures, "
+            "options, and orderbook data with structured warnings for partial coverage."
+        ),
+        module=_SERVER_DECLARED_MODULE,
+        owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
+    ),
+    ServerDeclaredToolSpec(
+        key="signaldeck.digital_oracle.cftc_positioning.lookup",
+        display_name="CFTC Positioning Lookup",
+        description=(
+            "Read normalized CFTC Commitment of Traders positioning reports with "
+            "structured warnings for missing, stale, or malformed provider data."
+        ),
+        module=_SERVER_DECLARED_MODULE,
+        owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
+    ),
+    ServerDeclaredToolSpec(
+        key="signaldeck.digital_oracle.options.lookup",
+        display_name="Options Lookup",
+        description=(
+            "Read normalized Yahoo option-chain calls and puts through an optional "
+            "yfinance-backed provider with structured warnings for unavailable coverage."
+        ),
+        module=_SERVER_DECLARED_MODULE,
+        owner_extension_key=DIGITAL_ORACLE_EXTENSION_KEY,
+    ),
 )
 
 

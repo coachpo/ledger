@@ -10,13 +10,54 @@ from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.core.config import Settings
 from app.core.formatting import normalize_symbol
 
-from .config import PREDICTION_MARKET_VENUES, PredictionMarketVenue
+from .config import (
+    CFTC_POSITIONING_REPORT_TYPES,
+    CRYPTO_DERIVATIVES_DATA_TYPES,
+    CRYPTO_DERIVATIVES_VENUES,
+    MACRO_RATES_FAMILIES,
+    MACRO_RATES_SOURCES,
+    PREDICTION_MARKET_VENUES,
+    CftcPositioningReportType,
+    CryptoDerivativesDataType,
+    CryptoDerivativesVenue,
+    MacroRatesFamily,
+    MacroRatesSource,
+    PredictionMarketVenue,
+)
 from .factory import DigitalOraclePhase1ProviderBundle, create_digital_oracle_phase1_provider_bundle
 from .types import (
+    DigitalOracleCftcPositioningProvider,
+    DigitalOracleCftcPositioningProviderQuery,
+    DigitalOracleCftcPositioningProviderResult,
+    DigitalOracleCftcPositioningQuery,
+    DigitalOracleCftcPositioningReport,
+    DigitalOracleCftcPositioningResult,
+    DigitalOracleCryptoDerivativesGlobalMetrics,
+    DigitalOracleCryptoDerivativesOptionSummary,
+    DigitalOracleCryptoDerivativesOrderBook,
+    DigitalOracleCryptoDerivativesProvider,
+    DigitalOracleCryptoDerivativesProviderQuery,
+    DigitalOracleCryptoDerivativesProviderResult,
+    DigitalOracleCryptoDerivativesQuery,
+    DigitalOracleCryptoDerivativesResult,
+    DigitalOracleCryptoDerivativesSpotQuote,
+    DigitalOracleCryptoDerivativesTermPoint,
+    DigitalOracleMacroRatesProvider,
+    DigitalOracleMacroRatesProviderQuery,
+    DigitalOracleMacroRatesProviderResult,
+    DigitalOracleMacroRatesQuery,
+    DigitalOracleMacroRatesResult,
+    DigitalOracleMacroRatesSeries,
     DigitalOracleMarketSentimentProvider,
     DigitalOracleMarketSentimentProviderQuery,
     DigitalOracleMarketSentimentQuery,
     DigitalOracleMarketSentimentResult,
+    DigitalOracleOptionsChain,
+    DigitalOracleOptionsProvider,
+    DigitalOracleOptionsProviderQuery,
+    DigitalOracleOptionsProviderResult,
+    DigitalOracleOptionsQuery,
+    DigitalOracleOptionsResult,
     DigitalOraclePredictionMarketEvent,
     DigitalOraclePredictionMarketProvider,
     DigitalOraclePredictionMarketsProviderQuery,
@@ -49,6 +90,15 @@ _SEC_FILINGS_MAX_ITEM_LIMIT = 50
 _PREDICTION_MARKETS_OPERATION = "prediction_markets"
 _SEC_FILINGS_OPERATION = "sec_filings"
 _MARKET_SENTIMENT_OPERATION = "market_sentiment"
+_MACRO_RATES_OPERATION = "macro_rates"
+_CRYPTO_DERIVATIVES_OPERATION = "crypto_derivatives"
+_CFTC_POSITIONING_OPERATION = "cftc_positioning"
+_OPTIONS_OPERATION = "options"
+_MACRO_RATES_MAX_ITEM_LIMIT = 50
+_CRYPTO_DERIVATIVES_MAX_ITEM_LIMIT = 50
+_CRYPTO_DERIVATIVES_MAX_DEPTH_LIMIT = 10
+_CFTC_POSITIONING_MAX_ITEM_LIMIT = 50
+_OPTIONS_MAX_ITEM_LIMIT = 50
 _RESOLVED_PREDICTION_MARKET_STATUSES = {"closed", "expired", "resolved", "settled"}
 
 
@@ -74,6 +124,10 @@ class DigitalOraclePhase1Service:
         prediction_market_providers: Sequence[DigitalOraclePredictionMarketProvider] = (),
         sec_filings_provider: DigitalOracleSecFilingsProvider | None = None,
         market_sentiment_provider: DigitalOracleMarketSentimentProvider | None = None,
+        macro_rates_providers: Sequence[DigitalOracleMacroRatesProvider] = (),
+        crypto_derivatives_providers: Sequence[DigitalOracleCryptoDerivativesProvider] = (),
+        cftc_positioning_providers: Sequence[DigitalOracleCftcPositioningProvider] = (),
+        options_providers: Sequence[DigitalOracleOptionsProvider] = (),
     ) -> None:
         self._provider_bundle: DigitalOraclePhase1ProviderBundle = (
             provider_bundle or create_digital_oracle_phase1_provider_bundle(settings)
@@ -86,6 +140,21 @@ class DigitalOraclePhase1Service:
         self._market_sentiment_provider: DigitalOracleMarketSentimentProvider | None = (
             market_sentiment_provider
         )
+        self._macro_rates_providers_by_source: dict[
+            MacroRatesSource,
+            DigitalOracleMacroRatesProvider,
+        ] = {provider.source: provider for provider in macro_rates_providers}
+        self._crypto_derivatives_providers_by_venue: dict[
+            CryptoDerivativesVenue,
+            DigitalOracleCryptoDerivativesProvider,
+        ] = {provider.venue: provider for provider in crypto_derivatives_providers}
+        self._cftc_positioning_providers_by_name: dict[
+            str,
+            DigitalOracleCftcPositioningProvider,
+        ] = {provider.provider_name: provider for provider in cftc_positioning_providers}
+        self._options_providers_by_name: dict[str, DigitalOracleOptionsProvider] = {
+            provider.provider_name: provider for provider in options_providers
+        }
 
     def lookup_prediction_markets(
         self,
@@ -309,13 +378,21 @@ class DigitalOraclePhase1Service:
             warnings.append(
                 empty_result_warning(operation=_SEC_FILINGS_OPERATION, provider="edgar")
             )
-        search_hits = _search_sec_filings(
-            filtered_filings,
-            query=search_query,
-            cik=provider_result.cik,
-            ticker=provider_result.ticker or ticker,
-            entity_name=provider_result.entity_name,
+        search_hits = _filter_sec_search_hits(
+            provider_result.search_hits,
+            form_types=form_types,
+            start_date=query.start_date,
+            end_date=query.end_date,
+            item_limit=item_limit,
         )
+        if not search_hits:
+            search_hits = _search_sec_filings(
+                filtered_filings,
+                query=search_query,
+                cik=provider_result.cik,
+                ticker=provider_result.ticker or ticker,
+                entity_name=provider_result.entity_name,
+            )
         if search_query is not None and not search_hits:
             warnings.append(empty_result_warning(operation="sec_filings_search", provider="edgar"))
         return DigitalOracleSecFilingsResult(
@@ -431,6 +508,466 @@ class DigitalOraclePhase1Service:
             warnings=tuple(warnings),
         )
 
+    def lookup_macro_rates(
+        self,
+        query: DigitalOracleMacroRatesQuery,
+    ) -> DigitalOracleMacroRatesResult:
+        normalized_query = _normalize_optional_text(query.query, field_name="query")
+        construction = self._provider_bundle.macro_rates
+        if construction.failure is not None:
+            return DigitalOracleMacroRatesResult(
+                query=normalized_query,
+                warnings=(
+                    warning_from_provider_failure(
+                        construction.failure,
+                        operation=_MACRO_RATES_OPERATION,
+                    ),
+                ),
+            )
+        provider_bundle = construction.provider
+        if provider_bundle is None:
+            return DigitalOracleMacroRatesResult(
+                query=normalized_query,
+                warnings=(unavailable_result_warning(operation=_MACRO_RATES_OPERATION),),
+            )
+
+        sources = _normalize_macro_sources(query.sources or MACRO_RATES_SOURCES)
+        families = _normalize_macro_families(query.families)
+        _validate_date_bounds(query.start_date, query.end_date)
+        item_limit = _normalize_limit(
+            query.item_limit,
+            default_limit=provider_bundle.default_item_limit,
+            max_limit=_MACRO_RATES_MAX_ITEM_LIMIT,
+            field_name="itemLimit",
+        )
+        warnings: list[RuntimeToolWarning] = []
+        uncovered_providers: set[str] = set()
+        calls: list[_ProviderCall[DigitalOracleMacroRatesProviderResult]] = []
+        descriptor_by_key = {descriptor.key: descriptor for descriptor in provider_bundle.providers}
+        failed_sources = {
+            str(failure.details.get("provider")): failure
+            for failure in provider_bundle.source_failures
+        }
+        for source in sources:
+            source_failure = failed_sources.get(source)
+            if source_failure is not None:
+                warnings.append(
+                    warning_from_provider_failure(source_failure, operation=_MACRO_RATES_OPERATION)
+                )
+                uncovered_providers.add(source)
+                continue
+            descriptor = descriptor_by_key.get(source)
+            provider = self._macro_rates_providers_by_source.get(source)
+            if descriptor is None or provider is None:
+                warnings.append(
+                    provider_unavailable_warning(
+                        operation=_MACRO_RATES_OPERATION,
+                        provider=source,
+                    )
+                )
+                uncovered_providers.add(source)
+                continue
+            provider_query = DigitalOracleMacroRatesProviderQuery(
+                source=source,
+                query=normalized_query,
+                families=families,
+                series_ids=query.series_ids,
+                countries=query.countries,
+                start_date=query.start_date,
+                end_date=query.end_date,
+                as_of_date=query.as_of_date,
+                item_limit=item_limit,
+                timeout_seconds=descriptor.timeout_seconds,
+                fred_api_key=provider_bundle.fred_api_key if source == "fred" else None,
+            )
+            calls.append(
+                _ProviderCall(
+                    provider=source,
+                    call=cast(
+                        Callable[[], DigitalOracleMacroRatesProviderResult],
+                        lambda provider=provider, provider_query=provider_query: (
+                            provider.lookup_macro_rates(provider_query)
+                        ),
+                    ),
+                )
+            )
+
+        series: list[DigitalOracleMacroRatesSeries] = []
+        for outcome in _gather_provider_calls(calls, operation=_MACRO_RATES_OPERATION):
+            if outcome.warning is not None:
+                warnings.append(outcome.warning)
+                uncovered_providers.add(outcome.provider)
+                continue
+            provider_result = cast(DigitalOracleMacroRatesProviderResult, outcome.result)
+            warnings.extend(provider_result.warnings)
+            provider_series = _filter_macro_rates_series(
+                provider_result.series,
+                families=families,
+                series_ids=query.series_ids,
+                countries=query.countries,
+                start_date=query.start_date,
+                end_date=query.end_date,
+                as_of_date=query.as_of_date,
+            )
+            if not provider_series:
+                warnings.append(
+                    empty_result_warning(
+                        operation=_MACRO_RATES_OPERATION,
+                        provider=outcome.provider,
+                    )
+                )
+                uncovered_providers.add(outcome.provider)
+                continue
+            series.extend(provider_series)
+
+        if len(series) > item_limit:
+            series = series[:item_limit]
+            warnings.append(
+                truncated_result_warning(
+                    operation=_MACRO_RATES_OPERATION,
+                    limit=item_limit,
+                )
+            )
+        _append_coverage_warning(
+            warnings,
+            operation=_MACRO_RATES_OPERATION,
+            requested_providers=sources,
+            uncovered_providers=tuple(sorted(uncovered_providers)),
+            has_results=bool(series),
+        )
+        return DigitalOracleMacroRatesResult(
+            query=normalized_query,
+            series=tuple(series),
+            warnings=tuple(warnings),
+        )
+
+    def lookup_crypto_derivatives(
+        self,
+        query: DigitalOracleCryptoDerivativesQuery,
+    ) -> DigitalOracleCryptoDerivativesResult:
+        construction = self._provider_bundle.crypto_derivatives
+        assets = _normalize_crypto_assets(query.assets)
+        if construction.failure is not None:
+            return DigitalOracleCryptoDerivativesResult(
+                assets=assets,
+                warnings=(
+                    warning_from_provider_failure(
+                        construction.failure,
+                        operation=_CRYPTO_DERIVATIVES_OPERATION,
+                    ),
+                ),
+            )
+        provider_bundle = construction.provider
+        if provider_bundle is None:
+            return DigitalOracleCryptoDerivativesResult(
+                assets=assets,
+                warnings=(unavailable_result_warning(operation=_CRYPTO_DERIVATIVES_OPERATION),),
+            )
+
+        venues = _normalize_crypto_venues(query.venues or CRYPTO_DERIVATIVES_VENUES)
+        data_types = _normalize_crypto_data_types(query.data_types)
+        item_limit = _normalize_limit(
+            query.item_limit,
+            default_limit=provider_bundle.default_item_limit,
+            max_limit=_CRYPTO_DERIVATIVES_MAX_ITEM_LIMIT,
+            field_name="itemLimit",
+        )
+        depth_limit = _normalize_limit(
+            query.depth_limit,
+            default_limit=5,
+            max_limit=_CRYPTO_DERIVATIVES_MAX_DEPTH_LIMIT,
+            field_name="depthLimit",
+        )
+        warnings: list[RuntimeToolWarning] = []
+        uncovered_providers: set[str] = set()
+        calls: list[_ProviderCall[DigitalOracleCryptoDerivativesProviderResult]] = []
+        descriptor_by_key = {descriptor.key: descriptor for descriptor in provider_bundle.providers}
+        for venue in venues:
+            descriptor = descriptor_by_key.get(venue)
+            provider = self._crypto_derivatives_providers_by_venue.get(venue)
+            if descriptor is None or provider is None:
+                warnings.append(
+                    provider_unavailable_warning(
+                        operation=_CRYPTO_DERIVATIVES_OPERATION,
+                        provider=venue,
+                    )
+                )
+                uncovered_providers.add(venue)
+                continue
+            provider_query = DigitalOracleCryptoDerivativesProviderQuery(
+                venue=venue,
+                assets=assets,
+                data_types=data_types,
+                expirations=query.expirations,
+                include_order_book=query.include_order_book,
+                depth_limit=depth_limit,
+                item_limit=item_limit,
+                timeout_seconds=descriptor.timeout_seconds,
+            )
+            calls.append(
+                _ProviderCall(
+                    provider=venue,
+                    call=cast(
+                        Callable[[], DigitalOracleCryptoDerivativesProviderResult],
+                        lambda provider=provider, provider_query=provider_query: (
+                            provider.lookup_crypto_derivatives(provider_query)
+                        ),
+                    ),
+                )
+            )
+
+        spot: list[DigitalOracleCryptoDerivativesSpotQuote] = []
+        global_metrics: list[DigitalOracleCryptoDerivativesGlobalMetrics] = []
+        term_structure: list[DigitalOracleCryptoDerivativesTermPoint] = []
+        options: list[DigitalOracleCryptoDerivativesOptionSummary] = []
+        order_books: list[DigitalOracleCryptoDerivativesOrderBook] = []
+        for outcome in _gather_provider_calls(calls, operation=_CRYPTO_DERIVATIVES_OPERATION):
+            if outcome.warning is not None:
+                warnings.append(outcome.warning)
+                uncovered_providers.add(outcome.provider)
+                continue
+            provider_result = cast(DigitalOracleCryptoDerivativesProviderResult, outcome.result)
+            warnings.extend(provider_result.warnings)
+            spot.extend(provider_result.spot)
+            global_metrics.extend(provider_result.global_metrics)
+            term_structure.extend(provider_result.term_structure)
+            options.extend(provider_result.options)
+            order_books.extend(provider_result.order_books)
+            if not _crypto_provider_has_results(provider_result):
+                warnings.append(
+                    empty_result_warning(
+                        operation=_CRYPTO_DERIVATIVES_OPERATION,
+                        provider=outcome.provider,
+                    )
+                )
+                uncovered_providers.add(outcome.provider)
+
+        has_results = bool(spot or global_metrics or term_structure or options or order_books)
+        _append_coverage_warning(
+            warnings,
+            operation=_CRYPTO_DERIVATIVES_OPERATION,
+            requested_providers=venues,
+            uncovered_providers=tuple(sorted(uncovered_providers)),
+            has_results=has_results,
+        )
+        return DigitalOracleCryptoDerivativesResult(
+            assets=assets,
+            spot=tuple(spot[:item_limit]),
+            global_metrics=tuple(global_metrics[:item_limit]),
+            term_structure=tuple(term_structure[:item_limit]),
+            options=tuple(options[:item_limit]),
+            order_books=tuple(order_books[:item_limit]),
+            warnings=tuple(warnings),
+        )
+
+    def lookup_cftc_positioning(
+        self,
+        query: DigitalOracleCftcPositioningQuery,
+    ) -> DigitalOracleCftcPositioningResult:
+        construction = self._provider_bundle.cftc_positioning
+        markets = _normalize_cftc_markets(query.markets)
+        if construction.failure is not None:
+            return DigitalOracleCftcPositioningResult(
+                warnings=(
+                    warning_from_provider_failure(
+                        construction.failure,
+                        operation=_CFTC_POSITIONING_OPERATION,
+                    ),
+                ),
+            )
+        provider_bundle = construction.provider
+        if provider_bundle is None:
+            return DigitalOracleCftcPositioningResult(
+                warnings=(unavailable_result_warning(operation=_CFTC_POSITIONING_OPERATION),),
+            )
+
+        report_types = _normalize_cftc_report_types(
+            query.report_types or CFTC_POSITIONING_REPORT_TYPES
+        )
+        _validate_date_bounds(query.start_date, query.end_date)
+        item_limit = _normalize_limit(
+            query.item_limit,
+            default_limit=provider_bundle.default_item_limit,
+            max_limit=_CFTC_POSITIONING_MAX_ITEM_LIMIT,
+            field_name="itemLimit",
+        )
+        warnings: list[RuntimeToolWarning] = []
+        uncovered_providers: set[str] = set()
+        calls: list[_ProviderCall[DigitalOracleCftcPositioningProviderResult]] = []
+        descriptor_by_key = {descriptor.key: descriptor for descriptor in provider_bundle.providers}
+        for descriptor in provider_bundle.providers:
+            provider = self._cftc_positioning_providers_by_name.get(descriptor.key)
+            if provider is None:
+                warnings.append(
+                    provider_unavailable_warning(
+                        operation=_CFTC_POSITIONING_OPERATION,
+                        provider=descriptor.key,
+                    )
+                )
+                uncovered_providers.add(descriptor.key)
+                continue
+            provider_query = DigitalOracleCftcPositioningProviderQuery(
+                markets=markets,
+                report_types=report_types,
+                start_date=query.start_date,
+                end_date=query.end_date,
+                item_limit=item_limit,
+                timeout_seconds=descriptor_by_key[descriptor.key].timeout_seconds,
+            )
+            calls.append(
+                _ProviderCall(
+                    provider=descriptor.key,
+                    call=cast(
+                        Callable[[], DigitalOracleCftcPositioningProviderResult],
+                        lambda provider=provider, provider_query=provider_query: (
+                            provider.lookup_cftc_positioning(provider_query)
+                        ),
+                    ),
+                )
+            )
+
+        reports: list[DigitalOracleCftcPositioningReport] = []
+        for outcome in _gather_provider_calls(calls, operation=_CFTC_POSITIONING_OPERATION):
+            if outcome.warning is not None:
+                warnings.append(outcome.warning)
+                uncovered_providers.add(outcome.provider)
+                continue
+            provider_result = cast(DigitalOracleCftcPositioningProviderResult, outcome.result)
+            warnings.extend(provider_result.warnings)
+            provider_reports = _filter_cftc_reports(
+                provider_result.reports,
+                markets=markets,
+                report_types=report_types,
+                start_date=query.start_date,
+                end_date=query.end_date,
+            )
+            if not provider_reports:
+                warnings.append(
+                    empty_result_warning(
+                        operation=_CFTC_POSITIONING_OPERATION,
+                        provider=outcome.provider,
+                    )
+                )
+                uncovered_providers.add(outcome.provider)
+                continue
+            reports.extend(provider_reports)
+
+        if len(reports) > item_limit:
+            reports = reports[:item_limit]
+            warnings.append(
+                truncated_result_warning(operation=_CFTC_POSITIONING_OPERATION, limit=item_limit)
+            )
+        _append_coverage_warning(
+            warnings,
+            operation=_CFTC_POSITIONING_OPERATION,
+            requested_providers=tuple(descriptor.key for descriptor in provider_bundle.providers),
+            uncovered_providers=tuple(sorted(uncovered_providers)),
+            has_results=bool(reports),
+        )
+        return DigitalOracleCftcPositioningResult(
+            reports=tuple(reports),
+            warnings=tuple(warnings),
+        )
+
+    def lookup_options(self, query: DigitalOracleOptionsQuery) -> DigitalOracleOptionsResult:
+        symbols = _normalize_options_symbols(query.symbols)
+        result_symbol = ",".join(symbols)
+        construction = self._provider_bundle.options
+        if construction.failure is not None:
+            return DigitalOracleOptionsResult(
+                symbol=result_symbol,
+                warnings=(
+                    warning_from_provider_failure(
+                        construction.failure,
+                        operation=_OPTIONS_OPERATION,
+                    ),
+                ),
+            )
+        provider_bundle = construction.provider
+        if provider_bundle is None:
+            return DigitalOracleOptionsResult(
+                symbol=result_symbol,
+                warnings=(unavailable_result_warning(operation=_OPTIONS_OPERATION),),
+            )
+
+        item_limit = _normalize_limit(
+            query.item_limit,
+            default_limit=provider_bundle.default_item_limit,
+            max_limit=_OPTIONS_MAX_ITEM_LIMIT,
+            field_name="itemLimit",
+        )
+        warnings: list[RuntimeToolWarning] = []
+        uncovered_providers: set[str] = set()
+        calls: list[_ProviderCall[DigitalOracleOptionsProviderResult]] = []
+        descriptor_by_key = {descriptor.key: descriptor for descriptor in provider_bundle.providers}
+        for failure in provider_bundle.source_failures:
+            failed_provider = str(failure.details.get("provider"))
+            warnings.append(warning_from_provider_failure(failure, operation=_OPTIONS_OPERATION))
+            uncovered_providers.add(failed_provider)
+        for descriptor in provider_bundle.providers:
+            provider = self._options_providers_by_name.get(descriptor.key)
+            if provider is None:
+                warnings.append(
+                    provider_unavailable_warning(
+                        operation=_OPTIONS_OPERATION,
+                        provider=descriptor.key,
+                    )
+                )
+                uncovered_providers.add(descriptor.key)
+                continue
+            for symbol in symbols:
+                provider_query = DigitalOracleOptionsProviderQuery(
+                    symbol=symbol,
+                    expirations=query.expirations,
+                    include_greeks=query.include_greeks,
+                    moneyness=query.moneyness,
+                    item_limit=item_limit,
+                    timeout_seconds=descriptor_by_key[descriptor.key].timeout_seconds,
+                )
+                calls.append(
+                    _ProviderCall(
+                        provider=descriptor.key,
+                        call=cast(
+                            Callable[[], DigitalOracleOptionsProviderResult],
+                            lambda provider=provider, provider_query=provider_query: (
+                                provider.lookup_options(provider_query)
+                            ),
+                        ),
+                    )
+                )
+
+        chains: list[DigitalOracleOptionsChain] = []
+        for outcome in _gather_provider_calls(calls, operation=_OPTIONS_OPERATION):
+            if outcome.warning is not None:
+                warnings.append(outcome.warning)
+                uncovered_providers.add(outcome.provider)
+                continue
+            provider_result = cast(DigitalOracleOptionsProviderResult, outcome.result)
+            warnings.extend(provider_result.warnings)
+            provider_chains = tuple(
+                chain for chain in provider_result.chains if chain.calls or chain.puts
+            )
+            if not provider_chains:
+                warnings.append(
+                    empty_result_warning(operation=_OPTIONS_OPERATION, provider=outcome.provider)
+                )
+                uncovered_providers.add(outcome.provider)
+                continue
+            chains.extend(provider_chains)
+
+        _append_coverage_warning(
+            warnings,
+            operation=_OPTIONS_OPERATION,
+            requested_providers=tuple(descriptor.key for descriptor in provider_bundle.providers),
+            uncovered_providers=tuple(sorted(uncovered_providers)),
+            has_results=bool(chains),
+        )
+        return DigitalOracleOptionsResult(
+            symbol=result_symbol,
+            chains=tuple(chains[:item_limit]),
+            warnings=tuple(warnings),
+        )
+
 
 def create_digital_oracle_phase1_service(
     *,
@@ -439,6 +976,10 @@ def create_digital_oracle_phase1_service(
     prediction_market_providers: Sequence[DigitalOraclePredictionMarketProvider] = (),
     sec_filings_provider: DigitalOracleSecFilingsProvider | None = None,
     market_sentiment_provider: DigitalOracleMarketSentimentProvider | None = None,
+        macro_rates_providers: Sequence[DigitalOracleMacroRatesProvider] = (),
+        crypto_derivatives_providers: Sequence[DigitalOracleCryptoDerivativesProvider] = (),
+        cftc_positioning_providers: Sequence[DigitalOracleCftcPositioningProvider] = (),
+        options_providers: Sequence[DigitalOracleOptionsProvider] = (),
 ) -> DigitalOraclePhase1Service:
     return DigitalOraclePhase1Service(
         settings=settings,
@@ -446,6 +987,10 @@ def create_digital_oracle_phase1_service(
         prediction_market_providers=prediction_market_providers,
         sec_filings_provider=sec_filings_provider,
         market_sentiment_provider=market_sentiment_provider,
+        macro_rates_providers=macro_rates_providers,
+        crypto_derivatives_providers=crypto_derivatives_providers,
+        cftc_positioning_providers=cftc_positioning_providers,
+        options_providers=options_providers,
     )
 
 
@@ -491,6 +1036,205 @@ def _execute_provider_call[
                 provider=call.provider,
             ),
         )
+
+
+def _normalize_macro_sources(
+    sources: Sequence[MacroRatesSource],
+) -> tuple[MacroRatesSource, ...]:
+    normalized: list[MacroRatesSource] = []
+    seen: set[MacroRatesSource] = set()
+    for raw_source in sources:
+        source = cast(MacroRatesSource, str(raw_source).strip().lower())
+        if source in MACRO_RATES_SOURCES and source not in seen:
+            normalized.append(source)
+            seen.add(source)
+    if not normalized:
+        return MACRO_RATES_SOURCES
+    return tuple(normalized)
+
+
+def _normalize_macro_families(
+    families: Sequence[MacroRatesFamily] | None,
+) -> tuple[MacroRatesFamily, ...] | None:
+    if families is None:
+        return None
+    normalized: list[MacroRatesFamily] = []
+    seen: set[MacroRatesFamily] = set()
+    for raw_family in families:
+        family = cast(MacroRatesFamily, str(raw_family).strip().lower())
+        if family in MACRO_RATES_FAMILIES and family not in seen:
+            normalized.append(family)
+            seen.add(family)
+    return tuple(normalized) or None
+
+
+def _filter_macro_rates_series(
+    series: Sequence[DigitalOracleMacroRatesSeries],
+    *,
+    families: tuple[MacroRatesFamily, ...] | None,
+    series_ids: tuple[str, ...] | None,
+    countries: tuple[str, ...] | None,
+    start_date: date | None,
+    end_date: date | None,
+    as_of_date: date | None,
+) -> list[DigitalOracleMacroRatesSeries]:
+    family_filter = set(families or ())
+    series_id_filter = {value.casefold() for value in series_ids or ()}
+    country_filter = {value.casefold() for value in countries or ()}
+    filtered: list[DigitalOracleMacroRatesSeries] = []
+    for item in series:
+        if family_filter and item.family not in family_filter:
+            continue
+        if series_id_filter and item.series_id.casefold() not in series_id_filter:
+            continue
+        if country_filter and (
+            item.country is None or item.country.casefold() not in country_filter
+        ):
+            continue
+        if start_date is not None and item.date < start_date:
+            continue
+        if end_date is not None and item.date > end_date:
+            continue
+        if as_of_date is not None and item.date > as_of_date:
+            continue
+        filtered.append(item)
+    return sorted(
+        filtered,
+        key=lambda item: (item.date, item.provider, item.series_id),
+        reverse=True,
+    )
+
+
+def _normalize_crypto_assets(assets: Sequence[str] | None) -> tuple[str, ...]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_asset in assets or ("BTC",):
+        asset = normalize_symbol(raw_asset)
+        if asset and asset not in seen:
+            normalized.append(asset)
+            seen.add(asset)
+    if not normalized:
+        raise ValueError("assets must contain at least one value")
+    return tuple(normalized)
+
+
+def _normalize_crypto_venues(
+    venues: Sequence[CryptoDerivativesVenue],
+) -> tuple[CryptoDerivativesVenue, ...]:
+    normalized: list[CryptoDerivativesVenue] = []
+    seen: set[CryptoDerivativesVenue] = set()
+    for raw_venue in venues:
+        venue = cast(CryptoDerivativesVenue, str(raw_venue).strip().lower())
+        if venue in CRYPTO_DERIVATIVES_VENUES and venue not in seen:
+            normalized.append(venue)
+            seen.add(venue)
+    if not normalized:
+        return CRYPTO_DERIVATIVES_VENUES
+    return tuple(normalized)
+
+
+def _normalize_crypto_data_types(
+    data_types: Sequence[CryptoDerivativesDataType] | None,
+) -> tuple[CryptoDerivativesDataType, ...]:
+    normalized: list[CryptoDerivativesDataType] = []
+    seen: set[CryptoDerivativesDataType] = set()
+    for raw_data_type in data_types or CRYPTO_DERIVATIVES_DATA_TYPES:
+        data_type = cast(CryptoDerivativesDataType, str(raw_data_type).strip().lower())
+        if data_type in CRYPTO_DERIVATIVES_DATA_TYPES and data_type not in seen:
+            normalized.append(data_type)
+            seen.add(data_type)
+    return tuple(normalized) or CRYPTO_DERIVATIVES_DATA_TYPES
+
+
+def _crypto_provider_has_results(result: DigitalOracleCryptoDerivativesProviderResult) -> bool:
+    return bool(
+        result.spot
+        or result.global_metrics
+        or result.term_structure
+        or result.options
+        or result.order_books
+    )
+
+
+def _normalize_cftc_markets(markets: Sequence[str] | None) -> tuple[str, ...]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_market in markets or ():
+        market = " ".join(raw_market.split()).strip()
+        dedupe_key = market.casefold()
+        if market and dedupe_key not in seen:
+            normalized.append(market)
+            seen.add(dedupe_key)
+    return tuple(normalized)
+
+
+def _normalize_cftc_report_types(
+    report_types: Sequence[CftcPositioningReportType],
+) -> tuple[CftcPositioningReportType, ...]:
+    normalized: list[CftcPositioningReportType] = []
+    seen: set[CftcPositioningReportType] = set()
+    for raw_report_type in report_types:
+        report_type = cast(CftcPositioningReportType, str(raw_report_type).strip().lower())
+        if report_type in CFTC_POSITIONING_REPORT_TYPES and report_type not in seen:
+            normalized.append(report_type)
+            seen.add(report_type)
+    return tuple(normalized) or CFTC_POSITIONING_REPORT_TYPES
+
+
+def _normalize_options_symbols(symbols: Sequence[str]) -> tuple[str, ...]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_symbol in symbols:
+        symbol = normalize_symbol(raw_symbol)
+        if symbol and symbol not in seen:
+            normalized.append(symbol)
+            seen.add(symbol)
+    if not normalized:
+        raise ValueError("symbols must contain at least one value")
+    return tuple(normalized)
+
+
+def _filter_cftc_reports(
+    reports: Sequence[DigitalOracleCftcPositioningReport],
+    *,
+    markets: tuple[str, ...],
+    report_types: tuple[CftcPositioningReportType, ...],
+    start_date: date | None,
+    end_date: date | None,
+) -> list[DigitalOracleCftcPositioningReport]:
+    market_filters = tuple(market.casefold() for market in markets)
+    report_type_filter = set(report_types)
+    filtered: list[DigitalOracleCftcPositioningReport] = []
+    for report in reports:
+        if report.report_type not in report_type_filter:
+            continue
+        if start_date is not None and report.report_date < start_date:
+            continue
+        if end_date is not None and report.report_date > end_date:
+            continue
+        rows = tuple(
+            row
+            for row in report.rows
+            if not market_filters
+            or any(
+                market in row.market.casefold()
+                or (
+                    row.contract_market_code is not None
+                    and market in row.contract_market_code.casefold()
+                )
+                for market in market_filters
+            )
+        )
+        if rows:
+            filtered.append(
+                DigitalOracleCftcPositioningReport(
+                    provider=report.provider,
+                    report_type=report.report_type,
+                    report_date=report.report_date,
+                    rows=rows,
+                )
+            )
+    return sorted(filtered, key=lambda item: item.report_date, reverse=True)
 
 
 def _normalize_prediction_venues(
@@ -579,6 +1323,27 @@ def _search_sec_filings(
             )
         )
     return hits
+
+
+def _filter_sec_search_hits(
+    search_hits: Sequence[DigitalOracleSecSearchHit],
+    *,
+    form_types: tuple[str, ...],
+    start_date: date | None,
+    end_date: date | None,
+    item_limit: int,
+) -> list[DigitalOracleSecSearchHit]:
+    form_type_filter = set(form_types)
+    filtered: list[DigitalOracleSecSearchHit] = []
+    for hit in search_hits:
+        if form_type_filter and hit.form_type.strip().upper() not in form_type_filter:
+            continue
+        if start_date is not None and hit.filing_date < start_date:
+            continue
+        if end_date is not None and hit.filing_date > end_date:
+            continue
+        filtered.append(hit)
+    return sorted(filtered, key=lambda hit: hit.filing_date, reverse=True)[:item_limit]
 
 
 def _ownership_transactions_for_filings(

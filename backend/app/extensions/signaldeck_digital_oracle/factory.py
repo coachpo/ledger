@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
@@ -9,9 +10,15 @@ from .config import (
     EDGAR_CONTACT_EMAIL_MISSING_CODE,
     EDGAR_CONTACT_EMAIL_MISSING_MESSAGE,
     EDGAR_CONTACT_EMAIL_SETTING,
+    FRED_API_KEY_MISSING_CODE,
+    FRED_API_KEY_MISSING_MESSAGE,
+    FRED_API_KEY_SETTING,
     MARKET_SENTIMENT_PROVIDER_KEY,
     MARKET_SENTIMENT_SOURCE_URL,
     PREDICTION_MARKET_VENUES,
+    YFINANCE_OPTIONAL_DEPENDENCY,
+    YFINANCE_OPTIONAL_DEPENDENCY_MISSING_CODE,
+    YFINANCE_OPTIONAL_DEPENDENCY_MISSING_MESSAGE,
     DigitalOracleProviderConfig,
     MarketSentimentIndicator,
     PredictionMarketVenue,
@@ -21,13 +28,32 @@ from .config import (
 _DIGITAL_ORACLE_PROVIDER_DISABLED_CODE = "digital_oracle_provider_disabled"
 
 _PROVIDER_LABELS: Mapping[str, str] = {
+    "bis": "BIS",
+    "cftc": "CFTC COT",
+    "cftc_positioning": "Digital Oracle CFTC positioning",
+    "cme_fedwatch": "CME FedWatch",
+    "coingecko": "CoinGecko",
+    "crypto_derivatives": "Digital Oracle crypto derivatives",
+    "deribit": "Deribit",
     "polymarket": "Polymarket",
+    "fred": "FRED",
     "kalshi": "Kalshi",
     "edgar": "SEC EDGAR",
     "fear_greed": "Fear & Greed Index",
+    "macro_rates": "Digital Oracle macro rates",
     "prediction_markets": "Digital Oracle prediction markets",
+    "options": "Digital Oracle options",
     "market_sentiment": "Digital Oracle market sentiment",
+    "treasury": "US Treasury",
+    "worldbank": "World Bank",
+    "yahoo": "Yahoo Finance",
+    "yfinance": "YFinance",
 }
+
+_MACRO_RATE_PROVIDER_KEYS = ("treasury", "bis", "worldbank", "cme_fedwatch", "fred")
+_CRYPTO_DERIVATIVES_PROVIDER_KEYS = ("deribit", "coingecko")
+_CFTC_POSITIONING_PROVIDER_KEYS = ("cftc",)
+_OPTIONS_PROVIDER_KEYS = ("yahoo",)
 
 
 def _empty_failure_details() -> dict[str, object]:
@@ -81,10 +107,26 @@ class MarketSentimentProviderBundle:
 
 
 @dataclass(frozen=True, slots=True)
+class DigitalOracleSourceScopedProviderBundle:
+    providers: tuple[DigitalOracleProviderDescriptor, ...]
+    source_failures: tuple[DigitalOracleProviderFailure, ...]
+    default_item_limit: int
+    fred_api_key: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class DigitalOraclePhase1ProviderBundle:
     prediction_markets: DigitalOracleProviderConstructionResult[PredictionMarketsProviderBundle]
     sec_filings: DigitalOracleProviderConstructionResult[SecFilingsProviderBundle]
     market_sentiment: DigitalOracleProviderConstructionResult[MarketSentimentProviderBundle]
+    macro_rates: DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle]
+    crypto_derivatives: DigitalOracleProviderConstructionResult[
+        DigitalOracleSourceScopedProviderBundle
+    ]
+    cftc_positioning: DigitalOracleProviderConstructionResult[
+        DigitalOracleSourceScopedProviderBundle
+    ]
+    options: DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle]
 
 
 def _configured[T](provider: T) -> DigitalOracleProviderConstructionResult[T]:
@@ -100,6 +142,35 @@ def _disabled_failure(provider: str) -> DigitalOracleProviderFailure:
     )
 
 
+def _missing_fred_key_failure() -> DigitalOracleProviderFailure:
+    return DigitalOracleProviderFailure(
+        code=FRED_API_KEY_MISSING_CODE,
+        message=FRED_API_KEY_MISSING_MESSAGE,
+        details={
+            "provider": "fred",
+            "setting": FRED_API_KEY_SETTING,
+        },
+    )
+
+
+def _missing_yfinance_failure() -> DigitalOracleProviderFailure:
+    return DigitalOracleProviderFailure(
+        code=YFINANCE_OPTIONAL_DEPENDENCY_MISSING_CODE,
+        message=YFINANCE_OPTIONAL_DEPENDENCY_MISSING_MESSAGE,
+        details={
+            "dependency": YFINANCE_OPTIONAL_DEPENDENCY,
+            "provider": "yfinance",
+        },
+    )
+
+
+def _optional_dependency_available(module_name: str) -> bool:
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def _descriptor(
     *,
     key: str,
@@ -111,6 +182,53 @@ def _descriptor(
         label=_PROVIDER_LABELS[key],
         timeout_seconds=config.provider_timeout_seconds,
         default_item_limit=default_item_limit,
+    )
+
+
+def _source_scoped_bundle(
+    *,
+    enabled: bool,
+    group_key: str,
+    provider_keys: tuple[str, ...],
+    config: DigitalOracleProviderConfig,
+    default_item_limit: int,
+    source_failures: tuple[DigitalOracleProviderFailure, ...] = (),
+) -> DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle]:
+    if not enabled:
+        return DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle](
+            failure=_disabled_failure(group_key)
+        )
+
+    return _configured(
+        DigitalOracleSourceScopedProviderBundle(
+            providers=tuple(
+                _descriptor(
+                    key=provider_key,
+                    config=config,
+                    default_item_limit=default_item_limit,
+                )
+                for provider_key in provider_keys
+            ),
+            source_failures=source_failures,
+            default_item_limit=default_item_limit,
+        )
+    )
+
+
+def _with_fred_api_key(
+    construction: DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle],
+    fred_api_key: str | None,
+) -> DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle]:
+    provider = construction.provider
+    if provider is None:
+        return construction
+    return _configured(
+        DigitalOracleSourceScopedProviderBundle(
+            providers=provider.providers,
+            source_failures=provider.source_failures,
+            default_item_limit=provider.default_item_limit,
+            fred_api_key=fred_api_key,
+        )
     )
 
 
@@ -217,6 +335,45 @@ def create_digital_oracle_phase1_provider_bundle(
         prediction_markets=_create_prediction_markets_provider_bundle(config),
         sec_filings=_create_sec_filings_provider(config),
         market_sentiment=_create_market_sentiment_provider(config),
+        macro_rates=_with_fred_api_key(
+            _source_scoped_bundle(
+                enabled=config.macro_rates_enabled,
+                group_key="macro_rates",
+                provider_keys=_MACRO_RATE_PROVIDER_KEYS,
+                config=config,
+                default_item_limit=config.macro_rates_default_item_limit,
+                source_failures=(
+                    () if config.fred_api_key is not None else (_missing_fred_key_failure(),)
+                ),
+            ),
+            config.fred_api_key,
+        ),
+        crypto_derivatives=_source_scoped_bundle(
+            enabled=config.crypto_derivatives_enabled,
+            group_key="crypto_derivatives",
+            provider_keys=_CRYPTO_DERIVATIVES_PROVIDER_KEYS,
+            config=config,
+            default_item_limit=config.crypto_derivatives_default_item_limit,
+        ),
+        cftc_positioning=_source_scoped_bundle(
+            enabled=config.cftc_positioning_enabled,
+            group_key="cftc_positioning",
+            provider_keys=_CFTC_POSITIONING_PROVIDER_KEYS,
+            config=config,
+            default_item_limit=config.cftc_positioning_default_item_limit,
+        ),
+        options=_source_scoped_bundle(
+            enabled=config.options_enabled,
+            group_key="options",
+            provider_keys=_OPTIONS_PROVIDER_KEYS,
+            config=config,
+            default_item_limit=config.options_default_item_limit,
+            source_failures=(
+                ()
+                if _optional_dependency_available(YFINANCE_OPTIONAL_DEPENDENCY)
+                else (_missing_yfinance_failure(),)
+            ),
+        ),
     )
 
 
@@ -225,6 +382,7 @@ __all__ = [
     "DigitalOracleProviderConstructionResult",
     "DigitalOracleProviderDescriptor",
     "DigitalOracleProviderFailure",
+    "DigitalOracleSourceScopedProviderBundle",
     "MarketSentimentProviderBundle",
     "PredictionMarketsProviderBundle",
     "SecFilingsProviderBundle",
