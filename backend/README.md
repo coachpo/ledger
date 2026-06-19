@@ -17,7 +17,7 @@ uv sync
 uv run pytest
 ```
 
-The backend expects PostgreSQL everywhere. Full-stack local startup gets it from the root Compose `db` service at `db:5432`; backend tests that run outside Docker still need `TEST_DATABASE_URL` or `DATABASE_URL` pointing at a PostgreSQL server with permission to create/drop temporary databases.
+The backend expects PostgreSQL everywhere. Full-stack local startup gets it from the root Compose `db` service at `db:5432`. Direct backend/frontend startup with `./start-local.sh` uses available loopback ports by default and lets Docker assign an available host port for its managed PostgreSQL container. Backend tests that run outside Docker can use `TEST_DATABASE_URL` or `DATABASE_URL` for a specific PostgreSQL server, otherwise the test fixture starts or reuses the same managed local PostgreSQL container with an available host port.
 
 ## Model Connections
 
@@ -44,7 +44,7 @@ Rerun endpoints are `GET /api/runs/{runId}/rerun-draft` and `POST /api/runs/{run
 
 The test suite creates and drops temporary PostgreSQL databases. Set `TEST_DATABASE_URL` or `DATABASE_URL` to a PostgreSQL connection with permission to connect to `postgres` and create/drop databases when you run `uv run pytest` outside Docker.
 
-Root CI runs backend quality after `uv sync --frozen`, with PostgreSQL supplied as a GitHub Actions service on `25432`. The repo-level `version-sync` job also checks `backend/VERSION` against `backend/pyproject.toml`.
+Root CI runs backend quality after `uv sync --frozen`, with PostgreSQL supplied as a GitHub Actions service. The repo-level `version-sync` job also checks `backend/VERSION` against `backend/pyproject.toml`.
 
 ```bash
 uv run ruff check app tests
@@ -62,7 +62,7 @@ The root `docker-compose.yml` is the local/demo full-stack Compose file. It star
 docker compose -f ../docker-compose.yml up --build --remove-orphans
 ```
 
-From the repository root, prefer `./start.sh`, which runs the same command and streams logs in the foreground. Only `${APP_PORT:-8080}:8080` is published on the host; PostgreSQL stays on the Docker network and FastAPI stays behind Nginx in the app container.
+From the repository root, prefer `./start.sh`, which runs the same command and streams logs in the foreground. Only the app/Nginx port is published on the host; PostgreSQL stays on the Docker network and FastAPI stays behind Nginx in the app container. For bare-metal development, use `./start-local.sh`; it chooses available local app/backend/PostgreSQL ports unless you set explicit environment overrides.
 
 To reset the container-managed PostgreSQL data:
 

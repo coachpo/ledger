@@ -138,6 +138,8 @@ It will:
 
 The helper preserves the root Compose environment controls, including `APP_PORT`, `POSTGRES_PASSWORD`, `AGENT_PLATFORM_ENCRYPTION_KEY`, `BUILD_FRONTEND`, and `VITE_API_BASE_URL`.
 
+For direct backend/frontend development without the combined Docker app image, use `./start-local.sh`. It starts Uvicorn, the scheduler, and the Vite dev server on available loopback ports by default, prints the selected URLs, and lets Docker assign an available host port for its managed PostgreSQL container. Set `BACKEND_PORT`, `FRONTEND_PORT` or `APP_PORT`, `LOCAL_POSTGRES_PORT`, or `DATABASE_URL` only when you need deterministic ports or an external database.
+
 ### 2. Open the app and verify the stack
 
 Once startup finishes, open:

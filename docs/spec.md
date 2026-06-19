@@ -10,8 +10,9 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 
 ## Runtime Topology
 
-- Root startup is managed by `start.sh`, which wraps the root `docker-compose.yml` local/demo stack. Compose starts PostgreSQL/pgvector in `db` and the combined Nginx/FastAPI/scheduler app image in `app`.
-- The public local app is `http://localhost:${APP_PORT:-8080}`. Nginx proxies `/health`, `/ready`, `/api/`, and `/api/v1/` to the internal backend; PostgreSQL and FastAPI are not exposed directly on host ports by default.
+- Root startup has two supported paths: `start.sh` wraps the root `docker-compose.yml` local/demo stack, while `start-local.sh` runs the bare-metal local stack with Uvicorn, the scheduler, and the Vite dev server.
+- The Compose public local app is `http://localhost:${APP_PORT:-8080}`. Nginx proxies `/health`, `/ready`, `/api/`, and `/api/v1/` to the internal backend; PostgreSQL and FastAPI are not exposed directly on host ports by default.
+- `start-local.sh` chooses available loopback ports for the backend and frontend by default, prints the selected URLs, and lets Docker assign an available host port for its managed PostgreSQL container unless explicit port overrides are set.
 - Playwright starts dedicated E2E servers on backend `8001` and frontend `4173`; the backend helper also launches the scheduler worker.
 - Backend requires Python 3.13+, frontend targets Node 24 and pnpm 10.
 
