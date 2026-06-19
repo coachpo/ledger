@@ -23,6 +23,7 @@ from app.services.social_sentiment_provider import (
     RedditSocialSentimentAdapter,
     SocialSentimentSourceAdapter,
     StockTwitsSocialSentimentAdapter,
+    _RedditRequestConfig,
 )
 
 
@@ -51,7 +52,16 @@ def create_social_sentiment_adapters(
     resolved_settings = settings or get_settings()
     timeout = resolved_settings.quote_provider_timeout_seconds
     return (
-        RedditSocialSentimentAdapter(timeout=timeout),
+        RedditSocialSentimentAdapter(
+            timeout=timeout,
+            config=_RedditRequestConfig(
+                subreddits=tuple(resolved_settings.finance_reddit_subreddits),
+                retry_after_max_seconds=(resolved_settings.finance_reddit_retry_after_max_seconds),
+                inter_request_delay_seconds=(
+                    resolved_settings.finance_reddit_inter_request_delay_seconds
+                ),
+            ),
+        ),
         StockTwitsSocialSentimentAdapter(timeout=timeout),
     )
 

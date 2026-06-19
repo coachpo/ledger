@@ -34,6 +34,7 @@ from app.services.social_sentiment_provider import (
     SocialSentimentProviderTimeoutError,
     SocialSentimentSource,
     StockTwitsSocialSentimentAdapter,
+    _RedditRequestConfig,
     _RedditTransport,
     _StockTwitsTransport,
 )
@@ -130,6 +131,17 @@ class _SleepRecorder:
         self.calls.append(delay_seconds)
 
 
+def _reddit_config(
+    *,
+    subreddits: tuple[str, ...] = ("stocks",),
+    retry_after_max_seconds: float = 2.0,
+) -> _RedditRequestConfig:
+    return _RedditRequestConfig(
+        subreddits=subreddits,
+        retry_after_max_seconds=retry_after_max_seconds,
+    )
+
+
 def _failing_session_factory() -> object:
     raise AssertionError("social sentiment lookup should not open a database session")
 
@@ -153,6 +165,26 @@ def _reddit_rss_fixture() -> str:
       </channel>
     </rss>
     """
+
+
+def _reddit_atom_fixture() -> str:
+    return """
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <title>NVDA Atom thread</title>
+        <content type="html">
+          &lt;div&gt;&lt;p&gt;Retail &lt;b&gt;interest&lt;/b&gt; rose for NVDA.&lt;/p&gt;
+          &lt;/div&gt;
+        </content>
+        <link href="https://www.reddit.com/r/stocks/comments/3/nvda_atom/" />
+        <published>2026-01-02T10:30:00+00:00</published>
+      </entry>
+    </feed>
+    """
+
+
+def _reddit_empty_atom_fixture() -> str:
+    return '<feed xmlns="http://www.w3.org/2005/Atom"><title>empty</title></feed>'
 
 
 def _reddit_json_fixture() -> dict[str, object]:
@@ -212,7 +244,7 @@ def test_reddit_adapter_parses_rss_items_before_json_fetch() -> None:
     json_fetcher = _FakeJsonFetcher([_reddit_json_fixture()])
     adapter = RedditSocialSentimentAdapter(
         timeout=1,
-        subreddits=("stocks",),
+        config=_reddit_config(),
         transport=_RedditTransport(
             json_fetcher=json_fetcher,
             text_fetcher=text_fetcher,
@@ -241,13 +273,44 @@ def test_reddit_adapter_parses_rss_items_before_json_fetch() -> None:
     assert block.metrics == []
 
 
+def test_reddit_adapter_uses_rss_default_params_and_parses_atom_without_fake_metrics() -> None:
+    text_fetcher = _FakeTextFetcher([_reddit_atom_fixture()])
+    json_fetcher = _FakeJsonFetcher([_reddit_json_fixture()])
+    adapter = RedditSocialSentimentAdapter(
+        timeout=1,
+        config=_reddit_config(),
+        transport=_RedditTransport(
+            json_fetcher=json_fetcher,
+            text_fetcher=text_fetcher,
+            sleep=_SleepRecorder(),
+        ),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=5)
+
+    assert json_fetcher.calls == []
+    assert text_fetcher.calls == [
+        (
+            "https://www.reddit.com/r/stocks/search.rss",
+            {"q": "NVDA", "restrict_sr": "on", "sort": "new", "t": "week", "limit": 5},
+        )
+    ]
+    assert result.metrics == []
+    block = result.source_blocks[0]
+    assert block.title == "NVDA Atom thread"
+    assert block.summary == "Retail interest rose for NVDA."
+    assert block.url == "https://www.reddit.com/r/stocks/comments/3/nvda_atom/"
+    assert block.as_of == datetime(2026, 1, 2, 10, 30, tzinfo=UTC)
+    assert block.metrics == []
+
+
 def test_reddit_adapter_retries_rss_429_once_with_injected_backoff() -> None:
     text_fetcher = _FakeTextFetcher([_reddit_rss_fixture()])
     text_fetcher.failures.append(SocialSentimentProviderRateLimitError("reddit rss rate limited"))
     sleep = _SleepRecorder()
     adapter = RedditSocialSentimentAdapter(
         timeout=1,
-        subreddits=("stocks",),
+        config=_reddit_config(),
         transport=_RedditTransport(
             json_fetcher=_FakeJsonFetcher(),
             text_fetcher=text_fetcher,
@@ -268,6 +331,47 @@ def test_reddit_adapter_retries_rss_429_once_with_injected_backoff() -> None:
     assert [block.title for block in result.source_blocks] == ["NVDA retail thread"]
 
 
+def test_reddit_adapter_caps_retry_after_and_warns_when_rss_stays_rate_limited() -> None:
+    text_fetcher = _FakeTextFetcher()
+    text_fetcher.failures.extend(
+        [
+            SocialSentimentProviderRateLimitError(
+                "reddit rss rate limited",
+                details={"status": "429", "retryAfterSeconds": "30"},
+            ),
+            SocialSentimentProviderRateLimitError(
+                "reddit rss still rate limited",
+                details={"status": "429", "retryAfterSeconds": "30"},
+            ),
+        ]
+    )
+    sleep = _SleepRecorder()
+    adapter = RedditSocialSentimentAdapter(
+        timeout=1,
+        config=_reddit_config(retry_after_max_seconds=2.0),
+        transport=_RedditTransport(
+            json_fetcher=_FakeJsonFetcher([_reddit_json_fixture()]),
+            text_fetcher=text_fetcher,
+            sleep=sleep,
+        ),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=5)
+
+    assert len(text_fetcher.calls) == 2
+    assert sleep.calls == [2.0]
+    assert result.source_blocks == []
+    assert result.metrics == []
+    assert [warning.code for warning in result.warnings] == ["provider_rate_limited"]
+    assert result.warnings[0].details == {
+        "provider": "reddit_public_search",
+        "source": "reddit",
+        "status": "429",
+        "retryAfterSeconds": "30",
+        "subreddit": "stocks",
+    }
+
+
 def test_reddit_adapter_falls_back_to_json_when_rss_is_unavailable() -> None:
     text_fetcher = _FakeTextFetcher()
     text_fetcher.failures.append(
@@ -279,7 +383,7 @@ def test_reddit_adapter_falls_back_to_json_when_rss_is_unavailable() -> None:
     json_fetcher = _FakeJsonFetcher([_reddit_json_fixture()])
     adapter = RedditSocialSentimentAdapter(
         timeout=1,
-        subreddits=("stocks",),
+        config=_reddit_config(),
         transport=_RedditTransport(
             json_fetcher=json_fetcher,
             text_fetcher=text_fetcher,
@@ -295,6 +399,71 @@ def test_reddit_adapter_falls_back_to_json_when_rss_is_unavailable() -> None:
     assert result.metrics[0].name == "mention_count"
     assert result.source_blocks[0].title == "NVDA JSON thread"
     assert result.source_blocks[0].metrics[0].name == "score"
+
+
+def test_reddit_adapter_falls_back_to_json_when_rss_is_malformed() -> None:
+    text_fetcher = _FakeTextFetcher(["<feed>"])
+    json_fetcher = _FakeJsonFetcher([_reddit_json_fixture()])
+    adapter = RedditSocialSentimentAdapter(
+        timeout=1,
+        config=_reddit_config(),
+        transport=_RedditTransport(
+            json_fetcher=json_fetcher,
+            text_fetcher=text_fetcher,
+            sleep=_SleepRecorder(),
+        ),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=5)
+
+    assert len(text_fetcher.calls) == 1
+    assert len(json_fetcher.calls) == 1
+    assert result.source_blocks[0].title == "NVDA JSON thread"
+    assert result.source_blocks[0].metrics[0].name == "score"
+    assert result.warnings == []
+
+
+def test_reddit_adapter_falls_back_to_json_when_rss_is_empty() -> None:
+    text_fetcher = _FakeTextFetcher([_reddit_empty_atom_fixture()])
+    json_fetcher = _FakeJsonFetcher([_reddit_json_fixture()])
+    adapter = RedditSocialSentimentAdapter(
+        timeout=1,
+        config=_reddit_config(),
+        transport=_RedditTransport(
+            json_fetcher=json_fetcher,
+            text_fetcher=text_fetcher,
+            sleep=_SleepRecorder(),
+        ),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=5)
+
+    assert len(text_fetcher.calls) == 1
+    assert len(json_fetcher.calls) == 1
+    assert result.source_blocks[0].title == "NVDA JSON thread"
+    assert result.metrics[0].name == "mention_count"
+
+
+def test_reddit_adapter_preserves_useful_rss_when_later_json_fallback_fails() -> None:
+    text_fetcher = _FakeTextFetcher([_reddit_atom_fixture(), _reddit_empty_atom_fixture()])
+    json_fetcher = _FakeJsonFetcher()
+    json_fetcher.failures.append(SocialSentimentProviderTimeoutError("reddit json timed out"))
+    adapter = RedditSocialSentimentAdapter(
+        timeout=1,
+        config=_reddit_config(subreddits=("stocks", "investing")),
+        transport=_RedditTransport(
+            json_fetcher=json_fetcher,
+            text_fetcher=text_fetcher,
+            sleep=_SleepRecorder(),
+        ),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=10)
+
+    assert [block.title for block in result.source_blocks] == ["NVDA Atom thread"]
+    assert result.metrics == []
+    assert [warning.code for warning in result.warnings] == ["provider_timeout"]
+    assert result.warnings[0].details["subreddit"] == "investing"
 
 
 def test_stocktwits_adapter_returns_warning_instead_of_raising_on_failure() -> None:

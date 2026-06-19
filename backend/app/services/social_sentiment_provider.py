@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from email.utils import parsedate_to_datetime
+from html import unescape
+from html.parser import HTMLParser
 from typing import Literal, Protocol, cast
 from xml.etree import ElementTree
 
@@ -130,12 +132,15 @@ class RedditSocialSentimentAdapter:
         self,
         *,
         timeout: float,
-        subreddits: Sequence[str] | None = None,
+        config: _RedditRequestConfig | None = None,
         transport: _RedditTransport | None = None,
     ) -> None:
+        request_config = config or _RedditRequestConfig()
         self.timeout: float = timeout
-        self.subreddits: tuple[str, ...] = tuple(
-            subreddits or ("wallstreetbets", "stocks", "investing")
+        self.subreddits: tuple[str, ...] = request_config.subreddits
+        self.retry_after_max_seconds: float = max(0.0, request_config.retry_after_max_seconds)
+        self.inter_request_delay_seconds: float = max(
+            0.0, request_config.inter_request_delay_seconds
         )
         self._transport: _RedditTransport = transport or _RedditTransport(
             json_fetcher=_request_json,
@@ -156,7 +161,7 @@ class RedditSocialSentimentAdapter:
         warnings: list[ProviderSocialSentimentWarning] = []
         limit_per_subreddit = max(1, (limit + len(self.subreddits) - 1) // len(self.subreddits))
 
-        for subreddit in self.subreddits:
+        for subreddit_index, subreddit in enumerate(self.subreddits):
             try:
                 rss_blocks = self._fetch_subreddit_rss_blocks(
                     normalized_symbol,
@@ -165,7 +170,18 @@ class RedditSocialSentimentAdapter:
                 )
                 if rss_blocks:
                     blocks.extend(rss_blocks)
+                    self._sleep_between_subreddits(subreddit_index)
                     continue
+            except SocialSentimentProviderRateLimitError as exc:
+                warnings.append(
+                    _warning_from_error(
+                        _error_with_subreddit(exc, subreddit=subreddit),
+                        source=self.source,
+                        provider=self.provider_name,
+                    )
+                )
+                self._sleep_between_subreddits(subreddit_index)
+                continue
             except SocialSentimentProviderError:
                 rss_blocks = []
 
@@ -177,8 +193,13 @@ class RedditSocialSentimentAdapter:
                 )
             except SocialSentimentProviderError as exc:
                 warnings.append(
-                    _warning_from_error(exc, source=self.source, provider=self.provider_name)
+                    _warning_from_error(
+                        _error_with_subreddit(exc, subreddit=subreddit),
+                        source=self.source,
+                        provider=self.provider_name,
+                    )
                 )
+                self._sleep_between_subreddits(subreddit_index)
                 continue
             for post in posts:
                 block = self._build_post_block(
@@ -189,11 +210,12 @@ class RedditSocialSentimentAdapter:
                 )
                 if block is not None:
                     blocks.append(block)
+            self._sleep_between_subreddits(subreddit_index)
 
         filtered_blocks = blocks[:limit]
         metrics = (
             []
-            if filtered_blocks and not filtered_blocks[0].metrics
+            if not filtered_blocks or any(not block.metrics for block in filtered_blocks)
             else _count_metrics(
                 source=self.source,
                 as_of=_latest_as_of(filtered_blocks),
@@ -275,8 +297,8 @@ class RedditSocialSentimentAdapter:
                 provider=self.provider_name,
                 source=self.source,
             )
-        except SocialSentimentProviderRateLimitError:
-            self._transport.sleep(1.0)
+        except SocialSentimentProviderRateLimitError as exc:
+            self._transport.sleep(self._retry_after_delay(exc))
             return self._transport.text_fetcher(
                 self._RSS_API.format(subreddit=subreddit),
                 params=params,
@@ -284,6 +306,23 @@ class RedditSocialSentimentAdapter:
                 provider=self.provider_name,
                 source=self.source,
             )
+
+    def _retry_after_delay(self, error: SocialSentimentProviderRateLimitError) -> float:
+        raw_delay = error.details.get("retryAfterSeconds") or error.details.get("retryAfter")
+        if raw_delay is None:
+            return min(1.0, self.retry_after_max_seconds)
+        try:
+            parsed_delay = float(raw_delay)
+        except ValueError:
+            return min(1.0, self.retry_after_max_seconds)
+        return min(max(0.0, parsed_delay), self.retry_after_max_seconds)
+
+    def _sleep_between_subreddits(self, subreddit_index: int) -> None:
+        if self.inter_request_delay_seconds <= 0:
+            return
+        if subreddit_index >= len(self.subreddits) - 1:
+            return
+        self._transport.sleep(self.inter_request_delay_seconds)
 
     def _build_post_block(
         self,
@@ -507,9 +546,13 @@ def _request_json(
     except httpx.HTTPStatusError as exc:
         status_code = exc.response.status_code
         if status_code == 429:
+            details = {"provider": provider, "source": source, "status": str(status_code)}
+            retry_after = _retry_after_header_seconds(exc.response.headers.get("Retry-After"))
+            if retry_after is not None:
+                details["retryAfterSeconds"] = str(retry_after)
             raise SocialSentimentProviderRateLimitError(
                 f"{provider} rate limited {source} sentiment",
-                details={"provider": provider, "source": source, "status": str(status_code)},
+                details=details,
             ) from exc
         if status_code >= 500:
             raise SocialSentimentProviderError(
@@ -558,8 +601,18 @@ def _request_text(
     except httpx.HTTPStatusError as exc:
         status_code = exc.response.status_code
         if status_code == 429:
+            details = {"provider": provider, "source": source, "status": str(status_code)}
+            retry_after = _retry_after_header_seconds(exc.response.headers.get("Retry-After"))
+            if retry_after is not None:
+                details["retryAfterSeconds"] = str(retry_after)
             raise SocialSentimentProviderRateLimitError(
                 f"{provider} rate limited {source} sentiment",
+                details=details,
+            ) from exc
+        if status_code >= 500:
+            raise SocialSentimentProviderError(
+                f"{provider} outage while fetching {source} sentiment",
+                code="provider_unavailable",
                 details={"provider": provider, "source": source, "status": str(status_code)},
             ) from exc
         raise SocialSentimentProviderError(
@@ -580,6 +633,13 @@ class _RedditTransport:
     json_fetcher: _JsonFetcher
     text_fetcher: _TextFetcher
     sleep: _Sleeper
+
+
+@dataclass(frozen=True, slots=True)
+class _RedditRequestConfig:
+    subreddits: tuple[str, ...] = ("wallstreetbets", "stocks", "investing")
+    retry_after_max_seconds: float = 2.0
+    inter_request_delay_seconds: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -609,24 +669,100 @@ def _parse_reddit_rss_blocks(
             f"{provider} returned malformed {source} sentiment",
             details={"provider": provider, "source": source},
         ) from exc
-    blocks: list[ProviderSocialSentimentSourceBlock] = []
-    for item in root.findall(".//item")[:limit]:
-        block = ProviderSocialSentimentSourceBlock(
+    entries = [element for element in root.iter() if _local_name(element.tag) in {"entry", "item"}]
+    return [
+        _parse_reddit_rss_entry(
+            entry,
+            symbol=symbol,
             source=source,
             provider=provider,
-            title=_element_text(item, "title"),
-            summary=_truncate(_element_text(item, "description"), limit=280),
-            url=_element_text(item, "link"),
-            as_of=_rss_datetime(_element_text(item, "pubDate")),
-            symbols=[symbol],
         )
-        blocks.append(block)
-    return blocks
+        for entry in entries[:limit]
+    ]
+
+
+def _parse_reddit_rss_entry(
+    entry: ElementTree.Element,
+    *,
+    symbol: str,
+    source: SocialSentimentSource,
+    provider: str,
+) -> ProviderSocialSentimentSourceBlock:
+    summary = _child_text_by_local(entry, "content") or _child_text_by_local(entry, "description")
+    published = _child_text_by_local(entry, "published") or _child_text_by_local(entry, "updated")
+    pub_date = _child_text_by_local(entry, "pubDate")
+    return ProviderSocialSentimentSourceBlock(
+        source=source,
+        provider=provider,
+        title=_child_text_by_local(entry, "title"),
+        summary=_truncate(_strip_html(summary), limit=280),
+        url=_entry_link(entry),
+        as_of=_entry_datetime(published=published, pub_date=pub_date),
+        symbols=[symbol],
+    )
 
 
 def _element_text(element: ElementTree.Element, child_name: str) -> str | None:
     child = element.find(child_name)
     return _text(child.text if child is not None else None)
+
+
+def _child_text_by_local(element: ElementTree.Element, child_name: str) -> str | None:
+    for child in element:
+        if _local_name(child.tag) == child_name:
+            return _text(child.text)
+    return None
+
+
+def _entry_link(element: ElementTree.Element) -> str | None:
+    for child in element:
+        if _local_name(child.tag) != "link":
+            continue
+        href = _text(child.attrib.get("href"))
+        return href or _text(child.text)
+    return None
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", maxsplit=1)[-1]
+
+
+class _HtmlTextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+    def text(self) -> str | None:
+        normalized = " ".join(" ".join(self.parts).split())
+        return normalized or None
+
+
+def _strip_html(value: str | None) -> str | None:
+    if value is None:
+        return None
+    parser = _HtmlTextExtractor()
+    parser.feed(unescape(value))
+    return parser.text()
+
+
+def _entry_datetime(*, published: str | None, pub_date: str | None) -> datetime | None:
+    return _iso_datetime(published) or _rss_datetime(pub_date)
+
+
+def _retry_after_header_seconds(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return max(0, int(float(value)))
+    except ValueError:
+        parsed_datetime = _rss_datetime(value)
+        if parsed_datetime is None:
+            return None
+        delta = parsed_datetime - datetime.now(tz=UTC)
+        return max(0, int(delta.total_seconds()))
 
 
 def _rss_datetime(value: str | None) -> datetime | None:
@@ -649,6 +785,19 @@ def _warning_from_error(
         message=str(error),
         details={**error.details, "provider": provider, "source": source},
     )
+
+
+def _error_with_subreddit(
+    error: SocialSentimentProviderError,
+    *,
+    subreddit: str,
+) -> SocialSentimentProviderError:
+    details = {**error.details, "subreddit": subreddit}
+    if isinstance(error, SocialSentimentProviderRateLimitError):
+        return SocialSentimentProviderRateLimitError(str(error), details=details)
+    if isinstance(error, SocialSentimentProviderTimeoutError):
+        return SocialSentimentProviderTimeoutError(str(error), details=details)
+    return SocialSentimentProviderError(str(error), code=error.code, details=details)
 
 
 def _object_dict(value: object) -> dict[str, object]:
