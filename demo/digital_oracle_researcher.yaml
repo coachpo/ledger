@@ -358,6 +358,30 @@ spec:
           type: integer
         filingSignals:
           type: object
+          required: []
+          properties:
+            summary:
+              type: string
+            signals:
+              type: array
+              items:
+                type: string
+            horizons:
+              type: array
+              items:
+                type: string
+            contradictions:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            nextQuestions:
+              type: array
+              items:
+                type: string
     outputSchema: sec_metadata_packet
     capabilityProfiles:
     - digital_oracle_phase1_tools
@@ -391,16 +415,166 @@ spec:
           type: string
         marketSignals:
           type: object
+          required: []
+          properties:
+            summary:
+              type: string
+            signals:
+              type: array
+              items:
+                type: string
+            horizons:
+              type: array
+              items:
+                type: string
+            contradictions:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            nextQuestions:
+              type: array
+              items:
+                type: string
         filingSignals:
           type: object
+          required: []
+          properties:
+            summary:
+              type: string
+            signals:
+              type: array
+              items:
+                type: string
+            horizons:
+              type: array
+              items:
+                type: string
+            contradictions:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            nextQuestions:
+              type: array
+              items:
+                type: string
         sentimentSearchSignals:
           type: object
+          required: []
+          properties:
+            summary:
+              type: string
+            signals:
+              type: array
+              items:
+                type: string
+            horizons:
+              type: array
+              items:
+                type: string
+            contradictions:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            nextQuestions:
+              type: array
+              items:
+                type: string
         macroEvidence:
           type: object
+          required: []
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         webEvidence:
           type: object
+          required: []
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         secMetadataEvidence:
           type: object
+          required: []
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         ticker:
           type: string
         cik:
