@@ -87,6 +87,7 @@ const REMOVED_BROWSER_ROUTE_PATHS = [
   "/backtests",
   "/backtests/new",
   "/backtests/123",
+  "/tools",
 ];
 const REMOVED_BROWSER_ROUTE_PREFIXES = [
   "/agents",
@@ -101,6 +102,7 @@ const REMOVED_BROWSER_ROUTE_PREFIXES = [
   "/runtime-v2",
   "/simulations",
   "/backtests",
+  "/tools",
 ];
 const LIVE_BROWSER_ROUTE_PREFIXES = [
   "/workflow-packages",
@@ -836,8 +838,8 @@ describe("router", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Workflow Memory Review" }),
     ).toBeVisible();
-    expect(screen.getByTestId("memory-review-contract")).toHaveTextContent(
-      /Review-only surface/,
+    expect(screen.getByTestId("memory-list-page")).toHaveTextContent(
+      /Review workflow-generated memory proposals/,
     );
     expect(
       screen.getByRole("combobox", { name: "Proposal status" }),
@@ -971,9 +973,17 @@ describe("router", () => {
       "/digital-oracle/prediction-markets",
       "/digital-oracle/sec-filings",
       "/digital-oracle/market-sentiment",
+      "/digital-oracle/macro-rates",
+      "/digital-oracle/crypto-derivatives",
+      "/digital-oracle/cftc-positioning",
+      "/digital-oracle/options",
       "/prediction-markets",
       "/sec-filings",
       "/market-sentiment",
+      "/macro-rates",
+      "/crypto-derivatives",
+      "/cftc-positioning",
+      "/options",
     ]) {
       expect(matchedRouteComponent(retiredDigitalOracleRoute)).toBe(
         NotFoundPage,
@@ -1124,6 +1134,22 @@ describe("router", () => {
         requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
         toolKeyPrefix: "signaldeck.digital_oracle.market_sentiment.",
       },
+      {
+        requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.digital_oracle.macro_rates.",
+      },
+      {
+        requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.digital_oracle.crypto_derivatives.",
+      },
+      {
+        requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.digital_oracle.cftc_positioning.",
+      },
+      {
+        requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
+        toolKeyPrefix: "signaldeck.digital_oracle.options.",
+      },
     ]);
   });
 
@@ -1158,6 +1184,26 @@ describe("router", () => {
         description: "Read market sentiment snapshots.",
       },
       {
+        key: "signaldeck.digital_oracle.macro_rates.lookup",
+        displayName: "Macro Rates",
+        description: "Read macro rates snapshots.",
+      },
+      {
+        key: "signaldeck.digital_oracle.crypto_derivatives.lookup",
+        displayName: "Crypto Derivatives",
+        description: "Read crypto derivatives signals.",
+      },
+      {
+        key: "signaldeck.digital_oracle.cftc_positioning.lookup",
+        displayName: "CFTC Positioning",
+        description: "Read CFTC positioning signals.",
+      },
+      {
+        key: "signaldeck.digital_oracle.options.lookup",
+        displayName: "Options",
+        description: "Read options market signals.",
+      },
+      {
         key: "core.echo",
         displayName: "Echo",
         description: "Core smoke tool",
@@ -1183,6 +1229,10 @@ describe("router", () => {
       "signaldeck.digital_oracle.prediction_markets.lookup",
       "signaldeck.digital_oracle.sec_filings.lookup",
       "signaldeck.digital_oracle.market_sentiment.lookup",
+      "signaldeck.digital_oracle.macro_rates.lookup",
+      "signaldeck.digital_oracle.crypto_derivatives.lookup",
+      "signaldeck.digital_oracle.cftc_positioning.lookup",
+      "signaldeck.digital_oracle.options.lookup",
       "core.echo",
     ]);
     expect(enabledFinanceRoutePaths(extensionList(true, false))).toEqual(
@@ -1197,6 +1247,10 @@ describe("router", () => {
       "signaldeck.digital_oracle.prediction_markets.lookup",
       "signaldeck.digital_oracle.sec_filings.lookup",
       "signaldeck.digital_oracle.market_sentiment.lookup",
+      "signaldeck.digital_oracle.macro_rates.lookup",
+      "signaldeck.digital_oracle.crypto_derivatives.lookup",
+      "signaldeck.digital_oracle.cftc_positioning.lookup",
+      "signaldeck.digital_oracle.options.lookup",
       "core.echo",
     ]);
     expect(enabledFinanceRoutePaths(extensionList(false, false))).toEqual([]);

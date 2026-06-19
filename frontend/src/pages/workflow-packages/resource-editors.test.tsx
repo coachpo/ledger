@@ -158,6 +158,26 @@ const ownerQualifiedToolItems = [
     displayName: "Digital Oracle Market Sentiment",
     description: "Read Digital Oracle market sentiment snapshots.",
   },
+  {
+    key: "signaldeck.digital_oracle.macro_rates.lookup",
+    displayName: "Digital Oracle Macro Rates",
+    description: "Read Digital Oracle macro rates snapshots.",
+  },
+  {
+    key: "signaldeck.digital_oracle.crypto_derivatives.lookup",
+    displayName: "Digital Oracle Crypto Derivatives",
+    description: "Read Digital Oracle crypto derivatives signals.",
+  },
+  {
+    key: "signaldeck.digital_oracle.cftc_positioning.lookup",
+    displayName: "Digital Oracle CFTC Positioning",
+    description: "Read Digital Oracle CFTC positioning signals.",
+  },
+  {
+    key: "signaldeck.digital_oracle.options.lookup",
+    displayName: "Digital Oracle Options",
+    description: "Read Digital Oracle options market signals.",
+  },
 ];
 
 function renderEditor(initialEntry = "/workflow-packages/42") {
@@ -307,6 +327,18 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
       "signaldeck.digital_oracle.market_sentiment.lookup",
     );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "signaldeck.digital_oracle.macro_rates.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "signaldeck.digital_oracle.crypto_derivatives.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "signaldeck.digital_oracle.cftc_positioning.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "signaldeck.digital_oracle.options.lookup",
+    );
 
     clickTab("Private MCP");
     fireEvent.click(screen.getByRole("button", { name: "Add Private MCP" }));
@@ -338,6 +370,18 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
       "signaldeck.digital_oracle.market_sentiment.lookup",
     );
+    expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
+      "signaldeck.digital_oracle.macro_rates.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
+      "signaldeck.digital_oracle.crypto_derivatives.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
+      "signaldeck.digital_oracle.cftc_positioning.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).not.toHaveTextContent(
+      "signaldeck.digital_oracle.options.lookup",
+    );
     disabledView.unmount();
 
     useToolsMock.mockReturnValue({
@@ -362,6 +406,18 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     );
     expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
       "signaldeck.digital_oracle.market_sentiment.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "signaldeck.digital_oracle.macro_rates.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "signaldeck.digital_oracle.crypto_derivatives.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "signaldeck.digital_oracle.cftc_positioning.lookup",
+    );
+    expect(screen.getByTestId("capability-tool-command")).toHaveTextContent(
+      "signaldeck.digital_oracle.options.lookup",
     );
   });
 

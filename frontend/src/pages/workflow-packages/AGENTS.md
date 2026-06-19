@@ -41,6 +41,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `editor.tsx` is the authoring hotspot; keep request policy in hooks and local draft/resource editing in the page.
 - Package-private resources stay tabbed inside the editor and never call retired global authoring APIs.
 - Capability profile tool pickers use extension-filtered `useTools()` data from hooks; disabled-extension tools must not appear as selectable package capability keys.
+- During upstream migrations, role prompts/personas belong in package-local agents, orchestration graphs and debates belong in package workflows, upstream tool groups belong in package-local capability profiles, and generic web/page fetch belongs in private MCP resources unless product scope promotes a public extension tool.
 - Backend validation diagnostics should deep-link to package-local editor fields when possible.
 - Import belongs to `import-page.tsx`, not the editor. The import workspace owns pasted manifest YAML, unsaved/active-import navigation blocking, and detailed backend rejection messages.
 - Launch belongs to `launch.tsx`, not the editor. Phase 1 keeps `/workflow-packages/:packageId/run` as the live browser route and uses `Launch Workflow Package` as the route label; a `/launch` browser rename is deferred follow-up only.

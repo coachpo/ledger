@@ -16,6 +16,22 @@ const digitalOracleToolAuthoringDiscovery = [
     requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
     toolKeyPrefix: "signaldeck.digital_oracle.market_sentiment.",
   },
+  {
+    requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
+    toolKeyPrefix: "signaldeck.digital_oracle.macro_rates.",
+  },
+  {
+    requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
+    toolKeyPrefix: "signaldeck.digital_oracle.crypto_derivatives.",
+  },
+  {
+    requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
+    toolKeyPrefix: "signaldeck.digital_oracle.cftc_positioning.",
+  },
+  {
+    requiredExtensionKey: DIGITAL_ORACLE_EXTENSION_KEY,
+    toolKeyPrefix: "signaldeck.digital_oracle.options.",
+  },
 ] as const;
 
 export const digitalOracleFrontendExtension = {

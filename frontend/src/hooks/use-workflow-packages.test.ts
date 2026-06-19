@@ -156,6 +156,26 @@ describe("useWorkflowPackages", () => {
           description: "Read market sentiment snapshots.",
         },
         {
+          key: "signaldeck.digital_oracle.macro_rates.lookup",
+          displayName: "Macro Rates",
+          description: "Read macro rates snapshots.",
+        },
+        {
+          key: "signaldeck.digital_oracle.crypto_derivatives.lookup",
+          displayName: "Crypto Derivatives",
+          description: "Read crypto derivatives signals.",
+        },
+        {
+          key: "signaldeck.digital_oracle.cftc_positioning.lookup",
+          displayName: "CFTC Positioning",
+          description: "Read CFTC positioning signals.",
+        },
+        {
+          key: "signaldeck.digital_oracle.options.lookup",
+          displayName: "Options",
+          description: "Read options market signals.",
+        },
+        {
           key: "core.echo",
           displayName: "Echo",
           description: "Core smoke tool.",
@@ -174,6 +194,10 @@ describe("useWorkflowPackages", () => {
       "signaldeck.digital_oracle.prediction_markets.lookup",
       "signaldeck.digital_oracle.sec_filings.lookup",
       "signaldeck.digital_oracle.market_sentiment.lookup",
+      "signaldeck.digital_oracle.macro_rates.lookup",
+      "signaldeck.digital_oracle.crypto_derivatives.lookup",
+      "signaldeck.digital_oracle.cftc_positioning.lookup",
+      "signaldeck.digital_oracle.options.lookup",
       "core.echo",
     ]);
     expect(reactQueryState.useQueryMock).toHaveBeenCalledWith(
@@ -231,6 +255,10 @@ describe("useWorkflowPackages", () => {
       "signaldeck.digital_oracle.prediction_markets.lookup",
       "signaldeck.digital_oracle.sec_filings.lookup",
       "signaldeck.digital_oracle.market_sentiment.lookup",
+      "signaldeck.digital_oracle.macro_rates.lookup",
+      "signaldeck.digital_oracle.crypto_derivatives.lookup",
+      "signaldeck.digital_oracle.cftc_positioning.lookup",
+      "signaldeck.digital_oracle.options.lookup",
       "core.echo",
     ]);
   });
