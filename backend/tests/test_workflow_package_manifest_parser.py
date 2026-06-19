@@ -302,6 +302,9 @@ def test_parse_digital_oracle_demo_preserves_methodology_tools_and_graph() -> No
             "signaldeck.digital_oracle.sec_filings.lookup",
             "signaldeck.digital_oracle.market_sentiment.lookup",
             "signaldeck.digital_oracle.macro_rates.lookup",
+            "signaldeck.digital_oracle.crypto_derivatives.lookup",
+            "signaldeck.digital_oracle.cftc_positioning.lookup",
+            "signaldeck.digital_oracle.options.lookup",
         ]
     }
     assert mcp_servers[0]["key"] == "web_research"

@@ -52,13 +52,15 @@ spec:
   capabilityProfiles:
   - key: digital_oracle_phase1_tools
     name: Digital Oracle Native Tools
-    description: Grants Digital Oracle prediction market, SEC filing, market sentiment,
-      and macro/rates lookups.
+    description: Grants all shipped Digital Oracle native runtime lookups.
     toolKeys:
     - signaldeck.digital_oracle.prediction_markets.lookup
     - signaldeck.digital_oracle.sec_filings.lookup
     - signaldeck.digital_oracle.market_sentiment.lookup
     - signaldeck.digital_oracle.macro_rates.lookup
+    - signaldeck.digital_oracle.crypto_derivatives.lookup
+    - signaldeck.digital_oracle.cftc_positioning.lookup
+    - signaldeck.digital_oracle.options.lookup
   outputSchemas:
   - key: digital_oracle_report
     name: Digital Oracle Report
@@ -234,8 +236,8 @@ spec:
     systemPrompt: |
       Digital Oracle methodology is package-local for this agent.
       Decompose each research question into the variable, labeled horizon, observable market, and granted evidence sources before using tools.
-      Use only the granted Digital Oracle prediction-market, SEC filing, market sentiment, and macro/rates tools for evidence.
-      Seek independent signal dimensions when available: prediction markets, SEC filings, broad market sentiment, and macro/rates context.
+      Use only the granted Digital Oracle prediction-market, SEC filing, market sentiment, macro/rates, crypto derivatives, CFTC positioning, and options tools for evidence.
+      Seek independent signal dimensions when available: prediction markets, SEC filings, broad market sentiment, macro/rates context, crypto derivatives, CFTC positioning, and options context.
       Label every horizon, including as-of date and horizon days when supplied.
       Compare contradictions across sources. Explain when markets, filings, sentiment, or macro/rates point in different directions.
       Disclose warnings, sparse coverage, stale data, unresolved tickers, source gaps, and any missing signal dimension before drawing conclusions.
