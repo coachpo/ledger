@@ -392,19 +392,13 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         },
     )
 
-    assert [step.index for step in plan.steps] == list(range(1, 14))
+    assert [step.index for step in plan.steps] == list(range(1, 8))
     assert [[agent.slot for agent in step.agents] for step in plan.steps] == [
         ["market_signals"],
         ["filing_signals"],
         ["sentiment_search_signals"],
-        [],
-        [],
-        [],
-        [],
-        [],
         ["macro_evidence"],
         ["web_evidence"],
-        [],
         ["sec_metadata"],
         ["report"],
     ]
@@ -412,18 +406,12 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         [],
         [],
         [],
-        ["fred_fedfunds_observations"],
-        ["fred_unrate_observations"],
-        ["fred_cpiaucsl_observations"],
-        ["fred_t10y2y_observations"],
-        ["treasury_rates_snapshot_json"],
         [],
         [],
-        ["sec_submissions_json"],
         [],
         [],
     ]
-    assert plan.final_output.step_index == 13
+    assert plan.final_output.step_index == 7
     assert plan.final_output.slot == "report"
     fanout_metadata = [plan.steps[index].agents[0].graph_metadata for index in range(3)]
     assert all(metadata is not None for metadata in fanout_metadata)
@@ -437,7 +425,7 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         "evidence_fanout",
         "evidence_fanout",
     ]
-    synthesis = plan.steps[12].agents[0]
+    synthesis = plan.steps[6].agents[0]
     assert synthesis.agent_key == "digital_oracle_synthesizer"
     assert synthesis.graph_metadata is not None
     assert synthesis.graph_metadata.source_refs == {
@@ -468,21 +456,21 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
             "source": "nodes",
             "nodeId": "macro_evidence_collect",
             "slot": "macro_evidence",
-            "stepIndex": 9,
+            "stepIndex": 4,
             "compiledSlot": "macro_evidence",
         },
         "webEvidence": {
             "source": "nodes",
             "nodeId": "web_evidence_collect",
             "slot": "web_evidence",
-            "stepIndex": 10,
+            "stepIndex": 5,
             "compiledSlot": "web_evidence",
         },
         "secMetadataEvidence": {
             "source": "nodes",
             "nodeId": "sec_metadata_collect",
             "slot": "sec_metadata",
-            "stepIndex": 12,
+            "stepIndex": 6,
             "compiledSlot": "sec_metadata",
         },
         "ticker": {"source": "inputs", "path": "ticker"},
@@ -505,16 +493,8 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         "step",
         "step",
         "step",
-        "sequence",
-        "fanout",
-        "http",
-        "http",
-        "http",
-        "http",
-        "http",
         "step",
         "step",
-        "http",
         "step",
         "step",
     ]
@@ -536,7 +516,7 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         "Digital Oracle Signal Researcher",
         "Macro Evidence Collector",
         "Web Evidence Collector",
-        "SEC Metadata Collector",
+        "SEC Filing Evidence Collector",
         "Digital Oracle Synthesizer",
     ]
     assert [agent.model_binding for agent in runtime_agents] == [
@@ -585,6 +565,7 @@ def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None
         (
             "digital_oracle_phase1_tools",
             (
+                "signaldeck.digital_oracle.macro_rates.lookup",
                 "signaldeck.digital_oracle.market_sentiment.lookup",
                 "signaldeck.digital_oracle.prediction_markets.lookup",
                 "signaldeck.digital_oracle.sec_filings.lookup",

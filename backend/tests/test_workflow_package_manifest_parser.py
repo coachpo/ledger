@@ -301,6 +301,7 @@ def test_parse_digital_oracle_demo_preserves_methodology_tools_and_graph() -> No
             "signaldeck.digital_oracle.prediction_markets.lookup",
             "signaldeck.digital_oracle.sec_filings.lookup",
             "signaldeck.digital_oracle.market_sentiment.lookup",
+            "signaldeck.digital_oracle.macro_rates.lookup",
         ]
     }
     assert mcp_servers[0]["key"] == "web_research"
@@ -324,7 +325,6 @@ def test_parse_digital_oracle_demo_preserves_methodology_tools_and_graph() -> No
         "sentiment_search_signals",
         "macro_evidence",
         "web_evidence",
-        "sec_metadata",
     ]
     assert sec_metadata_collect["id"] == "sec_metadata_collect"
     assert sec_metadata_collect["uses"] == "sec_metadata_collector"
@@ -368,13 +368,16 @@ def test_parse_tradingagents_macro_and_mixed_variants_preserve_private_mcp_and_h
         assert mcp_servers[0]["key"] == "web_research"
         assert mcp_servers[0]["transport"] == "http-sse"
         assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
-        assert http_node_ids == [
-            "fred_fedfunds_observations",
-            "fred_unrate_observations",
-            "fred_cpiaucsl_observations",
-            "fred_t10y2y_observations",
-            "treasury_rates_snapshot_json",
-        ]
+        if package_key == "tradingagents_advisory_research_macro":
+            assert http_node_ids == [
+                "fred_fedfunds_observations",
+                "fred_unrate_observations",
+                "fred_cpiaucsl_observations",
+                "fred_t10y2y_observations",
+                "treasury_rates_snapshot_json",
+            ]
+        else:
+            assert http_node_ids == []
 
 
 def test_parse_rejects_package_schema_additional_properties_keyword() -> None:
