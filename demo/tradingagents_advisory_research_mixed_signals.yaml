@@ -438,7 +438,31 @@ spec:
         macroContext:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
     outputSchema: web_news_breadth_packet
     capabilityProfiles: []
     mcpServers:
@@ -469,11 +493,59 @@ spec:
         macroContext:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         newsBreadth:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
     outputSchema: prediction_market_packet
     capabilityProfiles:
     - prediction_market_tools
@@ -532,11 +604,59 @@ spec:
         prefetchedSentiment:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         newsBreadth:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
     outputSchema: analyst_report
     capabilityProfiles:
     - social_sentiment_tools
@@ -567,11 +687,59 @@ spec:
         macroContext:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         newsBreadth:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
     outputSchema: analyst_report
     capabilityProfiles:
     - news_research_tools
@@ -686,11 +854,59 @@ spec:
         macroContext:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         newsBreadth:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         sentimentReport:
           type: object
           required:
@@ -1000,10 +1216,90 @@ spec:
                     type: string
         outputLanguage:
           type: string
+        macroContext:
+          type: object
+          required: []
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
+        newsBreadth:
+          type: object
+          required: []
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         predictionMarketContext:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         sentimentReport:
           type: object
           required:
@@ -1113,7 +1409,31 @@ spec:
         predictionMarketContext:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         sentimentReport:
           type: object
           required:
@@ -1247,7 +1567,31 @@ spec:
         predictionMarketContext:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         traderProposal:
           type: object
           required:
@@ -1393,7 +1737,31 @@ spec:
         predictionMarketContext:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         traderProposal:
           type: object
           required:
@@ -1540,7 +1908,31 @@ spec:
         predictionMarketContext:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         traderProposal:
           type: object
           required:
@@ -1692,7 +2084,31 @@ spec:
         predictionMarketContext:
           type: object
           required: []
-          properties: {}
+          properties:
+            summary:
+              type: string
+            findings:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            sourceType:
+              type: string
+            sourceUrl:
+              type: string
+            fetchedAt:
+              type: string
+            query:
+              type: string
+            stableSourceId:
+              type: string
         traderProposal:
           type: object
           required:
