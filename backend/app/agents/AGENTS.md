@@ -52,6 +52,8 @@ app/agents/
 - Runtime prompt builders and memory middleware treat `memoryId` values as opaque platform-core memory identifiers.
 - MCP boundary code owns URL/stdio safety, saved config normalization, snapshots, and dispatch wrapping; keep that safety logic here instead of scattering it through routes or services.
 - Do not recreate a `skills/` namespace here; package-private skills are not a live backend app/agents contract.
+- During upstream migrations, role prompts and persona logic belong in Workflow Package `agents[]`; orchestration topology belongs in package `workflows[]`; upstream tool groups and role capability sets belong in package-local `capabilityProfiles`, not global capabilities.
+- Generic web search or page fetch remains package-private MCP unless product scope explicitly promotes it to a public extension-owned tool.
 
 ## ANTI-PATTERNS
 - Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
