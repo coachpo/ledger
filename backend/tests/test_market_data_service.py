@@ -1,40 +1,39 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import cast
 
 import pytest
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from app.extensions.signaldeck_finance.provider_factories import (
     register as register_finance_workspace_provider_factories,
 )
 from app.services.market_data_service import MarketDataService
-from app.services.quote_provider import (
+from app.services.news_provider import (
+    NewsProvider,
+    NewsProviderError,
+    NewsProviderRateLimitError,
+    NewsProviderTimeoutError,
+    NewsScope,
     ProviderNewsItem,
     ProviderNewsResult,
-    QuoteProvider,
-    QuoteProviderError,
-    QuoteProviderRateLimitError,
-    QuoteProviderTimeoutError,
-    YahooFinanceQuoteProvider,
 )
+from app.services.quote_provider import DeterministicQuoteProvider
 
 
-def _quote_provider(provider: object) -> QuoteProvider:
-    return cast(QuoteProvider, provider)
+def _news_provider(provider: object) -> NewsProvider:
+    return cast(NewsProvider, provider)
 
 
-def _service(session: Session, provider: object) -> MarketDataService:
+def _service(provider: object) -> MarketDataService:
     return MarketDataService(
-        session=session,
-        quote_provider=_quote_provider(provider),
+        session=cast(Session, None),
+        quote_provider=DeterministicQuoteProvider(),
+        news_providers=(_news_provider(provider),),
     )
-
-
-def _timestamp(value: datetime) -> int:
-    return int(value.timestamp())
 
 
 class _NewsProvider:
@@ -43,11 +42,11 @@ class _NewsProvider:
         *,
         provider_name: str = "news_test",
         items: list[ProviderNewsItem] | None = None,
-        failure: QuoteProviderError | None = None,
+        failure: NewsProviderError | None = None,
     ) -> None:
         self.provider_name: str = provider_name
         self.items: list[ProviderNewsItem] = list(items or [])
-        self.failure: QuoteProviderError | None = failure
+        self.failure: NewsProviderError | None = failure
         self.news_calls: list[
             tuple[list[str], str | None, str, datetime | None, datetime | None, int]
         ] = []
@@ -57,7 +56,7 @@ class _NewsProvider:
         *,
         symbols: list[str],
         query: str | None,
-        scope: str,
+        scope: NewsScope,
         start_date: datetime | None,
         end_date: datetime | None,
         limit: int,
@@ -66,6 +65,14 @@ class _NewsProvider:
         if self.failure is not None:
             raise self.failure
         return ProviderNewsResult(provider=self.provider_name, items=self.items[:limit])
+
+
+@pytest.fixture()
+def news_service_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Callable[[object], MarketDataService]:
+    monkeypatch.setattr(MarketDataService, "_require_enabled", lambda self: None)
+    return _service
 
 
 def test_market_data_provider_factories_are_extension_owned() -> None:
@@ -82,80 +89,17 @@ def test_market_data_provider_factories_are_extension_owned() -> None:
     }
 
 
-def test_news_adapter_yahoo_normalizes_company_and_macro_news(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    provider = YahooFinanceQuoteProvider(timeout=0.1)
-    calls: list[tuple[str, int]] = []
-
-    def fake_fetch_news_payload(query: str, *, limit: int) -> dict[str, object]:
-        calls.append((query, limit))
-        if query == "financial markets":
-            return {
-                "news": [
-                    {
-                        "title": "Macro market recap",
-                        "publisher": "Macro Wire",
-                        "providerPublishTime": _timestamp(datetime(2026, 1, 2, tzinfo=UTC)),
-                    }
-                ]
-            }
-        return {
-            "news": [
-                {
-                    "title": "Nvidia earnings recap",
-                    "publisher": "Market Wire",
-                    "providerPublishTime": _timestamp(datetime(2026, 1, 2, tzinfo=UTC)),
-                    "link": "https://example.test/nvda",
-                    "summary": "Results beat expectations.",
-                    "relatedTickers": ["nvda", "NVDA"],
-                },
-                {
-                    "title": "Outside window",
-                    "publisher": "Old Wire",
-                    "providerPublishTime": _timestamp(datetime(2025, 12, 31, tzinfo=UTC)),
-                },
-            ]
-        }
-
-    monkeypatch.setattr(provider, "_fetch_news_payload", fake_fetch_news_payload)
-    result = provider.fetch_news(
-        symbols=[" nvda ", "NVDA"],
-        query=" earnings ",
-        scope="symbol",
-        start_date=datetime(2026, 1, 1, tzinfo=UTC),
-        end_date=datetime(2026, 1, 3, tzinfo=UTC),
-        limit=5,
-    )
-    macro_result = provider.fetch_news(
-        symbols=[],
-        query=None,
-        scope="market",
-        start_date=None,
-        end_date=None,
-        limit=2,
-    )
-
-    assert calls == [("NVDA earnings", 5), ("financial markets", 2)]
-    assert result.provider == "yahoo_finance"
-    assert [item.title for item in result.items] == ["Nvidia earnings recap"]
-    assert result.items[0].source == "Market Wire"
-    assert result.items[0].symbols == ["NVDA"]
-    assert macro_result.items[0].symbols == []
-
-
 def test_news_adapter_rate_limit_degrades_with_structured_warning(
-    session_factory: sessionmaker[Session],
+    news_service_factory: Callable[[object], MarketDataService],
 ) -> None:
     provider = _NewsProvider(
-        failure=QuoteProviderRateLimitError(
+        failure=NewsProviderRateLimitError(
             "provider rate limited api_key=sk-secret",
             details={"status": "429", "api_key": "sk-secret"},
         )
     )
-    with session_factory() as session:
-        service = _service(session, provider)
-        result = service.get_news_snapshot(symbols=["nvda"], providers=[_quote_provider(provider)])
+    service = news_service_factory(provider)
+    result = service.get_news_snapshot(symbols=["nvda"], providers=[_news_provider(provider)])
     payload = result.model_dump(mode="json", by_alias=True)
 
     assert payload["items"] == []
@@ -169,12 +113,11 @@ def test_news_adapter_rate_limit_degrades_with_structured_warning(
 
 
 def test_news_adapter_timeout_degrades_with_structured_warning(
-    session_factory: sessionmaker[Session],
+    news_service_factory: Callable[[object], MarketDataService],
 ) -> None:
-    provider = _NewsProvider(failure=QuoteProviderTimeoutError("news provider timed out"))
-    with session_factory() as session:
-        service = _service(session, provider)
-        result = service.get_news_snapshot(symbols=["nvda"], providers=[_quote_provider(provider)])
+    provider = _NewsProvider(failure=NewsProviderTimeoutError("news provider timed out"))
+    service = news_service_factory(provider)
+    result = service.get_news_snapshot(symbols=["nvda"], providers=[_news_provider(provider)])
     payload = result.model_dump(mode="json", by_alias=True)
 
     assert payload["items"] == []
@@ -185,12 +128,11 @@ def test_news_adapter_timeout_degrades_with_structured_warning(
 
 
 def test_news_adapter_empty_result_returns_structured_warning(
-    session_factory: sessionmaker[Session],
+    news_service_factory: Callable[[object], MarketDataService],
 ) -> None:
     provider = _NewsProvider()
-    with session_factory() as session:
-        service = _service(session, provider)
-        result = service.get_news_snapshot(symbols=["nvda"], providers=[_quote_provider(provider)])
+    service = news_service_factory(provider)
+    result = service.get_news_snapshot(symbols=["nvda"], providers=[_news_provider(provider)])
     payload = result.model_dump(mode="json", by_alias=True)
 
     assert payload["items"] == []
@@ -209,11 +151,11 @@ def test_news_adapter_empty_result_returns_structured_warning(
 
 
 def test_news_adapter_partial_result_falls_back_after_provider_outage(
-    session_factory: sessionmaker[Session],
+    news_service_factory: Callable[[object], MarketDataService],
 ) -> None:
     first_provider = _NewsProvider(
         provider_name="primary_news",
-        failure=QuoteProviderError("primary outage", code="provider_unavailable"),
+        failure=NewsProviderError("primary outage", code="provider_unavailable"),
     )
     second_provider = _NewsProvider(
         provider_name="secondary_news",
@@ -226,12 +168,11 @@ def test_news_adapter_partial_result_falls_back_after_provider_outage(
             )
         ],
     )
-    with session_factory() as session:
-        service = _service(session, first_provider)
-        result = service.get_news_snapshot(
-            symbols=["nvda"],
-            providers=[_quote_provider(first_provider), _quote_provider(second_provider)],
-        )
+    service = news_service_factory(first_provider)
+    result = service.get_news_snapshot(
+        symbols=["nvda"],
+        providers=[_news_provider(first_provider), _news_provider(second_provider)],
+    )
     payload = result.model_dump(mode="json", by_alias=True)
 
     assert [item["title"] for item in cast(list[dict[str, object]], payload["items"])] == [

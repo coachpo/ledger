@@ -58,9 +58,16 @@ from app.services.market_data_snapshots import (
 )
 from app.services.market_data_snapshots import MarketDataOhlcvRow as RuntimeOhlcvRow
 from app.services.market_data_snapshots import MarketDataOhlcvSeries as RuntimeOhlcvSeries
+from app.services.news_provider import (
+    DeterministicNewsProvider,
+    NewsProvider,
+    NewsProviderError,
+    NewsScope,
+    ProviderNewsItem,
+    ProviderNewsResult,
+)
 from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import (
-    NewsScope,
     ProviderFinancialStatement,
     ProviderFinancialStatementLine,
     ProviderFundamentalMetric,
@@ -69,18 +76,16 @@ from app.services.quote_provider import (
     ProviderHistorySeries,
     ProviderInsiderData,
     ProviderInsiderTransaction,
-    ProviderNewsItem,
-    ProviderNewsResult,
     ProviderOhlcvRow,
     ProviderOhlcvSeries,
     ProviderQuote,
     QuoteProvider,
     QuoteProviderError,
-    QuoteProviderRateLimitError,
 )
 from app.services.runtime_tool_grants import RuntimeToolGrantPolicy, RuntimeToolGrantService
 
 _ProviderResultT = TypeVar("_ProviderResultT")
+_ProviderT = TypeVar("_ProviderT", QuoteProvider, NewsProvider)
 
 _FUNDAMENTAL_METRIC_ORDER = {
     name: index
@@ -188,7 +193,6 @@ __all__ = [
     "ProviderQuote",
     "QuoteProvider",
     "QuoteProviderError",
-    "QuoteProviderRateLimitError",
 ]
 
 
@@ -209,9 +213,17 @@ class MarketDataService:
     insider_default_transaction_limit: int = 50
     insider_max_transaction_limit: int = 100
 
-    def __init__(self, session: Session, quote_provider: QuoteProvider) -> None:
+    def __init__(
+        self,
+        session: Session,
+        quote_provider: QuoteProvider,
+        news_providers: Sequence[NewsProvider] | None = None,
+    ) -> None:
         self.session: Session = session
         self.quote_provider: QuoteProvider = quote_provider
+        self.news_providers: tuple[NewsProvider, ...] = tuple(
+            news_providers or (DeterministicNewsProvider(),)
+        )
         self.portfolio_service: PortfolioService = PortfolioService(session)
         self.repository: MarketQuoteRepository = MarketQuoteRepository(session)
         self.settings: Settings = get_settings()
@@ -471,6 +483,7 @@ class MarketDataService:
 
         provider_result, warnings = self._resolve_with_provider_fallback(
             providers,
+            default_providers=(self.quote_provider,),
             operation="fundamentals",
             call=lambda provider: provider.fetch_fundamentals(normalized_symbol),
         )
@@ -527,7 +540,7 @@ class MarketDataService:
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         item_limit: int | None = None,
-        providers: Sequence[QuoteProvider] | None = None,
+        providers: Sequence[NewsProvider] | None = None,
     ) -> RuntimeNewsLookupResult:
         self._require_enabled()
         normalized_symbols = self._normalize_optional_symbols(symbols or [])
@@ -553,6 +566,7 @@ class MarketDataService:
 
         provider_result, warnings = self._resolve_with_provider_fallback(
             providers,
+            default_providers=self.news_providers,
             operation="news",
             call=lambda provider: provider.fetch_news(
                 symbols=normalized_symbols,
@@ -640,6 +654,7 @@ class MarketDataService:
 
         provider_result, warnings = self._resolve_with_provider_fallback(
             providers,
+            default_providers=(self.quote_provider,),
             operation="insider",
             call=lambda provider: provider.fetch_insider_transactions(
                 normalized_symbol,
@@ -1215,12 +1230,13 @@ class MarketDataService:
 
     def _resolve_with_provider_fallback(
         self,
-        providers: Sequence[QuoteProvider] | None,
+        providers: Sequence[_ProviderT] | None,
         *,
+        default_providers: Sequence[_ProviderT],
         operation: str,
-        call: Callable[[QuoteProvider], _ProviderResultT],
+        call: Callable[[_ProviderT], _ProviderResultT],
     ) -> tuple[_ProviderResultT | None, list[RuntimeToolWarning]]:
-        ordered_providers = list(providers or [self.quote_provider])[
+        ordered_providers = list(providers or default_providers)[
             : self.provider_fallback_max_attempts
         ]
         warnings: list[RuntimeToolWarning] = []
@@ -1238,7 +1254,7 @@ class MarketDataService:
             provider_name = self._provider_name(provider)
             try:
                 return call(provider), warnings
-            except QuoteProviderError as exc:
+            except (QuoteProviderError, NewsProviderError) as exc:
                 warnings.append(
                     self._runtime_warning(
                         code=self._provider_warning_code(operation, exc),
@@ -1420,7 +1436,9 @@ class MarketDataService:
             raise QuoteProviderError(f"{label} must be at most {max_limit}")
         return limit
 
-    def _provider_warning_code(self, operation: str, exc: QuoteProviderError) -> str:
+    def _provider_warning_code(
+        self, operation: str, exc: QuoteProviderError | NewsProviderError
+    ) -> str:
         if exc.code == "provider_api_key_missing":
             return f"{operation}_api_key_missing"
         if exc.code == "provider_timeout":
@@ -1431,7 +1449,7 @@ class MarketDataService:
             return f"{operation}_provider_unavailable"
         return f"{operation}_provider_error"
 
-    def _provider_name(self, provider: QuoteProvider) -> str:
+    def _provider_name(self, provider: QuoteProvider | NewsProvider) -> str:
         return str(getattr(provider, "provider_name", provider.__class__.__name__))
 
     def _runtime_warning(

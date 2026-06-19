@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
+from email.utils import parsedate_to_datetime
 from typing import Literal, Protocol, cast
+from xml.etree import ElementTree
 
 import httpx
 
@@ -88,10 +91,39 @@ class SocialSentimentSourceAdapter(Protocol):
     ) -> ProviderSocialSentimentSourceResult: ...
 
 
+class _JsonFetcher(Protocol):
+    def __call__(
+        self,
+        url: str,
+        *,
+        params: dict[str, str | int],
+        timeout: float,
+        provider: str,
+        source: SocialSentimentSource,
+    ) -> dict[str, object]: ...
+
+
+class _TextFetcher(Protocol):
+    def __call__(
+        self,
+        url: str,
+        *,
+        params: dict[str, str | int],
+        timeout: float,
+        provider: str,
+        source: SocialSentimentSource,
+    ) -> str: ...
+
+
+class _Sleeper(Protocol):
+    def __call__(self, delay_seconds: float, /) -> None: ...
+
+
 class RedditSocialSentimentAdapter:
     source: SocialSentimentSource = "reddit"
     provider_name: str = "reddit_public_search"
     _API: str = "https://www.reddit.com/r/{subreddit}/search.json"
+    _RSS_API: str = "https://www.reddit.com/r/{subreddit}/search.rss"
     _USER_AGENT: str = "signaldeck-backend/0.1"
 
     def __init__(
@@ -99,10 +131,16 @@ class RedditSocialSentimentAdapter:
         *,
         timeout: float,
         subreddits: Sequence[str] | None = None,
+        transport: _RedditTransport | None = None,
     ) -> None:
         self.timeout: float = timeout
         self.subreddits: tuple[str, ...] = tuple(
             subreddits or ("wallstreetbets", "stocks", "investing")
+        )
+        self._transport: _RedditTransport = transport or _RedditTransport(
+            json_fetcher=_request_json,
+            text_fetcher=_request_text,
+            sleep=time.sleep,
         )
 
     def fetch_source_blocks(
@@ -119,6 +157,18 @@ class RedditSocialSentimentAdapter:
         limit_per_subreddit = max(1, (limit + len(self.subreddits) - 1) // len(self.subreddits))
 
         for subreddit in self.subreddits:
+            try:
+                rss_blocks = self._fetch_subreddit_rss_blocks(
+                    normalized_symbol,
+                    subreddit=subreddit,
+                    limit=limit_per_subreddit,
+                )
+                if rss_blocks:
+                    blocks.extend(rss_blocks)
+                    continue
+            except SocialSentimentProviderError:
+                rss_blocks = []
+
             try:
                 posts = self._fetch_subreddit_posts(
                     normalized_symbol,
@@ -141,10 +191,14 @@ class RedditSocialSentimentAdapter:
                     blocks.append(block)
 
         filtered_blocks = blocks[:limit]
-        metrics = _count_metrics(
-            source=self.source,
-            as_of=_latest_as_of(filtered_blocks),
-            count=len(filtered_blocks),
+        metrics = (
+            []
+            if filtered_blocks and not filtered_blocks[0].metrics
+            else _count_metrics(
+                source=self.source,
+                as_of=_latest_as_of(filtered_blocks),
+                count=len(filtered_blocks),
+            )
         )
         return ProviderSocialSentimentSourceResult(
             source=self.source,
@@ -168,7 +222,7 @@ class RedditSocialSentimentAdapter:
             "t": "week",
             "limit": limit,
         }
-        payload = _request_json(
+        payload = self._transport.json_fetcher(
             self._API.format(subreddit=subreddit),
             params=params,
             timeout=self.timeout,
@@ -183,6 +237,53 @@ class RedditSocialSentimentAdapter:
             post = _object_dict(child_payload.get("data"))
             posts.append(post)
         return posts
+
+    def _fetch_subreddit_rss_blocks(
+        self,
+        symbol: str,
+        *,
+        subreddit: str,
+        limit: int,
+    ) -> list[ProviderSocialSentimentSourceBlock]:
+        params: dict[str, str | int] = {
+            "q": symbol,
+            "restrict_sr": "on",
+            "sort": "new",
+            "t": "week",
+            "limit": limit,
+        }
+        payload = self._fetch_subreddit_rss_text(subreddit=subreddit, params=params)
+        return _parse_reddit_rss_blocks(
+            payload,
+            symbol=symbol,
+            source=self.source,
+            provider=self.provider_name,
+            limit=limit,
+        )
+
+    def _fetch_subreddit_rss_text(
+        self,
+        *,
+        subreddit: str,
+        params: dict[str, str | int],
+    ) -> str:
+        try:
+            return self._transport.text_fetcher(
+                self._RSS_API.format(subreddit=subreddit),
+                params=params,
+                timeout=self.timeout,
+                provider=self.provider_name,
+                source=self.source,
+            )
+        except SocialSentimentProviderRateLimitError:
+            self._transport.sleep(1.0)
+            return self._transport.text_fetcher(
+                self._RSS_API.format(subreddit=subreddit),
+                params=params,
+                timeout=self.timeout,
+                provider=self.provider_name,
+                source=self.source,
+            )
 
     def _build_post_block(
         self,
@@ -232,8 +333,11 @@ class StockTwitsSocialSentimentAdapter:
     provider_name: str = "stocktwits_public_stream"
     _API: str = "https://api.stocktwits.com/api/2/streams/symbol/{symbol}.json"
 
-    def __init__(self, *, timeout: float) -> None:
+    def __init__(self, *, timeout: float, transport: _StockTwitsTransport | None = None) -> None:
         self.timeout: float = timeout
+        self._transport: _StockTwitsTransport = transport or _StockTwitsTransport(
+            json_fetcher=_request_json
+        )
 
     def fetch_source_blocks(
         self,
@@ -244,13 +348,26 @@ class StockTwitsSocialSentimentAdapter:
         limit: int,
     ) -> ProviderSocialSentimentSourceResult:
         normalized_symbol = normalize_symbol(symbol)
-        payload = _request_json(
-            self._API.format(symbol=normalized_symbol),
-            params={},
-            timeout=self.timeout,
-            provider=self.provider_name,
-            source=self.source,
-        )
+        try:
+            payload = self._transport.json_fetcher(
+                self._API.format(symbol=normalized_symbol),
+                params={},
+                timeout=self.timeout,
+                provider=self.provider_name,
+                source=self.source,
+            )
+        except SocialSentimentProviderError as exc:
+            return ProviderSocialSentimentSourceResult(
+                source=self.source,
+                provider=self.provider_name,
+                warnings=[
+                    _warning_from_error(
+                        exc,
+                        source=self.source,
+                        provider=self.provider_name,
+                    )
+                ],
+            )
         messages = _object_list(payload.get("messages"))
         blocks: list[ProviderSocialSentimentSourceBlock] = []
         for message in messages[:limit]:
@@ -389,6 +506,100 @@ def _request_json(
             details={"provider": provider, "source": source},
         )
     return cast(dict[str, object], payload)
+
+
+def _request_text(
+    url: str,
+    *,
+    params: dict[str, str | int],
+    timeout: float,
+    provider: str,
+    source: SocialSentimentSource,
+) -> str:
+    headers = {"User-Agent": "signaldeck-backend/0.1", "Accept": "application/rss+xml"}
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.get(url, params=params, headers=headers)
+            _ = response.raise_for_status()
+    except httpx.TimeoutException as exc:
+        raise SocialSentimentProviderTimeoutError(
+            f"{provider} timed out while fetching {source} sentiment",
+            details={"provider": provider, "source": source},
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
+        if status_code == 429:
+            raise SocialSentimentProviderRateLimitError(
+                f"{provider} rate limited {source} sentiment",
+                details={"provider": provider, "source": source, "status": str(status_code)},
+            ) from exc
+        raise SocialSentimentProviderError(
+            f"{provider} failed while fetching {source} sentiment",
+            details={"provider": provider, "source": source, "status": str(status_code)},
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise SocialSentimentProviderError(
+            f"{provider} is unavailable for {source} sentiment",
+            code="provider_unavailable",
+            details={"provider": provider, "source": source},
+        ) from exc
+    return response.text
+
+
+@dataclass(frozen=True, slots=True)
+class _RedditTransport:
+    json_fetcher: _JsonFetcher
+    text_fetcher: _TextFetcher
+    sleep: _Sleeper
+
+
+@dataclass(frozen=True, slots=True)
+class _StockTwitsTransport:
+    json_fetcher: _JsonFetcher
+
+
+def _parse_reddit_rss_blocks(
+    payload: str,
+    *,
+    symbol: str,
+    source: SocialSentimentSource,
+    provider: str,
+    limit: int,
+) -> list[ProviderSocialSentimentSourceBlock]:
+    try:
+        root = ElementTree.fromstring(payload)
+    except ElementTree.ParseError as exc:
+        raise SocialSentimentProviderError(
+            f"{provider} returned malformed {source} sentiment",
+            details={"provider": provider, "source": source},
+        ) from exc
+    blocks: list[ProviderSocialSentimentSourceBlock] = []
+    for item in root.findall(".//item")[:limit]:
+        block = ProviderSocialSentimentSourceBlock(
+            source=source,
+            provider=provider,
+            title=_element_text(item, "title"),
+            summary=_truncate(_element_text(item, "description"), limit=280),
+            url=_element_text(item, "link"),
+            as_of=_rss_datetime(_element_text(item, "pubDate")),
+            symbols=[symbol],
+        )
+        blocks.append(block)
+    return blocks
+
+
+def _element_text(element: ElementTree.Element, child_name: str) -> str | None:
+    child = element.find(child_name)
+    return _text(child.text if child is not None else None)
+
+
+def _rss_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return to_utc(parsedate_to_datetime(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _warning_from_error(

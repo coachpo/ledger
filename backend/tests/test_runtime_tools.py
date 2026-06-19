@@ -77,9 +77,7 @@ from app.extensions.signaldeck_digital_oracle.ownership import (
     DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES,
     DIGITAL_ORACLE_RUNTIME_TOOL_KEYS,
 )
-from app.extensions.signaldeck_digital_oracle.provider_inventory import (
-    IN_SCOPE_PROVIDER_INVENTORY,
-)
+from app.extensions.signaldeck_digital_oracle.provider_inventory import IN_SCOPE_PROVIDER_INVENTORY
 from app.extensions.signaldeck_digital_oracle.runtime_cftc_positioning import (
     CFTC_POSITIONING_LOOKUP_OPENAI_FUNCTION_NAME,
     CFTC_POSITIONING_LOOKUP_TOOL_SPEC,
@@ -304,6 +302,7 @@ from app.services.market_data_service import MarketDataService, MarketIndicatorS
 from app.services.model_gateway_dto import ModelGatewayError, ModelToolCall
 from app.services.model_gateway_tool_retry import ModelToolCallRetryState
 from app.services.model_gateway_tool_strategy import build_model_tool_call
+from app.services.news_provider import ProviderNewsItem, ProviderNewsResult
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.position_service import PositionService
 from app.services.quote_provider import (
@@ -315,8 +314,6 @@ from app.services.quote_provider import (
     ProviderHistorySeries,
     ProviderInsiderData,
     ProviderInsiderTransaction,
-    ProviderNewsItem,
-    ProviderNewsResult,
     ProviderOhlcvRow,
     ProviderOhlcvSeries,
     ProviderQuote,
@@ -7956,9 +7953,10 @@ def test_crypto_derivatives_parser_normalizes_arrays_and_rejects_invalid_inputs(
         "depth_limit": 3,
         "item_limit": 4,
     }
-    assert parse_crypto_derivatives_lookup_arguments(json.dumps({"depthLimit": 3}))[
-        "depth_limit"
-    ] is None
+    assert (
+        parse_crypto_derivatives_lookup_arguments(json.dumps({"depthLimit": 3}))["depth_limit"]
+        is None
+    )
 
     with pytest.raises(RuntimeToolError, match="unsupported fields"):
         _ = parse_crypto_derivatives_lookup_arguments(json.dumps({"asset": "BTC"}))
@@ -8141,14 +8139,14 @@ def test_cftc_positioning_missing_market_and_provider_failure_return_warnings() 
     )
 
     empty_payload = map_cftc_positioning_result(
-        DigitalOraclePhase1Service(cftc_positioning_providers=(empty_provider,)).lookup_cftc_positioning(
-            DigitalOracleCftcPositioningQuery(markets=("Bitcoin",))
-        )
+        DigitalOraclePhase1Service(
+            cftc_positioning_providers=(empty_provider,)
+        ).lookup_cftc_positioning(DigitalOracleCftcPositioningQuery(markets=("Bitcoin",)))
     ).model_dump(mode="json", by_alias=True)
     failure_payload = map_cftc_positioning_result(
-        DigitalOraclePhase1Service(cftc_positioning_providers=(failed_provider,)).lookup_cftc_positioning(
-            DigitalOracleCftcPositioningQuery(markets=("Bitcoin",))
-        )
+        DigitalOraclePhase1Service(
+            cftc_positioning_providers=(failed_provider,)
+        ).lookup_cftc_positioning(DigitalOracleCftcPositioningQuery(markets=("Bitcoin",)))
     ).model_dump(mode="json", by_alias=True)
 
     assert empty_payload["reports"] == []
@@ -8216,9 +8214,10 @@ def test_cftc_positioning_runtime_registry_dispatch_and_disabled_extension_denia
             context=_runtime_context(fail_on_session=True),
         )
     assert denied_error.value.code == "agent_execution_access_denied"
-    assert denied_error.value.message == DIGITAL_ORACLE_DENIED_MESSAGES[
-        CFTC_POSITIONING_LOOKUP_TOOL_KEY
-    ]
+    assert (
+        denied_error.value.message
+        == DIGITAL_ORACLE_DENIED_MESSAGES[CFTC_POSITIONING_LOOKUP_TOOL_KEY]
+    )
 
 
 def test_crypto_derivatives_service_maps_fake_provider_results_to_camel_payload() -> None:
@@ -9502,8 +9501,7 @@ def test_macro_rates_runtime_tool_spec_uses_approved_parameters_schema() -> None
     assert MACRO_RATES_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_digital_oracle_macro_rates_lookup"
     assert MACRO_RATES_LOOKUP_TOOL_SPEC.key == MACRO_RATES_LOOKUP_TOOL_KEY
     assert (
-        MACRO_RATES_LOOKUP_TOOL_SPEC.openai_function_name
-        == MACRO_RATES_LOOKUP_OPENAI_FUNCTION_NAME
+        MACRO_RATES_LOOKUP_TOOL_SPEC.openai_function_name == MACRO_RATES_LOOKUP_OPENAI_FUNCTION_NAME
     )
     assert MACRO_RATES_LOOKUP_TOOL_SPEC.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
     assert MACRO_RATES_LOOKUP_TOOL_SPEC.parser is parse_macro_rates_lookup_arguments

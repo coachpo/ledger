@@ -38,9 +38,6 @@ class QuoteProviderRateLimitError(QuoteProviderError):
         super().__init__(message, code="provider_rate_limited", details=details)
 
 
-NewsScope = Literal["symbol", "market", "global"]
-
-
 @dataclass(slots=True)
 class ProviderQuote:
     symbol: str
@@ -119,23 +116,6 @@ class ProviderFundamentals:
 
 
 @dataclass(slots=True)
-class ProviderNewsItem:
-    title: str
-    source: str
-    published_at: datetime
-    url: str | None = None
-    summary: str | None = None
-    symbols: list[str] | None = None
-    sentiment: Literal["positive", "neutral", "negative", "mixed"] | None = None
-
-
-@dataclass(slots=True)
-class ProviderNewsResult:
-    provider: str
-    items: list[ProviderNewsItem]
-
-
-@dataclass(slots=True)
 class ProviderInsiderTransaction:
     insider_name: str
     transaction_type: str
@@ -168,17 +148,6 @@ class QuoteProvider(Protocol):
     ) -> ProviderOhlcvSeries: ...
 
     def fetch_fundamentals(self, symbol: str) -> ProviderFundamentals: ...
-
-    def fetch_news(
-        self,
-        *,
-        symbols: list[str],
-        query: str | None,
-        scope: NewsScope,
-        start_date: datetime | None,
-        end_date: datetime | None,
-        limit: int,
-    ) -> ProviderNewsResult: ...
 
     def fetch_insider_transactions(
         self,
@@ -375,98 +344,6 @@ class YahooFinanceQuoteProvider:
             f"Fundamentals are unavailable for {normalize_symbol(symbol)}",
             code="provider_unavailable",
             details={"provider": self.provider_name, "symbol": normalize_symbol(symbol)},
-        )
-
-    def fetch_news(
-        self,
-        *,
-        symbols: list[str],
-        query: str | None,
-        scope: NewsScope,
-        start_date: datetime | None,
-        end_date: datetime | None,
-        limit: int,
-    ) -> ProviderNewsResult:
-        normalized_symbols = _normalize_symbols(symbols)
-        normalized_start = to_utc(start_date) if start_date is not None else None
-        normalized_end = to_utc(end_date) if end_date is not None else None
-        query_text = _build_news_query(normalized_symbols, query, scope=scope)
-        payload = self._fetch_news_payload(query_text, limit=limit)
-        news_items = _as_object_list(
-            payload.get("news", []),
-            context=f"News result list for {query_text}",
-        )
-        items: list[ProviderNewsItem] = []
-        for raw_item in news_items:
-            item = _as_object_dict(raw_item, context=f"News item for {query_text}")
-            news_item = _build_provider_news_item(
-                item,
-                requested_symbols=normalized_symbols,
-                start_date=normalized_start,
-                end_date=normalized_end,
-                provider=self.provider_name,
-            )
-            if news_item is not None:
-                items.append(news_item)
-
-        return ProviderNewsResult(provider=self.provider_name, items=items[:limit])
-
-    def _fetch_news_payload(self, query: str, *, limit: int) -> dict[str, object]:
-        url = "https://query1.finance.yahoo.com/v1/finance/search"
-        params: dict[str, str | int] = {
-            "q": query,
-            "quotesCount": 0,
-            "newsCount": limit,
-        }
-        headers = {"User-Agent": "signaldeck-backend/0.1"}
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(url, params=params, headers=headers)
-                _ = response.raise_for_status()
-        except httpx.TimeoutException as exc:
-            raise QuoteProviderTimeoutError(
-                "News request timed out",
-                details={"provider": self.provider_name, "query": query},
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            status_code = exc.response.status_code
-            if status_code == 429:
-                raise QuoteProviderRateLimitError(
-                    "News provider rate limited the request",
-                    details={
-                        "provider": self.provider_name,
-                        "query": query,
-                        "status": str(status_code),
-                    },
-                ) from exc
-            if status_code >= 500:
-                raise QuoteProviderError(
-                    "News provider is unavailable",
-                    code="provider_unavailable",
-                    details={
-                        "provider": self.provider_name,
-                        "query": query,
-                        "status": str(status_code),
-                    },
-                ) from exc
-            raise QuoteProviderError(
-                "News request failed",
-                details={
-                    "provider": self.provider_name,
-                    "query": query,
-                    "status": str(status_code),
-                },
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise QuoteProviderError(
-                "News provider is unavailable",
-                code="provider_unavailable",
-                details={"provider": self.provider_name, "query": query},
-            ) from exc
-
-        return _as_object_dict(
-            cast(object, response.json()),
-            context=f"News payload for {query}",
         )
 
     def fetch_insider_transactions(
@@ -773,46 +650,6 @@ class DeterministicQuoteProvider:
             ],
         )
 
-    def fetch_news(
-        self,
-        *,
-        symbols: list[str],
-        query: str | None,
-        scope: NewsScope,
-        start_date: datetime | None,
-        end_date: datetime | None,
-        limit: int,
-    ) -> ProviderNewsResult:
-        del start_date, end_date
-        normalized_symbols = _normalize_symbols(symbols)
-        if not normalized_symbols:
-            query_label = (query or scope).strip().replace("_", " ")
-            return ProviderNewsResult(
-                provider=self.provider_name,
-                items=[
-                    ProviderNewsItem(
-                        title=f"{query_label} deterministic news update",
-                        source="deterministic_test",
-                        published_at=datetime.combine(
-                            date(2024, 3, 29), datetime.min.time(), tzinfo=UTC
-                        ),
-                        symbols=[],
-                        sentiment="neutral",
-                    )
-                ][:limit],
-            )
-        items = [
-            ProviderNewsItem(
-                title=f"{normalize_symbol(symbol)} deterministic market update",
-                source="deterministic_test",
-                published_at=datetime.combine(date(2024, 3, 29), datetime.min.time(), tzinfo=UTC),
-                symbols=[normalize_symbol(symbol)],
-                sentiment="neutral",
-            )
-            for symbol in normalized_symbols[:limit]
-        ]
-        return ProviderNewsResult(provider=self.provider_name, items=items)
-
     def fetch_insider_transactions(
         self,
         symbol: str,
@@ -889,81 +726,6 @@ def _as_object_list(value: object, *, context: str) -> list[object]:
         raise QuoteProviderError(f"{context} was malformed")
 
     return cast(list[object], value)
-
-
-def _build_news_query(symbols: list[str], query: str | None, *, scope: NewsScope) -> str:
-    parts: list[str] = []
-    if scope == "global":
-        parts.extend(["global", "financial", "markets", "economy"])
-    parts.extend(symbol for symbol in symbols)
-    normalized_query = query.strip() if query is not None else ""
-    if normalized_query:
-        parts.append(normalized_query)
-    return " ".join(parts) if parts else "financial markets"
-
-
-def _build_provider_news_item(
-    item: dict[str, object],
-    *,
-    requested_symbols: list[str],
-    start_date: datetime | None,
-    end_date: datetime | None,
-    provider: str,
-) -> ProviderNewsItem | None:
-    title = _coerce_name(item.get("title"))
-    published_at = _coerce_news_datetime(item.get("providerPublishTime"))
-    if title is None or published_at is None:
-        return None
-    if start_date is not None and published_at < start_date:
-        return None
-    if end_date is not None and published_at > end_date:
-        return None
-
-    symbols = _coerce_symbol_list(item.get("relatedTickers")) or requested_symbols
-    return ProviderNewsItem(
-        title=title,
-        source=_coerce_name(item.get("publisher")) or provider,
-        published_at=published_at,
-        url=_coerce_name(item.get("link")),
-        summary=_coerce_name(item.get("summary")),
-        symbols=symbols,
-    )
-
-
-def _normalize_symbols(symbols: list[str]) -> list[str]:
-    normalized_symbols: list[str] = []
-    seen_symbols: set[str] = set()
-    for raw_symbol in symbols:
-        symbol = normalize_symbol(raw_symbol)
-        if not symbol or symbol in seen_symbols:
-            continue
-        seen_symbols.add(symbol)
-        normalized_symbols.append(symbol)
-    return normalized_symbols
-
-
-def _coerce_symbol_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    symbols: list[str] = []
-    seen_symbols: set[str] = set()
-    raw_symbols = cast(list[object], value)
-    for raw_symbol in raw_symbols:
-        if not isinstance(raw_symbol, str):
-            continue
-        symbol = normalize_symbol(raw_symbol)
-        if not symbol or symbol in seen_symbols:
-            continue
-        seen_symbols.add(symbol)
-        symbols.append(symbol)
-    return symbols
-
-
-def _coerce_news_datetime(value: object) -> datetime | None:
-    timestamp = _coerce_timestamp(value)
-    if timestamp is None:
-        return None
-    return datetime.fromtimestamp(timestamp, tz=UTC)
 
 
 def _list_item(items: list[object], index: int) -> object:

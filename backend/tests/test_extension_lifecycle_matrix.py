@@ -35,13 +35,13 @@ from app.schemas.text_template import TextTemplateCreate
 from app.services import extension_gate as generic_extension_gate
 from app.services.extension_service import ExtensionService
 from app.services.market_data_service import MarketDataService
+from app.services.news_provider import ProviderNewsResult
 from app.services.portfolio_service import PortfolioService
 from app.services.position_service import PositionService
 from app.services.quote_provider import (
     ProviderFundamentals,
     ProviderHistorySeries,
     ProviderInsiderData,
-    ProviderNewsResult,
     ProviderOhlcvSeries,
     ProviderQuote,
 )

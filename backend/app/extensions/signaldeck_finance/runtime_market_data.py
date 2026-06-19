@@ -50,7 +50,7 @@ from app.services.market_data_service import (
     QuoteProvider,
     QuoteProviderError,
 )
-from app.services.quote_provider import NewsScope
+from app.services.news_provider import NewsScope
 
 MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_market_data_quote_lookup"
 MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_market_data_history_lookup"
