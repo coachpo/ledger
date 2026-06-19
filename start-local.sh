@@ -5,25 +5,20 @@ ROOT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 
-APP_PORT="${APP_PORT:-8080}"
+APP_PORT="${APP_PORT:-}"
 BACKEND_HOST="127.0.0.1"
-BACKEND_PORT="${BACKEND_PORT:-8000}"
+BACKEND_PORT="${BACKEND_PORT:-}"
 FRONTEND_HOST="127.0.0.1"
-FRONTEND_PORT="${FRONTEND_PORT:-$APP_PORT}"
+FRONTEND_PORT="${FRONTEND_PORT:-}"
 RUN_SCHEDULER="${RUN_SCHEDULER:-true}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-signaldeck}"
-DEFAULT_DATABASE_URL="postgresql+psycopg://signaldeck:${POSTGRES_PASSWORD}@localhost:25432/signaldeck"
 LOCAL_POSTGRES_CONTAINER="signaldeck-local-postgres"
 LOCAL_POSTGRES_IMAGE="pgvector/pgvector:pg16"
-LOCAL_POSTGRES_PORT="25432"
+LOCAL_POSTGRES_PORT="${LOCAL_POSTGRES_PORT:-}"
 LOCAL_POSTGRES_VOLUME="signaldeck-postgres-data"
 
-export DATABASE_URL="${DATABASE_URL:-$DEFAULT_DATABASE_URL}"
 export AGENT_PLATFORM_ENCRYPTION_KEY="${AGENT_PLATFORM_ENCRYPTION_KEY:-signaldeck-agent-platform-dev-key}"
 export SIGNALDECK_RUNTIME_MODE="${SIGNALDECK_RUNTIME_MODE:-local}"
-export VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://${BACKEND_HOST}:${BACKEND_PORT}/api/v1}"
-export PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://localhost:${FRONTEND_PORT}}"
-export CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}}"
 
 LOG_DIR="$ROOT_DIR/.tmp/start-local/$(date +%Y%m%d-%H%M%S)"
 BACKEND_LOG="$LOG_DIR/backend.log"
@@ -34,6 +29,7 @@ CHILD_PIDS=()
 CHILD_LABELS=()
 CHILD_LOGS=()
 MANAGED_DATABASE_STARTED=false
+MANAGE_LOCAL_DATABASE=false
 STOPPING=false
 
 status() {
@@ -95,7 +91,7 @@ scheduler_enabled() {
 }
 
 using_managed_local_database() {
-  [[ "$DATABASE_URL" == "$DEFAULT_DATABASE_URL" ]]
+  [[ "$MANAGE_LOCAL_DATABASE" == "true" ]]
 }
 
 docker_container_running() {
@@ -110,63 +106,113 @@ docker_container_exists() {
   docker inspect "$container_name" >/dev/null 2>&1
 }
 
+docker_container_port() {
+  local container_name="$1"
+  local container_port="$2"
+  local published
+
+  published="$(docker port "$container_name" "${container_port}/tcp" 2>/dev/null || true)"
+  published="${published%%$'\n'*}"
+  printf '%s\n' "${published##*:}"
+}
+
 port_listener_pids() {
   local port="$1"
 
   lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u || true
 }
 
-stop_port_listeners() {
+validate_port() {
+  local label="$1"
+  local port="$2"
+
+  case "$port" in
+    ''|*[!0-9]*)
+      die "$label must be a numeric TCP port."
+      ;;
+  esac
+
+  if (( port < 1024 || port > 65535 )); then
+    die "$label must be between 1024 and 65535."
+  fi
+}
+
+port_available() {
+  local port="$1"
+
+  [[ -z "$(port_listener_pids "$port")" ]]
+}
+
+choose_available_port() {
+  local label="$1"
+  local reserved_ports="${2:- }"
+  local attempt
+  local port
+
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    port=$((20000 + RANDOM % 40000))
+    if [[ "$reserved_ports" == *" $port "* ]]; then
+      continue
+    fi
+    if port_available "$port"; then
+      printf '%s\n' "$port"
+      return 0
+    fi
+  done
+
+  die "Could not find an available $label port."
+}
+
+require_port_available() {
   local port="$1"
   local label="$2"
+  local env_name="$3"
   local pids=()
-  local remaining_pids=()
-  local deadline
-  local pid
 
   mapfile -t pids < <(port_listener_pids "$port")
   if ((${#pids[@]} == 0)); then
     return 0
   fi
 
-  status "Freeing $label port $port from listener pid(s): ${pids[*]}"
-  for pid in "${pids[@]}"; do
-    kill -TERM "$pid" >/dev/null 2>&1 || true
-  done
-
-  deadline=$((SECONDS + 5))
-  while (( SECONDS < deadline )); do
-    mapfile -t remaining_pids < <(port_listener_pids "$port")
-    if ((${#remaining_pids[@]} == 0)); then
-      return 0
-    fi
-    sleep 1
-  done
-
-  mapfile -t remaining_pids < <(port_listener_pids "$port")
-  for pid in "${remaining_pids[@]}"; do
-    status "Force-stopping $label listener pid $pid on port $port."
-    kill -KILL "$pid" >/dev/null 2>&1 || true
-  done
-
-  sleep 1
-  mapfile -t remaining_pids < <(port_listener_pids "$port")
-  if ((${#remaining_pids[@]} > 0)); then
-    die "Could not free $label port $port; listener pid(s) remain: ${remaining_pids[*]}"
-  fi
+  die "$label port $port is already in use by listener pid(s): ${pids[*]}. Set $env_name to a free port, or unset it so start-local can choose one."
 }
 
-free_application_ports() {
-  local seen_ports=" "
-  local port
+configure_runtime_ports() {
+  local reserved_ports=" "
 
-  for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
-    if [[ "$seen_ports" == *" $port "* ]]; then
-      continue
-    fi
-    seen_ports+="$port "
-    stop_port_listeners "$port" "application"
-  done
+  if [[ -n "$BACKEND_PORT" ]]; then
+    validate_port "BACKEND_PORT" "$BACKEND_PORT"
+  else
+    BACKEND_PORT="$(choose_available_port "backend" "$reserved_ports")"
+  fi
+  reserved_ports+="$BACKEND_PORT "
+
+  if [[ -n "$FRONTEND_PORT" ]]; then
+    validate_port "FRONTEND_PORT" "$FRONTEND_PORT"
+  elif [[ -n "$APP_PORT" ]]; then
+    FRONTEND_PORT="$APP_PORT"
+    validate_port "APP_PORT" "$FRONTEND_PORT"
+  else
+    FRONTEND_PORT="$(choose_available_port "frontend" "$reserved_ports")"
+  fi
+
+  if [[ "$BACKEND_PORT" == "$FRONTEND_PORT" ]]; then
+    die "BACKEND_PORT and FRONTEND_PORT must be different ports."
+  fi
+  reserved_ports+="$FRONTEND_PORT "
+
+  require_port_available "$BACKEND_PORT" "backend" "BACKEND_PORT"
+  require_port_available "$FRONTEND_PORT" "frontend" "FRONTEND_PORT"
+
+  APP_PORT="$FRONTEND_PORT"
+  if [[ -z "${DATABASE_URL:-}" ]]; then
+    MANAGE_LOCAL_DATABASE=true
+  fi
+
+  export APP_PORT BACKEND_PORT FRONTEND_PORT
+  export VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://${BACKEND_HOST}:${BACKEND_PORT}/api/v1}"
+  export PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://localhost:${FRONTEND_PORT}}"
+  export CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}}"
 }
 
 show_log_tail() {
@@ -313,13 +359,16 @@ check_dependencies() {
   require_command pnpm
   require_command setsid
   require_command uv
-  if using_managed_local_database; then
-    require_command docker
-  fi
 
   node_version="$(node --version)"
   require_numeric_major_at_least "Node" "${node_version#v}" 24
   require_numeric_major_at_least "pnpm" "$(pnpm --version)" 10
+}
+
+check_database_dependencies() {
+  if using_managed_local_database; then
+    require_command docker
+  fi
 }
 
 prepare_dependencies() {
@@ -354,6 +403,8 @@ wait_for_local_database() {
 }
 
 start_local_database() {
+  local postgres_publish_port="127.0.0.1::5432"
+
   if ! using_managed_local_database; then
     status "Using DATABASE_URL override; skipping managed local PostgreSQL startup."
     return 0
@@ -361,17 +412,41 @@ start_local_database() {
 
   if docker_container_running "$LOCAL_POSTGRES_CONTAINER"; then
     status "Local PostgreSQL container $LOCAL_POSTGRES_CONTAINER is already running."
+    local running_postgres_port
+    running_postgres_port="$(docker_container_port "$LOCAL_POSTGRES_CONTAINER" 5432)"
+    [[ -n "$running_postgres_port" ]] || die "Could not resolve published PostgreSQL port for $LOCAL_POSTGRES_CONTAINER."
+    if [[ -n "$LOCAL_POSTGRES_PORT" && "$LOCAL_POSTGRES_PORT" != "$running_postgres_port" ]]; then
+      die "Local PostgreSQL container $LOCAL_POSTGRES_CONTAINER is already running on port $running_postgres_port, not LOCAL_POSTGRES_PORT=$LOCAL_POSTGRES_PORT."
+    fi
+    LOCAL_POSTGRES_PORT="$running_postgres_port"
+    export DATABASE_URL="postgresql+psycopg://signaldeck:${POSTGRES_PASSWORD}@localhost:${LOCAL_POSTGRES_PORT}/signaldeck"
     wait_for_local_database 60
     return 0
   fi
 
-  stop_port_listeners "$LOCAL_POSTGRES_PORT" "local PostgreSQL"
+  if [[ -n "$LOCAL_POSTGRES_PORT" ]]; then
+    validate_port "LOCAL_POSTGRES_PORT" "$LOCAL_POSTGRES_PORT"
+    require_port_available "$LOCAL_POSTGRES_PORT" "local PostgreSQL" "LOCAL_POSTGRES_PORT"
+    postgres_publish_port="127.0.0.1:${LOCAL_POSTGRES_PORT}:5432"
+  fi
+
+  if docker_container_exists "$LOCAL_POSTGRES_CONTAINER"; then
+    local existing_postgres_port
+    existing_postgres_port="$(docker_container_port "$LOCAL_POSTGRES_CONTAINER" 5432)"
+    if [[ -z "$LOCAL_POSTGRES_PORT" && -n "$existing_postgres_port" ]]; then
+      status "Removing stopped local PostgreSQL container $LOCAL_POSTGRES_CONTAINER so Docker can assign an available host port."
+      docker rm "$LOCAL_POSTGRES_CONTAINER" >/dev/null
+    elif [[ -n "$LOCAL_POSTGRES_PORT" && -n "$existing_postgres_port" && "$LOCAL_POSTGRES_PORT" != "$existing_postgres_port" ]]; then
+      status "Removing stopped local PostgreSQL container $LOCAL_POSTGRES_CONTAINER because it maps port $existing_postgres_port instead of LOCAL_POSTGRES_PORT=$LOCAL_POSTGRES_PORT."
+      docker rm "$LOCAL_POSTGRES_CONTAINER" >/dev/null
+    fi
+  fi
 
   if docker_container_exists "$LOCAL_POSTGRES_CONTAINER"; then
     status "Starting existing local PostgreSQL container $LOCAL_POSTGRES_CONTAINER."
     docker start "$LOCAL_POSTGRES_CONTAINER" >/dev/null
   else
-    status "Creating local PostgreSQL container $LOCAL_POSTGRES_CONTAINER."
+    status "Creating local PostgreSQL container $LOCAL_POSTGRES_CONTAINER on host port ${LOCAL_POSTGRES_PORT:-auto}."
     docker volume create "$LOCAL_POSTGRES_VOLUME" >/dev/null
     docker run -d \
       --name "$LOCAL_POSTGRES_CONTAINER" \
@@ -380,11 +455,14 @@ start_local_database() {
       -e POSTGRES_DB=signaldeck \
       -e POSTGRES_USER=signaldeck \
       -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
-      -p "127.0.0.1:${LOCAL_POSTGRES_PORT}:5432" \
+      -p "$postgres_publish_port" \
       -v "${LOCAL_POSTGRES_VOLUME}:/var/lib/postgresql/data" \
       "$LOCAL_POSTGRES_IMAGE" >/dev/null
   fi
 
+  LOCAL_POSTGRES_PORT="$(docker_container_port "$LOCAL_POSTGRES_CONTAINER" 5432)"
+  [[ -n "$LOCAL_POSTGRES_PORT" ]] || die "Could not resolve published PostgreSQL port for $LOCAL_POSTGRES_CONTAINER."
+  export DATABASE_URL="postgresql+psycopg://signaldeck:${POSTGRES_PASSWORD}@localhost:${LOCAL_POSTGRES_PORT}/signaldeck"
   MANAGED_DATABASE_STARTED=true
   wait_for_local_database 60
 }
@@ -409,7 +487,7 @@ PY
     return 0
   fi
 
-  die "Database preflight failed. Start local PostgreSQL/pgvector and set DATABASE_URL, or provide a reachable database at the default localhost:25432 signaldeck URL."
+  die "Database preflight failed. Start local PostgreSQL/pgvector and set DATABASE_URL, or let start-local manage a local database."
 }
 
 print_startup_summary() {
@@ -420,6 +498,9 @@ print_startup_summary() {
   status "Backend health URL: http://${BACKEND_HOST}:${BACKEND_PORT}/health"
   status "Backend readiness URL: http://${BACKEND_HOST}:${BACKEND_PORT}/ready"
   status "Frontend API base: $VITE_API_BASE_URL"
+  if using_managed_local_database; then
+    status "Local PostgreSQL URL: postgresql+psycopg://signaldeck:****@localhost:${LOCAL_POSTGRES_PORT}/signaldeck"
+  fi
   status "Scheduler enabled: $RUN_SCHEDULER"
   status "Logs directory: $LOG_DIR"
 }
@@ -442,10 +523,11 @@ main() {
 
   validate_boolean
   check_dependencies
+  configure_runtime_ports
+  check_database_dependencies
   prepare_dependencies
   start_local_database
   preflight_database
-  free_application_ports
   print_startup_summary
 
   start_child "backend" "$BACKEND_LOG" "$BACKEND_DIR" \
