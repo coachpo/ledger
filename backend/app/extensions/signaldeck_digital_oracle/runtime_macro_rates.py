@@ -30,9 +30,7 @@ from app.extensions.signaldeck_digital_oracle.runtime_macro_rates_providers impo
 )
 from app.extensions.signaldeck_digital_oracle.runtime_types import MACRO_RATES_LOOKUP_TOOL_KEY
 from app.extensions.signaldeck_digital_oracle.service import DigitalOraclePhase1Service
-from app.extensions.signaldeck_digital_oracle.types import (
-    DigitalOracleMacroRatesQuery,
-)
+from app.extensions.signaldeck_digital_oracle.types import DigitalOracleMacroRatesQuery
 
 MACRO_RATES_LOOKUP_ACCESS_DENIED_CODE = DIGITAL_ORACLE_DENIED_CODE
 MACRO_RATES_LOOKUP_ACCESS_DENIED_MESSAGE = DIGITAL_ORACLE_DENIED_MESSAGES[
