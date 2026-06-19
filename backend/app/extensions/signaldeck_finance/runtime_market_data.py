@@ -13,6 +13,7 @@ from app.agents.runtime_tools.types import (
 )
 from app.core.formatting import normalize_symbol, to_utc
 from app.extensions.signaldeck_finance.execution_dependencies import (
+    resolve_finance_news_providers,
     resolve_finance_quote_provider,
     resolve_social_sentiment_adapters,
 )
@@ -952,6 +953,7 @@ def execute_news_lookup(
         context,
         function_name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
     )
+    news_providers = resolve_finance_news_providers(context.provider_bundle)
     with context.session_factory() as session:
         service = MarketDataService(session=session, quote_provider=quote_provider)
         result = service.get_news_snapshot(
@@ -961,6 +963,7 @@ def execute_news_lookup(
             start_date=cast(datetime | None, arguments["start_date"]),
             end_date=cast(datetime | None, arguments["end_date"]),
             item_limit=cast(int, arguments["item_limit"]),
+            providers=news_providers,
         )
     runtime_result = RuntimeNewsLookupResult.model_validate(result.model_dump(mode="python"))
     return cast(dict[str, object], runtime_result.model_dump(mode="json", by_alias=True))

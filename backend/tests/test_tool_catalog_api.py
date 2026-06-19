@@ -488,16 +488,12 @@ def test_digital_oracle_runtime_response_aliases_and_warnings_are_stable() -> No
         "orderBooks",
         "warnings",
     }
-    assert crypto_derivatives["toolKey"] == (
-        "signaldeck.digital_oracle.crypto_derivatives.lookup"
-    )
+    assert crypto_derivatives["toolKey"] == ("signaldeck.digital_oracle.crypto_derivatives.lookup")
     assert cast(list[dict[str, object]], crypto_derivatives["spot"])[0]["asOf"] == (
         "2026-06-19T14:30:00Z"
     )
     assert set(cftc_positioning) == {"toolKey", "reports", "warnings"}
-    assert cftc_positioning["toolKey"] == (
-        "signaldeck.digital_oracle.cftc_positioning.lookup"
-    )
+    assert cftc_positioning["toolKey"] == ("signaldeck.digital_oracle.cftc_positioning.lookup")
     cftc_report = cast(list[dict[str, object]], cftc_positioning["reports"])[0]
     assert set(cftc_report) == {"provider", "reportType", "reportDate", "rows"}
     assert cast(list[dict[str, object]], cftc_report["rows"])[0]["managedMoneyLong"] == "7200"
@@ -572,10 +568,12 @@ def test_digital_oracle_runtime_response_aliases_and_warnings_are_stable() -> No
     ),
 )
 def test_digital_oracle_runtime_response_aliases_reject_raw_and_unknown_fields(
-    schema: type[RuntimeMacroRatesLookupResult]
-    | type[RuntimeCryptoDerivativesLookupResult]
-    | type[RuntimeCftcPositioningLookupResult]
-    | type[RuntimeOptionsLookupResult],
+    schema: (
+        type[RuntimeMacroRatesLookupResult]
+        | type[RuntimeCryptoDerivativesLookupResult]
+        | type[RuntimeCftcPositioningLookupResult]
+        | type[RuntimeOptionsLookupResult]
+    ),
     payload: dict[str, object],
 ) -> None:
     with pytest.raises(ValidationError):
@@ -751,9 +749,7 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     sec_filings_tool = tools_by_key["signaldeck.digital_oracle.sec_filings.lookup"]
     market_sentiment_tool = tools_by_key["signaldeck.digital_oracle.market_sentiment.lookup"]
     macro_rates_tool = tools_by_key["signaldeck.digital_oracle.macro_rates.lookup"]
-    crypto_derivatives_tool = tools_by_key[
-        "signaldeck.digital_oracle.crypto_derivatives.lookup"
-    ]
+    crypto_derivatives_tool = tools_by_key["signaldeck.digital_oracle.crypto_derivatives.lookup"]
     cftc_positioning_tool = tools_by_key["signaldeck.digital_oracle.cftc_positioning.lookup"]
     options_tool = tools_by_key["signaldeck.digital_oracle.options.lookup"]
     assert quote_tool == {
@@ -783,8 +779,8 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         "key": "signaldeck.finance.news.lookup",
         "displayName": "News Lookup",
         "description": (
-            "Read server-owned symbol, market, and global finance news with structured "
-            "warnings for provider, empty, truncated, or bounded global coverage."
+            "Read Alpha Vantage/Yahoo-backed symbol, market, and global finance news "
+            "with structured warnings for provider, empty, truncated, or bounded coverage."
         ),
     }
     assert report_lookup_tool == {

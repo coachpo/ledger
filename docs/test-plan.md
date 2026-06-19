@@ -10,9 +10,9 @@
 - `uv run mypy app`
 - `uv run pytest`
 
-Backend coverage must prove preserved `/api/v1` finance CRUD, template/report behavior, package-first platform contracts, declarative workflow-memory middleware, Scheduled Tasks API and materialization semantics, backend-owned compatibility resolution, Model Gateway behavior, native runtime tools, seven Digital Oracle tools owned by `signaldeck.digital_oracle`, typed tool-failure taxonomy, bounded `toolCallRetries`, distinct live-execution `providerRetries`, `/api/memory` proposal/audit/quarantine review surfaces, scheduler semantics, run provenance, and removed-route guarantees.
+Backend coverage must prove preserved `/api/v1` finance CRUD, template/report behavior, package-first platform contracts, declarative workflow-memory middleware, Scheduled Tasks API and materialization semantics, backend-owned compatibility resolution, Model Gateway behavior, native runtime tools, Alpha Vantage/Yahoo-backed Finance news dispatch, Reddit and StockTwits social sentiment degradation, seven Digital Oracle tools owned by `signaldeck.digital_oracle`, typed tool-failure taxonomy, bounded `toolCallRetries`, distinct live-execution `providerRetries`, `/api/memory` proposal/audit/quarantine review surfaces, scheduler semantics, run provenance, and removed-route guarantees.
 
-Automated backend coverage must stay deterministic. CI uses fake clients, fixtures, deterministic provider settings, and descriptor assertions only; it must not call live provider APIs, live MCP web search, or `yfinance` network paths. Fixture refreshes, live provider smoke checks, and upstream/provider regression runs are manual/dev-only checks, with evidence captured outside CI.
+Automated backend coverage must stay deterministic. CI uses fake clients, fixtures, deterministic provider settings, and descriptor assertions only; it must not call live provider APIs, live MCP web search, Alpha Vantage, Yahoo, Reddit, StockTwits, or `yfinance` network paths. Fixture refreshes, live provider smoke checks, and upstream/provider regression runs are manual/dev-only checks, with evidence captured outside CI.
 
 ## Frontend Quality Gates
 
@@ -99,6 +99,8 @@ rg -n "providerRetries" frontend/src/lib/types/run.ts
 ```
 
 Digital Oracle docs alignment must also keep `demo/digital_oracle_researcher.yaml` as the final artifact path, describe `signaldeck.digital_oracle` as the default-enabled tool-only bundled owner for seven shipped native tools, preserve base TradingAgents as Finance-only, keep mixed TradingAgents composition limited to `signaldeck.digital_oracle.macro_rates.lookup` plus `signaldeck.digital_oracle.prediction_markets.lookup` unless prompts explicitly use more, and avoid adding any Digital Oracle route/nav surface. Deferred roadmap docs must keep ownerless rates/macro aliases, Finance-owned macro/options/crypto/CFTC aliases, generic web search, and any Digital Oracle tools outside the seven-key topology out of shipped contracts.
+
+TradingAgents Finance provider migration checks must keep the base TradingAgents fixture and demo Finance-only, keep `signaldeck.finance.news.lookup` and `signaldeck.finance.social_sentiment.lookup` as separate capability-profile grants, prove runtime news dispatch uses injected Finance news providers, and document that Digital Oracle has no route or nav surface and no provider-settings UI route is added.
 
 No-live-network policy checks for Digital Oracle work:
 

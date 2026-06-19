@@ -51,8 +51,8 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         key="signaldeck.finance.news.lookup",
         display_name="News Lookup",
         description=(
-            "Read server-owned symbol, market, and global finance news with structured "
-            "warnings for provider, empty, truncated, or bounded global coverage."
+            "Read Alpha Vantage/Yahoo-backed symbol, market, and global finance news "
+            "with structured warnings for provider, empty, truncated, or bounded coverage."
         ),
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,

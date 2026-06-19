@@ -302,7 +302,7 @@ from app.services.market_data_service import MarketDataService, MarketIndicatorS
 from app.services.model_gateway_dto import ModelGatewayError, ModelToolCall
 from app.services.model_gateway_tool_retry import ModelToolCallRetryState
 from app.services.model_gateway_tool_strategy import build_model_tool_call
-from app.services.news_provider import ProviderNewsItem, ProviderNewsResult
+from app.services.news_provider import NewsProvider, ProviderNewsItem, ProviderNewsResult
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.position_service import PositionService
 from app.services.quote_provider import (
@@ -1074,6 +1074,7 @@ def _runtime_context(
     fail_on_session: bool = False,
     session_factory_override: sessionmaker[Session] | None = None,
     quote_provider: QuoteProvider | None = None,
+    news_providers: Sequence[NewsProvider] = (),
     run_id: int | None = None,
     run_step_id: int | None = None,
     run_agent_invocation_id: int | None = None,
@@ -1094,8 +1095,11 @@ def _runtime_context(
         _failing_session_factory if fail_on_session else _session_factory
     )
     provider_bundle = (
-        finance_execution_provider_bundle_from_parts(quote_provider=quote_provider)
-        if quote_provider is not None
+        finance_execution_provider_bundle_from_parts(
+            quote_provider=quote_provider,
+            news_providers=news_providers,
+        )
+        if quote_provider is not None or news_providers
         else ExecutionProviderBundle()
     )
     return RuntimeToolContext(
@@ -3456,6 +3460,54 @@ def test_news_lookup_parser_supports_bounded_global_scope_without_social_mutatio
                 }
             )
         )
+
+
+def test_news_lookup_dispatch_uses_injected_finance_news_providers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quote_provider = _RecordingQuoteProvider()
+    news_provider = _FinancialContractProvider(provider_name="runtime_news", news_count=3)
+    registry = RuntimeToolRegistry([NEWS_LOOKUP_TOOL_SPEC])
+    start_date = datetime(2026, 1, 1, tzinfo=UTC)
+    end_date = datetime(2026, 1, 3, tzinfo=UTC)
+    monkeypatch.setattr(
+        "app.services.market_data_service.require_finance_workspace_enabled",
+        lambda session, *, surface: None,
+    )
+
+    payload = registry.dispatch(
+        name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "symbols": [" nvda "],
+                "query": " earnings ",
+                "scope": "symbol",
+                "startDate": "2026-01-01T00:00:00Z",
+                "endDate": "2026-01-03T00:00:00Z",
+                "itemLimit": 2,
+            }
+        ),
+        granted_tool_keys={NEWS_LOOKUP_TOOL_KEY},
+        context=_runtime_context(
+            quote_provider=quote_provider,
+            news_providers=[news_provider],
+        ),
+    )
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert news_provider.news_calls == [(["NVDA"], "earnings", "symbol", start_date, end_date, 3)]
+    assert payload["toolKey"] == NEWS_LOOKUP_TOOL_KEY
+    assert payload["query"] == "earnings"
+    assert payload["symbols"] == ["NVDA"]
+    item_payload = cast(list[dict[str, object]], payload["items"])
+    assert [item["title"] for item in item_payload] == ["News 2", "News 1"]
+    assert cast(list[dict[str, object]], payload["warnings"])[0] == {
+        "code": "news_truncated",
+        "message": "News results were truncated to 2 items",
+        "details": {"limit": "2", "scope": "symbol"},
+    }
+    assert "sourceBlocks" not in payload
+    assert "metrics" not in payload
 
 
 def test_indicator_contract_requires_warmup_reasons_and_rejects_lookahead() -> None:
@@ -6183,6 +6235,7 @@ def test_news_lookup_dispatches_success_and_truncates(
         context=_runtime_context(
             session_factory_override=session_factory,
             quote_provider=quote_provider,
+            news_providers=[quote_provider],
         ),
     )
 
@@ -6334,6 +6387,7 @@ def test_news_lookup_provider_unavailable_returns_typed_empty_payload(
         context=_runtime_context(
             session_factory_override=session_factory,
             quote_provider=quote_provider,
+            news_providers=[quote_provider],
         ),
     )
 
@@ -8717,6 +8771,10 @@ def test_options_lookup_service_and_executor_return_normalized_fake_provider_pay
                 ),
             ),
         )
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.factory.importlib.util.find_spec",
+        lambda module_name: object(),
     )
     service_payload = map_options_result(
         DigitalOraclePhase1Service(options_providers=(provider,)).lookup_options(

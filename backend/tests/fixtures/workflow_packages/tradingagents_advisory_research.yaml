@@ -72,7 +72,7 @@ spec:
     - signaldeck.finance.fundamentals.lookup
   - key: news_research_tools
     name: News Research Tools
-    description: Reads company news and insider-data context from SignalDeck native tools.
+    description: Reads Finance-owned company news and insider-data context from SignalDeck native tools.
     toolKeys:
     - signaldeck.finance.insider_data.lookup
     - signaldeck.finance.news.lookup
