@@ -72,7 +72,13 @@ def create_news_providers(settings: Settings | None = None) -> tuple[NewsProvide
             case "deterministic":
                 providers.append(DeterministicNewsProvider())
             case "yahoo":
-                providers.append(YahooFinanceNewsProvider())
+                providers.append(
+                    YahooFinanceNewsProvider(
+                        timeout=resolved_settings.quote_provider_timeout_seconds,
+                        global_queries=tuple(resolved_settings.finance_global_news_queries),
+                        global_lookback_days=resolved_settings.finance_global_news_lookback_days,
+                    )
+                )
     return tuple(providers)
 
 

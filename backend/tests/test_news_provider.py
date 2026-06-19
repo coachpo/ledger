@@ -22,6 +22,7 @@ from app.services.news_provider import (
     NewsProviderUnavailableError,
     NewsSentiment,
     ProviderNewsItem,
+    YahooFinanceNewsProvider,
 )
 from app.services.quote_provider import DeterministicQuoteProvider, QuoteProvider
 
@@ -95,6 +96,9 @@ def test_create_news_providers_preserves_configured_order() -> None:
         {
             "finance_news_provider_order": ["alpha_vantage", "yahoo"],
             "finance_alpha_vantage_api_key": "alpha-key",
+            "quote_provider_timeout_seconds": 3.5,
+            "finance_global_news_queries": ["markets", "macro"],
+            "finance_global_news_lookback_days": 5,
         }
     )
 
@@ -104,6 +108,11 @@ def test_create_news_providers_preserves_configured_order() -> None:
         "AlphaVantageNewsProvider",
         "YahooFinanceNewsProvider",
     ]
+    yahoo_provider = providers[1]
+    assert isinstance(yahoo_provider, YahooFinanceNewsProvider)
+    assert yahoo_provider.timeout == 3.5
+    assert yahoo_provider.global_queries == ("markets", "macro")
+    assert yahoo_provider.global_lookback_days == 5
 
 
 def test_create_news_providers_uses_deterministic_backend_only() -> None:
@@ -139,7 +148,7 @@ def test_alpha_news_provider_missing_key_surfaces_service_warning(
 ) -> None:
     monkeypatch.setattr(MarketDataService, "_require_enabled", lambda self: None)
     providers = create_news_providers(
-        Settings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "alpha_vantage,yahoo"})
+        Settings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "alpha_vantage"})
     )
     service = MarketDataService(
         session=cast(Session, None),
@@ -153,7 +162,6 @@ def test_alpha_news_provider_missing_key_surfaces_service_warning(
     assert payload["items"] == []
     assert [warning["code"] for warning in cast(list[dict[str, object]], payload["warnings"])] == [
         "news_api_key_missing",
-        "news_provider_unavailable",
         "news_unavailable",
     ]
     assert "FINANCE_ALPHA_VANTAGE_API_KEY" not in json.dumps(payload["warnings"])

@@ -94,7 +94,7 @@ def test_alpha_news_provider_missing_key_degrades_with_structured_warning(
     news_service_factory: Callable[[object], MarketDataService],
 ) -> None:
     providers = provider_factories.create_news_providers(
-        Settings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "alpha_vantage,yahoo"})
+        Settings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "alpha_vantage"})
     )
     service = news_service_factory(providers[0])
 
@@ -104,7 +104,6 @@ def test_alpha_news_provider_missing_key_degrades_with_structured_warning(
     assert payload["items"] == []
     assert [warning["code"] for warning in cast(list[dict[str, object]], payload["warnings"])] == [
         "news_api_key_missing",
-        "news_provider_unavailable",
         "news_unavailable",
     ]
     assert "FINANCE_ALPHA_VANTAGE_API_KEY" not in json.dumps(payload["warnings"])
@@ -168,6 +167,68 @@ def test_news_adapter_empty_result_returns_structured_warning(
                 "provider": "news_test",
             },
         }
+    ]
+
+
+def test_news_adapter_empty_after_filter_preserves_empty_warning(
+    news_service_factory: Callable[[object], MarketDataService],
+) -> None:
+    provider = _NewsProvider(
+        items=[
+            ProviderNewsItem(
+                title="Future item",
+                source="wire",
+                published_at=datetime(2025, 6, 1, tzinfo=UTC),
+                symbols=["NVDA"],
+            )
+        ]
+    )
+    service = news_service_factory(provider)
+
+    result = service.get_news_snapshot(
+        symbols=["nvda"],
+        start_date=datetime(2025, 5, 1, tzinfo=UTC),
+        end_date=datetime(2025, 5, 9, tzinfo=UTC),
+        providers=[_news_provider(provider)],
+    )
+    payload = result.model_dump(mode="json", by_alias=True)
+
+    assert payload["items"] == []
+    assert [warning["code"] for warning in cast(list[dict[str, object]], payload["warnings"])] == [
+        "news_empty"
+    ]
+
+
+def test_news_adapter_global_warning_and_truncation_preserved(
+    news_service_factory: Callable[[object], MarketDataService],
+) -> None:
+    provider = _NewsProvider(
+        items=[
+            ProviderNewsItem(
+                title=f"Global item {index}",
+                source="wire",
+                published_at=datetime(2025, 5, index + 1, tzinfo=UTC),
+            )
+            for index in range(3)
+        ]
+    )
+    service = news_service_factory(provider)
+
+    result = service.get_news_snapshot(
+        scope="global",
+        end_date=datetime(2025, 5, 9, tzinfo=UTC),
+        item_limit=2,
+        providers=[_news_provider(provider)],
+    )
+    payload = result.model_dump(mode="json", by_alias=True)
+
+    assert [item["title"] for item in cast(list[dict[str, object]], payload["items"])] == [
+        "Global item 2",
+        "Global item 1",
+    ]
+    assert [warning["code"] for warning in cast(list[dict[str, object]], payload["warnings"])] == [
+        "news_truncated",
+        "news_global_coverage_limited",
     ]
 
 

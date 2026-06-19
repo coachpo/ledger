@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Literal, Protocol
+from importlib import import_module
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from app.core.formatting import normalize_symbol
 
@@ -106,27 +107,6 @@ class AlphaVantageNewsProvider:
         )
 
 
-@dataclass(frozen=True, slots=True)
-class YahooFinanceNewsProvider:
-    provider_name: str = "yahoo"
-
-    def fetch_news(
-        self,
-        *,
-        symbols: list[str],
-        query: str | None,
-        scope: NewsScope,
-        start_date: datetime | None,
-        end_date: datetime | None,
-        limit: int,
-    ) -> ProviderNewsResult:
-        del symbols, query, scope, start_date, end_date, limit
-        raise NewsProviderUnavailableError(
-            "Yahoo Finance news provider parsing is not implemented yet",
-            details={"provider": self.provider_name},
-        )
-
-
 class DeterministicNewsProvider:
     provider_name: str = "deterministic_test"
 
@@ -183,6 +163,20 @@ def _normalize_symbols(symbols: list[str]) -> list[str]:
     return normalized_symbols
 
 
+if TYPE_CHECKING:
+    from app.services.yahoo_news_provider import (
+        YahooFinanceNewsProvider,
+        YahooFinanceNewsSearchClient,
+    )
+
+
+def __getattr__(name: str) -> object:
+    if name in {"YahooFinanceNewsProvider", "YahooFinanceNewsSearchClient"}:
+        yahoo_news_provider = import_module("app.services.yahoo_news_provider")
+        return getattr(yahoo_news_provider, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
     "AlphaVantageNewsProvider",
     "DeterministicNewsProvider",
@@ -198,4 +192,5 @@ __all__ = [
     "ProviderNewsItem",
     "ProviderNewsResult",
     "YahooFinanceNewsProvider",
+    "YahooFinanceNewsSearchClient",
 ]
