@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib
 import json
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime, timedelta, timezone
@@ -45,7 +47,13 @@ from app.extensions.signaldeck_digital_oracle.config import (
     EDGAR_CONTACT_EMAIL_MISSING_CODE,
     EDGAR_CONTACT_EMAIL_MISSING_MESSAGE,
     EDGAR_CONTACT_EMAIL_SETTING,
+    FRED_API_KEY_MISSING_CODE,
+    FRED_API_KEY_MISSING_MESSAGE,
+    FRED_API_KEY_SETTING,
     MARKET_SENTIMENT_SOURCE_URL,
+    CftcPositioningReportType,
+    CryptoDerivativesVenue,
+    MacroRatesSource,
     PredictionMarketVenue,
     get_digital_oracle_provider_config,
 )
@@ -55,7 +63,11 @@ from app.extensions.signaldeck_digital_oracle.factory import (
     create_sec_filings_provider,
 )
 from app.extensions.signaldeck_digital_oracle.mappers import (
+    map_cftc_positioning_result,
+    map_crypto_derivatives_result,
+    map_macro_rates_result,
     map_market_sentiment_result,
+    map_options_result,
     map_prediction_markets_result,
     map_sec_filings_result,
 )
@@ -65,12 +77,50 @@ from app.extensions.signaldeck_digital_oracle.ownership import (
     DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES,
     DIGITAL_ORACLE_RUNTIME_TOOL_KEYS,
 )
+from app.extensions.signaldeck_digital_oracle.provider_inventory import (
+    IN_SCOPE_PROVIDER_INVENTORY,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_cftc_positioning import (
+    CFTC_POSITIONING_LOOKUP_OPENAI_FUNCTION_NAME,
+    CFTC_POSITIONING_LOOKUP_TOOL_SPEC,
+    CftcCotPositioningProvider,
+    execute_cftc_positioning_lookup,
+    parse_cftc_positioning_lookup_arguments,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_crypto_derivatives import (
+    CRYPTO_DERIVATIVES_LOOKUP_OPENAI_FUNCTION_NAME,
+    CRYPTO_DERIVATIVES_LOOKUP_TOOL_SPEC,
+    CoinGeckoCryptoDerivativesProvider,
+    DeribitCryptoDerivativesProvider,
+    execute_crypto_derivatives_lookup,
+    parse_crypto_derivatives_lookup_arguments,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_macro_rates import (
+    MACRO_RATES_LOOKUP_OPENAI_FUNCTION_NAME,
+    MACRO_RATES_LOOKUP_TOOL_SPEC,
+    BisMacroRatesProvider,
+    FredMacroRatesProvider,
+    TreasuryMacroRatesProvider,
+    execute_macro_rates_lookup,
+    parse_macro_rates_lookup_arguments,
+)
 from app.extensions.signaldeck_digital_oracle.runtime_market_sentiment import (
     MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
     MARKET_SENTIMENT_LOOKUP_TOOL_SPEC,
     FearGreedMarketSentimentProvider,
     execute_market_sentiment_lookup,
     parse_market_sentiment_lookup_arguments,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_options import (
+    OPTIONS_LOOKUP_OPENAI_FUNCTION_NAME,
+    OPTIONS_LOOKUP_TOOL_SPEC,
+    YahooOptionsProvider,
+    execute_options_lookup,
+    parse_options_lookup_arguments,
+)
+from app.extensions.signaldeck_digital_oracle.runtime_options_providers import (
+    OptionsChainPayload,
+    OptionsTicker,
 )
 from app.extensions.signaldeck_digital_oracle.runtime_prediction_markets import (
     PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -88,8 +138,12 @@ from app.extensions.signaldeck_digital_oracle.runtime_sec_filings import (
     parse_sec_filings_lookup_arguments,
 )
 from app.extensions.signaldeck_digital_oracle.runtime_types import (
+    CFTC_POSITIONING_LOOKUP_TOOL_KEY,
+    CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY,
+    MACRO_RATES_LOOKUP_TOOL_KEY,
     MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
     NATIVE_RUNTIME_DIGITAL_ORACLE_TOOL_KEYS,
+    OPTIONS_LOOKUP_TOOL_KEY,
     PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
     SEC_FILINGS_LOOKUP_TOOL_KEY,
     RuntimeMarketSentimentLookupResult,
@@ -105,9 +159,33 @@ from app.extensions.signaldeck_digital_oracle.runtime_types import (
 )
 from app.extensions.signaldeck_digital_oracle.service import DigitalOraclePhase1Service
 from app.extensions.signaldeck_digital_oracle.types import (
+    DigitalOracleCftcPositioningProviderQuery,
+    DigitalOracleCftcPositioningProviderResult,
+    DigitalOracleCftcPositioningQuery,
+    DigitalOracleCftcPositioningReport,
+    DigitalOracleCftcPositioningRow,
+    DigitalOracleCryptoDerivativesGlobalMetrics,
+    DigitalOracleCryptoDerivativesOptionSummary,
+    DigitalOracleCryptoDerivativesOrderBook,
+    DigitalOracleCryptoDerivativesOrderBookLevel,
+    DigitalOracleCryptoDerivativesProviderQuery,
+    DigitalOracleCryptoDerivativesProviderResult,
+    DigitalOracleCryptoDerivativesQuery,
+    DigitalOracleCryptoDerivativesSpotQuote,
+    DigitalOracleCryptoDerivativesTermPoint,
+    DigitalOracleMacroRatesProviderQuery,
+    DigitalOracleMacroRatesProviderResult,
+    DigitalOracleMacroRatesResult,
+    DigitalOracleMacroRatesSeries,
     DigitalOracleMarketSentimentProviderQuery,
     DigitalOracleMarketSentimentProviderResult,
     DigitalOracleMarketSentimentQuery,
+    DigitalOracleOptionContract,
+    DigitalOracleOptionGreeks,
+    DigitalOracleOptionsChain,
+    DigitalOracleOptionsProviderQuery,
+    DigitalOracleOptionsProviderResult,
+    DigitalOracleOptionsQuery,
     DigitalOraclePredictionMarketContract,
     DigitalOraclePredictionMarketEvent,
     DigitalOraclePredictionMarketOrderBook,
@@ -120,7 +198,9 @@ from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleSecFilingsProviderQuery,
     DigitalOracleSecFilingsProviderResult,
     DigitalOracleSecFilingsQuery,
+    DigitalOracleSecFilingsResult,
     DigitalOracleSecOwnershipTransaction,
+    DigitalOracleSecSearchHit,
 )
 from app.extensions.signaldeck_finance.execution_dependencies import (
     finance_execution_provider_bundle_from_parts,
@@ -292,6 +372,10 @@ _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
     "signaldeck.digital_oracle.prediction_markets.lookup",
     "signaldeck.digital_oracle.sec_filings.lookup",
     "signaldeck.digital_oracle.market_sentiment.lookup",
+    "signaldeck.digital_oracle.macro_rates.lookup",
+    "signaldeck.digital_oracle.crypto_derivatives.lookup",
+    "signaldeck.digital_oracle.cftc_positioning.lookup",
+    "signaldeck.digital_oracle.options.lookup",
     "signaldeck.finance.positions.lookup",
     "signaldeck.finance.reports.lookup",
 }
@@ -378,10 +462,12 @@ class _FakeDigitalOraclePredictionProvider:
         venue: PredictionMarketVenue,
         *,
         events: Sequence[DigitalOraclePredictionMarketEvent] = (),
+        warnings: Sequence[RuntimeToolWarning] = (),
         failure: DigitalOracleProviderError | None = None,
     ) -> None:
         self.venue: PredictionMarketVenue = venue
         self.events: tuple[DigitalOraclePredictionMarketEvent, ...] = tuple(events)
+        self.warnings: tuple[RuntimeToolWarning, ...] = tuple(warnings)
         self.failure: DigitalOracleProviderError | None = failure
         self.calls: list[DigitalOraclePredictionMarketsProviderQuery] = []
 
@@ -395,6 +481,7 @@ class _FakeDigitalOraclePredictionProvider:
         return DigitalOraclePredictionMarketsProviderResult(
             provider=self.venue,
             events=self.events,
+            warnings=self.warnings,
         )
 
 
@@ -406,12 +493,14 @@ class _FakeDigitalOracleSecFilingsProvider:
         filings: Sequence[DigitalOracleSecFiling],
         *,
         ownership_transactions: Sequence[DigitalOracleSecOwnershipTransaction] = (),
+        search_hits: Sequence[DigitalOracleSecSearchHit] = (),
         failure: DigitalOracleProviderError | None = None,
     ) -> None:
         self.filings: tuple[DigitalOracleSecFiling, ...] = tuple(filings)
         self.ownership_transactions: tuple[DigitalOracleSecOwnershipTransaction, ...] = tuple(
             ownership_transactions
         )
+        self.search_hits: tuple[DigitalOracleSecSearchHit, ...] = tuple(search_hits)
         self.failure: DigitalOracleProviderError | None = failure
         self.calls: list[DigitalOracleSecFilingsProviderQuery] = []
 
@@ -428,6 +517,7 @@ class _FakeDigitalOracleSecFilingsProvider:
             cik="0001045810",
             entity_name="NVIDIA CORP",
             filings=self.filings,
+            search_hits=self.search_hits,
             ownership_transactions=self.ownership_transactions,
         )
 
@@ -457,6 +547,167 @@ class _FakeDigitalOracleMarketSentimentProvider:
         return self.result
 
 
+class _FakeDigitalOracleMacroRatesProvider:
+    def __init__(
+        self,
+        source: MacroRatesSource,
+        *,
+        series: Sequence[DigitalOracleMacroRatesSeries] = (),
+        failure: DigitalOracleProviderError | None = None,
+    ) -> None:
+        self.source: MacroRatesSource = source
+        self.series: tuple[DigitalOracleMacroRatesSeries, ...] = tuple(series)
+        self.failure: DigitalOracleProviderError | None = failure
+        self.calls: list[DigitalOracleMacroRatesProviderQuery] = []
+
+    def lookup_macro_rates(
+        self,
+        query: DigitalOracleMacroRatesProviderQuery,
+    ) -> DigitalOracleMacroRatesProviderResult:
+        self.calls.append(query)
+        if self.failure is not None:
+            raise self.failure
+        return DigitalOracleMacroRatesProviderResult(
+            provider=self.source,
+            series=self.series,
+        )
+
+
+class _FakeDigitalOracleCryptoDerivativesProvider:
+    def __init__(
+        self,
+        venue: CryptoDerivativesVenue,
+        *,
+        result: DigitalOracleCryptoDerivativesProviderResult | None = None,
+        failure: DigitalOracleProviderError | None = None,
+    ) -> None:
+        self.venue: CryptoDerivativesVenue = venue
+        self.result: DigitalOracleCryptoDerivativesProviderResult = (
+            result or DigitalOracleCryptoDerivativesProviderResult(provider=venue)
+        )
+        self.failure: DigitalOracleProviderError | None = failure
+        self.calls: list[DigitalOracleCryptoDerivativesProviderQuery] = []
+
+    def lookup_crypto_derivatives(
+        self,
+        query: DigitalOracleCryptoDerivativesProviderQuery,
+    ) -> DigitalOracleCryptoDerivativesProviderResult:
+        self.calls.append(query)
+        if self.failure is not None:
+            raise self.failure
+        return self.result
+
+
+class _FakeDigitalOracleCftcPositioningProvider:
+    provider_name = "cftc"
+
+    def __init__(
+        self,
+        *,
+        result: DigitalOracleCftcPositioningProviderResult | None = None,
+        failure: DigitalOracleProviderError | None = None,
+    ) -> None:
+        self.result: DigitalOracleCftcPositioningProviderResult = (
+            result or DigitalOracleCftcPositioningProviderResult(provider=self.provider_name)
+        )
+        self.failure: DigitalOracleProviderError | None = failure
+        self.calls: list[DigitalOracleCftcPositioningProviderQuery] = []
+
+    def lookup_cftc_positioning(
+        self,
+        query: DigitalOracleCftcPositioningProviderQuery,
+    ) -> DigitalOracleCftcPositioningProviderResult:
+        self.calls.append(query)
+        if self.failure is not None:
+            raise self.failure
+        return self.result
+
+
+class _FakeDigitalOracleOptionsProvider:
+    provider_name = "yahoo"
+
+    def __init__(
+        self,
+        *,
+        result: DigitalOracleOptionsProviderResult | None = None,
+        failure: DigitalOracleProviderError | None = None,
+    ) -> None:
+        self.result: DigitalOracleOptionsProviderResult = (
+            result or DigitalOracleOptionsProviderResult(provider=self.provider_name)
+        )
+        self.failure: DigitalOracleProviderError | None = failure
+        self.calls: list[DigitalOracleOptionsProviderQuery] = []
+
+    def lookup_options(
+        self,
+        query: DigitalOracleOptionsProviderQuery,
+    ) -> DigitalOracleOptionsProviderResult:
+        self.calls.append(query)
+        if self.failure is not None:
+            raise self.failure
+        return self.result
+
+
+class _FakeOptionsTable:
+    def __init__(self, rows: Sequence[Mapping[str, object]]) -> None:
+        self.rows: tuple[Mapping[str, object], ...] = tuple(rows)
+
+    def to_dict(self, orient: str) -> list[Mapping[str, object]]:
+        assert orient == "records"
+        return list(self.rows)
+
+
+class _FakeOptionsChainPayload:
+    def __init__(
+        self,
+        *,
+        calls: Sequence[Mapping[str, object]],
+        puts: Sequence[Mapping[str, object]],
+    ) -> None:
+        self.calls = _FakeOptionsTable(calls)
+        self.puts = _FakeOptionsTable(puts)
+
+
+class _FakeOptionsTicker:
+    def __init__(
+        self,
+        *,
+        chains_by_expiration: Mapping[str, _FakeOptionsChainPayload],
+        spot_price: Decimal | None = Decimal("200"),
+    ) -> None:
+        self._chains_by_expiration: dict[str, _FakeOptionsChainPayload] = dict(chains_by_expiration)
+        self._spot_price = spot_price
+        self.option_chain_calls: list[str] = []
+
+    @property
+    def options(self) -> Sequence[str]:
+        return tuple(self._chains_by_expiration)
+
+    @property
+    def fast_info(self) -> Mapping[str, object]:
+        if self._spot_price is None:
+            return {}
+        return {"last_price": str(self._spot_price)}
+
+    @property
+    def info(self) -> Mapping[str, object]:
+        return {}
+
+    def option_chain(self, date: str) -> OptionsChainPayload:
+        self.option_chain_calls.append(date)
+        return self._chains_by_expiration[date]
+
+
+class _FakeOptionsTickerFactory:
+    def __init__(self, ticker: _FakeOptionsTicker) -> None:
+        self.ticker = ticker
+        self.symbols: list[str] = []
+
+    def __call__(self, symbol: str) -> OptionsTicker:
+        self.symbols.append(symbol)
+        return self.ticker
+
+
 class _FakePredictionMarketsJsonClient:
     def __init__(self, payloads_by_url_fragment: Mapping[str, object]) -> None:
         self.payloads_by_url_fragment: dict[str, object] = dict(payloads_by_url_fragment)
@@ -478,8 +729,14 @@ class _FakePredictionMarketsJsonClient:
                 "provider": provider,
             }
         )
-        for fragment, payload in self.payloads_by_url_fragment.items():
+        for fragment, payload in sorted(
+            self.payloads_by_url_fragment.items(),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        ):
             if fragment in url:
+                if isinstance(payload, DigitalOracleProviderError):
+                    raise payload
                 return payload
         raise AssertionError(f"No fake prediction-market payload configured for {url}")
 
@@ -499,6 +756,8 @@ class _FakeEdgarJsonClient:
         self.calls.append({"url": url, "timeout": timeout, "contactEmail": contact_email})
         for fragment, payload in self.payloads_by_url_fragment.items():
             if fragment in url:
+                if isinstance(payload, DigitalOracleProviderError):
+                    raise payload
                 return payload
         raise AssertionError(f"No fake EDGAR payload configured for {url}")
 
@@ -518,6 +777,97 @@ class _FakeFearGreedJsonClient:
     def get_json(self, url: str, *, timeout: float, source_url: str) -> object:
         self.calls.append({"url": url, "timeout": timeout, "sourceUrl": source_url})
         return self.payload
+
+
+class _FakeMacroRatesJsonClient:
+    def __init__(self, payloads_by_url_fragment: Mapping[str, object]) -> None:
+        self.payloads_by_url_fragment: dict[str, object] = dict(payloads_by_url_fragment)
+        self.calls: list[dict[str, object]] = []
+
+    def get_json(
+        self,
+        url: str,
+        *,
+        params: Mapping[str, object],
+        timeout: float,
+        provider: MacroRatesSource,
+        api_key: str | None = None,
+    ) -> object:
+        call: dict[str, object] = {
+            "url": url,
+            "params": dict(params),
+            "timeout": timeout,
+            "provider": provider,
+        }
+        if api_key is not None:
+            call["apiKey"] = api_key
+        self.calls.append(call)
+        for fragment, payload in sorted(
+            self.payloads_by_url_fragment.items(),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        ):
+            if fragment in url:
+                if isinstance(payload, DigitalOracleProviderError):
+                    raise payload
+                return payload
+        raise AssertionError(f"No fake macro-rates payload configured for {url}")
+
+
+class _FakeCryptoDerivativesJsonClient:
+    def __init__(self, payloads_by_url_fragment: Mapping[str, object]) -> None:
+        self.payloads_by_url_fragment: dict[str, object] = dict(payloads_by_url_fragment)
+        self.calls: list[dict[str, object]] = []
+
+    def get_json(
+        self,
+        url: str,
+        *,
+        params: Mapping[str, object],
+        timeout: float,
+        provider: CryptoDerivativesVenue,
+    ) -> object:
+        self.calls.append(
+            {"url": url, "params": dict(params), "timeout": timeout, "provider": provider}
+        )
+        for fragment, payload in sorted(
+            self.payloads_by_url_fragment.items(),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        ):
+            if fragment in url:
+                if isinstance(payload, DigitalOracleProviderError):
+                    raise payload
+                return payload
+        raise AssertionError(f"No fake crypto-derivatives payload configured for {url}")
+
+
+class _FakeCftcPositioningJsonClient:
+    def __init__(self, payloads_by_url_fragment: Mapping[str, object]) -> None:
+        self.payloads_by_url_fragment: dict[str, object] = dict(payloads_by_url_fragment)
+        self.calls: list[dict[str, object]] = []
+
+    def get_json(
+        self,
+        url: str,
+        *,
+        params: Mapping[str, object],
+        timeout: float,
+        report_type: CftcPositioningReportType,
+    ) -> object:
+        self.calls.append(
+            {"url": url, "params": dict(params), "timeout": timeout, "reportType": report_type}
+        )
+        for fragment, payload in sorted(
+            self.payloads_by_url_fragment.items(),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        ):
+            if fragment in url:
+                if isinstance(payload, DigitalOracleProviderError):
+                    raise payload
+                return payload
+        raise AssertionError(f"No fake CFTC positioning payload configured for {url}")
 
 
 _DIGITAL_ORACLE_FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "digital_oracle"
@@ -1422,6 +1772,10 @@ def test_native_runtime_financial_tool_result_keys_are_signaldeck_prefixed_and_c
         PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
         SEC_FILINGS_LOOKUP_TOOL_KEY,
         MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+        MACRO_RATES_LOOKUP_TOOL_KEY,
+        CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY,
+        CFTC_POSITIONING_LOOKUP_TOOL_KEY,
+        OPTIONS_LOOKUP_TOOL_KEY,
     )
     assert all(
         tool_key.startswith("signaldeck.") for tool_key in NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS
@@ -1557,11 +1911,19 @@ def test_prediction_markets_sec_filings_market_sentiment_tool_ownership_constant
         "signaldeck.digital_oracle.prediction_markets.lookup",
         "signaldeck.digital_oracle.sec_filings.lookup",
         "signaldeck.digital_oracle.market_sentiment.lookup",
+        "signaldeck.digital_oracle.macro_rates.lookup",
+        "signaldeck.digital_oracle.crypto_derivatives.lookup",
+        "signaldeck.digital_oracle.cftc_positioning.lookup",
+        "signaldeck.digital_oracle.options.lookup",
     )
     assert DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES == (
         "signaldeck_digital_oracle_prediction_markets_lookup",
         "signaldeck_digital_oracle_sec_filings_lookup",
         "signaldeck_digital_oracle_market_sentiment_lookup",
+        "signaldeck_digital_oracle_macro_rates_lookup",
+        "signaldeck_digital_oracle_crypto_derivatives_lookup",
+        "signaldeck_digital_oracle_cftc_positioning_lookup",
+        "signaldeck_digital_oracle_options_lookup",
     )
     assert DIGITAL_ORACLE_DENIED_MESSAGES[
         "signaldeck.digital_oracle.prediction_markets.lookup"
@@ -1593,6 +1955,7 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
         PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
         SEC_FILINGS_LOOKUP_TOOL_KEY,
         MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+        MACRO_RATES_LOOKUP_TOOL_KEY,
     }
     assert "Package-ready draft" not in manifest_source
     assert "spec.skills" not in manifest_source
@@ -1789,12 +2152,47 @@ def test_digital_oracle_config_reads_edgar_contact_from_backend_settings(
             reset_settings_cache()
 
 
+def test_digital_oracle_provider_config_reads_new_provider_controls_from_backend_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with monkeypatch.context() as patched:
+        patched.setenv("DIGITAL_ORACLE_MACRO_RATES_ENABLED", "false")
+        patched.setenv("DIGITAL_ORACLE_MACRO_RATES_DEFAULT_ITEM_LIMIT", "13")
+        patched.setenv("DIGITAL_ORACLE_FRED_API_KEY", " fred-key ")
+        patched.setenv("DIGITAL_ORACLE_CRYPTO_DERIVATIVES_ENABLED", "false")
+        patched.setenv("DIGITAL_ORACLE_CRYPTO_DERIVATIVES_DEFAULT_ITEM_LIMIT", "14")
+        patched.setenv("DIGITAL_ORACLE_CFTC_POSITIONING_ENABLED", "false")
+        patched.setenv("DIGITAL_ORACLE_CFTC_POSITIONING_DEFAULT_ITEM_LIMIT", "15")
+        patched.setenv("DIGITAL_ORACLE_OPTIONS_ENABLED", "false")
+        patched.setenv("DIGITAL_ORACLE_OPTIONS_DEFAULT_ITEM_LIMIT", "16")
+        reset_settings_cache()
+        try:
+            config = get_digital_oracle_provider_config()
+        finally:
+            reset_settings_cache()
+
+    assert config.macro_rates_enabled is False
+    assert config.macro_rates_default_item_limit == 13
+    assert config.fred_api_key == "fred-key"
+    assert config.crypto_derivatives_enabled is False
+    assert config.crypto_derivatives_default_item_limit == 14
+    assert config.cftc_positioning_enabled is False
+    assert config.cftc_positioning_default_item_limit == 15
+    assert config.options_enabled is False
+    assert config.options_default_item_limit == 16
+
+
 def test_digital_oracle_configured_provider_factory_construction_uses_defaults() -> None:
     settings = _settings(
         quote_provider_timeout_seconds=2.5,
         digital_oracle_edgar_contact_email="sec-contact@example.test",
         digital_oracle_prediction_markets_default_item_limit=6,
         digital_oracle_sec_filings_default_item_limit=12,
+        digital_oracle_fred_api_key="fred-key",
+        digital_oracle_macro_rates_default_item_limit=13,
+        digital_oracle_crypto_derivatives_default_item_limit=14,
+        digital_oracle_cftc_positioning_default_item_limit=15,
+        digital_oracle_options_default_item_limit=16,
     )
 
     config = get_digital_oracle_provider_config(settings)
@@ -1834,6 +2232,38 @@ def test_digital_oracle_configured_provider_factory_construction_uses_defaults()
     assert market_sentiment.provider.key == "fear_greed"
     assert market_sentiment.indicator == "fear_greed"
 
+    assert bundle.macro_rates.configured is True
+    assert bundle.macro_rates.provider is not None
+    assert bundle.macro_rates.provider.default_item_limit == 13
+    assert [provider.key for provider in bundle.macro_rates.provider.providers] == [
+        "treasury",
+        "bis",
+        "worldbank",
+        "cme_fedwatch",
+        "fred",
+    ]
+    assert bundle.macro_rates.provider.source_failures == ()
+
+    assert bundle.crypto_derivatives.configured is True
+    assert bundle.crypto_derivatives.provider is not None
+    assert bundle.crypto_derivatives.provider.default_item_limit == 14
+    assert [provider.key for provider in bundle.crypto_derivatives.provider.providers] == [
+        "deribit",
+        "coingecko",
+    ]
+
+    assert bundle.cftc_positioning.configured is True
+    assert bundle.cftc_positioning.provider is not None
+    assert bundle.cftc_positioning.provider.default_item_limit == 15
+    assert [provider.key for provider in bundle.cftc_positioning.provider.providers] == [
+        "cftc",
+    ]
+
+    assert bundle.options.configured is True
+    assert bundle.options.provider is not None
+    assert bundle.options.provider.default_item_limit == 16
+    assert {provider.key for provider in bundle.options.provider.providers} >= {"yahoo"}
+
     disabled_prediction = create_prediction_markets_provider_bundle(
         _settings(digital_oracle_prediction_markets_enabled=False)
     )
@@ -1842,6 +2272,62 @@ def test_digital_oracle_configured_provider_factory_construction_uses_defaults()
     assert disabled_prediction.failure.message == (
         "Digital Oracle prediction markets provider is disabled by backend configuration."
     )
+
+
+def test_digital_oracle_provider_bundle_disabled_new_sources_return_structured_failures() -> None:
+    bundle = create_digital_oracle_phase1_provider_bundle(
+        _settings(
+            digital_oracle_macro_rates_enabled=False,
+            digital_oracle_crypto_derivatives_enabled=False,
+            digital_oracle_cftc_positioning_enabled=False,
+            digital_oracle_options_enabled=False,
+        )
+    )
+
+    assert bundle.macro_rates.configured is False
+    assert bundle.macro_rates.failure is not None
+    assert bundle.macro_rates.failure.details == {"provider": "macro_rates"}
+    assert bundle.crypto_derivatives.configured is False
+    assert bundle.crypto_derivatives.failure is not None
+    assert bundle.crypto_derivatives.failure.details == {"provider": "crypto_derivatives"}
+    assert bundle.cftc_positioning.configured is False
+    assert bundle.cftc_positioning.failure is not None
+    assert bundle.cftc_positioning.failure.details == {"provider": "cftc_positioning"}
+    assert bundle.options.configured is False
+    assert bundle.options.failure is not None
+    assert bundle.options.failure.details == {"provider": "options"}
+
+
+def test_digital_oracle_provider_bundle_missing_fred_key_is_source_scoped_failure() -> None:
+    bundle = create_digital_oracle_phase1_provider_bundle(
+        _settings(digital_oracle_fred_api_key=None)
+    )
+
+    assert bundle.macro_rates.configured is True
+    assert bundle.macro_rates.provider is not None
+    assert [failure.details for failure in bundle.macro_rates.provider.source_failures] == [
+        {
+            "provider": "fred",
+            "setting": "DIGITAL_ORACLE_FRED_API_KEY",
+        }
+    ]
+
+
+def test_digital_oracle_optional_dependency_missing_yfinance_is_source_scoped_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "yfinance", None)
+
+    bundle = create_digital_oracle_phase1_provider_bundle(_settings())
+
+    assert bundle.options.configured is True
+    assert bundle.options.provider is not None
+    assert [failure.details for failure in bundle.options.provider.source_failures] == [
+        {
+            "dependency": "yfinance",
+            "provider": "yfinance",
+        }
+    ]
 
 
 def test_digital_oracle_edgar_missing_config_returns_structured_failure() -> None:
@@ -2280,6 +2766,10 @@ def test_runtime_types_digital_oracle_results_serialize_normalized_contracts() -
         PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
         SEC_FILINGS_LOOKUP_TOOL_KEY,
         MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+        MACRO_RATES_LOOKUP_TOOL_KEY,
+        CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY,
+        CFTC_POSITIONING_LOOKUP_TOOL_KEY,
+        OPTIONS_LOOKUP_TOOL_KEY,
     )
 
     prediction_warning = RuntimeToolWarning(
@@ -5989,7 +6479,7 @@ def test_prediction_markets_runtime_tool_spec_and_parser_normalize_arguments() -
     assert inactive_depth_limit["depth_limit"] is None
 
 
-def test_prediction_markets_providers_map_requested_order_book_depth_and_warnings() -> None:
+def test_prediction_markets_providers_fetch_direct_order_book_depth() -> None:
     client = _FakePredictionMarketsJsonClient(
         {
             "gamma-api.polymarket.com/events": [
@@ -6005,24 +6495,22 @@ def test_prediction_markets_providers_map_requested_order_book_depth_and_warning
                                 "question": "Will the Fed cut rates?",
                                 "outcomes": json.dumps(["Yes", "No"]),
                                 "outcomePrices": json.dumps(["0.61", "0.40"]),
-                                "orderBook": {
-                                    "bids": [
-                                        {"price": "0.60", "size": "100"},
-                                        {"price": "0.59", "size": "50"},
-                                    ],
-                                    "asks": [{"price": "0.62", "size": "70"}],
-                                },
-                            },
-                            {
-                                "id": "pm-fed-no-depth",
-                                "question": "Will the Fed pause?",
-                                "outcomes": json.dumps(["Yes", "No"]),
-                                "outcomePrices": json.dumps(["0.35", "0.65"]),
+                                "clobTokenIds": json.dumps(["pm-yes-token", "pm-no-token"]),
                             },
                         ]
                     ),
                 }
             ],
+            "clob.polymarket.com/book?token_id=pm-yes-token": {
+                "bids": [
+                    {"price": "0.60", "size": "100"},
+                    {"price": "0.59", "size": "50"},
+                ],
+                "asks": [
+                    {"price": "0.62", "size": "70"},
+                    {"price": "0.63", "size": "25"},
+                ],
+            },
             "api.elections.kalshi.com": {
                 "markets": [
                     {
@@ -6034,6 +6522,12 @@ def test_prediction_markets_providers_map_requested_order_book_depth_and_warning
                         "yes_ask": 57,
                     }
                 ]
+            },
+            "markets/KXFEDCUT-26/orderbook": {
+                "orderbook": {
+                    "yes": [[55, 100], [54, 50]],
+                    "no": [[43, 75], [42, 25]],
+                }
             },
         }
     )
@@ -6073,21 +6567,190 @@ def test_prediction_markets_providers_map_requested_order_book_depth_and_warning
     )
     kalshi_order_book = kalshi_result.events[0].contracts[0].order_book
 
-    assert polymarket_contracts[0]["orderBook"] == {
-        "bids": [{"price": "0.60", "size": "100"}],
-        "asks": [{"price": "0.62", "size": "70"}],
-        "spread": "0.02",
-        "depthLimit": 1,
-    }
-    assert "orderBook" in polymarket_contracts[1]
-    assert polymarket_contracts[1]["orderBook"] is None
-    assert [warning.code for warning in polymarket_result.warnings] == [
-        "prediction_markets_order_book_unavailable"
+    assert polymarket_contracts == [
+        {
+            "contractId": "pm-fed-yes",
+            "title": "Will the Fed cut rates?",
+            "probability": "0.61",
+            "yesPrice": "0.61",
+            "noPrice": "0.40",
+            "volume": None,
+            "openInterest": None,
+            "orderBook": {
+                "bids": [{"price": "0.60", "size": "100"}],
+                "asks": [{"price": "0.62", "size": "70"}],
+                "spread": "0.02",
+                "depthLimit": 1,
+            },
+        }
     ]
+    assert polymarket_result.warnings == ()
     assert kalshi_order_book is not None
     assert kalshi_order_book.spread == Decimal("0.02")
     assert [level.price for level in kalshi_order_book.bids] == [Decimal("0.55")]
+    assert [level.size for level in kalshi_order_book.bids] == [Decimal("100")]
     assert [level.price for level in kalshi_order_book.asks] == [Decimal("0.57")]
+    assert [level.size for level in kalshi_order_book.asks] == [Decimal("75")]
+    assert [call["url"] for call in client.calls] == [
+        "https://gamma-api.polymarket.com/events",
+        "https://clob.polymarket.com/book?token_id=pm-yes-token",
+        "https://api.elections.kalshi.com/trade-api/v2/markets",
+        "https://api.elections.kalshi.com/trade-api/v2/markets/KXFEDCUT-26/orderbook",
+    ]
+
+
+def test_prediction_markets_providers_preserve_events_when_order_book_degrades() -> None:
+    client = _FakePredictionMarketsJsonClient(
+        {
+            "gamma-api.polymarket.com/events": [
+                {
+                    "id": "pm-fed-event",
+                    "slug": "fed-cut",
+                    "title": "Fed cut odds",
+                    "active": True,
+                    "markets": json.dumps(
+                        [
+                            {
+                                "id": "pm-fed-empty-book",
+                                "question": "Will the Fed cut rates?",
+                                "outcomes": json.dumps(["Yes", "No"]),
+                                "outcomePrices": json.dumps(["0.61", "0.40"]),
+                                "clobTokenIds": json.dumps(["empty-book-token", "no-token"]),
+                                "orderBook": {
+                                    "bids": [{"price": "0.60", "size": "22"}],
+                                    "asks": [{"price": "0.63", "size": "18"}],
+                                },
+                            },
+                            {
+                                "id": "pm-fed-one-sided-book",
+                                "question": "Will the Fed cut in March?",
+                                "outcomes": json.dumps(["Yes", "No"]),
+                                "outcomePrices": json.dumps(["0.41", "0.59"]),
+                                "outcomeTokenIds": json.dumps(["one-sided-token", "no-token"]),
+                            },
+                            {
+                                "id": "pm-fed-no-token-embedded-book",
+                                "question": "Will the Fed cut in June?",
+                                "outcomes": json.dumps(["Yes", "No"]),
+                                "outcomePrices": json.dumps(["0.31", "0.69"]),
+                                "orderBook": {
+                                    "bids": [{"price": "0.30", "size": "15"}],
+                                    "asks": [{"price": "0.32", "size": "20"}],
+                                },
+                            },
+                        ]
+                    ),
+                }
+            ],
+            "clob.polymarket.com/book?token_id=empty-book-token": {"bids": [], "asks": []},
+            "clob.polymarket.com/book?token_id=one-sided-token": {
+                "bids": [{"price": "0.40", "size": "10"}],
+                "asks": [],
+            },
+            "api.elections.kalshi.com": {
+                "markets": [
+                    {
+                        "ticker": "KXFEDCUT-26",
+                        "event_ticker": "KXFEDCUT",
+                        "title": "Fed cut odds",
+                        "status": "open",
+                        "yes_bid": 55,
+                        "yes_ask": 57,
+                    }
+                ]
+            },
+            "markets/KXFEDCUT-26/orderbook": DigitalOracleProviderError(
+                "Kalshi timed out while fetching orderbook",
+                code="provider_timeout",
+                details={"provider": "kalshi"},
+            ),
+        }
+    )
+    query = DigitalOraclePredictionMarketsProviderQuery(
+        query="Fed cut",
+        venue="polymarket",
+        item_limit=5,
+        include_resolved=False,
+        timeout_seconds=1.5,
+        include_order_book=True,
+        depth_limit=2,
+    )
+
+    polymarket_result = PolymarketPredictionMarketsProvider(client).lookup_prediction_markets(query)
+    kalshi_result = KalshiPredictionMarketsProvider(client).lookup_prediction_markets(
+        replace(query, venue="kalshi")
+    )
+    payload = map_prediction_markets_result(
+        DigitalOraclePhase1Service(
+            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
+            prediction_market_providers=(
+                _FakeDigitalOraclePredictionProvider(
+                    "polymarket",
+                    events=polymarket_result.events,
+                    warnings=polymarket_result.warnings,
+                ),
+                _FakeDigitalOraclePredictionProvider(
+                    "kalshi",
+                    events=kalshi_result.events,
+                    warnings=kalshi_result.warnings,
+                ),
+            ),
+        ).lookup_prediction_markets(
+            DigitalOraclePredictionMarketsQuery(
+                query="Fed cut",
+                include_order_book=True,
+                depth_limit=2,
+            )
+        )
+    ).model_dump(mode="json", by_alias=True)
+    events = cast(list[dict[str, object]], payload["events"])
+    polymarket_contracts = cast(list[dict[str, object]], events[0]["contracts"])
+    kalshi_contracts = cast(list[dict[str, object]], events[1]["contracts"])
+    warnings = cast(list[dict[str, object]], payload["warnings"])
+
+    assert polymarket_contracts[0]["orderBook"] == {
+        "bids": [{"price": "0.60", "size": "22"}],
+        "asks": [{"price": "0.63", "size": "18"}],
+        "spread": "0.03",
+        "depthLimit": 2,
+    }
+    assert polymarket_contracts[1]["orderBook"] == {
+        "bids": [{"price": "0.40", "size": "10"}],
+        "asks": [],
+        "spread": None,
+        "depthLimit": 2,
+    }
+    assert polymarket_contracts[2]["orderBook"] == {
+        "bids": [{"price": "0.30", "size": "15"}],
+        "asks": [{"price": "0.32", "size": "20"}],
+        "spread": "0.02",
+        "depthLimit": 2,
+    }
+    assert kalshi_contracts[0]["orderBook"] == {
+        "bids": [{"price": "0.55", "size": None}],
+        "asks": [{"price": "0.57", "size": None}],
+        "spread": "0.02",
+        "depthLimit": 2,
+    }
+    assert [warning["code"] for warning in warnings] == [
+        "prediction_markets_order_book_malformed",
+        "prediction_markets_order_book_partial",
+        "prediction_markets_order_book_unavailable",
+        "prediction_markets_order_book_provider_timeout",
+    ]
+    warning_details = [cast(dict[str, object], warning["details"]) for warning in warnings]
+    assert [details["provider"] for details in warning_details] == [
+        "polymarket",
+        "polymarket",
+        "polymarket",
+        "kalshi",
+    ]
+    assert [details["scope"] for details in warning_details] == [
+        "orderbook",
+        "orderbook",
+        "orderbook",
+        "orderbook",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -6378,6 +7041,314 @@ def test_digital_oracle_fixture_replay_provider_errors_degrade_without_network()
             "details": {"operation": "market_sentiment", "provider": "fear_greed"},
         }
     ]
+
+
+def test_edgar_sec_filings_search_maps_hits_and_preserves_submissions_fallback() -> None:
+    company_payload = {
+        "0": {"cik_str": 1045810, "ticker": "NVDA", "title": "NVIDIA CORP"},
+    }
+    submissions_payload = {
+        "name": "NVIDIA CORP",
+        "filings": {
+            "recent": {
+                "accessionNumber": ["0001045810-26-000010"],
+                "form": ["10-K"],
+                "filingDate": ["2026-02-20"],
+                "acceptanceDateTime": ["20260220163001"],
+                "primaryDocument": ["nvda-20260131.htm"],
+                "primaryDocDescription": ["Annual report"],
+            }
+        },
+    }
+    search_payload = {
+        "hits": {
+            "hits": [
+                {
+                    "_source": {
+                        "adsh": "0001045810-26-000010",
+                        "form": "10-K",
+                        "filedAt": "2026-02-20",
+                        "ciks": ["0001045810"],
+                        "tickers": ["NVDA"],
+                        "companyName": "NVIDIA CORP",
+                        "linkToFilingDetails": (
+                            "https://www.sec.gov/Archives/edgar/data/1045810/"
+                            "000104581026000010/nvda-20260131.htm"
+                        ),
+                        "fileName": "nvda-20260131.htm",
+                        "description": "Annual report mentions accelerated computing.",
+                    }
+                }
+            ]
+        }
+    }
+    client = _FakeEdgarJsonClient(
+        {
+            "company_tickers.json": company_payload,
+            "submissions/CIK0001045810.json": submissions_payload,
+            "search-index": search_payload,
+        }
+    )
+
+    provider_result = EdgarSecFilingsProvider(http_client=client).lookup_sec_filings(
+        DigitalOracleSecFilingsProviderQuery(
+            ticker="NVDA",
+            query="accelerated computing",
+            form_types=(),
+            start_date=None,
+            end_date=None,
+            item_limit=5,
+            edgar_contact_email="test@example.invalid",
+            timeout_seconds=2.5,
+        )
+    )
+    payload = map_sec_filings_result(
+        DigitalOraclePhase1Service(
+            settings=_settings(digital_oracle_edgar_contact_email="test@example.invalid"),
+            sec_filings_provider=_FakeDigitalOracleSecFilingsProvider(
+                filings=provider_result.filings,
+                search_hits=provider_result.search_hits,
+            ),
+        ).lookup_sec_filings(DigitalOracleSecFilingsQuery(ticker="NVDA", query="accelerated"))
+    ).model_dump(mode="json", by_alias=True)
+
+    search_hits = cast(list[dict[str, object]], payload["searchHits"])
+    assert provider_result.cik == "0001045810"
+    assert provider_result.filings[0].form_type == "10-K"
+    assert search_hits == [
+        {
+            "accessionNumber": "0001045810-26-000010",
+            "formType": "10-K",
+            "filingDate": "2026-02-20",
+            "cik": "0001045810",
+            "ticker": "NVDA",
+            "entityName": "NVIDIA CORP",
+            "primaryDocument": "nvda-20260131.htm",
+            "url": (
+                "https://www.sec.gov/Archives/edgar/data/1045810/"
+                "000104581026000010/nvda-20260131.htm"
+            ),
+            "description": "Annual report mentions accelerated computing.",
+            "matchedText": "Annual report mentions accelerated computing.",
+        }
+    ]
+    assert "test@example" not in json.dumps(payload)
+
+
+def test_edgar_sec_filings_cik_lookup_empty_search_warns_and_falls_back_to_metadata() -> None:
+    client = _FakeEdgarJsonClient(
+        {
+            "company_tickers.json": {
+                "0": {"cik_str": 1045810, "ticker": "NVDA", "title": "NVIDIA CORP"},
+            },
+            "submissions/CIK0001045810.json": {
+                "name": "NVIDIA CORP",
+                "filings": {
+                    "recent": {
+                        "accessionNumber": ["0001045810-26-000011"],
+                        "form": ["8-K"],
+                        "filingDate": ["2026-03-01"],
+                        "primaryDocument": ["nvda-8k.htm"],
+                        "primaryDocDescription": ["Current report for AI data center demand"],
+                    }
+                },
+            },
+            "search-index": {"hits": {"hits": []}},
+        }
+    )
+
+    result = EdgarSecFilingsProvider(http_client=client).lookup_sec_filings(
+        DigitalOracleSecFilingsProviderQuery(
+            ticker=None,
+            cik="0001045810",
+            query="data center",
+            form_types=(),
+            start_date=None,
+            end_date=None,
+            item_limit=5,
+            edgar_contact_email="test@example.invalid",
+            timeout_seconds=2.5,
+        )
+    )
+    service_payload = map_sec_filings_result(
+        DigitalOraclePhase1Service(
+            settings=_settings(digital_oracle_edgar_contact_email="test@example.invalid"),
+            sec_filings_provider=_FakeDigitalOracleSecFilingsProvider(
+                filings=result.filings,
+                search_hits=result.search_hits,
+            ),
+        ).lookup_sec_filings(DigitalOracleSecFilingsQuery(cik="1045810", query="data center"))
+    ).model_dump(mode="json", by_alias=True)
+
+    assert result.ticker == "NVDA"
+    assert [warning.code for warning in result.warnings] == ["sec_filings_search_empty"]
+    search_hits = cast(list[dict[str, object]], service_payload["searchHits"])
+    assert search_hits[0]["matchedText"] == "Current report for AI data center demand"
+    assert "test@example" not in json.dumps(service_payload)
+
+
+def test_edgar_sec_filings_ownership_transactions_are_bounded_and_malformed_xml_warns() -> None:
+    client = _FakeEdgarJsonClient(
+        {
+            "company_tickers.json": {
+                "0": {"cik_str": 1045810, "ticker": "NVDA", "title": "NVIDIA CORP"},
+            },
+            "submissions/CIK0001045810.json": {
+                "name": "NVIDIA CORP",
+                "filings": {
+                    "recent": {
+                        "accessionNumber": [
+                            "0001045810-26-000020",
+                            "0001045810-26-000021",
+                        ],
+                        "form": ["4", "4/A"],
+                        "filingDate": ["2026-02-22", "2026-02-21"],
+                        "primaryDocument": ["form4.xml", "broken.xml"],
+                        "primaryDocDescription": ["Statement of ownership", "Broken ownership"],
+                    }
+                },
+            },
+        },
+        text_by_url_fragment={
+            "form4.xml": (
+                "<ownershipDocument>"
+                "<issuer><issuerName>NVIDIA CORP</issuerName>"
+                "<issuerTradingSymbol>NVDA</issuerTradingSymbol></issuer>"
+                "<reportingOwner><reportingOwnerId>"
+                "<rptOwnerName>Ada Lovelace</rptOwnerName>"
+                "</reportingOwnerId></reportingOwner>"
+                "<nonDerivativeTable>"
+                "<nonDerivativeTransaction>"
+                "<transactionDate><value>2026-02-20</value></transactionDate>"
+                "<transactionCoding><transactionCode>P</transactionCode></transactionCoding>"
+                "<transactionAmounts>"
+                "<transactionShares><value>10</value></transactionShares>"
+                "<transactionPricePerShare><value>120.25</value></transactionPricePerShare>"
+                "<transactionAcquiredDisposedCode><value>A</value>"
+                "</transactionAcquiredDisposedCode>"
+                "</transactionAmounts>"
+                "</nonDerivativeTransaction>"
+                "<nonDerivativeTransaction>"
+                "<transactionDate><value>2026-02-21</value></transactionDate>"
+                "<transactionCoding><transactionCode>S</transactionCode></transactionCoding>"
+                "</nonDerivativeTransaction>"
+                "</nonDerivativeTable>"
+                "</ownershipDocument>"
+            ),
+            "broken.xml": "<ownershipDocument>",
+        },
+    )
+
+    result = EdgarSecFilingsProvider(http_client=client).lookup_sec_filings(
+        DigitalOracleSecFilingsProviderQuery(
+            ticker="NVDA",
+            query=None,
+            form_types=("4", "4/A"),
+            start_date=None,
+            end_date=None,
+            item_limit=1,
+            edgar_contact_email="test@example.invalid",
+            timeout_seconds=2.5,
+            include_ownership_transactions=True,
+        )
+    )
+    malformed_result = EdgarSecFilingsProvider(http_client=client).lookup_sec_filings(
+        DigitalOracleSecFilingsProviderQuery(
+            ticker="NVDA",
+            query=None,
+            form_types=("4", "4/A"),
+            start_date=None,
+            end_date=None,
+            item_limit=3,
+            edgar_contact_email="test@example.invalid",
+            timeout_seconds=2.5,
+            include_ownership_transactions=True,
+        )
+    )
+    payload = map_sec_filings_result(
+        DigitalOracleSecFilingsResult(
+            ticker=result.ticker,
+            cik=result.cik,
+            entity_name=result.entity_name,
+            filings=result.filings,
+            ownership_transactions=result.ownership_transactions,
+            warnings=result.warnings,
+        )
+    ).model_dump(mode="json", by_alias=True)
+
+    ownership = cast(list[dict[str, object]], payload["ownershipTransactions"])
+    assert len(result.ownership_transactions) == 1
+    assert ownership[0]["transactionCode"] == "P"
+    assert ownership[0]["shares"] == "10"
+    assert "sec_filings_malformed_payload" in [
+        warning.code for warning in malformed_result.warnings
+    ]
+    assert "test@example" not in json.dumps(payload)
+
+
+def test_edgar_sec_filings_search_timeout_and_malformed_ownership_degrade_safely() -> None:
+    client = _FakeEdgarJsonClient(
+        {
+            "company_tickers.json": {
+                "0": {"cik_str": 1045810, "ticker": "NVDA", "title": "NVIDIA CORP"},
+            },
+            "submissions/CIK0001045810.json": {
+                "name": "NVIDIA CORP",
+                "filings": {
+                    "recent": {
+                        "accessionNumber": ["0001045810-26-000020"],
+                        "form": ["4"],
+                        "filingDate": ["2026-02-22"],
+                        "primaryDocument": ["broken.xml"],
+                        "primaryDocDescription": ["Ownership statement"],
+                    }
+                },
+            },
+            "search-index": DigitalOracleProviderError(
+                "SEC EDGAR timed out while searching filings",
+                code="provider_timeout",
+                details={"provider": "edgar"},
+            ),
+        },
+        text_by_url_fragment={"broken.xml": "<ownershipDocument>"},
+    )
+
+    result = EdgarSecFilingsProvider(http_client=client).lookup_sec_filings(
+        DigitalOracleSecFilingsProviderQuery(
+            ticker="NVDA",
+            query="ownership",
+            form_types=("4",),
+            start_date=None,
+            end_date=None,
+            item_limit=5,
+            edgar_contact_email="test@example.invalid",
+            timeout_seconds=2.5,
+            include_ownership_transactions=True,
+        )
+    )
+    payload = map_sec_filings_result(
+        DigitalOraclePhase1Service(
+            settings=_settings(digital_oracle_edgar_contact_email="test@example.invalid"),
+            sec_filings_provider=_FakeDigitalOracleSecFilingsProvider(
+                filings=result.filings,
+                search_hits=result.search_hits,
+                ownership_transactions=result.ownership_transactions,
+            ),
+        ).lookup_sec_filings(
+            DigitalOracleSecFilingsQuery(
+                ticker="NVDA",
+                query="ownership",
+                form_types=("4",),
+                include_ownership_transactions=True,
+            )
+        )
+    ).model_dump(mode="json", by_alias=True)
+
+    warning_codes = [warning.code for warning in result.warnings]
+    assert "sec_filings_search_unavailable" in warning_codes
+    assert "sec_filings_malformed_payload" in warning_codes
+    assert payload["ownershipTransactions"] == []
+    assert "test@example" not in json.dumps(payload)
 
 
 def test_digital_oracle_fixture_replay_missing_or_malformed_fixture_fails_deterministically(
@@ -6924,6 +7895,922 @@ def test_prediction_markets_service_preserves_malformed_adapter_warnings_with_pa
         "operation": "prediction_markets",
         "providers": "polymarket,kalshi",
         "uncoveredProviders": "polymarket",
+    }
+
+
+def test_crypto_derivatives_tool_spec_uses_native_parameters_schema() -> None:
+    assert (
+        CRYPTO_DERIVATIVES_LOOKUP_OPENAI_FUNCTION_NAME
+        == "signaldeck_digital_oracle_crypto_derivatives_lookup"
+    )
+    assert CRYPTO_DERIVATIVES_LOOKUP_TOOL_SPEC.key == CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY
+    assert CRYPTO_DERIVATIVES_LOOKUP_TOOL_SPEC.parser is parse_crypto_derivatives_lookup_arguments
+    assert CRYPTO_DERIVATIVES_LOOKUP_TOOL_SPEC.executor is execute_crypto_derivatives_lookup
+
+    schema = CRYPTO_DERIVATIVES_LOOKUP_TOOL_SPEC.parameters_schema
+    properties = cast(dict[str, object], schema["properties"])
+    assert schema["required"] == []
+    assert set(properties) == {
+        "assets",
+        "venues",
+        "dataTypes",
+        "expirations",
+        "includeOrderBook",
+        "depthLimit",
+        "itemLimit",
+    }
+    data_types = cast(dict[str, object], properties["dataTypes"])
+    data_type_items = cast(dict[str, object], data_types["items"])
+    assert data_type_items["enum"] == [
+        "spot",
+        "global_market",
+        "term_structure",
+        "option_chain",
+        "order_book",
+    ]
+    assert cast(dict[str, object], properties["depthLimit"])["maximum"] == 10
+    assert cast(dict[str, object], properties["itemLimit"])["maximum"] == 50
+
+
+def test_crypto_derivatives_parser_normalizes_arrays_and_rejects_invalid_inputs() -> None:
+    arguments = parse_crypto_derivatives_lookup_arguments(
+        json.dumps(
+            {
+                "assets": [" btc ", "BTC", " eth "],
+                "venues": ["DERIBIT", "coingecko", "deribit"],
+                "dataTypes": ["spot", "option_chain", "order_book", "spot"],
+                "expirations": ["2026-06-26", "2026-09-25"],
+                "includeOrderBook": True,
+                "depthLimit": 3,
+                "itemLimit": 4,
+            }
+        )
+    )
+
+    assert arguments == {
+        "assets": ("BTC", "ETH"),
+        "venues": ("deribit", "coingecko"),
+        "data_types": ("spot", "option_chain", "order_book"),
+        "expirations": (date(2026, 6, 26), date(2026, 9, 25)),
+        "include_order_book": True,
+        "depth_limit": 3,
+        "item_limit": 4,
+    }
+    assert parse_crypto_derivatives_lookup_arguments(json.dumps({"depthLimit": 3}))[
+        "depth_limit"
+    ] is None
+
+    with pytest.raises(RuntimeToolError, match="unsupported fields"):
+        _ = parse_crypto_derivatives_lookup_arguments(json.dumps({"asset": "BTC"}))
+    with pytest.raises(RuntimeToolError, match="venues must use"):
+        _ = parse_crypto_derivatives_lookup_arguments(json.dumps({"venues": ["finance"]}))
+    with pytest.raises(RuntimeToolError, match="dataTypes must use"):
+        _ = parse_crypto_derivatives_lookup_arguments(json.dumps({"dataTypes": ["funding"]}))
+    with pytest.raises(RuntimeToolError, match="dataTypes must use"):
+        _ = parse_crypto_derivatives_lookup_arguments(
+            json.dumps({"dataTypes": ["global_metrics", "options"]})
+        )
+    with pytest.raises(RuntimeToolError, match="depthLimit must be at most 10"):
+        _ = parse_crypto_derivatives_lookup_arguments(json.dumps({"depthLimit": 11}))
+    with pytest.raises(RuntimeToolError, match="itemLimit must be at most 50"):
+        _ = parse_crypto_derivatives_lookup_arguments(json.dumps({"itemLimit": 51}))
+
+
+def test_cftc_positioning_runtime_tool_spec_uses_approved_parameters_schema() -> None:
+    assert (
+        CFTC_POSITIONING_LOOKUP_OPENAI_FUNCTION_NAME
+        == "signaldeck_digital_oracle_cftc_positioning_lookup"
+    )
+    assert CFTC_POSITIONING_LOOKUP_TOOL_SPEC.key == CFTC_POSITIONING_LOOKUP_TOOL_KEY
+    assert CFTC_POSITIONING_LOOKUP_TOOL_SPEC.parser is parse_cftc_positioning_lookup_arguments
+    assert CFTC_POSITIONING_LOOKUP_TOOL_SPEC.executor is execute_cftc_positioning_lookup
+    assert CFTC_POSITIONING_LOOKUP_TOOL_SPEC.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
+
+    schema = CFTC_POSITIONING_LOOKUP_TOOL_SPEC.parameters_schema
+    properties = cast(dict[str, object], schema["properties"])
+    assert schema["required"] == []
+    assert set(properties) == {"markets", "reportTypes", "startDate", "endDate", "itemLimit"}
+    assert cast(dict[str, object], properties["markets"])["maxItems"] == 10
+    assert cast(dict[str, object], properties["itemLimit"])["maximum"] == 50
+
+
+def test_cftc_positioning_parser_normalizes_filters_and_rejects_invalid_args() -> None:
+    arguments = parse_cftc_positioning_lookup_arguments(
+        json.dumps(
+            {
+                "markets": [" Bitcoin ", "BITCOIN", "Gold"],
+                "reportTypes": [" legacy_futures_only ", "financial_futures"],
+                "startDate": "2026-01-01",
+                "endDate": "2026-06-30",
+                "itemLimit": 5,
+            }
+        )
+    )
+
+    assert arguments == {
+        "markets": ("Bitcoin", "Gold"),
+        "report_types": ("legacy_futures_only", "financial_futures"),
+        "start_date": date(2026, 1, 1),
+        "end_date": date(2026, 6, 30),
+        "item_limit": 5,
+    }
+    with pytest.raises(RuntimeToolError, match="unsupported fields"):
+        _ = parse_cftc_positioning_lookup_arguments(json.dumps({"market": "Bitcoin"}))
+    with pytest.raises(RuntimeToolError, match="reportTypes must use"):
+        _ = parse_cftc_positioning_lookup_arguments(json.dumps({"reportTypes": ["legacy"]}))
+    with pytest.raises(RuntimeToolError, match="markets must contain at most 10"):
+        _ = parse_cftc_positioning_lookup_arguments(
+            json.dumps({"markets": [f"M{index}" for index in range(11)]})
+        )
+    with pytest.raises(RuntimeToolError, match="startDate must be before or equal to endDate"):
+        _ = parse_cftc_positioning_lookup_arguments(
+            json.dumps({"startDate": "2026-06-30", "endDate": "2026-01-01"})
+        )
+
+
+def test_cftc_positioning_provider_maps_fake_rows_and_malformed_warning() -> None:
+    client = _FakeCftcPositioningJsonClient(
+        {
+            "6dca-aqww": [
+                {
+                    "market_and_exchange_names": "BITCOIN - CHICAGO MERCANTILE EXCHANGE",
+                    "cftc_contract_market_code": "133741",
+                    "report_date_as_yyyy_mm_dd": "2026-06-16T00:00:00",
+                    "noncomm_positions_long_all": "1200",
+                    "noncomm_positions_short_all": "900",
+                    "noncomm_positions_spread_all": "45",
+                    "open_interest_all": "18300",
+                },
+                {"market_and_exchange_names": "malformed"},
+            ]
+        }
+    )
+    provider = CftcCotPositioningProvider(client)
+
+    result = provider.lookup_cftc_positioning(
+        DigitalOracleCftcPositioningProviderQuery(
+            markets=("Bitcoin",),
+            report_types=("legacy_futures_only",),
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 12, 31),
+            item_limit=5,
+            timeout_seconds=2.5,
+        )
+    )
+
+    assert cast(dict[str, object], client.calls[0]["params"])["$limit"] == 5
+    assert result.reports[0].report_date == date(2026, 6, 16)
+    assert result.reports[0].rows[0].non_commercial_net == Decimal("300")
+    assert [warning.code for warning in result.warnings] == ["cftc_positioning_malformed_payload"]
+
+
+def test_cftc_positioning_service_filters_dates_report_types_and_markets() -> None:
+    provider = _FakeDigitalOracleCftcPositioningProvider(
+        result=DigitalOracleCftcPositioningProviderResult(
+            provider="cftc",
+            reports=(
+                DigitalOracleCftcPositioningReport(
+                    provider="cftc",
+                    report_type="legacy_futures_only",
+                    report_date=date(2026, 6, 16),
+                    rows=(
+                        DigitalOracleCftcPositioningRow(
+                            market="BITCOIN - CME",
+                            contract_market_code="133741",
+                            producer_long=Decimal("1200"),
+                            producer_short=Decimal("900"),
+                            producer_net=Decimal("300"),
+                            open_interest=Decimal("18300"),
+                        ),
+                    ),
+                ),
+                DigitalOracleCftcPositioningReport(
+                    provider="cftc",
+                    report_type="financial_futures",
+                    report_date=date(2025, 12, 30),
+                    rows=(DigitalOracleCftcPositioningRow(market="GOLD"),),
+                ),
+            ),
+        )
+    )
+    service = DigitalOraclePhase1Service(cftc_positioning_providers=(provider,))
+
+    payload = map_cftc_positioning_result(
+        service.lookup_cftc_positioning(
+            DigitalOracleCftcPositioningQuery(
+                markets=("bitcoin",),
+                report_types=("legacy_futures_only",),
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 12, 31),
+                item_limit=5,
+            )
+        )
+    ).model_dump(mode="json", by_alias=True)
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert provider.calls[0].markets == ("bitcoin",)
+    assert provider.calls[0].report_types == ("legacy_futures_only",)
+    reports = cast(list[dict[str, object]], payload["reports"])
+    assert reports[0]["reportDate"] == "2026-06-16"
+    row = cast(list[dict[str, object]], reports[0]["rows"])[0]
+    assert row["producerNet"] == "300"
+    assert row["openInterest"] == "18300"
+    assert payload["warnings"] == []
+
+
+def test_cftc_positioning_missing_market_and_provider_failure_return_warnings() -> None:
+    empty_provider = _FakeDigitalOracleCftcPositioningProvider(
+        result=DigitalOracleCftcPositioningProviderResult(
+            provider="cftc",
+            reports=(
+                DigitalOracleCftcPositioningReport(
+                    provider="cftc",
+                    report_type="legacy_futures_only",
+                    report_date=date(2026, 6, 16),
+                    rows=(DigitalOracleCftcPositioningRow(market="GOLD"),),
+                ),
+            ),
+        )
+    )
+    failed_provider = _FakeDigitalOracleCftcPositioningProvider(
+        failure=DigitalOracleProviderError(
+            "CFTC timed out with provider token sk-provider-secret",
+            code="provider_timeout",
+            details={"provider": "cftc", "api_key": "sk-provider-secret"},
+        )
+    )
+
+    empty_payload = map_cftc_positioning_result(
+        DigitalOraclePhase1Service(cftc_positioning_providers=(empty_provider,)).lookup_cftc_positioning(
+            DigitalOracleCftcPositioningQuery(markets=("Bitcoin",))
+        )
+    ).model_dump(mode="json", by_alias=True)
+    failure_payload = map_cftc_positioning_result(
+        DigitalOraclePhase1Service(cftc_positioning_providers=(failed_provider,)).lookup_cftc_positioning(
+            DigitalOracleCftcPositioningQuery(markets=("Bitcoin",))
+        )
+    ).model_dump(mode="json", by_alias=True)
+
+    assert empty_payload["reports"] == []
+    empty_warnings = cast(list[dict[str, object]], empty_payload["warnings"])
+    assert [warning["code"] for warning in empty_warnings] == [
+        "cftc_positioning_empty",
+        "cftc_positioning_unavailable",
+    ]
+    failure_warnings = cast(list[dict[str, object]], failure_payload["warnings"])
+    assert [warning["code"] for warning in failure_warnings] == [
+        "cftc_positioning_provider_timeout",
+        "cftc_positioning_unavailable",
+    ]
+    assert "sk-provider-secret" not in json.dumps(failure_payload)
+    assert "api_key" not in json.dumps(failure_payload)
+
+
+def test_cftc_positioning_runtime_registry_dispatch_and_disabled_extension_denial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _FakeDigitalOracleCftcPositioningProvider(
+        result=DigitalOracleCftcPositioningProviderResult(
+            provider="cftc",
+            reports=(
+                DigitalOracleCftcPositioningReport(
+                    provider="cftc",
+                    report_type="legacy_futures_only",
+                    report_date=date(2026, 6, 16),
+                    rows=(
+                        DigitalOracleCftcPositioningRow(
+                            market="BITCOIN - CME",
+                            managed_money_long=Decimal("7200"),
+                            managed_money_short=Decimal("6800"),
+                            managed_money_net=Decimal("400"),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_cftc_positioning.create_cftc_positioning_providers",
+        lambda: (provider,),
+    )
+    registry = RuntimeToolRegistry([CFTC_POSITIONING_LOOKUP_TOOL_SPEC])
+    payload = registry.dispatch(
+        name=CFTC_POSITIONING_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {"markets": ["Bitcoin"], "reportTypes": ["legacy_futures_only"], "itemLimit": 1}
+        ),
+        granted_tool_keys={CFTC_POSITIONING_LOOKUP_TOOL_KEY},
+        context=_runtime_context(fail_on_session=True),
+    )
+
+    assert provider.calls[0].item_limit == 1
+    assert payload["toolKey"] == CFTC_POSITIONING_LOOKUP_TOOL_KEY
+    reports = cast(list[dict[str, object]], payload["reports"])
+    row = cast(list[dict[str, object]], reports[0]["rows"])[0]
+    assert row["managedMoneyNet"] == "400"
+    with pytest.raises(RuntimeToolError) as denied_error:
+        _ = registry.dispatch(
+            name=CFTC_POSITIONING_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json="not-json",
+            granted_tool_keys=set(),
+            context=_runtime_context(fail_on_session=True),
+        )
+    assert denied_error.value.code == "agent_execution_access_denied"
+    assert denied_error.value.message == DIGITAL_ORACLE_DENIED_MESSAGES[
+        CFTC_POSITIONING_LOOKUP_TOOL_KEY
+    ]
+
+
+def test_crypto_derivatives_service_maps_fake_provider_results_to_camel_payload() -> None:
+    coingecko_provider = _FakeDigitalOracleCryptoDerivativesProvider(
+        "coingecko",
+        result=DigitalOracleCryptoDerivativesProviderResult(
+            provider="coingecko",
+            spot=(
+                DigitalOracleCryptoDerivativesSpotQuote(
+                    provider="coingecko",
+                    symbol="BTC",
+                    price=Decimal("65000.5"),
+                    currency="USD",
+                    as_of=_NOW,
+                ),
+            ),
+            global_metrics=(
+                DigitalOracleCryptoDerivativesGlobalMetrics(
+                    provider="coingecko",
+                    symbol=None,
+                    market_cap=Decimal("2500000000000"),
+                    volume_24h=Decimal("80000000000"),
+                    as_of=_NOW,
+                ),
+            ),
+        ),
+    )
+    deribit_provider = _FakeDigitalOracleCryptoDerivativesProvider(
+        "deribit",
+        result=DigitalOracleCryptoDerivativesProviderResult(
+            provider="deribit",
+            term_structure=(
+                DigitalOracleCryptoDerivativesTermPoint(
+                    provider="deribit",
+                    symbol="BTC",
+                    expiry_date=date(2026, 6, 26),
+                    instrument="BTC-26JUN26",
+                    implied_volatility=Decimal("0.55"),
+                    open_interest=Decimal("1200"),
+                ),
+            ),
+            options=(
+                DigitalOracleCryptoDerivativesOptionSummary(
+                    provider="deribit",
+                    symbol="BTC",
+                    expiry_date=date(2026, 6, 26),
+                    strike=Decimal("70000"),
+                    option_type="call",
+                    implied_volatility=Decimal("0.61"),
+                    open_interest=Decimal("35"),
+                ),
+            ),
+            order_books=(
+                DigitalOracleCryptoDerivativesOrderBook(
+                    provider="deribit",
+                    symbol="BTC",
+                    instrument="BTC-26JUN26",
+                    bids=(
+                        DigitalOracleCryptoDerivativesOrderBookLevel(
+                            price=Decimal("64990"),
+                            size=Decimal("2.5"),
+                        ),
+                    ),
+                    asks=(
+                        DigitalOracleCryptoDerivativesOrderBookLevel(
+                            price=Decimal("65010"),
+                            size=Decimal("1.75"),
+                        ),
+                    ),
+                    depth_limit=2,
+                ),
+            ),
+        ),
+    )
+    service = DigitalOraclePhase1Service(
+        settings=_settings(quote_provider_timeout_seconds=2.5),
+        crypto_derivatives_providers=(deribit_provider, coingecko_provider),
+    )
+
+    payload = map_crypto_derivatives_result(
+        service.lookup_crypto_derivatives(
+            DigitalOracleCryptoDerivativesQuery(
+                assets=(" btc ", "BTC"),
+                venues=("coingecko", "deribit"),
+                data_types=(
+                    "spot",
+                    "global_market",
+                    "term_structure",
+                    "option_chain",
+                    "order_book",
+                ),
+                include_order_book=True,
+                depth_limit=2,
+                item_limit=5,
+            )
+        )
+    ).model_dump(mode="json", by_alias=True)
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert coingecko_provider.calls[0].assets == ("BTC",)
+    assert deribit_provider.calls[0].depth_limit == 2
+    assert payload["toolKey"] == CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY
+    assert payload["assets"] == ["BTC"]
+    assert cast(list[dict[str, object]], payload["spot"])[0]["price"] == "65000.5"
+    assert cast(list[dict[str, object]], payload["globalMetrics"])[0]["marketCap"] == (
+        "2500000000000"
+    )
+    assert cast(list[dict[str, object]], payload["termStructure"])[0]["instrument"] == (
+        "BTC-26JUN26"
+    )
+    assert cast(list[dict[str, object]], payload["options"])[0]["optionType"] == "call"
+    assert cast(list[dict[str, object]], payload["orderBooks"])[0]["bids"] == [
+        {"price": "64990", "size": "2.5"}
+    ]
+    assert payload["warnings"] == []
+
+
+def test_crypto_derivatives_providers_normalize_coingecko_and_deribit_payloads() -> None:
+    coingecko_client = _FakeCryptoDerivativesJsonClient(
+        {
+            "simple/price": {
+                "bitcoin": {
+                    "usd": 65000.5,
+                    "usd_market_cap": 1280000000000,
+                    "usd_24h_vol": 32000000000,
+                    "last_updated_at": 1767225600,
+                }
+            },
+            "/global": {
+                "data": {
+                    "total_market_cap": {"usd": "2500000000000"},
+                    "total_volume": {"usd": "80000000000"},
+                    "updated_at": 1767225600,
+                }
+            },
+        }
+    )
+    coingecko_result = CoinGeckoCryptoDerivativesProvider(
+        coingecko_client
+    ).lookup_crypto_derivatives(
+        DigitalOracleCryptoDerivativesProviderQuery(
+            venue="coingecko",
+            assets=("BTC",),
+            data_types=("spot", "global_market"),
+            expirations=None,
+            include_order_book=False,
+            depth_limit=5,
+            item_limit=5,
+            timeout_seconds=2.5,
+        )
+    )
+
+    assert coingecko_result.spot[0].symbol == "BTC"
+    assert coingecko_result.spot[0].price == Decimal("65000.5")
+    assert coingecko_result.global_metrics[0].market_cap == Decimal("2500000000000")
+    assert cast(dict[str, object], coingecko_client.calls[0]["params"])["ids"] == "bitcoin"
+
+    deribit_client = _FakeCryptoDerivativesJsonClient(
+        {
+            "get_instruments": {
+                "result": [
+                    {
+                        "instrument_name": "BTC-26JUN26",
+                        "expiration_timestamp": 1782432000000,
+                    },
+                    {
+                        "instrument_name": "BTC-26JUN26-70000-C",
+                        "expiration_timestamp": 1782432000000,
+                        "strike": "70000",
+                        "option_type": "call",
+                    },
+                ]
+            },
+            "get_book_summary_by_currency": {
+                "result": [
+                    {
+                        "instrument_name": "BTC-26JUN26",
+                        "mark_iv": "55",
+                        "open_interest": "1200",
+                    },
+                    {
+                        "instrument_name": "BTC-26JUN26-70000-C",
+                        "mark_iv": "61",
+                        "open_interest": "35",
+                    },
+                ]
+            },
+            "get_order_book": {
+                "result": {
+                    "instrument_name": "BTC-26JUN26",
+                    "bids": [["64990", "2.5"], ["64980", "1"]],
+                    "asks": [["65010", "1.75"], ["65020", "3"]],
+                }
+            },
+        }
+    )
+    deribit_result = DeribitCryptoDerivativesProvider(deribit_client).lookup_crypto_derivatives(
+        DigitalOracleCryptoDerivativesProviderQuery(
+            venue="deribit",
+            assets=("BTC",),
+            data_types=("term_structure", "option_chain", "order_book"),
+            expirations=(date(2026, 6, 26),),
+            include_order_book=True,
+            depth_limit=1,
+            item_limit=5,
+            timeout_seconds=2.5,
+        )
+    )
+
+    assert deribit_result.term_structure[0].instrument == "BTC-26JUN26"
+    assert deribit_result.term_structure[0].implied_volatility == Decimal("55")
+    assert deribit_result.options[0].strike == Decimal("70000")
+    assert deribit_result.options[0].open_interest == Decimal("35")
+    assert deribit_result.order_books[0].bids == (
+        DigitalOracleCryptoDerivativesOrderBookLevel(
+            price=Decimal("64990"),
+            size=Decimal("2.5"),
+        ),
+    )
+
+
+def test_crypto_derivatives_failure_paths_preserve_partial_results_and_scrub_payloads() -> None:
+    coingecko_provider = _FakeDigitalOracleCryptoDerivativesProvider(
+        "coingecko",
+        failure=DigitalOracleProviderError(
+            "CoinGecko rate limited crypto derivatives with provider token sk-provider-secret",
+            code="provider_rate_limited",
+            details={"provider": "coingecko", "api_key": "sk-provider-secret", "status": "429"},
+        ),
+    )
+    deribit_provider = _FakeDigitalOracleCryptoDerivativesProvider(
+        "deribit",
+        result=DigitalOracleCryptoDerivativesProviderResult(
+            provider="deribit",
+            term_structure=(
+                DigitalOracleCryptoDerivativesTermPoint(
+                    provider="deribit",
+                    symbol="BTC",
+                    expiry_date=date(2026, 6, 26),
+                    instrument="BTC-26JUN26",
+                ),
+            ),
+            warnings=(
+                RuntimeToolWarning(
+                    code="crypto_derivatives_malformed_payload",
+                    message="deribit returned malformed crypto-derivatives orderbook.",
+                    details={
+                        "operation": "crypto_derivatives",
+                        "provider": "deribit",
+                        "field": "orderbook",
+                    },
+                ),
+            ),
+        ),
+    )
+    service = DigitalOraclePhase1Service(
+        crypto_derivatives_providers=(coingecko_provider, deribit_provider),
+    )
+
+    payload = map_crypto_derivatives_result(
+        service.lookup_crypto_derivatives(
+            DigitalOracleCryptoDerivativesQuery(
+                assets=("BTC",),
+                venues=("coingecko", "deribit"),
+                data_types=("spot", "term_structure", "order_book"),
+                include_order_book=True,
+            )
+        )
+    ).model_dump(mode="json", by_alias=True)
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert cast(list[dict[str, object]], payload["termStructure"])[0]["instrument"] == (
+        "BTC-26JUN26"
+    )
+    warnings = cast(list[dict[str, object]], payload["warnings"])
+    assert [warning["code"] for warning in warnings] == [
+        "crypto_derivatives_provider_rate_limited",
+        "crypto_derivatives_malformed_payload",
+        "crypto_derivatives_partial_result",
+    ]
+    assert warnings[0]["message"] == (
+        "CoinGecko rate limited crypto derivatives with provider token <redacted>"
+    )
+    assert warnings[0]["details"] == {
+        "operation": "crypto_derivatives",
+        "provider": "coingecko",
+        "status": "429",
+    }
+    payload_json = json.dumps(payload, sort_keys=True)
+    assert "rawPayload" not in payload_json
+    assert "providerPayload" not in payload_json
+    assert "api_key" not in payload_json
+    assert "sk-provider-secret" not in payload_json
+
+
+def test_crypto_derivatives_executor_dispatches_native_providers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _FakeDigitalOracleCryptoDerivativesProvider(
+        "coingecko",
+        result=DigitalOracleCryptoDerivativesProviderResult(
+            provider="coingecko",
+            spot=(
+                DigitalOracleCryptoDerivativesSpotQuote(
+                    provider="coingecko",
+                    symbol="BTC",
+                    price=Decimal("65000.5"),
+                    currency="USD",
+                ),
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_crypto_derivatives.create_crypto_derivatives_providers",
+        lambda: (provider,),
+    )
+
+    payload = execute_crypto_derivatives_lookup(
+        _runtime_context(fail_on_session=True),
+        parse_crypto_derivatives_lookup_arguments(
+            json.dumps(
+                {
+                    "assets": ["btc"],
+                    "venues": ["coingecko"],
+                    "dataTypes": ["spot"],
+                    "itemLimit": 1,
+                }
+            )
+        ),
+    )
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert provider.calls[0].assets == ("BTC",)
+    assert provider.calls[0].item_limit == 1
+    assert payload["toolKey"] == CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY
+    assert cast(list[dict[str, object]], payload["spot"])[0]["price"] == "65000.5"
+
+
+def test_options_lookup_tool_spec_uses_native_parameters_schema() -> None:
+    assert OPTIONS_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_digital_oracle_options_lookup"
+    assert OPTIONS_LOOKUP_TOOL_SPEC.key == OPTIONS_LOOKUP_TOOL_KEY
+    assert OPTIONS_LOOKUP_TOOL_SPEC.parser is parse_options_lookup_arguments
+    assert OPTIONS_LOOKUP_TOOL_SPEC.executor is execute_options_lookup
+    assert OPTIONS_LOOKUP_TOOL_SPEC.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
+
+    schema = OPTIONS_LOOKUP_TOOL_SPEC.parameters_schema
+    properties = cast(dict[str, object], schema["properties"])
+    assert schema["required"] == ["symbols"]
+    assert set(properties) == {"symbols", "expirations", "includeGreeks", "moneyness", "itemLimit"}
+    assert cast(dict[str, object], properties["symbols"])["maxItems"] == 10
+    assert cast(dict[str, object], properties["itemLimit"])["maximum"] == 50
+
+
+def test_options_lookup_parser_normalizes_symbols_and_rejects_invalid_args() -> None:
+    arguments = parse_options_lookup_arguments(
+        json.dumps(
+            {
+                "symbols": [" aapl ", "AAPL", "msft"],
+                "expirations": ["2026-07-17"],
+                "includeGreeks": True,
+                "moneyness": "near_the_money",
+                "itemLimit": 5,
+            }
+        )
+    )
+
+    assert arguments == {
+        "symbols": ("AAPL", "MSFT"),
+        "expirations": (date(2026, 7, 17),),
+        "include_greeks": True,
+        "moneyness": "near_the_money",
+        "item_limit": 5,
+    }
+    with pytest.raises(RuntimeToolError, match="unsupported fields"):
+        _ = parse_options_lookup_arguments(json.dumps({"symbol": "AAPL"}))
+    with pytest.raises(RuntimeToolError, match="symbols is required"):
+        _ = parse_options_lookup_arguments(json.dumps({}))
+    with pytest.raises(RuntimeToolError, match="symbols must contain at most 10"):
+        _ = parse_options_lookup_arguments(
+            json.dumps({"symbols": [f"S{index}" for index in range(11)]})
+        )
+    with pytest.raises(RuntimeToolError, match="expirations must be valid ISO dates"):
+        _ = parse_options_lookup_arguments(
+            json.dumps({"symbols": ["AAPL"], "expirations": ["soon"]})
+        )
+    with pytest.raises(RuntimeToolError, match="moneyness must use"):
+        _ = parse_options_lookup_arguments(json.dumps({"symbols": ["AAPL"], "moneyness": "atm"}))
+    with pytest.raises(RuntimeToolError, match="includeGreeks must be a boolean"):
+        _ = parse_options_lookup_arguments(
+            json.dumps({"symbols": ["AAPL"], "includeGreeks": "yes"})
+        )
+    with pytest.raises(RuntimeToolError, match="itemLimit must be at most 50"):
+        _ = parse_options_lookup_arguments(json.dumps({"symbols": ["AAPL"], "itemLimit": 51}))
+
+
+def test_options_lookup_provider_maps_fake_yfinance_chain_and_filters_moneyness() -> None:
+    ticker = _FakeOptionsTicker(
+        chains_by_expiration={
+            "2026-07-17": _FakeOptionsChainPayload(
+                calls=(
+                    {
+                        "contractSymbol": "AAPL260717C00190000",
+                        "strike": "190",
+                        "lastPrice": "12.5",
+                        "bid": "12.4",
+                        "ask": "12.6",
+                        "volume": "1000",
+                        "openInterest": "5000",
+                        "delta": "0.61",
+                        "gamma": "0.04",
+                        "theta": "-0.03",
+                        "vega": "0.18",
+                        "rho": "0.05",
+                        "impliedVolatility": "0.32",
+                    },
+                    {"contractSymbol": "AAPL260717C00210000", "strike": "210"},
+                ),
+                puts=(
+                    {"contractSymbol": "AAPL260717P00190000", "strike": "190"},
+                    {
+                        "contractSymbol": "AAPL260717P00210000",
+                        "strike": "210",
+                        "lastPrice": "13.1",
+                        "bid": "13.0",
+                        "ask": "13.2",
+                        "openInterest": "4200",
+                        "delta": "-0.39",
+                        "impliedVolatility": "0.31",
+                    },
+                ),
+            )
+        },
+        spot_price=Decimal("200"),
+    )
+    factory = _FakeOptionsTickerFactory(ticker)
+
+    result = YahooOptionsProvider(factory).lookup_options(
+        DigitalOracleOptionsProviderQuery(
+            symbol="AAPL",
+            expirations=(date(2026, 7, 17),),
+            include_greeks=True,
+            moneyness="itm",
+            item_limit=5,
+            timeout_seconds=2.5,
+        )
+    )
+
+    assert factory.symbols == ["AAPL"]
+    assert ticker.option_chain_calls == ["2026-07-17"]
+    assert result.warnings == ()
+    chain = result.chains[0]
+    assert chain.expiry_date == date(2026, 7, 17)
+    assert chain.calls[0].contract_symbol == "AAPL260717C00190000"
+    assert chain.calls[0].greeks == DigitalOracleOptionGreeks(
+        delta=Decimal("0.61"),
+        gamma=Decimal("0.04"),
+        theta=Decimal("-0.03"),
+        vega=Decimal("0.18"),
+        rho=Decimal("0.05"),
+        implied_volatility=Decimal("0.32"),
+    )
+    assert [contract.contract_symbol for contract in chain.puts] == ["AAPL260717P00210000"]
+
+
+def test_options_lookup_service_and_executor_return_normalized_fake_provider_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _FakeDigitalOracleOptionsProvider(
+        result=DigitalOracleOptionsProviderResult(
+            provider="yahoo",
+            chains=(
+                DigitalOracleOptionsChain(
+                    provider="yahoo",
+                    symbol="AAPL",
+                    expiry_date=date(2026, 7, 17),
+                    calls=(
+                        DigitalOracleOptionContract(
+                            contract_symbol="AAPL260717C00200000",
+                            strike=Decimal("200"),
+                            bid=Decimal("6.2"),
+                            ask=Decimal("6.3"),
+                            last_price=Decimal("6.25"),
+                            volume=Decimal("1000"),
+                            open_interest=Decimal("5000"),
+                            greeks=DigitalOracleOptionGreeks(implied_volatility=Decimal("0.32")),
+                        ),
+                    ),
+                    puts=(
+                        DigitalOracleOptionContract(
+                            contract_symbol="AAPL260717P00200000",
+                            strike=Decimal("200"),
+                            bid=Decimal("5.7"),
+                            ask=Decimal("5.8"),
+                            last_price=Decimal("5.75"),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    service_payload = map_options_result(
+        DigitalOraclePhase1Service(options_providers=(provider,)).lookup_options(
+            DigitalOracleOptionsQuery(
+                symbols=(" aapl ",),
+                expirations=(date(2026, 7, 17),),
+                include_greeks=True,
+                moneyness="near_the_money",
+                item_limit=1,
+            )
+        )
+    ).model_dump(mode="json", by_alias=True)
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_options.create_options_providers",
+        lambda: (provider,),
+    )
+    executor_payload = execute_options_lookup(
+        _runtime_context(fail_on_session=True),
+        parse_options_lookup_arguments(
+            json.dumps(
+                {
+                    "symbols": ["AAPL"],
+                    "expirations": ["2026-07-17"],
+                    "includeGreeks": True,
+                    "moneyness": "near_the_money",
+                    "itemLimit": 1,
+                }
+            )
+        ),
+    )
+
+    for payload in (service_payload, executor_payload):
+        _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+        assert payload["toolKey"] == OPTIONS_LOOKUP_TOOL_KEY
+        assert payload["symbol"] == "AAPL"
+        chain = cast(list[dict[str, object]], payload["chains"])[0]
+        assert chain["expiryDate"] == "2026-07-17"
+        call = cast(list[dict[str, object]], chain["calls"])[0]
+        assert call["contractSymbol"] == "AAPL260717C00200000"
+        assert call["bid"] == "6.2"
+        assert cast(dict[str, object], call["greeks"])["impliedVolatility"] == "0.32"
+        assert payload["warnings"] == []
+
+
+def test_options_lookup_yfinance_absence_degrades_and_keeps_registry_import_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def missing_yfinance(module_name: str) -> object:
+        if module_name == "yfinance":
+            raise ImportError("No module named yfinance")
+        return importlib.import_module(module_name)
+
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.factory.importlib.util.find_spec",
+        lambda module_name: None if module_name == "yfinance" else object(),
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_options_providers.importlib.import_module",
+        missing_yfinance,
+    )
+    reset_settings_cache()
+    try:
+        app = create_app(init_database=False)
+        registry = get_default_runtime_tool_registry()
+        payload = registry.dispatch(
+            name=OPTIONS_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json=json.dumps({"symbols": ["AAPL"], "includeGreeks": True}),
+            granted_tool_keys={OPTIONS_LOOKUP_TOOL_KEY},
+            context=_runtime_context(fail_on_session=True),
+        )
+    finally:
+        reset_settings_cache()
+
+    assert app is not None
+    assert OPTIONS_LOOKUP_TOOL_KEY in {spec.key for spec in registry.list_specs()}
+    assert payload["toolKey"] == OPTIONS_LOOKUP_TOOL_KEY
+    assert payload["symbol"] == "AAPL"
+    assert payload["chains"] == []
+    warnings = cast(list[dict[str, object]], payload["warnings"])
+    assert [warning["code"] for warning in warnings] == [
+        "digital_oracle_yfinance_missing",
+        "options_provider_unavailable",
+        "options_unavailable",
+    ]
+    assert warnings[0]["details"] == {
+        "operation": "options",
+        "dependency": "yfinance",
+        "provider": "yfinance",
+    }
+    assert warnings[1]["details"] == {
+        "operation": "options",
+        "provider": "yahoo",
+        "dependency": "yfinance",
     }
 
 
@@ -7609,6 +9496,445 @@ def test_sec_filings_runtime_executor_returns_empty_warning_for_configured_edgar
             "details": {"operation": "sec_filings", "provider": "edgar"},
         }
     ]
+
+
+def test_macro_rates_runtime_tool_spec_uses_approved_parameters_schema() -> None:
+    assert MACRO_RATES_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_digital_oracle_macro_rates_lookup"
+    assert MACRO_RATES_LOOKUP_TOOL_SPEC.key == MACRO_RATES_LOOKUP_TOOL_KEY
+    assert (
+        MACRO_RATES_LOOKUP_TOOL_SPEC.openai_function_name
+        == MACRO_RATES_LOOKUP_OPENAI_FUNCTION_NAME
+    )
+    assert MACRO_RATES_LOOKUP_TOOL_SPEC.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
+    assert MACRO_RATES_LOOKUP_TOOL_SPEC.parser is parse_macro_rates_lookup_arguments
+    assert MACRO_RATES_LOOKUP_TOOL_SPEC.executor is execute_macro_rates_lookup
+
+    schema = MACRO_RATES_LOOKUP_TOOL_SPEC.parameters_schema
+    properties = cast(dict[str, object], schema["properties"])
+    sources_schema = cast(dict[str, object], properties["sources"])
+    families_schema = cast(dict[str, object], properties["families"])
+    assert schema["required"] == []
+    assert set(properties) == {
+        "query",
+        "sources",
+        "families",
+        "seriesIds",
+        "countries",
+        "startDate",
+        "endDate",
+        "asOfDate",
+        "itemLimit",
+    }
+    assert cast(dict[str, object], sources_schema["items"])["enum"] == [
+        "treasury",
+        "bis",
+        "worldbank",
+        "cme_fedwatch",
+        "fred",
+    ]
+    assert cast(dict[str, object], families_schema["items"])["enum"] == [
+        "macro_indicators",
+        "yield_curve",
+        "fx_rates",
+        "policy_rates",
+        "credit_gaps",
+        "fedwatch",
+    ]
+    assert cast(dict[str, object], properties["itemLimit"])["maximum"] == 50
+
+
+def test_macro_rates_parser_normalizes_sources_families_dates_and_filters() -> None:
+    arguments = parse_macro_rates_lookup_arguments(
+        json.dumps(
+            {
+                "query": "  Fed   rates  ",
+                "sources": [" FRED ", "treasury", "fred"],
+                "families": [" Policy_Rates ", "yield_curve", "policy_rates"],
+                "seriesIds": [" DGS10 ", "DGS10", "FEDFUNDS"],
+                "countries": [" us ", "United States", "US"],
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-31",
+                "asOfDate": "2026-02-01",
+                "itemLimit": 3,
+            }
+        )
+    )
+
+    assert arguments == {
+        "query": "Fed rates",
+        "sources": ("fred", "treasury"),
+        "families": ("policy_rates", "yield_curve"),
+        "series_ids": ("DGS10", "FEDFUNDS"),
+        "countries": ("US", "UNITED STATES"),
+        "start_date": date(2026, 1, 1),
+        "end_date": date(2026, 1, 31),
+        "as_of_date": date(2026, 2, 1),
+        "item_limit": 3,
+    }
+
+    assert parse_macro_rates_lookup_arguments("{}") == {
+        "query": None,
+        "sources": None,
+        "families": None,
+        "series_ids": None,
+        "countries": None,
+        "start_date": None,
+        "end_date": None,
+        "as_of_date": None,
+        "item_limit": None,
+    }
+
+    with pytest.raises(RuntimeToolError, match="sources must use"):
+        _ = parse_macro_rates_lookup_arguments(json.dumps({"sources": ["ecb"]}))
+    with pytest.raises(RuntimeToolError, match="families must use"):
+        _ = parse_macro_rates_lookup_arguments(json.dumps({"families": ["rates"]}))
+    with pytest.raises(RuntimeToolError, match="families must use"):
+        _ = parse_macro_rates_lookup_arguments(json.dumps({"families": ["policy_rate"]}))
+    with pytest.raises(RuntimeToolError, match="families must use"):
+        _ = parse_macro_rates_lookup_arguments(json.dumps({"families": ["macro_indicator"]}))
+    with pytest.raises(RuntimeToolError, match="startDate must be before or equal to endDate"):
+        _ = parse_macro_rates_lookup_arguments(
+            json.dumps({"startDate": "2026-02-01", "endDate": "2026-01-01"})
+        )
+    with pytest.raises(RuntimeToolError, match="itemLimit must be at most 50"):
+        _ = parse_macro_rates_lookup_arguments(json.dumps({"itemLimit": 51}))
+
+
+def test_macro_rates_provider_inventory_marks_implemented_sources_live() -> None:
+    macro_inventory = {
+        item.upstream_provider: item
+        for item in IN_SCOPE_PROVIDER_INVENTORY
+        if item.signaldeck_tool_key == MACRO_RATES_LOOKUP_TOOL_KEY
+    }
+
+    assert {
+        "USTreasuryProvider",
+        "BisProvider",
+        "WorldBankProvider",
+        "CMEFedWatchProvider",
+        "FredProvider",
+    } <= set(macro_inventory)
+    for provider_name in (
+        "USTreasuryProvider",
+        "BisProvider",
+        "WorldBankProvider",
+        "CMEFedWatchProvider",
+        "FredProvider",
+    ):
+        assert macro_inventory[provider_name].migration_status == "phase_1_in_scope"
+
+
+def test_macro_rates_providers_map_public_payloads_to_normalized_series() -> None:
+    client = _FakeMacroRatesJsonClient(
+        {
+            "fred/series/observations": {
+                "observations": [
+                    {"date": "2026-01-02", "value": "4.33"},
+                    {"date": "2026-01-03", "value": "."},
+                ]
+            },
+            "treasury.gov": {
+                "data": [
+                    {
+                        "record_date": "2026-01-02",
+                        "security_desc": "10-Year Treasury Constant Maturity",
+                        "avg_interest_rate_amt": "4.15",
+                        "security_term": "10 Yr",
+                    }
+                ]
+            },
+            "bis.org": {
+                "observations": [
+                    {
+                        "date": "2026-01-02",
+                        "value": "5.25",
+                        "country": "US",
+                        "series_id": "BIS-US-POLICY",
+                        "label": "United States policy rate",
+                    }
+                ]
+            },
+        }
+    )
+    fred_query = DigitalOracleMacroRatesProviderQuery(
+        source="fred",
+        query="Fed funds",
+        families=("macro_indicators",),
+        series_ids=("FEDFUNDS",),
+        countries=("US",),
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 1, 31),
+        as_of_date=None,
+        item_limit=5,
+        timeout_seconds=2.5,
+        fred_api_key="fred-key",
+    )
+    treasury_query = replace(
+        fred_query,
+        source="treasury",
+        families=("yield_curve",),
+        fred_api_key=None,
+    )
+    bis_query = replace(fred_query, source="bis", families=("policy_rates",), fred_api_key=None)
+
+    fred_result = FredMacroRatesProvider(client).lookup_macro_rates(fred_query)
+    treasury_result = TreasuryMacroRatesProvider(client).lookup_macro_rates(treasury_query)
+    bis_result = BisMacroRatesProvider(client).lookup_macro_rates(bis_query)
+
+    assert fred_result.series[0].provider == "fred"
+    assert fred_result.series[0].family == "macro_indicators"
+    assert fred_result.series[0].series_id == "FEDFUNDS"
+    assert fred_result.series[0].date == date(2026, 1, 2)
+    assert fred_result.series[0].value == Decimal("4.33")
+    assert [warning.code for warning in fred_result.warnings] == ["macro_rates_malformed_payload"]
+    assert treasury_result.series[0].tenor == "10Y"
+    assert treasury_result.series[0].family == "yield_curve"
+    assert bis_result.series[0].family == "policy_rates"
+    assert bis_result.series[0].country == "US"
+    non_fred_calls = [call for call in client.calls if call["provider"] != "fred"]
+    assert "fred-key" not in json.dumps(non_fred_calls)
+
+
+def test_macro_rates_runtime_executor_returns_normalized_happy_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fred_provider = _FakeDigitalOracleMacroRatesProvider(
+        "fred",
+        series=(
+            DigitalOracleMacroRatesSeries(
+                provider="fred",
+                family="macro_indicators",
+                series_id="FEDFUNDS",
+                label="Federal Funds Effective Rate",
+                country="US",
+                currency="USD",
+                unit="percent",
+                date=date(2026, 1, 2),
+                value=Decimal("4.33"),
+                source_url="https://fred.stlouisfed.org/series/FEDFUNDS",
+            ),
+        ),
+    )
+    treasury_provider = _FakeDigitalOracleMacroRatesProvider(
+        "treasury",
+        series=(
+            DigitalOracleMacroRatesSeries(
+                provider="treasury",
+                family="yield_curve",
+                series_id="UST-10Y",
+                label="US Treasury 10Y par yield",
+                country="US",
+                currency="USD",
+                unit="percent",
+                date=date(2026, 1, 2),
+                value=Decimal("4.15"),
+                tenor="10Y",
+                source_url="https://home.treasury.gov/",
+            ),
+        ),
+    )
+    bis_provider = _FakeDigitalOracleMacroRatesProvider(
+        "bis",
+        series=(
+            DigitalOracleMacroRatesSeries(
+                provider="bis",
+                family="policy_rates",
+                series_id="BIS-US-POLICY",
+                label="United States policy rate",
+                country="US",
+                currency="USD",
+                unit="percent",
+                date=date(2026, 1, 2),
+                value=Decimal("5.25"),
+                source_url="https://www.bis.org/statistics/",
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_macro_rates.create_macro_rates_providers",
+        lambda: (fred_provider, treasury_provider, bis_provider),
+    )
+    monkeypatch.setenv("DIGITAL_ORACLE_FRED_API_KEY", "fred-key")
+    reset_settings_cache()
+    try:
+        payload = execute_macro_rates_lookup(
+            _runtime_context(fail_on_session=True),
+            parse_macro_rates_lookup_arguments(
+                json.dumps(
+                    {
+                        "query": "rates",
+                        "sources": ["fred", "treasury", "bis"],
+                        "itemLimit": 3,
+                    }
+                )
+            ),
+        )
+    finally:
+        reset_settings_cache()
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert payload["toolKey"] == MACRO_RATES_LOOKUP_TOOL_KEY
+    assert payload["query"] == "rates"
+    series = cast(list[dict[str, object]], payload["series"])
+    assert [item["provider"] for item in series] == ["fred", "treasury", "bis"]
+    assert [item["seriesId"] for item in series] == ["FEDFUNDS", "UST-10Y", "BIS-US-POLICY"]
+    assert series[1]["tenor"] == "10Y"
+    assert payload["warnings"] == []
+
+
+def test_macro_rates_runtime_executor_preserves_partial_warnings_without_fred_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    treasury_provider = _FakeDigitalOracleMacroRatesProvider(
+        "treasury",
+        series=(
+            DigitalOracleMacroRatesSeries(
+                provider="treasury",
+                family="yield_curve",
+                series_id="UST-10Y",
+                label="US Treasury 10Y par yield",
+                country="US",
+                currency="USD",
+                unit="percent",
+                date=date(2026, 1, 2),
+                value=Decimal("4.15"),
+                tenor="10Y",
+                source_url="https://home.treasury.gov/",
+            ),
+        ),
+    )
+    bis_provider = _FakeDigitalOracleMacroRatesProvider(
+        "bis",
+        failure=DigitalOracleProviderError(
+            "BIS timed out while fetching policy rates",
+            code="provider_timeout",
+            details={"provider": "bis"},
+        ),
+    )
+    fred_provider = _FakeDigitalOracleMacroRatesProvider("fred")
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_macro_rates.create_macro_rates_providers",
+        lambda: (treasury_provider, bis_provider, fred_provider),
+    )
+    monkeypatch.delenv("DIGITAL_ORACLE_FRED_API_KEY", raising=False)
+    reset_settings_cache()
+    try:
+        payload = execute_macro_rates_lookup(
+            _runtime_context(fail_on_session=True),
+            parse_macro_rates_lookup_arguments(
+                json.dumps({"sources": ["treasury", "bis", "fred"], "itemLimit": 5})
+            ),
+        )
+    finally:
+        reset_settings_cache()
+
+    assert fred_provider.calls == []
+    assert treasury_provider.calls[0].source == "treasury"
+    assert bis_provider.calls[0].source == "bis"
+    series = cast(list[dict[str, object]], payload["series"])
+    warnings = cast(list[dict[str, object]], payload["warnings"])
+    assert [item["provider"] for item in series] == ["treasury"]
+    assert [warning["code"] for warning in warnings] == [
+        FRED_API_KEY_MISSING_CODE,
+        "macro_rates_provider_timeout",
+        "macro_rates_partial_result",
+    ]
+    assert warnings[0]["message"] == FRED_API_KEY_MISSING_MESSAGE
+    assert warnings[0]["details"] == {
+        "operation": "macro_rates",
+        "provider": "fred",
+        "setting": FRED_API_KEY_SETTING,
+    }
+    assert warnings[1]["details"] == {"operation": "macro_rates", "provider": "bis"}
+
+
+def test_macro_rates_result_aliasing_rejects_raw_provider_fields() -> None:
+    payload = map_macro_rates_result(
+        DigitalOracleMacroRatesResult(
+            query="rates",
+            series=(
+                DigitalOracleMacroRatesSeries(
+                    provider="treasury",
+                    family="yield_curve",
+                    series_id="UST-2Y",
+                    label="US Treasury 2Y par yield",
+                    country="US",
+                    currency="USD",
+                    unit="percent",
+                    date=date(2026, 1, 2),
+                    value=Decimal("3.95"),
+                    tenor="2Y",
+                    source_url="https://home.treasury.gov/",
+                ),
+            ),
+        )
+    ).model_dump(mode="json", by_alias=True)
+
+    assert payload["toolKey"] == MACRO_RATES_LOOKUP_TOOL_KEY
+    series = cast(list[dict[str, object]], payload["series"])
+    assert series[0] == {
+        "provider": "treasury",
+        "family": "yield_curve",
+        "seriesId": "UST-2Y",
+        "label": "US Treasury 2Y par yield",
+        "country": "US",
+        "currency": "USD",
+        "unit": "percent",
+        "date": "2026-01-02",
+        "value": "3.95",
+        "tenor": "2Y",
+        "sourceUrl": "https://home.treasury.gov/",
+    }
+    serialized = json.dumps(payload)
+    assert "rawPayload" not in serialized
+    assert "requestConfig" not in serialized
+
+
+def test_macro_rates_runtime_registry_dispatch_and_disabled_extension_denial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _FakeDigitalOracleMacroRatesProvider(
+        "treasury",
+        series=(
+            DigitalOracleMacroRatesSeries(
+                provider="treasury",
+                family="yield_curve",
+                series_id="UST-3M",
+                label="US Treasury 3M bill rate",
+                country="US",
+                currency="USD",
+                unit="percent",
+                date=date(2026, 1, 2),
+                value=Decimal("4.01"),
+                tenor="3M",
+                source_url="https://home.treasury.gov/",
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_macro_rates.create_macro_rates_providers",
+        lambda: (provider,),
+    )
+    registry = RuntimeToolRegistry([MACRO_RATES_LOOKUP_TOOL_SPEC])
+    payload = registry.dispatch(
+        name=MACRO_RATES_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps({"sources": ["treasury"], "families": ["yield_curve"]}),
+        granted_tool_keys={MACRO_RATES_LOOKUP_TOOL_KEY},
+        context=_runtime_context(fail_on_session=True),
+    )
+
+    assert provider.calls[0].families == ("yield_curve",)
+    assert payload["toolKey"] == MACRO_RATES_LOOKUP_TOOL_KEY
+    assert len(cast(list[dict[str, object]], payload["series"])) == 1
+    with pytest.raises(RuntimeToolError) as denied_error:
+        _ = registry.dispatch(
+            name=MACRO_RATES_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json="not-json",
+            granted_tool_keys=set(),
+            context=_runtime_context(fail_on_session=True),
+        )
+    assert denied_error.value.code == "agent_execution_access_denied"
+    assert denied_error.value.message == DIGITAL_ORACLE_DENIED_MESSAGES[MACRO_RATES_LOOKUP_TOOL_KEY]
 
 
 def test_market_sentiment_runtime_tool_spec_uses_approved_parameters_schema() -> None:

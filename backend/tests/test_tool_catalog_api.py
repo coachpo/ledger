@@ -1,18 +1,26 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from importlib import import_module
 from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import ToolCatalogValidationError, get_default_tool_catalog
 from app.agents.runtime_tools import get_default_runtime_tool_registry
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
+from app.extensions.signaldeck_digital_oracle.mappers import (
+    map_cftc_positioning_result,
+    map_crypto_derivatives_result,
+    map_macro_rates_result,
+    map_options_result,
+)
 from app.extensions.signaldeck_digital_oracle.ownership import (
     DIGITAL_ORACLE_EXTENSION_KEY,
     DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES,
@@ -22,13 +30,35 @@ from app.extensions.signaldeck_digital_oracle.provider_inventory import (
     DEFERRED_PROVIDER_INVENTORY,
     IN_SCOPE_PROVIDER_INVENTORY,
     NO_NEW_RUNTIME_KEYS_REGISTERED,
-    RATES_LOOKUP_DEFERRED_TOOL_KEY,
 )
 from app.extensions.signaldeck_digital_oracle.runtime_types import (
     NATIVE_RUNTIME_DIGITAL_ORACLE_TOOL_KEYS,
+    RuntimeCftcPositioningLookupResult,
+    RuntimeCryptoDerivativesLookupResult,
+    RuntimeDigitalOracleUnavailableLookupResult,
+    RuntimeMacroRatesLookupResult,
     RuntimeMarketSentimentLookupResult,
+    RuntimeOptionsLookupResult,
     RuntimePredictionMarketsLookupResult,
     RuntimeSecFilingsLookupResult,
+)
+from app.extensions.signaldeck_digital_oracle.types import (
+    DigitalOracleCftcPositioningReport,
+    DigitalOracleCftcPositioningResult,
+    DigitalOracleCftcPositioningRow,
+    DigitalOracleCryptoDerivativesGlobalMetrics,
+    DigitalOracleCryptoDerivativesOptionSummary,
+    DigitalOracleCryptoDerivativesOrderBook,
+    DigitalOracleCryptoDerivativesOrderBookLevel,
+    DigitalOracleCryptoDerivativesResult,
+    DigitalOracleCryptoDerivativesSpotQuote,
+    DigitalOracleCryptoDerivativesTermPoint,
+    DigitalOracleMacroRatesResult,
+    DigitalOracleMacroRatesSeries,
+    DigitalOracleOptionContract,
+    DigitalOracleOptionGreeks,
+    DigitalOracleOptionsChain,
+    DigitalOracleOptionsResult,
 )
 from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_EXTENSION_KEY,
@@ -41,11 +71,19 @@ _EXPECTED_DIGITAL_ORACLE_TOOL_KEYS = (
     "signaldeck.digital_oracle.prediction_markets.lookup",
     "signaldeck.digital_oracle.sec_filings.lookup",
     "signaldeck.digital_oracle.market_sentiment.lookup",
+    "signaldeck.digital_oracle.macro_rates.lookup",
+    "signaldeck.digital_oracle.crypto_derivatives.lookup",
+    "signaldeck.digital_oracle.cftc_positioning.lookup",
+    "signaldeck.digital_oracle.options.lookup",
 )
 _EXPECTED_DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES = (
     "signaldeck_digital_oracle_prediction_markets_lookup",
     "signaldeck_digital_oracle_sec_filings_lookup",
     "signaldeck_digital_oracle_market_sentiment_lookup",
+    "signaldeck_digital_oracle_macro_rates_lookup",
+    "signaldeck_digital_oracle_crypto_derivatives_lookup",
+    "signaldeck_digital_oracle_cftc_positioning_lookup",
+    "signaldeck_digital_oracle_options_lookup",
 )
 _DIGITAL_ORACLE_TOOL_KEYS = set(_EXPECTED_DIGITAL_ORACLE_TOOL_KEYS)
 _FINANCE_PRICE_HISTORY_TOOL_KEYS = {
@@ -88,6 +126,7 @@ _LEGACY_LIVE_TOOL_KEYS = (
     _legacy_tool_key(".prediction_markets.lookup"),
     _legacy_tool_key(".sec_filings.lookup"),
     _legacy_tool_key(".market_sentiment.lookup"),
+    "signaldeck.macro.lookup",
 )
 _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS = {
     "signaldeck.rates.lookup",
@@ -124,6 +163,18 @@ def _warning_payload() -> RuntimeToolWarning:
         message="Fixture provider is unavailable.",
         details={"provider": "fixture", "operation": "contract_freeze"},
     )
+
+
+def _assert_no_raw_provider_fields(payload: dict[str, object]) -> None:
+    forbidden_keys = {
+        "backendException",
+        "headers",
+        "rawPayload",
+        "requestConfig",
+        "secret",
+        "secrets",
+    }
+    assert forbidden_keys.isdisjoint(payload)
 
 
 def test_extension_tool_inventories_match_catalog_and_runtime() -> None:
@@ -197,6 +248,7 @@ def test_extension_tool_inventories_match_catalog_and_runtime() -> None:
 
 def test_digital_oracle_runtime_response_aliases_and_warnings_are_stable() -> None:
     warning = _warning_payload()
+    as_of = datetime(2026, 6, 19, 14, 30, tzinfo=UTC)
     prediction_markets = RuntimePredictionMarketsLookupResult(
         query="election markets",
         events=[],
@@ -212,6 +264,172 @@ def test_digital_oracle_runtime_response_aliases_and_warnings_are_stable() -> No
         as_of_date=date(2026, 6, 7),
         provider="fear_greed",
         warnings=[warning],
+    ).model_dump(mode="json", by_alias=True)
+    unavailable = RuntimeDigitalOracleUnavailableLookupResult(
+        tool_key="signaldeck.digital_oracle.macro_rates.lookup",
+        warnings=[warning],
+    ).model_dump(mode="json", by_alias=True)
+    macro_rates = map_macro_rates_result(
+        DigitalOracleMacroRatesResult(
+            query="fed funds",
+            series=(
+                DigitalOracleMacroRatesSeries(
+                    provider="fred",
+                    family="macro_indicators",
+                    series_id="FEDFUNDS",
+                    label="Effective Federal Funds Rate",
+                    country="US",
+                    currency="USD",
+                    unit="percent",
+                    date=date(2026, 6, 18),
+                    value=Decimal("4.33"),
+                    tenor=None,
+                    source_url="https://fred.stlouisfed.org/series/FEDFUNDS",
+                ),
+            ),
+            warnings=(warning,),
+        )
+    ).model_dump(mode="json", by_alias=True)
+    crypto_derivatives = map_crypto_derivatives_result(
+        DigitalOracleCryptoDerivativesResult(
+            assets=("BTC",),
+            spot=(
+                DigitalOracleCryptoDerivativesSpotQuote(
+                    provider="CoinGeckoProvider",
+                    symbol="BTC",
+                    price=Decimal("64250.12"),
+                    currency="USD",
+                    as_of=as_of,
+                ),
+            ),
+            global_metrics=(
+                DigitalOracleCryptoDerivativesGlobalMetrics(
+                    provider="CoinGeckoProvider",
+                    symbol=None,
+                    market_cap=Decimal("1260000000000"),
+                    volume_24h=Decimal("42000000000"),
+                    as_of=as_of,
+                ),
+            ),
+            term_structure=(
+                DigitalOracleCryptoDerivativesTermPoint(
+                    provider="DeribitProvider",
+                    symbol="BTC",
+                    expiry_date=date(2026, 9, 25),
+                    instrument="BTC-PERPETUAL",
+                    implied_volatility=Decimal("0.54"),
+                    open_interest=Decimal("15123.5"),
+                ),
+            ),
+            options=(
+                DigitalOracleCryptoDerivativesOptionSummary(
+                    provider="DeribitProvider",
+                    symbol="BTC",
+                    expiry_date=date(2026, 9, 25),
+                    strike=Decimal("70000"),
+                    option_type="call",
+                    implied_volatility=Decimal("0.58"),
+                    open_interest=Decimal("725.1"),
+                ),
+            ),
+            order_books=(
+                DigitalOracleCryptoDerivativesOrderBook(
+                    provider="DeribitProvider",
+                    symbol="BTC",
+                    instrument="BTC-PERPETUAL",
+                    bids=(
+                        DigitalOracleCryptoDerivativesOrderBookLevel(
+                            price=Decimal("64249.5"),
+                            size=Decimal("12.4"),
+                        ),
+                    ),
+                    asks=(
+                        DigitalOracleCryptoDerivativesOrderBookLevel(
+                            price=Decimal("64250.5"),
+                            size=Decimal("10.8"),
+                        ),
+                    ),
+                    depth_limit=1,
+                ),
+            ),
+            warnings=(warning,),
+        )
+    ).model_dump(mode="json", by_alias=True)
+    cftc_positioning = map_cftc_positioning_result(
+        DigitalOracleCftcPositioningResult(
+            reports=(
+                DigitalOracleCftcPositioningReport(
+                    provider="CftcCotProvider",
+                    report_type="legacy_futures_only",
+                    report_date=date(2026, 6, 16),
+                    rows=(
+                        DigitalOracleCftcPositioningRow(
+                            market="Bitcoin",
+                            contract_market_code="133741",
+                            producer_long=Decimal("1200"),
+                            producer_short=Decimal("900"),
+                            swap_dealer_long=Decimal("450"),
+                            swap_dealer_short=Decimal("510"),
+                            managed_money_long=Decimal("7200"),
+                            managed_money_short=Decimal("6800"),
+                            open_interest=Decimal("18300"),
+                        ),
+                    ),
+                ),
+            ),
+            warnings=(warning,),
+        )
+    ).model_dump(mode="json", by_alias=True)
+    options = map_options_result(
+        DigitalOracleOptionsResult(
+            symbol="AAPL",
+            chains=(
+                DigitalOracleOptionsChain(
+                    provider="YFinanceProvider",
+                    symbol="AAPL",
+                    expiry_date=date(2026, 7, 17),
+                    calls=(
+                        DigitalOracleOptionContract(
+                            contract_symbol="AAPL260717C00200000",
+                            strike=Decimal("200"),
+                            last_price=Decimal("6.25"),
+                            bid=Decimal("6.2"),
+                            ask=Decimal("6.3"),
+                            volume=Decimal("1000"),
+                            open_interest=Decimal("5000"),
+                            greeks=DigitalOracleOptionGreeks(
+                                delta=Decimal("0.61"),
+                                gamma=Decimal("0.04"),
+                                theta=Decimal("-0.03"),
+                                vega=Decimal("0.18"),
+                                rho=Decimal("0.05"),
+                                implied_volatility=Decimal("0.32"),
+                            ),
+                        ),
+                    ),
+                    puts=(
+                        DigitalOracleOptionContract(
+                            contract_symbol="AAPL260717P00200000",
+                            strike=Decimal("200"),
+                            last_price=Decimal("5.75"),
+                            bid=Decimal("5.7"),
+                            ask=Decimal("5.8"),
+                            volume=Decimal("800"),
+                            open_interest=Decimal("4200"),
+                            greeks=DigitalOracleOptionGreeks(
+                                delta=Decimal("-0.39"),
+                                gamma=Decimal("0.04"),
+                                theta=Decimal("-0.02"),
+                                vega=Decimal("0.17"),
+                                rho=Decimal("-0.04"),
+                                implied_volatility=Decimal("0.31"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            warnings=(warning,),
+        )
     ).model_dump(mode="json", by_alias=True)
 
     assert set(prediction_markets) == {"toolKey", "query", "events", "warnings"}
@@ -243,7 +461,63 @@ def test_digital_oracle_runtime_response_aliases_and_warnings_are_stable() -> No
         "warnings",
     }
     assert market_sentiment["toolKey"] == "signaldeck.digital_oracle.market_sentiment.lookup"
-    for payload in (prediction_markets, sec_filings, market_sentiment):
+    assert set(unavailable) == {"toolKey", "warnings"}
+    assert unavailable["toolKey"] == "signaldeck.digital_oracle.macro_rates.lookup"
+    assert set(macro_rates) == {"toolKey", "query", "series", "warnings"}
+    assert macro_rates["toolKey"] == "signaldeck.digital_oracle.macro_rates.lookup"
+    assert cast(list[dict[str, object]], macro_rates["series"])[0] == {
+        "provider": "fred",
+        "family": "macro_indicators",
+        "seriesId": "FEDFUNDS",
+        "label": "Effective Federal Funds Rate",
+        "country": "US",
+        "currency": "USD",
+        "unit": "percent",
+        "date": "2026-06-18",
+        "value": "4.33",
+        "tenor": None,
+        "sourceUrl": "https://fred.stlouisfed.org/series/FEDFUNDS",
+    }
+    assert set(crypto_derivatives) == {
+        "toolKey",
+        "assets",
+        "spot",
+        "globalMetrics",
+        "termStructure",
+        "options",
+        "orderBooks",
+        "warnings",
+    }
+    assert crypto_derivatives["toolKey"] == (
+        "signaldeck.digital_oracle.crypto_derivatives.lookup"
+    )
+    assert cast(list[dict[str, object]], crypto_derivatives["spot"])[0]["asOf"] == (
+        "2026-06-19T14:30:00Z"
+    )
+    assert set(cftc_positioning) == {"toolKey", "reports", "warnings"}
+    assert cftc_positioning["toolKey"] == (
+        "signaldeck.digital_oracle.cftc_positioning.lookup"
+    )
+    cftc_report = cast(list[dict[str, object]], cftc_positioning["reports"])[0]
+    assert set(cftc_report) == {"provider", "reportType", "reportDate", "rows"}
+    assert cast(list[dict[str, object]], cftc_report["rows"])[0]["managedMoneyLong"] == "7200"
+    assert set(options) == {"toolKey", "symbol", "chains", "warnings"}
+    assert options["toolKey"] == "signaldeck.digital_oracle.options.lookup"
+    options_chain = cast(list[dict[str, object]], options["chains"])[0]
+    assert set(options_chain) == {"provider", "symbol", "expiryDate", "calls", "puts"}
+    call_contract = cast(list[dict[str, object]], options_chain["calls"])[0]
+    assert cast(dict[str, object], call_contract["greeks"])["impliedVolatility"] == "0.32"
+    for payload in (
+        prediction_markets,
+        sec_filings,
+        market_sentiment,
+        unavailable,
+        macro_rates,
+        crypto_derivatives,
+        cftc_positioning,
+        options,
+    ):
+        _assert_no_raw_provider_fields(payload)
         assert payload["warnings"] == [
             {
                 "code": "provider_unavailable",
@@ -251,6 +525,67 @@ def test_digital_oracle_runtime_response_aliases_and_warnings_are_stable() -> No
                 "details": {"provider": "fixture", "operation": "contract_freeze"},
             }
         ]
+
+
+@pytest.mark.parametrize(
+    ("schema", "payload"),
+    (
+        (
+            RuntimeMacroRatesLookupResult,
+            {
+                "toolKey": "signaldeck.digital_oracle.macro_rates.lookup",
+                "query": "fed funds",
+                "series": [],
+                "warnings": [],
+            },
+        ),
+        (
+            RuntimeCryptoDerivativesLookupResult,
+            {
+                "toolKey": "signaldeck.digital_oracle.crypto_derivatives.lookup",
+                "symbol": "BTC",
+                "spot": None,
+                "globalMetrics": None,
+                "termStructure": [],
+                "options": [],
+                "orderBook": None,
+                "warnings": [],
+            },
+        ),
+        (
+            RuntimeCftcPositioningLookupResult,
+            {
+                "toolKey": "signaldeck.digital_oracle.cftc_positioning.lookup",
+                "reports": [],
+                "warnings": [],
+            },
+        ),
+        (
+            RuntimeOptionsLookupResult,
+            {
+                "toolKey": "signaldeck.digital_oracle.options.lookup",
+                "symbol": "AAPL",
+                "chains": [],
+                "warnings": [],
+            },
+        ),
+    ),
+)
+def test_digital_oracle_runtime_response_aliases_reject_raw_and_unknown_fields(
+    schema: type[RuntimeMacroRatesLookupResult]
+    | type[RuntimeCryptoDerivativesLookupResult]
+    | type[RuntimeCftcPositioningLookupResult]
+    | type[RuntimeOptionsLookupResult],
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        _ = schema.model_validate({**payload, "rawPayload": {"provider": "secret"}})
+
+    with pytest.raises(ValidationError):
+        _ = schema.model_validate({**payload, "requestConfig": {"headers": {}}})
+
+    with pytest.raises(ValidationError):
+        _ = schema.model_validate({**payload, "unexpectedField": "denied"})
 
 
 def test_digital_oracle_upstream_provider_inventory_freezes_migration_scope(
@@ -286,6 +621,16 @@ def test_digital_oracle_upstream_provider_inventory_freezes_migration_scope(
         "KalshiProvider",
         "EdgarProvider",
         "FearGreedProvider",
+        "FredProvider",
+        "USTreasuryProvider",
+        "BisProvider",
+        "WorldBankProvider",
+        "CMEFedWatchProvider",
+        "DeribitProvider",
+        "CoinGeckoProvider",
+        "YahooPriceProvider",
+        "YFinanceProvider",
+        "CftcCotProvider",
         "methodology/package patterns",
     }
     assert in_scope_by_provider["PolymarketProvider"].signaldeck_tool_key == (
@@ -300,20 +645,46 @@ def test_digital_oracle_upstream_provider_inventory_freezes_migration_scope(
     assert in_scope_by_provider["FearGreedProvider"].signaldeck_tool_key == (
         "signaldeck.digital_oracle.market_sentiment.lookup"
     )
+    assert in_scope_by_provider["FredProvider"].signaldeck_tool_key == (
+        "signaldeck.digital_oracle.macro_rates.lookup"
+    )
+    assert in_scope_by_provider["USTreasuryProvider"].signaldeck_tool_key == (
+        "signaldeck.digital_oracle.macro_rates.lookup"
+    )
+    assert in_scope_by_provider["BisProvider"].signaldeck_tool_key == (
+        "signaldeck.digital_oracle.macro_rates.lookup"
+    )
+    assert in_scope_by_provider["WorldBankProvider"].signaldeck_tool_key == (
+        "signaldeck.digital_oracle.macro_rates.lookup"
+    )
+    assert in_scope_by_provider["CMEFedWatchProvider"].signaldeck_tool_key == (
+        "signaldeck.digital_oracle.macro_rates.lookup"
+    )
+    assert in_scope_by_provider["DeribitProvider"].signaldeck_tool_key == (
+        "signaldeck.digital_oracle.crypto_derivatives.lookup"
+    )
+    assert in_scope_by_provider["CoinGeckoProvider"].signaldeck_tool_key == (
+        "signaldeck.digital_oracle.crypto_derivatives.lookup"
+    )
+    assert in_scope_by_provider["YahooPriceProvider"].signaldeck_tool_key == (
+        "signaldeck.digital_oracle.options.lookup"
+    )
+    assert in_scope_by_provider["YFinanceProvider"].signaldeck_tool_key == (
+        "signaldeck.digital_oracle.options.lookup"
+    )
+    assert in_scope_by_provider["CftcCotProvider"].signaldeck_tool_key == (
+        "signaldeck.digital_oracle.cftc_positioning.lookup"
+    )
     assert in_scope_by_provider["methodology/package patterns"].signaldeck_tool_key is None
     assert in_scope_by_provider["methodology/package patterns"].capability_family == (
         "Workflow Package methodology"
     )
     assert deferred_modules_by_family == {
-        "rates/macro": {"treasury", "bis", "worldbank", "cme_fedwatch"},
-        "derivatives/crypto": {"deribit", "coingecko", "yahoo", "yfinance_provider"},
-        "CFTC positioning": {"cftc"},
         "generic web": {"web"},
         "price/history": {"prices", "stooq"},
     }
-    assert NO_NEW_RUNTIME_KEYS_REGISTERED is True
-    assert deferred_tool_keys == {RATES_LOOKUP_DEFERRED_TOOL_KEY}
-    assert RATES_LOOKUP_DEFERRED_TOOL_KEY == "signaldeck.rates.lookup"
+    assert NO_NEW_RUNTIME_KEYS_REGISTERED is False
+    assert deferred_tool_keys == set()
     assert _DIGITAL_ORACLE_TOOL_KEYS == set(_EXPECTED_DIGITAL_ORACLE_TOOL_KEYS)
     assert _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS.isdisjoint(api_tool_keys)
     assert _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS.isdisjoint(digital_oracle_runtime_keys)
@@ -379,6 +750,12 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     prediction_markets_tool = tools_by_key["signaldeck.digital_oracle.prediction_markets.lookup"]
     sec_filings_tool = tools_by_key["signaldeck.digital_oracle.sec_filings.lookup"]
     market_sentiment_tool = tools_by_key["signaldeck.digital_oracle.market_sentiment.lookup"]
+    macro_rates_tool = tools_by_key["signaldeck.digital_oracle.macro_rates.lookup"]
+    crypto_derivatives_tool = tools_by_key[
+        "signaldeck.digital_oracle.crypto_derivatives.lookup"
+    ]
+    cftc_positioning_tool = tools_by_key["signaldeck.digital_oracle.cftc_positioning.lookup"]
+    options_tool = tools_by_key["signaldeck.digital_oracle.options.lookup"]
     assert quote_tool == {
         "key": "signaldeck.finance.market_data.quote_lookup",
         "displayName": "Market Data Quote Lookup",
@@ -440,6 +817,38 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
             "lookups with structured warnings for partial coverage."
         ),
     }
+    assert macro_rates_tool == {
+        "key": "signaldeck.digital_oracle.macro_rates.lookup",
+        "displayName": "Macro Rates Lookup",
+        "description": (
+            "Read normalized macro, yield, policy-rate, and Fed-implied rates "
+            "series with structured warnings for partial provider coverage."
+        ),
+    }
+    assert crypto_derivatives_tool == {
+        "key": "signaldeck.digital_oracle.crypto_derivatives.lookup",
+        "displayName": "Crypto Derivatives Lookup",
+        "description": (
+            "Read normalized CoinGecko spot/global-market and Deribit futures, "
+            "options, and orderbook data with structured warnings for partial coverage."
+        ),
+    }
+    assert cftc_positioning_tool == {
+        "key": "signaldeck.digital_oracle.cftc_positioning.lookup",
+        "displayName": "CFTC Positioning Lookup",
+        "description": (
+            "Read normalized CFTC Commitment of Traders positioning reports with "
+            "structured warnings for missing, stale, or malformed provider data."
+        ),
+    }
+    assert options_tool == {
+        "key": "signaldeck.digital_oracle.options.lookup",
+        "displayName": "Options Lookup",
+        "description": (
+            "Read normalized Yahoo option-chain calls and puts through an optional "
+            "yfinance-backed provider with structured warnings for unavailable coverage."
+        ),
+    }
     for tool in (
         quote_tool,
         history_tool,
@@ -450,6 +859,10 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         prediction_markets_tool,
         sec_filings_tool,
         market_sentiment_tool,
+        macro_rates_tool,
+        crypto_derivatives_tool,
+        cftc_positioning_tool,
+        options_tool,
     ):
         assert "module" not in tool
         assert "ownerExtensionKey" not in tool

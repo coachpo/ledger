@@ -365,16 +365,16 @@ _TRADINGAGENTS_MIXED_SIGNALS_PRESET_SQL_PATH = (
 )
 _EXPECTED_PRESET_HASHES = {
     _DIGITAL_ORACLE_PRESET_KEY: (
-        "3745b83eadefe2974081b231b2907a0ca04e2188be339895a595eb473a454bf6",
-        "ff38846a3ab0eda32f2c57dc89b99abbe2d9e1a95c02be65071de320b4d1c353",
+        "957916b15af9631d153d9a7bb0038454865cab0acc4732ea138fb222d2592883",
+        "8e890564cf36df6d05b6ce2ff6bc89bea0084c2a5f1b0b3b6a39882601769281",
     ),
     _TRADINGAGENTS_MACRO_PRESET_KEY: (
         "776d1d0984c11943800cb6e11873350d4b5155eb956f3a4b95fd6d5361001edc",
         "ff83de867b7c43ce76753e54d16793b50e9aac22030893016cc6a69d979e9bd9",
     ),
     _TRADINGAGENTS_MIXED_SIGNALS_PRESET_KEY: (
-        "705a85499b1a559ce6ff5c73f79c4a1d982cb76bc4ae213af8b79cbbb8ca153d",
-        "dca62a71471b322fdd2c20292c49467aff2c47f6b6d7794e5cc6dc8bf6be2939",
+        "1948c659af52f72e7cf740c5bcd2d15be88eb64fac2c8573f307ebd58a4fe666",
+        "e24ee6f18b8c16f5bf043e24dd3ba2c03779d291e5491762d5326b21481b32d8",
     ),
 }
 _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES = [
@@ -384,11 +384,14 @@ _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES = [
             "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
             "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
             "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
+            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[3]",
         ],
         "surfaces": [
+            "runtime.tool.signaldeck.digital_oracle.macro_rates.lookup",
             "runtime.tool.signaldeck.digital_oracle.market_sentiment.lookup",
             "runtime.tool.signaldeck.digital_oracle.prediction_markets.lookup",
             "runtime.tool.signaldeck.digital_oracle.sec_filings.lookup",
+            "tool.signaldeck.digital_oracle.macro_rates.lookup",
             "tool.signaldeck.digital_oracle.market_sentiment.lookup",
             "tool.signaldeck.digital_oracle.prediction_markets.lookup",
             "tool.signaldeck.digital_oracle.sec_filings.lookup",
@@ -4466,7 +4469,10 @@ def test_init_db_seeds_macro_and_mixed_signal_presets_with_expected_boundaries(
             _TRADINGAGENTS_MIXED_SIGNALS_FIXTURE_PATH,
             _TRADINGAGENTS_MIXED_SIGNALS_PRESET_SQL_PATH,
             {FINANCE_WORKSPACE_EXTENSION_KEY, DIGITAL_ORACLE_EXTENSION_KEY},
-            {"signaldeck.digital_oracle.prediction_markets.lookup"},
+            {
+                "signaldeck.digital_oracle.macro_rates.lookup",
+                "signaldeck.digital_oracle.prediction_markets.lookup",
+            },
         ),
     }
 
@@ -4565,6 +4571,7 @@ def test_init_db_seeds_macro_and_mixed_signal_presets_with_expected_boundaries(
             assert {
                 tool_key
                 for tool_key in (
+                    "signaldeck.digital_oracle.macro_rates.lookup",
                     "signaldeck.digital_oracle.prediction_markets.lookup",
                     "signaldeck.digital_oracle.sec_filings.lookup",
                     "signaldeck.digital_oracle.market_sentiment.lookup",
