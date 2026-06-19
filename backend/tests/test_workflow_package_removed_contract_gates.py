@@ -99,8 +99,11 @@ _FINANCE_TOOL_KEYS = {
     "signaldeck.finance.social_sentiment.lookup",
 }
 _DIGITAL_ORACLE_PHASE1_NATIVE_TOOL_KEYS = {
+    "signaldeck.digital_oracle.cftc_positioning.lookup",
+    "signaldeck.digital_oracle.crypto_derivatives.lookup",
     "signaldeck.digital_oracle.macro_rates.lookup",
     "signaldeck.digital_oracle.market_sentiment.lookup",
+    "signaldeck.digital_oracle.options.lookup",
     "signaldeck.digital_oracle.prediction_markets.lookup",
     "signaldeck.digital_oracle.sec_filings.lookup",
 }
