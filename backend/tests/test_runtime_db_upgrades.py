@@ -365,8 +365,8 @@ _TRADINGAGENTS_MIXED_SIGNALS_PRESET_SQL_PATH = (
 )
 _EXPECTED_PRESET_HASHES = {
     _DIGITAL_ORACLE_PRESET_KEY: (
-        "957916b15af9631d153d9a7bb0038454865cab0acc4732ea138fb222d2592883",
-        "8e890564cf36df6d05b6ce2ff6bc89bea0084c2a5f1b0b3b6a39882601769281",
+        "50c85d309ed51e69f7837e748011ae0b72553cfbba123f6c22101b7a38b78aa0",
+        "3f3c0730930972e02967a3bac0d313aece7d233fbfc128ebfc047a6b8c72ca64",
     ),
     _TRADINGAGENTS_MACRO_PRESET_KEY: (
         "776d1d0984c11943800cb6e11873350d4b5155eb956f3a4b95fd6d5361001edc",
@@ -385,14 +385,23 @@ _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES = [
             "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
             "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
             "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[3]",
+            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[4]",
+            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[5]",
+            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[6]",
         ],
         "surfaces": [
+            "runtime.tool.signaldeck.digital_oracle.cftc_positioning.lookup",
+            "runtime.tool.signaldeck.digital_oracle.crypto_derivatives.lookup",
             "runtime.tool.signaldeck.digital_oracle.macro_rates.lookup",
             "runtime.tool.signaldeck.digital_oracle.market_sentiment.lookup",
+            "runtime.tool.signaldeck.digital_oracle.options.lookup",
             "runtime.tool.signaldeck.digital_oracle.prediction_markets.lookup",
             "runtime.tool.signaldeck.digital_oracle.sec_filings.lookup",
+            "tool.signaldeck.digital_oracle.cftc_positioning.lookup",
+            "tool.signaldeck.digital_oracle.crypto_derivatives.lookup",
             "tool.signaldeck.digital_oracle.macro_rates.lookup",
             "tool.signaldeck.digital_oracle.market_sentiment.lookup",
+            "tool.signaldeck.digital_oracle.options.lookup",
             "tool.signaldeck.digital_oracle.prediction_markets.lookup",
             "tool.signaldeck.digital_oracle.sec_filings.lookup",
         ],
