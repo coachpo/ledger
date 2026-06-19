@@ -256,16 +256,16 @@ def test_validate_manifest_accepts_private_mcp_and_http_demo_variants(
 ) -> None:
     expected_hashes = {
         "digital_oracle_researcher": (
-            "957916b15af9631d153d9a7bb0038454865cab0acc4732ea138fb222d2592883",
-            "8e890564cf36df6d05b6ce2ff6bc89bea0084c2a5f1b0b3b6a39882601769281",
+            "9cdde0eaf311164747948b386c9901cd3a70c0ef981c8296e616c52e212ac0c4",
+            "1a997fe3f393bdef1db33473c7241683ecbba6e5f266b3bc1b1960c4e5ba5ea4",
         ),
         "tradingagents_advisory_research_macro": (
             "776d1d0984c11943800cb6e11873350d4b5155eb956f3a4b95fd6d5361001edc",
             "ff83de867b7c43ce76753e54d16793b50e9aac22030893016cc6a69d979e9bd9",
         ),
         "tradingagents_advisory_research_mixed_signals": (
-            "1948c659af52f72e7cf740c5bcd2d15be88eb64fac2c8573f307ebd58a4fe666",
-            "e24ee6f18b8c16f5bf043e24dd3ba2c03779d291e5491762d5326b21481b32d8",
+            "6b5e54a5bd3fc62d99aa6bec8d0be839f548d232e3e610535da3bc0d083ba92f",
+            "59010485fc6eac23f94bb75777ae3fb3b920b5879738007f0dfd7ad58daa16fd",
         ),
     }
 
