@@ -8,9 +8,8 @@ from typing import cast
 import pytest
 from sqlalchemy.orm import Session
 
-from app.extensions.signaldeck_finance.provider_factories import (
-    register as register_finance_workspace_provider_factories,
-)
+from app.core.config import Settings
+from app.extensions.signaldeck_finance import provider_factories
 from app.services.market_data_service import MarketDataService
 from app.services.news_provider import (
     NewsProvider,
@@ -77,16 +76,38 @@ def news_service_factory(
 
 def test_market_data_provider_factories_are_extension_owned() -> None:
     registrations = {
-        registration.key: registration
-        for registration in register_finance_workspace_provider_factories()
+        registration.key: registration for registration in provider_factories.register()
     }
 
     assert "quote_provider" in registrations
+    assert "news_providers" in registrations
     quote_provider = registrations["quote_provider"].factory()
+    news_providers = registrations["news_providers"].factory()
     assert quote_provider.__class__.__name__ in {
         "DeterministicQuoteProvider",
         "YahooFinanceQuoteProvider",
     }
+    assert isinstance(news_providers, tuple)
+
+
+def test_alpha_news_provider_missing_key_degrades_with_structured_warning(
+    news_service_factory: Callable[[object], MarketDataService],
+) -> None:
+    providers = provider_factories.create_news_providers(
+        Settings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "alpha_vantage,yahoo"})
+    )
+    service = news_service_factory(providers[0])
+
+    result = service.get_news_snapshot(symbols=["nvda"], providers=providers)
+    payload = result.model_dump(mode="json", by_alias=True)
+
+    assert payload["items"] == []
+    assert [warning["code"] for warning in cast(list[dict[str, object]], payload["warnings"])] == [
+        "news_api_key_missing",
+        "news_provider_unavailable",
+        "news_unavailable",
+    ]
+    assert "FINANCE_ALPHA_VANTAGE_API_KEY" not in json.dumps(payload["warnings"])
 
 
 def test_news_adapter_rate_limit_degrades_with_structured_warning(

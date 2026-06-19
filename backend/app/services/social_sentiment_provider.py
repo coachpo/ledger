@@ -368,45 +368,74 @@ class StockTwitsSocialSentimentAdapter:
                     )
                 ],
             )
-        messages = _object_list(payload.get("messages"))
+        messages_payload = payload.get("messages")
+        if not isinstance(messages_payload, list):
+            return ProviderSocialSentimentSourceResult(
+                source=self.source,
+                provider=self.provider_name,
+                warnings=[
+                    _malformed_stocktwits_payload_warning(
+                        source=self.source,
+                        provider=self.provider_name,
+                    )
+                ],
+            )
+        messages = messages_payload
         blocks: list[ProviderSocialSentimentSourceBlock] = []
+        malformed_message_count = 0
         for message in messages[:limit]:
+            parsed_message = _parse_stocktwits_message(message)
+            if parsed_message is None:
+                malformed_message_count += 1
+                continue
             block = self._build_message_block(
-                _object_dict(message),
+                parsed_message,
                 symbol=normalized_symbol,
                 start_date=start_date,
                 end_date=end_date,
             )
             if block is not None:
                 blocks.append(block)
+        warnings = (
+            [
+                _malformed_stocktwits_messages_warning(
+                    malformed_message_count=malformed_message_count,
+                    source=self.source,
+                    provider=self.provider_name,
+                )
+            ]
+            if malformed_message_count > 0
+            else []
+        )
 
         return ProviderSocialSentimentSourceResult(
             source=self.source,
             provider=self.provider_name,
             source_blocks=blocks,
-            metrics=self._aggregate_metrics(blocks),
+            metrics=self._aggregate_metrics(blocks) if blocks else [],
+            warnings=warnings,
         )
 
     def _build_message_block(
         self,
-        message: dict[str, object],
+        message: _StockTwitsParsedMessage,
         *,
         symbol: str,
         start_date: datetime | None,
         end_date: datetime | None,
     ) -> ProviderSocialSentimentSourceBlock | None:
-        as_of = _iso_datetime(_text(message.get("created_at")))
+        as_of = message.as_of
         if not _within_bounds(as_of, start_date=start_date, end_date=end_date):
             return None
-        user = _object_dict(message.get("user"))
+        user = _object_dict(message.payload.get("user"))
         username = _text(user.get("username")) or "unknown"
-        sentiment = _stocktwits_sentiment(message)
-        message_id = _text(message.get("id"))
+        sentiment = _stocktwits_sentiment(message.payload)
+        message_id = _text(message.payload.get("id"))
         return ProviderSocialSentimentSourceBlock(
             source=self.source,
             provider=self.provider_name,
             title=f"@{username}",
-            summary=_truncate(_text(message.get("body")), limit=280),
+            summary=_truncate(message.body, limit=280),
             url=(
                 f"https://stocktwits.com/{username}/message/{message_id}"
                 if message_id is not None
@@ -558,6 +587,13 @@ class _StockTwitsTransport:
     json_fetcher: _JsonFetcher
 
 
+@dataclass(frozen=True, slots=True)
+class _StockTwitsParsedMessage:
+    payload: dict[str, object]
+    body: str
+    as_of: datetime
+
+
 def _parse_reddit_rss_blocks(
     payload: str,
     *,
@@ -678,6 +714,46 @@ def _within_bounds(
     if end_date is not None and normalized > to_utc(end_date):
         return False
     return True
+
+
+def _parse_stocktwits_message(value: object) -> _StockTwitsParsedMessage | None:
+    if not isinstance(value, dict):
+        return None
+    payload = cast(dict[str, object], value)
+    body = _text(payload.get("body"))
+    as_of = _iso_datetime(_text(payload.get("created_at")))
+    if body is None or as_of is None:
+        return None
+    return _StockTwitsParsedMessage(payload=payload, body=body, as_of=as_of)
+
+
+def _malformed_stocktwits_payload_warning(
+    *,
+    source: SocialSentimentSource,
+    provider: str,
+) -> ProviderSocialSentimentWarning:
+    return ProviderSocialSentimentWarning(
+        code="provider_malformed_payload",
+        message=f"{provider} returned malformed {source} sentiment payload",
+        details={"provider": provider, "source": source, "field": "messages"},
+    )
+
+
+def _malformed_stocktwits_messages_warning(
+    *,
+    malformed_message_count: int,
+    source: SocialSentimentSource,
+    provider: str,
+) -> ProviderSocialSentimentWarning:
+    return ProviderSocialSentimentWarning(
+        code="source_partial",
+        message=f"{provider} skipped malformed {source} messages",
+        details={
+            "malformedMessageCount": str(malformed_message_count),
+            "provider": provider,
+            "source": source,
+        },
+    )
 
 
 def _stocktwits_sentiment(

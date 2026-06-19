@@ -15,6 +15,7 @@ PLACEHOLDER_AGENT_PLATFORM_ENCRYPTION_KEYS = {
     "change-me",
     "changeme",
 }
+_FINANCE_NEWS_PROVIDER_KEYS = {"alpha_vantage", "deterministic", "yahoo"}
 
 
 class Settings(BaseSettings):
@@ -29,6 +30,41 @@ class Settings(BaseSettings):
     quote_provider_timeout_seconds: float = Field(default=5.0, alias="QUOTE_PROVIDER_TIMEOUT")
     quote_provider_backend: str = Field(default="yahoo", alias="QUOTE_PROVIDER_BACKEND")
     quote_stale_after_minutes: int = Field(default=15, alias="QUOTE_STALE_AFTER_MINUTES")
+    finance_alpha_vantage_api_key: str | None = Field(
+        default=None,
+        alias="FINANCE_ALPHA_VANTAGE_API_KEY",
+    )
+    finance_news_provider_order: Annotated[list[str], NoDecode] = Field(
+        default=["yahoo"],
+        alias="FINANCE_NEWS_PROVIDER_ORDER",
+    )
+    finance_global_news_queries: Annotated[list[str], NoDecode] = Field(
+        default=[
+            "financial markets",
+            "macro economy",
+            "monetary policy",
+        ],
+        alias="FINANCE_GLOBAL_NEWS_QUERIES",
+    )
+    finance_global_news_lookback_days: int = Field(
+        default=7,
+        alias="FINANCE_GLOBAL_NEWS_LOOKBACK_DAYS",
+        ge=1,
+    )
+    finance_reddit_subreddits: Annotated[list[str], NoDecode] = Field(
+        default=["wallstreetbets", "stocks", "investing"],
+        alias="FINANCE_REDDIT_SUBREDDITS",
+    )
+    finance_reddit_retry_after_max_seconds: float = Field(
+        default=2.0,
+        alias="FINANCE_REDDIT_RETRY_AFTER_MAX_SECONDS",
+        ge=0,
+    )
+    finance_reddit_inter_request_delay_seconds: float = Field(
+        default=0.0,
+        alias="FINANCE_REDDIT_INTER_REQUEST_DELAY_SECONDS",
+        ge=0,
+    )
     digital_oracle_prediction_markets_enabled: bool = Field(
         default=True,
         alias="DIGITAL_ORACLE_PREDICTION_MARKETS_ENABLED",
@@ -178,6 +214,9 @@ class Settings(BaseSettings):
         "cors_allowed_origins",
         "mcp_stdio_allowed_commands",
         "http_operation_allowed_methods",
+        "finance_news_provider_order",
+        "finance_global_news_queries",
+        "finance_reddit_subreddits",
         mode="before",
     )
     @classmethod
@@ -196,6 +235,37 @@ class Settings(BaseSettings):
             raise ValueError("HTTP_OPERATION_ALLOWED_METHODS must not contain duplicates")
         return normalized
 
+    @field_validator("finance_news_provider_order")
+    @classmethod
+    def normalize_finance_news_provider_order(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            provider_key = item.strip().lower()
+            if not provider_key or provider_key in seen:
+                continue
+            if provider_key not in _FINANCE_NEWS_PROVIDER_KEYS:
+                allowed = ", ".join(sorted(_FINANCE_NEWS_PROVIDER_KEYS))
+                raise ValueError(f"FINANCE_NEWS_PROVIDER_ORDER must contain only: {allowed}")
+            seen.add(provider_key)
+            normalized.append(provider_key)
+        if not normalized:
+            raise ValueError("FINANCE_NEWS_PROVIDER_ORDER must include at least one provider")
+        return normalized
+
+    @field_validator("finance_global_news_queries", "finance_reddit_subreddits")
+    @classmethod
+    def normalize_deduped_finance_list(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            entry = item.strip()
+            if not entry or entry in seen:
+                continue
+            seen.add(entry)
+            normalized.append(entry)
+        return normalized
+
     @field_validator("public_base_url", mode="before")
     @classmethod
     def normalize_public_base_url(cls, value: object) -> str | None:
@@ -209,6 +279,7 @@ class Settings(BaseSettings):
     @field_validator(
         "digital_oracle_edgar_contact_email",
         "digital_oracle_fred_api_key",
+        "finance_alpha_vantage_api_key",
         mode="before",
     )
     @classmethod

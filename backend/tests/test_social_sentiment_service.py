@@ -188,6 +188,25 @@ def _stocktwits_json_fixture() -> dict[str, object]:
     }
 
 
+def _stocktwits_message(
+    *,
+    message_id: int,
+    body: str,
+    created_at: str,
+    sentiment: str | None,
+) -> dict[str, object]:
+    entities: dict[str, object] = {}
+    if sentiment is not None:
+        entities = {"sentiment": {"basic": sentiment}}
+    return {
+        "id": message_id,
+        "body": body,
+        "created_at": created_at,
+        "user": {"username": "trader"},
+        "entities": entities,
+    }
+
+
 def test_reddit_adapter_parses_rss_items_before_json_fetch() -> None:
     text_fetcher = _FakeTextFetcher([_reddit_rss_fixture()])
     json_fetcher = _FakeJsonFetcher([_reddit_json_fixture()])
@@ -300,6 +319,203 @@ def test_stocktwits_adapter_returns_warning_instead_of_raising_on_failure() -> N
         "provider": "stocktwits_public_stream",
         "source": "stocktwits",
         "status": "429",
+    }
+
+
+def test_stocktwits_adapter_returns_warning_for_timeout_failure() -> None:
+    json_fetcher = _FakeJsonFetcher()
+    json_fetcher.failures.append(SocialSentimentProviderTimeoutError("stocktwits timed out"))
+    adapter = StockTwitsSocialSentimentAdapter(
+        timeout=1,
+        transport=_StockTwitsTransport(json_fetcher=json_fetcher),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=5)
+
+    assert result.source_blocks == []
+    assert result.metrics == []
+    assert [warning.code for warning in result.warnings] == ["provider_timeout"]
+
+
+def test_stocktwits_adapter_returns_warning_for_provider_unavailable_failure() -> None:
+    json_fetcher = _FakeJsonFetcher()
+    json_fetcher.failures.append(
+        SocialSentimentProviderError(
+            "stocktwits outage",
+            code="provider_unavailable",
+            details={"status": "503"},
+        )
+    )
+    adapter = StockTwitsSocialSentimentAdapter(
+        timeout=1,
+        transport=_StockTwitsTransport(json_fetcher=json_fetcher),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=5)
+
+    assert result.source_blocks == []
+    assert result.metrics == []
+    assert [warning.code for warning in result.warnings] == ["provider_unavailable"]
+    assert result.warnings[0].details["status"] == "503"
+
+
+def test_stocktwits_adapter_returns_warning_for_malformed_json_failure() -> None:
+    json_fetcher = _FakeJsonFetcher()
+    json_fetcher.failures.append(
+        SocialSentimentProviderError(
+            "stocktwits returned malformed json",
+            details={"payload": "json"},
+        )
+    )
+    adapter = StockTwitsSocialSentimentAdapter(
+        timeout=1,
+        transport=_StockTwitsTransport(json_fetcher=json_fetcher),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=5)
+
+    assert result.source_blocks == []
+    assert result.metrics == []
+    assert [warning.code for warning in result.warnings] == ["provider_error"]
+    assert result.warnings[0].details["payload"] == "json"
+
+
+def test_stocktwits_adapter_warns_when_messages_payload_is_missing() -> None:
+    adapter = StockTwitsSocialSentimentAdapter(
+        timeout=1,
+        transport=_StockTwitsTransport(json_fetcher=_FakeJsonFetcher([{}])),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=5)
+
+    assert result.source_blocks == []
+    assert result.metrics == []
+    assert [warning.code for warning in result.warnings] == ["provider_malformed_payload"]
+    assert result.warnings[0].details["field"] == "messages"
+
+
+def test_stocktwits_adapter_warns_when_messages_payload_is_not_a_list() -> None:
+    adapter = StockTwitsSocialSentimentAdapter(
+        timeout=1,
+        transport=_StockTwitsTransport(json_fetcher=_FakeJsonFetcher([{"messages": {"id": 123}}])),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=5)
+
+    assert result.source_blocks == []
+    assert result.metrics == []
+    assert [warning.code for warning in result.warnings] == ["provider_malformed_payload"]
+    assert result.warnings[0].details["field"] == "messages"
+
+
+def test_stocktwits_adapter_skips_all_malformed_messages_with_warning() -> None:
+    adapter = StockTwitsSocialSentimentAdapter(
+        timeout=1,
+        transport=_StockTwitsTransport(
+            json_fetcher=_FakeJsonFetcher(
+                [
+                    {
+                        "messages": [
+                            "not an object",
+                            {"id": 1, "created_at": "2026-01-02T12:00:00Z"},
+                            {"id": 2, "body": "Invalid timestamp", "created_at": "not-a-date"},
+                        ]
+                    }
+                ]
+            )
+        ),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=5)
+
+    assert result.source_blocks == []
+    assert result.metrics == []
+    assert [warning.code for warning in result.warnings] == ["source_partial"]
+    assert result.warnings[0].details == {
+        "malformedMessageCount": "3",
+        "provider": "stocktwits_public_stream",
+        "source": "stocktwits",
+    }
+
+
+def test_stocktwits_adapter_preserves_valid_metrics_when_payload_is_mixed() -> None:
+    adapter = StockTwitsSocialSentimentAdapter(
+        timeout=1,
+        transport=_StockTwitsTransport(
+            json_fetcher=_FakeJsonFetcher(
+                [
+                    {
+                        "messages": [
+                            _stocktwits_message(
+                                message_id=1,
+                                body="Bullish into earnings.",
+                                created_at="2026-01-02T12:00:00Z",
+                                sentiment="Bullish",
+                            ),
+                            {"id": 2, "created_at": "2026-01-02T12:01:00Z"},
+                            _stocktwits_message(
+                                message_id=3,
+                                body="No label, just watching.",
+                                created_at="2026-01-02T12:02:00Z",
+                                sentiment=None,
+                            ),
+                            _stocktwits_message(
+                                message_id=4,
+                                body="Bearish below support.",
+                                created_at="2026-01-02T12:03:00Z",
+                                sentiment="Bearish",
+                            ),
+                            {"id": 5, "body": "Invalid timestamp", "created_at": "bad"},
+                        ]
+                    }
+                ]
+            )
+        ),
+    )
+
+    result = adapter.fetch_source_blocks("NVDA", start_date=None, end_date=None, limit=10)
+
+    assert [block.sentiment for block in result.source_blocks] == [
+        "positive",
+        None,
+        "negative",
+    ]
+    metrics = {metric.name: metric.value for metric in result.metrics}
+    assert metrics == {
+        "message_count": Decimal("3"),
+        "bullish_count": Decimal("1"),
+        "bearish_count": Decimal("1"),
+        "unlabeled_count": Decimal("1"),
+        "bullish_ratio": Decimal("0.3333"),
+        "bearish_ratio": Decimal("0.3333"),
+    }
+    assert [warning.code for warning in result.warnings] == ["source_partial"]
+    assert result.warnings[0].details["malformedMessageCount"] == "2"
+
+
+def test_social_sentiment_service_degrades_malformed_stocktwits_source() -> None:
+    stocktwits = StockTwitsSocialSentimentAdapter(
+        timeout=1,
+        transport=_StockTwitsTransport(json_fetcher=_FakeJsonFetcher([{}])),
+    )
+    service = SocialSentimentService(source_adapters=[stocktwits])
+
+    payload = _payload(service.get_social_sentiment_snapshot("NVDA", sources=["stocktwits"]))
+
+    assert payload["sourceBlocks"] == []
+    assert payload["metrics"] == []
+    warnings = cast(list[dict[str, object]], payload["warnings"])
+    assert [warning["code"] for warning in warnings] == [
+        "social_sentiment_empty_source",
+        "social_sentiment_provider_error",
+        "social_sentiment_unavailable",
+    ]
+    assert warnings[1]["details"] == {
+        "operation": "social_sentiment",
+        "symbol": "NVDA",
+        "source": "stocktwits",
+        "provider": "stocktwits_public_stream",
+        "field": "messages",
     }
 
 

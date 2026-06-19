@@ -8,6 +8,7 @@ from app.services.execution_providers import (
     ExecutionProviderBundle,
     execution_provider_bundle_from_parts,
 )
+from app.services.news_provider import NewsProvider
 from app.services.quote_provider import QuoteProvider
 from app.services.social_sentiment_provider import SocialSentimentSourceAdapter
 
@@ -16,6 +17,7 @@ from app.services.social_sentiment_provider import SocialSentimentSourceAdapter
 class FinanceExecutionProviders:
     quote_provider: QuoteProvider | None = None
     fallback_quote_provider: QuoteProvider | None = None
+    news_providers: tuple[NewsProvider, ...] = ()
     social_sentiment_adapters: tuple[SocialSentimentSourceAdapter, ...] = ()
 
 
@@ -23,11 +25,13 @@ def finance_execution_provider_bundle_from_parts(
     *,
     quote_provider: QuoteProvider | None = None,
     fallback_quote_provider: QuoteProvider | None = None,
+    news_providers: Sequence[NewsProvider] = (),
     social_sentiment_adapters: Sequence[SocialSentimentSourceAdapter] = (),
 ) -> ExecutionProviderBundle:
     payload = FinanceExecutionProviders(
         quote_provider=quote_provider,
         fallback_quote_provider=fallback_quote_provider,
+        news_providers=tuple(news_providers),
         social_sentiment_adapters=tuple(social_sentiment_adapters),
     )
     return execution_provider_bundle_from_parts(
@@ -56,6 +60,15 @@ def resolve_finance_quote_provider(
     return providers.quote_provider or providers.fallback_quote_provider
 
 
+def resolve_finance_news_providers(
+    provider_bundle: ExecutionProviderBundle,
+) -> tuple[NewsProvider, ...]:
+    providers = finance_execution_providers_for(provider_bundle)
+    if providers is None:
+        return ()
+    return providers.news_providers
+
+
 def resolve_social_sentiment_adapters(
     provider_bundle: ExecutionProviderBundle,
 ) -> tuple[SocialSentimentSourceAdapter, ...]:
@@ -69,6 +82,7 @@ __all__ = [
     "FinanceExecutionProviders",
     "finance_execution_provider_bundle_from_parts",
     "finance_execution_providers_for",
+    "resolve_finance_news_providers",
     "resolve_finance_quote_provider",
     "resolve_social_sentiment_adapters",
 ]

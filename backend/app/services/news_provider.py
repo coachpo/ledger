@@ -35,7 +35,18 @@ class NewsProviderRateLimitError(NewsProviderError):
         super().__init__(message, code="provider_rate_limited", details=details)
 
 
+class NewsProviderUnavailableError(NewsProviderError):
+    def __init__(self, message: str, *, details: dict[str, str] | None = None) -> None:
+        super().__init__(message, code="provider_unavailable", details=details)
+
+
+class NewsProviderMalformedResponseError(NewsProviderError):
+    def __init__(self, message: str, *, details: dict[str, str] | None = None) -> None:
+        super().__init__(message, code="provider_malformed_response", details=details)
+
+
 NewsScope = Literal["symbol", "market", "global"]
+NewsSentiment = Literal["positive", "neutral", "negative", "mixed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +57,7 @@ class ProviderNewsItem:
     url: str | None = None
     summary: str | None = None
     symbols: list[str] | None = None
-    sentiment: Literal["positive", "neutral", "negative", "mixed"] | None = None
+    sentiment: NewsSentiment | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +77,54 @@ class NewsProvider(Protocol):
         end_date: datetime | None,
         limit: int,
     ) -> ProviderNewsResult: ...
+
+
+@dataclass(frozen=True, slots=True)
+class AlphaVantageNewsProvider:
+    api_key: str | None
+    provider_name: str = "alpha_vantage"
+
+    def fetch_news(
+        self,
+        *,
+        symbols: list[str],
+        query: str | None,
+        scope: NewsScope,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderNewsResult:
+        del symbols, query, scope, start_date, end_date, limit
+        if self.api_key is None:
+            raise NewsProviderMissingKeyError(
+                "Alpha Vantage news provider requires a configured API key",
+                details={"provider": self.provider_name},
+            )
+        raise NewsProviderUnavailableError(
+            "Alpha Vantage news provider parsing is not implemented yet",
+            details={"provider": self.provider_name},
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class YahooFinanceNewsProvider:
+    provider_name: str = "yahoo"
+
+    def fetch_news(
+        self,
+        *,
+        symbols: list[str],
+        query: str | None,
+        scope: NewsScope,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderNewsResult:
+        del symbols, query, scope, start_date, end_date, limit
+        raise NewsProviderUnavailableError(
+            "Yahoo Finance news provider parsing is not implemented yet",
+            details={"provider": self.provider_name},
+        )
 
 
 class DeterministicNewsProvider:
@@ -125,13 +184,18 @@ def _normalize_symbols(symbols: list[str]) -> list[str]:
 
 
 __all__ = [
+    "AlphaVantageNewsProvider",
     "DeterministicNewsProvider",
     "NewsProvider",
     "NewsProviderError",
+    "NewsProviderMalformedResponseError",
     "NewsProviderMissingKeyError",
     "NewsProviderRateLimitError",
     "NewsProviderTimeoutError",
+    "NewsProviderUnavailableError",
+    "NewsSentiment",
     "NewsScope",
     "ProviderNewsItem",
     "ProviderNewsResult",
+    "YahooFinanceNewsProvider",
 ]
