@@ -15,8 +15,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import ApiError
 from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_digital_oracle.runtime_types import (
+    CFTC_POSITIONING_LOOKUP_TOOL_KEY,
+    CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY,
     MACRO_RATES_LOOKUP_TOOL_KEY,
     MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+    OPTIONS_LOOKUP_TOOL_KEY,
     PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
     SEC_FILINGS_LOOKUP_TOOL_KEY,
 )
@@ -327,6 +330,9 @@ _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
     SEC_FILINGS_LOOKUP_TOOL_KEY,
     MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
     MACRO_RATES_LOOKUP_TOOL_KEY,
+    CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY,
+    CFTC_POSITIONING_LOOKUP_TOOL_KEY,
+    OPTIONS_LOOKUP_TOOL_KEY,
 )
 
 

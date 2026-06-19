@@ -1953,10 +1953,13 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
     assert runtime_agent.key == "digital_oracle_signal_researcher"
     assert runtime_agent.output_schema.key == "digital_oracle_report"
     assert granted_tool_keys == {
+        CFTC_POSITIONING_LOOKUP_TOOL_KEY,
+        CRYPTO_DERIVATIVES_LOOKUP_TOOL_KEY,
         PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
         SEC_FILINGS_LOOKUP_TOOL_KEY,
         MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
         MACRO_RATES_LOOKUP_TOOL_KEY,
+        OPTIONS_LOOKUP_TOOL_KEY,
     }
     assert "Package-ready draft" not in manifest_source
     assert "spec.skills" not in manifest_source
