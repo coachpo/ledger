@@ -18,16 +18,16 @@ from tests.test_workflow_package_manifest_parser import _valid_package_manifest_
 _DEMO_ROOT = Path(__file__).resolve().parents[2] / "demo"
 _EXPECTED_DEMO_HASHES = {
     "digital_oracle_researcher": (
-        "3745b83eadefe2974081b231b2907a0ca04e2188be339895a595eb473a454bf6",
-        "ff38846a3ab0eda32f2c57dc89b99abbe2d9e1a95c02be65071de320b4d1c353",
+        "957916b15af9631d153d9a7bb0038454865cab0acc4732ea138fb222d2592883",
+        "8e890564cf36df6d05b6ce2ff6bc89bea0084c2a5f1b0b3b6a39882601769281",
     ),
     "tradingagents_advisory_research_macro": (
         "776d1d0984c11943800cb6e11873350d4b5155eb956f3a4b95fd6d5361001edc",
         "ff83de867b7c43ce76753e54d16793b50e9aac22030893016cc6a69d979e9bd9",
     ),
     "tradingagents_advisory_research_mixed_signals": (
-        "705a85499b1a559ce6ff5c73f79c4a1d982cb76bc4ae213af8b79cbbb8ca153d",
-        "dca62a71471b322fdd2c20292c49467aff2c47f6b6d7794e5cc6dc8bf6be2939",
+        "1948c659af52f72e7cf740c5bcd2d15be88eb64fac2c8573f307ebd58a4fe666",
+        "e24ee6f18b8c16f5bf043e24dd3ba2c03779d291e5491762d5326b21481b32d8",
     ),
 }
 
@@ -237,18 +237,12 @@ def test_compile_inline_private_mcp_preserves_report_and_quote_tool_keys() -> No
         (
             "digital_oracle_researcher",
             {
+                "signaldeck.digital_oracle.macro_rates.lookup",
                 "signaldeck.digital_oracle.prediction_markets.lookup",
                 "signaldeck.digital_oracle.sec_filings.lookup",
                 "signaldeck.digital_oracle.market_sentiment.lookup",
             },
-            {
-                "fred_fedfunds_observations",
-                "fred_unrate_observations",
-                "fred_cpiaucsl_observations",
-                "fred_t10y2y_observations",
-                "treasury_rates_snapshot_json",
-                "sec_submissions_json",
-            },
+            set(),
         ),
         (
             "tradingagents_advisory_research_macro",
@@ -275,6 +269,7 @@ def test_compile_inline_private_mcp_preserves_report_and_quote_tool_keys() -> No
         (
             "tradingagents_advisory_research_mixed_signals",
             {
+                "signaldeck.digital_oracle.macro_rates.lookup",
                 "signaldeck.digital_oracle.prediction_markets.lookup",
                 "signaldeck.finance.fundamentals.lookup",
                 "signaldeck.finance.indicators.lookup",
@@ -287,13 +282,7 @@ def test_compile_inline_private_mcp_preserves_report_and_quote_tool_keys() -> No
                 "signaldeck.finance.reports.lookup",
                 "signaldeck.finance.social_sentiment.lookup",
             },
-            {
-                "fred_fedfunds_observations",
-                "fred_unrate_observations",
-                "fred_cpiaucsl_observations",
-                "fred_t10y2y_observations",
-                "treasury_rates_snapshot_json",
-            },
+            set(),
         ),
     ],
 )

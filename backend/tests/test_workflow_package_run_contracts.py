@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import ApiError
 from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_digital_oracle.runtime_types import (
+    MACRO_RATES_LOOKUP_TOOL_KEY,
     MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
     PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
     SEC_FILINGS_LOOKUP_TOOL_KEY,
@@ -325,6 +326,7 @@ _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
     PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
     SEC_FILINGS_LOOKUP_TOOL_KEY,
     MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
+    MACRO_RATES_LOOKUP_TOOL_KEY,
 )
 
 
@@ -967,6 +969,7 @@ def test_digital_oracle_package_local_system_prompt_receives_runtime_tool_guidan
     assert "call signaldeck_digital_oracle_prediction_markets_lookup" in instructions
     assert "call signaldeck_digital_oracle_sec_filings_lookup" in instructions
     assert "call signaldeck_digital_oracle_market_sentiment_lookup" in instructions
+    assert "call signaldeck_digital_oracle_macro_rates_lookup" in instructions
     assert instructions.index("Digital Oracle methodology") < instructions.index(
         "When you need prediction-market signals"
     )
@@ -998,7 +1001,7 @@ def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local
 
     expected_tool_keys = set(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
 
-    assert len(plan.steps) == 13
+    assert len(plan.steps) == 7
     assert [step.agents[0].agent_key for step in plan.steps if step.agents] == [
         "digital_oracle_signal_researcher",
         "digital_oracle_signal_researcher",
@@ -1023,6 +1026,7 @@ def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local
     assert "call signaldeck_digital_oracle_prediction_markets_lookup" in instructions
     assert "call signaldeck_digital_oracle_sec_filings_lookup" in instructions
     assert "call signaldeck_digital_oracle_market_sentiment_lookup" in instructions
+    assert "call signaldeck_digital_oracle_macro_rates_lookup" in instructions
 
 
 def test_digital_oracle_guidance_omits_ungranted_phase1_tools_and_global_skill_surface(
@@ -2671,9 +2675,8 @@ def test_digital_oracle_guidance_launch_persists_digital_oracle_extension_depend
                 ]
             ),
             "fields": [
-                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
-                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
-                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
+                f"spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[{index}]"
+                for index in range(len(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS))
             ],
         }
     ]

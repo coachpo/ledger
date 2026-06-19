@@ -70,6 +70,7 @@ _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
     "signaldeck.digital_oracle.prediction_markets.lookup",
     "signaldeck.digital_oracle.sec_filings.lookup",
     "signaldeck.digital_oracle.market_sentiment.lookup",
+    "signaldeck.digital_oracle.macro_rates.lookup",
 )
 _FINANCE_MARKET_CONTEXT_TOOL_KEYS = (
     "signaldeck.finance.market_data.history_lookup",
@@ -179,9 +180,10 @@ spec:
       name: Digital Oracle Phase 1 Tools
       description: Grants Digital Oracle-owned phase-1 research tools.
       toolKeys:
+        - signaldeck.digital_oracle.macro_rates.lookup
+        - signaldeck.digital_oracle.market_sentiment.lookup
         - signaldeck.digital_oracle.prediction_markets.lookup
         - signaldeck.digital_oracle.sec_filings.lookup
-        - signaldeck.digital_oracle.market_sentiment.lookup
   outputSchemas:
     - key: digital_oracle_report
       name: Digital Oracle Report
@@ -329,9 +331,10 @@ spec:
       name: Digital Oracle Phase 1 Tools
       description: Grants Digital Oracle-owned phase-1 research tools.
       toolKeys:
+        - signaldeck.digital_oracle.macro_rates.lookup
+        - signaldeck.digital_oracle.market_sentiment.lookup
         - signaldeck.digital_oracle.prediction_markets.lookup
         - signaldeck.digital_oracle.sec_filings.lookup
-        - signaldeck.digital_oracle.market_sentiment.lookup
   outputSchemas:
     - key: digital_oracle_report
       name: Digital Oracle Report
@@ -1106,9 +1109,8 @@ def test_preflight_accepts_digital_oracle_server_declared_toolKeys(
                 ]
             ),
             "fields": [
-                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
-                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
-                "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
+                f"spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[{index}]"
+                for index in range(len(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS))
             ],
         }
     ]
@@ -1185,9 +1187,8 @@ def test_preflight_accepts_mixed_extension_research_package_with_finance_market_
             ]
         ),
         "fields": [
-            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
-            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
-            "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
+            f"spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[{index}]"
+            for index in range(len(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS))
         ],
     }
     finance_dependency = dependencies_by_extension[FINANCE_WORKSPACE_EXTENSION_KEY]

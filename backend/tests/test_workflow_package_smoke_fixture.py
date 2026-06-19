@@ -194,8 +194,12 @@ def test_demo_fixture_variants_lock_tool_ownership_and_private_operations() -> N
             EXPECTED_MACRO_AND_MIXED_HTTP_IDS,
         ),
         "tradingagents_advisory_research_mixed_signals.yaml": (
-            EXPECTED_TOOL_KEYS | {"signaldeck.digital_oracle.prediction_markets.lookup"},
-            EXPECTED_MACRO_AND_MIXED_HTTP_IDS,
+            EXPECTED_TOOL_KEYS
+            | {
+                "signaldeck.digital_oracle.macro_rates.lookup",
+                "signaldeck.digital_oracle.prediction_markets.lookup",
+            },
+            set(),
         ),
     }
 

@@ -105,6 +105,7 @@ _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
     "signaldeck.digital_oracle.prediction_markets.lookup",
     "signaldeck.digital_oracle.sec_filings.lookup",
     "signaldeck.digital_oracle.market_sentiment.lookup",
+    "signaldeck.digital_oracle.macro_rates.lookup",
 )
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
 _DIGITAL_ORACLE_PRESET_KEY = "digital_oracle_researcher"
@@ -733,6 +734,7 @@ spec:
         - signaldeck.digital_oracle.prediction_markets.lookup
         - signaldeck.digital_oracle.sec_filings.lookup
         - signaldeck.digital_oracle.market_sentiment.lookup
+        - signaldeck.digital_oracle.macro_rates.lookup
   outputSchemas:
     - key: summary_output
       name: Summary Output
@@ -1406,13 +1408,19 @@ def test_macro_and_mixed_signal_launch_snapshots_keep_private_operations_package
         assert {"mcp_servers", "agents", "workflows"}.isdisjoint(table_names)
         assert mcp_servers[0]["key"] == "web_research"
         assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
-        assert {
+        private_macro_operation_ids = {
             "fred_fedfunds_observations",
             "fred_unrate_observations",
             "fred_cpiaucsl_observations",
             "fred_t10y2y_observations",
             "treasury_rates_snapshot_json",
-        } <= operation_ids
+        }
+        if expect_prediction_market:
+            assert private_macro_operation_ids.isdisjoint(operation_ids)
+            assert "signaldeck.digital_oracle.macro_rates.lookup" in serialized_snapshot
+        else:
+            assert private_macro_operation_ids <= operation_ids
+            assert "signaldeck.digital_oracle.macro_rates.lookup" not in serialized_snapshot
         assert "mcp.packagePrivate.web_search_exa" in serialized_snapshot
         assert ("signaldeck.digital_oracle.prediction_markets.lookup" in serialized_snapshot) is (
             expect_prediction_market
@@ -1468,7 +1476,8 @@ def test_seeded_digital_oracle_launch_omits_null_optional_inputs_before_runtime(
             sort_keys=True,
         )
 
-    assert "fred_fedfunds_observations" in serialized_snapshot
+    assert "signaldeck.digital_oracle.macro_rates.lookup" in serialized_snapshot
+    assert "fred_fedfunds_observations" not in serialized_snapshot
     assert "web_research" in serialized_snapshot
     assert "ticker" in serialized_snapshot
     assert "secSubmissionsUrl" in serialized_snapshot
@@ -4238,9 +4247,8 @@ def test_runtime_digital_oracle_toolKeys_dependency_snapshot_when_finance_disabl
     assert dependency["extensionKey"] == DIGITAL_ORACLE_EXTENSION_KEY
     assert FINANCE_WORKSPACE_EXTENSION_KEY not in json.dumps(dependencies, sort_keys=True)
     assert set(cast(list[str], dependency["fields"])) == {
-        "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
-        "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
-        "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[2]",
+        f"spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[{index}]"
+        for index in range(len(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS))
     }
     assert surfaces == {
         *[f"tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],

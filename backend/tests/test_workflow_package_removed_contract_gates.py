@@ -26,9 +26,13 @@ _DEMO_PRESET_OWNER_EXPECTATIONS = (
         ),
         "allowed_tool_prefixes": ("signaldeck.finance.",),
         "forbidden_tool_keys": (
+            "signaldeck.digital_oracle.crypto_derivatives.lookup",
+            "signaldeck.digital_oracle.cftc_positioning.lookup",
+            "signaldeck.digital_oracle.macro_rates.lookup",
+            "signaldeck.digital_oracle.market_sentiment.lookup",
+            "signaldeck.digital_oracle.options.lookup",
             "signaldeck.digital_oracle.prediction_markets.lookup",
             "signaldeck.digital_oracle.sec_filings.lookup",
-            "signaldeck.digital_oracle.market_sentiment.lookup",
         ),
     },
     {
@@ -46,9 +50,13 @@ _DEMO_PRESET_OWNER_EXPECTATIONS = (
         ),
         "allowed_tool_prefixes": ("signaldeck.finance.",),
         "forbidden_tool_keys": (
+            "signaldeck.digital_oracle.crypto_derivatives.lookup",
+            "signaldeck.digital_oracle.cftc_positioning.lookup",
+            "signaldeck.digital_oracle.macro_rates.lookup",
+            "signaldeck.digital_oracle.market_sentiment.lookup",
+            "signaldeck.digital_oracle.options.lookup",
             "signaldeck.digital_oracle.prediction_markets.lookup",
             "signaldeck.digital_oracle.sec_filings.lookup",
-            "signaldeck.digital_oracle.market_sentiment.lookup",
         ),
     },
     {
@@ -63,8 +71,11 @@ _DEMO_PRESET_OWNER_EXPECTATIONS = (
         ),
         "allowed_tool_prefixes": ("signaldeck.finance.", "signaldeck.digital_oracle."),
         "forbidden_tool_keys": (
+            "signaldeck.digital_oracle.crypto_derivatives.lookup",
+            "signaldeck.digital_oracle.cftc_positioning.lookup",
             "signaldeck.digital_oracle.sec_filings.lookup",
             "signaldeck.digital_oracle.market_sentiment.lookup",
+            "signaldeck.digital_oracle.options.lookup",
         ),
     },
 )
@@ -75,6 +86,57 @@ _SQL_BASE64_DECODE_RE: re.Pattern[str] = re.compile(
 _SIGNALDECK_TOOL_KEY_RE: re.Pattern[str] = re.compile(
     r"signaldeck\.(?:finance|digital_oracle)(?:\.[A-Za-z0-9_]+)+"
 )
+_FINANCE_TOOL_KEYS = {
+    "signaldeck.finance.fundamentals.lookup",
+    "signaldeck.finance.indicators.lookup",
+    "signaldeck.finance.insider_data.lookup",
+    "signaldeck.finance.market_data.history_lookup",
+    "signaldeck.finance.market_data.ohlcv_lookup",
+    "signaldeck.finance.market_data.quote_lookup",
+    "signaldeck.finance.news.lookup",
+    "signaldeck.finance.positions.lookup",
+    "signaldeck.finance.reports.lookup",
+    "signaldeck.finance.social_sentiment.lookup",
+}
+_DIGITAL_ORACLE_PHASE1_NATIVE_TOOL_KEYS = {
+    "signaldeck.digital_oracle.macro_rates.lookup",
+    "signaldeck.digital_oracle.market_sentiment.lookup",
+    "signaldeck.digital_oracle.prediction_markets.lookup",
+    "signaldeck.digital_oracle.sec_filings.lookup",
+}
+_MACRO_PRIVATE_HTTP_OPERATION_IDS = {
+    "fred_cpiaucsl_observations",
+    "fred_fedfunds_observations",
+    "fred_t10y2y_observations",
+    "fred_unrate_observations",
+    "treasury_rates_snapshot_json",
+}
+_DEMO_SQL_PAYLOAD_EXPECTATIONS = {
+    "tradingagents_advisory_research.sql": (
+        _FINANCE_TOOL_KEYS,
+        set(),
+        {"signaldeck.finance"},
+    ),
+    "tradingagents_advisory_research_macro.sql": (
+        _FINANCE_TOOL_KEYS,
+        _MACRO_PRIVATE_HTTP_OPERATION_IDS,
+        {"signaldeck.finance"},
+    ),
+    "tradingagents_advisory_research_mixed_signals.sql": (
+        _FINANCE_TOOL_KEYS
+        | {
+            "signaldeck.digital_oracle.macro_rates.lookup",
+            "signaldeck.digital_oracle.prediction_markets.lookup",
+        },
+        set(),
+        {"signaldeck.digital_oracle", "signaldeck.finance"},
+    ),
+    "digital_oracle_researcher.sql": (
+        _DIGITAL_ORACLE_PHASE1_NATIVE_TOOL_KEYS,
+        set(),
+        {"signaldeck.digital_oracle", "signaldeck.finance"},
+    ),
+}
 S13_DEFERRED_REMOVED_OPENAPI_TOKENS = (
     "Budget USD",
     "budgetUsd",
@@ -103,6 +165,36 @@ def _decoded_sql_payloads(sql_seed_path: Path) -> list[str]:
         base64.b64decode(encoded_payload, validate=True).decode("utf-8")
         for encoded_payload in encoded_payloads
     ]
+
+
+def _decoded_sql_artifacts(
+    sql_seed_path: Path,
+) -> tuple[str, dict[str, object], dict[str, object], list[dict[str, object]]]:
+    decoded_payloads = _decoded_sql_payloads(sql_seed_path)
+    assert len(decoded_payloads) == 4
+    package_definition = cast(dict[str, object], json.loads(decoded_payloads[1]))
+    compiled_plan = cast(dict[str, object], json.loads(decoded_payloads[2]))
+    extension_dependencies = cast(list[dict[str, object]], json.loads(decoded_payloads[3]))
+    return decoded_payloads[0], package_definition, compiled_plan, extension_dependencies
+
+
+def _profile_tool_keys(package_definition: dict[str, object]) -> set[str]:
+    spec = cast(dict[str, object], package_definition["spec"])
+    profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
+    return {
+        tool_key
+        for profile in profiles
+        for tool_key in cast(list[str], profile["toolKeys"])
+    }
+
+
+def _operation_ids(compiled_plan: dict[str, object]) -> set[str]:
+    return {
+        str(operation["operationKey"])
+        for workflow in cast(list[dict[str, object]], compiled_plan["workflows"])
+        for step in cast(list[dict[str, object]], workflow["steps"])
+        for operation in cast(list[dict[str, object]], step.get("operations", []))
+    }
 
 
 def _assert_owner_scoped_tool_usage(
@@ -159,6 +251,22 @@ def test_sql_seed_payloads_decode_without_removed_contract_tokens() -> None:
                 context=f"decoded SQL payload in {sql_seed_path.relative_to(_REPO_ROOT)}",
             )
     assert decoded_payload_count > 0
+
+
+def test_sql_seed_payloads_lock_tool_operation_and_extension_dependencies() -> None:
+    for sql_seed_path in _SQL_SEED_PATHS:
+        _, package_definition, compiled_plan, extension_dependencies = _decoded_sql_artifacts(
+            sql_seed_path
+        )
+        expected_tool_keys, expected_operation_ids, expected_extension_keys = (
+            _DEMO_SQL_PAYLOAD_EXPECTATIONS[sql_seed_path.name]
+        )
+
+        assert _profile_tool_keys(package_definition) == expected_tool_keys
+        assert _operation_ids(compiled_plan) == expected_operation_ids
+        assert {dependency["extensionKey"] for dependency in extension_dependencies} == (
+            expected_extension_keys
+        )
 
 
 def test_demo_presets_and_sql_seeds_use_only_their_extension_tools() -> None:
