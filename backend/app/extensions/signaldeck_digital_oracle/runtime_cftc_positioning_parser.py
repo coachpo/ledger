@@ -7,9 +7,7 @@ from typing import cast
 from app.agents.runtime_tools.types import RuntimeToolError
 from app.extensions.signaldeck_digital_oracle.config import CFTC_POSITIONING_REPORT_TYPES
 
-CFTC_POSITIONING_LOOKUP_OPENAI_FUNCTION_NAME = (
-    "signaldeck_digital_oracle_cftc_positioning_lookup"
-)
+CFTC_POSITIONING_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_digital_oracle_cftc_positioning_lookup"
 
 _MAX_ITEM_LIMIT = 50
 _MAX_MARKETS = 10

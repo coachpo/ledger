@@ -140,9 +140,7 @@ def _map_greeks(row: Mapping[str, object]) -> DigitalOracleOptionGreeks | None:
         theta=_decimal(_first_value(row, ("theta",))),
         vega=_decimal(_first_value(row, ("vega",))),
         rho=_decimal(_first_value(row, ("rho",))),
-        implied_volatility=_decimal(
-            _first_value(row, ("impliedVolatility", "implied_volatility"))
-        ),
+        implied_volatility=_decimal(_first_value(row, ("impliedVolatility", "implied_volatility"))),
     )
     if any(
         value is not None

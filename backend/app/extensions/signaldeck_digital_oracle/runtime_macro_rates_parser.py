@@ -87,11 +87,9 @@ def _parse_optional_query(value: object) -> str | None:
     return normalized
 
 
-def _parse_enum_array[T: str](
-    value: object,
-    field_name: str,
-    allowed_values: tuple[T, ...],
-) -> tuple[T, ...] | None:
+def _parse_enum_array[
+    T: str
+](value: object, field_name: str, allowed_values: tuple[T, ...],) -> tuple[T, ...] | None:
     values = _parse_text_array(value, field_name, upper=False)
     if values is None:
         return None

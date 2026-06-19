@@ -87,11 +87,9 @@ def _reject_unexpected_keys(raw_arguments: dict[str, object], *, allowed_keys: s
         raise _invalid(f"arguments contained unsupported fields: {', '.join(unexpected_keys)}")
 
 
-def _parse_enum_array[T: str](
-    value: object,
-    field_name: str,
-    allowed_values: tuple[T, ...],
-) -> tuple[T, ...] | None:
+def _parse_enum_array[
+    T: str
+](value: object, field_name: str, allowed_values: tuple[T, ...],) -> tuple[T, ...] | None:
     values = _parse_text_array(value, field_name, maximum=len(allowed_values))
     if values is None:
         return None

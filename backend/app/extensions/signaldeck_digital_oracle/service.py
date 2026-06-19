@@ -976,10 +976,10 @@ def create_digital_oracle_phase1_service(
     prediction_market_providers: Sequence[DigitalOraclePredictionMarketProvider] = (),
     sec_filings_provider: DigitalOracleSecFilingsProvider | None = None,
     market_sentiment_provider: DigitalOracleMarketSentimentProvider | None = None,
-        macro_rates_providers: Sequence[DigitalOracleMacroRatesProvider] = (),
-        crypto_derivatives_providers: Sequence[DigitalOracleCryptoDerivativesProvider] = (),
-        cftc_positioning_providers: Sequence[DigitalOracleCftcPositioningProvider] = (),
-        options_providers: Sequence[DigitalOracleOptionsProvider] = (),
+    macro_rates_providers: Sequence[DigitalOracleMacroRatesProvider] = (),
+    crypto_derivatives_providers: Sequence[DigitalOracleCryptoDerivativesProvider] = (),
+    cftc_positioning_providers: Sequence[DigitalOracleCftcPositioningProvider] = (),
+    options_providers: Sequence[DigitalOracleOptionsProvider] = (),
 ) -> DigitalOraclePhase1Service:
     return DigitalOraclePhase1Service(
         settings=settings,

@@ -85,8 +85,7 @@ def _map_row(
         date=point_date,
         value=point_value,
         tenor=tenor,
-        source_url=_text(_first_value(row, ("source_url", "sourceUrl")))
-        or defaults.source_url,
+        source_url=_text(_first_value(row, ("source_url", "sourceUrl"))) or defaults.source_url,
     )
 
 

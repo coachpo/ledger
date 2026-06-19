@@ -314,12 +314,8 @@ class DigitalOracleCryptoDerivativesOrderBook:
     provider: str
     symbol: str
     instrument: str
-    bids: tuple[DigitalOracleCryptoDerivativesOrderBookLevel, ...] = field(
-        default_factory=tuple
-    )
-    asks: tuple[DigitalOracleCryptoDerivativesOrderBookLevel, ...] = field(
-        default_factory=tuple
-    )
+    bids: tuple[DigitalOracleCryptoDerivativesOrderBookLevel, ...] = field(default_factory=tuple)
+    asks: tuple[DigitalOracleCryptoDerivativesOrderBookLevel, ...] = field(default_factory=tuple)
     depth_limit: int | None = None
 
 
@@ -373,12 +369,8 @@ class DigitalOracleCryptoDerivativesProviderResult:
     term_structure: tuple[DigitalOracleCryptoDerivativesTermPoint, ...] = field(
         default_factory=tuple
     )
-    options: tuple[DigitalOracleCryptoDerivativesOptionSummary, ...] = field(
-        default_factory=tuple
-    )
-    order_books: tuple[DigitalOracleCryptoDerivativesOrderBook, ...] = field(
-        default_factory=tuple
-    )
+    options: tuple[DigitalOracleCryptoDerivativesOptionSummary, ...] = field(default_factory=tuple)
+    order_books: tuple[DigitalOracleCryptoDerivativesOrderBook, ...] = field(default_factory=tuple)
     warnings: tuple[RuntimeToolWarning, ...] = field(default_factory=_empty_warnings)
 
 
@@ -415,12 +407,8 @@ class DigitalOracleCryptoDerivativesResult:
     term_structure: tuple[DigitalOracleCryptoDerivativesTermPoint, ...] = field(
         default_factory=tuple
     )
-    options: tuple[DigitalOracleCryptoDerivativesOptionSummary, ...] = field(
-        default_factory=tuple
-    )
-    order_books: tuple[DigitalOracleCryptoDerivativesOrderBook, ...] = field(
-        default_factory=tuple
-    )
+    options: tuple[DigitalOracleCryptoDerivativesOptionSummary, ...] = field(default_factory=tuple)
+    order_books: tuple[DigitalOracleCryptoDerivativesOrderBook, ...] = field(default_factory=tuple)
     warnings: tuple[RuntimeToolWarning, ...] = field(default_factory=_empty_warnings)
 
 

@@ -181,11 +181,7 @@ def _decoded_sql_artifacts(
 def _profile_tool_keys(package_definition: dict[str, object]) -> set[str]:
     spec = cast(dict[str, object], package_definition["spec"])
     profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
-    return {
-        tool_key
-        for profile in profiles
-        for tool_key in cast(list[str], profile["toolKeys"])
-    }
+    return {tool_key for profile in profiles for tool_key in cast(list[str], profile["toolKeys"])}
 
 
 def _operation_ids(compiled_plan: dict[str, object]) -> set[str]:
