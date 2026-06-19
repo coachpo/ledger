@@ -17,9 +17,11 @@ from app.extensions.signaldeck_finance.provider_factories import create_news_pro
 from app.services import news_provider
 from app.services.market_data_service import MarketDataService
 from app.services.news_provider import (
+    AlphaVantageNewsProvider,
     DeterministicNewsProvider,
     NewsProviderMalformedResponseError,
     NewsProviderUnavailableError,
+    NewsProviderUnsupportedQueryError,
     NewsSentiment,
     ProviderNewsItem,
     YahooFinanceNewsProvider,
@@ -65,9 +67,11 @@ def test_news_provider_contract_exports_sentiment_alias_and_error_codes() -> Non
     assert unavailable.details == {"provider": "news_test"}
     assert malformed.code == "provider_malformed_response"
     assert malformed.details == {"provider": "news_test"}
+    assert NewsProviderUnsupportedQueryError("unsupported").code == "provider_unsupported_query"
     assert "NewsSentiment" in news_provider.__all__
     assert "NewsProviderUnavailableError" in news_provider.__all__
     assert "NewsProviderMalformedResponseError" in news_provider.__all__
+    assert "NewsProviderUnsupportedQueryError" in news_provider.__all__
 
 
 def test_finance_news_settings_normalize_order_and_lists() -> None:
@@ -110,6 +114,9 @@ def test_create_news_providers_preserves_configured_order() -> None:
     ]
     yahoo_provider = providers[1]
     assert isinstance(yahoo_provider, YahooFinanceNewsProvider)
+    alpha_provider = providers[0]
+    assert isinstance(alpha_provider, AlphaVantageNewsProvider)
+    assert alpha_provider.timeout == 3.5
     assert yahoo_provider.timeout == 3.5
     assert yahoo_provider.global_queries == ("markets", "macro")
     assert yahoo_provider.global_lookback_days == 5

@@ -67,6 +67,7 @@ def create_news_providers(settings: Settings | None = None) -> tuple[NewsProvide
                 providers.append(
                     AlphaVantageNewsProvider(
                         api_key=resolved_settings.finance_alpha_vantage_api_key,
+                        timeout=resolved_settings.quote_provider_timeout_seconds,
                     )
                 )
             case "deterministic":

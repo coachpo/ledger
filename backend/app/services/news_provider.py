@@ -46,6 +46,11 @@ class NewsProviderMalformedResponseError(NewsProviderError):
         super().__init__(message, code="provider_malformed_response", details=details)
 
 
+class NewsProviderUnsupportedQueryError(NewsProviderError):
+    def __init__(self, message: str, *, details: dict[str, str] | None = None) -> None:
+        super().__init__(message, code="provider_unsupported_query", details=details)
+
+
 NewsScope = Literal["symbol", "market", "global"]
 NewsSentiment = Literal["positive", "neutral", "negative", "mixed"]
 
@@ -78,33 +83,6 @@ class NewsProvider(Protocol):
         end_date: datetime | None,
         limit: int,
     ) -> ProviderNewsResult: ...
-
-
-@dataclass(frozen=True, slots=True)
-class AlphaVantageNewsProvider:
-    api_key: str | None
-    provider_name: str = "alpha_vantage"
-
-    def fetch_news(
-        self,
-        *,
-        symbols: list[str],
-        query: str | None,
-        scope: NewsScope,
-        start_date: datetime | None,
-        end_date: datetime | None,
-        limit: int,
-    ) -> ProviderNewsResult:
-        del symbols, query, scope, start_date, end_date, limit
-        if self.api_key is None:
-            raise NewsProviderMissingKeyError(
-                "Alpha Vantage news provider requires a configured API key",
-                details={"provider": self.provider_name},
-            )
-        raise NewsProviderUnavailableError(
-            "Alpha Vantage news provider parsing is not implemented yet",
-            details={"provider": self.provider_name},
-        )
 
 
 class DeterministicNewsProvider:
@@ -164,6 +142,10 @@ def _normalize_symbols(symbols: list[str]) -> list[str]:
 
 
 if TYPE_CHECKING:
+    from app.services.alpha_vantage_news_provider import (
+        AlphaVantageNewsClient,
+        AlphaVantageNewsProvider,
+    )
     from app.services.yahoo_news_provider import (
         YahooFinanceNewsProvider,
         YahooFinanceNewsSearchClient,
@@ -171,6 +153,9 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> object:
+    if name in {"AlphaVantageNewsClient", "AlphaVantageNewsProvider"}:
+        alpha_vantage_news_provider = import_module("app.services.alpha_vantage_news_provider")
+        return getattr(alpha_vantage_news_provider, name)
     if name in {"YahooFinanceNewsProvider", "YahooFinanceNewsSearchClient"}:
         yahoo_news_provider = import_module("app.services.yahoo_news_provider")
         return getattr(yahoo_news_provider, name)
@@ -187,10 +172,12 @@ __all__ = [
     "NewsProviderRateLimitError",
     "NewsProviderTimeoutError",
     "NewsProviderUnavailableError",
+    "NewsProviderUnsupportedQueryError",
     "NewsSentiment",
     "NewsScope",
     "ProviderNewsItem",
     "ProviderNewsResult",
+    "AlphaVantageNewsClient",
     "YahooFinanceNewsProvider",
     "YahooFinanceNewsSearchClient",
 ]

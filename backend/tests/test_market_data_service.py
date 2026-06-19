@@ -16,6 +16,7 @@ from app.services.news_provider import (
     NewsProviderError,
     NewsProviderRateLimitError,
     NewsProviderTimeoutError,
+    NewsProviderUnsupportedQueryError,
     NewsScope,
     ProviderNewsItem,
     ProviderNewsResult,
@@ -144,6 +145,42 @@ def test_news_adapter_timeout_degrades_with_structured_warning(
     assert [warning["code"] for warning in cast(list[dict[str, object]], payload["warnings"])] == [
         "news_provider_timeout",
         "news_unavailable",
+    ]
+
+
+def test_news_adapter_unsupported_query_falls_back_with_structured_warning(
+    news_service_factory: Callable[[object], MarketDataService],
+) -> None:
+    primary_provider = _NewsProvider(
+        provider_name="alpha_vantage",
+        failure=NewsProviderUnsupportedQueryError(
+            "Alpha Vantage free-text news queries require symbols",
+            details={"provider": "alpha_vantage"},
+        ),
+    )
+    fallback_provider = _NewsProvider(
+        provider_name="fallback_news",
+        items=[
+            ProviderNewsItem(
+                title="Fallback market item",
+                source="wire",
+                published_at=datetime(2026, 1, 2, tzinfo=UTC),
+            )
+        ],
+    )
+    service = news_service_factory(primary_provider)
+
+    result = service.get_news_snapshot(
+        query="Fed meeting",
+        providers=[_news_provider(primary_provider), _news_provider(fallback_provider)],
+    )
+    payload = result.model_dump(mode="json", by_alias=True)
+
+    assert [item["title"] for item in cast(list[dict[str, object]], payload["items"])] == [
+        "Fallback market item"
+    ]
+    assert [warning["code"] for warning in cast(list[dict[str, object]], payload["warnings"])] == [
+        "news_provider_unsupported_query"
     ]
 
 

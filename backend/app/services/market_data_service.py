@@ -1445,6 +1445,8 @@ class MarketDataService:
             return f"{operation}_provider_timeout"
         if exc.code == "provider_rate_limited":
             return f"{operation}_provider_rate_limited"
+        if exc.code == "provider_unsupported_query":
+            return f"{operation}_provider_unsupported_query"
         if exc.code == "provider_unavailable":
             return f"{operation}_provider_unavailable"
         return f"{operation}_provider_error"
