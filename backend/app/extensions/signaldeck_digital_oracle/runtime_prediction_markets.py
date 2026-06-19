@@ -40,6 +40,7 @@ from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOraclePredictionMarketsQuery,
     DigitalOracleProviderError,
 )
+from app.extensions.signaldeck_digital_oracle.warnings import runtime_warning
 
 PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME = (
     "signaldeck_digital_oracle_prediction_markets_lookup"
@@ -53,6 +54,7 @@ _PREDICTION_MARKETS_MAX_ITEM_LIMIT = 20
 _PREDICTION_MARKETS_MAX_DEPTH_LIMIT = 10
 _PREDICTION_MARKET_VENUES = set(PREDICTION_MARKET_VENUES)
 _POLYMARKET_EVENTS_URL = "https://gamma-api.polymarket.com/events"
+_POLYMARKET_ORDER_BOOK_URL = "https://clob.polymarket.com/book"
 _KALSHI_MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
 _USER_AGENT = "signaldeck-backend/0.1"
 _QUERY_TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -181,6 +183,7 @@ class PolymarketPredictionMarketsProvider:
             event = _map_polymarket_event(
                 cast(Mapping[str, object], item),
                 query=query,
+                http_client=self._http_client,
                 warnings=warnings,
             )
             if event is not None:
@@ -225,6 +228,7 @@ class KalshiPredictionMarketsProvider:
             event = _map_kalshi_market(
                 cast(Mapping[str, object], item),
                 query=query,
+                http_client=self._http_client,
                 warnings=warnings,
             )
             if event is not None:
@@ -453,6 +457,7 @@ def _map_polymarket_event(
     raw_event: Mapping[str, object],
     *,
     query: DigitalOraclePredictionMarketsProviderQuery,
+    http_client: _PredictionMarketsJsonClient,
     warnings: list[RuntimeToolWarning],
 ) -> DigitalOraclePredictionMarketEvent | None:
     slug = _text(raw_event.get("slug"))
@@ -482,6 +487,7 @@ def _map_polymarket_event(
             event_id=event_id,
             event_open_interest=open_interest,
             query=query,
+            http_client=http_client,
             warnings=warnings,
         )
         if contract is not None:
@@ -507,6 +513,7 @@ def _map_polymarket_market(
     event_id: str,
     event_open_interest: Decimal | None,
     query: DigitalOraclePredictionMarketsProviderQuery,
+    http_client: _PredictionMarketsJsonClient,
     warnings: list[RuntimeToolWarning],
 ) -> DigitalOraclePredictionMarketContract | None:
     try:
@@ -541,14 +548,24 @@ def _map_polymarket_market(
         return None
     order_book = None
     if query.include_order_book:
-        order_book = _map_provider_order_book(
-            raw_market,
-            provider="polymarket",
+        token_id = _polymarket_yes_token_id(raw_market, outcomes)
+        order_book = _fetch_polymarket_order_book(
+            http_client,
+            token_id=token_id,
+            query=query,
             event_id=event_id,
             contract_id=contract_id,
-            depth_limit=query.depth_limit,
             warnings=warnings,
         )
+        if order_book is None:
+            order_book = _map_provider_order_book(
+                raw_market,
+                provider="polymarket",
+                event_id=event_id,
+                contract_id=contract_id,
+                depth_limit=query.depth_limit,
+                warnings=warnings,
+            )
     return DigitalOraclePredictionMarketContract(
         contract_id=contract_id,
         title=title,
@@ -569,6 +586,7 @@ def _map_kalshi_market(
     raw_market: Mapping[str, object],
     *,
     query: DigitalOraclePredictionMarketsProviderQuery,
+    http_client: _PredictionMarketsJsonClient,
     warnings: list[RuntimeToolWarning],
 ) -> DigitalOraclePredictionMarketEvent | None:
     ticker = _text(raw_market.get("ticker"))
@@ -610,16 +628,24 @@ def _map_kalshi_market(
         probability = last_price
     order_book = None
     if query.include_order_book:
-        order_book = _map_provider_order_book(
-            raw_market,
-            provider="kalshi",
+        order_book = _fetch_kalshi_order_book(
+            http_client,
+            query=query,
             event_id=event_ticker or ticker,
             contract_id=ticker,
-            depth_limit=query.depth_limit,
-            fallback_bid=yes_bid,
-            fallback_ask=yes_ask,
             warnings=warnings,
         )
+        if order_book is None:
+            order_book = _map_provider_order_book(
+                raw_market,
+                provider="kalshi",
+                event_id=event_ticker or ticker,
+                contract_id=ticker,
+                depth_limit=query.depth_limit,
+                fallback_bid=yes_bid,
+                fallback_ask=yes_ask,
+                warnings=warnings,
+            )
     contract = DigitalOraclePredictionMarketContract(
         contract_id=ticker,
         title=_first_text(raw_market, ("yes_sub_title", "yesSubTitle", "subtitle")) or title,
@@ -792,6 +818,194 @@ def _midpoint(left: Decimal | None, right: Decimal | None) -> Decimal | None:
     return (left + right) / Decimal("2")
 
 
+def _polymarket_yes_token_id(
+    raw_market: Mapping[str, object],
+    outcomes: list[object],
+) -> str | None:
+    yes_index = 0
+    for index, outcome in enumerate(outcomes):
+        if str(outcome).strip().lower() == "yes":
+            yes_index = index
+            break
+    for key in ("clobTokenIds", "outcomeTokenIds", "clob_token_ids", "outcome_token_ids"):
+        try:
+            token_ids = _json_array(raw_market.get(key))
+        except ValueError:
+            return None
+        if yes_index < len(token_ids):
+            token_id = _text(token_ids[yes_index])
+            if token_id is not None:
+                return token_id
+    return None
+
+
+def _fetch_polymarket_order_book(
+    http_client: _PredictionMarketsJsonClient,
+    *,
+    token_id: str | None,
+    query: DigitalOraclePredictionMarketsProviderQuery,
+    event_id: str,
+    contract_id: str,
+    warnings: list[RuntimeToolWarning],
+) -> DigitalOraclePredictionMarketOrderBook | None:
+    if token_id is None:
+        warnings.append(
+            _order_book_warning(
+                "polymarket",
+                "prediction_markets_order_book_unavailable",
+                "did not provide a prediction-market orderbook token id",
+                event_id=event_id,
+                contract_id=contract_id,
+            )
+        )
+        return None
+    payload = _fetch_order_book_payload(
+        http_client,
+        url=f"{_POLYMARKET_ORDER_BOOK_URL}?token_id={token_id}",
+        params={},
+        query=query,
+        provider="polymarket",
+        event_id=event_id,
+        contract_id=contract_id,
+        warnings=warnings,
+    )
+    if payload is None:
+        return None
+    return _map_provider_order_book(
+        payload,
+        provider="polymarket",
+        event_id=event_id,
+        contract_id=contract_id,
+        depth_limit=query.depth_limit,
+        warnings=warnings,
+    )
+
+
+def _fetch_kalshi_order_book(
+    http_client: _PredictionMarketsJsonClient,
+    *,
+    query: DigitalOraclePredictionMarketsProviderQuery,
+    event_id: str,
+    contract_id: str,
+    warnings: list[RuntimeToolWarning],
+) -> DigitalOraclePredictionMarketOrderBook | None:
+    payload = _fetch_order_book_payload(
+        http_client,
+        url=f"{_KALSHI_MARKETS_URL}/{contract_id}/orderbook",
+        params={},
+        query=query,
+        provider="kalshi",
+        event_id=event_id,
+        contract_id=contract_id,
+        warnings=warnings,
+    )
+    if payload is None:
+        return None
+    return _map_kalshi_direct_order_book(
+        payload,
+        event_id=event_id,
+        contract_id=contract_id,
+        depth_limit=query.depth_limit,
+        warnings=warnings,
+    )
+
+
+def _fetch_order_book_payload(
+    http_client: _PredictionMarketsJsonClient,
+    *,
+    url: str,
+    params: Mapping[str, object],
+    query: DigitalOraclePredictionMarketsProviderQuery,
+    provider: PredictionMarketVenue,
+    event_id: str,
+    contract_id: str,
+    warnings: list[RuntimeToolWarning],
+) -> Mapping[str, object] | None:
+    try:
+        payload = http_client.get_json(
+            url,
+            params=params,
+            timeout=query.timeout_seconds,
+            provider=provider,
+        )
+    except DigitalOracleProviderError as exc:
+        warnings.append(
+            _order_book_provider_error_warning(
+                provider,
+                exc,
+                event_id=event_id,
+                contract_id=contract_id,
+            )
+        )
+        return None
+    if not isinstance(payload, Mapping):
+        warnings.append(
+            _order_book_warning(
+                provider,
+                "prediction_markets_order_book_malformed",
+                "returned malformed prediction-market orderbook depth",
+                event_id=event_id,
+                contract_id=contract_id,
+            )
+        )
+        return None
+    return cast(Mapping[str, object], payload)
+
+
+def _map_kalshi_direct_order_book(
+    payload: Mapping[str, object],
+    *,
+    event_id: str,
+    contract_id: str,
+    depth_limit: int,
+    warnings: list[RuntimeToolWarning],
+) -> DigitalOraclePredictionMarketOrderBook | None:
+    source = _nested_order_book_payload(payload)
+    bids = _order_book_levels(
+        _first_value(source, ("bids", "yesBids", "yes_bids")),
+        depth_limit=depth_limit,
+    ) or _kalshi_cent_order_book_levels(
+        _first_value(source, ("yes", "yes_bid", "yesBids", "yes_bids")),
+        depth_limit=depth_limit,
+        invert_price=False,
+    )
+    asks = _order_book_levels(
+        _first_value(source, ("asks", "yesAsks", "yes_asks")),
+        depth_limit=depth_limit,
+    ) or _kalshi_cent_order_book_levels(
+        _first_value(source, ("no", "no_bid", "noBids", "no_bids")),
+        depth_limit=depth_limit,
+        invert_price=True,
+    )
+    if not bids and not asks:
+        warnings.append(
+            _order_book_warning(
+                "kalshi",
+                "prediction_markets_order_book_malformed",
+                "returned malformed prediction-market orderbook depth",
+                event_id=event_id,
+                contract_id=contract_id,
+            )
+        )
+        return None
+    if not bids or not asks:
+        warnings.append(
+            _order_book_warning(
+                "kalshi",
+                "prediction_markets_order_book_partial",
+                "returned partial prediction-market orderbook depth",
+                event_id=event_id,
+                contract_id=contract_id,
+            )
+        )
+    return DigitalOraclePredictionMarketOrderBook(
+        bids=bids,
+        asks=asks,
+        spread=_order_book_spread(bids, asks),
+        depth_limit=depth_limit,
+    )
+
+
 def _map_provider_order_book(
     raw_market: Mapping[str, object],
     *,
@@ -870,6 +1084,14 @@ def _order_book_source(raw_market: Mapping[str, object]) -> Mapping[str, object]
     return None
 
 
+def _nested_order_book_payload(payload: Mapping[str, object]) -> Mapping[str, object]:
+    for key in ("orderbook", "orderBook", "order_book", "book"):
+        value = payload.get(key)
+        if isinstance(value, Mapping):
+            return cast(Mapping[str, object], value)
+    return payload
+
+
 def _order_book_levels(
     value: object,
     *,
@@ -898,6 +1120,44 @@ def _order_book_level(value: object) -> DigitalOraclePredictionMarketOrderBookLe
         return None
     if price is None:
         return None
+    return DigitalOraclePredictionMarketOrderBookLevel(price=price, size=size)
+
+
+def _kalshi_cent_order_book_levels(
+    value: object,
+    *,
+    depth_limit: int,
+    invert_price: bool,
+) -> tuple[DigitalOraclePredictionMarketOrderBookLevel, ...]:
+    levels: list[DigitalOraclePredictionMarketOrderBookLevel] = []
+    for raw_level in _object_list(value):
+        level = _kalshi_cent_order_book_level(raw_level, invert_price=invert_price)
+        if level is not None:
+            levels.append(level)
+        if len(levels) == depth_limit:
+            break
+    return tuple(levels)
+
+
+def _kalshi_cent_order_book_level(
+    value: object,
+    *,
+    invert_price: bool,
+) -> DigitalOraclePredictionMarketOrderBookLevel | None:
+    if isinstance(value, Mapping):
+        payload = cast(Mapping[str, object], value)
+        price = _cent_decimal(_first_value(payload, ("price", "p", "yesPrice", "yes_price")))
+        size = _decimal(_first_value(payload, ("size", "quantity", "qty", "volume")))
+    elif isinstance(value, (list, tuple)) and value:
+        raw_values = list(cast(tuple[object, ...] | list[object], value))
+        price = _cent_decimal(raw_values[0])
+        size = _decimal(raw_values[1]) if len(raw_values) > 1 else None
+    else:
+        return None
+    if price is None:
+        return None
+    if invert_price:
+        price = Decimal("1") - price
     return DigitalOraclePredictionMarketOrderBookLevel(price=price, size=size)
 
 
@@ -999,14 +1259,41 @@ def _order_book_warning(
     event_id: str,
     contract_id: str,
 ) -> RuntimeToolWarning:
-    return RuntimeToolWarning(
+    return runtime_warning(
         code=code,
         message=f"{provider} {message_fragment}.",
         details={
             "operation": "prediction_markets",
+            "scope": "orderbook",
             "provider": provider,
             "eventId": event_id,
             "contractId": contract_id,
+        },
+    )
+
+
+def _order_book_provider_error_warning(
+    provider: PredictionMarketVenue,
+    exc: DigitalOracleProviderError,
+    *,
+    event_id: str,
+    contract_id: str,
+) -> RuntimeToolWarning:
+    error_suffix = {
+        "provider_timeout": "provider_timeout",
+        "provider_rate_limited": "provider_rate_limited",
+        "provider_unavailable": "provider_unavailable",
+    }.get(exc.code, "provider_error")
+    return runtime_warning(
+        code=f"prediction_markets_order_book_{error_suffix}",
+        message=str(exc) or f"{provider} failed while fetching prediction-market orderbook depth.",
+        details={
+            "operation": "prediction_markets",
+            "scope": "orderbook",
+            "provider": provider,
+            "eventId": event_id,
+            "contractId": contract_id,
+            **dict(exc.details),
         },
     )
 

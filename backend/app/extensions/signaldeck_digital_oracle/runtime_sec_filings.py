@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Protocol, cast
+from urllib.parse import urlencode
 from xml.etree import ElementTree
 
 import httpx
@@ -38,6 +39,7 @@ from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleSecFilingsProviderResult,
     DigitalOracleSecFilingsQuery,
     DigitalOracleSecOwnershipTransaction,
+    DigitalOracleSecSearchHit,
 )
 
 SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_digital_oracle_sec_filings_lookup"
@@ -48,6 +50,7 @@ SEC_FILINGS_LOOKUP_ACCESS_DENIED_MESSAGE = DIGITAL_ORACLE_DENIED_MESSAGES[
 
 _SEC_FILINGS_MAX_ITEM_LIMIT = 50
 _COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+_SEARCH_INDEX_URL = "https://efts.sec.gov/LATEST/search-index"
 _SUBMISSIONS_URL_TEMPLATE = "https://data.sec.gov/submissions/CIK{cik}.json"
 _ARCHIVES_DOCUMENT_URL_TEMPLATE = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}"
 _SEC_FILINGS_LOOKUP_DESCRIPTION = (
@@ -247,6 +250,18 @@ class EdgarSecFilingsProvider:
         filings = _map_recent_filings(recent, cik=cik, warnings=warnings)
         if not filings and _has_archived_filings(submissions):
             warnings.append(_stale_archive_warning(ticker or cik, cik=cik))
+        search_hits: tuple[DigitalOracleSecSearchHit, ...] = ()
+        if query.query is not None:
+            search_hits = tuple(
+                _search_edgar_filings(
+                    query,
+                    cik=cik,
+                    ticker=ticker,
+                    entity_name=entity_name,
+                    http_client=self._http_client,
+                    warnings=warnings,
+                )
+            )
         ownership_transactions: tuple[DigitalOracleSecOwnershipTransaction, ...] = ()
         if query.include_ownership_transactions:
             ownership_transactions = tuple(
@@ -256,6 +271,7 @@ class EdgarSecFilingsProvider:
                     timeout=query.timeout_seconds,
                     contact_email=query.edgar_contact_email,
                     warnings=warnings,
+                    transaction_limit=query.item_limit,
                     warn_when_no_form4=_should_warn_for_missing_ownership_forms(query),
                 )
             )
@@ -266,6 +282,7 @@ class EdgarSecFilingsProvider:
             cik=cik,
             entity_name=entity_name,
             filings=tuple(filings),
+            search_hits=search_hits,
             ownership_transactions=ownership_transactions,
             warnings=tuple(warnings),
         )
@@ -696,6 +713,153 @@ def _map_recent_filings(
     return filings
 
 
+def _search_edgar_filings(
+    query: DigitalOracleSecFilingsProviderQuery,
+    *,
+    cik: str,
+    ticker: str | None,
+    entity_name: str | None,
+    http_client: _EdgarJsonClient,
+    warnings: list[RuntimeToolWarning],
+) -> list[DigitalOracleSecSearchHit]:
+    if query.query is None:
+        return []
+    try:
+        payload = http_client.get_json(
+            _search_url(query, cik=cik),
+            timeout=query.timeout_seconds,
+            contact_email=query.edgar_contact_email,
+        )
+    except DigitalOracleProviderError as exc:
+        warnings.append(_search_unavailable_warning(str(exc)))
+        return []
+
+    try:
+        search_hits = _map_search_hits(
+            payload,
+            fallback_cik=cik,
+            fallback_ticker=ticker,
+            fallback_entity_name=entity_name,
+            query_text=query.query,
+            limit=query.item_limit,
+            warnings=warnings,
+        )
+    except DigitalOracleProviderError as exc:
+        warnings.append(_search_unavailable_warning(str(exc)))
+        return []
+    if not search_hits:
+        warnings.append(_search_empty_warning(query.query))
+    return search_hits
+
+
+def _search_url(query: DigitalOracleSecFilingsProviderQuery, *, cik: str) -> str:
+    params: dict[str, object] = {
+        "keys": query.query or "",
+        "from": 0,
+        "size": query.item_limit,
+        "ciks": cik.lstrip("0") or cik,
+    }
+    if query.form_types:
+        params["forms"] = ",".join(query.form_types)
+    if query.start_date is not None:
+        params["startdt"] = query.start_date.isoformat()
+    if query.end_date is not None:
+        params["enddt"] = query.end_date.isoformat()
+    return f"{_SEARCH_INDEX_URL}?{urlencode(params)}"
+
+
+def _map_search_hits(
+    payload: object,
+    *,
+    fallback_cik: str,
+    fallback_ticker: str | None,
+    fallback_entity_name: str | None,
+    query_text: str,
+    limit: int,
+    warnings: list[RuntimeToolWarning],
+) -> list[DigitalOracleSecSearchHit]:
+    rows = _search_hit_rows(payload)
+    hits: list[DigitalOracleSecSearchHit] = []
+    for row in rows:
+        source = _search_hit_source(row)
+        accession_number = _text(source.get("adsh") or source.get("accessionNumber"))
+        form_type = _text(source.get("form") or source.get("formType"))
+        filing_date = _search_hit_date(source)
+        if accession_number is None or form_type is None or filing_date is None:
+            warnings.append(_malformed_warning("search hit"))
+            continue
+        hit = DigitalOracleSecSearchHit(
+            accession_number=accession_number,
+            form_type=form_type.upper(),
+            filing_date=filing_date,
+            cik=_first_text_value(source.get("ciks")) or fallback_cik,
+            ticker=_first_text_value(source.get("tickers")) or fallback_ticker,
+            entity_name=(
+                _text(source.get("companyName") or source.get("display_names"))
+                or _first_text_value(source.get("display_names"))
+                or fallback_entity_name
+            ),
+            primary_document=_text(source.get("fileName") or source.get("primaryDocument")),
+            url=_text(source.get("linkToFilingDetails") or source.get("url")),
+            description=_text(source.get("description") or source.get("fileDescription")),
+            matched_text=_search_matched_text(source, query_text=query_text),
+        )
+        hits.append(hit)
+        if len(hits) >= limit:
+            break
+    return hits
+
+
+def _search_hit_rows(payload: object) -> tuple[Mapping[str, object], ...]:
+    root = _mapping_payload(payload, label="search results")
+    hits = root.get("hits")
+    if isinstance(hits, Mapping):
+        hit_rows = cast(Mapping[str, object], hits).get("hits")
+    else:
+        hit_rows = hits
+    return tuple(
+        cast(Mapping[str, object], row)
+        for row in _sequence_values(hit_rows)
+        if isinstance(row, Mapping)
+    )
+
+
+def _search_hit_source(row: Mapping[str, object]) -> Mapping[str, object]:
+    source = row.get("_source")
+    if isinstance(source, Mapping):
+        return cast(Mapping[str, object], source)
+    return row
+
+
+def _search_hit_date(source: Mapping[str, object]) -> date | None:
+    for key in ("filedAt", "filingDate", "filed"):
+        raw_value = _text(source.get(key))
+        if raw_value is None:
+            continue
+        try:
+            return date.fromisoformat(raw_value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _first_text_value(value: object) -> str | None:
+    for item in _sequence_values(value):
+        text = _text(item)
+        if text is not None:
+            return text
+    return _text(value)
+
+
+def _search_matched_text(source: Mapping[str, object], *, query_text: str) -> str | None:
+    needle = query_text.casefold()
+    for key in ("description", "fileDescription", "companyName", "fileName", "form", "adsh"):
+        text = _text(source.get(key))
+        if text is not None and needle in text.casefold():
+            return text
+    return _text(source.get("description") or source.get("fileDescription"))
+
+
 def _ownership_transactions_from_filings(
     filings: Sequence[DigitalOracleSecFiling],
     *,
@@ -703,6 +867,7 @@ def _ownership_transactions_from_filings(
     timeout: float,
     contact_email: str,
     warnings: list[RuntimeToolWarning],
+    transaction_limit: int,
     warn_when_no_form4: bool = True,
 ) -> list[DigitalOracleSecOwnershipTransaction]:
     form4_filings = [
@@ -727,6 +892,8 @@ def _ownership_transactions_from_filings(
                 contact_email=contact_email,
             )
             transactions.extend(_parse_form4_ownership_transactions(filing, xml_payload))
+            if len(transactions) >= transaction_limit:
+                return transactions[:transaction_limit]
         except DigitalOracleProviderError as exc:
             warnings.append(
                 _ownership_unavailable_warning(
@@ -957,6 +1124,23 @@ def _stale_archive_warning(ticker: str, *, cik: str) -> RuntimeToolWarning:
             "are not loaded by this lookup."
         ),
         details={"operation": "sec_filings", "provider": "edgar", "ticker": ticker, "cik": cik},
+    )
+
+
+def _search_empty_warning(query: str) -> RuntimeToolWarning:
+    return RuntimeToolWarning(
+        code="sec_filings_search_empty",
+        message="SEC EDGAR search returned no filing hits; using company submissions fallback.",
+        details={"operation": "sec_filings", "provider": "edgar", "query": query},
+    )
+
+
+def _search_unavailable_warning(message: str) -> RuntimeToolWarning:
+    del message
+    return RuntimeToolWarning(
+        code="sec_filings_search_unavailable",
+        message="SEC EDGAR search was unavailable; using company submissions fallback.",
+        details={"operation": "sec_filings", "provider": "edgar", "scope": "search"},
     )
 
 
