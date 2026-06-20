@@ -26,6 +26,10 @@ from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_DENIED_MESSAGES,
     FINANCE_WORKSPACE_EXTENSION_KEY,
 )
+from app.extensions.signaldeck_finance.provider_factories import (
+    FinanceProviderSecrets,
+    create_runtime_news_providers,
+)
 from app.extensions.signaldeck_finance.runtime_types import (
     FUNDAMENTALS_LOOKUP_TOOL_KEY,
     INDICATORS_LOOKUP_TOOL_KEY,
@@ -51,7 +55,7 @@ from app.services.market_data_service import (
     QuoteProvider,
     QuoteProviderError,
 )
-from app.services.news_provider import NewsScope
+from app.services.news_provider import NewsProvider, NewsScope
 
 MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_market_data_quote_lookup"
 MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_market_data_history_lookup"
@@ -953,7 +957,7 @@ def execute_news_lookup(
         context,
         function_name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
     )
-    news_providers = resolve_finance_news_providers(context.provider_bundle)
+    news_providers = _runtime_news_providers(context)
     with context.session_factory() as session:
         service = MarketDataService(session=session, quote_provider=quote_provider)
         result = service.get_news_snapshot(
@@ -967,6 +971,17 @@ def execute_news_lookup(
         )
     runtime_result = RuntimeNewsLookupResult.model_validate(result.model_dump(mode="python"))
     return cast(dict[str, object], runtime_result.model_dump(mode="json", by_alias=True))
+
+
+def _runtime_news_providers(context: RuntimeToolContext) -> tuple[NewsProvider, ...]:
+    configured_providers = resolve_finance_news_providers(context.provider_bundle)
+    if configured_providers:
+        return configured_providers
+    return create_runtime_news_providers(
+        provider_secrets=FinanceProviderSecrets(
+            alpha_vantage_api_key=context.resolve_secret_value("alpha_vantage_api_key"),
+        )
+    )
 
 
 def execute_social_sentiment_lookup(

@@ -33,6 +33,11 @@ class FinanceWorkspaceProviderFactory:
     factory: Callable[[], object]
 
 
+@dataclass(frozen=True, slots=True)
+class FinanceProviderSecrets:
+    alpha_vantage_api_key: str | None = None
+
+
 def create_deterministic_quote_provider() -> QuoteProvider:
     return DeterministicQuoteProvider()
 
@@ -68,15 +73,37 @@ def create_social_sentiment_adapters(
 
 def create_news_providers(settings: Settings | None = None) -> tuple[NewsProvider, ...]:
     resolved_settings = settings or get_settings()
+    return _create_news_providers(resolved_settings, provider_secrets=None)
+
+
+def create_runtime_news_providers(
+    *,
+    provider_secrets: FinanceProviderSecrets,
+    settings: Settings | None = None,
+) -> tuple[NewsProvider, ...]:
+    resolved_settings = settings or get_settings()
+    return _create_news_providers(resolved_settings, provider_secrets=provider_secrets)
+
+
+def _create_news_providers(
+    resolved_settings: Settings,
+    *,
+    provider_secrets: FinanceProviderSecrets | None,
+) -> tuple[NewsProvider, ...]:
     if resolved_settings.quote_provider_backend == "deterministic":
         return (DeterministicNewsProvider(),)
+    alpha_vantage_api_key = (
+        resolved_settings.finance_alpha_vantage_api_key
+        if provider_secrets is None
+        else provider_secrets.alpha_vantage_api_key
+    )
     providers: list[NewsProvider] = []
     for provider_key in resolved_settings.finance_news_provider_order:
         match provider_key:
             case "alpha_vantage":
                 providers.append(
                     AlphaVantageNewsProvider(
-                        api_key=resolved_settings.finance_alpha_vantage_api_key,
+                        api_key=alpha_vantage_api_key,
                         timeout=resolved_settings.quote_provider_timeout_seconds,
                     )
                 )
@@ -100,7 +127,6 @@ def create_execution_provider_bundle(
     return finance_execution_provider_bundle_from_parts(
         quote_provider=create_quote_provider(resolved_settings),
         fallback_quote_provider=create_deterministic_quote_provider(),
-        news_providers=create_news_providers(resolved_settings),
         social_sentiment_adapters=create_social_sentiment_adapters(resolved_settings),
     )
 
@@ -128,10 +154,12 @@ def register() -> tuple[FinanceWorkspaceProviderFactory, ...]:
 
 __all__ = [
     "FinanceWorkspaceProviderFactory",
+    "FinanceProviderSecrets",
     "create_deterministic_quote_provider",
     "create_execution_provider_bundle",
     "create_news_providers",
     "create_quote_provider",
+    "create_runtime_news_providers",
     "create_social_sentiment_adapters",
     "register",
 ]
