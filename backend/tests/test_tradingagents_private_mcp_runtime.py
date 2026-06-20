@@ -82,7 +82,11 @@ class _TradingAgentsOpenAIClient:
                 ],
                 "usage": {"total_tokens": 2},
             }
-        if type(self).reject_followup and not type(self).rejected_continuation:
+        if (
+            type(self).reject_followup
+            and not type(self).rejected_continuation
+            and "previous_response_id" in kwargs
+        ):
             type(self).rejected_continuation = True
             request = httpx.Request("POST", "https://api.openai.local/v1/responses")
             response = httpx.Response(
@@ -363,16 +367,22 @@ def test_tradingagents_package_smoke_calls_private_exa_mcp(
     second_call = _TradingAgentsOpenAIClient.create_calls[1]
     assert first_call.get("previous_response_id") is None
     assert _has_tool(first_call, _MCP_FUNCTION_NAME) is True
-    assert second_call.get("previous_response_id") == "resp_exa_request"
+    assert second_call.get("previous_response_id") is None
     second_input = cast(list[dict[str, Any]], second_call.get("input"))
     assert second_input == [
         {
+            "type": "function_call",
+            "name": _MCP_FUNCTION_NAME,
+            "arguments": json.dumps({"query": _MCP_QUERY}),
+            "call_id": "call_exa_search",
+        },
+        {
             "type": "function_call_output",
             "call_id": "call_exa_search",
-            "output": cast(str, second_input[0]["output"]),
-        }
+            "output": cast(str, second_input[1]["output"]),
+        },
     ]
-    assert json.loads(cast(str, second_input[0]["output"])) == {
+    assert json.loads(cast(str, second_input[1]["output"])) == {
         "mcpServerKey": "exa",
         "mcpServerVersion": 1,
         "originalToolName": "web_search_exa",
@@ -390,7 +400,7 @@ def test_tradingagents_package_smoke_calls_private_exa_mcp(
     assert call["arguments"] == {"query": _MCP_QUERY}
 
 
-def test_tradingagents_package_rejected_continuation_does_not_retry_statelessly(
+def test_tradingagents_package_stateless_replay_avoids_continuation_rejection(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,
@@ -421,17 +431,8 @@ def test_tradingagents_package_rejected_continuation_does_not_retry_statelessly(
     _drain_run_queue(session_factory)
     detail = _wait_for_run(client, run_id)
 
-    assert detail["status"] == "failed", detail
-    failure_detail = (
-        detail.get("error")
-        or detail.get("failureCause")
-        or detail.get("failureMessage")
-        or detail.get("errorMessage")
-        or detail.get("message")
-        or detail.get("statusDetail")
-    )
-    assert failure_detail is not None, detail
-    assert "previous_response_id rejected by provider" in str(failure_detail)
+    assert detail["status"] == "succeeded", detail
+    assert detail["error"] is None
     assert len(mcp_client.calls) == 1
     call = mcp_client.calls[0]
     boundary = cast(McpClientBoundary, call["boundary"])
@@ -447,11 +448,6 @@ def test_tradingagents_package_rejected_continuation_does_not_retry_statelessly(
     second_call = _TradingAgentsOpenAIClient.create_calls[1]
     assert first_call.get("previous_response_id") is None
     assert _has_tool(first_call, _MCP_FUNCTION_NAME) is True
-    assert second_call.get("previous_response_id") is not None
+    assert second_call.get("previous_response_id") is None
     assert "function_call_output" in str(second_call.get("input") or "")
-    assert all(
-        "function_call_output" not in str(call.get("input") or "")
-        or call.get("previous_response_id") is not None
-        for call in _TradingAgentsOpenAIClient.create_calls
-    )
-    assert _TradingAgentsOpenAIClient.rejected_continuation is True
+    assert _TradingAgentsOpenAIClient.rejected_continuation is False

@@ -51,10 +51,8 @@ class OpenAIResponsesAdapter:
         tool_executor: ModelToolExecutor,
         started_at: float,
     ) -> ModelExecutionResult:
-        response_input: str | list[dict[str, str]] = request.input_text
-        previous_response_id: str | None = None
-        previous_tool_calls: list[ModelToolCall] | None = None
-        manual_replay_mode = False
+        response_input: str | list[Any] = request.input_text
+        replay_input_items: list[Any] = []
         usage = ModelExecutionUsage()
         tool_strategy = select_tool_strategy(request)
         tools = self._tools_from_declarations(request.tools)
@@ -82,18 +80,13 @@ class OpenAIResponsesAdapter:
                     request_kwargs["text"] = text_format
                 if selected_strategies.reasoning_effort is not None:
                     request_kwargs["reasoning"] = {"effort": selected_strategies.reasoning_effort}
-                if previous_response_id is not None:
-                    request_kwargs["previous_response_id"] = previous_response_id
+                    request_kwargs["include"] = ["reasoning.encrypted_content"]
                 if tools:
                     request_kwargs["tools"] = tools
                     request_kwargs["parallel_tool_calls"] = tool_strategy.allow_parallel_tool_calls
-                response, manual_replay_mode = self._create_with_manual_replay_fallback(
+                response = self._create_response(
                     client=client,
                     request_kwargs=request_kwargs,
-                    previous_response_id=previous_response_id,
-                    previous_tool_calls=previous_tool_calls,
-                    function_call_outputs=response_input,
-                    manual_replay_mode=manual_replay_mode,
                     provider_retry_recorder=provider_retry_recorder,
                 )
                 usage = self._merge_usage(usage, self._extract_usage(response))
@@ -105,9 +98,7 @@ class OpenAIResponsesAdapter:
                             request.input_text,
                             tool_retry_state.record_retry(exc),
                         )
-                        previous_response_id = None
-                        previous_tool_calls = None
-                        manual_replay_mode = False
+                        replay_input_items = []
                         continue
                     if is_retryable_tool_call_failure(exc):
                         raise tool_retry_state.exhausted_error(exc) from exc
@@ -133,9 +124,7 @@ class OpenAIResponsesAdapter:
                             original_input=request.input_text,
                             validation_details=exc.details,
                         )
-                        previous_response_id = None
-                        previous_tool_calls = None
-                        manual_replay_mode = False
+                        replay_input_items = []
                         continue
                     validation = validate_model_output(request, output)
                     if validation.details is None:
@@ -158,9 +147,7 @@ class OpenAIResponsesAdapter:
                         original_input=request.input_text,
                         validation_details=validation.details,
                     )
-                    previous_response_id = None
-                    previous_tool_calls = None
-                    manual_replay_mode = False
+                    replay_input_items = []
                     continue
                 function_call_outputs, retry_feedback = self._build_function_call_outputs(
                     pending_tool_calls=pending_tool_calls,
@@ -169,13 +156,14 @@ class OpenAIResponsesAdapter:
                 )
                 if retry_feedback is not None:
                     response_input = self._tool_retry_input(request.input_text, retry_feedback)
-                    previous_response_id = None
-                    previous_tool_calls = None
-                    manual_replay_mode = False
+                    replay_input_items = []
                     continue
-                previous_response_id = self._extract_response_id(response)
-                previous_tool_calls = pending_tool_calls
-                response_input = function_call_outputs
+                replay_input_items = self._build_stateless_replay_input(
+                    previous_items=replay_input_items,
+                    response=response,
+                    function_call_outputs=function_call_outputs,
+                )
+                response_input = replay_input_items
             raise ModelGatewayError(
                 code="agent_tool_round_limit_exceeded",
                 message="Agent exceeded the supported server tool call round limit.",
@@ -336,62 +324,6 @@ class OpenAIResponsesAdapter:
             context=context,
         )
 
-    def _create_with_manual_replay_fallback(
-        self,
-        *,
-        client: Any,
-        request_kwargs: dict[str, Any],
-        previous_response_id: str | None,
-        previous_tool_calls: list[ModelToolCall] | None,
-        function_call_outputs: str | list[dict[str, str]],
-        manual_replay_mode: bool,
-        provider_retry_recorder: ProviderRetryRecorder,
-    ) -> tuple[Any, bool]:
-        effective_request_kwargs = dict(request_kwargs)
-        if manual_replay_mode:
-            if previous_tool_calls is None or not isinstance(function_call_outputs, list):
-                raise ModelGatewayError(
-                    code="model_tool_call_payload_invalid",
-                    message="Responses manual replay could not reconstruct prior tool call state.",
-                )
-            effective_request_kwargs.pop("previous_response_id", None)
-            effective_request_kwargs["input"] = self._build_manual_replay_input(
-                pending_tool_calls=previous_tool_calls,
-                function_call_outputs=function_call_outputs,
-            )
-        try:
-            return (
-                self._create_response(
-                    client=client,
-                    request_kwargs=effective_request_kwargs,
-                    provider_retry_recorder=provider_retry_recorder,
-                ),
-                manual_replay_mode,
-            )
-        except openai.APIStatusError as exc:
-            if (
-                manual_replay_mode
-                or previous_response_id is None
-                or previous_tool_calls is None
-                or not isinstance(function_call_outputs, list)
-                or not self._is_missing_tool_call_for_function_output(exc)
-            ):
-                raise
-            replay_request_kwargs = dict(request_kwargs)
-            replay_request_kwargs.pop("previous_response_id", None)
-            replay_request_kwargs["input"] = self._build_manual_replay_input(
-                pending_tool_calls=previous_tool_calls,
-                function_call_outputs=function_call_outputs,
-            )
-            return (
-                self._create_response(
-                    client=client,
-                    request_kwargs=replay_request_kwargs,
-                    provider_retry_recorder=provider_retry_recorder,
-                ),
-                True,
-            )
-
     @staticmethod
     def _create_response(
         *,
@@ -411,51 +343,28 @@ class OpenAIResponsesAdapter:
             recorder=provider_retry_recorder,
         )
 
-    @staticmethod
-    def _is_missing_tool_call_for_function_output(exc: openai.APIStatusError) -> bool:
-        status_code = getattr(exc, "status_code", None)
-        if status_code != 400:
-            return False
-        body = getattr(exc, "body", None)
-        if isinstance(body, dict):
-            raw_error = body.get("error")
-            if isinstance(raw_error, dict):
-                raw_message = raw_error.get("message")
-                if isinstance(raw_message, str):
-                    return "no tool call found for function call output" in raw_message.lower()
-            raw_message = body.get("message")
-            if isinstance(raw_message, str):
-                return "no tool call found for function call output" in raw_message.lower()
-        return False
-
-    @staticmethod
-    def _build_manual_replay_input(
+    @classmethod
+    def _build_stateless_replay_input(
+        cls,
         *,
-        pending_tool_calls: list[ModelToolCall],
+        previous_items: list[Any],
+        response: Any,
         function_call_outputs: list[dict[str, str]],
-    ) -> list[dict[str, str]]:
+    ) -> list[Any]:
         return [
-            *[
-                {
-                    "type": "function_call",
-                    "name": tool_call.tool_name,
-                    "arguments": tool_call.arguments_json,
-                    "call_id": tool_call.call_id,
-                }
-                for tool_call in pending_tool_calls
-            ],
+            *previous_items,
+            *cls._extract_output_items(response),
             *function_call_outputs,
         ]
 
     @classmethod
-    def _extract_response_id(cls, response: Any) -> str:
-        response_id = cls._read_field(response, "id")
-        if isinstance(response_id, str) and response_id.strip():
-            return response_id.strip()
-        raise ModelGatewayError(
-            code="model_tool_call_payload_invalid",
-            message="OpenAI response did not include a response id for tool continuation.",
-        )
+    def _extract_output_items(cls, response: Any) -> list[Any]:
+        output_items = cls._read_field(response, "output")
+        if output_items is None:
+            return []
+        if not isinstance(output_items, list):
+            return [output_items]
+        return list(output_items)
 
     def _build_function_call_outputs(
         self,

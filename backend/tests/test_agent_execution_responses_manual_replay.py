@@ -7,7 +7,6 @@ from typing import Any
 import httpx
 import openai
 import pytest
-from openai import BadRequestError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -138,27 +137,9 @@ class _ManualReplayClient:
                 "usage": {"total_tokens": 2},
             }
         if len(self.create_calls) == 2:
-            request = httpx.Request("POST", "https://provider.example/v1/responses")
-            response = httpx.Response(
-                400,
-                request=request,
-                json={
-                    "message": (
-                        "No tool call found for function call output with call_id call_quote."
-                    ),
-                    "type": "invalid_request_error",
-                    "param": "input",
-                    "code": None,
-                },
-            )
-            raise BadRequestError(
-                "No tool call found for function call output with call_id call_quote.",
-                response=response,
-                body=response.json(),
-            )
-        if len(self.create_calls) == 3:
             assert "previous_response_id" not in kwargs
             assert kwargs["input"] == [
+                {"type": "reasoning", "id": "rs_1", "summary": [], "status": "completed"},
                 {
                     "type": "function_call",
                     "name": "signaldeck_finance_market_data_quote_lookup",
@@ -192,9 +173,28 @@ class _ManualReplayClient:
                 ],
                 "usage": {"total_tokens": 2},
             }
-        if len(self.create_calls) == 4:
+        if len(self.create_calls) == 3:
             assert "previous_response_id" not in kwargs
             assert kwargs["input"] == [
+                {"type": "reasoning", "id": "rs_1", "summary": [], "status": "completed"},
+                {
+                    "type": "function_call",
+                    "name": "signaldeck_finance_market_data_quote_lookup",
+                    "arguments": json.dumps({"symbols": ["AAPL"]}),
+                    "call_id": "call_quote",
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_quote",
+                    "output": json.dumps(
+                        {
+                            "arguments": {"symbols": ["AAPL"]},
+                            "tool": "signaldeck_finance_market_data_quote_lookup",
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                },
                 {
                     "type": "function_call",
                     "name": "signaldeck_finance_market_data_history_lookup",
@@ -256,8 +256,14 @@ class _ContinuationProviderRetryClient:
         if len(self.create_calls) == 2:
             raise _provider_status_error(503)
         if len(self.create_calls) == 3:
-            assert kwargs["previous_response_id"] == "resp_initial"
+            assert "previous_response_id" not in kwargs
             assert kwargs["input"] == [
+                {
+                    "type": "function_call",
+                    "name": "signaldeck_finance_market_data_quote_lookup",
+                    "arguments": json.dumps({"symbols": ["AAPL"]}),
+                    "call_id": "call_quote",
+                },
                 {
                     "type": "function_call_output",
                     "call_id": "call_quote",
@@ -269,7 +275,7 @@ class _ContinuationProviderRetryClient:
                         ensure_ascii=False,
                         sort_keys=True,
                     ),
-                }
+                },
             ]
             return {
                 "id": "resp_final",
@@ -289,7 +295,7 @@ class _ContinuationProviderRetryClient:
         raise AssertionError(f"Unexpected create call count: {len(self.create_calls)}")
 
 
-def test_invoke_responses_agent_replays_manual_context_after_call_id_failure(
+def test_invoke_responses_agent_uses_stateless_tool_replay(
     session_factory: sessionmaker[Session],
 ) -> None:
     service = AgentExecutionService(session_factory)
@@ -336,11 +342,12 @@ def test_invoke_responses_agent_replays_manual_context_after_call_id_failure(
         "signaldeck_finance_market_data_quote_lookup",
         "signaldeck_finance_market_data_history_lookup",
     ]
-    assert len(client.create_calls) == 4
-    assert client.create_calls[1]["previous_response_id"] == "resp_initial"
-    assert client.create_calls[1]["input"][0]["type"] == "function_call_output"
+    assert len(client.create_calls) == 3
+    assert "previous_response_id" not in client.create_calls[1]
+    assert client.create_calls[1]["input"][0]["type"] == "reasoning"
+    assert client.create_calls[1]["input"][1]["type"] == "function_call"
+    assert client.create_calls[1]["input"][2]["type"] == "function_call_output"
     assert "previous_response_id" not in client.create_calls[2]
-    assert "previous_response_id" not in client.create_calls[3]
     assert result.runtime_metadata is not None
     assert "providerRetries" not in result.runtime_metadata
 
@@ -403,9 +410,11 @@ def test_invoke_responses_agent_provider_retry_keeps_completed_tool_dispatch_sin
         "signaldeck_finance_market_data_quote_lookup"
     ]
     assert len(client.create_calls) == 3
-    assert client.create_calls[1]["previous_response_id"] == "resp_initial"
-    assert client.create_calls[2]["previous_response_id"] == "resp_initial"
+    assert "previous_response_id" not in client.create_calls[1]
+    assert "previous_response_id" not in client.create_calls[2]
     assert client.create_calls[1]["input"] == client.create_calls[2]["input"]
+    assert client.create_calls[1]["input"][0]["type"] == "function_call"
+    assert client.create_calls[1]["input"][1]["type"] == "function_call_output"
     assert result.runtime_metadata is not None
     assert result.runtime_metadata["providerRetries"] == {
         "policy": "transientProviderRetry/v1",

@@ -4061,10 +4061,11 @@ def test_workflow_package_runtime_responses_provider_retry_records_providerRetri
     assert init_call["max_retries"] == 0
     second_call = _RuntimeProviderRetryingResponsesClient.create_calls[1]
     third_call = _RuntimeProviderRetryingResponsesClient.create_calls[2]
-    assert second_call["previous_response_id"] == "resp_tool_1"
-    assert third_call["previous_response_id"] == "resp_tool_1"
+    assert "previous_response_id" not in second_call
+    assert "previous_response_id" not in third_call
     assert second_call["input"] == third_call["input"]
-    assert second_call["input"][0]["type"] == "function_call_output"
+    assert second_call["input"][0]["type"] == "function_call"
+    assert second_call["input"][1]["type"] == "function_call_output"
     invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
     gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
     assert gateway_metadata["providerRetries"] == {
