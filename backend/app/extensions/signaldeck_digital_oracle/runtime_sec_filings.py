@@ -20,6 +20,7 @@ from app.agents.runtime_tools.types import (
 from app.core.config import Settings
 from app.core.formatting import normalize_symbol, to_utc
 from app.extensions.signaldeck_digital_oracle.factory import (
+    DigitalOracleProviderSecrets,
     create_digital_oracle_phase1_provider_bundle,
     create_sec_filings_provider,
 )
@@ -295,11 +296,15 @@ def create_sec_filings_provider_adapter() -> DigitalOracleSecFilingsProvider:
 def create_sec_filings_service(
     *,
     settings: Settings | None = None,
+    provider_secrets: DigitalOracleProviderSecrets | None = None,
     sec_filings_provider: DigitalOracleSecFilingsProvider | None = None,
 ) -> DigitalOraclePhase1Service:
     provider_bundle = replace(
-        create_digital_oracle_phase1_provider_bundle(settings),
-        sec_filings=create_sec_filings_provider(settings),
+        create_digital_oracle_phase1_provider_bundle(
+            settings,
+            provider_secrets=provider_secrets,
+        ),
+        sec_filings=create_sec_filings_provider(settings, provider_secrets=provider_secrets),
     )
     return DigitalOraclePhase1Service(
         provider_bundle=provider_bundle,
@@ -360,8 +365,11 @@ def execute_sec_filings_lookup(
     context: RuntimeToolContext,
     arguments: dict[str, object],
 ) -> dict[str, object]:
-    del context
-    service = create_sec_filings_service()
+    service = create_sec_filings_service(
+        provider_secrets=DigitalOracleProviderSecrets(
+            edgar_contact_email=context.resolve_secret_value("edgar_contact_email"),
+        )
+    )
     result = service.lookup_sec_filings(
         DigitalOracleSecFilingsQuery(
             ticker=cast(str | None, arguments["ticker"]),

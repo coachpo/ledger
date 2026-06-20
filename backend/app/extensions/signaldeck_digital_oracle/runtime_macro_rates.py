@@ -10,6 +10,10 @@ from app.extensions.signaldeck_digital_oracle.config import (
     MacroRatesFamily,
     MacroRatesSource,
 )
+from app.extensions.signaldeck_digital_oracle.factory import (
+    DigitalOracleProviderSecrets,
+    create_digital_oracle_phase1_provider_bundle,
+)
 from app.extensions.signaldeck_digital_oracle.mappers import map_macro_rates_result
 from app.extensions.signaldeck_digital_oracle.ownership import (
     DIGITAL_ORACLE_DENIED_CODE,
@@ -70,8 +74,12 @@ def execute_macro_rates_lookup(
     context: RuntimeToolContext,
     arguments: dict[str, object],
 ) -> dict[str, object]:
-    del context
     result = DigitalOraclePhase1Service(
+        provider_bundle=create_digital_oracle_phase1_provider_bundle(
+            provider_secrets=DigitalOracleProviderSecrets(
+                fred_api_key=context.resolve_secret_value("fred_api_key"),
+            )
+        ),
         macro_rates_providers=create_macro_rates_providers(),
     ).lookup_macro_rates(
         DigitalOracleMacroRatesQuery(

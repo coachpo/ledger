@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from app.core.config import Settings
 
@@ -127,6 +127,12 @@ class DigitalOraclePhase1ProviderBundle:
         DigitalOracleSourceScopedProviderBundle
     ]
     options: DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle]
+
+
+@dataclass(frozen=True, slots=True)
+class DigitalOracleProviderSecrets:
+    edgar_contact_email: str | None = None
+    fred_api_key: str | None = None
 
 
 def _configured[T](provider: T) -> DigitalOracleProviderConstructionResult[T]:
@@ -315,8 +321,12 @@ def create_prediction_markets_provider_bundle(
 
 def create_sec_filings_provider(
     settings: Settings | None = None,
+    provider_secrets: DigitalOracleProviderSecrets | None = None,
 ) -> DigitalOracleProviderConstructionResult[SecFilingsProviderBundle]:
-    config = get_digital_oracle_provider_config(settings)
+    config = _config_with_provider_secrets(
+        get_digital_oracle_provider_config(settings),
+        provider_secrets,
+    )
     return _create_sec_filings_provider(config)
 
 
@@ -329,8 +339,12 @@ def create_market_sentiment_provider(
 
 def create_digital_oracle_phase1_provider_bundle(
     settings: Settings | None = None,
+    provider_secrets: DigitalOracleProviderSecrets | None = None,
 ) -> DigitalOraclePhase1ProviderBundle:
-    config = get_digital_oracle_provider_config(settings)
+    config = _config_with_provider_secrets(
+        get_digital_oracle_provider_config(settings),
+        provider_secrets,
+    )
     return DigitalOraclePhase1ProviderBundle(
         prediction_markets=_create_prediction_markets_provider_bundle(config),
         sec_filings=_create_sec_filings_provider(config),
@@ -377,8 +391,22 @@ def create_digital_oracle_phase1_provider_bundle(
     )
 
 
+def _config_with_provider_secrets(
+    config: DigitalOracleProviderConfig,
+    provider_secrets: DigitalOracleProviderSecrets | None,
+) -> DigitalOracleProviderConfig:
+    if provider_secrets is None:
+        return config
+    return replace(
+        config,
+        edgar_contact_email=provider_secrets.edgar_contact_email,
+        fred_api_key=provider_secrets.fred_api_key,
+    )
+
+
 __all__ = [
     "DigitalOraclePhase1ProviderBundle",
+    "DigitalOracleProviderSecrets",
     "DigitalOracleProviderConstructionResult",
     "DigitalOracleProviderDescriptor",
     "DigitalOracleProviderFailure",
