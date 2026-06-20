@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
@@ -13,6 +13,7 @@ from app.agents.runtime_tools.failure_taxonomy import (
     classification_for_error_code,
     runtime_failure_metadata,
 )
+from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
 from app.schemas.common import CamelModel
 from app.services.execution_providers import ExecutionProviderBundle
 
@@ -69,6 +70,29 @@ class RuntimeToolContext:
     trace_id: str | None = None
     trace_span_id: str | None = None
     invocation_id: str | None = None
+    secret_values: Mapping[str, object] = field(default_factory=dict)
+
+    def resolve_secret_value(self, key: str) -> str | None:
+        if key in self.secret_values:
+            return _normalize_optional_secret_value(self.secret_values[key])
+        if self.package_ownership is None:
+            return None
+        with self.session_factory() as session:
+            binding = WorkflowPackageSecretBindingRepository(session).get_by_key(
+                self.package_ownership.package_id,
+                key,
+            )
+            if binding is None:
+                return None
+            payload = binding.secret_payload if isinstance(binding.secret_payload, dict) else {}
+        return _normalize_optional_secret_value(payload.get("value"))
+
+
+def _normalize_optional_secret_value(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
 
 
 class RuntimeToolParser(Protocol):
