@@ -235,6 +235,7 @@ from app.extensions.signaldeck_finance.runtime_market_data import (
     NEWS_LOOKUP_TOOL_SPEC,
     SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
     SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
+    execute_news_lookup,
     parse_fundamentals_lookup_arguments,
     parse_history_lookup_arguments,
     parse_indicators_lookup_arguments,
@@ -302,7 +303,7 @@ from app.services.market_data_service import MarketDataService, MarketIndicatorS
 from app.services.model_gateway_dto import ModelGatewayError, ModelToolCall
 from app.services.model_gateway_tool_retry import ModelToolCallRetryState
 from app.services.model_gateway_tool_strategy import build_model_tool_call
-from app.services.news_provider import NewsProvider, ProviderNewsItem, ProviderNewsResult
+from app.services.news_provider import NewsProvider, NewsScope, ProviderNewsItem, ProviderNewsResult
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.position_service import PositionService
 from app.services.quote_provider import (
@@ -1090,6 +1091,7 @@ def _runtime_context(
     trace_span_id: str | None = None,
     invocation_id: str | None = None,
     package_ownership: PackageExecutionOwnership | None = None,
+    secret_values: Mapping[str, object] | None = None,
 ) -> RuntimeToolContext:
     selected_session_factory = session_factory_override or (
         _failing_session_factory if fail_on_session else _session_factory
@@ -1102,7 +1104,7 @@ def _runtime_context(
         if quote_provider is not None or news_providers
         else ExecutionProviderBundle()
     )
-    return RuntimeToolContext(
+    context = RuntimeToolContext(
         session_factory=cast(sessionmaker[Session], selected_session_factory),
         capability_references=list(
             capability_references
@@ -1134,6 +1136,9 @@ def _runtime_context(
         trace_span_id=trace_span_id,
         invocation_id=invocation_id,
     )
+    if secret_values is None:
+        return context
+    return replace(context, secret_values=dict(secret_values))
 
 
 def _capability_reference(*, tools: Sequence[str]) -> dict[str, object]:
@@ -2048,7 +2053,7 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
         "app.extensions.signaldeck_digital_oracle.runtime_market_sentiment.create_market_sentiment_provider_adapter",
         lambda: sentiment_provider,
     )
-    monkeypatch.setenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", "sec-contact@example.test")
+    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
     reset_settings_cache()
     try:
         registry = get_default_runtime_tool_registry()
@@ -2060,6 +2065,7 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
             step_id="digital_oracle_research",
             slot="report",
             package_ownership=plan.package_ownership,
+            secret_values={"edgar_contact_email": "sec-contact@example.test"},
         )
         declarations = registry.get_tool_declarations(granted_tool_keys)
         prediction_declaration = registry.get_tool_declarations(
@@ -3513,6 +3519,97 @@ def test_news_lookup_dispatch_uses_injected_finance_news_providers(
     assert "metrics" not in payload
 
 
+def test_news_lookup_uses_context_alpha_vantage_secret_when_provider_order_prefers_alpha(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    quote_provider = _RecordingQuoteProvider()
+    created_api_keys: list[str | None] = []
+    fetch_calls: list[
+        tuple[list[str], str | None, NewsScope, datetime | None, datetime | None, int]
+    ] = []
+
+    class RecordingAlphaVantageNewsProvider:
+        provider_name = "alpha_vantage"
+
+        def __init__(self, *, api_key: str | None, timeout: float = 5.0) -> None:
+            del timeout
+            created_api_keys.append(api_key)
+
+        def fetch_news(
+            self,
+            *,
+            symbols: list[str],
+            query: str | None,
+            scope: NewsScope,
+            start_date: datetime | None,
+            end_date: datetime | None,
+            limit: int,
+        ) -> ProviderNewsResult:
+            fetch_calls.append((symbols, query, scope, start_date, end_date, limit))
+            return ProviderNewsResult(
+                provider=self.provider_name,
+                items=[
+                    ProviderNewsItem(
+                        title="Alpha Vantage runtime news",
+                        source="alpha_vantage",
+                        published_at=_NOW,
+                        symbols=symbols,
+                    )
+                ],
+            )
+
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_finance.provider_factories.AlphaVantageNewsProvider",
+        RecordingAlphaVantageNewsProvider,
+    )
+    monkeypatch.setattr(
+        "app.services.market_data_service.require_finance_workspace_enabled",
+        lambda session, *, surface: None,
+    )
+    monkeypatch.setenv("QUOTE_PROVIDER_BACKEND", "yahoo")
+    monkeypatch.setenv("FINANCE_NEWS_PROVIDER_ORDER", "alpha_vantage")
+    monkeypatch.delenv("FINANCE_ALPHA_VANTAGE_API_KEY", raising=False)
+    reset_settings_cache()
+    try:
+        payload = execute_news_lookup(
+            _runtime_context(
+                session_factory_override=session_factory,
+                quote_provider=quote_provider,
+                secret_values={"alpha_vantage_api_key": "caller-alpha-vantage-key"},
+            ),
+            parse_news_lookup_arguments(
+                json.dumps(
+                    {
+                        "symbols": ["NVDA"],
+                        "query": "earnings",
+                        "scope": "symbol",
+                        "startDate": None,
+                        "endDate": None,
+                        "itemLimit": 1,
+                    }
+                )
+            ),
+        )
+    finally:
+        reset_settings_cache()
+
+    assert created_api_keys == ["caller-alpha-vantage-key"]
+    assert fetch_calls == [(["NVDA"], "earnings", "symbol", None, None, 2)]
+    assert payload["items"] == [
+        {
+            "title": "Alpha Vantage runtime news",
+            "source": "alpha_vantage",
+            "publishedAt": "2026-01-02T03:04:05Z",
+            "url": None,
+            "summary": None,
+            "symbols": ["NVDA"],
+            "sentiment": None,
+        }
+    ]
+    assert "caller-alpha-vantage-key" not in json.dumps(payload)
+
+
 def test_indicator_contract_requires_warmup_reasons_and_rejects_lookahead() -> None:
     with pytest.raises(ValidationError, match="nullReason is required"):
         _ = RuntimeIndicatorValue(name="sma_20", value=None)
@@ -4351,6 +4448,51 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
     ]
     for tool in tools:
         _assert_strict_openai_tool_schema(tool)
+
+
+def test_model_facing_runtime_tool_declarations_keep_provider_secrets_internal() -> None:
+    registry = get_default_runtime_tool_registry()
+    granted_tool_keys = {
+        SEC_FILINGS_LOOKUP_TOOL_KEY,
+        MACRO_RATES_LOOKUP_TOOL_KEY,
+        NEWS_LOOKUP_TOOL_KEY,
+    }
+    declarations = [
+        {
+            "kind": declaration.kind,
+            "toolKey": declaration.tool_key,
+            "modelName": declaration.model_name,
+            "description": declaration.description,
+            "inputSchema": declaration.input_schema,
+            "schemaHash": declaration.schema_hash,
+            "strict": declaration.strict,
+            "ownerExtensionKey": declaration.owner_extension_key,
+        }
+        for declaration in registry.get_tool_declarations(granted_tool_keys)
+    ]
+    serialized_declarations = json.dumps(
+        {
+            "openaiTools": registry.get_openai_tools(granted_tool_keys),
+            "signaldeckTools": declarations,
+            "parametersSchemas": [
+                SEC_FILINGS_LOOKUP_TOOL_SPEC.parameters_schema,
+                MACRO_RATES_LOOKUP_TOOL_SPEC.parameters_schema,
+                NEWS_LOOKUP_TOOL_SPEC.parameters_schema,
+            ],
+        },
+        sort_keys=True,
+    )
+
+    for forbidden_name in (
+        "apiKey",
+        "fredApiKey",
+        "edgarContactEmail",
+        "contactEmail",
+        "FINANCE_ALPHA_VANTAGE_API_KEY",
+        "DIGITAL_ORACLE_FRED_API_KEY",
+        "DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL",
+    ):
+        assert forbidden_name not in serialized_declarations
 
 
 def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typed_error() -> None:
@@ -9373,11 +9515,14 @@ def test_sec_filings_runtime_executor_filters_forms_dates_and_returns_normalized
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    monkeypatch.setenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", "sec-contact@example.test")
+    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
     reset_settings_cache()
     try:
         payload = execute_sec_filings_lookup(
-            _runtime_context(fail_on_session=True),
+            _runtime_context(
+                fail_on_session=True,
+                secret_values={"edgar_contact_email": "sec-contact@example.test"},
+            ),
             parse_sec_filings_lookup_arguments(
                 json.dumps(
                     {
@@ -9441,6 +9586,50 @@ def test_sec_filings_runtime_executor_filters_forms_dates_and_returns_normalized
     assert payload["warnings"] == []
 
 
+def test_sec_filings_runtime_executor_uses_context_edgar_contact_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _FakeDigitalOracleSecFilingsProvider(
+        filings=(
+            DigitalOracleSecFiling(
+                accession_number="0001045810-26-000010",
+                form_type="10-K",
+                filing_date=date(2026, 2, 20),
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
+        lambda: provider,
+    )
+    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
+    reset_settings_cache()
+    try:
+        payload = execute_sec_filings_lookup(
+            _runtime_context(
+                fail_on_session=True,
+                secret_values={"edgar_contact_email": "caller-edgar@example.test"},
+            ),
+            parse_sec_filings_lookup_arguments(json.dumps({"ticker": "NVDA"})),
+        )
+    finally:
+        reset_settings_cache()
+
+    assert provider.calls[0].edgar_contact_email == "caller-edgar@example.test"
+    assert payload["filings"] == [
+        {
+            "accessionNumber": "0001045810-26-000010",
+            "formType": "10-K",
+            "filingDate": "2026-02-20",
+            "acceptedAt": None,
+            "primaryDocument": None,
+            "url": None,
+            "description": None,
+        }
+    ]
+    assert "caller-edgar@example.test" not in json.dumps(payload)
+
+
 def test_sec_filings_runtime_executor_preserves_missing_edgar_email_warning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -9497,11 +9686,14 @@ def test_sec_filings_runtime_executor_degrades_provider_failure_and_redacts_deta
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    monkeypatch.setenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", "sec-contact@example.test")
+    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
     reset_settings_cache()
     try:
         payload = execute_sec_filings_lookup(
-            _runtime_context(fail_on_session=True),
+            _runtime_context(
+                fail_on_session=True,
+                secret_values={"edgar_contact_email": "sec-contact@example.test"},
+            ),
             parse_sec_filings_lookup_arguments(json.dumps({"ticker": "NVDA"})),
         )
     finally:
@@ -9537,11 +9729,14 @@ def test_sec_filings_runtime_executor_returns_empty_warning_for_configured_edgar
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    monkeypatch.setenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", "sec-contact@example.test")
+    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
     reset_settings_cache()
     try:
         payload = execute_sec_filings_lookup(
-            _runtime_context(fail_on_session=True),
+            _runtime_context(
+                fail_on_session=True,
+                secret_values={"edgar_contact_email": "sec-contact@example.test"},
+            ),
             parse_sec_filings_lookup_arguments(json.dumps({"ticker": "NVDA"})),
         )
     finally:
@@ -9813,11 +10008,14 @@ def test_macro_rates_runtime_executor_returns_normalized_happy_path(
         "app.extensions.signaldeck_digital_oracle.runtime_macro_rates.create_macro_rates_providers",
         lambda: (fred_provider, treasury_provider, bis_provider),
     )
-    monkeypatch.setenv("DIGITAL_ORACLE_FRED_API_KEY", "fred-key")
+    monkeypatch.delenv("DIGITAL_ORACLE_FRED_API_KEY", raising=False)
     reset_settings_cache()
     try:
         payload = execute_macro_rates_lookup(
-            _runtime_context(fail_on_session=True),
+            _runtime_context(
+                fail_on_session=True,
+                secret_values={"fred_api_key": "fred-key"},
+            ),
             parse_macro_rates_lookup_arguments(
                 json.dumps(
                     {
@@ -9839,6 +10037,63 @@ def test_macro_rates_runtime_executor_returns_normalized_happy_path(
     assert [item["seriesId"] for item in series] == ["FEDFUNDS", "UST-10Y", "BIS-US-POLICY"]
     assert series[1]["tenor"] == "10Y"
     assert payload["warnings"] == []
+
+
+def test_macro_rates_runtime_executor_uses_context_fred_api_key_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fred_provider = _FakeDigitalOracleMacroRatesProvider(
+        "fred",
+        series=(
+            DigitalOracleMacroRatesSeries(
+                provider="fred",
+                family="macro_indicators",
+                series_id="FEDFUNDS",
+                label="Federal Funds Effective Rate",
+                country="US",
+                currency="USD",
+                unit="percent",
+                date=date(2026, 1, 2),
+                value=Decimal("4.33"),
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_digital_oracle.runtime_macro_rates.create_macro_rates_providers",
+        lambda: (fred_provider,),
+    )
+    monkeypatch.delenv("DIGITAL_ORACLE_FRED_API_KEY", raising=False)
+    reset_settings_cache()
+    try:
+        payload = execute_macro_rates_lookup(
+            _runtime_context(
+                fail_on_session=True,
+                secret_values={"fred_api_key": "caller-fred-key"},
+            ),
+            parse_macro_rates_lookup_arguments(
+                json.dumps({"sources": ["fred"], "seriesIds": ["FEDFUNDS"], "itemLimit": 1})
+            ),
+        )
+    finally:
+        reset_settings_cache()
+
+    assert fred_provider.calls[0].fred_api_key == "caller-fred-key"
+    assert payload["series"] == [
+        {
+            "provider": "fred",
+            "family": "macro_indicators",
+            "seriesId": "FEDFUNDS",
+            "label": "Federal Funds Effective Rate",
+            "country": "US",
+            "currency": "USD",
+            "unit": "percent",
+            "date": "2026-01-02",
+            "value": "4.33",
+            "tenor": None,
+            "sourceUrl": None,
+        }
+    ]
+    assert "caller-fred-key" not in json.dumps(payload)
 
 
 def test_macro_rates_runtime_executor_preserves_partial_warnings_without_fred_key(
