@@ -1,11 +1,3 @@
-import { Dashboard } from "@/pages/dashboard";
-import { PortfolioDetailPage } from "@/pages/portfolios/detail";
-import { PortfolioListPage } from "@/pages/portfolios/list";
-import { ReportDetailPage } from "@/pages/reports/detail";
-import { ReportListPage } from "@/pages/reports/list";
-import { TemplateEditorPage } from "@/pages/templates/editor";
-import { TemplateListPage } from "@/pages/templates/list";
-
 import type {
   FrontendExtensionDefinition,
   FrontendNavContribution,
@@ -38,7 +30,7 @@ function financeRouteOwnerNav(
 
 const financeRouteContributions = [
   {
-    Component: Dashboard,
+    lazy: async () => ({ Component: (await import("@/pages/dashboard")).Dashboard }),
     path: "/",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
     routeMetadata: {
@@ -59,7 +51,9 @@ const financeRouteContributions = [
     },
   },
   {
-    Component: PortfolioListPage,
+    lazy: async () => ({
+      Component: (await import("@/pages/portfolios/list")).PortfolioListPage,
+    }),
     path: "/portfolios",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
     routeMetadata: {
@@ -80,7 +74,9 @@ const financeRouteContributions = [
     },
   },
   {
-    Component: PortfolioDetailPage,
+    lazy: async () => ({
+      Component: (await import("@/pages/portfolios/detail")).PortfolioDetailPage,
+    }),
     path: "/portfolios/:portfolioId",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
     routeMetadata: {
@@ -110,7 +106,9 @@ const financeRouteContributions = [
     },
   },
   {
-    Component: TemplateListPage,
+    lazy: async () => ({
+      Component: (await import("@/pages/templates/list")).TemplateListPage,
+    }),
     path: "/templates",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
     routeMetadata: {
@@ -138,7 +136,9 @@ const financeRouteContributions = [
     },
   },
   {
-    Component: TemplateEditorPage,
+    lazy: async () => ({
+      Component: (await import("@/pages/templates/editor")).TemplateEditorPage,
+    }),
     path: "/templates/new",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
     routeMetadata: {
@@ -162,7 +162,9 @@ const financeRouteContributions = [
     },
   },
   {
-    Component: TemplateEditorPage,
+    lazy: async () => ({
+      Component: (await import("@/pages/templates/editor")).TemplateEditorPage,
+    }),
     path: "/templates/:templateId/edit",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
     routeMetadata: {
@@ -193,7 +195,9 @@ const financeRouteContributions = [
     },
   },
   {
-    Component: ReportListPage,
+    lazy: async () => ({
+      Component: (await import("@/pages/reports/list")).ReportListPage,
+    }),
     path: "/reports",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
     routeMetadata: {
@@ -221,7 +225,9 @@ const financeRouteContributions = [
     },
   },
   {
-    Component: ReportDetailPage,
+    lazy: async () => ({
+      Component: (await import("@/pages/reports/detail")).ReportDetailPage,
+    }),
     path: "/reports/:slug",
     requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
     routeMetadata: {

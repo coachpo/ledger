@@ -36,12 +36,6 @@ import { queryKeys } from "./lib/query-keys";
 import type { ExtensionListRead } from "./lib/types/extension";
 import { NotFoundPage } from "./pages/not-found";
 import { RouteErrorPage } from "./pages/route-error";
-import { MemoryListPage } from "./pages/memory/list";
-import { ScheduledTaskDetailPage } from "./pages/scheduled-tasks/detail";
-import { ScheduledTaskEditorPage } from "./pages/scheduled-tasks/editor";
-import { ScheduledTasksListPage } from "./pages/scheduled-tasks/list";
-import { WorkflowPackageEditorPage } from "./pages/workflow-packages/editor";
-import { WorkflowPackageLaunchPage } from "./pages/workflow-packages/launch";
 import { router } from "./routes";
 
 Object.defineProperty(globalThis, "localStorage", {
@@ -323,13 +317,13 @@ function navItemsFromGroups(groups: ReturnType<typeof assembleNavGroups>) {
 type RouteWithComponent = {
   Component?: unknown;
   element?: { type?: unknown } | null;
+  lazy?: unknown;
 };
 
-function matchedRouteComponent(path: string) {
-  const match = matchRoutes(router.routes, path)?.at(-1)?.route as
+function matchedRoute(path: string) {
+  return matchRoutes(router.routes, path)?.at(-1)?.route as
     | RouteWithComponent
     | undefined;
-  return match?.Component ?? match?.element?.type;
 }
 
 type RootRouteWithChildren = {
@@ -368,6 +362,31 @@ describe("router", () => {
     expect(getRouteMetadataForPathname("/does-not-exist")).toBe(
       unknownRouteMetadata,
     );
+  });
+
+  it("keeps child route modules lazy to avoid eager page imports", () => {
+    for (const path of [
+      "/",
+      "/reports",
+      "/templates/new",
+      "/portfolios/123",
+      "/extensions",
+      "/workflow-packages",
+      "/workflow-packages/123/run",
+      "/model-connections",
+      "/memory",
+      "/scheduled-tasks/123",
+      "/runs/123",
+      "/does-not-exist",
+    ]) {
+      const route = matchedRoute(path);
+
+      expect(route?.Component, `${path} should not expose an eager Component`).toBeUndefined();
+      expect(route?.element, `${path} should not expose an eager element`).toBeUndefined();
+      expect(route?.lazy, `${path} should lazy-load its route module`).toEqual(
+        expect.any(Function),
+      );
+    }
   });
 
   it("keeps removed browser prefixes out of live route registration and metadata", () => {
@@ -719,20 +738,32 @@ describe("router", () => {
   });
 
   it("routes removed legacy families to the product-owned 404", () => {
-    expect(matchedRouteComponent("/tryout")).toBe(NotFoundPage);
-    expect(matchedRouteComponent("/studio")).toBe(NotFoundPage);
-    expect(matchedRouteComponent("/studio/agents")).toBe(NotFoundPage);
-    expect(matchedRouteComponent("/orchestration")).toBe(NotFoundPage);
-    expect(matchedRouteComponent("/orchestration/roles")).toBe(NotFoundPage);
-    expect(matchedRouteComponent("/orchestration/characters")).toBe(
-      NotFoundPage,
+    expect(getRouteMetadataForPathname("/tryout")).toBe(unknownRouteMetadata);
+    expect(getRouteMetadataForPathname("/studio")).toBe(unknownRouteMetadata);
+    expect(getRouteMetadataForPathname("/studio/agents")).toBe(
+      unknownRouteMetadata,
+    );
+    expect(getRouteMetadataForPathname("/orchestration")).toBe(
+      unknownRouteMetadata,
+    );
+    expect(getRouteMetadataForPathname("/orchestration/roles")).toBe(
+      unknownRouteMetadata,
+    );
+    expect(getRouteMetadataForPathname("/orchestration/characters")).toBe(
+      unknownRouteMetadata,
     );
   });
 
   it("routes the removed backtests family to the product-owned 404", () => {
-    expect(matchedRouteComponent("/backtests")).toBe(NotFoundPage);
-    expect(matchedRouteComponent("/backtests/new")).toBe(NotFoundPage);
-    expect(matchedRouteComponent("/backtests/123")).toBe(NotFoundPage);
+    expect(getRouteMetadataForPathname("/backtests")).toBe(
+      unknownRouteMetadata,
+    );
+    expect(getRouteMetadataForPathname("/backtests/new")).toBe(
+      unknownRouteMetadata,
+    );
+    expect(getRouteMetadataForPathname("/backtests/123")).toBe(
+      unknownRouteMetadata,
+    );
   });
 
   it("registers workflow package routes and removes old global authoring routes", () => {
@@ -745,17 +776,12 @@ describe("router", () => {
       matchRoutes(router.routes, "/workflow-packages/import"),
     ).not.toBeNull();
     expect(matchRoutes(router.routes, "/workflow-packages/new")).not.toBeNull();
-    expect(matchedRouteComponent("/workflow-packages/123")).toBe(
-      WorkflowPackageEditorPage,
-    );
-    expect(matchedRouteComponent("/workflow-packages/123/run")).toBe(
-      WorkflowPackageLaunchPage,
-    );
-    expect(matchedRouteComponent("/workflow-packages/123/run")).not.toBe(
-      WorkflowPackageEditorPage,
-    );
-    expect(matchedRouteComponent("/workflow-packages/123/launch")).toBe(
-      NotFoundPage,
+    expect(matchRoutes(router.routes, "/workflow-packages/123")).not.toBeNull();
+    expect(
+      matchRoutes(router.routes, "/workflow-packages/123/run"),
+    ).not.toBeNull();
+    expect(getRouteMetadataForPathname("/workflow-packages/123/launch")).toBe(
+      unknownRouteMetadata,
     );
 
     for (const prefix of LIVE_BROWSER_ROUTE_PREFIXES) {
@@ -775,7 +801,6 @@ describe("router", () => {
     }
 
     for (const retiredRoute of REMOVED_BROWSER_ROUTE_PATHS) {
-      expect(matchedRouteComponent(retiredRoute)).toBe(NotFoundPage);
       expect(getRouteMetadataForPathname(retiredRoute)).toBe(
         unknownRouteMetadata,
       );
@@ -788,34 +813,25 @@ describe("router", () => {
     expect(
       matchRoutes(router.routes, "/model-connections/123/edit"),
     ).not.toBeNull();
-    expect(matchedRouteComponent("/memory")).toBe(MemoryListPage);
-    expect(matchedRouteComponent("/memory/mem-risk-1")).toBe(NotFoundPage);
+    expect(matchRoutes(router.routes, "/memory")).not.toBeNull();
     expect(getRouteMetadataForPathname("/memory")?.testId).toBe(
       "route-memory-list",
     );
     expect(getRouteMetadataForPathname("/memory/mem-risk-1")).toBe(
       unknownRouteMetadata,
     );
-    expect(matchedRouteComponent("/api/memory")).toBe(NotFoundPage);
     expect(getRouteMetadataForPathname("/api/memory")).toBe(
       unknownRouteMetadata,
     );
-    expect(matchedRouteComponent("/scheduled-tasks")).toBe(
-      ScheduledTasksListPage,
-    );
-    expect(matchedRouteComponent("/scheduled-tasks/new")).toBe(
-      ScheduledTaskEditorPage,
-    );
-    expect(matchedRouteComponent("/scheduled-tasks/123")).toBe(
-      ScheduledTaskDetailPage,
-    );
+    expect(matchRoutes(router.routes, "/scheduled-tasks")).not.toBeNull();
+    expect(matchRoutes(router.routes, "/scheduled-tasks/new")).not.toBeNull();
+    expect(matchRoutes(router.routes, "/scheduled-tasks/123")).not.toBeNull();
     expect(getRouteMetadataForPathname("/scheduled-tasks")?.testId).toBe(
       "route-scheduled-tasks-list",
     );
     expect(getRouteMetadataForPathname("/scheduled-tasks/123")?.testId).toBe(
       "route-scheduled-task-detail",
     );
-    expect(matchedRouteComponent("/api/schedules")).toBe(NotFoundPage);
     expect(getRouteMetadataForPathname("/api/schedules")).toBe(
       unknownRouteMetadata,
     );
@@ -985,9 +1001,6 @@ describe("router", () => {
       "/cftc-positioning",
       "/options",
     ]) {
-      expect(matchedRouteComponent(retiredDigitalOracleRoute)).toBe(
-        NotFoundPage,
-      );
       expect(getRouteMetadataForPathname(retiredDigitalOracleRoute)).toBe(
         unknownRouteMetadata,
       );
@@ -1007,7 +1020,7 @@ describe("router", () => {
       ),
     ).toEqual(
       financeExtension.routeContributions.map(() => [
-        "Component",
+        "lazy",
         "path",
         "requiredExtensionKey",
         "routeMetadata",

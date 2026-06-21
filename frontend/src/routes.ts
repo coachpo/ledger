@@ -3,62 +3,130 @@ import { createBrowserRouter } from "react-router";
 
 import { Layout } from "./components/layout";
 import { assembleFinanceWorkspaceRoutes } from "./extensions/runtime-helpers";
-import { ExtensionsListPage } from "./pages/extensions/list";
-import { MemoryListPage } from "./pages/memory/list";
-import { ModelConnectionsEditorPage } from "./pages/model-connections/editor";
-import { ModelConnectionsListPage } from "./pages/model-connections/list";
-import { NotFoundPage } from "./pages/not-found";
 import { RouteErrorPage } from "./pages/route-error";
-import { RunsDetailPage } from "./pages/runs/detail";
-import { RunsListPage } from "./pages/runs/list";
-import { ScheduledTaskDetailPage } from "./pages/scheduled-tasks/detail";
-import { ScheduledTaskEditorPage } from "./pages/scheduled-tasks/editor";
-import { ScheduledTasksListPage } from "./pages/scheduled-tasks/list";
-import { WorkflowPackageEditorPage } from "./pages/workflow-packages/editor";
-import { WorkflowPackageImportPage } from "./pages/workflow-packages/import-page";
-import { WorkflowPackageLaunchPage } from "./pages/workflow-packages/launch";
-import { WorkflowPackagesListPage } from "./pages/workflow-packages/list";
 import { assertRouteMetadataCoverage } from "./routes.metadata";
 
 type AppRouteDefinition = {
-  Component: ComponentType;
   index?: boolean;
+  lazy: () => Promise<{ Component: ComponentType }>;
   path?: string;
 };
 
 const financeWorkspaceRoutes: AppRouteDefinition[] =
   assembleFinanceWorkspaceRoutes();
 const platformRoutes: AppRouteDefinition[] = [
-  { path: "extensions", Component: ExtensionsListPage },
-  { path: "workflow-packages", Component: WorkflowPackagesListPage },
-  { path: "workflow-packages/import", Component: WorkflowPackageImportPage },
-  { path: "workflow-packages/new", Component: WorkflowPackageEditorPage },
+  {
+    path: "extensions",
+    lazy: async () => ({
+      Component: (await import("./pages/extensions/list")).ExtensionsListPage,
+    }),
+  },
+  {
+    path: "workflow-packages",
+    lazy: async () => ({
+      Component: (await import("./pages/workflow-packages/list"))
+        .WorkflowPackagesListPage,
+    }),
+  },
+  {
+    path: "workflow-packages/import",
+    lazy: async () => ({
+      Component: (await import("./pages/workflow-packages/import-page"))
+        .WorkflowPackageImportPage,
+    }),
+  },
+  {
+    path: "workflow-packages/new",
+    lazy: async () => ({
+      Component: (await import("./pages/workflow-packages/editor"))
+        .WorkflowPackageEditorPage,
+    }),
+  },
   {
     path: "workflow-packages/:packageId",
-    Component: WorkflowPackageEditorPage,
+    lazy: async () => ({
+      Component: (await import("./pages/workflow-packages/editor"))
+        .WorkflowPackageEditorPage,
+    }),
   },
   {
     path: "workflow-packages/:packageId/run",
-    Component: WorkflowPackageLaunchPage,
+    lazy: async () => ({
+      Component: (await import("./pages/workflow-packages/launch"))
+        .WorkflowPackageLaunchPage,
+    }),
   },
-  { path: "model-connections", Component: ModelConnectionsListPage },
-  { path: "model-connections/new", Component: ModelConnectionsEditorPage },
+  {
+    path: "model-connections",
+    lazy: async () => ({
+      Component: (await import("./pages/model-connections/list"))
+        .ModelConnectionsListPage,
+    }),
+  },
+  {
+    path: "model-connections/new",
+    lazy: async () => ({
+      Component: (await import("./pages/model-connections/editor"))
+        .ModelConnectionsEditorPage,
+    }),
+  },
   {
     path: "model-connections/:modelConnectionId/edit",
-    Component: ModelConnectionsEditorPage,
+    lazy: async () => ({
+      Component: (await import("./pages/model-connections/editor"))
+        .ModelConnectionsEditorPage,
+    }),
   },
-  { path: "memory", Component: MemoryListPage },
-  { path: "scheduled-tasks", Component: ScheduledTasksListPage },
-  { path: "scheduled-tasks/new", Component: ScheduledTaskEditorPage },
-  { path: "scheduled-tasks/:scheduleId", Component: ScheduledTaskDetailPage },
-  { path: "runs", Component: RunsListPage },
-  { path: "runs/:runId", Component: RunsDetailPage },
+  {
+    path: "memory",
+    lazy: async () => ({
+      Component: (await import("./pages/memory/list")).MemoryListPage,
+    }),
+  },
+  {
+    path: "scheduled-tasks",
+    lazy: async () => ({
+      Component: (await import("./pages/scheduled-tasks/list"))
+        .ScheduledTasksListPage,
+    }),
+  },
+  {
+    path: "scheduled-tasks/new",
+    lazy: async () => ({
+      Component: (await import("./pages/scheduled-tasks/editor"))
+        .ScheduledTaskEditorPage,
+    }),
+  },
+  {
+    path: "scheduled-tasks/:scheduleId",
+    lazy: async () => ({
+      Component: (await import("./pages/scheduled-tasks/detail"))
+        .ScheduledTaskDetailPage,
+    }),
+  },
+  {
+    path: "runs",
+    lazy: async () => ({
+      Component: (await import("./pages/runs/list")).RunsListPage,
+    }),
+  },
+  {
+    path: "runs/:runId",
+    lazy: async () => ({
+      Component: (await import("./pages/runs/detail")).RunsDetailPage,
+    }),
+  },
+  {
+    path: "*",
+    lazy: async () => ({
+      Component: (await import("./pages/not-found")).NotFoundPage,
+    }),
+  },
 ];
 
 const appRouteChildren: AppRouteDefinition[] = [
   ...financeWorkspaceRoutes,
   ...platformRoutes,
-  { path: "*", Component: NotFoundPage },
 ];
 
 assertRouteMetadataCoverage(appRouteChildren);

@@ -12,7 +12,7 @@ export type FrontendRouteMetadataContribution = Omit<
 >;
 
 export type FrontendRouteContribution = FrontendExtensionGateTag & {
-  Component: ComponentType;
+  lazy: () => Promise<{ Component: ComponentType }>;
   path: AbsoluteRoutePath;
   routeMetadata: FrontendRouteMetadataContribution;
 };

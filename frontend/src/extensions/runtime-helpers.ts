@@ -38,8 +38,8 @@ export type NavGroup = {
 };
 
 type ExtensionRouteDefinition = {
-  Component: ComponentType;
   index?: boolean;
+  lazy: () => Promise<{ Component: ComponentType }>;
   path?: string;
 };
 
@@ -158,13 +158,17 @@ export function assembleFinanceWorkspaceRoutes(): ExtensionRouteDefinition[] {
         );
       }
 
-      const GuardedComponent = withFinanceWorkspaceGate(contribution.Component);
+      const lazy = async () => {
+        const { Component } = await contribution.lazy();
+
+        return { Component: withFinanceWorkspaceGate(Component) };
+      };
 
       return contribution.path === "/"
-        ? { index: true, Component: GuardedComponent }
+        ? { index: true, lazy }
         : {
             path: contribution.path.replace(/^\//, ""),
-            Component: GuardedComponent,
+            lazy,
           };
     },
   );
