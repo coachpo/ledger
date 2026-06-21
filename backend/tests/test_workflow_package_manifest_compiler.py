@@ -22,8 +22,8 @@ _EXPECTED_DEMO_HASHES = {
         "1a997fe3f393bdef1db33473c7241683ecbba6e5f266b3bc1b1960c4e5ba5ea4",
     ),
     "tradingagents_advisory_research_macro": (
-        "776d1d0984c11943800cb6e11873350d4b5155eb956f3a4b95fd6d5361001edc",
-        "ff83de867b7c43ce76753e54d16793b50e9aac22030893016cc6a69d979e9bd9",
+        "09c79f75209be49c4745b548129df309c039d84894e3dc80e27d21eeae6812de",
+        "43cf2f6e2890e15ab1d943636d08471d9013aa1c8435cacea496da930ff50865",
     ),
     "tradingagents_advisory_research_mixed_signals": (
         "6b5e54a5bd3fc62d99aa6bec8d0be839f548d232e3e610535da3bc0d083ba92f",
@@ -45,6 +45,10 @@ def _compiled_tool_keys(compiled: dict[str, object]) -> set[str]:
     spec = cast(dict[str, object], package_definition["spec"])
     profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
     return {tool_key for profile in profiles for tool_key in cast(list[str], profile["toolKeys"])}
+
+
+def _items_by_key(items: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    return {str(item["key"]): item for item in items}
 
 
 def _inline_private_mcp_manifest_source() -> str:
@@ -336,6 +340,48 @@ def test_compile_demo_presets_lock_hashes_tools_and_private_operations(
             }
             & expected_tool_keys
         )
+
+
+def test_compile_macro_demo_collector_accepts_raw_http_payload_shapes() -> None:
+    compiled = compile_workflow_package_manifest(
+        _demo_source("tradingagents_advisory_research_macro")
+    )
+    package_definition = cast(dict[str, object], compiled["packageDefinition"])
+    compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
+    spec = cast(dict[str, object], package_definition["spec"])
+    output_schemas = _items_by_key(cast(list[dict[str, object]], spec["outputSchemas"]))
+    agents = _items_by_key(cast(list[dict[str, object]], spec["agents"]))
+    macro_collector = agents["macro_context_collector"]
+    input_schema = cast(dict[str, object], macro_collector["inputSchema"])
+    input_properties = cast(dict[str, object], input_schema["properties"])
+    fred_schema = cast(dict[str, object], output_schemas["fred_observations_raw"])["jsonSchema"]
+    treasury_schema = cast(dict[str, object], output_schemas["treasury_rates_raw"])["jsonSchema"]
+
+    for property_name in (
+        "fredFedfundsObservations",
+        "fredUnrateObservations",
+        "fredCpiaucslObservations",
+        "fredT10y2yObservations",
+    ):
+        assert input_properties[property_name] == fred_schema
+    assert input_properties["treasuryRatesSnapshot"] == treasury_schema
+
+    advisory_workflow = next(
+        workflow
+        for workflow in cast(list[dict[str, object]], compiled_plan["workflows"])
+        if workflow["key"] == "advisory_research"
+    )
+    treasury_operation = next(
+        operation
+        for step in cast(list[dict[str, object]], advisory_workflow["steps"])
+        for operation in cast(list[dict[str, object]], step.get("operations", []))
+        if operation["operationKey"] == "treasury_rates_snapshot_json"
+    )
+    request = cast(dict[str, object], treasury_operation["request"])
+    assert request["url"] == (
+        "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/"
+        "v2/accounting/od/avg_interest_rates"
+    )
 
 
 def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:

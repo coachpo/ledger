@@ -216,15 +216,81 @@ spec:
               labels:
                 type: object
                 required: []
-                properties: {}
+                properties:
+                  record_date:
+                    type: string
+                  security_type_desc:
+                    type: string
+                  security_desc:
+                    type: string
+                  avg_interest_rate_amt:
+                    type: string
+                  src_line_nbr:
+                    type: string
+                  record_fiscal_year:
+                    type: string
+                  record_fiscal_quarter:
+                    type: string
+                  record_calendar_year:
+                    type: string
+                  record_calendar_quarter:
+                    type: string
+                  record_calendar_month:
+                    type: string
+                  record_calendar_day:
+                    type: string
               dataTypes:
                 type: object
                 required: []
-                properties: {}
+                properties:
+                  record_date:
+                    type: string
+                  security_type_desc:
+                    type: string
+                  security_desc:
+                    type: string
+                  avg_interest_rate_amt:
+                    type: string
+                  src_line_nbr:
+                    type: string
+                  record_fiscal_year:
+                    type: string
+                  record_fiscal_quarter:
+                    type: string
+                  record_calendar_year:
+                    type: string
+                  record_calendar_quarter:
+                    type: string
+                  record_calendar_month:
+                    type: string
+                  record_calendar_day:
+                    type: string
               dataFormats:
                 type: object
                 required: []
-                properties: {}
+                properties:
+                  record_date:
+                    type: string
+                  security_type_desc:
+                    type: string
+                  security_desc:
+                    type: string
+                  avg_interest_rate_amt:
+                    type: string
+                  src_line_nbr:
+                    type: string
+                  record_fiscal_year:
+                    type: string
+                  record_fiscal_quarter:
+                    type: string
+                  record_calendar_year:
+                    type: string
+                  record_calendar_quarter:
+                    type: string
+                  record_calendar_month:
+                    type: string
+                  record_calendar_day:
+                    type: string
               total-count:
                 type: integer
               total-pages:
@@ -236,13 +302,13 @@ spec:
               self:
                 type: string
               first:
-                type: string
+                type: [string, "null"]
               prev:
-                type: string
+                type: [string, "null"]
               next:
-                type: string
+                type: [string, "null"]
               last:
-                type: string
+                type: [string, "null"]
     - key: macro_context_packet
       name: Macro Context Packet
       description: Bounded macro and rates evidence packet with provenance.
@@ -477,24 +543,319 @@ spec:
             type: integer
           fredFedfundsObservations:
             type: object
-            required: []
-            properties: {}
+            required:
+              - observations
+            properties:
+              realtime_start:
+                type: string
+              realtime_end:
+                type: string
+              observation_start:
+                type: string
+              observation_end:
+                type: string
+              units:
+                type: string
+              output_type:
+                type: integer
+              file_type:
+                type: string
+              order_by:
+                type: string
+              sort_order:
+                type: string
+              count:
+                type: integer
+              offset:
+                type: integer
+              limit:
+                type: integer
+              observations:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - date
+                    - value
+                  properties:
+                    realtime_start:
+                      type: string
+                    realtime_end:
+                      type: string
+                    date:
+                      type: string
+                    value:
+                      type: string
           fredUnrateObservations:
             type: object
-            required: []
-            properties: {}
+            required:
+              - observations
+            properties:
+              realtime_start:
+                type: string
+              realtime_end:
+                type: string
+              observation_start:
+                type: string
+              observation_end:
+                type: string
+              units:
+                type: string
+              output_type:
+                type: integer
+              file_type:
+                type: string
+              order_by:
+                type: string
+              sort_order:
+                type: string
+              count:
+                type: integer
+              offset:
+                type: integer
+              limit:
+                type: integer
+              observations:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - date
+                    - value
+                  properties:
+                    realtime_start:
+                      type: string
+                    realtime_end:
+                      type: string
+                    date:
+                      type: string
+                    value:
+                      type: string
           fredCpiaucslObservations:
             type: object
-            required: []
-            properties: {}
+            required:
+              - observations
+            properties:
+              realtime_start:
+                type: string
+              realtime_end:
+                type: string
+              observation_start:
+                type: string
+              observation_end:
+                type: string
+              units:
+                type: string
+              output_type:
+                type: integer
+              file_type:
+                type: string
+              order_by:
+                type: string
+              sort_order:
+                type: string
+              count:
+                type: integer
+              offset:
+                type: integer
+              limit:
+                type: integer
+              observations:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - date
+                    - value
+                  properties:
+                    realtime_start:
+                      type: string
+                    realtime_end:
+                      type: string
+                    date:
+                      type: string
+                    value:
+                      type: string
           fredT10y2yObservations:
             type: object
-            required: []
-            properties: {}
+            required:
+              - observations
+            properties:
+              realtime_start:
+                type: string
+              realtime_end:
+                type: string
+              observation_start:
+                type: string
+              observation_end:
+                type: string
+              units:
+                type: string
+              output_type:
+                type: integer
+              file_type:
+                type: string
+              order_by:
+                type: string
+              sort_order:
+                type: string
+              count:
+                type: integer
+              offset:
+                type: integer
+              limit:
+                type: integer
+              observations:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - date
+                    - value
+                  properties:
+                    realtime_start:
+                      type: string
+                    realtime_end:
+                      type: string
+                    date:
+                      type: string
+                    value:
+                      type: string
           treasuryRatesSnapshot:
             type: object
-            required: []
-            properties: {}
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required: []
+                  properties:
+                    record_date:
+                      type: string
+                    security_type_desc:
+                      type: string
+                    security_desc:
+                      type: string
+                    avg_interest_rate_amt:
+                      type: string
+                    src_line_nbr:
+                      type: string
+                    record_fiscal_year:
+                      type: string
+                    record_fiscal_quarter:
+                      type: string
+                    record_calendar_year:
+                      type: string
+                    record_calendar_quarter:
+                      type: string
+                    record_calendar_month:
+                      type: string
+                    record_calendar_day:
+                      type: string
+              meta:
+                type: object
+                required: []
+                properties:
+                  count:
+                    type: integer
+                  labels:
+                    type: object
+                    required: []
+                    properties:
+                      record_date:
+                        type: string
+                      security_type_desc:
+                        type: string
+                      security_desc:
+                        type: string
+                      avg_interest_rate_amt:
+                        type: string
+                      src_line_nbr:
+                        type: string
+                      record_fiscal_year:
+                        type: string
+                      record_fiscal_quarter:
+                        type: string
+                      record_calendar_year:
+                        type: string
+                      record_calendar_quarter:
+                        type: string
+                      record_calendar_month:
+                        type: string
+                      record_calendar_day:
+                        type: string
+                  dataTypes:
+                    type: object
+                    required: []
+                    properties:
+                      record_date:
+                        type: string
+                      security_type_desc:
+                        type: string
+                      security_desc:
+                        type: string
+                      avg_interest_rate_amt:
+                        type: string
+                      src_line_nbr:
+                        type: string
+                      record_fiscal_year:
+                        type: string
+                      record_fiscal_quarter:
+                        type: string
+                      record_calendar_year:
+                        type: string
+                      record_calendar_quarter:
+                        type: string
+                      record_calendar_month:
+                        type: string
+                      record_calendar_day:
+                        type: string
+                  dataFormats:
+                    type: object
+                    required: []
+                    properties:
+                      record_date:
+                        type: string
+                      security_type_desc:
+                        type: string
+                      security_desc:
+                        type: string
+                      avg_interest_rate_amt:
+                        type: string
+                      src_line_nbr:
+                        type: string
+                      record_fiscal_year:
+                        type: string
+                      record_fiscal_quarter:
+                        type: string
+                      record_calendar_year:
+                        type: string
+                      record_calendar_quarter:
+                        type: string
+                      record_calendar_month:
+                        type: string
+                      record_calendar_day:
+                        type: string
+                  total-count:
+                    type: integer
+                  total-pages:
+                    type: integer
+              links:
+                type: object
+                required: []
+                properties:
+                  self:
+                    type: string
+                  first:
+                    type: [string, "null"]
+                  prev:
+                    type: [string, "null"]
+                  next:
+                    type: [string, "null"]
+                  last:
+                    type: [string, "null"]
       outputSchema: macro_context_packet
       capabilityProfiles: []
       mcpServers: []
@@ -1913,7 +2274,7 @@ spec:
                 id: treasury_rates_snapshot_json
                 slot: treasury_rates_snapshot_json
                 method: GET
-                url: https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/avg_interest_rates
+                url: https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/avg_interest_rates
                 query:
                   sort: -record_date
                   page[size]: "30"

@@ -260,8 +260,8 @@ def test_validate_manifest_accepts_private_mcp_and_http_demo_variants(
             "1a997fe3f393bdef1db33473c7241683ecbba6e5f266b3bc1b1960c4e5ba5ea4",
         ),
         "tradingagents_advisory_research_macro": (
-            "776d1d0984c11943800cb6e11873350d4b5155eb956f3a4b95fd6d5361001edc",
-            "ff83de867b7c43ce76753e54d16793b50e9aac22030893016cc6a69d979e9bd9",
+            "09c79f75209be49c4745b548129df309c039d84894e3dc80e27d21eeae6812de",
+            "43cf2f6e2890e15ab1d943636d08471d9013aa1c8435cacea496da930ff50865",
         ),
         "tradingagents_advisory_research_mixed_signals": (
             "6b5e54a5bd3fc62d99aa6bec8d0be839f548d232e3e610535da3bc0d083ba92f",
