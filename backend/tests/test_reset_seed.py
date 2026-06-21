@@ -4,6 +4,7 @@ from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy import select
 
 from app.db.session import get_session_factory, init_db, reset_db_caches
+from app.extensions.signaldeck_finance.services.portfolio_service import PortfolioService
 from app.models.balance import Balance
 from app.models.portfolio import Portfolio
 from app.models.position import Position
@@ -11,7 +12,6 @@ from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.reset_seed import reset_and_seed_database
 from app.schemas.portfolio import PortfolioCreate
-from app.services.portfolio_service import PortfolioService
 
 
 def test_reset_and_seed_database_replaces_existing_data_with_a_clean_empty_workspace(

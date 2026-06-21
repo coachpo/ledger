@@ -24,7 +24,7 @@ from app.repositories.report import ReportRepository
 from app.schemas.market_data import MarketQuoteRead
 
 if TYPE_CHECKING:
-    from app.services.market_data_service import MarketDataService
+    from app.extensions.signaldeck_finance.services.market_data_service import MarketDataService
 
 _PLACEHOLDER_RE = re.compile(r"\{\{(.+?)\}\}")
 _INPUT_REFERENCE_RE = re.compile(r"^inputs\.(?P<name>[A-Za-z_][A-Za-z0-9_]*)$")

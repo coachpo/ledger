@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import get_default_tool_catalog
 from app.core.errors import ApiError
+from app.extensions.signaldeck_finance.services.portfolio_service import PortfolioService
+from app.extensions.signaldeck_finance.services.report_service import ReportService
+from app.extensions.signaldeck_finance.services.text_template_service import TextTemplateService
 from app.models.portfolio import Portfolio
 from app.models.report import Report
 from app.models.text_template import TextTemplate
@@ -22,9 +25,6 @@ from app.schemas.workflow_package import (
     WorkflowPackageManifestRequest,
 )
 from app.services.model_connection_service import ModelConnectionService
-from app.services.portfolio_service import PortfolioService
-from app.services.report_service import ReportService
-from app.services.text_template_service import TextTemplateService
 from app.services.workflow_package_service import WorkflowPackageService
 
 _FIXTURE = (

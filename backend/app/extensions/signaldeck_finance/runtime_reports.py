@@ -12,7 +12,7 @@ from app.extensions.signaldeck_finance.grant_policy import (
 )
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.runtime_types import REPORT_LOOKUP_TOOL_KEY
-from app.services.report_service import ReportService
+from app.extensions.signaldeck_finance.services.report_service import ReportService
 
 REPORT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_reports_lookup"
 

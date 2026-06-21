@@ -7,49 +7,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = REPO_ROOT / "backend"
 FINANCE_EXTENSION_IMPORT_PREFIX = "app.extensions.signaldeck_finance"
 APPROVED_STATIC_SCAN_EXCLUSIONS = ("app/extensions/registry.py",)
-FINANCE_SERVICE_GATE_MODULE = "app.extensions.signaldeck_finance.service_gate"
-APPROVED_FINANCE_SERVICE_GATE_IMPORTS = {
-    "app/services/balance_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:BALANCE_SERVICE_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
-    "app/services/csv_import_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:CSV_IMPORT_SERVICE_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
-    "app/services/market_data_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:MARKET_DATA_SERVICE_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
-    "app/services/memory_report_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:MEMORY_REPORT_SERVICE_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
-    "app/services/portfolio_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:PORTFOLIO_SERVICE_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
-    "app/services/position_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:POSITION_SERVICE_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
-    "app/services/report_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:REPORT_SERVICE_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
-    "app/services/template_compiler_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:TEMPLATE_COMPILER_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
-    "app/services/text_template_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:TEXT_TEMPLATE_SERVICE_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
-    "app/services/trading_operation_service.py": (
-        f"{FINANCE_SERVICE_GATE_MODULE}:TRADING_OPERATION_SERVICE_SURFACE",
-        f"{FINANCE_SERVICE_GATE_MODULE}:require_finance_workspace_enabled",
-    ),
-}
 CORE_RUNTIME_PROVIDER_MODULES = {
     "app/agents/runtime_tools/types.py",
     "app/api/dependencies.py",
@@ -71,24 +28,24 @@ FORBIDDEN_CORE_SETTING_PREFIXES = (
 )
 FINANCE_DEPENDENCIES_MODULE = "app.extensions.signaldeck_finance.dependencies"
 APPROVED_FINANCE_ROUTE_IMPORTS = {
-    "app/api/balances.py": (f"{FINANCE_DEPENDENCIES_MODULE}:get_balance_service",),
-    "app/api/market_data.py": (f"{FINANCE_DEPENDENCIES_MODULE}:get_market_data_service",),
-    "app/api/portfolios.py": (f"{FINANCE_DEPENDENCIES_MODULE}:get_portfolio_service",),
+    "app/api/balances.py": (f"{FINANCE_DEPENDENCIES_MODULE}:BalanceServiceDependency",),
+    "app/api/market_data.py": (f"{FINANCE_DEPENDENCIES_MODULE}:MarketDataServiceDependency",),
+    "app/api/portfolios.py": (f"{FINANCE_DEPENDENCIES_MODULE}:PortfolioServiceDependency",),
     "app/api/positions.py": (
-        f"{FINANCE_DEPENDENCIES_MODULE}:get_csv_import_service",
-        f"{FINANCE_DEPENDENCIES_MODULE}:get_position_service",
+        f"{FINANCE_DEPENDENCIES_MODULE}:CsvImportServiceDependency",
+        f"{FINANCE_DEPENDENCIES_MODULE}:PositionServiceDependency",
     ),
     "app/api/reports.py": (
-        f"{FINANCE_DEPENDENCIES_MODULE}:get_report_service",
-        f"{FINANCE_DEPENDENCIES_MODULE}:get_template_compiler_service",
-        f"{FINANCE_DEPENDENCIES_MODULE}:get_text_template_service",
+        f"{FINANCE_DEPENDENCIES_MODULE}:ReportServiceDependency",
+        f"{FINANCE_DEPENDENCIES_MODULE}:TemplateCompilerServiceDependency",
+        f"{FINANCE_DEPENDENCIES_MODULE}:TextTemplateServiceDependency",
     ),
     "app/api/templates.py": (
-        f"{FINANCE_DEPENDENCIES_MODULE}:get_template_compiler_service",
-        f"{FINANCE_DEPENDENCIES_MODULE}:get_text_template_service",
+        f"{FINANCE_DEPENDENCIES_MODULE}:TemplateCompilerServiceDependency",
+        f"{FINANCE_DEPENDENCIES_MODULE}:TextTemplateServiceDependency",
     ),
     "app/api/trading_operations.py": (
-        f"{FINANCE_DEPENDENCIES_MODULE}:get_trading_operation_service",
+        f"{FINANCE_DEPENDENCIES_MODULE}:TradingOperationServiceDependency",
     ),
 }
 _APPROVED_REGISTRY_REGISTRARS = (
@@ -138,7 +95,6 @@ def _is_scanned_shared_app_file(path: Path) -> bool:
 
 def _unapproved_finance_import_entries(relative_path: str, path: Path) -> tuple[str, ...]:
     approved_entries = set(APPROVED_FINANCE_ROUTE_IMPORTS.get(relative_path, ()))
-    approved_entries.update(APPROVED_FINANCE_SERVICE_GATE_IMPORTS.get(relative_path, ()))
     entries = set(_finance_import_entries(path)) - approved_entries
     return tuple(sorted(entries))
 

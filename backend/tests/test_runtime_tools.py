@@ -203,6 +203,7 @@ from app.extensions.signaldeck_digital_oracle.types import (
     DigitalOracleSecOwnershipTransaction,
     DigitalOracleSecSearchHit,
 )
+from app.extensions.signaldeck_finance.config import reset_finance_workspace_settings_cache
 from app.extensions.signaldeck_finance.execution_dependencies import (
     finance_execution_provider_bundle_from_parts,
 )
@@ -291,6 +292,12 @@ from app.extensions.signaldeck_finance.runtime_types import (
     RuntimeSocialSentimentMetric,
     RuntimeSocialSentimentSourceBlock,
 )
+from app.extensions.signaldeck_finance.services.market_data_service import (
+    MarketDataService,
+    MarketIndicatorSelection,
+)
+from app.extensions.signaldeck_finance.services.position_service import PositionService
+from app.extensions.signaldeck_finance.services.report_service import ReportService
 from app.main import create_app
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
@@ -302,13 +309,11 @@ from app.schemas.report import ReportRead
 from app.services.agent_execution_service import AgentExecutionService
 from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_providers import ExecutionProviderBundle
-from app.services.market_data_service import MarketDataService, MarketIndicatorSelection
 from app.services.model_gateway_dto import ModelGatewayError, ModelToolCall
 from app.services.model_gateway_tool_retry import ModelToolCallRetryState
 from app.services.model_gateway_tool_strategy import build_model_tool_call
 from app.services.news_provider import NewsProvider, NewsScope, ProviderNewsItem, ProviderNewsResult
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
-from app.services.position_service import PositionService
 from app.services.quote_provider import (
     ProviderFinancialStatement,
     ProviderFinancialStatementLine,
@@ -326,7 +331,6 @@ from app.services.quote_provider import (
     QuoteProviderMissingKeyError,
     QuoteProviderTimeoutError,
 )
-from app.services.report_service import ReportService
 from app.services.runtime_tool_grants import (
     RuntimeToolGrantError,
     RuntimeToolGrantPolicy,
@@ -380,6 +384,11 @@ _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
     "signaldeck.finance.positions.lookup",
     "signaldeck.finance.reports.lookup",
 }
+
+
+def _reset_runtime_settings_caches() -> None:
+    reset_settings_cache()
+    reset_finance_workspace_settings_cache()
 
 
 def _legacy_tool_key(suffix: str) -> str:
@@ -2056,7 +2065,7 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
         "app.extensions.signaldeck_digital_oracle.runtime_market_sentiment.create_market_sentiment_provider_adapter",
         lambda: sentiment_provider,
     )
-    reset_settings_cache()
+    _reset_runtime_settings_caches()
     try:
         registry = get_default_runtime_tool_registry()
         context = _runtime_context(
@@ -2126,7 +2135,7 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
             context=context,
         )
     finally:
-        reset_settings_cache()
+        _reset_runtime_settings_caches()
 
     assert {declaration.tool_key for declaration in declarations} == granted_tool_keys
     assert polymarket_provider.calls[0].query == "NVDA earnings"
@@ -3485,7 +3494,7 @@ def test_news_lookup_dispatch_uses_injected_finance_news_providers(
     start_date = datetime(2026, 1, 1, tzinfo=UTC)
     end_date = datetime(2026, 1, 3, tzinfo=UTC)
     monkeypatch.setattr(
-        "app.services.market_data_service.require_finance_workspace_enabled",
+        "app.extensions.signaldeck_finance.services.market_data_service.require_finance_workspace_enabled",
         lambda session, *, surface: None,
     )
 
@@ -3569,12 +3578,12 @@ def test_news_lookup_uses_context_alpha_vantage_secret_when_provider_order_prefe
         RecordingAlphaVantageNewsProvider,
     )
     monkeypatch.setattr(
-        "app.services.market_data_service.require_finance_workspace_enabled",
+        "app.extensions.signaldeck_finance.services.market_data_service.require_finance_workspace_enabled",
         lambda session, *, surface: None,
     )
     monkeypatch.setenv("QUOTE_PROVIDER_BACKEND", "yahoo")
     monkeypatch.setenv("FINANCE_NEWS_PROVIDER_ORDER", "alpha_vantage")
-    reset_settings_cache()
+    _reset_runtime_settings_caches()
     try:
         payload = execute_news_lookup(
             _runtime_context(
@@ -3596,7 +3605,7 @@ def test_news_lookup_uses_context_alpha_vantage_secret_when_provider_order_prefe
             ),
         )
     finally:
-        reset_settings_cache()
+        _reset_runtime_settings_caches()
 
     assert created_api_keys == ["caller-alpha-vantage-key"]
     assert fetch_calls == [(["NVDA"], "earnings", "symbol", None, None, 2)]
@@ -8990,7 +8999,7 @@ def test_options_lookup_yfinance_absence_degrades_and_keeps_registry_import_safe
         "app.extensions.signaldeck_digital_oracle.runtime_options_providers.importlib.import_module",
         missing_yfinance,
     )
-    reset_settings_cache()
+    _reset_runtime_settings_caches()
     try:
         app = create_app(init_database=False)
         registry = get_default_runtime_tool_registry()
@@ -9001,7 +9010,7 @@ def test_options_lookup_yfinance_absence_degrades_and_keeps_registry_import_safe
             context=_runtime_context(fail_on_session=True),
         )
     finally:
-        reset_settings_cache()
+        _reset_runtime_settings_caches()
 
     assert app is not None
     assert OPTIONS_LOOKUP_TOOL_KEY in {spec.key for spec in registry.list_specs()}
@@ -9525,7 +9534,7 @@ def test_sec_filings_runtime_executor_filters_forms_dates_and_returns_normalized
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    reset_settings_cache()
+    _reset_runtime_settings_caches()
     try:
         payload = execute_sec_filings_lookup(
             _runtime_context(
@@ -9548,7 +9557,7 @@ def test_sec_filings_runtime_executor_filters_forms_dates_and_returns_normalized
             ),
         )
     finally:
-        reset_settings_cache()
+        _reset_runtime_settings_caches()
 
     assert provider.calls[0].ticker == "NVDA"
     assert provider.calls[0].query == "annual report"
@@ -9611,7 +9620,7 @@ def test_sec_filings_runtime_executor_uses_context_edgar_contact_secret(
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    reset_settings_cache()
+    _reset_runtime_settings_caches()
     try:
         payload = execute_sec_filings_lookup(
             _runtime_context(
@@ -9621,7 +9630,7 @@ def test_sec_filings_runtime_executor_uses_context_edgar_contact_secret(
             parse_sec_filings_lookup_arguments(json.dumps({"ticker": "NVDA"})),
         )
     finally:
-        reset_settings_cache()
+        _reset_runtime_settings_caches()
 
     assert provider.calls[0].edgar_contact_email == "caller-edgar@example.test"
     assert payload["filings"] == [
@@ -9654,14 +9663,14 @@ def test_sec_filings_runtime_executor_preserves_missing_edgar_email_warning(
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    reset_settings_cache()
+    _reset_runtime_settings_caches()
     try:
         payload = execute_sec_filings_lookup(
             _runtime_context(fail_on_session=True),
             parse_sec_filings_lookup_arguments(json.dumps({"ticker": "NVDA"})),
         )
     finally:
-        reset_settings_cache()
+        _reset_runtime_settings_caches()
 
     assert provider.calls == []
     assert payload["filings"] == []
@@ -9692,7 +9701,7 @@ def test_sec_filings_runtime_executor_degrades_provider_failure_and_redacts_deta
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    reset_settings_cache()
+    _reset_runtime_settings_caches()
     try:
         payload = execute_sec_filings_lookup(
             _runtime_context(
@@ -9702,7 +9711,7 @@ def test_sec_filings_runtime_executor_degrades_provider_failure_and_redacts_deta
             parse_sec_filings_lookup_arguments(json.dumps({"ticker": "NVDA"})),
         )
     finally:
-        reset_settings_cache()
+        _reset_runtime_settings_caches()
 
     assert provider.calls[0].edgar_contact_email == "sec-contact@example.test"
     assert payload["filings"] == []
@@ -9734,7 +9743,7 @@ def test_sec_filings_runtime_executor_returns_empty_warning_for_configured_edgar
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    reset_settings_cache()
+    _reset_runtime_settings_caches()
     try:
         payload = execute_sec_filings_lookup(
             _runtime_context(
@@ -9744,7 +9753,7 @@ def test_sec_filings_runtime_executor_returns_empty_warning_for_configured_edgar
             parse_sec_filings_lookup_arguments(json.dumps({"ticker": "NVDA"})),
         )
     finally:
-        reset_settings_cache()
+        _reset_runtime_settings_caches()
 
     assert provider.calls[0].edgar_contact_email == "sec-contact@example.test"
     assert payload["filings"] == []
@@ -10012,7 +10021,7 @@ def test_macro_rates_runtime_executor_returns_normalized_happy_path(
         "app.extensions.signaldeck_digital_oracle.runtime_macro_rates.create_macro_rates_providers",
         lambda: (fred_provider, treasury_provider, bis_provider),
     )
-    reset_settings_cache()
+    _reset_runtime_settings_caches()
     try:
         payload = execute_macro_rates_lookup(
             _runtime_context(
@@ -10030,7 +10039,7 @@ def test_macro_rates_runtime_executor_returns_normalized_happy_path(
             ),
         )
     finally:
-        reset_settings_cache()
+        _reset_runtime_settings_caches()
 
     _assert_native_runtime_payload_is_json_safe_and_camel(payload)
     assert payload["toolKey"] == MACRO_RATES_LOOKUP_TOOL_KEY
@@ -10065,7 +10074,7 @@ def test_macro_rates_runtime_executor_uses_context_fred_api_key_secret(
         "app.extensions.signaldeck_digital_oracle.runtime_macro_rates.create_macro_rates_providers",
         lambda: (fred_provider,),
     )
-    reset_settings_cache()
+    _reset_runtime_settings_caches()
     try:
         payload = execute_macro_rates_lookup(
             _runtime_context(
@@ -10077,7 +10086,7 @@ def test_macro_rates_runtime_executor_uses_context_fred_api_key_secret(
             ),
         )
     finally:
-        reset_settings_cache()
+        _reset_runtime_settings_caches()
 
     assert fred_provider.calls[0].fred_api_key == "caller-fred-key"
     assert payload["series"] == [
@@ -10132,7 +10141,7 @@ def test_macro_rates_runtime_executor_preserves_partial_warnings_without_fred_ke
         "app.extensions.signaldeck_digital_oracle.runtime_macro_rates.create_macro_rates_providers",
         lambda: (treasury_provider, bis_provider, fred_provider),
     )
-    reset_settings_cache()
+    _reset_runtime_settings_caches()
     try:
         payload = execute_macro_rates_lookup(
             _runtime_context(fail_on_session=True),
@@ -10141,7 +10150,7 @@ def test_macro_rates_runtime_executor_preserves_partial_warnings_without_fred_ke
             ),
         )
     finally:
-        reset_settings_cache()
+        _reset_runtime_settings_caches()
 
     assert fred_provider.calls == []
     assert treasury_provider.calls[0].source == "treasury"

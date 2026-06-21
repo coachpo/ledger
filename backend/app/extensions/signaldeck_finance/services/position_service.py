@@ -10,6 +10,7 @@ from app.extensions.signaldeck_finance.service_gate import (
     POSITION_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
+from app.extensions.signaldeck_finance.services.portfolio_service import PortfolioService
 from app.models.position import Position
 from app.repositories.position import PositionRepository
 from app.repositories.symbol_name_cache import SymbolNameCacheRepository
@@ -19,7 +20,6 @@ from app.schemas.position import (
     PositionSymbolLookupRead,
     PositionUpdate,
 )
-from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import QuoteProvider, QuoteProviderError
 from app.services.runtime_tool_grants import RuntimeToolGrantPolicy, RuntimeToolGrantService
 

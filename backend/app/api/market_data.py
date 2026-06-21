@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
-from app.extensions.signaldeck_finance.dependencies import get_market_data_service
+from app.extensions.signaldeck_finance.dependencies import MarketDataServiceDependency
 from app.schemas.market_data import MarketHistoryRead, MarketQuoteListRead
-from app.services.market_data_service import MarketDataService
 
 router = APIRouter(prefix="/portfolios/{portfolio_id}/market-data", tags=["market-data"])
 
@@ -15,7 +14,7 @@ router = APIRouter(prefix="/portfolios/{portfolio_id}/market-data", tags=["marke
 def get_quotes(
     portfolio_id: int,
     symbols: Annotated[str, Query(..., min_length=1)],
-    service: Annotated[MarketDataService, Depends(get_market_data_service)],
+    service: MarketDataServiceDependency,
 ) -> MarketQuoteListRead:
     symbol_list = [part.strip() for part in symbols.split(",") if part.strip()]
     return service.get_quotes(portfolio_id, symbol_list)
@@ -25,7 +24,7 @@ def get_quotes(
 def get_history(
     portfolio_id: int,
     symbols: Annotated[str, Query(..., min_length=1)],
-    service: Annotated[MarketDataService, Depends(get_market_data_service)],
+    service: MarketDataServiceDependency,
     range_value: Annotated[
         Literal["1mo", "3mo", "ytd", "1y", "max"],
         Query(alias="range"),

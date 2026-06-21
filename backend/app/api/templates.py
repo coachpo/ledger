@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Response, status
 
 from app.extensions.signaldeck_finance.dependencies import (
-    get_template_compiler_service,
-    get_text_template_service,
+    TemplateCompilerServiceDependency,
+    TextTemplateServiceDependency,
 )
 from app.schemas.text_template import (
     PlaceholderTreeRead,
@@ -18,15 +16,13 @@ from app.schemas.text_template import (
     TextTemplateStoredCompile,
     TextTemplateUpdate,
 )
-from app.services.template_compiler_service import TemplateCompilerService
-from app.services.text_template_service import TextTemplateService
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 
 
 @router.get("", response_model=list[TextTemplateRead])
 def list_templates(
-    service: Annotated[TextTemplateService, Depends(get_text_template_service)],
+    service: TextTemplateServiceDependency,
 ) -> list[TextTemplateRead]:
     return service.list_templates()
 
@@ -34,14 +30,14 @@ def list_templates(
 @router.post("", response_model=TextTemplateRead, status_code=status.HTTP_201_CREATED)
 def create_template(
     payload: TextTemplateCreate,
-    service: Annotated[TextTemplateService, Depends(get_text_template_service)],
+    service: TextTemplateServiceDependency,
 ) -> TextTemplateRead:
     return service.create_template(payload)
 
 
 @router.get("/placeholders", response_model=PlaceholderTreeRead)
 def get_placeholders(
-    compiler_service: Annotated[TemplateCompilerService, Depends(get_template_compiler_service)],
+    compiler_service: TemplateCompilerServiceDependency,
 ) -> PlaceholderTreeRead:
     tree = compiler_service.get_placeholder_tree()
     return PlaceholderTreeRead.model_validate(tree)
@@ -50,7 +46,7 @@ def get_placeholders(
 @router.post("/compile", response_model=TextTemplateInlineCompileRead)
 def compile_inline(
     payload: TextTemplateInlineCompile,
-    compiler_service: Annotated[TemplateCompilerService, Depends(get_template_compiler_service)],
+    compiler_service: TemplateCompilerServiceDependency,
 ) -> TextTemplateInlineCompileRead:
     compiled = compiler_service.compile(payload.content, inputs=payload.inputs)
     return TextTemplateInlineCompileRead.model_validate({"compiled": compiled})
@@ -59,7 +55,7 @@ def compile_inline(
 @router.get("/{template_id:int}", response_model=TextTemplateRead)
 def get_template(
     template_id: int,
-    service: Annotated[TextTemplateService, Depends(get_text_template_service)],
+    service: TextTemplateServiceDependency,
 ) -> TextTemplateRead:
     return service.get_template(template_id)
 
@@ -68,7 +64,7 @@ def get_template(
 def update_template(
     template_id: int,
     payload: TextTemplateUpdate,
-    service: Annotated[TextTemplateService, Depends(get_text_template_service)],
+    service: TextTemplateServiceDependency,
 ) -> TextTemplateRead:
     return service.update_template(template_id, payload)
 
@@ -76,7 +72,7 @@ def update_template(
 @router.delete("/{template_id:int}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_template(
     template_id: int,
-    service: Annotated[TextTemplateService, Depends(get_text_template_service)],
+    service: TextTemplateServiceDependency,
 ) -> Response:
     service.delete_template(template_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -85,8 +81,8 @@ def delete_template(
 @router.get("/{template_id:int}/compile", response_model=TextTemplateCompileRead)
 def compile_template(
     template_id: int,
-    template_service: Annotated[TextTemplateService, Depends(get_text_template_service)],
-    compiler_service: Annotated[TemplateCompilerService, Depends(get_template_compiler_service)],
+    template_service: TextTemplateServiceDependency,
+    compiler_service: TemplateCompilerServiceDependency,
 ) -> TextTemplateCompileRead:
     template = template_service.get_template_model(template_id)
     compiled = compiler_service.compile(template.content)
@@ -103,8 +99,8 @@ def compile_template(
 def compile_template_with_inputs(
     template_id: int,
     payload: TextTemplateStoredCompile,
-    template_service: Annotated[TextTemplateService, Depends(get_text_template_service)],
-    compiler_service: Annotated[TemplateCompilerService, Depends(get_template_compiler_service)],
+    template_service: TextTemplateServiceDependency,
+    compiler_service: TemplateCompilerServiceDependency,
 ) -> TextTemplateCompileRead:
     template = template_service.get_template_model(template_id)
     compiled = compiler_service.compile(template.content, inputs=payload.inputs)

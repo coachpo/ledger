@@ -48,13 +48,13 @@ from app.extensions.signaldeck_finance.runtime_types import (
     RuntimeQuoteLookupResult,
     RuntimeSocialSentimentLookupResult,
 )
-from app.schemas.market_data import MarketHistorySeriesRead, MarketQuoteRead
-from app.services.market_data_service import (
+from app.extensions.signaldeck_finance.services.market_data_service import (
     MarketDataService,
     MarketIndicatorSelection,
     QuoteProvider,
     QuoteProviderError,
 )
+from app.schemas.market_data import MarketHistorySeriesRead, MarketQuoteRead
 from app.services.news_provider import NewsProvider, NewsScope
 
 MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_market_data_quote_lookup"

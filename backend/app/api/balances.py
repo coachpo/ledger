@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from typing import Annotated
+from fastapi import APIRouter, Response, status
 
-from fastapi import APIRouter, Depends, Response, status
-
-from app.extensions.signaldeck_finance.dependencies import get_balance_service
+from app.extensions.signaldeck_finance.dependencies import BalanceServiceDependency
 from app.schemas.balance import BalanceCreate, BalanceRead, BalanceUpdate
-from app.services.balance_service import BalanceService
 
 router = APIRouter(prefix="/portfolios/{portfolio_id}/balances", tags=["balances"])
 
@@ -14,7 +11,7 @@ router = APIRouter(prefix="/portfolios/{portfolio_id}/balances", tags=["balances
 @router.get("", response_model=list[BalanceRead])
 def list_balances(
     portfolio_id: int,
-    service: Annotated[BalanceService, Depends(get_balance_service)],
+    service: BalanceServiceDependency,
 ) -> list[BalanceRead]:
     return service.list_balances(portfolio_id)
 
@@ -23,7 +20,7 @@ def list_balances(
 def create_balance(
     portfolio_id: int,
     payload: BalanceCreate,
-    service: Annotated[BalanceService, Depends(get_balance_service)],
+    service: BalanceServiceDependency,
 ) -> BalanceRead:
     return service.create_balance(portfolio_id, payload)
 
@@ -33,7 +30,7 @@ def update_balance(
     portfolio_id: int,
     balance_id: int,
     payload: BalanceUpdate,
-    service: Annotated[BalanceService, Depends(get_balance_service)],
+    service: BalanceServiceDependency,
 ) -> BalanceRead:
     return service.update_balance(portfolio_id, balance_id, payload)
 
@@ -42,7 +39,7 @@ def update_balance(
 def delete_balance(
     portfolio_id: int,
     balance_id: int,
-    service: Annotated[BalanceService, Depends(get_balance_service)],
+    service: BalanceServiceDependency,
 ) -> Response:
     service.delete_balance(portfolio_id, balance_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

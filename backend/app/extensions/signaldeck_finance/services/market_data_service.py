@@ -17,6 +17,7 @@ from app.extensions.signaldeck_finance.service_gate import (
     MARKET_DATA_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
+from app.extensions.signaldeck_finance.services.portfolio_service import PortfolioService
 from app.models.market_quote import MarketQuote
 from app.repositories.market_quote import MarketQuoteRepository
 from app.schemas.common import to_camel
@@ -65,7 +66,6 @@ from app.services.news_provider import (
     ProviderNewsItem,
     ProviderNewsResult,
 )
-from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import (
     ProviderFinancialStatement,
     ProviderFinancialStatementLine,

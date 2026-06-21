@@ -15,10 +15,10 @@ from app.extensions.signaldeck_finance.service_gate import (
     CSV_IMPORT_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
+from app.extensions.signaldeck_finance.services.portfolio_service import PortfolioService
 from app.models.position import Position
 from app.repositories.position import PositionRepository
 from app.schemas.csv_import import CsvAcceptedRow, CsvCommitRead, CsvPreviewRead, CsvRowError
-from app.services.portfolio_service import PortfolioService
 
 REQUIRED_HEADERS = {"symbol", "quantity", "average_cost"}
 OPTIONAL_HEADERS = {"name"}

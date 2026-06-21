@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.core.errors import ApiError
 from app.extensions.signaldeck_finance.dependencies import (
-    get_report_service,
-    get_template_compiler_service,
-    get_text_template_service,
+    ReportServiceDependency,
+    TemplateCompilerServiceDependency,
+    TextTemplateServiceDependency,
 )
 from app.schemas.report import (
     ReportCompileCreate,
@@ -17,9 +17,6 @@ from app.schemas.report import (
     ReportSource,
     ReportUpdate,
 )
-from app.services.report_service import ReportService
-from app.services.template_compiler_service import TemplateCompilerService
-from app.services.text_template_service import TextTemplateService
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -28,7 +25,7 @@ _MAX_UPLOAD_SIZE = 2 * 1024 * 1024  # 2 MB
 
 @router.get("", response_model=list[ReportRead])
 def list_reports(
-    service: Annotated[ReportService, Depends(get_report_service)],
+    service: ReportServiceDependency,
     ticker: Annotated[str | None, Query()] = None,
     tag: Annotated[str | None, Query()] = None,
     review_type: Annotated[str | None, Query(alias="reviewType")] = None,
@@ -51,7 +48,7 @@ def list_reports(
 @router.post("", response_model=ReportRead, status_code=status.HTTP_201_CREATED)
 def create_report(
     payload: ReportCreate,
-    service: Annotated[ReportService, Depends(get_report_service)],
+    service: ReportServiceDependency,
 ) -> ReportRead:
     return service.create_external_report(
         content=payload.content,
@@ -66,9 +63,9 @@ def create_report(
 )
 def compile_report(
     template_id: int,
-    report_service: Annotated[ReportService, Depends(get_report_service)],
-    template_service: Annotated[TextTemplateService, Depends(get_text_template_service)],
-    compiler_service: Annotated[TemplateCompilerService, Depends(get_template_compiler_service)],
+    report_service: ReportServiceDependency,
+    template_service: TextTemplateServiceDependency,
+    compiler_service: TemplateCompilerServiceDependency,
     payload: ReportCompileCreate | None = None,
 ) -> ReportRead:
     template = template_service.get_template_model(template_id)
@@ -81,7 +78,7 @@ def compile_report(
 
 @router.post("/upload", response_model=ReportRead, status_code=status.HTTP_201_CREATED)
 async def upload_report(
-    service: Annotated[ReportService, Depends(get_report_service)],
+    service: ReportServiceDependency,
     file: Annotated[UploadFile, File(description="Markdown file (.md)")],
     slug: Annotated[str | None, Form()] = None,
     author: Annotated[str | None, Form()] = None,
@@ -156,7 +153,7 @@ async def upload_report(
 @router.get("/{slug}", response_model=ReportRead)
 def get_report(
     slug: str,
-    service: Annotated[ReportService, Depends(get_report_service)],
+    service: ReportServiceDependency,
 ) -> ReportRead:
     return service.get_report_by_slug(slug)
 
@@ -165,7 +162,7 @@ def get_report(
 def update_report(
     slug: str,
     payload: ReportUpdate,
-    service: Annotated[ReportService, Depends(get_report_service)],
+    service: ReportServiceDependency,
 ) -> ReportRead:
     return service.update_report_by_slug(slug, payload)
 
@@ -173,7 +170,7 @@ def update_report(
 @router.delete("/{slug}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_report(
     slug: str,
-    service: Annotated[ReportService, Depends(get_report_service)],
+    service: ReportServiceDependency,
 ) -> Response:
     service.delete_report_by_slug(slug)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -182,7 +179,7 @@ def delete_report(
 @router.get("/{slug}/download")
 def download_report(
     slug: str,
-    service: Annotated[ReportService, Depends(get_report_service)],
+    service: ReportServiceDependency,
 ) -> Response:
     report = service.get_report_model_by_slug(slug)
     return Response(

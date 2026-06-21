@@ -26,6 +26,10 @@ from app.extensions.signaldeck_finance.service_gate import (
     POSITION_SERVICE_SURFACE,
     TEXT_TEMPLATE_SERVICE_SURFACE,
 )
+from app.extensions.signaldeck_finance.services.market_data_service import MarketDataService
+from app.extensions.signaldeck_finance.services.portfolio_service import PortfolioService
+from app.extensions.signaldeck_finance.services.position_service import PositionService
+from app.extensions.signaldeck_finance.services.text_template_service import TextTemplateService
 from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.schemas.extension import ExtensionToggleRequest
@@ -34,10 +38,7 @@ from app.schemas.position import PositionCreate
 from app.schemas.text_template import TextTemplateCreate
 from app.services import extension_gate as generic_extension_gate
 from app.services.extension_service import ExtensionService
-from app.services.market_data_service import MarketDataService
 from app.services.news_provider import ProviderNewsResult
-from app.services.portfolio_service import PortfolioService
-from app.services.position_service import PositionService
 from app.services.quote_provider import (
     ProviderFundamentals,
     ProviderHistorySeries,
@@ -46,7 +47,6 @@ from app.services.quote_provider import (
     ProviderQuote,
 )
 from app.services.run_service import RunService
-from app.services.text_template_service import TextTemplateService
 from tests.test_workflow_package_runtime_api import (
     _drain_run_queue,
     _RuntimeRecordingOpenAIClient,
@@ -784,8 +784,21 @@ def test_finance_shared_service_ownership_map_classifies_task_5_services() -> No
     }
 
     assert set(ownership_by_service) == expected_services
-    assert {entry.classification for entry in ownership_by_service.values()} == {
-        "keep-shared-behind-neutral-seam"
+    assert {entry.classification for entry in ownership_by_service.values()} == {"move-now"}
+    assert {entry.module_path for entry in ownership_by_service.values()} == {
+        f"app.extensions.signaldeck_finance.services.{module_name}"
+        for module_name in (
+            "balance_service",
+            "csv_import_service",
+            "market_data_service",
+            "memory_report_service",
+            "portfolio_service",
+            "position_service",
+            "report_service",
+            "template_compiler_service",
+            "text_template_service",
+            "trading_operation_service",
+        )
     }
     assert ownership_by_service["MarketDataService"].surface == MARKET_DATA_SERVICE_SURFACE
     assert ownership_by_service["PositionService"].surface == POSITION_SERVICE_SURFACE

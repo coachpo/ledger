@@ -23,6 +23,7 @@ from app.core.errors import ApiError
 from app.db.session import init_db, validate_supported_database_engine
 from app.extensions.signaldeck_finance.dependencies import get_quote_provider
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.services.report_service import ReportService
 from app.models.market_quote import MarketQuote
 from app.models.model_connection import ModelConnection
 from app.models.report import REPORT_SOURCE_CHECK_CONSTRAINT, Report
@@ -43,7 +44,6 @@ from app.services.quote_provider import (
     ProviderQuote,
     QuoteProviderError,
 )
-from app.services.report_service import ReportService
 from tests.fake_openai_provider import run_fake_openai_provider
 
 UTC_TZ = timezone.utc  # noqa: UP017
@@ -2129,7 +2129,10 @@ def test_report_name_generation_and_uniqueness(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fixed_now = datetime(2026, 3, 18, 10, 56, 51, tzinfo=UTC_TZ)
-    monkeypatch.setattr("app.services.report_service.utcnow", lambda: fixed_now)
+    monkeypatch.setattr(
+        "app.extensions.signaldeck_finance.services.report_service.utcnow",
+        lambda: fixed_now,
+    )
 
     template = create_template(
         client,

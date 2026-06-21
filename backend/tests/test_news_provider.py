@@ -18,8 +18,8 @@ from app.extensions.signaldeck_finance.provider_factories import (
     create_news_providers,
     create_runtime_news_providers,
 )
+from app.extensions.signaldeck_finance.services.market_data_service import MarketDataService
 from app.services import news_provider
-from app.services.market_data_service import MarketDataService
 from app.services.news_provider import (
     AlphaVantageNewsProvider,
     DeterministicNewsProvider,

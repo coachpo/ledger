@@ -8,10 +8,10 @@ from app.extensions.signaldeck_finance.service_gate import (
     BALANCE_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
+from app.extensions.signaldeck_finance.services.portfolio_service import PortfolioService
 from app.models.balance import Balance
 from app.repositories.balance import BalanceRepository
 from app.schemas.balance import BalanceCreate, BalanceRead, BalanceUpdate
-from app.services.portfolio_service import PortfolioService
 
 
 class BalanceService:

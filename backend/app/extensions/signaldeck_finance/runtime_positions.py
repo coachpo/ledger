@@ -12,7 +12,7 @@ from app.extensions.signaldeck_finance.grant_policy import (
 )
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.runtime_types import POSITION_LOOKUP_TOOL_KEY
-from app.services.position_service import PositionService
+from app.extensions.signaldeck_finance.services.position_service import PositionService
 
 POSITION_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_positions_lookup"
 

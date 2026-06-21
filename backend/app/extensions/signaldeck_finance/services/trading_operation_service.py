@@ -11,6 +11,7 @@ from app.extensions.signaldeck_finance.service_gate import (
     TRADING_OPERATION_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
+from app.extensions.signaldeck_finance.services.portfolio_service import PortfolioService
 from app.models.balance import Balance
 from app.models.position import Position
 from app.models.trading_operation import TradingOperation
@@ -30,7 +31,6 @@ from app.schemas.trading_operation import (
     TradingOperationRead,
     TradingOperationResult,
 )
-from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import QuoteProvider, QuoteProviderError
 
 

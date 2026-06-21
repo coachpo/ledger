@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.extensions.signaldeck_finance import provider_factories
 from app.extensions.signaldeck_finance.config import FinanceWorkspaceSettings
-from app.services.market_data_service import MarketDataService
+from app.extensions.signaldeck_finance.services.market_data_service import MarketDataService
 from app.services.news_provider import (
     NewsProvider,
     NewsProviderError,
