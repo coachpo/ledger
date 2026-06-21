@@ -61,7 +61,7 @@ Route-family coverage includes smoke/navigation, portfolio CRUD, reports/templat
 
 Compatibility E2E coverage uses deterministic or fake OpenAI-compatible providers for strict schema, JSON-object fallback, missing native tool-call support, unsupported reasoning fields, and missing usage metadata without live external network dependencies.
 
-Digital Oracle provider coverage uses local replay fixtures and fake JSON clients for Polymarket/Kalshi prediction markets, SEC filings, Fear & Greed sentiment, macro/rates, crypto derivatives, CFTC positioning, and options. Missing optional FRED source configuration and missing optional `yfinance` dependency are warning-path fixtures, not CI failures or live-network calls. Generic web search is validated only as package-private MCP descriptor/config handling, not as a live global Digital Oracle tool or CI web-search call.
+Digital Oracle provider coverage uses local replay fixtures and fake JSON clients for Polymarket/Kalshi prediction markets, SEC filings, Fear & Greed sentiment, macro/rates, crypto derivatives, CFTC positioning, and options. Missing optional FRED runtime secret `fred_api_key` and missing optional `yfinance` dependency are warning-path fixtures, not CI failures or live-network calls. Generic web search is validated only as package-private MCP descriptor/config handling, not as a live global Digital Oracle tool or CI web-search call.
 
 Frontend removed-route assertions cover `/templates/seed`, `/tryout*`, `/studio*`, `/orchestration*`, `/backtests*`, hidden removed navigation entries, and absence of live global-authoring routes from the router. Backend removed-surface coverage separately guards `/api/skills` and removed global-authoring API families.
 
