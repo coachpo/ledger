@@ -163,7 +163,7 @@ Trading operations are the implementation's finance simulation engine.
 
 Evidence:
 - `backend/app/api/trading_operations.py` :: `list_trading_operations`, `create_trading_operation` — exposes `/api/v1/portfolios/{portfolioId}/trading-operations`.
-- `backend/app/services/trading_operation_service.py` :: `create_operation`, `_apply_buy`, `_apply_sell`, `_apply_split` — implements side-specific business rules.
+- `backend/app/extensions/signaldeck_finance/services/trading_operation_service.py` :: `create_operation`, `_apply_buy`, `_apply_sell`, `_apply_split` — implements side-specific business rules.
 - `backend/tests/test_api.py` :: `test_trading_operations_respect_withdrawals_and_deposit_balances`, `test_dividend_requires_existing_position`, `test_split_requires_existing_position`, `test_split_succeeds_without_balance`, `test_trade_linked_balance_cannot_change_operation_type` — proves operation constraints and state updates.
 
 Confidence:
@@ -219,7 +219,7 @@ Templates are a first-class authoring surface and a prerequisite for report gene
 
 Evidence:
 - `backend/app/api/templates.py` :: CRUD, inline compile, stored compile, and placeholder routes.
-- `backend/app/services/template_compiler_service.py` :: `compile`, `get_placeholder_tree` — resolves `inputs`, `portfolios`, and `reports` placeholders.
+- `backend/app/extensions/signaldeck_finance/services/template_compiler_service.py` :: `compile`, `get_placeholder_tree` — resolves `inputs`, `portfolios`, and `reports` placeholders.
 - `backend/tests/test_api.py` :: `test_template_crud_and_compile_flow`, `test_template_compile_accepts_runtime_inputs`, `test_template_compile_surfaces_missing_runtime_inputs`, `test_placeholder_tree_includes_reports` — proves compile and placeholder behavior.
 
 Confidence:
@@ -634,7 +634,7 @@ Edge Cases:
 - Main flow: create/edit template -> preview or stored compile -> generate report.
 - Alternative flows: use latest report selectors or portfolio selectors inside placeholders.
 - Failure flows: missing input values, placeholder cycles, provider degradation for market-dependent placeholders.
-- Evidence: `backend/app/services/template_compiler_service.py`, `backend/tests/test_api.py`.
+- Evidence: `backend/app/extensions/signaldeck_finance/services/template_compiler_service.py`, `backend/tests/test_api.py`.
 
 ### UJ-003: Upload Or Manage Reports
 - Actor: Trusted operator
@@ -701,7 +701,7 @@ The table below summarizes the public contract surfaces that are evidence-backed
 | Balances | `GET/POST /api/v1/portfolios/{portfolioId}/balances`, `PATCH/DELETE .../{balanceId}` | balance DTO validation | CRUD over `balances` | finance extension gate | `backend/app/api/balances.py` |
 | Positions | `GET/POST /api/v1/portfolios/{portfolioId}/positions`, `GET .../lookup`, `PATCH/DELETE .../{positionId}` | position DTOs and lookup params | CRUD plus provider/cache-assisted symbol lookup | finance extension gate | `backend/app/api/positions.py` |
 | CSV import | `POST .../positions/imports/preview`, `POST .../positions/imports/commit` | uploaded CSV and validation | preview diagnostics or persisted upserts | finance extension gate | `backend/app/api/positions.py`, `backend/tests/test_api.py` |
-| Trading operations | `GET/POST /api/v1/portfolios/{portfolioId}/trading-operations` | discriminated operation payloads | append operation row plus balance/position mutation | finance extension gate | `backend/app/api/trading_operations.py`, `backend/app/services/trading_operation_service.py` |
+| Trading operations | `GET/POST /api/v1/portfolios/{portfolioId}/trading-operations` | discriminated operation payloads | append operation row plus balance/position mutation | finance extension gate | `backend/app/api/trading_operations.py`, `backend/app/extensions/signaldeck_finance/services/trading_operation_service.py` |
 | Market data | `GET .../market-data/quotes`, `GET .../market-data/history` | symbol/time-range queries | quote/history payloads with warnings/fallback | finance extension gate | `backend/app/api/market_data.py` |
 | Templates | `GET/POST /api/v1/templates`, `GET/PATCH/DELETE /api/v1/templates/{templateId}`, `POST /api/v1/templates/compile`, `GET/POST /api/v1/templates/{templateId}/compile`, `GET /api/v1/templates/placeholders` | template DTOs and runtime input maps | CRUD, compile, placeholder browsing | finance extension gate | `backend/app/api/templates.py` |
 | Reports | `GET/POST /api/v1/reports`, `POST /api/v1/reports/compile/{templateId}`, `POST /api/v1/reports/upload`, `GET/PATCH/DELETE /api/v1/reports/{slug}`, `GET /api/v1/reports/{slug}/download` | source-specific DTOs and multipart upload | report persistence, filtering, download | finance extension gate | `backend/app/api/reports.py` |
@@ -754,11 +754,11 @@ The table below summarizes the public contract surfaces that are evidence-backed
 
 - **BR-001**: Portfolio slugs are lowercase identifiers, unique, and immutable after creation. Evidence: `backend/app/schemas/portfolio.py`, `backend/tests/test_api.py::test_portfolio_slug_validation_uniqueness_and_immutability`. Confidence: High.
 - **BR-002**: Balance labels are unique within one portfolio and balance amounts cannot be negative. Evidence: `backend/app/models/balance.py`. Confidence: High.
-- **BR-003**: Trading operations require deposit balances for buy/sell/dividend flows, and oversells are rejected. Evidence: `backend/app/services/trading_operation_service.py`, `backend/tests/test_api.py`. Confidence: High.
+- **BR-003**: Trading operations require deposit balances for buy/sell/dividend flows, and oversells are rejected. Evidence: `backend/app/extensions/signaldeck_finance/services/trading_operation_service.py`, `backend/tests/test_api.py`. Confidence: High.
 - **BR-004**: Dividend and split operations require an existing position; split may succeed without an attached balance row. Evidence: `backend/tests/test_api.py::test_dividend_requires_existing_position`, `test_split_requires_existing_position`, `test_split_succeeds_without_balance`. Confidence: High.
 - **BR-005**: Position CSV import uses preview before commit and commit applies validated rows to the target portfolio. Evidence: `backend/app/api/positions.py`, `backend/tests/test_api.py::test_csv_preview_and_commit_flow`. Confidence: High.
 - **BR-006**: Quote/history degradation is warning-oriented and may fall back to cached rows instead of failing the local portfolio surface. Evidence: `backend/tests/test_api.py::test_market_data_falls_back_to_cached_quote`. Confidence: High.
-- **BR-007**: Template placeholder roots are limited to `inputs`, `portfolios`, and `reports`; report and portfolio dynamic selectors are supported. Evidence: `backend/app/services/template_compiler_service.py`, `backend/tests/test_api.py`. Confidence: High.
+- **BR-007**: Template placeholder roots are limited to `inputs`, `portfolios`, and `reports`; report and portfolio dynamic selectors are supported. Evidence: `backend/app/extensions/signaldeck_finance/services/template_compiler_service.py`, `backend/tests/test_api.py`. Confidence: High.
 - **BR-008**: Public report creation may use `source="external"` only; server-owned agent provenance is rejected for non-agent reports. Evidence: `backend/app/schemas/report.py`, `backend/tests/test_api.py::test_public_report_create_rejects_agent_created_by_provenance`. Confidence: High.
 - **BR-009**: Workflow package manifests reject YAML aliases, anchors, merge keys, unsupported tags, non-finite numbers, forbidden secret/id keys, and `spec.skills`. Evidence: `backend/app/services/workflow_package_manifest_parser.py`, `backend/tests/test_workflow_package_api.py`, `backend/tests/test_workflow_package_preflight.py`. Confidence: High.
 - **BR-010**: Secret refs are valid only in HTTP request `url`, `headers`, `query`, and `body` fields. Evidence: `backend/app/services/workflow_package_manifest_parser.py`, `backend/tests/test_workflow_package_manifest_http_node.py`. Confidence: High.
@@ -791,7 +791,7 @@ The table below summarizes the public contract surfaces that are evidence-backed
 | --- | --- | --- | --- | --- | --- |
 | PostgreSQL | Authoritative persistence for finance and platform tables | app startup and request handling | ORM rows, JSONB artifacts, schedule/run state | readiness fails closed; startup upgrade path repairs schema | `backend/app/db/session.py`, `backend/app/db/upgrades.py` |
 | OpenAI-compatible model endpoints | Run package agents and model connection tests/probes | launch, preflight, run execution, test/probe actions | model prompts, structured outputs, capability status | backend-owned validation and retry policy; secret-safe messages | `backend/app/services/model_gateway*.py`, `backend/app/api/model_connections.py` |
-| Quote provider (`yahoo` or `deterministic`) | Quotes, history, symbol names | finance market-data calls and lookups | symbols, quotes, history | degraded warnings and cache fallback | `backend/app/core/config.py`, `backend/app/services/market_data_service.py` |
+| Quote provider (`yahoo` or `deterministic`) | Quotes, history, symbol names | finance market-data calls and lookups | symbols, quotes, history | degraded warnings and cache fallback | `backend/app/core/config.py`, `backend/app/extensions/signaldeck_finance/services/market_data_service.py` |
 | Digital Oracle providers | Prediction markets, SEC filings, and market sentiment runtime tools | granted runtime tool calls | normalized DTOs plus warnings | warnings/degraded results; extension-owned visibility | `backend/app/extensions/signaldeck_digital_oracle/*`, `backend/tests/test_runtime_tools.py` |
 | Package-private MCP runtime | Package-local external tool dispatch | package runtime when MCP descriptors are granted | descriptor config, tool IO, redacted output | strict descriptor/hash/security validation | `backend/app/agents/mcp/runtime.py`, `backend/tests/test_mcp_runtime.py` |
 | Logfire | Optional traces/spans for run observability | app startup and run execution | trace/span ids and metadata | execution remains functional without token | `backend/app/core/telemetry.py`, `docs/spec.md` |
