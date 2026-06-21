@@ -80,18 +80,18 @@ DIGITAL_ORACLE_PHASE1_PROVIDER_BOUNDARY = (
     "digital-oracle or require yfinance."
 )
 
-EDGAR_CONTACT_EMAIL_SETTING = "DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL"
-EDGAR_CONTACT_EMAIL_MISSING_CODE = "digital_oracle_edgar_contact_email_missing"
+EDGAR_CONTACT_EMAIL_SECRET = "edgar_contact_email"
+EDGAR_CONTACT_EMAIL_MISSING_CODE = "digital_oracle_edgar_contact_secret_missing"
 EDGAR_CONTACT_EMAIL_MISSING_MESSAGE = (
-    "SEC EDGAR provider is not configured. Set "
-    f"{EDGAR_CONTACT_EMAIL_SETTING} in backend configuration before using "
+    "SEC EDGAR provider is not configured. Bind workflow package secret "
+    f"{EDGAR_CONTACT_EMAIL_SECRET} before using "
     "signaldeck.digital_oracle.sec_filings.lookup."
 )
-FRED_API_KEY_SETTING = "DIGITAL_ORACLE_FRED_API_KEY"
-FRED_API_KEY_MISSING_CODE = "digital_oracle_fred_api_key_missing"
+FRED_API_KEY_SECRET = "fred_api_key"
+FRED_API_KEY_MISSING_CODE = "digital_oracle_fred_secret_missing"
 FRED_API_KEY_MISSING_MESSAGE = (
-    "FRED macro rates source is not configured. Set "
-    f"{FRED_API_KEY_SETTING} in backend configuration before using the FRED source."
+    "FRED macro rates source is not configured. Bind workflow package secret "
+    f"{FRED_API_KEY_SECRET} before using the FRED source."
 )
 YFINANCE_OPTIONAL_DEPENDENCY = "yfinance"
 YFINANCE_OPTIONAL_DEPENDENCY_MISSING_CODE = "digital_oracle_yfinance_missing"
@@ -169,8 +169,8 @@ def get_digital_oracle_provider_config(
         ),
         options_default_item_limit=resolved_settings.digital_oracle_options_default_item_limit,
         provider_timeout_seconds=resolved_settings.quote_provider_timeout_seconds,
-        edgar_contact_email=resolved_settings.digital_oracle_edgar_contact_email,
-        fred_api_key=resolved_settings.digital_oracle_fred_api_key,
+        edgar_contact_email=None,
+        fred_api_key=None,
     )
 
 
@@ -183,10 +183,10 @@ __all__ = [
     "CFTC_POSITIONING_REPORT_TYPES",
     "EDGAR_CONTACT_EMAIL_MISSING_CODE",
     "EDGAR_CONTACT_EMAIL_MISSING_MESSAGE",
-    "EDGAR_CONTACT_EMAIL_SETTING",
+    "EDGAR_CONTACT_EMAIL_SECRET",
     "FRED_API_KEY_MISSING_CODE",
     "FRED_API_KEY_MISSING_MESSAGE",
-    "FRED_API_KEY_SETTING",
+    "FRED_API_KEY_SECRET",
     "MACRO_RATES_FAMILIES",
     "MACRO_RATES_SOURCES",
     "MARKET_SENTIMENT_PROVIDER_KEY",

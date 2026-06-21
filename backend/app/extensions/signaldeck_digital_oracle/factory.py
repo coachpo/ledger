@@ -9,10 +9,10 @@ from app.core.config import Settings
 from .config import (
     EDGAR_CONTACT_EMAIL_MISSING_CODE,
     EDGAR_CONTACT_EMAIL_MISSING_MESSAGE,
-    EDGAR_CONTACT_EMAIL_SETTING,
+    EDGAR_CONTACT_EMAIL_SECRET,
     FRED_API_KEY_MISSING_CODE,
     FRED_API_KEY_MISSING_MESSAGE,
-    FRED_API_KEY_SETTING,
+    FRED_API_KEY_SECRET,
     MARKET_SENTIMENT_PROVIDER_KEY,
     MARKET_SENTIMENT_SOURCE_URL,
     PREDICTION_MARKET_VENUES,
@@ -154,7 +154,7 @@ def _missing_fred_key_failure() -> DigitalOracleProviderFailure:
         message=FRED_API_KEY_MISSING_MESSAGE,
         details={
             "provider": "fred",
-            "setting": FRED_API_KEY_SETTING,
+            "secret": FRED_API_KEY_SECRET,
         },
     )
 
@@ -277,7 +277,7 @@ def _create_sec_filings_provider(
                 message=EDGAR_CONTACT_EMAIL_MISSING_MESSAGE,
                 details={
                     "provider": "edgar",
-                    "setting": EDGAR_CONTACT_EMAIL_SETTING,
+                    "secret": EDGAR_CONTACT_EMAIL_SECRET,
                 },
             )
         )

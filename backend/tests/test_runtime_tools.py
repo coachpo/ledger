@@ -39,17 +39,17 @@ from app.agents.runtime_tools.failure_taxonomy import (
 )
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
-from app.core.config import Settings, get_settings, reset_settings_cache
+from app.core.config import Settings, reset_settings_cache
 from app.extensions.signaldeck_digital_oracle.config import (
     DIGITAL_ORACLE_PHASE1_PROVIDER_BOUNDARY,
     DIGITAL_ORACLE_PHASE1_REQUIRES_VENDORED_PACKAGE,
     DIGITAL_ORACLE_PHASE1_REQUIRES_YFINANCE,
     EDGAR_CONTACT_EMAIL_MISSING_CODE,
     EDGAR_CONTACT_EMAIL_MISSING_MESSAGE,
-    EDGAR_CONTACT_EMAIL_SETTING,
+    EDGAR_CONTACT_EMAIL_SECRET,
     FRED_API_KEY_MISSING_CODE,
     FRED_API_KEY_MISSING_MESSAGE,
-    FRED_API_KEY_SETTING,
+    FRED_API_KEY_SECRET,
     MARKET_SENTIMENT_SOURCE_URL,
     CftcPositioningReportType,
     CryptoDerivativesVenue,
@@ -58,6 +58,7 @@ from app.extensions.signaldeck_digital_oracle.config import (
     get_digital_oracle_provider_config,
 )
 from app.extensions.signaldeck_digital_oracle.factory import (
+    DigitalOracleProviderSecrets,
     create_digital_oracle_phase1_provider_bundle,
     create_prediction_markets_provider_bundle,
     create_sec_filings_provider,
@@ -2053,7 +2054,6 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
         "app.extensions.signaldeck_digital_oracle.runtime_market_sentiment.create_market_sentiment_provider_adapter",
         lambda: sentiment_provider,
     )
-    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
     reset_settings_cache()
     try:
         registry = get_default_runtime_tool_registry()
@@ -2142,22 +2142,20 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
     assert sentiment_payload["score"] == 79
 
 
-def test_digital_oracle_config_reads_edgar_contact_from_backend_settings(
+def test_digital_oracle_config_keeps_provider_credentials_out_of_backend_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with monkeypatch.context() as patched:
-        patched.setenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", "sec-contact@example.test")
         patched.setenv("DIGITAL_ORACLE_PREDICTION_MARKETS_DEFAULT_ITEM_LIMIT", "7")
         patched.setenv("DIGITAL_ORACLE_SEC_FILINGS_DEFAULT_ITEM_LIMIT", "11")
         reset_settings_cache()
         try:
-            settings = get_settings()
             config = get_digital_oracle_provider_config()
 
-            assert settings.digital_oracle_edgar_contact_email == "sec-contact@example.test"
-            assert config.edgar_contact_email == "sec-contact@example.test"
             assert config.prediction_markets_default_item_limit == 7
             assert config.sec_filings_default_item_limit == 11
+            assert config.edgar_contact_email is None
+            assert config.fred_api_key is None
         finally:
             reset_settings_cache()
 
@@ -2168,7 +2166,6 @@ def test_digital_oracle_provider_config_reads_new_provider_controls_from_backend
     with monkeypatch.context() as patched:
         patched.setenv("DIGITAL_ORACLE_MACRO_RATES_ENABLED", "false")
         patched.setenv("DIGITAL_ORACLE_MACRO_RATES_DEFAULT_ITEM_LIMIT", "13")
-        patched.setenv("DIGITAL_ORACLE_FRED_API_KEY", " fred-key ")
         patched.setenv("DIGITAL_ORACLE_CRYPTO_DERIVATIVES_ENABLED", "false")
         patched.setenv("DIGITAL_ORACLE_CRYPTO_DERIVATIVES_DEFAULT_ITEM_LIMIT", "14")
         patched.setenv("DIGITAL_ORACLE_CFTC_POSITIONING_ENABLED", "false")
@@ -2183,7 +2180,7 @@ def test_digital_oracle_provider_config_reads_new_provider_controls_from_backend
 
     assert config.macro_rates_enabled is False
     assert config.macro_rates_default_item_limit == 13
-    assert config.fred_api_key == "fred-key"
+    assert config.fred_api_key is None
     assert config.crypto_derivatives_enabled is False
     assert config.crypto_derivatives_default_item_limit == 14
     assert config.cftc_positioning_enabled is False
@@ -2195,10 +2192,8 @@ def test_digital_oracle_provider_config_reads_new_provider_controls_from_backend
 def test_digital_oracle_configured_provider_factory_construction_uses_defaults() -> None:
     settings = _settings(
         quote_provider_timeout_seconds=2.5,
-        digital_oracle_edgar_contact_email="sec-contact@example.test",
         digital_oracle_prediction_markets_default_item_limit=6,
         digital_oracle_sec_filings_default_item_limit=12,
-        digital_oracle_fred_api_key="fred-key",
         digital_oracle_macro_rates_default_item_limit=13,
         digital_oracle_crypto_derivatives_default_item_limit=14,
         digital_oracle_cftc_positioning_default_item_limit=15,
@@ -2216,7 +2211,13 @@ def test_digital_oracle_configured_provider_factory_construction_uses_defaults()
     assert config.requires_yfinance is False
     assert config.provider_boundary == DIGITAL_ORACLE_PHASE1_PROVIDER_BOUNDARY
 
-    bundle = create_digital_oracle_phase1_provider_bundle(settings)
+    bundle = create_digital_oracle_phase1_provider_bundle(
+        settings,
+        provider_secrets=DigitalOracleProviderSecrets(
+            edgar_contact_email="sec-contact@example.test",
+            fred_api_key="fred-key",
+        ),
+    )
     prediction_markets = bundle.prediction_markets.provider
     sec_filings = bundle.sec_filings.provider
     market_sentiment = bundle.market_sentiment.provider
@@ -2309,16 +2310,14 @@ def test_digital_oracle_provider_bundle_disabled_new_sources_return_structured_f
 
 
 def test_digital_oracle_provider_bundle_missing_fred_key_is_source_scoped_failure() -> None:
-    bundle = create_digital_oracle_phase1_provider_bundle(
-        _settings(digital_oracle_fred_api_key=None)
-    )
+    bundle = create_digital_oracle_phase1_provider_bundle(_settings())
 
     assert bundle.macro_rates.configured is True
     assert bundle.macro_rates.provider is not None
     assert [failure.details for failure in bundle.macro_rates.provider.source_failures] == [
         {
             "provider": "fred",
-            "setting": "DIGITAL_ORACLE_FRED_API_KEY",
+            "secret": FRED_API_KEY_SECRET,
         }
     ]
 
@@ -2341,7 +2340,7 @@ def test_digital_oracle_optional_dependency_missing_yfinance_is_source_scoped_fa
 
 
 def test_digital_oracle_edgar_missing_config_returns_structured_failure() -> None:
-    result = create_sec_filings_provider(_settings(digital_oracle_edgar_contact_email=None))
+    result = create_sec_filings_provider(_settings())
 
     assert result.configured is False
     assert result.provider is None
@@ -2350,14 +2349,11 @@ def test_digital_oracle_edgar_missing_config_returns_structured_failure() -> Non
     assert result.failure.message == EDGAR_CONTACT_EMAIL_MISSING_MESSAGE
     assert result.failure.details == {
         "provider": "edgar",
-        "setting": EDGAR_CONTACT_EMAIL_SETTING,
+        "secret": EDGAR_CONTACT_EMAIL_SECRET,
     }
 
 
-def test_digital_oracle_missing_edgar_contact_does_not_break_app_startup(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
+def test_digital_oracle_missing_edgar_contact_does_not_break_app_startup() -> None:
     reset_settings_cache()
     try:
         app = create_app(init_database=False)
@@ -2380,7 +2376,6 @@ def test_digital_oracle_missing_edgar_contact_does_not_break_app_startup(
             "details": {
                 "operation": "sec_filings",
                 "provider": "edgar",
-                "setting": EDGAR_CONTACT_EMAIL_SETTING,
             },
         }
     ]
@@ -2419,7 +2414,6 @@ def test_digital_oracle_service_disabled_provider_config_returns_warnings_withou
             digital_oracle_prediction_markets_enabled=False,
             digital_oracle_sec_filings_enabled=False,
             digital_oracle_market_sentiment_enabled=False,
-            digital_oracle_edgar_contact_email="sec-contact@example.test",
         ),
         prediction_market_providers=(prediction_provider,),
         sec_filings_provider=sec_provider,
@@ -2575,12 +2569,17 @@ def test_digital_oracle_service_returns_normalized_phase1_dtos() -> None:
             year_ago=None,
         )
     )
+    settings = _settings(
+        quote_provider_timeout_seconds=2.5,
+        digital_oracle_prediction_markets_default_item_limit=6,
+        digital_oracle_sec_filings_default_item_limit=12,
+    )
     service = DigitalOraclePhase1Service(
-        settings=_settings(
-            quote_provider_timeout_seconds=2.5,
-            digital_oracle_edgar_contact_email="sec-contact@example.test",
-            digital_oracle_prediction_markets_default_item_limit=6,
-            digital_oracle_sec_filings_default_item_limit=12,
+        provider_bundle=create_digital_oracle_phase1_provider_bundle(
+            settings,
+            provider_secrets=DigitalOracleProviderSecrets(
+                edgar_contact_email="sec-contact@example.test"
+            ),
         ),
         prediction_market_providers=(polymarket_provider, kalshi_provider),
         sec_filings_provider=sec_provider,
@@ -2708,7 +2707,6 @@ def test_digital_oracle_service_partial_failures_return_structured_warnings() ->
         DigitalOracleMarketSentimentProviderResult(provider="fear_greed")
     )
     service = DigitalOraclePhase1Service(
-        settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
         prediction_market_providers=(polymarket_provider, kalshi_provider),
         market_sentiment_provider=empty_sentiment_provider,
     )
@@ -2739,9 +2737,7 @@ def test_digital_oracle_service_partial_failures_return_structured_warnings() ->
     }
 
     sec_payload = map_sec_filings_result(
-        DigitalOraclePhase1Service(
-            settings=_settings(digital_oracle_edgar_contact_email=None)
-        ).lookup_sec_filings(DigitalOracleSecFilingsQuery(ticker="NVDA"))
+        DigitalOraclePhase1Service().lookup_sec_filings(DigitalOracleSecFilingsQuery(ticker="NVDA"))
     ).model_dump(mode="json", by_alias=True)
     sec_warnings = cast(list[dict[str, object]], sec_payload["warnings"])
     assert sec_payload["filings"] == []
@@ -2752,7 +2748,6 @@ def test_digital_oracle_service_partial_failures_return_structured_warnings() ->
             "details": {
                 "operation": "sec_filings",
                 "provider": "edgar",
-                "setting": EDGAR_CONTACT_EMAIL_SETTING,
             },
         }
     ]
@@ -3569,7 +3564,6 @@ def test_news_lookup_uses_context_alpha_vantage_secret_when_provider_order_prefe
     )
     monkeypatch.setenv("QUOTE_PROVIDER_BACKEND", "yahoo")
     monkeypatch.setenv("FINANCE_NEWS_PROVIDER_ORDER", "alpha_vantage")
-    monkeypatch.delenv("FINANCE_ALPHA_VANTAGE_API_KEY", raising=False)
     reset_settings_cache()
     try:
         payload = execute_news_lookup(
@@ -4488,9 +4482,6 @@ def test_model_facing_runtime_tool_declarations_keep_provider_secrets_internal()
         "fredApiKey",
         "edgarContactEmail",
         "contactEmail",
-        "FINANCE_ALPHA_VANTAGE_API_KEY",
-        "DIGITAL_ORACLE_FRED_API_KEY",
-        "DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL",
     ):
         assert forbidden_name not in serialized_declarations
 
@@ -6744,7 +6735,6 @@ def test_prediction_markets_providers_fetch_direct_order_book_depth() -> None:
 
     polymarket_payload = map_prediction_markets_result(
         DigitalOraclePhase1Service(
-            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
             prediction_market_providers=(
                 _FakeDigitalOraclePredictionProvider("polymarket", events=polymarket_result.events),
             ),
@@ -6878,7 +6868,6 @@ def test_prediction_markets_providers_preserve_events_when_order_book_degrades()
     )
     payload = map_prediction_markets_result(
         DigitalOraclePhase1Service(
-            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
             prediction_market_providers=(
                 _FakeDigitalOraclePredictionProvider(
                     "polymarket",
@@ -7109,7 +7098,6 @@ def test_digital_oracle_fixture_replay_malformed_empty_and_error_payloads() -> N
         ("market_sentiment_malformed.json",)
     )
     prediction_service = DigitalOraclePhase1Service(
-        settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
         prediction_market_providers=(
             PolymarketPredictionMarketsProvider(fixture_client),
             KalshiPredictionMarketsProvider(fixture_client),
@@ -7148,7 +7136,6 @@ def test_digital_oracle_fixture_replay_malformed_empty_and_error_payloads() -> N
     )
     malformed_sentiment_payload = map_market_sentiment_result(
         DigitalOraclePhase1Service(
-            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
             market_sentiment_provider=FearGreedMarketSentimentProvider(
                 http_client=malformed_sentiment_client
             ),
@@ -7187,7 +7174,6 @@ def test_digital_oracle_fixture_replay_provider_errors_degrade_without_network()
     )
     prediction_payload = map_prediction_markets_result(
         DigitalOraclePhase1Service(
-            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
             prediction_market_providers=(
                 PolymarketPredictionMarketsProvider(prediction_client),
                 KalshiPredictionMarketsProvider(prediction_client),
@@ -7204,13 +7190,16 @@ def test_digital_oracle_fixture_replay_provider_errors_degrade_without_network()
     sentiment_client = _DigitalOracleFixtureReplayJsonClient(("market_sentiment_unavailable.json",))
     sec_payload = map_sec_filings_result(
         DigitalOraclePhase1Service(
-            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
+            provider_bundle=create_digital_oracle_phase1_provider_bundle(
+                provider_secrets=DigitalOracleProviderSecrets(
+                    edgar_contact_email="sec-contact@example.test"
+                )
+            ),
             sec_filings_provider=EdgarSecFilingsProvider(http_client=sec_client),
         ).lookup_sec_filings(DigitalOracleSecFilingsQuery(ticker="NVDA"))
     ).model_dump(mode="json", by_alias=True)
     sentiment_payload = map_market_sentiment_result(
         DigitalOraclePhase1Service(
-            settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
             market_sentiment_provider=FearGreedMarketSentimentProvider(
                 http_client=sentiment_client
             ),
@@ -7300,7 +7289,11 @@ def test_edgar_sec_filings_search_maps_hits_and_preserves_submissions_fallback()
     )
     payload = map_sec_filings_result(
         DigitalOraclePhase1Service(
-            settings=_settings(digital_oracle_edgar_contact_email="test@example.invalid"),
+            provider_bundle=create_digital_oracle_phase1_provider_bundle(
+                provider_secrets=DigitalOracleProviderSecrets(
+                    edgar_contact_email="test@example.invalid"
+                )
+            ),
             sec_filings_provider=_FakeDigitalOracleSecFilingsProvider(
                 filings=provider_result.filings,
                 search_hits=provider_result.search_hits,
@@ -7368,7 +7361,11 @@ def test_edgar_sec_filings_cik_lookup_empty_search_warns_and_falls_back_to_metad
     )
     service_payload = map_sec_filings_result(
         DigitalOraclePhase1Service(
-            settings=_settings(digital_oracle_edgar_contact_email="test@example.invalid"),
+            provider_bundle=create_digital_oracle_phase1_provider_bundle(
+                provider_secrets=DigitalOracleProviderSecrets(
+                    edgar_contact_email="test@example.invalid"
+                )
+            ),
             sec_filings_provider=_FakeDigitalOracleSecFilingsProvider(
                 filings=result.filings,
                 search_hits=result.search_hits,
@@ -7524,7 +7521,11 @@ def test_edgar_sec_filings_search_timeout_and_malformed_ownership_degrade_safely
     )
     payload = map_sec_filings_result(
         DigitalOraclePhase1Service(
-            settings=_settings(digital_oracle_edgar_contact_email="test@example.invalid"),
+            provider_bundle=create_digital_oracle_phase1_provider_bundle(
+                provider_secrets=DigitalOracleProviderSecrets(
+                    edgar_contact_email="test@example.invalid"
+                )
+            ),
             sec_filings_provider=_FakeDigitalOracleSecFilingsProvider(
                 filings=result.filings,
                 search_hits=result.search_hits,
@@ -8057,7 +8058,6 @@ def test_prediction_markets_service_preserves_malformed_adapter_warnings_with_pa
         ),
     )
     service = DigitalOraclePhase1Service(
-        settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
         prediction_market_providers=(polymarket_provider, kalshi_provider),
     )
 
@@ -9515,7 +9515,6 @@ def test_sec_filings_runtime_executor_filters_forms_dates_and_returns_normalized
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
     reset_settings_cache()
     try:
         payload = execute_sec_filings_lookup(
@@ -9602,7 +9601,6 @@ def test_sec_filings_runtime_executor_uses_context_edgar_contact_secret(
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
     reset_settings_cache()
     try:
         payload = execute_sec_filings_lookup(
@@ -9646,7 +9644,6 @@ def test_sec_filings_runtime_executor_preserves_missing_edgar_email_warning(
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
     reset_settings_cache()
     try:
         payload = execute_sec_filings_lookup(
@@ -9665,7 +9662,6 @@ def test_sec_filings_runtime_executor_preserves_missing_edgar_email_warning(
             "details": {
                 "operation": "sec_filings",
                 "provider": "edgar",
-                "setting": EDGAR_CONTACT_EMAIL_SETTING,
             },
         }
     ]
@@ -9686,7 +9682,6 @@ def test_sec_filings_runtime_executor_degrades_provider_failure_and_redacts_deta
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
     reset_settings_cache()
     try:
         payload = execute_sec_filings_lookup(
@@ -9729,7 +9724,6 @@ def test_sec_filings_runtime_executor_returns_empty_warning_for_configured_edgar
         "app.extensions.signaldeck_digital_oracle.runtime_sec_filings.create_sec_filings_provider_adapter",
         lambda: provider,
     )
-    monkeypatch.delenv("DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL", raising=False)
     reset_settings_cache()
     try:
         payload = execute_sec_filings_lookup(
@@ -10008,7 +10002,6 @@ def test_macro_rates_runtime_executor_returns_normalized_happy_path(
         "app.extensions.signaldeck_digital_oracle.runtime_macro_rates.create_macro_rates_providers",
         lambda: (fred_provider, treasury_provider, bis_provider),
     )
-    monkeypatch.delenv("DIGITAL_ORACLE_FRED_API_KEY", raising=False)
     reset_settings_cache()
     try:
         payload = execute_macro_rates_lookup(
@@ -10062,7 +10055,6 @@ def test_macro_rates_runtime_executor_uses_context_fred_api_key_secret(
         "app.extensions.signaldeck_digital_oracle.runtime_macro_rates.create_macro_rates_providers",
         lambda: (fred_provider,),
     )
-    monkeypatch.delenv("DIGITAL_ORACLE_FRED_API_KEY", raising=False)
     reset_settings_cache()
     try:
         payload = execute_macro_rates_lookup(
@@ -10130,7 +10122,6 @@ def test_macro_rates_runtime_executor_preserves_partial_warnings_without_fred_ke
         "app.extensions.signaldeck_digital_oracle.runtime_macro_rates.create_macro_rates_providers",
         lambda: (treasury_provider, bis_provider, fred_provider),
     )
-    monkeypatch.delenv("DIGITAL_ORACLE_FRED_API_KEY", raising=False)
     reset_settings_cache()
     try:
         payload = execute_macro_rates_lookup(
@@ -10157,7 +10148,6 @@ def test_macro_rates_runtime_executor_preserves_partial_warnings_without_fred_ke
     assert warnings[0]["details"] == {
         "operation": "macro_rates",
         "provider": "fred",
-        "setting": FRED_API_KEY_SETTING,
     }
     assert warnings[1]["details"] == {"operation": "macro_rates", "provider": "bis"}
 
@@ -10497,10 +10487,7 @@ def test_market_sentiment_runtime_executor_returns_empty_warning_for_empty_provi
 def test_market_sentiment_service_degrades_malformed_payload_to_warning() -> None:
     client = _FakeFearGreedJsonClient({"unexpected": {}})
     provider = FearGreedMarketSentimentProvider(http_client=client)
-    service = DigitalOraclePhase1Service(
-        settings=_settings(digital_oracle_edgar_contact_email="sec-contact@example.test"),
-        market_sentiment_provider=provider,
-    )
+    service = DigitalOraclePhase1Service(market_sentiment_provider=provider)
 
     payload = map_market_sentiment_result(
         service.lookup_market_sentiment(DigitalOracleMarketSentimentQuery())
