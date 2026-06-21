@@ -93,9 +93,7 @@ def _create_news_providers(
     if resolved_settings.quote_provider_backend == "deterministic":
         return (DeterministicNewsProvider(),)
     alpha_vantage_api_key = (
-        resolved_settings.finance_alpha_vantage_api_key
-        if provider_secrets is None
-        else provider_secrets.alpha_vantage_api_key
+        None if provider_secrets is None else provider_secrets.alpha_vantage_api_key
     )
     providers: list[NewsProvider] = []
     for provider_key in resolved_settings.finance_news_provider_order:

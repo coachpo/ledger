@@ -107,7 +107,7 @@ def test_alpha_news_provider_missing_key_degrades_with_structured_warning(
         "news_api_key_missing",
         "news_unavailable",
     ]
-    assert "FINANCE_ALPHA_VANTAGE_API_KEY" not in json.dumps(payload["warnings"])
+    assert "apiKey" not in json.dumps(payload["warnings"])
 
 
 def test_news_adapter_rate_limit_degrades_with_structured_warning(

@@ -13,7 +13,11 @@ from app.extensions.signaldeck_finance.execution_dependencies import (
     finance_execution_provider_bundle_from_parts,
     resolve_finance_news_providers,
 )
-from app.extensions.signaldeck_finance.provider_factories import create_news_providers
+from app.extensions.signaldeck_finance.provider_factories import (
+    FinanceProviderSecrets,
+    create_news_providers,
+    create_runtime_news_providers,
+)
 from app.services import news_provider
 from app.services.market_data_service import MarketDataService
 from app.services.news_provider import (
@@ -77,14 +81,12 @@ def test_news_provider_contract_exports_sentiment_alias_and_error_codes() -> Non
 def test_finance_news_settings_normalize_order_and_lists() -> None:
     settings = Settings.model_validate(
         {
-            "FINANCE_ALPHA_VANTAGE_API_KEY": "  alpha-key  ",
             "FINANCE_NEWS_PROVIDER_ORDER": " Alpha_Vantage, yahoo, alpha_vantage, deterministic ",
             "FINANCE_GLOBAL_NEWS_QUERIES": " markets, macro , markets ",
             "FINANCE_REDDIT_SUBREDDITS": " stocks, investing, stocks ",
         }
     )
 
-    assert settings.finance_alpha_vantage_api_key == "alpha-key"
     assert settings.finance_news_provider_order == ["alpha_vantage", "yahoo", "deterministic"]
     assert settings.finance_global_news_queries == ["markets", "macro"]
     assert settings.finance_reddit_subreddits == ["stocks", "investing"]
@@ -99,7 +101,6 @@ def test_create_news_providers_preserves_configured_order() -> None:
     settings = Settings.model_validate(
         {
             "finance_news_provider_order": ["alpha_vantage", "yahoo"],
-            "finance_alpha_vantage_api_key": "alpha-key",
             "quote_provider_timeout_seconds": 3.5,
             "finance_global_news_queries": ["markets", "macro"],
             "finance_global_news_lookback_days": 5,
@@ -116,10 +117,27 @@ def test_create_news_providers_preserves_configured_order() -> None:
     assert isinstance(yahoo_provider, YahooFinanceNewsProvider)
     alpha_provider = providers[0]
     assert isinstance(alpha_provider, AlphaVantageNewsProvider)
+    assert alpha_provider.api_key is None
     assert alpha_provider.timeout == 3.5
     assert yahoo_provider.timeout == 3.5
     assert yahoo_provider.global_queries == ("markets", "macro")
     assert yahoo_provider.global_lookback_days == 5
+
+
+def test_create_runtime_news_providers_uses_explicit_alpha_vantage_secret() -> None:
+    providers = create_runtime_news_providers(
+        provider_secrets=FinanceProviderSecrets(alpha_vantage_api_key="alpha-key"),
+        settings=Settings.model_validate(
+            {
+                "finance_news_provider_order": ["alpha_vantage", "yahoo"],
+                "quote_provider_timeout_seconds": 3.5,
+            }
+        ),
+    )
+
+    alpha_provider = providers[0]
+    assert isinstance(alpha_provider, AlphaVantageNewsProvider)
+    assert alpha_provider.api_key == "alpha-key"
 
 
 def test_create_news_providers_uses_deterministic_backend_only() -> None:
@@ -127,7 +145,6 @@ def test_create_news_providers_uses_deterministic_backend_only() -> None:
         {
             "QUOTE_PROVIDER_BACKEND": "deterministic",
             "finance_news_provider_order": ["alpha_vantage", "yahoo"],
-            "finance_alpha_vantage_api_key": "alpha-key",
         }
     )
 
@@ -141,7 +158,6 @@ def test_resolve_finance_news_providers_returns_ordered_payload() -> None:
         Settings.model_validate(
             {
                 "finance_news_provider_order": ["alpha_vantage", "yahoo"],
-                "finance_alpha_vantage_api_key": "alpha-key",
             }
         )
     )
@@ -171,4 +187,4 @@ def test_alpha_news_provider_missing_key_surfaces_service_warning(
         "news_api_key_missing",
         "news_unavailable",
     ]
-    assert "FINANCE_ALPHA_VANTAGE_API_KEY" not in json.dumps(payload["warnings"])
+    assert "apiKey" not in json.dumps(payload["warnings"])

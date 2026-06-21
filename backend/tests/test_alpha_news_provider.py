@@ -181,7 +181,7 @@ def test_alpha_missing_key_raises_without_secret_name() -> None:
             symbols=["nvda"], query=None, scope="symbol", start_date=None, end_date=None, limit=5
         )
 
-    assert "FINANCE_ALPHA_VANTAGE_API_KEY" not in str(exc_info.value)
+    assert "apiKey" not in str(exc_info.value)
     assert exc_info.value.details == {"provider": "alpha_vantage"}
 
 
