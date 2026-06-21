@@ -63,6 +63,12 @@ FINANCE_PROVIDER_PROTOCOL_MODULES = {
     "app.services.quote_provider",
     "app.services.social_sentiment_provider",
 }
+FORBIDDEN_CORE_SETTING_PREFIXES = (
+    "digital_oracle_",
+    "finance_",
+    "quote_provider_",
+    "quote_stale_",
+)
 FINANCE_DEPENDENCIES_MODULE = "app.extensions.signaldeck_finance.dependencies"
 APPROVED_FINANCE_ROUTE_IMPORTS = {
     "app/api/balances.py": (f"{FINANCE_DEPENDENCIES_MODULE}:get_balance_service",),
@@ -188,6 +194,19 @@ def _module_matches(
     return False
 
 
+def _core_settings_fields() -> tuple[str, ...]:
+    path = BACKEND_ROOT / "app/core/config.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    fields: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or node.name != "Settings":
+            continue
+        for statement in node.body:
+            if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
+                fields.append(statement.target.id)
+    return tuple(sorted(fields))
+
+
 def test_shared_backend_has_no_finance_extension_imports_outside_private_registry() -> None:
     assert collect_shared_finance_imports() == {}
 
@@ -215,3 +234,19 @@ def test_private_registry_seam_is_the_only_static_scan_exclusion() -> None:
 
     for registrar in _APPROVED_REGISTRY_REGISTRARS:
         assert registrar in registry_source
+
+
+def test_core_settings_do_not_own_extension_runtime_fields() -> None:
+    forbidden_fields = tuple(
+        field
+        for field in _core_settings_fields()
+        if field.startswith(FORBIDDEN_CORE_SETTING_PREFIXES)
+    )
+
+    assert forbidden_fields == ()
+
+
+def test_core_config_does_not_own_finance_provider_constants() -> None:
+    core_config_source = (BACKEND_ROOT / "app/core/config.py").read_text(encoding="utf-8")
+
+    assert "_FINANCE_NEWS_PROVIDER_KEYS" not in core_config_source

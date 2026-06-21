@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings
+from app.extensions.signaldeck_finance.config import FinanceWorkspaceSettings
 from app.extensions.signaldeck_finance.execution_dependencies import (
     finance_execution_provider_bundle_from_parts,
     resolve_finance_news_providers,
@@ -79,7 +79,7 @@ def test_news_provider_contract_exports_sentiment_alias_and_error_codes() -> Non
 
 
 def test_finance_news_settings_normalize_order_and_lists() -> None:
-    settings = Settings.model_validate(
+    settings = FinanceWorkspaceSettings.model_validate(
         {
             "FINANCE_NEWS_PROVIDER_ORDER": " Alpha_Vantage, yahoo, alpha_vantage, deterministic ",
             "FINANCE_GLOBAL_NEWS_QUERIES": " markets, macro , markets ",
@@ -94,11 +94,11 @@ def test_finance_news_settings_normalize_order_and_lists() -> None:
 
 def test_finance_news_settings_reject_unknown_provider() -> None:
     with pytest.raises(ValidationError, match="FINANCE_NEWS_PROVIDER_ORDER"):
-        _ = Settings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "unknown"})
+        _ = FinanceWorkspaceSettings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "unknown"})
 
 
 def test_create_news_providers_preserves_configured_order() -> None:
-    settings = Settings.model_validate(
+    settings = FinanceWorkspaceSettings.model_validate(
         {
             "finance_news_provider_order": ["alpha_vantage", "yahoo"],
             "quote_provider_timeout_seconds": 3.5,
@@ -127,7 +127,7 @@ def test_create_news_providers_preserves_configured_order() -> None:
 def test_create_runtime_news_providers_uses_explicit_alpha_vantage_secret() -> None:
     providers = create_runtime_news_providers(
         provider_secrets=FinanceProviderSecrets(alpha_vantage_api_key="alpha-key"),
-        settings=Settings.model_validate(
+        settings=FinanceWorkspaceSettings.model_validate(
             {
                 "finance_news_provider_order": ["alpha_vantage", "yahoo"],
                 "quote_provider_timeout_seconds": 3.5,
@@ -141,7 +141,7 @@ def test_create_runtime_news_providers_uses_explicit_alpha_vantage_secret() -> N
 
 
 def test_create_news_providers_uses_deterministic_backend_only() -> None:
-    settings = Settings.model_validate(
+    settings = FinanceWorkspaceSettings.model_validate(
         {
             "QUOTE_PROVIDER_BACKEND": "deterministic",
             "finance_news_provider_order": ["alpha_vantage", "yahoo"],
@@ -155,7 +155,7 @@ def test_create_news_providers_uses_deterministic_backend_only() -> None:
 
 def test_resolve_finance_news_providers_returns_ordered_payload() -> None:
     providers = create_news_providers(
-        Settings.model_validate(
+        FinanceWorkspaceSettings.model_validate(
             {
                 "finance_news_provider_order": ["alpha_vantage", "yahoo"],
             }
@@ -171,7 +171,7 @@ def test_alpha_news_provider_missing_key_surfaces_service_warning(
 ) -> None:
     monkeypatch.setattr(MarketDataService, "_require_enabled", lambda self: None)
     providers = create_news_providers(
-        Settings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "alpha_vantage"})
+        FinanceWorkspaceSettings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "alpha_vantage"})
     )
     service = MarketDataService(
         session=cast(Session, None),

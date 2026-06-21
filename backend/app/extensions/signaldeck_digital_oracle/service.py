@@ -7,7 +7,6 @@ from datetime import date
 from typing import cast
 
 from app.agents.runtime_tools.types import RuntimeToolWarning
-from app.core.config import Settings
 from app.core.formatting import normalize_symbol
 
 from .config import (
@@ -20,6 +19,7 @@ from .config import (
     CftcPositioningReportType,
     CryptoDerivativesDataType,
     CryptoDerivativesVenue,
+    DigitalOracleSettings,
     MacroRatesFamily,
     MacroRatesSource,
     PredictionMarketVenue,
@@ -119,7 +119,7 @@ class DigitalOraclePhase1Service:
     def __init__(
         self,
         *,
-        settings: Settings | None = None,
+        settings: DigitalOracleSettings | None = None,
         provider_bundle: DigitalOraclePhase1ProviderBundle | None = None,
         prediction_market_providers: Sequence[DigitalOraclePredictionMarketProvider] = (),
         sec_filings_provider: DigitalOracleSecFilingsProvider | None = None,
@@ -971,7 +971,7 @@ class DigitalOraclePhase1Service:
 
 def create_digital_oracle_phase1_service(
     *,
-    settings: Settings | None = None,
+    settings: DigitalOracleSettings | None = None,
     provider_bundle: DigitalOraclePhase1ProviderBundle | None = None,
     prediction_market_providers: Sequence[DigitalOraclePredictionMarketProvider] = (),
     sec_filings_provider: DigitalOracleSecFilingsProvider | None = None,

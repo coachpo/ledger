@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app.core.config import Settings, get_settings
+from app.extensions.signaldeck_finance.config import (
+    FinanceWorkspaceSettings,
+    get_finance_workspace_settings,
+)
 from app.extensions.signaldeck_finance.execution_dependencies import (
     finance_execution_provider_bundle_from_parts,
 )
@@ -42,8 +45,8 @@ def create_deterministic_quote_provider() -> QuoteProvider:
     return DeterministicQuoteProvider()
 
 
-def create_quote_provider(settings: Settings | None = None) -> QuoteProvider:
-    resolved_settings = settings or get_settings()
+def create_quote_provider(settings: FinanceWorkspaceSettings | None = None) -> QuoteProvider:
+    resolved_settings = settings or get_finance_workspace_settings()
     if resolved_settings.quote_provider_backend == "deterministic":
         return create_deterministic_quote_provider()
     return YahooFinanceQuoteProvider(
@@ -52,9 +55,9 @@ def create_quote_provider(settings: Settings | None = None) -> QuoteProvider:
 
 
 def create_social_sentiment_adapters(
-    settings: Settings | None = None,
+    settings: FinanceWorkspaceSettings | None = None,
 ) -> tuple[SocialSentimentSourceAdapter, ...]:
-    resolved_settings = settings or get_settings()
+    resolved_settings = settings or get_finance_workspace_settings()
     timeout = resolved_settings.quote_provider_timeout_seconds
     return (
         RedditSocialSentimentAdapter(
@@ -71,22 +74,24 @@ def create_social_sentiment_adapters(
     )
 
 
-def create_news_providers(settings: Settings | None = None) -> tuple[NewsProvider, ...]:
-    resolved_settings = settings or get_settings()
+def create_news_providers(
+    settings: FinanceWorkspaceSettings | None = None,
+) -> tuple[NewsProvider, ...]:
+    resolved_settings = settings or get_finance_workspace_settings()
     return _create_news_providers(resolved_settings, provider_secrets=None)
 
 
 def create_runtime_news_providers(
     *,
     provider_secrets: FinanceProviderSecrets,
-    settings: Settings | None = None,
+    settings: FinanceWorkspaceSettings | None = None,
 ) -> tuple[NewsProvider, ...]:
-    resolved_settings = settings or get_settings()
+    resolved_settings = settings or get_finance_workspace_settings()
     return _create_news_providers(resolved_settings, provider_secrets=provider_secrets)
 
 
 def _create_news_providers(
-    resolved_settings: Settings,
+    resolved_settings: FinanceWorkspaceSettings,
     *,
     provider_secrets: FinanceProviderSecrets | None,
 ) -> tuple[NewsProvider, ...]:
@@ -119,9 +124,9 @@ def _create_news_providers(
 
 
 def create_execution_provider_bundle(
-    settings: Settings | None = None,
+    settings: FinanceWorkspaceSettings | None = None,
 ) -> ExecutionProviderBundle:
-    resolved_settings = settings or get_settings()
+    resolved_settings = settings or get_finance_workspace_settings()
     return finance_execution_provider_bundle_from_parts(
         quote_provider=create_quote_provider(resolved_settings),
         fallback_quote_provider=create_deterministic_quote_provider(),

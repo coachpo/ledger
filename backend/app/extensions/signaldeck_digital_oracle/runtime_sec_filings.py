@@ -17,8 +17,8 @@ from app.agents.runtime_tools.types import (
     RuntimeToolSpec,
     RuntimeToolWarning,
 )
-from app.core.config import Settings
 from app.core.formatting import normalize_symbol, to_utc
+from app.extensions.signaldeck_digital_oracle.config import DigitalOracleSettings
 from app.extensions.signaldeck_digital_oracle.factory import (
     DigitalOracleProviderSecrets,
     create_digital_oracle_phase1_provider_bundle,
@@ -295,7 +295,7 @@ def create_sec_filings_provider_adapter() -> DigitalOracleSecFilingsProvider:
 
 def create_sec_filings_service(
     *,
-    settings: Settings | None = None,
+    settings: DigitalOracleSettings | None = None,
     provider_secrets: DigitalOracleProviderSecrets | None = None,
     sec_filings_provider: DigitalOracleSecFilingsProvider | None = None,
 ) -> DigitalOraclePhase1Service:

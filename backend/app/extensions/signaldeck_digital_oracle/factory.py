@@ -4,8 +4,6 @@ import importlib.util
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
-from app.core.config import Settings
-
 from .config import (
     EDGAR_CONTACT_EMAIL_MISSING_CODE,
     EDGAR_CONTACT_EMAIL_MISSING_MESSAGE,
@@ -20,6 +18,7 @@ from .config import (
     YFINANCE_OPTIONAL_DEPENDENCY_MISSING_CODE,
     YFINANCE_OPTIONAL_DEPENDENCY_MISSING_MESSAGE,
     DigitalOracleProviderConfig,
+    DigitalOracleSettings,
     MarketSentimentIndicator,
     PredictionMarketVenue,
     get_digital_oracle_provider_config,
@@ -313,14 +312,14 @@ def _create_market_sentiment_provider(
 
 
 def create_prediction_markets_provider_bundle(
-    settings: Settings | None = None,
+    settings: DigitalOracleSettings | None = None,
 ) -> DigitalOracleProviderConstructionResult[PredictionMarketsProviderBundle]:
     config = get_digital_oracle_provider_config(settings)
     return _create_prediction_markets_provider_bundle(config)
 
 
 def create_sec_filings_provider(
-    settings: Settings | None = None,
+    settings: DigitalOracleSettings | None = None,
     provider_secrets: DigitalOracleProviderSecrets | None = None,
 ) -> DigitalOracleProviderConstructionResult[SecFilingsProviderBundle]:
     config = _config_with_provider_secrets(
@@ -331,14 +330,14 @@ def create_sec_filings_provider(
 
 
 def create_market_sentiment_provider(
-    settings: Settings | None = None,
+    settings: DigitalOracleSettings | None = None,
 ) -> DigitalOracleProviderConstructionResult[MarketSentimentProviderBundle]:
     config = get_digital_oracle_provider_config(settings)
     return _create_market_sentiment_provider(config)
 
 
 def create_digital_oracle_phase1_provider_bundle(
-    settings: Settings | None = None,
+    settings: DigitalOracleSettings | None = None,
     provider_secrets: DigitalOracleProviderSecrets | None = None,
 ) -> DigitalOraclePhase1ProviderBundle:
     config = _config_with_provider_secrets(

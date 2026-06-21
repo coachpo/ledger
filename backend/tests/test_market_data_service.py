@@ -8,8 +8,8 @@ from typing import cast
 import pytest
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings
 from app.extensions.signaldeck_finance import provider_factories
+from app.extensions.signaldeck_finance.config import FinanceWorkspaceSettings
 from app.services.market_data_service import MarketDataService
 from app.services.news_provider import (
     NewsProvider,
@@ -95,7 +95,7 @@ def test_alpha_news_provider_missing_key_degrades_with_structured_warning(
     news_service_factory: Callable[[object], MarketDataService],
 ) -> None:
     providers = provider_factories.create_news_providers(
-        Settings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "alpha_vantage"})
+        FinanceWorkspaceSettings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "alpha_vantage"})
     )
     service = news_service_factory(providers[0])
 

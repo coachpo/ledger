@@ -8,6 +8,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
+from app.extensions.signaldeck_finance.config import get_finance_workspace_settings
 from app.extensions.signaldeck_finance.provider_factories import create_quote_provider
 from app.extensions.signaldeck_finance.service_gate import (
     BALANCE_SERVICE_SURFACE,
@@ -172,7 +173,12 @@ def get_market_data_service(
     session: Annotated[Session, Depends(get_finance_workspace_session)],
     quote_provider: Annotated[QuoteProvider, Depends(get_quote_provider)],
 ) -> MarketDataService:
-    return MarketDataService(session=session, quote_provider=quote_provider)
+    settings = get_finance_workspace_settings()
+    return MarketDataService(
+        session=session,
+        quote_provider=quote_provider,
+        quote_stale_after_minutes=settings.quote_stale_after_minutes,
+    )
 
 
 def get_text_template_service(

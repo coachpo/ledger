@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from app.agents import get_default_tool_catalog
 from app.agents.runtime_tools.types import RuntimeToolWarning
-from app.core.config import Settings, get_settings
 from app.core.constants import PORTFOLIO_CURRENCY
 from app.core.formatting import normalize_symbol, to_utc, utcnow
 from app.extensions.signaldeck_finance.service_gate import (
@@ -218,6 +217,7 @@ class MarketDataService:
         session: Session,
         quote_provider: QuoteProvider,
         news_providers: Sequence[NewsProvider] | None = None,
+        quote_stale_after_minutes: int = 15,
     ) -> None:
         self.session: Session = session
         self.quote_provider: QuoteProvider = quote_provider
@@ -226,7 +226,7 @@ class MarketDataService:
         )
         self.portfolio_service: PortfolioService = PortfolioService(session)
         self.repository: MarketQuoteRepository = MarketQuoteRepository(session)
-        self.settings: Settings = get_settings()
+        self.quote_stale_after_minutes: int = quote_stale_after_minutes
 
     def _require_enabled(self) -> None:
         _ = require_finance_workspace_enabled(self.session, surface=MARKET_DATA_SERVICE_SURFACE)
@@ -1555,7 +1555,7 @@ class MarketDataService:
     def _is_quote_stale(self, as_of: datetime | None) -> bool:
         if as_of is None:
             return True
-        stale_cutoff = utcnow() - timedelta(minutes=self.settings.quote_stale_after_minutes)
+        stale_cutoff = utcnow() - timedelta(minutes=self.quote_stale_after_minutes)
         return to_utc(as_of) < stale_cutoff
 
     def _to_market_quote_read(

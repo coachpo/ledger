@@ -14,8 +14,10 @@ from app.agents.runtime_tools.types import (
     RuntimeToolSpec,
     RuntimeToolWarning,
 )
-from app.core.config import Settings
-from app.extensions.signaldeck_digital_oracle.config import MarketSentimentIndicator
+from app.extensions.signaldeck_digital_oracle.config import (
+    DigitalOracleSettings,
+    MarketSentimentIndicator,
+)
 from app.extensions.signaldeck_digital_oracle.factory import (
     create_digital_oracle_phase1_provider_bundle,
     create_market_sentiment_provider,
@@ -148,7 +150,7 @@ def create_market_sentiment_provider_adapter() -> DigitalOracleMarketSentimentPr
 
 def create_market_sentiment_service(
     *,
-    settings: Settings | None = None,
+    settings: DigitalOracleSettings | None = None,
     market_sentiment_provider: DigitalOracleMarketSentimentProvider | None = None,
 ) -> DigitalOraclePhase1Service:
     provider_bundle = replace(

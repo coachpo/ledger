@@ -53,9 +53,11 @@ from app.extensions.signaldeck_digital_oracle.config import (
     MARKET_SENTIMENT_SOURCE_URL,
     CftcPositioningReportType,
     CryptoDerivativesVenue,
+    DigitalOracleSettings,
     MacroRatesSource,
     PredictionMarketVenue,
     get_digital_oracle_provider_config,
+    reset_digital_oracle_settings_cache,
 )
 from app.extensions.signaldeck_digital_oracle.factory import (
     DigitalOracleProviderSecrets,
@@ -2148,7 +2150,7 @@ def test_digital_oracle_config_keeps_provider_credentials_out_of_backend_setting
     with monkeypatch.context() as patched:
         patched.setenv("DIGITAL_ORACLE_PREDICTION_MARKETS_DEFAULT_ITEM_LIMIT", "7")
         patched.setenv("DIGITAL_ORACLE_SEC_FILINGS_DEFAULT_ITEM_LIMIT", "11")
-        reset_settings_cache()
+        reset_digital_oracle_settings_cache()
         try:
             config = get_digital_oracle_provider_config()
 
@@ -2157,7 +2159,7 @@ def test_digital_oracle_config_keeps_provider_credentials_out_of_backend_setting
             assert config.edgar_contact_email is None
             assert config.fred_api_key is None
         finally:
-            reset_settings_cache()
+            reset_digital_oracle_settings_cache()
 
 
 def test_digital_oracle_provider_config_reads_new_provider_controls_from_backend_settings(
@@ -2172,11 +2174,11 @@ def test_digital_oracle_provider_config_reads_new_provider_controls_from_backend
         patched.setenv("DIGITAL_ORACLE_CFTC_POSITIONING_DEFAULT_ITEM_LIMIT", "15")
         patched.setenv("DIGITAL_ORACLE_OPTIONS_ENABLED", "false")
         patched.setenv("DIGITAL_ORACLE_OPTIONS_DEFAULT_ITEM_LIMIT", "16")
-        reset_settings_cache()
+        reset_digital_oracle_settings_cache()
         try:
             config = get_digital_oracle_provider_config()
         finally:
-            reset_settings_cache()
+            reset_digital_oracle_settings_cache()
 
     assert config.macro_rates_enabled is False
     assert config.macro_rates_default_item_limit == 13
@@ -2190,14 +2192,16 @@ def test_digital_oracle_provider_config_reads_new_provider_controls_from_backend
 
 
 def test_digital_oracle_configured_provider_factory_construction_uses_defaults() -> None:
-    settings = _settings(
-        quote_provider_timeout_seconds=2.5,
-        digital_oracle_prediction_markets_default_item_limit=6,
-        digital_oracle_sec_filings_default_item_limit=12,
-        digital_oracle_macro_rates_default_item_limit=13,
-        digital_oracle_crypto_derivatives_default_item_limit=14,
-        digital_oracle_cftc_positioning_default_item_limit=15,
-        digital_oracle_options_default_item_limit=16,
+    settings = DigitalOracleSettings.model_validate(
+        {
+            "DIGITAL_ORACLE_PROVIDER_TIMEOUT": "2.5",
+            "DIGITAL_ORACLE_PREDICTION_MARKETS_DEFAULT_ITEM_LIMIT": "6",
+            "DIGITAL_ORACLE_SEC_FILINGS_DEFAULT_ITEM_LIMIT": "12",
+            "DIGITAL_ORACLE_MACRO_RATES_DEFAULT_ITEM_LIMIT": "13",
+            "DIGITAL_ORACLE_CRYPTO_DERIVATIVES_DEFAULT_ITEM_LIMIT": "14",
+            "DIGITAL_ORACLE_CFTC_POSITIONING_DEFAULT_ITEM_LIMIT": "15",
+            "DIGITAL_ORACLE_OPTIONS_DEFAULT_ITEM_LIMIT": "16",
+        }
     )
 
     config = get_digital_oracle_provider_config(settings)
@@ -2276,7 +2280,7 @@ def test_digital_oracle_configured_provider_factory_construction_uses_defaults()
     assert {provider.key for provider in bundle.options.provider.providers} >= {"yahoo"}
 
     disabled_prediction = create_prediction_markets_provider_bundle(
-        _settings(digital_oracle_prediction_markets_enabled=False)
+        DigitalOracleSettings.model_validate({"DIGITAL_ORACLE_PREDICTION_MARKETS_ENABLED": "false"})
     )
     assert disabled_prediction.configured is False
     assert disabled_prediction.failure is not None
@@ -2287,11 +2291,13 @@ def test_digital_oracle_configured_provider_factory_construction_uses_defaults()
 
 def test_digital_oracle_provider_bundle_disabled_new_sources_return_structured_failures() -> None:
     bundle = create_digital_oracle_phase1_provider_bundle(
-        _settings(
-            digital_oracle_macro_rates_enabled=False,
-            digital_oracle_crypto_derivatives_enabled=False,
-            digital_oracle_cftc_positioning_enabled=False,
-            digital_oracle_options_enabled=False,
+        DigitalOracleSettings.model_validate(
+            {
+                "DIGITAL_ORACLE_MACRO_RATES_ENABLED": "false",
+                "DIGITAL_ORACLE_CRYPTO_DERIVATIVES_ENABLED": "false",
+                "DIGITAL_ORACLE_CFTC_POSITIONING_ENABLED": "false",
+                "DIGITAL_ORACLE_OPTIONS_ENABLED": "false",
+            }
         )
     )
 
@@ -2310,7 +2316,7 @@ def test_digital_oracle_provider_bundle_disabled_new_sources_return_structured_f
 
 
 def test_digital_oracle_provider_bundle_missing_fred_key_is_source_scoped_failure() -> None:
-    bundle = create_digital_oracle_phase1_provider_bundle(_settings())
+    bundle = create_digital_oracle_phase1_provider_bundle(DigitalOracleSettings())
 
     assert bundle.macro_rates.configured is True
     assert bundle.macro_rates.provider is not None
@@ -2327,7 +2333,7 @@ def test_digital_oracle_optional_dependency_missing_yfinance_is_source_scoped_fa
 ) -> None:
     monkeypatch.setitem(sys.modules, "yfinance", None)
 
-    bundle = create_digital_oracle_phase1_provider_bundle(_settings())
+    bundle = create_digital_oracle_phase1_provider_bundle(DigitalOracleSettings())
 
     assert bundle.options.configured is True
     assert bundle.options.provider is not None
@@ -2340,7 +2346,7 @@ def test_digital_oracle_optional_dependency_missing_yfinance_is_source_scoped_fa
 
 
 def test_digital_oracle_edgar_missing_config_returns_structured_failure() -> None:
-    result = create_sec_filings_provider(_settings())
+    result = create_sec_filings_provider(DigitalOracleSettings())
 
     assert result.configured is False
     assert result.provider is None
@@ -2354,7 +2360,7 @@ def test_digital_oracle_edgar_missing_config_returns_structured_failure() -> Non
 
 
 def test_digital_oracle_missing_edgar_contact_does_not_break_app_startup() -> None:
-    reset_settings_cache()
+    reset_digital_oracle_settings_cache()
     try:
         app = create_app(init_database=False)
         payload = map_sec_filings_result(
@@ -2363,7 +2369,7 @@ def test_digital_oracle_missing_edgar_contact_does_not_break_app_startup() -> No
             )
         ).model_dump(mode="json", by_alias=True)
     finally:
-        reset_settings_cache()
+        reset_digital_oracle_settings_cache()
 
     assert app is not None
     assert payload["toolKey"] == SEC_FILINGS_LOOKUP_TOOL_KEY
@@ -2410,10 +2416,12 @@ def test_digital_oracle_service_disabled_provider_config_returns_warnings_withou
         )
     )
     service = DigitalOraclePhase1Service(
-        settings=_settings(
-            digital_oracle_prediction_markets_enabled=False,
-            digital_oracle_sec_filings_enabled=False,
-            digital_oracle_market_sentiment_enabled=False,
+        settings=DigitalOracleSettings.model_validate(
+            {
+                "DIGITAL_ORACLE_PREDICTION_MARKETS_ENABLED": "false",
+                "DIGITAL_ORACLE_SEC_FILINGS_ENABLED": "false",
+                "DIGITAL_ORACLE_MARKET_SENTIMENT_ENABLED": "false",
+            }
         ),
         prediction_market_providers=(prediction_provider,),
         sec_filings_provider=sec_provider,
@@ -2569,10 +2577,12 @@ def test_digital_oracle_service_returns_normalized_phase1_dtos() -> None:
             year_ago=None,
         )
     )
-    settings = _settings(
-        quote_provider_timeout_seconds=2.5,
-        digital_oracle_prediction_markets_default_item_limit=6,
-        digital_oracle_sec_filings_default_item_limit=12,
+    settings = DigitalOracleSettings.model_validate(
+        {
+            "DIGITAL_ORACLE_PROVIDER_TIMEOUT": "2.5",
+            "DIGITAL_ORACLE_PREDICTION_MARKETS_DEFAULT_ITEM_LIMIT": "6",
+            "DIGITAL_ORACLE_SEC_FILINGS_DEFAULT_ITEM_LIMIT": "12",
+        }
     )
     service = DigitalOraclePhase1Service(
         provider_bundle=create_digital_oracle_phase1_provider_bundle(
@@ -8492,7 +8502,7 @@ def test_crypto_derivatives_service_maps_fake_provider_results_to_camel_payload(
         ),
     )
     service = DigitalOraclePhase1Service(
-        settings=_settings(quote_provider_timeout_seconds=2.5),
+        settings=DigitalOracleSettings.model_validate({"DIGITAL_ORACLE_PROVIDER_TIMEOUT": "2.5"}),
         crypto_derivatives_providers=(deribit_provider, coingecko_provider),
     )
 

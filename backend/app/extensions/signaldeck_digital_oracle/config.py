@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from app.core.config import Settings, get_settings
+from app.extensions.signaldeck_digital_oracle.settings import (
+    DigitalOracleSettings,
+    get_digital_oracle_settings,
+    reset_digital_oracle_settings_cache,
+)
 
 PredictionMarketVenue = Literal["polymarket", "kalshi"]
 MarketSentimentIndicator = Literal["fear_greed"]
@@ -141,34 +145,28 @@ class DigitalOracleProviderConfig:
 
 
 def get_digital_oracle_provider_config(
-    settings: Settings | None = None,
+    settings: DigitalOracleSettings | None = None,
 ) -> DigitalOracleProviderConfig:
-    resolved_settings = settings or get_settings()
+    resolved_settings = settings or get_digital_oracle_settings()
     return DigitalOracleProviderConfig(
-        prediction_markets_enabled=(resolved_settings.digital_oracle_prediction_markets_enabled),
-        sec_filings_enabled=resolved_settings.digital_oracle_sec_filings_enabled,
-        market_sentiment_enabled=(resolved_settings.digital_oracle_market_sentiment_enabled),
-        macro_rates_enabled=resolved_settings.digital_oracle_macro_rates_enabled,
-        crypto_derivatives_enabled=(resolved_settings.digital_oracle_crypto_derivatives_enabled),
-        cftc_positioning_enabled=resolved_settings.digital_oracle_cftc_positioning_enabled,
-        options_enabled=resolved_settings.digital_oracle_options_enabled,
+        prediction_markets_enabled=resolved_settings.prediction_markets_enabled,
+        sec_filings_enabled=resolved_settings.sec_filings_enabled,
+        market_sentiment_enabled=resolved_settings.market_sentiment_enabled,
+        macro_rates_enabled=resolved_settings.macro_rates_enabled,
+        crypto_derivatives_enabled=resolved_settings.crypto_derivatives_enabled,
+        cftc_positioning_enabled=resolved_settings.cftc_positioning_enabled,
+        options_enabled=resolved_settings.options_enabled,
         prediction_markets_default_item_limit=(
-            resolved_settings.digital_oracle_prediction_markets_default_item_limit
+            resolved_settings.prediction_markets_default_item_limit
         ),
-        sec_filings_default_item_limit=(
-            resolved_settings.digital_oracle_sec_filings_default_item_limit
-        ),
-        macro_rates_default_item_limit=(
-            resolved_settings.digital_oracle_macro_rates_default_item_limit
-        ),
+        sec_filings_default_item_limit=resolved_settings.sec_filings_default_item_limit,
+        macro_rates_default_item_limit=resolved_settings.macro_rates_default_item_limit,
         crypto_derivatives_default_item_limit=(
-            resolved_settings.digital_oracle_crypto_derivatives_default_item_limit
+            resolved_settings.crypto_derivatives_default_item_limit
         ),
-        cftc_positioning_default_item_limit=(
-            resolved_settings.digital_oracle_cftc_positioning_default_item_limit
-        ),
-        options_default_item_limit=resolved_settings.digital_oracle_options_default_item_limit,
-        provider_timeout_seconds=resolved_settings.quote_provider_timeout_seconds,
+        cftc_positioning_default_item_limit=(resolved_settings.cftc_positioning_default_item_limit),
+        options_default_item_limit=resolved_settings.options_default_item_limit,
+        provider_timeout_seconds=resolved_settings.provider_timeout_seconds,
         edgar_contact_email=None,
         fred_api_key=None,
     )
@@ -178,6 +176,7 @@ __all__ = [
     "DIGITAL_ORACLE_PHASE1_PROVIDER_BOUNDARY",
     "DIGITAL_ORACLE_PHASE1_REQUIRES_VENDORED_PACKAGE",
     "DIGITAL_ORACLE_PHASE1_REQUIRES_YFINANCE",
+    "DigitalOracleSettings",
     "CRYPTO_DERIVATIVES_DATA_TYPES",
     "CRYPTO_DERIVATIVES_VENUES",
     "CFTC_POSITIONING_REPORT_TYPES",
@@ -206,4 +205,6 @@ __all__ = [
     "OptionsMoneyness",
     "PredictionMarketVenue",
     "get_digital_oracle_provider_config",
+    "get_digital_oracle_settings",
+    "reset_digital_oracle_settings_cache",
 ]
