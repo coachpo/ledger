@@ -30,10 +30,6 @@ class Settings(BaseSettings):
     quote_provider_timeout_seconds: float = Field(default=5.0, alias="QUOTE_PROVIDER_TIMEOUT")
     quote_provider_backend: str = Field(default="yahoo", alias="QUOTE_PROVIDER_BACKEND")
     quote_stale_after_minutes: int = Field(default=15, alias="QUOTE_STALE_AFTER_MINUTES")
-    finance_alpha_vantage_api_key: str | None = Field(
-        default=None,
-        alias="FINANCE_ALPHA_VANTAGE_API_KEY",
-    )
     finance_news_provider_order: Annotated[list[str], NoDecode] = Field(
         default=["yahoo"],
         alias="FINANCE_NEWS_PROVIDER_ORDER",
@@ -115,13 +111,6 @@ class Settings(BaseSettings):
     )
     digital_oracle_options_default_item_limit: int = Field(
         default=10, alias="DIGITAL_ORACLE_OPTIONS_DEFAULT_ITEM_LIMIT", ge=1, le=50
-    )
-    digital_oracle_edgar_contact_email: str | None = Field(
-        default=None,
-        alias="DIGITAL_ORACLE_EDGAR_CONTACT_EMAIL",
-    )
-    digital_oracle_fred_api_key: str | None = Field(
-        default=None, alias="DIGITAL_ORACLE_FRED_API_KEY"
     )
     agent_platform_encryption_key: str = Field(
         default=DEFAULT_AGENT_PLATFORM_ENCRYPTION_KEY,
@@ -275,19 +264,6 @@ class Settings(BaseSettings):
         if not normalized:
             return None
         return normalized.rstrip("/")
-
-    @field_validator(
-        "digital_oracle_edgar_contact_email",
-        "digital_oracle_fred_api_key",
-        "finance_alpha_vantage_api_key",
-        mode="before",
-    )
-    @classmethod
-    def normalize_optional_digital_oracle_secret(cls, value: object) -> str | None:
-        if value is None:
-            return None
-        normalized = str(value).strip()
-        return normalized or None
 
     @field_validator("runtime_mode", mode="before")
     @classmethod
