@@ -247,6 +247,8 @@ const NOW = "2026-04-20T10:00:00Z";
 const CONTENT_VISIBILITY_AUTO_CLASS = "[content-visibility:auto]";
 const RUNTIME_DEFERRED_SECTION_SIZE_CLASS =
   "[contain-intrinsic-size:auto_960px]";
+const EXECUTION_DEFERRED_SECTION_SIZE_CLASS =
+  "[contain-intrinsic-size:auto_960px]";
 const WORKFLOW_MEMORY_GROUP_SIZE_CLASS = "[contain-intrinsic-size:auto_720px]";
 
 function buildInvocation(
@@ -2162,6 +2164,16 @@ describe("RunsDetailPage", () => {
     expect(
       screen.getByTestId("runs-detail-section-execution-steps"),
     ).not.toHaveAttribute("data-slot");
+    expect(screen.getByTestId("runs-detail-section-diagnostics")).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      EXECUTION_DEFERRED_SECTION_SIZE_CLASS,
+    );
+    expect(
+      screen.getByTestId("runs-detail-section-execution-steps"),
+    ).toHaveClass(
+      CONTENT_VISIBILITY_AUTO_CLASS,
+      EXECUTION_DEFERRED_SECTION_SIZE_CLASS,
+    );
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(
       /copied origin/i,
     );

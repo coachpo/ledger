@@ -170,6 +170,8 @@ const LINEAGE_MAX_ZOOM = 1.8;
 const LINEAGE_CANVAS_HEIGHT_CLASS = "h-80";
 const WORKFLOW_MEMORY_GROUP_DEFERRED_SECTION_CLASS_NAME =
   "[content-visibility:auto] [contain-intrinsic-size:auto_720px]";
+const EXECUTION_DEFERRED_SECTION_CLASS_NAME =
+  "[content-visibility:auto] [contain-intrinsic-size:auto_960px]";
 
 const WORKFLOW_MEMORY_EVIDENCE_GROUPS: WorkflowMemoryEvidenceGroupDefinition[] = [
   {
@@ -1003,6 +1005,7 @@ export function RunDiagnosticsWorkspace({
         data-testid="runs-diagnostics-workspace"
       >
         <RunDetailContentSection
+          className={EXECUTION_DEFERRED_SECTION_CLASS_NAME}
           description="Warnings, failures, unsupported capabilities, and retry/fork safety checks appear here."
           sectionId="diagnostics"
           testId="runs-detail-section-diagnostics"
@@ -1023,6 +1026,7 @@ export function RunDiagnosticsWorkspace({
       data-testid="runs-diagnostics-workspace"
     >
       <RunDetailContentSection
+        className={EXECUTION_DEFERRED_SECTION_CLASS_NAME}
         description="Warnings stay visually separate from destructive failures so degraded runs are not confused with failed ones."
         sectionId="diagnostics"
         testId="runs-detail-section-diagnostics"
@@ -1265,6 +1269,7 @@ export function ExecutionOutline({
       data-testid="runs-execution-outline"
     >
       <RunDetailContentSection
+        className={EXECUTION_DEFERRED_SECTION_CLASS_NAME}
         description="Step and invocation rows stay visible while selected row detail expands inline."
         sectionId="execution-steps"
         testId="runs-detail-section-execution-steps"
