@@ -1,6 +1,6 @@
 # BACKEND GUIDE
 
-> Inherits root rules from `/AGENTS.md`. Local layer docs live under `app/*/AGENTS.md` and `tests/AGENTS.md`.
+> Inherits root rules from `/AGENTS.md`. App-layer rules live in `app/AGENTS.md`; deeper layer docs live under `app/**/AGENTS.md` and `tests/AGENTS.md`.
 
 ## OVERVIEW
 FastAPI + SQLAlchemy + Pydantic backend for SignalDeck. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error/telemetry helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and executable agent workflows are accepted only through Workflow Package APIs. The live request path includes the statically resident `signaldeck.finance` Finance Workspace extension, the tool-only `signaldeck.digital_oracle` extension, and platform routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs.
@@ -22,6 +22,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
 
 ## CHILD DOCS
+- `app/AGENTS.md` — app factory, split API roots, dependency composition, service/repository/schema layering, and worker entrypoints
 - `app/core/AGENTS.md` — settings, error envelope, telemetry, normalization helpers
 - `app/db/AGENTS.md` — engine/session lifecycle and PostgreSQL-only upgrade rules
 - `app/api/AGENTS.md` — route-handler delegation, extension-gated `/api/v1`, and dependency wiring

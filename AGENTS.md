@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-06-16
-**Commit:** 9c6feec
+**Generated:** 2026-06-25
+**Commit:** 4045579
 **Branch:** main
 
 ## OVERVIEW
@@ -14,28 +14,21 @@ Core ships statically resident extensions: `signaldeck.finance` supplies first-p
 Keep platform-core versus extension-owned boundaries explicit. Decide intentionally whether a capability belongs in generic platform contracts or extension ownership, then align routes, tools, registries, docs, and tests.
 
 ## Compatibility, Upgrades, and Removal Policy
-- This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
-- During upgrade work, favor the best current implementation and clean internal boundaries. Preserve legacy shapes, migration bridges, fallback behavior, or compatibility shims only when the task explicitly requests them.
-- For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
+- Prefer clean current architecture over compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers unless the task explicitly requests them.
+- For ordinary removal-only validation, prefer manual confirmation over dedicated “proves not” tests. Keep absence assertions only when the missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
 
 ## Upstream Migration Classification
-- Provider/data lookup functions map to extension-owned runtime tools, provider wrappers, and ToolCatalog metadata under the owning bundled extension.
-- Upstream agent roles, prompts, personas, researchers, managers, traders, reviewers, and analysts map to Workflow Package `agents[]`, never global agents.
-- Orchestration graphs, debates, loops, fanouts, step order, and execution topology map to Workflow Package `workflows[]`; complete runnable upstream agent systems map to package manifests when executable behavior is in scope.
-- Upstream tool groups and role capability sets map to package-local `capabilityProfiles`; generic web search or page fetch stays package-private MCP unless product scope promotes a public extension tool.
-- Similar functions from different upstream repos remain separate migration obligations. Intentionally narrower local behavior is partial migration or a product decision, while renamed or restructured equivalent behavior is not a gap.
-- Do not require exact source copying, and do not reintroduce retired global agents, workflows, capabilities, standalone MCP servers, skills, Studio, Tryout, orchestration, runtime-v2, auth/RBAC, or multi-tenant surfaces to close migration gaps.
+- Provider/data lookups map to extension-owned runtime tools, provider wrappers, and ToolCatalog metadata under the owning bundled extension.
+- Upstream roles, prompts, personas, researchers, managers, traders, reviewers, and analysts map to Workflow Package `agents[]`; orchestration graphs and execution topology map to package `workflows[]`.
+- Upstream capability sets map to package-local `capabilityProfiles`; generic web/page fetch stays package-private MCP unless product scope promotes a public extension tool.
+- Similar functions from different upstream repos remain separate migration obligations. Do not reintroduce retired global authoring, orchestration, runtime-v2, auth/RBAC, or multi-tenant surfaces to close migration gaps.
 
 ## CHILD DOCS
-- `backend/AGENTS.md`, `backend/app/*/AGENTS.md`, `backend/tests/AGENTS.md` — backend layer, runtime, persistence, schema, worker, and test rules
-- `backend/app/agents/{tool_catalog,runtime_tools,mcp}/AGENTS.md` — server tool metadata, native runtime dispatch, and MCP safety boundaries
-- `backend/app/extensions/signaldeck_finance/AGENTS.md`, `backend/app/extensions/signaldeck_digital_oracle/AGENTS.md` — first-party extension ownership
+- `backend/AGENTS.md`, `backend/app/AGENTS.md`, `backend/app/**/AGENTS.md`, `backend/tests/AGENTS.md` — backend app-layer, runtime, persistence, extension, schema, worker, and test rules
 - `.github/workflows/AGENTS.md` — CI gates and container publishing workflow rules
 - `docs/AGENTS.md` — live docs ownership, obsolete-content rules, and platform/extension documentation boundary
 - `frontend/AGENTS.md`, `frontend/src/components/shared/docs/README.md`, `frontend/e2e/AGENTS.md` — frontend shell, design system, browser tests, and startup conventions
-- `frontend/src/extensions/AGENTS.md`, `frontend/src/hooks/AGENTS.md`, `frontend/src/lib/**/AGENTS.md` — extension runtime, query hooks, API/type/platform-authoring contracts
-- `frontend/src/components/**/AGENTS.md`, `frontend/src/pages/AGENTS.md` — reusable UI, feature UI, form/dialog helpers, and routed page-family rules
-- `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/memory/AGENTS.md`, `frontend/src/pages/scheduled-tasks/AGENTS.md`, `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md`, `frontend/src/pages/runs/detail-sections/AGENTS.md` — deeper route-family hotspots
+- `frontend/src/{extensions,hooks,lib,components,pages}/**/AGENTS.md` — extension runtime, hooks, shared UI, API/types, platform-authoring, and routed page-family rules
 
 ## STRUCTURE
 ```text
@@ -56,7 +49,7 @@ signaldeck/
 | Start the full stack locally | `start.sh`, `docker-compose.yml`, `Dockerfile`, `docker/entrypoint.sh`, `docker/nginx.conf.template` | builds the root local/demo image, starts `db` and `app`, publishes only `${APP_PORT:-8080}:8080`, and keeps FastAPI/PostgreSQL internal to Docker |
 | Demo Workflow Package YAML | `demo/tradingagents_advisory_research.yaml`, `demo/digital_oracle_researcher.yaml` | grounded package inputs for manual import/testing across TradingAgents and Digital Oracle flows |
 | Cross-app E2E startup | `frontend/e2e/AGENTS.md`, `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with dedicated startup helpers |
-| Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory plus extension-gated `/api/v1` and current `/api/*` composition |
+| Backend app layer | `backend/app/AGENTS.md`, `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory, split API roots, dependency composition, service/repository/schema layering, and worker entrypoints |
 | Backend agent-platform flow | `backend/app/api/workflow_packages.py`, `backend/app/api/schedules.py`, `backend/app/api/model_connections.py`, `backend/app/api/extensions.py`, `backend/app/api/memory.py`, `backend/app/api/tools.py`, `backend/app/api/runs.py` | Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools metadata, and Runs |
 | Backend extension ownership | `backend/app/extensions/AGENTS.md`, `backend/app/extensions/signaldeck_finance/AGENTS.md`, `backend/app/extensions/signaldeck_digital_oracle/AGENTS.md`, `backend/app/services/extension_service.py` | statically resident extension registry/state plus private Finance Workspace and Digital Oracle registrar ownership |
 | Backend runtime tools, MCP, schedules, memory, and traces | `backend/app/agents/AGENTS.md`, `backend/app/agents/{tool_catalog,runtime_tools,mcp}/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py`, `backend/app/services/workflow_package_schedule_service.py`, `backend/app/workers/run_scheduler.py`, `backend/app/api/memory.py`, `backend/app/core/telemetry.py` | server-declared tools, native runtime tools, due schedule materialization, MCP snapshots/dispatch, platform-core memory API, Logfire trace ids/spans, and memory writes |
@@ -100,15 +93,12 @@ signaldeck/
 - `signaldeck.finance` is the statically resident first-party Finance Workspace extension. It is enabled by default, owns the preserved `/api/v1` finance route families, and gates finance route/nav/tool visibility through backend and frontend extension state.
 - `signaldeck.digital_oracle` is a separate statically resident bundled extension, also enabled by default, and owns only `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, and `signaldeck.digital_oracle.options.lookup` in this upgrade. It adds no route or nav surface.
 - Public `/api/extensions` state is only `key`, `label`, and `enabled`; registry and scaffold details stay private wiring.
-- When planning upgrades, decide explicitly whether behavior belongs in platform core or in extension-owned seams, then update registries, route gates, runtime tools, docs, and tests together instead of letting finance-specific behavior silently redefine shared contracts.
 - Workflow Packages are the canonical platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside package artifacts; persistence is artifact-only, while launch/preflight/rerun/fork readiness is evaluated late against live Model Connections, extension state, and package secret bindings.
 - Package-private HTTP operation nodes and MCP configs are artifact/runtime data, not fake agents or global authoring surfaces. Browser-visible manifest reads and exports omit database ids, run history, package secret bindings, and private MCP `env`, `headers`, and `query` values.
 - Scheduled Tasks are the package-first automation surface for recurring Workflow Package runs. They live at `/api/schedules` and `/scheduled-tasks`, use structured recurrence plus IANA timezones instead of raw cron, and materialize fires into ordinary queued runs through the scheduler worker.
 - Global Tools are read-only server-declared metadata at `/api/tools`; packages reference only canonical owner-qualified extension tool keys through local capability profiles. The live public keys are `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, `signaldeck.finance.reports.lookup`, `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, and `signaldeck.digital_oracle.options.lookup`. Finance and Digital Oracle tools are filtered by enabled extension state. Workflow memory is not exposed as a server-declared tool; packages declare workflow memory through `spec.memory`, and runtime reads/writes enter through workflow memory middleware, policy, and review surfaces. OpenAI function names are the mechanical underscore mapping from canonical keys, for example `signaldeck.finance.market_data.quote_lookup` -> `signaldeck_finance_market_data_quote_lookup`, and `signaldeck.digital_oracle.prediction_markets.lookup` -> `signaldeck_digital_oracle_prediction_markets_lookup`.
 - Tool-call recovery and provider retries are typed runtime contracts: bounded model-feedback correction is only for pre-dispatch argument/schema failures, while transient provider retries are recorded as provider retry metadata and never overload tool-call retry metadata.
 - Workflow package authoring is YAML-manifest based; backend parsers reject legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite numbers, duplicate refs, and raw global ids.
-- Test-writing rule: skip dedicated “proves not” tests for ordinary removal-only checks when manual confirmation already verifies the outcome. Keep absence assertions only when the absence itself is the shipped contract, such as slim-contract guarantees or security fail-closed behavior.
-- Application LLM calls must use official SDKs rather than raw HTTP requests; the current backend path uses the official `OpenAI` Python client.
 
 ## ANTI-PATTERNS
 
