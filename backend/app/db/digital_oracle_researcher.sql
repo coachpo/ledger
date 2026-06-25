@@ -1,4 +1,4 @@
--- Browser-proven Digital Oracle researcher workflow package preset.
+-- Bundled Digital Oracle researcher workflow package preset.
 -- This SQL seed restores only the current workflow_packages row.
 -- It intentionally does not create model_connections, secret bindings, runs, or local runtime state.
 

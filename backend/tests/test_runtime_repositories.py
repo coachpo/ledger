@@ -139,14 +139,12 @@ def _build_model_connection(
     *,
     name: str,
     key: str | None = None,
-    status: str,
     api_key: str,
     model_id: str = "gpt-5.4-mini",
     api_style: str = "responses",
 ) -> ModelConnection:
     return ModelConnection(
         key=key or name.strip().lower().replace(" ", "_"),
-        status=status,
         name=name,
         description=f"{name} description",
         base_url="https://api.openai.com/v1",
@@ -526,13 +524,11 @@ def test_agent_platform_model_connection_repository_lists_rows_by_name(
         alpha = _build_model_connection(
             name="Alpha Model",
             key="alpha_openai",
-            status="active",
             api_key="sk-alpha-1111",
         )
         beta = _build_model_connection(
             name="Beta Model",
             key="beta_openai",
-            status="active",
             api_key="sk-beta-2222",
         )
         session.add_all([beta, alpha])
@@ -542,7 +538,6 @@ def test_agent_platform_model_connection_repository_lists_rows_by_name(
         all_connections = repo.list_connections()
 
         assert [item.id for item in all_connections] == [alpha.id, beta.id]
-        assert all(connection.status == "active" for connection in all_connections)
 
 
 def test_agent_platform_model_connection_repository_and_service_resolve_by_key(
@@ -552,7 +547,6 @@ def test_agent_platform_model_connection_repository_and_service_resolve_by_key(
         active = _build_model_connection(
             name="Primary OpenAI",
             key="primary_openai",
-            status="active",
             api_key="sk-active-1111",
         )
         session.add(active)
@@ -585,7 +579,6 @@ def test_model_connection_delete_unused_hard_deletes_row(
         connection = _build_model_connection(
             name="Delete Unused Model",
             key="delete_unused_model",
-            status="active",
             api_key="sk-unused-delete-1111",
         )
         session.add(connection)
@@ -615,7 +608,6 @@ def test_model_connection_delete_allows_current_package_ref_as_future_readiness_
         connection = _build_model_connection(
             name="Package Referenced Model",
             key="package_referenced_model",
-            status="active",
             api_key=secret_value,
         )
         session.add(connection)
@@ -667,7 +659,6 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
         connection = _build_model_connection(
             name=f"Snapshot Ignored Model {run_status}",
             key=f"snapshot_ignored_model_{run_status}",
-            status="active",
             api_key="sk-snapshot-ignored",
         )
         session.add(connection)

@@ -18,17 +18,6 @@ from sqlalchemy.types import TypeDecorator
 from app.core.config import get_settings
 from app.core.formatting import utcnow
 
-_RETIRED_GLOBAL_AUTHORING_TABLE_NAMES = (
-    "workflow_agent_refs",
-    "agent_capability_refs",
-    "agent_mcp_server_refs",
-    "agents",
-    "workflows",
-    "capabilities",
-    "mcp_servers",
-    "output_schemas",
-)
-
 
 class Base(DeclarativeBase):
     type_annotation_map = {
@@ -49,13 +38,6 @@ class TimestampMixin:
         default=utcnow,
         onupdate=utcnow,
     )
-
-
-def prune_retired_global_authoring_metadata() -> None:
-    for table_name in _RETIRED_GLOBAL_AUTHORING_TABLE_NAMES:
-        table = Base.metadata.tables.get(table_name)
-        if table is not None:
-            Base.metadata.remove(table)
 
 
 _ENCRYPTED_PAYLOAD_MARKER = "__encrypted__"

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict
 from typing import cast
 
@@ -38,7 +37,7 @@ def test_unknown_tool_key_is_package_diagnostic() -> None:
     )
 
 
-def test_package_export_contains_model_key_not_secret_or_id(
+def test_package_export_uses_model_key_and_binding_summary(
     session_factory: sessionmaker[Session],
 ) -> None:
     secret_value = "sk-package-secret-1234"
@@ -48,7 +47,6 @@ def test_package_export_contains_model_key_not_secret_or_id(
     with session_factory() as session:
         connection = ModelConnection(
             key="tradingagents_primary_model",
-            status="active",
             name="TradingAgents Primary Model",
             description="Live global connection for package binding tests.",
             base_url="https://api.openai.com/v1",
@@ -86,30 +84,33 @@ def test_package_export_contains_model_key_not_secret_or_id(
 
     roundtrip = decompile_workflow_package_manifest(package_payload)
     binding_payload = asdict(binding)
-    serialized_package = json.dumps(
-        {
-            "packageDefinition": package_payload["packageDefinition"],
-            "compiledPlan": package_payload["compiledPlan"],
-            "source": roundtrip.source,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    roundtrip_compiled = compile_workflow_package_manifest(roundtrip.source)
+    roundtrip_definition = cast(dict[str, object], roundtrip_compiled["packageDefinition"])
+    roundtrip_spec = cast(dict[str, object], roundtrip_definition["spec"])
+    roundtrip_agent = cast(list[dict[str, object]], roundtrip_spec["agents"])[0]
+
     assert "modelConnection: tradingagents_primary_model" in roundtrip.source
-    assert '"modelConnection":"tradingagents_primary_model"' in serialized_package
+    assert roundtrip_agent["modelConnection"] == "tradingagents_primary_model"
+    assert set(binding_payload) == {
+        "key",
+        "name",
+        "protocol_profile",
+        "base_url",
+        "model_id",
+        "reasoning_effort",
+        "capabilities",
+        "output_strategy_policy",
+        "parallel_tool_calls_policy",
+        "reasoning_policy",
+        "streaming_policy",
+        "probe_cache_ttl_seconds",
+        "api_style",
+        "timeout_seconds",
+        "has_api_key",
+    }
     assert binding_payload["key"] == "tradingagents_primary_model"
+    assert binding_payload["model_id"] == "gpt-5.4-mini"
     assert binding_payload["has_api_key"] is True
-    assert "id" not in binding_payload
-    for forbidden in (
-        "modelConnectionId",
-        "secretPayload",
-        "apiKey",
-        "__encrypted__",
-        "ciphertext",
-        secret_value,
-    ):
-        assert forbidden not in serialized_package
-        assert forbidden not in json.dumps(binding_payload, sort_keys=True)
 
 
 def test_package_model_connection_preflight_blocks_missing_key(

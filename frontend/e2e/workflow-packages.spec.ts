@@ -4,6 +4,7 @@ import {
   type APIRequestContext,
   type Page,
 } from "@playwright/test";
+import { parse } from "yaml";
 
 const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
 const FAKE_PROVIDER_BASE_URL =
@@ -494,16 +495,32 @@ test.describe("Workflow packages", () => {
     );
     expect(exportResponse.ok()).toBeTruthy();
     const exported = await exportResponse.text();
-    expect(exported).toContain(`modelConnection: ${modelKey}`);
-    for (const forbidden of [
-      "secretPayload",
-      "encrypted",
-      "password",
-      "modelConnectionId",
-      "outputSchemaId",
-    ]) {
-      expect(exported).not.toContain(forbidden);
-    }
+    const exportedManifest = parse(exported) as {
+      metadata: { key: string };
+      spec: { agents: Array<Record<string, unknown>> };
+    };
+    const exportedAgent = exportedManifest.spec.agents[0];
+    expect(exportedManifest.metadata.key).toBe(packageKey);
+    expect(Object.keys(exportedManifest.spec).sort()).toEqual([
+      "agents",
+      "capabilityProfiles",
+      "inputs",
+      "mcpServers",
+      "outputSchemas",
+      "workflows",
+    ]);
+    expect(Object.keys(exportedAgent).sort()).toEqual([
+      "capabilityProfiles",
+      "description",
+      "inputSchema",
+      "key",
+      "mcpServers",
+      "modelConnection",
+      "name",
+      "outputSchema",
+      "systemPrompt",
+    ]);
+    expect(exportedAgent.modelConnection).toBe(modelKey);
 
     const importedKey = `${packageKey}_imported`;
     const importResponse = await request.post(

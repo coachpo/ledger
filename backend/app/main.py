@@ -4,7 +4,6 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-import uvicorn
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,10 +18,8 @@ from app.core.errors import ApiError, browser_safe_error_details, request_valida
 from app.core.telemetry import configure_logfire
 from app.db.engine import get_engine
 from app.db.session import init_db
-from app.models.base import prune_retired_global_authoring_metadata
 
 READINESS_UNAVAILABLE_STATUS = status.HTTP_503_SERVICE_UNAVAILABLE
-prune_retired_global_authoring_metadata()
 
 
 @asynccontextmanager
@@ -95,11 +92,3 @@ def create_app(*, init_database: bool = True) -> FastAPI:
 
 
 app = create_app()
-
-
-def main() -> None:
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000)
-
-
-if __name__ == "__main__":
-    main()

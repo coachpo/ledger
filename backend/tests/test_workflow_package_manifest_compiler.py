@@ -130,7 +130,7 @@ spec:
 """
 
 
-def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
+def test_compile_valid_package_manifest_roundtrips_current_contract() -> None:
     compiled = compile_workflow_package_manifest(_valid_package_manifest_source())
     roundtrip = decompile_workflow_package_manifest(compiled)
     recompiled = compile_workflow_package_manifest(roundtrip.source)
@@ -154,15 +154,6 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
     )
     assert "modelConnection: tradingagents_primary_model" in roundtrip.source
 
-    serialized = _canonical_json(compiled)
-    assert "modelConnectionId" not in serialized
-    assert "outputSchemaId" not in serialized
-    assert "capabilityId" not in serialized
-    assert "mcpServerId" not in serialized
-    assert "apiKey" not in serialized
-    assert "secret" not in serialized.lower()
-    assert "encrypted" not in serialized
-
     package_definition = cast(dict[str, object], compiled["packageDefinition"])
     compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
     spec = cast(dict[str, object], package_definition["spec"])
@@ -173,11 +164,38 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
     steps = cast(list[dict[str, object]], workflow["steps"])
     graph = cast(dict[str, object], workflow["compiledGraph"])
 
+    assert set(package_definition) == {"apiVersion", "kind", "metadata", "spec"}
+    assert set(spec) == {
+        "inputs",
+        "capabilityProfiles",
+        "outputSchemas",
+        "mcpServers",
+        "agents",
+        "workflows",
+    }
+    assert set(agents[0]) == {
+        "key",
+        "name",
+        "description",
+        "modelConnection",
+        "systemPrompt",
+        "inputSchema",
+        "outputSchema",
+        "capabilityProfiles",
+        "mcpServers",
+    }
     assert agents[0]["modelConnection"] == "tradingagents_primary_model"
-    assert mcp_servers[0]["env"] == {"RESEARCH_CONTEXT_TOKEN": "local-token"}
+    assert mcp_servers[0] == {
+        "key": "research_context",
+        "name": "Research Context",
+        "description": "Local context server declaration.",
+        "transport": "stdio",
+        "command": "python",
+        "args": ["server.py"],
+        "env": {"RESEARCH_CONTEXT_TOKEN": "local-token"},
+        "toolKeys": ["research_context.search"],
+    }
     assert "RESEARCH_CONTEXT_TOKEN: local-token" in roundtrip.source
-    assert "secretRefs" not in roundtrip.source
-    assert "requiredBindings" not in roundtrip.source
     compiled_agents = cast(list[dict[str, object]], compiled_plan["agents"])
     assert compiled_agents[0]["capabilityProfiles"] == ["market_research_tools"]
     assert compiled_agents[0]["mcpServers"] == ["research_context"]
@@ -220,12 +238,18 @@ def test_compile_inline_private_mcp_preserves_report_and_quote_tool_keys() -> No
         "signaldeck.finance.reports.lookup",
         "signaldeck.finance.market_data.quote_lookup",
     ]
-    assert mcp_server["headers"] == {"Authorization": "Bearer test-token"}
-    assert mcp_server["query"] == {"api_key": "test-api-key"}
+    assert mcp_server == {
+        "key": "exa",
+        "name": "Exa Web Search",
+        "description": "Remote Exa MCP server for advisory information search.",
+        "transport": "http-sse",
+        "url": "https://mcp.exa.ai/mcp",
+        "headers": {"Authorization": "Bearer test-token"},
+        "query": {"api_key": "test-api-key"},
+        "toolKeys": ["web_search_exa"],
+    }
     assert "Authorization: Bearer test-token" in roundtrip.source
     assert "api_key: test-api-key" in roundtrip.source
-    assert "secretRefs" not in roundtrip.source
-    assert "requiredBindings" not in roundtrip.source
     assert "signaldeck.finance.reports.lookup" in roundtrip.source
     assert "signaldeck.finance.market_data.quote_lookup" in roundtrip.source
     assert _canonical_json(compiled) == _canonical_json(recompiled)

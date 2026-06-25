@@ -38,9 +38,6 @@ from app.services.package_execution_plan_builder import (
 _MODEL_CAPABILITY_REQUIRED_MISSING_CODE = "model_capability_required_missing"
 _MODEL_CAPABILITY_PROBE_INCONCLUSIVE_CODE = "model_capability_probe_inconclusive"
 _MODEL_REASONING_UNSUPPORTED_CODE = "model_reasoning_unsupported"
-_OLD_CORE_MEMORY_TOOL_KEYS = {
-    ".".join(("signaldeck", "core", "memory", action)) for action in ("lookup", "write")
-}
 
 
 class WorkflowPackageDiagnosticProjectionContext(StrEnum):
@@ -697,9 +694,7 @@ class WorkflowPackagePreflightService:
                         self._profile_tool_error(profile_key=profile_key, detail=detail)
                     )
             for index, tool_key in enumerate(tool_keys):
-                if (
-                    tool_key in _OLD_CORE_MEMORY_TOOL_KEYS or tool_key not in known_keys
-                ) and not any(
+                if tool_key not in known_keys and not any(
                     diagnostic["field"]
                     == f"spec.capabilityProfiles.{profile_key}.toolKeys[{index}]"
                     for diagnostic in diagnostics

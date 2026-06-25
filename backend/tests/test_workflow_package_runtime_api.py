@@ -38,6 +38,7 @@ from app.models.workflow_package_schedule import (
 from app.repositories.workflow_memory import WorkflowMemoryRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.extension import ExtensionToggleRequest
+from app.schemas.run import RunAgentInvocationRead, RunPackageProvenanceRead
 from app.schemas.schedule import (
     DailyRecurrence,
     FireReason,
@@ -48,7 +49,7 @@ from app.schemas.schedule import (
     OverlapPolicy,
     ScheduleCreate,
 )
-from app.schemas.workflow_package import WorkflowPackageLaunchCreateRequest
+from app.schemas.workflow_package import WorkflowPackageLaunchCreateRequest, WorkflowPackageRead
 from app.services.extension_service import ExtensionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_dto import (
@@ -809,22 +810,12 @@ def _package_source_with_inline_private_mcp(*, package_key: str) -> str:
     )
 
 
-_PACKAGE_READ_OPERATION_FIELDS = {
-    "status",
-    "blockingErrors",
-    "canRun",
-    "health",
-    "last" + "LaunchedAt",
-    "lastPreflightAt",
-    "preflightSummary",
-    "ready",
-    "validation" + "Summary",
-    "warnings",
-}
+def _schema_aliases(schema: type[Any]) -> set[str]:
+    return {field.alias or name for name, field in schema.model_fields.items()}
 
 
 def _assert_package_read_is_artifact_inventory(body: dict[str, object]) -> None:
-    assert _PACKAGE_READ_OPERATION_FIELDS.isdisjoint(body)
+    assert set(body) == _schema_aliases(WorkflowPackageRead)
 
 
 def _create_package(
@@ -974,7 +965,6 @@ def _seed_model_connection(
         session.add(
             ModelConnection(
                 key=key,
-                status="active",
                 name=name,
                 description=description,
                 base_url=base_url,
@@ -2704,11 +2694,12 @@ def test_workflow_package_launch_executes_with_live_model_connection(
     assert detail["targetId"] == created["id"]
     assert detail["targetKey"] == "runtime_package"
     provenance = cast(dict[str, Any], detail["packageProvenance"])
+    assert set(provenance) == _schema_aliases(RunPackageProvenanceRead)
     assert provenance["workflowPackageKey"] == "runtime_package"
     assert provenance["workflowKey"] == "runtime_workflow"
-    assert "workflowPackageVersion" not in provenance
     assert provenance["launchSnapshot"]["parameters"] == {"ticker": "MSFT"}
     invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    assert set(invocation) == _schema_aliases(RunAgentInvocationRead)
     assert invocation["agentRef"] == {
         "scope": "packageLocal",
         "localId": 1,
@@ -2721,8 +2712,6 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         "key": "summary_output",
         "version": 1,
     }
-    assert "agentId" not in invocation
-    assert "outputSchemaId" not in invocation
     assert detail["finalOutput"] == {"summary": "package live runtime output"}
     assert detail["executedTokens"] == 23
     assert gateway_calls == ["package_analyst"]
@@ -5461,16 +5450,6 @@ def test_schedule_api_rejects_unknown_workflow_key_before_create_or_update_persi
         assert len(schedules) == 1
         assert schedules[0].workflow_key == "runtime_workflow"
         assert schedules[0].name == "Workflow key guard schedule"
-
-
-def test_schedule_api_list_rejects_archived_status_filter(client: TestClient) -> None:
-    archived_filter = client.get("/api/schedules", params={"status": "archived"})
-
-    assert archived_filter.status_code == 422, archived_filter.json()
-    archived_filter_body = cast(dict[str, Any], archived_filter.json())
-    assert archived_filter_body["code"] == "validation_error"
-    assert archived_filter_body["message"] == "Request validation failed"
-    assert archived_filter_body["details"][0]["field"] == "status"
 
 
 @pytest.mark.parametrize(

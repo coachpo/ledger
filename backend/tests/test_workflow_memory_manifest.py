@@ -392,15 +392,21 @@ def test_memory_dump_keeps_external_camel_case_contract() -> None:
     writes = cast(Mapping[str, object], memory["writes"])
     policy = cast(Mapping[str, object], memory["policy"])
 
-    assert "maxItems" in retrieval
-    assert "max_items" not in retrieval
-    assert "relevanceThreshold" in retrieval
-    assert "includeKinds" in retrieval
-    assert "allowedKinds" in writes
-    assert "defaultDecision" in writes
-    assert "autoCommitKinds" in writes
-    assert "sensitiveData" in policy
-    assert "expirationDays" in policy
+    assert set(retrieval) == {
+        "enabled",
+        "namespaces",
+        "maxItems",
+        "relevanceThreshold",
+        "includeKinds",
+    }
+    assert set(writes) == {"proposals", "allowedKinds", "defaultDecision", "autoCommitKinds"}
+    assert set(policy) == {
+        "secrets",
+        "sensitiveData",
+        "expirationDays",
+        "unauthorized",
+        "consolidation",
+    }
 
 
 def test_compile_manifest_omitted_memory_resolves_disabled_policy() -> None:

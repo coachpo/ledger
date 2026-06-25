@@ -1242,8 +1242,7 @@ def _assert_recursive_strict_schema(schema: object, *, path: str) -> None:
 
 
 def _assert_strict_openai_tool_schema(tool: dict[str, object]) -> None:
-    assert "displayName" not in tool
-    assert "display_name" not in tool
+    assert set(tool) == {"type", "name", "description", "strict", "parameters"}
     assert tool["type"] == "function"
     assert tool["strict"] is True
     parameters = cast(dict[str, object], tool["parameters"])
@@ -1820,9 +1819,6 @@ def test_digital_oracle_researcher_demo_dispatches_mocked_phase1_runtime_tools(
         MACRO_RATES_LOOKUP_TOOL_KEY,
         OPTIONS_LOOKUP_TOOL_KEY,
     }
-    assert "Package-ready draft" not in manifest_source
-    assert "spec.skills" not in manifest_source
-    assert "secrets:" not in manifest_source
 
     polymarket_provider = _FakeDigitalOraclePredictionProvider(
         "polymarket",
@@ -3199,7 +3195,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
     assert insider_payload["transactions"][0]["filedAt"] == "2026-01-02T03:04:05Z"
 
 
-def test_news_lookup_contract_remains_news_only_and_backward_compatible() -> None:
+def test_news_lookup_contract_uses_current_news_fields() -> None:
     parameters = NEWS_LOOKUP_TOOL_SPEC.parameters_schema
     properties = cast(dict[str, object], parameters["properties"])
 
@@ -3220,8 +3216,6 @@ def test_news_lookup_contract_remains_news_only_and_backward_compatible() -> Non
         "global",
         None,
     ]
-    assert "sources" not in properties
-    assert "sourceBlocks" not in properties
 
     parsed = parse_news_lookup_arguments(
         json.dumps(
@@ -3259,8 +3253,6 @@ def test_news_lookup_contract_remains_news_only_and_backward_compatible() -> Non
         "items",
         "warnings",
     }
-    assert "sourceBlocks" not in payload
-    assert "metrics" not in payload
 
 
 def test_news_lookup_parser_supports_bounded_global_scope_without_social_mutation() -> None:
@@ -3360,6 +3352,15 @@ def test_news_lookup_dispatch_uses_injected_finance_news_providers(
     )
 
     _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert set(payload) == {
+        "toolKey",
+        "query",
+        "symbols",
+        "startDate",
+        "endDate",
+        "items",
+        "warnings",
+    }
     assert news_provider.news_calls == [(["NVDA"], "earnings", "symbol", start_date, end_date, 3)]
     assert payload["toolKey"] == NEWS_LOOKUP_TOOL_KEY
     assert payload["query"] == "earnings"
@@ -3371,8 +3372,6 @@ def test_news_lookup_dispatch_uses_injected_finance_news_providers(
         "message": "News results were truncated to 2 items",
         "details": {"limit": "2", "scope": "symbol"},
     }
-    assert "sourceBlocks" not in payload
-    assert "metrics" not in payload
 
 
 def test_news_lookup_uses_context_alpha_vantage_secret_when_provider_order_prefers_alpha(
@@ -5210,7 +5209,14 @@ def test_indicators_lookup_runtime_tool_spec_uses_expanded_selection_schema() ->
         "indicators",
         "rowLimit",
     ]
-    assert "smaWindows" not in properties
+    assert set(properties) == {
+        "symbol",
+        "currentDate",
+        "startDate",
+        "endDate",
+        "indicators",
+        "rowLimit",
+    }
     assert indicators_property["type"] == "array"
     assert indicators_property["maxItems"] == 24
     assert indicator_type_property["enum"] == [
@@ -8835,7 +8841,6 @@ def test_sec_filings_runtime_tool_spec_uses_approved_parameters_schema() -> None
         "itemLimit",
         "includeOwnershipTransactions",
     }
-    assert "edgarContactEmail" not in properties
     assert cast(dict[str, object], properties["query"])["maxLength"] == 200
     assert cast(dict[str, object], properties["itemLimit"])["maximum"] == 50
 
@@ -10033,8 +10038,6 @@ def test_market_sentiment_runtime_tool_spec_uses_approved_parameters_schema() ->
     assert schema["required"] == ["indicator"]
     assert set(properties) == {"indicator", "asOfDate"}
     assert indicator_property["enum"] == ["fear_greed"]
-    assert "symbol" not in properties
-    assert "sources" not in properties
 
 
 def test_market_sentiment_parser_normalizes_indicator_and_as_of_date() -> None:
@@ -10222,9 +10225,6 @@ def test_market_sentiment_runtime_executor_returns_normalized_fear_greed_payload
         "sourceUrl": MARKET_SENTIMENT_SOURCE_URL,
         "warnings": [],
     }
-    assert "symbol" not in payload
-    assert "sourceBlocks" not in payload
-    assert "metrics" not in payload
 
 
 def test_market_sentiment_runtime_executor_returns_empty_warning_for_empty_provider(

@@ -46,10 +46,6 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
     __tablename__ = "model_connections"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('active')",
-            name="ck_model_connections_status",
-        ),
-        CheckConstraint(
             "reasoning_effort IS NULL OR (length(btrim(reasoning_effort)) BETWEEN 1 AND 128)",
             name="ck_model_connections_reasoning_effort",
         ),
@@ -91,17 +87,10 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
         ),
         UniqueConstraint("key", name="uq_model_connections_key"),
         Index("ix_model_connections_key", "key"),
-        Index("ix_model_connections_status", "status"),
         Index("ix_model_connections_model_id", "model_id"),
     )
 
     key: Mapped[str] = mapped_column(String(120), nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="active",
-        server_default="active",
-    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     base_url: Mapped[str] = mapped_column(String(500), nullable=False)

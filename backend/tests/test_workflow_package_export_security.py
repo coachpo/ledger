@@ -9,7 +9,7 @@ from app.services.workflow_package_manifest_compiler import compile_workflow_pac
 from tests.test_workflow_package_manifest_parser import _valid_http_sse_package_manifest_source
 
 
-def test_export_redacts_secret_bearing_mcp_request_config() -> None:
+def test_export_emits_authoring_safe_mcp_manifest() -> None:
     compiled = compile_workflow_package_manifest(_valid_http_sse_package_manifest_source())
     package_definition = deepcopy(cast(dict[str, Any], compiled["packageDefinition"]))
     compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
@@ -44,43 +44,40 @@ def test_export_redacts_secret_bearing_mcp_request_config() -> None:
     exported = export_workflow_package_yaml(
         {"packageDefinition": package_definition, "compiledPlan": compiled_plan}
     )
-    exported_bytes = exported.encode("utf-8")
+    recompiled = compile_workflow_package_manifest(exported)
+    safe_definition = cast(dict[str, Any], recompiled["packageDefinition"])
+    safe_spec = cast(dict[str, Any], safe_definition["spec"])
+    safe_agents = cast(list[dict[str, Any]], safe_spec["agents"])
+    safe_mcp_server = cast(list[dict[str, Any]], safe_spec["mcpServers"])[0]
 
     assert "apiVersion: signaldeck.workflowPackage/v1" in exported
     assert "modelConnection: tradingagents_primary_model" in exported
     assert "transport: http-sse" in exported
     assert "url: https://mcp.example.test/sse" in exported
-    assert "env:" not in exported
-    assert "headers:" not in exported
-    assert "query:" not in exported
-    assert "secretRefs:" not in exported
-    assert "requiredBindings:" not in exported
-    for forbidden in (
-        b"sk-",
-        b"apiKey",
-        b"secretPayload",
-        b"encrypted",
-        b"password",
-        b"raw-env-token",
-        b"raw-header-token",
-        b"raw-api-key",
-        b"raw-query-token",
-        b"raw-auth-token",
-        b"modelConnectionId",
-        b"mcpServerId",
-        b"agentId",
-        b"id: 99",
-        b"id: 123",
-    ):
-        assert forbidden not in exported_bytes
-
-    recompiled = compile_workflow_package_manifest(exported)
-    safe_definition = cast(dict[str, Any], recompiled["packageDefinition"])
-    safe_mcp_server = cast(
-        list[dict[str, Any]], cast(dict[str, Any], safe_definition["spec"])["mcpServers"]
-    )[0]
-    assert "env" not in safe_mcp_server
-    assert "headers" not in safe_mcp_server
-    assert "query" not in safe_mcp_server
-    assert "secretRefs" not in safe_mcp_server
-    assert "requiredBindings" not in safe_mcp_server
+    assert set(safe_spec) == {
+        "inputs",
+        "capabilityProfiles",
+        "outputSchemas",
+        "mcpServers",
+        "agents",
+        "workflows",
+    }
+    assert set(safe_agents[0]) == {
+        "key",
+        "name",
+        "description",
+        "modelConnection",
+        "systemPrompt",
+        "inputSchema",
+        "outputSchema",
+        "capabilityProfiles",
+        "mcpServers",
+    }
+    assert safe_mcp_server == {
+        "key": "research_context",
+        "name": "Research Context",
+        "description": "Local context server declaration.",
+        "transport": "http-sse",
+        "url": "https://mcp.example.test/sse",
+        "toolKeys": ["research_context.search"],
+    }

@@ -47,8 +47,6 @@ describe("launch input state", () => {
       ticker: "",
     });
     expect(state.formattedJson).toBe(JSON.stringify(state.payload, null, 2));
-    expect(state.formattedJson).not.toContain("comment");
-    expect(state.formattedJson).not.toContain("ignoredOptional");
   });
 
   it("keeps formatted JSON deterministic", () => {

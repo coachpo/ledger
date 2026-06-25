@@ -28,7 +28,6 @@ _EXPECTED_TRADINGAGENTS_MANIFEST_WORKFLOW_KEYS = (
     "news_research",
     "fundamentals_research",
 )
-_DB_UPGRADE_MARKER_TABLE = "db_upgrade_markers"
 
 
 def _workflow_package_payload(
@@ -233,7 +232,6 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
     assert {
         "id",
         "key",
-        "status",
         "name",
         "description",
         "base_url",
@@ -324,7 +322,6 @@ def test_workflow_package_upgrade_reseeds_stale_first_party_preset_row(
         stale_id = int(clean_row["id"])
 
         with engine.begin() as connection:
-            connection.execute(text(f"DELETE FROM {_DB_UPGRADE_MARKER_TABLE}"))
             connection.execute(
                 text(
                     """
@@ -369,9 +366,6 @@ def test_workflow_package_upgrade_reseeds_stale_first_party_preset_row(
                 .mappings()
                 .one()
             )
-            marker_count = connection.execute(
-                text(f"SELECT COUNT(*) FROM {_DB_UPGRADE_MARKER_TABLE}")
-            ).scalar_one()
 
         assert int(reseeded_row["id"]) != stale_id
         for field in (
@@ -385,7 +379,6 @@ def test_workflow_package_upgrade_reseeds_stale_first_party_preset_row(
             "extension_dependencies",
         ):
             assert reseeded_row[field] == clean_row[field]
-        assert marker_count == 1
     finally:
         engine.dispose()
 
@@ -417,45 +410,22 @@ def test_workflow_package_upgrade_reseeds_stale_marked_first_party_preset_row(
         stale_id = int(clean_row["id"])
 
         with engine.begin() as connection:
-            removed_budget_field = "budget" + "Usd"
             connection.execute(
                 text(
                     """
                     UPDATE workflow_packages
-                    SET manifest_source = manifest_source || E'\n# stale preset artifact\n'
-                            || :removed_budget_field || E': "10"\n',
+                    SET manifest_source = manifest_source || E'\n# stale preset artifact\n',
                         manifest_hash = :manifest_hash,
-                        package_definition = jsonb_set(
-                            package_definition,
-                            CAST(:package_budget_path AS text[]),
-                            '10'::jsonb,
-                            true
-                        ),
-                        compiled_plan = jsonb_set(
-                            compiled_plan,
-                            CAST(:plan_budget_path AS text[]),
-                            '10'::jsonb,
-                            true
-                        ),
                         updated_at = NOW()
                     WHERE key = :package_key
                     """
                 ),
                 {
                     "manifest_hash": "0" * 64,
-                    "package_budget_path": "{"
-                    + ",".join(("spec", "agents", "0", removed_budget_field))
-                    + "}",
                     "package_key": _TRADINGAGENTS_PRESET_KEY,
-                    "plan_budget_path": "{" + ",".join(("agents", "0", removed_budget_field)) + "}",
-                    "removed_budget_field": removed_budget_field,
                 },
             )
-            marker_count_before = connection.execute(
-                text(f"SELECT COUNT(*) FROM {_DB_UPGRADE_MARKER_TABLE}")
-            ).scalar_one()
 
-        assert marker_count_before == 1
         init_db(database_url)
         _assert_workflow_package_schema(engine)
         init_db(database_url)
@@ -478,9 +448,6 @@ def test_workflow_package_upgrade_reseeds_stale_marked_first_party_preset_row(
                 .mappings()
                 .one()
             )
-            marker_count_after = connection.execute(
-                text(f"SELECT COUNT(*) FROM {_DB_UPGRADE_MARKER_TABLE}")
-            ).scalar_one()
 
         assert int(reseeded_row["id"]) != stale_id
         for field in (
@@ -494,7 +461,6 @@ def test_workflow_package_upgrade_reseeds_stale_marked_first_party_preset_row(
             "extension_dependencies",
         ):
             assert reseeded_row[field] == clean_row[field]
-        assert marker_count_after == 1
     finally:
         engine.dispose()
 

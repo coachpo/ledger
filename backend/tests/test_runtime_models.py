@@ -117,7 +117,6 @@ def test_model_connections_enforce_unique_keys(session_factory) -> None:
         session.add(
             ModelConnection(
                 key="primary_openai",
-                status="active",
                 name="Primary OpenAI",
                 description="Primary model connection",
                 base_url="https://api.openai.com/v1",
@@ -132,7 +131,6 @@ def test_model_connections_enforce_unique_keys(session_factory) -> None:
         session.add(
             ModelConnection(
                 key="primary_openai",
-                status="active",
                 name="Duplicate OpenAI",
                 description="Duplicate model connection",
                 base_url="https://api.openai.com/v1",

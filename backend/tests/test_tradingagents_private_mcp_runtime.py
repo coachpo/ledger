@@ -248,7 +248,6 @@ def _seed_tradingagents_model(session_factory: sessionmaker[Session]) -> None:
         session.add(
             ModelConnection(
                 key="tradingagents_primary_model",
-                status="active",
                 name="TradingAgents Primary Model",
                 description="TradingAgents smoke model binding.",
                 base_url="https://runtime-v1.example.com/v1",

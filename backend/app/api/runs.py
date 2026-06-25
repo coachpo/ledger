@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.dependencies import get_run_service
-from app.core.errors import validation_error
 from app.schemas.run import (
     RunCreatedRead,
     RunForkCreateRequest,
@@ -23,7 +22,6 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 
 @router.get("", response_model=RunListRead)
 def list_runs(
-    request: Request,
     service: Annotated[RunService, Depends(get_run_service)],
     workflow_package_key: Annotated[str | None, Query(alias="workflowPackageKey")] = None,
     workflow_package_id: Annotated[int | None, Query(alias="workflowPackageId")] = None,
@@ -33,21 +31,6 @@ def list_runs(
     limit: Annotated[int | None, Query(ge=1, le=200)] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> RunListRead:
-    if any(key in request.query_params for key in ("targetKind", "targetId", "targetKey")):
-        raise validation_error(
-            "Request validation failed",
-            [
-                {
-                    "field": "targetKind",
-                    "issue": (
-                        "targetKind, targetId, and targetKey are no longer supported "
-                        "for runs filtering; use workflowPackageId, "
-                        "workflowPackageKey, or workflowKey."
-                    ),
-                }
-            ],
-        )
-
     return service.list_runs(
         workflow_package_key=workflow_package_key,
         workflow_package_id=workflow_package_id,

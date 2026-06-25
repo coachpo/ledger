@@ -8,7 +8,7 @@ For the easiest full-stack path, run `./start.sh` from the repository root. It u
 
 The public app URL is `http://localhost:${APP_PORT:-8080}`. Nginx runs inside the app container and proxies `/health`, `/ready`, `/api/`, and `/api/v1/` to the internal FastAPI backend. The backend, scheduler, and PostgreSQL/pgvector database are not exposed directly on host ports by default.
 
-The launcher preserves the root Compose environment controls, including `APP_PORT`, `POSTGRES_PASSWORD`, `AGENT_PLATFORM_ENCRYPTION_KEY`, `BUILD_FRONTEND`, and `VITE_API_BASE_URL`.
+The launcher preserves the root Compose environment controls, including `APP_PORT`, `POSTGRES_PASSWORD`, `AGENT_PLATFORM_ENCRYPTION_KEY`, and `VITE_API_BASE_URL`.
 
 If you want to work on the backend test suite directly outside the full local stack:
 
@@ -72,8 +72,8 @@ docker compose -f ../docker-compose.yml down -v
 
 ## Notes
 
-- `app/db/upgrades.py` is the supported schema-repair path; `alembic/` is scaffolding only.
-- Startup schema repair detaches legacy schedule rows from linked runs, backfills `scheduleProvenance` when resolvable, deletes obsolete schedule and fire rows, and no longer routes schedule cleanup through a destructive schedule cleanup path.
+- `app/db/upgrades.py` is the supported schema-repair path; there is no live Alembic path.
+- Startup schema repair keeps current schedule, run, extension-state, preset, and report invariants in sync with live tables.
 - Playwright E2E starts a dedicated backend on port `8001` through `frontend/scripts/start-playwright-backend.mjs`, sets `QUOTE_PROVIDER_BACKEND=deterministic` by default, and pairs with a built frontend preview on `4173`.
 - The frontend E2E helper defaults `VITE_API_BASE_URL=http://127.0.0.1:8001/api/v1`.
 - `docs/` has live product, platform, API, data-model, test, and runtime-input references.

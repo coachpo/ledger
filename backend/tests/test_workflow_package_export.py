@@ -4,10 +4,11 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
+from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
 
 
-def test_secret_binding_export_omission(client: TestClient) -> None:
+def test_secret_binding_export_keeps_manifest_secret_references(client: TestClient) -> None:
     create_response = client.post(
         "/api/workflow-packages",
         json={"manifestSource": http_node_package_source()},
@@ -28,7 +29,6 @@ def test_secret_binding_export_omission(client: TestClient) -> None:
     assert "kind: http" in exported
     assert "Authorization: ${{ secrets.slack_webhook_token }}" in exported
     assert "token: ${{ secrets.body_token }}" in exported
-    assert "slack-secret-value" not in exported
-    assert "secret-bindings" not in exported
-    assert "secret_payload" not in exported
-    assert "secretPayload" not in exported
+    assert compile_workflow_package_manifest(exported)["packageDefinition"] == (
+        compile_workflow_package_manifest(http_node_package_source())["packageDefinition"]
+    )

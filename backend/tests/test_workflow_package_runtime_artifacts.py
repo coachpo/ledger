@@ -91,7 +91,6 @@ def _seed_runtime_input_registry_boundary_model_connection(
         session.add(
             ModelConnection(
                 key="package_runtime_model",
-                status="active",
                 name="Package Runtime Model",
                 description="Runtime boundary model binding.",
                 base_url="https://runtime-boundary.example.com/v1",

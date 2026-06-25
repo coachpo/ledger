@@ -42,10 +42,6 @@ _REF_EXPR_RE = re.compile(r"^\$\{\{\s*(?P<body>[^{}]+?)\s*\}\}$")
 _MCP_INLINE_SECRET_FIELDS = {"env", "headers", "query"}
 _MCP_SECRET_REDACTION_VALUE = "[REDACTED]"
 _REMOVED_SCHEMA_KEYWORDS = {"additionalProperties", "allowAdditionalProperties"}
-_OLD_CORE_MEMORY_TOOL_KEYS = {
-    ".".join(("signaldeck", "core", "memory", action)) for action in ("lookup", "write")
-}
-
 type McpSecretProjectionMode = Literal["authoring", "redacted"]
 MCP_SECRET_PROJECTION_AUTHORING: McpSecretProjectionMode = "authoring"
 MCP_SECRET_PROJECTION_REDACTED: McpSecretProjectionMode = "redacted"
@@ -87,7 +83,6 @@ def compile_workflow_package_manifest(
     source: str | WorkflowPackageManifest,
     *,
     tool_catalog: ToolCatalog | None = None,
-    reject_retired_memory_tools: bool = False,
 ) -> dict[str, object]:
     manifest, source_text = _resolve_manifest(source)
     resolved_tool_catalog = tool_catalog or get_default_tool_catalog()
@@ -95,7 +90,6 @@ def compile_workflow_package_manifest(
         manifest,
         source_text,
         tool_catalog=resolved_tool_catalog,
-        reject_retired_memory_tools=reject_retired_memory_tools,
     )
     if diagnostics:
         raise WorkflowPackageManifestCompilerError(diagnostics)
@@ -861,7 +855,6 @@ def _validate_package_refs(
     source: str | None,
     *,
     tool_catalog: ToolCatalog,
-    reject_retired_memory_tools: bool,
 ) -> list[WorkflowPackageManifestDiagnostic]:
     diagnostics: list[WorkflowPackageManifestDiagnostic] = []
     output_schemas = {schema.key for schema in manifest.spec.output_schemas}
@@ -875,7 +868,6 @@ def _validate_package_refs(
                 profile,
                 tool_catalog,
                 source,
-                reject_retired_memory_tools=reject_retired_memory_tools,
             )
         )
 
@@ -923,12 +915,8 @@ def _validate_capability_profile_tools(
     profile: WorkflowPackageCapabilityProfile,
     tool_catalog: ToolCatalog,
     source: str | None,
-    *,
-    reject_retired_memory_tools: bool,
 ) -> list[WorkflowPackageManifestDiagnostic]:
     diagnostics: list[WorkflowPackageManifestDiagnostic] = []
-    if reject_retired_memory_tools:
-        diagnostics.extend(_retired_memory_tool_diagnostics(profile, source))
     try:
         _ = tool_catalog.resolve_tool_keys(profile.tool_keys)
     except ToolCatalogValidationError as exc:
@@ -941,21 +929,6 @@ def _validate_capability_profile_tools(
             for detail in exc.details
         )
     return diagnostics
-
-
-def _retired_memory_tool_diagnostics(
-    profile: WorkflowPackageCapabilityProfile,
-    source: str | None,
-) -> list[WorkflowPackageManifestDiagnostic]:
-    return [
-        _diagnostic(
-            f"Unknown server-declared tool {tool_key!r}",
-            path=f"spec.capabilityProfiles.{profile.key}.toolKeys[{index}]",
-            source=source,
-        )
-        for index, tool_key in enumerate(profile.tool_keys)
-        if tool_key in _OLD_CORE_MEMORY_TOOL_KEYS
-    ]
 
 
 def _profile_tool_key_path(profile_key: str, field: str) -> str:

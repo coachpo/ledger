@@ -62,18 +62,6 @@ docker run --rm -p 8080:8080 \
 
 For development against a database running on the Docker host, add `--add-host=host.docker.internal:host-gateway` and use `host.docker.internal` in `DATABASE_URL`. Do not publish database ports in production just to reach the app container.
 
-### Frontend-disabled mode
-
-```bash
-docker build --build-arg BUILD_FRONTEND=false -t signaldeck-backend-only .
-docker run --rm -p 8080:8080 \
-  -e DATABASE_URL='postgresql+psycopg://...' \
-  -e AGENT_PLATFORM_ENCRYPTION_KEY='change-me' \
-  signaldeck-backend-only
-```
-
-`BUILD_FRONTEND=false` skips `pnpm install` and `pnpm run build`, then bakes a minimal fallback `index.html` into `/usr/share/nginx/html`.
-
 ### Compose mode
 
 ```bash
@@ -96,12 +84,10 @@ Only the app/Nginx port is published on the host:
 - backend: internal only at `127.0.0.1:${BACKEND_PORT:-8000}` inside the app container
 - database: internal only on the compose network
 
-Nginx listens on `${PORT:-8080}`, serves `/usr/share/nginx/html`, falls back to `index.html` for frontend routes, and proxies `/health`, `/ready`, `/api/`, and `/api/v1/` to FastAPI. The local combined image has a Docker health check against `/ready`. The final image does not run Vite, the React dev server, or `frontend/server.mjs`.
+Nginx listens on `${PORT:-8080}`, serves `/usr/share/nginx/html`, falls back to `index.html` for frontend routes, and proxies `/health`, `/ready`, `/api/`, and `/api/v1/` to FastAPI. The local combined image has a Docker health check against `/ready`.
 
 Build args:
 
-- `BUILD_FRONTEND=true` builds `frontend/` with Node 24 and pnpm 10.30.1.
-- `BUILD_FRONTEND=false` skips the frontend build and uses the fallback page.
 - `VITE_API_BASE_URL=/api/v1` is the default same-origin frontend API base.
 
 Runtime env vars:
@@ -136,7 +122,7 @@ It will:
 - publish only the app/Nginx port on the host, defaulting to `http://localhost:${APP_PORT:-8080}`
 - keep the backend/API same-origin behind Nginx through `/health`, `/ready`, `/api/`, and `/api/v1/`
 
-The helper preserves the root Compose environment controls, including `APP_PORT`, `POSTGRES_PASSWORD`, `AGENT_PLATFORM_ENCRYPTION_KEY`, `BUILD_FRONTEND`, and `VITE_API_BASE_URL`.
+The helper preserves the root Compose environment controls, including `APP_PORT`, `POSTGRES_PASSWORD`, `AGENT_PLATFORM_ENCRYPTION_KEY`, and `VITE_API_BASE_URL`.
 
 ### 2. Open the app and verify the stack
 
@@ -174,7 +160,6 @@ The direct Compose path uses the same local/demo-only root image and keeps datab
 
 - The normal browser-facing execution surfaces are Workflow Packages, Scheduled Tasks, Model Connections, and Runs, plus the preserved portfolio, template, and report routes. In Runs, rerun is for root parameters and fork is for one agent invocation input.
 - Workflow package manifests use `signaldeck.workflowPackage/v1`; package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs are authored inside one package. Private MCP `env`, `headers`, and `query` fields are secret-bearing authoring/runtime config and are omitted from browser-visible manifest reads and exports.
-- Backend startup schema repair detaches legacy schedule rows from linked runs, backfills `scheduleProvenance` when resolvable, deletes obsolete schedule and fire rows, and no longer routes schedule cleanup through a destructive schedule cleanup path.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright E2E uses Chromium only with dedicated startup helpers: backend `8001`, frontend preview `4173`, deterministic quote provider, and frontend API base `http://127.0.0.1:8001/api/v1` by default.
 - `PUBLIC_BASE_URL` is not required for normal local development; only set it when you need an explicit externally reachable backend origin for downstream absolute links.

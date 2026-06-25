@@ -20,21 +20,14 @@ ENV VITE_GIT_RUN_NUMBER=$VITE_GIT_RUN_NUMBER
 ENV VITE_GIT_REVISION=$VITE_GIT_REVISION
 RUN pnpm run build
 
-FROM node:24-alpine AS runner
+FROM nginx:alpine AS runner
 
-WORKDIR /app
+ENV PORT=3000
 
-ENV NODE_ENV=production \
-    PORT=3000
-
-RUN apk add --no-cache curl
-
-COPY --from=build /app/dist ./dist
-COPY server.mjs ./server.mjs
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl --fail "http://127.0.0.1:${PORT:-3000}/health" || exit 1
-
-CMD ["node", "server.mjs"]
+    CMD wget -q -O - "http://127.0.0.1:${PORT:-3000}/health" >/dev/null || exit 1

@@ -1,6 +1,5 @@
 FROM node:24-alpine AS frontend-builder
 
-ARG BUILD_FRONTEND=true
 ARG VITE_API_BASE_URL=/api/v1
 
 WORKDIR /app
@@ -10,30 +9,10 @@ RUN apk add --no-cache libc6-compat curl \
     && corepack prepare pnpm@10.30.1 --activate
 
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
-RUN if [ "$BUILD_FRONTEND" = "true" ]; then pnpm install --frozen-lockfile; fi
+RUN pnpm install --frozen-lockfile
 
 COPY frontend/ ./
-RUN if [ "$BUILD_FRONTEND" = "true" ]; then \
-      VITE_API_BASE_URL="$VITE_API_BASE_URL" pnpm run build; \
-    else \
-      mkdir -p /app/dist; \
-      printf '%s\n' \
-        '<!doctype html>' \
-        '<html lang="en">' \
-        '  <head>' \
-        '    <meta charset="utf-8" />' \
-        '    <meta name="viewport" content="width=device-width, initial-scale=1" />' \
-        '    <title>SignalDeck</title>' \
-        '  </head>' \
-        '  <body>' \
-        '    <main>' \
-        '      <h1>SignalDeck</h1>' \
-        '      <p>The frontend build was skipped for this image.</p>' \
-        '    </main>' \
-        '  </body>' \
-        '</html>' \
-        >/app/dist/index.html; \
-    fi
+RUN VITE_API_BASE_URL="$VITE_API_BASE_URL" pnpm run build
 
 FROM python:3.13-slim AS backend-builder
 
@@ -51,7 +30,6 @@ COPY backend/pyproject.toml backend/uv.lock backend/README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY backend/app ./app
-RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.13-slim AS runtime
 

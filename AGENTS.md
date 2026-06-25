@@ -138,7 +138,7 @@ docker compose -f docker-compose.yml down
 ## NOTES
 
 - `start.sh` is the authoritative local stack launcher. It wraps the root `docker-compose.yml`, builds the current local/demo app image, starts PostgreSQL/pgvector in Docker, runs Nginx/FastAPI/scheduler inside the app container, and exposes only `http://localhost:${APP_PORT:-8080}` on the host.
-- Supported schema repair is code-based in `backend/app/db/`; startup repair targets live tables and treats retired global authoring tables as drop-only cleanup targets, not compatibility backfill surfaces. Do not create migration instructions around a reappearing Alembic scaffold.
+- Supported schema repair is code-based in `backend/app/db/`; startup repair targets live tables and must not grow compatibility backfill or cleanup paths for removed surfaces. Do not create migration instructions around a reappearing Alembic scaffold.
 - Playwright runs against backend `8001` and frontend `4173`; the backend startup helper starts both Uvicorn and the scheduler worker, while the frontend helper serves the built preview.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
 - Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing lives in a separate workflow.

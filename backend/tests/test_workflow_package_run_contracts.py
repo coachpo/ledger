@@ -40,7 +40,7 @@ from app.schemas.model_connection import (
     ModelConnectionProtocolProfile,
     default_model_connection_capabilities,
 )
-from app.schemas.run import RunPackageResolvedModelConnectionRead
+from app.schemas.run import RunOperationInvocationRead, RunPackageResolvedModelConnectionRead
 from app.schemas.schedule import (
     DailyRecurrence,
     FireReason,
@@ -80,6 +80,14 @@ _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING = {
     "ready": True,
     "blockingErrors": [],
     "warnings": [_EXPECTED_STRUCTURED_OUTPUT_WARNING],
+}
+_CURRENT_PACKAGE_AUDIT_KEYS = {
+    "available",
+    "manifestHash",
+    "compiledHash",
+    "manifestHashMatchesSnapshot",
+    "compiledHashMatchesSnapshot",
+    "unavailableReason",
 }
 
 
@@ -234,7 +242,6 @@ def _seed_tradingagents_model_connection(
         session.add(
             ModelConnection(
                 key="tradingagents_primary_model",
-                status="active",
                 name="TradingAgents Primary Model",
                 description="Preflight model binding.",
                 base_url="https://api.openai.com/v1",
@@ -524,7 +531,6 @@ def _seed_model_connection(
         session.add(
             ModelConnection(
                 key="package_runtime_model",
-                status="active",
                 name="Package Runtime Model",
                 description="Package runtime model binding.",
                 base_url=base_url,
@@ -949,8 +955,6 @@ def test_digital_oracle_package_local_system_prompt_receives_runtime_tool_guidan
         runtime_tool_guidance=guidance,
     )
 
-    assert "skills:" not in manifest_source
-    assert "skills" not in compiled_plan
     assert "Digital Oracle methodology" not in guidance
     assert "Digital Oracle methodology is package-local for this agent." in instructions
     assert "Decompose the research question before calling tools." in instructions
@@ -1003,10 +1007,6 @@ def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local
     assert runtime_agent.output_schema.key == "digital_oracle_report"
     assert granted_tool_keys == expected_tool_keys
     assert {declaration.tool_key for declaration in declarations} == granted_tool_keys
-    assert "Package-ready draft" not in manifest_source
-    assert "skills:" not in manifest_source
-    assert "spec.skills" not in manifest_source
-    assert "secrets:" not in manifest_source
     assert "Digital Oracle methodology is package-local for this agent." in instructions
     assert "Decompose each research question" in instructions
     assert "granted evidence sources" in instructions
@@ -1051,7 +1051,6 @@ def test_digital_oracle_guidance_respects_capability_profile_tool_grants(
     declared_tool_keys = {declaration.tool_key for declaration in declarations}
 
     assert declared_tool_keys == set(granted_profile_tool_keys)
-    assert MARKET_SENTIMENT_LOOKUP_TOOL_KEY not in declared_tool_keys
     assert "signaldeck_digital_oracle_prediction_markets_lookup" in instructions
     assert "signaldeck_digital_oracle_sec_filings_lookup" in instructions
     assert "signaldeck_digital_oracle_market_sentiment_lookup" not in instructions
@@ -1358,7 +1357,6 @@ def test_fork_invocation_input_preserves_nullable_null(
     assert fork_detail.status_code == 200, fork_detail.json()
     fork_invocation = cast(dict[str, Any], fork_detail.json()["steps"][0]["invocations"][0])
     assert fork_invocation["resolvedInput"] == {"ticker": "TSLA", "sector": None}
-    assert "horizonDays" not in fork_invocation["resolvedInput"]
     with session_factory() as session:
         target_invocation = (
             session.query(RunAgentInvocation)
@@ -1366,7 +1364,6 @@ def test_fork_invocation_input_preserves_nullable_null(
             .one()
         )
         assert target_invocation.resolved_input == {"ticker": "TSLA", "sector": None}
-        assert "horizonDays" not in target_invocation.resolved_input
 
 
 def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(
@@ -1418,7 +1415,9 @@ def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(
         "key": "webhook_response",
         "version": 1,
     }
-    assert "outputSchemaId" not in operation_invocations[0]
+    assert set(operation_invocations[0]) == {
+        field.alias or name for name, field in RunOperationInvocationRead.model_fields.items()
+    }
     assert operation_invocations[0]["status"] == "pending"
     assert request_metadata["headers"]["Authorization"] == {
         "from": "secret",
@@ -1706,8 +1705,8 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     ]
     assert provenance["preflightSummary"] == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
     assert set(provenance["preflightSummary"]) == {"ready", "blockingErrors", "warnings"}
+    assert set(provenance["currentPackage"]) == _CURRENT_PACKAGE_AUDIT_KEYS
     assert provenance["currentPackage"]["available"] is True
-    assert "status" not in provenance["currentPackage"]
     assert provenance["currentPackage"]["manifestHashMatchesSnapshot"] is True
     assert provenance["currentPackage"]["compiledHashMatchesSnapshot"] is True
     serialized = json.dumps(detail, sort_keys=True)
@@ -1744,7 +1743,7 @@ def test_new_workflow_package_runs_store_null_snapshot_status_for_fresh_and_line
     assert fresh_detail_response.status_code == 200, fresh_detail_response.json()
     fresh_provenance = cast(dict[str, Any], fresh_detail_response.json()["packageProvenance"])
     assert fresh_provenance["workflowPackageStatus"] is None
-    assert "status" not in fresh_provenance["currentPackage"]
+    assert set(fresh_provenance["currentPackage"]) == _CURRENT_PACKAGE_AUDIT_KEYS
 
     with session_factory() as session:
         source_run = session.get(Run, fresh_run_id)
@@ -1773,7 +1772,7 @@ def test_new_workflow_package_runs_store_null_snapshot_status_for_fresh_and_line
     assert rerun_detail_response.status_code == 200, rerun_detail_response.json()
     rerun_provenance = cast(dict[str, Any], rerun_detail_response.json()["packageProvenance"])
     assert rerun_provenance["workflowPackageStatus"] is None
-    assert "status" not in rerun_provenance["currentPackage"]
+    assert set(rerun_provenance["currentPackage"]) == _CURRENT_PACKAGE_AUDIT_KEYS
 
     stable_source_response = client.get(f"/api/runs/{fresh_run_id}")
     assert stable_source_response.status_code == 200, stable_source_response.json()
@@ -1841,8 +1840,8 @@ def test_rerun_uses_run_snapshot_after_current_package_mutation(
     assert rerun_provenance["compiledPlan"] == snapshot_compiled_plan
     assert rerun_provenance["workflowPackageCompiledHash"] == snapshot_compiled_hash
     assert rerun_provenance["launchSnapshot"]["parameters"] == {"ticker": "AAPL"}
+    assert set(rerun_provenance["currentPackage"]) == _CURRENT_PACKAGE_AUDIT_KEYS
     assert rerun_provenance["currentPackage"]["available"] is True
-    assert "status" not in rerun_provenance["currentPackage"]
     assert rerun_provenance["currentPackage"]["manifestHashMatchesSnapshot"] is False
     assert rerun_provenance["currentPackage"]["compiledHashMatchesSnapshot"] is False
 
@@ -2114,16 +2113,6 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
     )
     assert rerun_response.status_code == 201, rerun_response.json()
     assert fork_response.status_code == 201, fork_response.json()
-    old_snapshot_gate_code = "run_model_connection_" + "incompatible"
-    assert old_snapshot_gate_code not in json.dumps(
-        [
-            rerun_draft.json(),
-            fork_draft.json(),
-            rerun_response.json(),
-            fork_response.json(),
-        ],
-        sort_keys=True,
-    )
     rerun_id = int(rerun_response.json()["id"])
     fork_id = int(fork_response.json()["id"])
 

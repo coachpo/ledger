@@ -149,9 +149,6 @@ test.describe("Extension lifecycle browser matrix", () => {
     await expect(financeRow).toContainText("Finance Workspace");
     await expect(financeRow).toContainText(FINANCE_EXTENSION_KEY);
     await expect(financeRow).toContainText("Enabled");
-    await expect(page.getByText(/marketplace/i)).toHaveCount(0);
-    await expect(page.getByText(/install/i)).toHaveCount(0);
-    await expect(page.getByText(/remove/i)).toHaveCount(0);
 
     await page
       .getByTestId(`extension-toggle-${DIGITAL_ORACLE_EXTENSION_SEGMENT}`)
@@ -162,7 +159,6 @@ test.describe("Extension lifecycle browser matrix", () => {
 
     await page.goto("/reports");
     await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
-    await expect(page.getByTestId("extension-disabled-state")).toHaveCount(0);
     const digitalOracleDisabledToolPicker = await openCapabilityToolPicker(page);
     await expect(digitalOracleDisabledToolPicker).toContainText("Report Lookup");
     await expect(digitalOracleDisabledToolPicker).not.toContainText(

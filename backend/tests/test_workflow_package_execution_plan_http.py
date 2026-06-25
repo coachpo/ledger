@@ -145,12 +145,12 @@ def test_http_node_execution_plan_supports_mixed_agent_operation_steps() -> None
     assert len(plan.package_workflow.steps[0].operations) == 1
 
 
-def test_existing_package_execution_plan_keeps_pure_agent_shape_backward_compat() -> None:
+def test_package_execution_plan_builds_pure_agent_steps() -> None:
     compiled_plan = _compiled_plan(_valid_package_manifest_source())
     workflow = _first_workflow(compiled_plan)
     compiled_steps = cast(list[dict[str, Any]], workflow["steps"])
 
-    assert all("operations" not in step for step in compiled_steps)
+    assert [set(step) for step in compiled_steps] == [{"index", "agents"}]
 
     plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
         compiled_plan,

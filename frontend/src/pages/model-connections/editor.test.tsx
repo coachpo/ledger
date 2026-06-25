@@ -32,15 +32,15 @@ const existingConnection = {
   baseUrl: "https://provider.example.test/v1/",
   capabilities: existingCapabilities,
   createdAt: "2026-04-21T12:00:00Z",
-  description: "Production compatible endpoint.",
+  description: "Production endpoint.",
   id: 4,
-  key: "primary_compatible",
+  key: "primary_responses",
   lastProbedAt: "2026-04-22T08:20:00Z",
   lastTestMessage: "Healthy",
   lastTestOk: true,
   lastTestedAt: "2026-04-22T08:30:00Z",
   modelId: "fake-tools-disabled",
-  name: "Primary Compatible",
+  name: "Primary Responses",
   outputStrategyPolicy: "prefer_strict_schema",
   parallelToolCallsPolicy: "serialize",
   probeCacheTtlSeconds: 900,
@@ -92,10 +92,10 @@ vi.mock("@/hooks/use-model-connections", () => ({
 
 function fillRequiredCreateFields() {
   fireEvent.change(screen.getByLabelText(/^Name$/i), {
-    target: { value: "Primary Compatible" },
+    target: { value: "Primary Responses" },
   });
   fireEvent.change(screen.getByLabelText(/^Key$/i), {
-    target: { value: "primary_compatible" },
+    target: { value: "primary_responses" },
   });
   fireEvent.change(screen.getByLabelText(/^Model ID$/i), {
     target: { value: "fake-tools-disabled" },
@@ -215,9 +215,9 @@ describe("ModelConnectionsEditorPage", () => {
     expect(createModelConnectionMock).toHaveBeenCalledWith(
       expect.objectContaining({
         baseUrl: "https://new.sharedchat.cc/codex/v1",
-        key: "primary_compatible",
+        key: "primary_responses",
         modelId: "fake-tools-disabled",
-        name: "Primary Compatible",
+        name: "Primary Responses",
         protocolProfile: "openai_responses",
         reasoningEffort: "medium",
         timeoutSeconds: 60,
@@ -442,7 +442,7 @@ describe("ModelConnectionsEditorPage", () => {
     render(<ModelConnectionsEditorPage />);
 
     expect(screen.getByLabelText(/^API Key$/i)).toHaveValue("");
-    expect(screen.getByLabelText(/^Key$/i)).toHaveValue("primary_compatible");
+    expect(screen.getByLabelText(/^Key$/i)).toHaveValue("primary_responses");
     expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
     expect(screen.getByLabelText(/^Base URL$/i)).toHaveValue(
       "https://provider.example.test/v1/",
@@ -460,7 +460,7 @@ describe("ModelConnectionsEditorPage", () => {
       "Chat Completions-compatible",
     );
     fireEvent.change(screen.getByLabelText(/^Name$/i), {
-      target: { value: "Primary Compatible Updated" },
+      target: { value: "Primary Responses Updated" },
     });
     fireEvent.click(
       screen.getByRole("button", { name: /save model connection/i }),
@@ -473,9 +473,9 @@ describe("ModelConnectionsEditorPage", () => {
     expect(updateCall.modelConnectionId).toBe("4");
     expect(updateCall.payload).toMatchObject({
       baseUrl: "https://provider.example.com/custom-root",
-      description: "Production compatible endpoint.",
+      description: "Production endpoint.",
       modelId: "fake-tools-disabled",
-      name: "Primary Compatible Updated",
+      name: "Primary Responses Updated",
       protocolProfile: "openai_chat_completions",
       reasoningEffort: "high",
       timeoutSeconds: 90,

@@ -22,11 +22,10 @@ from app.agents.runtime_tools.failure_taxonomy import (
     runtime_failure_metadata,
 )
 from app.core.config import get_settings
-from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
 from app.schemas.workflow_memory import WorkflowMemoryContextPack
 from app.services.execution_ownership import PackageExecutionOwnership
-from app.services.execution_plan import PackageResolvedModelBinding, PackageRuntimeAgentSpec
+from app.services.execution_plan import PackageRuntimeAgentSpec
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.extension_service import ExtensionService
 from app.services.model_connection_resolution import ModelConnectionResolutionService
@@ -231,39 +230,11 @@ class AgentExecutionService:
                     }
                 ],
             )
-        self._assert_package_model_connection_available(
-            agent=agent,
-            binding=binding,
-            connection=connection,
-        )
         resolver = self.model_connection_resolution_service
         return resolver.to_gateway_connection_config_from_package_binding(
             binding,
             live_connection=connection,
         )
-
-    @staticmethod
-    def _assert_package_model_connection_available(
-        *,
-        agent: PackageRuntimeAgentSpec,
-        binding: PackageResolvedModelBinding,
-        connection: ModelConnection,
-    ) -> None:
-        if connection.status != "active":
-            raise RunExecutionError(
-                code="run_agent_model_connection_unavailable",
-                message=(
-                    f"Package agent {agent.key!r} references model connection "
-                    f"{binding.key!r}, but the live connection is {connection.status!r}"
-                ),
-                details=[
-                    {
-                        "field": "modelConnection",
-                        "issue": "Referenced live model connection is not active",
-                        "status": connection.status,
-                    }
-                ],
-            )
 
     @staticmethod
     def _runtime_granted_tool_keys(agent: PackageRuntimeAgentSpec) -> set[str]:

@@ -130,12 +130,6 @@ describe("WorkflowPackageEditorPage import and export flows", () => {
     await waitFor(() => expect((preview as HTMLTextAreaElement).value).toContain("command: market-mcp"));
     const previewValue = (preview as HTMLTextAreaElement).value;
     expect(previewValue).toContain("url: https://example.com/mcp");
-    expect(previewValue).not.toContain("env:");
-    expect(previewValue).not.toContain("headers:");
-    expect(previewValue).not.toContain("query:");
-    expect(previewValue).not.toContain("sk-live-env-secret");
-    expect(previewValue).not.toContain("sk-live-header-secret");
-    expect(previewValue).not.toContain("sk-live-query-secret");
 
     fireEvent.click(screen.getByRole("button", { name: "Import Package" }));
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/import");

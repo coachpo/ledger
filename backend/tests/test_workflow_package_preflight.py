@@ -497,7 +497,6 @@ def _seed_model_connection(
         session.add(
             ModelConnection(
                 key=key,
-                status="active",
                 protocol_profile=protocol_profile,
                 name=name,
                 description=description,
@@ -592,7 +591,6 @@ def _seed_runtime_profile_fixture_connection(
         session.add(
             ModelConnection(
                 key="runtime_profile_tools_disabled",
-                status="active",
                 protocol_profile="openai_chat_completions",
                 name="Provider Profile Fixture: Tools Disabled",
                 description="Probe fixture with tool calls disabled.",
@@ -1129,9 +1127,6 @@ def test_digital_oracle_researcher_demo_validates_compiles_and_preflights(
         sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
     )
     assert set(agent_profiles_by_key) == {"digital_oracle_phase1_tools"}
-    assert "Package-ready draft" not in manifest_source
-    assert "spec.skills" not in manifest_source
-    assert "secrets:" not in manifest_source
 
 
 def test_memory_research_fixture_validates_compiles_and_preflights(
@@ -1235,8 +1230,6 @@ def test_preflight_missing_digital_oracle_toolKeys_diagnostic_preserves_field_on
             "issue": "Unknown server-declared tool 'signaldeck.digital_oracle.missing'",
         }
     ]
-    assert "code" not in errors[0]
-    assert "surface" not in errors[0]
 
 
 def test_package_execution_plan_builder_derives_tool_and_output_requirements() -> None:
@@ -1427,7 +1420,6 @@ def test_preflight_multi_agent_per_agent_structured_output_scope_keeps_unrelated
             require_api_key=True,
         )
     assert set(result.model_bindings) == {"no_tool_model", "tool_capable_model"}
-    assert "unused_bad_model" not in result.model_bindings
     assert result.package_requirements.requires_native_tool_calls is True
     assert (
         result.agent_requirement_scopes["summary_writer"].requirements.requires_native_tool_calls

@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers `app/db/`.
 
 ## OVERVIEW
-`app/db/` owns engine/session creation, PostgreSQL-only database initialization, cache resets for tests, numeric-id guardrails, and in-code schema upgrades for preserved product tables, statically resident extension state, and current agent-platform tables. `upgrades.py` is also the supported startup repair path for extension-state canonicalization, current-package/reference-table creation, schedule tables, run-fork tables, stale-run recovery, and drop-only retired-table cleanup.
+`app/db/` owns engine/session creation, PostgreSQL-only database initialization, cache resets for tests, numeric-id guardrails, and in-code schema upgrades for preserved product tables, statically resident extension state, and current agent-platform tables. `upgrades.py` is also the supported startup repair path for extension-state canonicalization, current-package/reference-table creation, schedule tables, run-fork tables, and stale-run recovery.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -24,7 +24,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Request-scoped sessions | `engine.py` | `get_db_session()` generator used by API dependencies |
 | App startup DB init | `session.py` | `init_db()` composes model import, validation, table creation, and upgrade helpers |
 | Engine / id validation | `validation.py` | PostgreSQL requirement and numeric-id guardrails |
-| Schema upgrades | `upgrades.py` | preserved-table backfills, `extension_states` repair/seeding, platform reference tables, schedule tables/indexes, run scheduler metadata/indexes, `run_forks`, startup recovery, and drop-only retired-table cleanup |
+| Schema upgrades | `upgrades.py` | preserved-table repairs, `extension_states` repair/seeding, platform reference tables, schedule tables/indexes, run scheduler metadata/indexes, `run_forks`, and startup recovery |
 | Test cache resets | `engine.py` | `reset_db_caches()` for isolated test databases |
 
 ## CONVENTIONS
@@ -34,8 +34,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - The backend requires PostgreSQL via `postgresql+psycopg`; unsupported engines should fail fast during `init_db()`.
 - Legacy UUID-backed portfolio tables are rejected before startup; this codebase only supports numeric ids.
 - Upgrade helpers live in code, so raw SQL must stay valid for PostgreSQL.
-- Treat `upgrades.py` as authoritative for startup cutover markers and recovery behavior; if schema repair or live-table normalization changes, update the code path and its regression tests together.
-- Retired global authoring and legacy backend tables are drop-only cleanup targets when encountered. Do not add backfill, repair, or compatibility paths for removed surfaces.
+- Treat `upgrades.py` as authoritative for startup recovery behavior; if schema repair or live-table normalization changes, update the code path and its regression tests together.
+- Do not add backfill, repair, cleanup, or compatibility paths for removed surfaces.
 
 ## ANTI-PATTERNS
 - Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
@@ -56,7 +56,6 @@ uv run pytest tests/test_api.py tests/test_runtime_db_upgrades.py
 ```
 
 ## NOTES
-- `upgrades.py` backfills missing portfolio slugs, adds `balances.operation_type`, upgrades `reports` with `slug`/`source`/`metadata`, adds `market_quotes.name`, repairs and seeds `extension_states`, creates current agent-platform/reference tables including schedules, schedule fires, and `run_forks`, recovers stale agent-platform runs, drops retired global authoring and legacy backend tables, and removes stale model-connection secret metadata columns.
-- `upgrades.py` also owns the package-startup cutover marker table used to avoid re-running one-way artifact migrations.
+- `upgrades.py` adds `balances.operation_type`, repairs and seeds `extension_states`, creates current agent-platform/reference tables including schedules, schedule fires, and `run_forks`, and recovers stale agent-platform runs.
 - `session.py` imports the full model package, validates the engine and numeric-id schema, creates tables, and runs upgrade helpers.
 - `create_app(init_database=False)` lets tests control initialization explicitly through fixtures.

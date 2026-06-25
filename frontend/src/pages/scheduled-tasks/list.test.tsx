@@ -915,7 +915,7 @@ describe("ScheduledTasksListPage", () => {
             latestRunId: null,
             latestStatus: null,
             name: "Stale workflow schedule",
-            workflowKey: "retired_workflow",
+            workflowKey: "unknown_workflow",
           }),
         ],
         limit: 50,
@@ -940,19 +940,19 @@ describe("ScheduledTasksListPage", () => {
       "All workflows",
       "Daily Research",
       "News Research",
-      "Unknown workflow: retired_workflow",
+      "Unknown workflow: unknown_workflow",
     ]);
 
     fireEvent.click(
       await screen.findByRole("option", {
-        name: "Unknown workflow: retired_workflow",
+        name: "Unknown workflow: unknown_workflow",
       }),
     );
 
     expect(useScheduledTasksMock).toHaveBeenLastCalledWith({
       limit: 50,
       packageKey: "market_research_package",
-      workflowKey: "retired_workflow",
+      workflowKey: "unknown_workflow",
     });
   });
 

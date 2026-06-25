@@ -92,7 +92,6 @@ def _seed_model_connection(session_factory: sessionmaker[Session]) -> None:
         session.add(
             ModelConnection(
                 key="tradingagents_primary_model",
-                status="active",
                 name="Memory Integration Model",
                 description="Workflow memory integration model binding.",
                 base_url="https://provider-runtime.example.test/v1",

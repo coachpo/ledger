@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -15,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.session import init_db
-from app.db.upgrades import upgrade_legacy_schema
+from app.db.upgrades import apply_startup_schema_repairs
 from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.report import REPORT_SOURCE_CHECK_CONSTRAINT
@@ -33,16 +32,6 @@ AGENT_PLATFORM_TABLE_NAMES = {
     "workflow_package_runtime_input_entries",
     "workflow_package_secret_bindings",
 }
-OLD_MEMORY_TABLE_NAMES = {
-    "agent_memory_entries",
-    "agent_memory_revisions",
-    "run_memory_events",
-}
-LEGACY_MEMORY_TABLE_NAMES = {
-    "legacy_agent_memory_entries",
-    "legacy_agent_memory_revisions",
-    "legacy_run_memory_events",
-}
 WORKFLOW_MEMORY_TABLE_NAMES = {
     "workflow_memory_audit_events",
     "workflow_memory_consolidation_runs",
@@ -53,34 +42,9 @@ WORKFLOW_MEMORY_TABLE_NAMES = {
     "workflow_memory_revisions",
     "workflow_checkpoints",
 }
-REMOVED_CORE_MEMORY_TABLE_NAMES = {"agent_memory_chunks", "agent_memory_embeddings"}
 SCHEDULE_TABLE_NAMES = {
     "workflow_package_schedules",
     "workflow_package_schedule_fires",
-}
-RETIRED_GLOBAL_AUTHORING_TABLE_NAMES = {
-    "agents",
-    "workflows",
-    "capabilities",
-    "mcp_servers",
-    "output_schemas",
-    "workflow_agent_refs",
-    "agent_capability_refs",
-    "agent_mcp_server_refs",
-}
-LEGACY_BACKEND_TABLE_NAMES = {
-    "agent_specs",
-    "workflow_specs",
-    "persona_profiles",
-    "capability_registry_entries",
-    "runtime_runs",
-    "runtime_trace_events",
-    "runtime_approvals",
-    "runtime_checkpoints",
-    "runtime_run_artifacts",
-    "persona_projection_events",
-    "orchestration_roles",
-    "orchestration_characters",
 }
 LIVE_AGENT_PLATFORM_TABLE_NAMES = AGENT_PLATFORM_TABLE_NAMES
 LIVE_WORKFLOW_MEMORY_TABLE_NAMES = WORKFLOW_MEMORY_TABLE_NAMES
@@ -91,10 +55,6 @@ _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
 )
 _AGENT_PLATFORM_PENDING_SKIP_MESSAGE = (
     "Runtime row skipped during startup recovery because the parent run failed before it started."
-)
-_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS = (
-    "_".join(("has", "api", "key")),
-    "_".join(("api", "key", "last4")),
 )
 _RUN_HEADER_COLUMNS = {
     "id",
@@ -311,18 +271,6 @@ _RUN_OPERATION_INVOCATION_COLUMNS = {
     "created_at",
     "updated_at",
 }
-_RUNTIME_COST_WORD = "cost"
-_RUNTIME_COST_CURRENCY = "usd"
-_RUN_COST_COLUMNS = tuple(
-    f"{scope}_{_RUNTIME_COST_WORD}_{_RUNTIME_COST_CURRENCY}"
-    for scope in ("total", "inherited", "executed")
-)
-_RUN_COST_CHECKS = tuple(
-    f"ck_runs_{scope}_{_RUNTIME_COST_WORD}_non_negative"
-    for scope in ("total", "inherited", "executed")
-)
-_INVOCATION_COST_COLUMN = f"{_RUNTIME_COST_WORD}_{_RUNTIME_COST_CURRENCY}"
-_INVOCATION_COST_CHECK = f"ck_run_agent_invocations_{_RUNTIME_COST_WORD}_non_negative"
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
 _DIGITAL_ORACLE_PRESET_KEY = "digital_oracle_researcher"
 _TRADINGAGENTS_MACRO_PRESET_KEY = "tradingagents_advisory_research_macro"
@@ -560,16 +508,15 @@ def _assert_tradingagents_preset_launchable(
             text(
                 """
                 INSERT INTO model_connections (
-                    key, status, name, description, base_url, model_id,
+                    key, name, description, base_url, model_id,
                     reasoning_effort, protocol_profile, timeout_seconds, secret_payload,
                     created_at, updated_at
                 ) VALUES (
-                    :key, 'active', 'TradingAgents Primary Model', '', :base_url,
+                    :key, 'TradingAgents Primary Model', '', :base_url,
                     :model_id, 'medium', 'openai_responses', 60,
                     '{"apiKey":"sk-tradingagents-upgrade-test"}'::jsonb, NOW(), NOW()
                 )
                 ON CONFLICT (key) DO UPDATE SET
-                    status = EXCLUDED.status,
                     name = EXCLUDED.name,
                     base_url = EXCLUDED.base_url,
                     model_id = EXCLUDED.model_id,
@@ -599,28 +546,6 @@ def _assert_tradingagents_preset_launchable(
     assert launch.blocking_errors == []
 
 
-def _agent_memory_report_metadata(**analysis_overrides: object) -> dict[str, object]:
-    analysis: dict[str, object] = {
-        "reviewType": "agent_memory",
-        "versionGroup": "agent_memory/v1",
-        "runId": 4242,
-        "agentKey": "portfolio_manager",
-        "agentVersion": 7,
-        "agentName": "Portfolio Manager",
-        "workflowKey": "memory_workflow",
-        "workflowVersion": 2,
-        "stepId": "write_memory",
-        "slot": "decision",
-        "traceId": "trace-123",
-    }
-    analysis.update(analysis_overrides)
-    return {
-        "analysis": analysis,
-        "createdBy": {"type": "external", "agentKey": "spoofed"},
-        "tags": ["legacy"],
-    }
-
-
 def _insert_report_upgrade_row(
     connection: Connection,
     *,
@@ -643,31 +568,6 @@ def _insert_report_upgrade_row(
             "source": source,
         },
     )
-
-
-def _report_upgrade_rows_by_slug(
-    engine: Engine,
-    slugs: tuple[str, ...],
-) -> dict[str, dict[str, object]]:
-    with engine.connect() as connection:
-        rows = (
-            connection.execute(
-                text(
-                    """
-                    SELECT slug, source, metadata
-                    FROM reports
-                    WHERE slug IN :slugs
-                    ORDER BY slug ASC
-                    """
-                ).bindparams(bindparam("slugs", expanding=True)),
-                {"slugs": slugs},
-            )
-            .mappings()
-            .all()
-        )
-    return {
-        str(row["slug"]): {"source": row["source"], "metadata": row["metadata"]} for row in rows
-    }
 
 
 def _assert_report_source_constraint(engine: Engine) -> None:
@@ -757,7 +657,6 @@ def _assert_schedule_table_shape(engine: Engine) -> None:
     }
 
     assert set(schedule_columns) == _SCHEDULE_COLUMNS
-    assert "archived_at" not in schedule_columns
     assert schedule_columns["package_id"]["nullable"] is False
     assert schedule_columns["workflow_key"]["nullable"] is False
     assert schedule_columns["timezone"]["nullable"] is False
@@ -775,7 +674,6 @@ def _assert_schedule_table_shape(engine: Engine) -> None:
         value in schedule_checks["ck_workflow_package_schedules_status"]
         for value in ("enabled", "paused")
     )
-    assert "archived" not in schedule_checks["ck_workflow_package_schedules_status"]
     assert all(
         value in schedule_checks["ck_workflow_package_schedules_overlap_policy"]
         for value in ("skip", "queue")
@@ -850,8 +748,6 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     assert LIVE_WORKFLOW_MEMORY_TABLE_NAMES <= table_names
-    assert OLD_MEMORY_TABLE_NAMES.isdisjoint(table_names)
-    assert REMOVED_CORE_MEMORY_TABLE_NAMES.isdisjoint(table_names)
 
     item_columns = {
         column["name"]: column for column in inspector.get_columns("workflow_memory_items")
@@ -912,8 +808,6 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     assert item_columns["content_fingerprint"]["nullable"] is False
     assert item_columns["owner_type"]["nullable"] is False
     assert item_columns["owner_id"]["nullable"] is False
-    assert {"commit_status", "archived", "accepted", "visible_to_workflow"}.isdisjoint(item_columns)
-
     assert {
         "id",
         "proposal_id",
@@ -942,8 +836,6 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     assert proposal_columns["idempotency_key"]["nullable"] is False
     assert proposal_columns["owner_type"]["nullable"] is False
     assert proposal_columns["owner_id"]["nullable"] is False
-    assert {"accepted", "commit_status"}.isdisjoint(proposal_columns)
-
     assert {
         "id",
         "decision_id",
@@ -957,8 +849,6 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     } <= set(decision_columns)
     assert decision_columns["proposal_id"]["nullable"] is False
     assert decision_columns["policy_snapshot_json"]["nullable"] is False
-    assert {"owner_type", "owner_id"}.isdisjoint(decision_columns)
-
     assert {
         "id",
         "owner_type",
@@ -990,8 +880,6 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
         "created_at",
     } <= set(revision_columns)
     assert revision_columns["memory_item_id"]["nullable"] is False
-    assert {"owner_type", "owner_id"}.isdisjoint(revision_columns)
-
     assert {
         "id",
         "owner_type",
@@ -1047,7 +935,6 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
         "metadata_json",
         "created_at",
     } <= set(checkpoint_columns)
-    assert "state" not in checkpoint_columns
     assert checkpoint_columns["state_json"]["nullable"] is False
     assert checkpoint_columns["owner_type"]["nullable"] is False
     assert checkpoint_columns["owner_id"]["nullable"] is False
@@ -1074,10 +961,6 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     assert (
         "uq_workflow_memory_proposals_owner_idempotency_key"
         in unique_constraints_by_table["workflow_memory_proposals"]
-    )
-    assert (
-        "uq_workflow_memory_proposals_idempotency_key"
-        not in unique_constraints_by_table["workflow_memory_proposals"]
     )
     proposal_unique_columns = {
         constraint["name"]: tuple(constraint["column_names"])
@@ -1112,14 +995,12 @@ def _assert_workflow_memory_table_shape(engine: Engine) -> None:
     }
     checkpoint_indexes = {index["name"] for index in inspector.get_indexes("workflow_checkpoints")}
     assert "ix_workflow_memory_items_retrieval_scope" in item_indexes
-    assert "ix_workflow_memory_items_owner_retrieval_scope" in item_indexes
     assert "ix_workflow_memory_items_owner_run_invocation" in item_indexes
     assert "ix_workflow_memory_items_content_fingerprint" in item_indexes
-    assert "ix_workflow_memory_proposals_owner_scope" in proposal_indexes
+    assert "ix_workflow_memory_proposals_scope" in proposal_indexes
     assert "ix_workflow_memory_proposals_owner_run_invocation" in proposal_indexes
     assert "ix_workflow_memory_proposals_content_fingerprint" in proposal_indexes
     assert "ix_workflow_checkpoints_scope_run_sequence" in checkpoint_indexes
-    assert "ix_workflow_checkpoints_owner_scope_run_sequence" in checkpoint_indexes
     assert "ix_workflow_checkpoints_owner_run_invocation" in checkpoint_indexes
 
     item_foreign_keys = {
@@ -1171,10 +1052,10 @@ def _insert_model_connection_reasoning_effort_row(
             text(
                 """
                 INSERT INTO model_connections (
-                    key, status, name, description, base_url, model_id, reasoning_effort,
+                    key, name, description, base_url, model_id, reasoning_effort,
                     protocol_profile, timeout_seconds, secret_payload, created_at, updated_at
                 ) VALUES (
-                    :key, 'active', :name, '', 'https://api.openai.com/v1', :model_id,
+                    :key, :name, '', 'https://api.openai.com/v1', :model_id,
                     :reasoning_effort, :protocol_profile, 60, '{}'::jsonb, NOW(), NOW()
                 ) RETURNING id
                 """
@@ -1523,7 +1404,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert (("source_run_step_id",), "run_steps", "SET NULL") in operation_foreign_keys
 
 
-def test_init_db_creates_current_runtime_tables_and_drops_legacy_backend_tables(
+def test_init_db_creates_current_runtime_tables(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -1532,8 +1413,6 @@ def test_init_db_creates_current_runtime_tables_and_drops_legacy_backend_tables(
     try:
         table_names = set(inspect(engine).get_table_names())
         assert LIVE_AGENT_PLATFORM_TABLE_NAMES <= table_names
-        assert RETIRED_GLOBAL_AUTHORING_TABLE_NAMES.isdisjoint(table_names)
-        assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
         _assert_runtime_execution_table_shape(engine)
     finally:
         engine.dispose()
@@ -1799,568 +1678,6 @@ def test_init_db_schedule_repair_restores_missing_tables_columns_and_indexes(
         engine.dispose()
 
 
-def test_init_db_archived_schedule_repair_retains_direct_runs_and_stamps_scheduleDeletedAt(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-    archived_report_slug = "agent_memory_archived_schedule_cleanup_run"
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "DROP TABLE IF EXISTS workflow_package_schedule_fires CASCADE"
-            )
-            connection.exec_driver_sql("DROP TABLE IF EXISTS workflow_package_schedules CASCADE")
-            for index_name in (
-                "ix_runs_schedule",
-                "ix_runs_schedule_status",
-                "ix_runs_schedule_fire",
-                "ix_runs_scheduled_for",
-                "uq_runs_schedule_fire",
-            ):
-                connection.exec_driver_sql(f"DROP INDEX IF EXISTS {index_name}")
-            for column_name in (
-                "schedule_id",
-                "schedule_fire_id",
-                "scheduled_for",
-                "schedule_reason",
-                "schedule_provenance",
-            ):
-                connection.exec_driver_sql(
-                    f"ALTER TABLE runs DROP COLUMN IF EXISTS {column_name} CASCADE"
-                )
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE workflow_package_schedules (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    package_id INTEGER NOT NULL,
-                    workflow_key VARCHAR(120) NOT NULL,
-                    name VARCHAR(200) NOT NULL,
-                    status VARCHAR(20) NOT NULL DEFAULT 'enabled',
-                    timezone VARCHAR(120) NOT NULL,
-                    next_fire_at TIMESTAMPTZ,
-                    archived_at TIMESTAMPTZ,
-                    CONSTRAINT ck_workflow_package_schedules_status CHECK (
-                        status IN ('enabled', 'paused', 'archived')
-                    ),
-                    CONSTRAINT fk_workflow_package_schedules_package_id
-                        FOREIGN KEY (package_id)
-                        REFERENCES workflow_packages(id)
-                        ON DELETE CASCADE
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE workflow_package_schedule_fires (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    schedule_id INTEGER NOT NULL,
-                    fire_key VARCHAR(255) NOT NULL,
-                    reason VARCHAR(20) NOT NULL DEFAULT 'scheduled',
-                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                    scheduled_for TIMESTAMPTZ NOT NULL,
-                    rendered_parameters JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    CONSTRAINT uq_workflow_package_schedule_fires_schedule_fire_key
-                        UNIQUE (schedule_id, fire_key),
-                    CONSTRAINT ck_workflow_package_schedule_fires_status CHECK (
-                        status IN ('pending', 'queued', 'skipped', 'failed')
-                    ),
-                    CONSTRAINT ck_workflow_package_schedule_fires_reason CHECK (
-                        reason IN ('scheduled', 'manual')
-                    ),
-                    CONSTRAINT fk_workflow_package_schedule_fires_schedule_id
-                        FOREIGN KEY (schedule_id)
-                        REFERENCES workflow_package_schedules(id)
-                        ON DELETE CASCADE
-                )
-                """
-            )
-            connection.exec_driver_sql("ALTER TABLE runs ADD COLUMN schedule_id INTEGER")
-            connection.exec_driver_sql("ALTER TABLE runs ADD COLUMN schedule_fire_id INTEGER")
-            connection.exec_driver_sql("ALTER TABLE runs ADD COLUMN scheduled_for TIMESTAMPTZ")
-            connection.exec_driver_sql("ALTER TABLE runs ADD COLUMN schedule_reason VARCHAR(20)")
-            connection.exec_driver_sql(
-                "ALTER TABLE runs ADD CONSTRAINT fk_runs_schedule_id "
-                "FOREIGN KEY (schedule_id) "
-                "REFERENCES workflow_package_schedules(id) ON DELETE SET NULL"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE runs ADD CONSTRAINT fk_runs_schedule_fire_id "
-                "FOREIGN KEY (schedule_fire_id) "
-                "REFERENCES workflow_package_schedule_fires(id) ON DELETE SET NULL"
-            )
-            package = _insert_representable_workflow_package(
-                connection,
-                key="schedule_archive_cleanup_package",
-                workflow_key="schedule_archive_cleanup_workflow",
-            )
-            archived_schedule_id = int(
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO workflow_package_schedules (
-                            package_id, workflow_key, name, status, timezone, next_fire_at,
-                            archived_at
-                        ) VALUES (
-                            :package_id, :workflow_key, 'Archived cleanup schedule', 'archived',
-                            'UTC', '2026-05-31T13:00:00Z', '2026-05-31T13:30:00Z'
-                        ) RETURNING id
-                        """
-                    ),
-                    package,
-                ).scalar_one()
-            )
-            archived_fire_id = int(
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO workflow_package_schedule_fires (
-                            schedule_id, fire_key, reason, status, scheduled_for,
-                            rendered_parameters
-                        ) VALUES (
-                            :schedule_id, 'archived-cleanup-fire', 'scheduled', 'queued',
-                            '2026-05-31T13:00:00Z', '{}'::jsonb
-                        ) RETURNING id
-                        """
-                    ),
-                    {"schedule_id": archived_schedule_id},
-                ).scalar_one()
-            )
-            archived_run_id = int(
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO runs (
-                            target_kind, target_id, target_key, target_version,
-                            workflow_package_id, workflow_package_key,
-                            workflow_package_workflow_key, schedule_id, schedule_fire_id,
-                            scheduled_for, schedule_reason, status, input
-                        ) VALUES (
-                            'workflowPackage', :package_id, :package_key, 1,
-                            :package_id, :package_key, :workflow_key, :schedule_id,
-                            :schedule_fire_id, '2026-05-31T13:00:00Z', 'scheduled',
-                            'succeeded', '{}'::jsonb
-                        ) RETURNING id
-                        """
-                    ),
-                    {
-                        **package,
-                        "schedule_fire_id": archived_fire_id,
-                        "schedule_id": archived_schedule_id,
-                    },
-                ).scalar_one()
-            )
-            _insert_run_workflow_package_snapshot(
-                connection,
-                run_id=archived_run_id,
-                package=package,
-            )
-            _insert_report_upgrade_row(
-                connection,
-                slug=archived_report_slug,
-                source="agent",
-                metadata=_agent_memory_report_metadata(runId=archived_run_id),
-            )
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            archived_row = (
-                connection.execute(
-                    text(
-                        """
-                    SELECT schedule_id, schedule_fire_id, scheduled_for, schedule_reason,
-                           schedule_provenance
-                    FROM runs
-                    WHERE id = :run_id
-                    """
-                    ),
-                    {"run_id": archived_run_id},
-                )
-                .mappings()
-                .one()
-            )
-            stored_schedule_provenance = cast(
-                dict[str, object],
-                archived_row["schedule_provenance"],
-            )
-            deleted_at = cast(str | None, stored_schedule_provenance["scheduleDeletedAt"])
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            archived_counts = connection.execute(
-                text(
-                    """
-                    SELECT
-                        (SELECT COUNT(*) FROM workflow_package_schedules WHERE id = :schedule_id),
-                        (SELECT COUNT(*) FROM workflow_package_schedule_fires WHERE id = :fire_id),
-                        (SELECT COUNT(*) FROM runs WHERE id = :run_id),
-                        (SELECT COUNT(*) FROM reports WHERE slug = :report_slug)
-                    """
-                ),
-                {
-                    "fire_id": archived_fire_id,
-                    "report_slug": archived_report_slug,
-                    "run_id": archived_run_id,
-                    "schedule_id": archived_schedule_id,
-                },
-            ).one()
-            persisted_deleted_at = connection.execute(
-                text(
-                    "SELECT schedule_provenance ->> 'scheduleDeletedAt' FROM runs WHERE id = :run_id"
-                ),
-                {"run_id": archived_run_id},
-            ).scalar_one()
-
-        assert deleted_at is not None
-        assert archived_row["schedule_id"] is None
-        assert archived_row["schedule_fire_id"] is None
-        assert archived_row["scheduled_for"] == datetime(2026, 5, 31, 13, 0, tzinfo=UTC)
-        assert archived_row["schedule_reason"] == "scheduled"
-        assert stored_schedule_provenance == {
-            "scheduleId": archived_schedule_id,
-            "scheduleFireId": archived_fire_id,
-            "scheduleName": "Archived cleanup schedule",
-            "packageId": package["package_id"],
-            "packageKey": package["package_key"],
-            "workflowKey": package["workflow_key"],
-            "timezone": "UTC",
-            "recurrence": {},
-            "fireKey": "archived-cleanup-fire",
-            "reason": "scheduled",
-            "scheduledFor": "2026-05-31T13:00:00Z",
-            "scheduledLocalDate": None,
-            "scheduledLocalTime": None,
-            "scheduledLocalDateTime": None,
-            "materializedAt": None,
-            "scheduleDeletedAt": deleted_at,
-        }
-        assert persisted_deleted_at == deleted_at
-        assert archived_counts == (0, 0, 1, 1)
-    finally:
-        engine.dispose()
-
-
-def test_init_db_orphaned_schedule_repair_backfills_safe_provenance_and_leaves_fully_orphaned_rows_null(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS fk_runs_schedule_id"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS runs_schedule_id_fkey"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS fk_runs_schedule_fire_id"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS runs_schedule_fire_id_fkey"
-            )
-            package = _insert_representable_workflow_package(
-                connection,
-                key="orphaned_schedule_repair_package",
-                workflow_key="orphaned_schedule_repair_workflow",
-            )
-            schedule_id = int(
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO workflow_package_schedules (
-                            package_id, workflow_key, name, timezone, recurrence,
-                            input_template, template_vars
-                        ) VALUES (
-                            :package_id, :workflow_key, 'Repair schedule', 'UTC',
-                            CAST(:recurrence AS jsonb), '{}'::jsonb, '{}'::jsonb
-                        ) RETURNING id
-                        """
-                    ),
-                    {**package, "recurrence": json.dumps({"type": "daily"}, sort_keys=True)},
-                ).scalar_one()
-            )
-            fire_id = int(
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO workflow_package_schedule_fires (
-                            schedule_id, fire_key, reason, status, scheduled_for,
-                            scheduled_local_date, scheduled_local_time,
-                            scheduled_local_datetime, materialized_at, rendered_parameters
-                        ) VALUES (
-                            :schedule_id, 'repair-live-fire', 'manual', 'queued',
-                            '2026-06-01T14:00:00Z', '2026-06-01', '14:00:00',
-                            '2026-06-01T14:00:00', '2026-06-01T13:59:00Z', '{}'::jsonb
-                        ) RETURNING id
-                        """
-                    ),
-                    {"schedule_id": schedule_id},
-                ).scalar_one()
-            )
-            schedule_only_run_id = int(
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO runs (
-                            target_kind, target_id, target_key, target_version,
-                            workflow_package_id, workflow_package_key,
-                            workflow_package_workflow_key, schedule_id, schedule_fire_id,
-                            scheduled_for, schedule_reason, status, input
-                        ) VALUES (
-                            'workflowPackage', :package_id, :package_key, 1,
-                            :package_id, :package_key, :workflow_key, :schedule_id,
-                            :schedule_fire_id, '2026-06-01T13:00:00Z', 'scheduled',
-                            'queued', '{}'::jsonb
-                        ) RETURNING id
-                        """
-                    ),
-                    {
-                        **package,
-                        "schedule_id": schedule_id,
-                        "schedule_fire_id": fire_id + 1000,
-                    },
-                ).scalar_one()
-            )
-            fire_resolved_run_id = int(
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO runs (
-                            target_kind, target_id, target_key, target_version,
-                            workflow_package_id, workflow_package_key,
-                            workflow_package_workflow_key, schedule_id, schedule_fire_id,
-                            scheduled_for, schedule_reason, status, input
-                        ) VALUES (
-                            'workflowPackage', :package_id, :package_key, 1,
-                            :package_id, :package_key, :workflow_key, :schedule_id,
-                            :schedule_fire_id, '2026-06-01T14:00:00Z', 'manual',
-                            'queued', '{}'::jsonb
-                        ) RETURNING id
-                        """
-                    ),
-                    {
-                        **package,
-                        "schedule_id": schedule_id + 1000,
-                        "schedule_fire_id": fire_id,
-                    },
-                ).scalar_one()
-            )
-            fully_orphaned_run_id = int(
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO runs (
-                            target_kind, target_id, target_key, target_version,
-                            workflow_package_id, workflow_package_key,
-                            workflow_package_workflow_key, schedule_id, schedule_fire_id,
-                            scheduled_for, schedule_reason, status, input
-                        ) VALUES (
-                            'workflowPackage', :package_id, :package_key, 1,
-                            :package_id, :package_key, :workflow_key, :schedule_id,
-                            :schedule_fire_id, '2026-06-01T15:00:00Z', 'scheduled',
-                            'queued', '{}'::jsonb
-                        ) RETURNING id
-                        """
-                    ),
-                    {
-                        **package,
-                        "schedule_id": schedule_id + 2000,
-                        "schedule_fire_id": fire_id + 2000,
-                    },
-                ).scalar_one()
-            )
-            for run_id in (
-                schedule_only_run_id,
-                fire_resolved_run_id,
-                fully_orphaned_run_id,
-            ):
-                _insert_run_workflow_package_snapshot(
-                    connection,
-                    run_id=run_id,
-                    package=package,
-                )
-
-        init_db(database_url)
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            repaired_rows = cast(
-                list[Mapping[str, object]],
-                connection.execute(
-                    text(
-                        """
-                        SELECT id, schedule_id, schedule_fire_id, schedule_provenance
-                        FROM runs
-                        WHERE id IN :run_ids
-                        ORDER BY id
-                        """
-                    ).bindparams(bindparam("run_ids", expanding=True)),
-                    {
-                        "run_ids": [
-                            schedule_only_run_id,
-                            fire_resolved_run_id,
-                            fully_orphaned_run_id,
-                        ]
-                    },
-                )
-                .mappings()
-                .all(),
-            )
-
-        repaired_rows_by_id = {cast(int, row["id"]): row for row in repaired_rows}
-        assert repaired_rows_by_id[schedule_only_run_id]["schedule_id"] == schedule_id
-        assert repaired_rows_by_id[schedule_only_run_id]["schedule_fire_id"] is None
-        assert repaired_rows_by_id[schedule_only_run_id]["schedule_provenance"] == {
-            "scheduleId": schedule_id,
-            "scheduleFireId": None,
-            "scheduleName": "Repair schedule",
-            "packageId": package["package_id"],
-            "packageKey": package["package_key"],
-            "workflowKey": package["workflow_key"],
-            "timezone": "UTC",
-            "recurrence": {"type": "daily"},
-            "fireKey": None,
-            "reason": "scheduled",
-            "scheduledFor": "2026-06-01T13:00:00Z",
-            "scheduledLocalDate": None,
-            "scheduledLocalTime": None,
-            "scheduledLocalDateTime": None,
-            "materializedAt": None,
-            "scheduleDeletedAt": None,
-        }
-        assert repaired_rows_by_id[fire_resolved_run_id]["schedule_id"] is None
-        assert repaired_rows_by_id[fire_resolved_run_id]["schedule_fire_id"] == fire_id
-        assert repaired_rows_by_id[fire_resolved_run_id]["schedule_provenance"] == {
-            "scheduleId": schedule_id,
-            "scheduleFireId": fire_id,
-            "scheduleName": "Repair schedule",
-            "packageId": package["package_id"],
-            "packageKey": package["package_key"],
-            "workflowKey": package["workflow_key"],
-            "timezone": "UTC",
-            "recurrence": {"type": "daily"},
-            "fireKey": "repair-live-fire",
-            "reason": "manual",
-            "scheduledFor": "2026-06-01T14:00:00Z",
-            "scheduledLocalDate": "2026-06-01",
-            "scheduledLocalTime": "14:00:00",
-            "scheduledLocalDateTime": "2026-06-01T14:00:00",
-            "materializedAt": "2026-06-01T13:59:00Z",
-            "scheduleDeletedAt": None,
-        }
-        assert repaired_rows_by_id[fully_orphaned_run_id]["schedule_id"] is None
-        assert repaired_rows_by_id[fully_orphaned_run_id]["schedule_fire_id"] is None
-        assert repaired_rows_by_id[fully_orphaned_run_id]["schedule_provenance"] is None
-    finally:
-        engine.dispose()
-
-
-def test_upgrade_creates_run_forks_without_backfilling_legacy_lineage(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql('DROP TABLE IF EXISTS "run_forks"')
-            package = _insert_representable_workflow_package(
-                connection,
-                key="fork_upgrade_package",
-            )
-            source_run_id = cast(
-                int,
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO runs (
-                            target_kind, target_id, target_key, target_version,
-                            workflow_package_id, workflow_package_key,
-                            workflow_package_workflow_key, extension_dependencies,
-                            input, status, resume_step_index
-                        ) VALUES (
-                            'workflowPackage', :package_id, :package_key, 1,
-                            :package_id, :package_key, :workflow_key, '[]'::jsonb,
-                            CAST(:input AS jsonb), 'succeeded', 1
-                        ) RETURNING id
-                        """
-                    ),
-                    {
-                        "input": json.dumps({"ticker": "NVDA"}, sort_keys=True),
-                        "package_id": package["package_id"],
-                        "package_key": package["package_key"],
-                        "workflow_key": package["workflow_key"],
-                    },
-                ).scalar_one(),
-            )
-            _insert_run_workflow_package_snapshot(
-                connection,
-                run_id=source_run_id,
-                package=package,
-                parameters={"ticker": "NVDA"},
-            )
-            legacy_run_id = cast(
-                int,
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO runs (
-                            target_kind, target_id, target_key, target_version,
-                            workflow_package_id, workflow_package_key,
-                            workflow_package_workflow_key, extension_dependencies,
-                            input, status, source_run_id, lineage_root_run_id,
-                            forked_from_step_index, resume_step_index
-                        ) VALUES (
-                            'workflowPackage', :package_id, :package_key, 1,
-                            :package_id, :package_key, :workflow_key, '[]'::jsonb,
-                            CAST(:input AS jsonb), 'succeeded', :source_run_id,
-                            :source_run_id, 2, 2
-                        ) RETURNING id
-                        """
-                    ),
-                    {
-                        "input": json.dumps({"ticker": "NVDA"}, sort_keys=True),
-                        "package_id": package["package_id"],
-                        "package_key": package["package_key"],
-                        "source_run_id": source_run_id,
-                        "workflow_key": package["workflow_key"],
-                    },
-                ).scalar_one(),
-            )
-            _insert_run_workflow_package_snapshot(
-                connection,
-                run_id=legacy_run_id,
-                package=package,
-                parameters={"ticker": "NVDA"},
-            )
-
-        upgrade_legacy_schema(engine)
-        _assert_runtime_execution_table_shape(engine)
-        with engine.connect() as connection:
-            fork_count = connection.execute(text("SELECT COUNT(*) FROM run_forks")).scalar_one()
-            legacy_lineage = connection.execute(
-                text(
-                    """
-                    SELECT source_run_id, lineage_root_run_id,
-                           forked_from_step_index, resume_step_index
-                    FROM runs
-                    WHERE id = :legacy_run_id
-                    """
-                ),
-                {"legacy_run_id": legacy_run_id},
-            ).one()
-
-        assert fork_count == 0
-        assert tuple(legacy_lineage) == (source_run_id, source_run_id, 2, 2)
-    finally:
-        engine.dispose()
-
-
 def test_init_db_creates_workflow_memory_tables_idempotently(database_url: str) -> None:
     init_db(database_url)
     init_db(database_url)
@@ -2515,161 +1832,7 @@ def test_init_db_creates_workflow_memory_tables_idempotently(database_url: str) 
         engine.dispose()
 
 
-def test_init_db_backfills_workflow_memory_idempotency_columns_safely(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_memory_items "
-                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_items_proposal_id"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_memory_proposals "
-                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_proposals_idempotency_key"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_memory_proposals "
-                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_proposals_owner_idempotency_key"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_memory_items DROP COLUMN IF EXISTS content_fingerprint"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_memory_proposals DROP COLUMN IF EXISTS content_fingerprint"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_memory_proposals DROP COLUMN IF EXISTS idempotency_key"
-            )
-            proposal_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO workflow_memory_proposals (
-                        proposal_id, run_id, invocation_id, package_key, workflow_key, agent_key,
-                        step_id, namespace, kind, content_json, reason, source_output_path,
-                        detectors_json, status
-                    ) VALUES (
-                        'legacy-proposal-1', 991, 'invoke-legacy', 'package-a', 'workflow-a',
-                        'agent-a', 'step-a', 'research', 'fact', '{"value":"alpha"}'::jsonb,
-                        'legacy reason one', 'steps.output.memory[0]', '{}'::jsonb, 'committed'
-                    ) RETURNING id
-                    """
-                )
-            ).scalar_one()
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO workflow_memory_proposals (
-                        proposal_id, run_id, invocation_id, package_key, workflow_key, agent_key,
-                        step_id, namespace, kind, content_json, reason, source_output_path,
-                        detectors_json, status
-                    ) VALUES (
-                        'legacy-proposal-2', 991, 'invoke-legacy', 'package-a', 'workflow-a',
-                        'agent-a', 'step-a', 'research', 'fact', '{"value":"alpha"}'::jsonb,
-                        'legacy reason two', 'steps.output.memory[0]', '{}'::jsonb, 'committed'
-                    )
-                    """
-                )
-            )
-            for memory_id in ("legacy-memory-1", "legacy-memory-2"):
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO workflow_memory_items (
-                            memory_id, package_key, workflow_key, agent_key, step_id, namespace,
-                            kind, content_json, summary, provenance_json, policy_status,
-                            lifecycle_status, proposal_id
-                        ) VALUES (
-                            :memory_id, 'package-a', 'workflow-a', 'agent-a', 'step-a',
-                            'research', 'fact', '{"value":"alpha"}'::jsonb,
-                            'Legacy memory', '{}'::jsonb, 'committed', 'active', :proposal_id
-                        )
-                        """
-                    ),
-                    {"memory_id": memory_id, "proposal_id": proposal_id},
-                )
-
-        init_db(database_url)
-        inspector = inspect(engine)
-        proposal_constraints = {
-            constraint["name"]
-            for constraint in inspector.get_unique_constraints("workflow_memory_proposals")
-            if constraint.get("name")
-        }
-        item_constraints = {
-            constraint["name"]
-            for constraint in inspector.get_unique_constraints("workflow_memory_items")
-            if constraint.get("name")
-        }
-        with engine.connect() as connection:
-            proposal_backfill = connection.execute(
-                text(
-                    """
-                    SELECT COUNT(*), COUNT(DISTINCT idempotency_key),
-                           bool_and(content_fingerprint IS NOT NULL),
-                           bool_and(idempotency_key IS NOT NULL)
-                    FROM workflow_memory_proposals
-                    """
-                )
-            ).one()
-            linked_items = connection.execute(
-                text(
-                    """
-                    SELECT COUNT(*)
-                    FROM workflow_memory_items
-                    WHERE proposal_id = :proposal_id
-                    """
-                ),
-                {"proposal_id": proposal_id},
-            ).scalar_one()
-
-        assert proposal_backfill == (2, 1, True, True)
-        assert linked_items == 1
-        assert "uq_workflow_memory_items_proposal_id" in item_constraints
-        assert "uq_workflow_memory_proposals_idempotency_key" not in proposal_constraints
-        assert "uq_workflow_memory_proposals_owner_idempotency_key" not in proposal_constraints
-    finally:
-        engine.dispose()
-
-
-def test_init_db_replaces_global_proposal_idempotency_constraint_with_owner_scope(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_memory_proposals "
-                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_proposals_owner_idempotency_key"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_memory_proposals "
-                "ADD CONSTRAINT uq_workflow_memory_proposals_idempotency_key "
-                "UNIQUE (idempotency_key)"
-            )
-
-        init_db(database_url)
-        proposal_constraints = {
-            constraint["name"]: tuple(constraint["column_names"])
-            for constraint in inspect(engine).get_unique_constraints("workflow_memory_proposals")
-            if constraint.get("name")
-        }
-        assert "uq_workflow_memory_proposals_idempotency_key" not in proposal_constraints
-        assert proposal_constraints["uq_workflow_memory_proposals_owner_idempotency_key"] == (
-            "owner_type",
-            "owner_id",
-            "idempotency_key",
-        )
-    finally:
-        engine.dispose()
-
-
-def test_init_db_allows_duplicate_proposal_idempotency_keys_across_owners(
+def test_init_db_scopes_proposal_idempotency_keys_by_owner(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -2678,14 +1841,6 @@ def test_init_db_allows_duplicate_proposal_idempotency_keys_across_owners(
     try:
         duplicate_key = "8" * 64
         with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_memory_proposals "
-                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_proposals_idempotency_key"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_memory_proposals "
-                "DROP CONSTRAINT IF EXISTS uq_workflow_memory_proposals_owner_idempotency_key"
-            )
             for owner_id in ("default", "other"):
                 connection.execute(
                     text(
@@ -2710,18 +1865,6 @@ def test_init_db_allows_duplicate_proposal_idempotency_keys_across_owners(
                     },
                 )
 
-        init_db(database_url)
-        proposal_constraints = {
-            constraint["name"]: tuple(constraint["column_names"])
-            for constraint in inspect(engine).get_unique_constraints("workflow_memory_proposals")
-            if constraint.get("name")
-        }
-        assert "uq_workflow_memory_proposals_idempotency_key" not in proposal_constraints
-        assert proposal_constraints["uq_workflow_memory_proposals_owner_idempotency_key"] == (
-            "owner_type",
-            "owner_id",
-            "idempotency_key",
-        )
         with pytest.raises(IntegrityError):
             with engine.begin() as connection:
                 connection.execute(
@@ -2741,256 +1884,6 @@ def test_init_db_allows_duplicate_proposal_idempotency_keys_across_owners(
                     ),
                     {"fingerprint": "9" * 64, "idempotency_key": duplicate_key},
                 )
-    finally:
-        engine.dispose()
-
-
-def test_init_db_backfills_workflow_memory_owner_columns_safely(database_url: str) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            for table_name in (
-                "workflow_memory_items",
-                "workflow_memory_proposals",
-                "workflow_memory_audit_events",
-                "workflow_memory_quarantine",
-                "workflow_memory_consolidation_runs",
-                "workflow_checkpoints",
-            ):
-                connection.exec_driver_sql(
-                    f"ALTER TABLE {table_name} DROP COLUMN IF EXISTS owner_type CASCADE"
-                )
-                connection.exec_driver_sql(
-                    f"ALTER TABLE {table_name} DROP COLUMN IF EXISTS owner_id CASCADE"
-                )
-            item_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO workflow_memory_items (
-                        memory_id, package_key, workflow_key, agent_key, step_id, namespace,
-                        kind, content_fingerprint, content_json, summary, provenance_json,
-                        policy_status, lifecycle_status
-                    ) VALUES (
-                        'legacy-owner-memory', 'package-a', 'workflow-a', 'agent-a', 'step-a',
-                        'research', 'fact',
-                        '3333333333333333333333333333333333333333333333333333333333333333',
-                        '{"value":"owner"}'::jsonb, 'Owner backfill', '{}'::jsonb,
-                        'committed', 'active'
-                    ) RETURNING id
-                    """
-                )
-            ).scalar_one()
-            proposal_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO workflow_memory_proposals (
-                        proposal_id, package_key, workflow_key, agent_key, step_id, namespace,
-                        kind, content_fingerprint, idempotency_key, content_json, detectors_json,
-                        status
-                    ) VALUES (
-                        'legacy-owner-proposal', 'package-a', 'workflow-a', 'agent-a', 'step-a',
-                        'research', 'fact',
-                        '3333333333333333333333333333333333333333333333333333333333333333',
-                        '4444444444444444444444444444444444444444444444444444444444444444',
-                        '{"value":"owner"}'::jsonb, '{}'::jsonb, 'review_pending'
-                    ) RETURNING id
-                    """
-                )
-            ).scalar_one()
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO workflow_memory_quarantine (
-                        memory_item_id, proposal_id, reason_code, detectors_json
-                    ) VALUES (:item_id, :proposal_id, 'owner_backfill', '{}'::jsonb)
-                    """
-                ),
-                {"item_id": item_id, "proposal_id": proposal_id},
-            )
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO workflow_memory_audit_events (
-                        event_type, target_type, target_id, package_key, workflow_key, event_json
-                    ) VALUES (
-                        'created', 'proposal', 'legacy-owner-proposal', 'package-a',
-                        'workflow-a', '{}'::jsonb
-                    )
-                    """
-                )
-            )
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO workflow_memory_consolidation_runs (
-                        consolidation_id, package_key, workflow_key, namespace, status,
-                        started_at, source_memory_ids_json, output_memory_ids_json, stats_json
-                    ) VALUES (
-                        'legacy-owner-consolidation', 'package-a', 'workflow-a', 'research',
-                        'succeeded', NOW(), '[]'::jsonb, '[]'::jsonb, '{}'::jsonb
-                    )
-                    """
-                )
-            )
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO workflow_checkpoints (
-                        checkpoint_id, run_id, package_key, workflow_key, checkpoint_type,
-                        sequence, state_json, retention, metadata_json
-                    ) VALUES (
-                        'legacy-owner-checkpoint', 1, 'package-a', 'workflow-a', 'resume', 1,
-                        '{}'::jsonb, 'latest', '{}'::jsonb
-                    )
-                    """
-                )
-            )
-
-        init_db(database_url)
-        _assert_workflow_memory_table_shape(engine)
-        with engine.connect() as connection:
-            owner_counts = connection.execute(
-                text(
-                    """
-                    SELECT
-                        (SELECT COUNT(*) FROM workflow_memory_items
-                         WHERE owner_type = 'local_user' AND owner_id = 'default'),
-                        (SELECT COUNT(*) FROM workflow_memory_proposals
-                         WHERE owner_type = 'local_user' AND owner_id = 'default'),
-                        (SELECT COUNT(*) FROM workflow_memory_audit_events
-                         WHERE owner_type = 'local_user' AND owner_id = 'default'),
-                        (SELECT COUNT(*) FROM workflow_memory_quarantine
-                         WHERE owner_type = 'local_user' AND owner_id = 'default'),
-                        (SELECT COUNT(*) FROM workflow_memory_consolidation_runs
-                         WHERE owner_type = 'local_user' AND owner_id = 'default'),
-                        (SELECT COUNT(*) FROM workflow_checkpoints
-                         WHERE owner_type = 'local_user' AND owner_id = 'default')
-                    """
-                )
-            ).one()
-
-        assert owner_counts == (1, 1, 1, 1, 1, 1)
-    finally:
-        engine.dispose()
-
-
-def test_init_db_drops_empty_old_memory_tables_deterministically(database_url: str) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql("CREATE TABLE agent_memory_entries (id INTEGER)")
-            connection.exec_driver_sql("CREATE TABLE agent_memory_revisions (id INTEGER)")
-            connection.exec_driver_sql("CREATE TABLE run_memory_events (id INTEGER)")
-
-        init_db(database_url)
-        init_db(database_url)
-
-        table_names = set(inspect(engine).get_table_names())
-        assert OLD_MEMORY_TABLE_NAMES.isdisjoint(table_names)
-        assert LEGACY_MEMORY_TABLE_NAMES.isdisjoint(table_names)
-        _assert_workflow_memory_table_shape(engine)
-    finally:
-        engine.dispose()
-
-
-def test_init_db_renames_non_empty_old_memory_tables_to_legacy_names(
-    database_url: str,
-) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE agent_memory_entries (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    memory_id VARCHAR(160) NOT NULL
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE agent_memory_revisions (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    memory_entry_id INTEGER REFERENCES agent_memory_entries(id),
-                    revision_id VARCHAR(160) NOT NULL
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE run_memory_events (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    memory_entry_id INTEGER REFERENCES agent_memory_entries(id),
-                    memory_id VARCHAR(160)
-                )
-                """
-            )
-            entry_id = connection.execute(
-                text(
-                    "INSERT INTO agent_memory_entries (memory_id) "
-                    "VALUES ('old-memory-1') RETURNING id"
-                )
-            ).scalar_one()
-            connection.execute(
-                text(
-                    "INSERT INTO agent_memory_revisions (memory_entry_id, revision_id) "
-                    "VALUES (:entry_id, 'old-memory-1:rev-1')"
-                ),
-                {"entry_id": entry_id},
-            )
-            connection.execute(
-                text(
-                    "INSERT INTO run_memory_events (memory_entry_id, memory_id) "
-                    "VALUES (:entry_id, 'old-memory-1')"
-                ),
-                {"entry_id": entry_id},
-            )
-
-        init_db(database_url)
-        init_db(database_url)
-
-        table_names = set(inspect(engine).get_table_names())
-        assert OLD_MEMORY_TABLE_NAMES.isdisjoint(table_names)
-        assert LEGACY_MEMORY_TABLE_NAMES <= table_names
-        _assert_workflow_memory_table_shape(engine)
-        with engine.connect() as connection:
-            counts = connection.execute(
-                text(
-                    """
-                    SELECT
-                        (SELECT COUNT(*) FROM legacy_agent_memory_entries),
-                        (SELECT COUNT(*) FROM legacy_agent_memory_revisions),
-                        (SELECT COUNT(*) FROM legacy_run_memory_events)
-                    """
-                )
-            ).one()
-            legacy_event = connection.execute(
-                text("SELECT memory_id FROM legacy_run_memory_events")
-            ).scalar_one()
-
-        assert counts == (1, 1, 1)
-        assert legacy_event == "old-memory-1"
-    finally:
-        engine.dispose()
-
-
-def test_init_db_drops_old_memory_chunk_and_embedding_tables(database_url: str) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql("CREATE TABLE agent_memory_chunks (id INTEGER)")
-            connection.exec_driver_sql("CREATE TABLE agent_memory_embeddings (id INTEGER)")
-
-        init_db(database_url)
-
-        table_names = set(inspect(engine).get_table_names())
-        assert REMOVED_CORE_MEMORY_TABLE_NAMES.isdisjoint(table_names)
-        _assert_workflow_memory_table_shape(engine)
     finally:
         engine.dispose()
 
@@ -3077,227 +1970,6 @@ def test_init_db_creates_workflow_package_secret_binding_table(database_url: str
         assert "ix_workflow_package_secret_bindings_key" in indexes
         assert "uq_workflow_package_secret_bindings_package_key" in unique_constraints
         assert (("package_id",), "workflow_packages", "CASCADE") in foreign_keys
-    finally:
-        engine.dispose()
-
-
-def _recreate_legacy_owner_scoped_runtime_input_registry_table(
-    connection: Connection,
-) -> None:
-    connection.exec_driver_sql("DROP TABLE IF EXISTS workflow_package_runtime_input_entries")
-    connection.exec_driver_sql(
-        """
-        CREATE TABLE workflow_package_runtime_input_entries (
-            id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-            package_id INTEGER NOT NULL,
-            workflow_key VARCHAR(120) NOT NULL,
-            owner_type VARCHAR(40) NOT NULL,
-            owner_id VARCHAR(120) NOT NULL,
-            slot VARCHAR(20) NOT NULL,
-            name VARCHAR(200),
-            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-            source_kind VARCHAR(40) NOT NULL,
-            manifest_hash VARCHAR(64) NOT NULL,
-            compiled_hash VARCHAR(64) NOT NULL,
-            schema_fingerprint VARCHAR(64) NOT NULL,
-            input_schema_snapshot JSONB,
-            source_run_id INTEGER,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT ck_workflow_package_runtime_input_entries_slot CHECK (
-                slot IN ('history', 'personal')
-            ),
-            CONSTRAINT ck_workflow_package_runtime_input_entries_name_personal_only CHECK (
-                slot = 'personal' OR name IS NULL
-            ),
-            CONSTRAINT fk_workflow_package_runtime_input_entries_package_id
-                FOREIGN KEY (package_id) REFERENCES workflow_packages(id) ON DELETE CASCADE,
-            CONSTRAINT fk_workflow_package_runtime_input_entries_source_run_id
-                FOREIGN KEY (source_run_id) REFERENCES runs(id) ON DELETE SET NULL
-        )
-        """
-    )
-    connection.exec_driver_sql(
-        "CREATE INDEX ix_workflow_package_runtime_input_entries_package "
-        "ON workflow_package_runtime_input_entries (package_id)"
-    )
-    connection.exec_driver_sql(
-        "CREATE INDEX ix_workflow_package_runtime_input_entries_scope_slot_created "
-        "ON workflow_package_runtime_input_entries "
-        "(package_id, workflow_key, owner_type, owner_id, slot, created_at, id)"
-    )
-    connection.exec_driver_sql(
-        "CREATE INDEX ix_workflow_package_runtime_input_entries_scope_slot_updated "
-        "ON workflow_package_runtime_input_entries "
-        "(package_id, workflow_key, owner_type, owner_id, slot, updated_at, id)"
-    )
-    connection.exec_driver_sql(
-        "CREATE INDEX ix_workflow_package_runtime_input_entries_source_run "
-        "ON workflow_package_runtime_input_entries (source_run_id)"
-    )
-
-
-def _insert_legacy_owner_scoped_runtime_input_entry(
-    connection: Connection,
-    *,
-    package: Mapping[str, object],
-    owner_type: str,
-    owner_id: str,
-) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO workflow_package_runtime_input_entries (
-                package_id, workflow_key, owner_type, owner_id, slot, name, payload,
-                source_kind, manifest_hash, compiled_hash, schema_fingerprint,
-                input_schema_snapshot, source_run_id
-            ) VALUES (
-                :package_id, :workflow_key, :owner_type, :owner_id, 'personal',
-                'Default review', '{"ticker":"MSFT"}'::jsonb, 'manual', :manifest_hash,
-                :compiled_hash, :schema_fingerprint, '{"type":"object"}'::jsonb, NULL
-            )
-            """
-        ),
-        {
-            "compiled_hash": package["compiled_hash"],
-            "manifest_hash": package["manifest_hash"],
-            "owner_id": owner_id,
-            "owner_type": owner_type,
-            "package_id": package["package_id"],
-            "schema_fingerprint": "c" * 64,
-            "workflow_key": package["workflow_key"],
-        },
-    )
-
-
-def test_runtime_input_owner_cutoff_valid_legacy_scope_converts_to_preset(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            package = _insert_representable_workflow_package(
-                connection,
-                key="runtime_input_owner_cutoff_valid",
-                workflow_key="daily_review",
-            )
-            _recreate_legacy_owner_scoped_runtime_input_registry_table(connection)
-            _insert_legacy_owner_scoped_runtime_input_entry(
-                connection,
-                package=package,
-                owner_type="local_user",
-                owner_id="default",
-            )
-
-        init_db(database_url)
-
-        inspector = inspect(engine)
-        columns = {
-            column["name"]: column
-            for column in inspector.get_columns("workflow_package_runtime_input_entries")
-        }
-        check_constraints = {
-            constraint["name"]: constraint["sqltext"]
-            for constraint in inspector.get_check_constraints(
-                "workflow_package_runtime_input_entries"
-            )
-            if constraint.get("name")
-        }
-        index_columns = {
-            index["name"]: tuple(index["column_names"])
-            for index in inspector.get_indexes("workflow_package_runtime_input_entries")
-        }
-        with engine.connect() as connection:
-            row = connection.execute(
-                text(
-                    """
-                    SELECT slot, name, payload
-                    FROM workflow_package_runtime_input_entries
-                    WHERE package_id = :package_id
-                    """
-                ),
-                {"package_id": package["package_id"]},
-            ).one()
-            index_definitions = {
-                str(index_name): str(index_definition).lower()
-                for index_name, index_definition in connection.execute(
-                    text(
-                        """
-                        SELECT indexname, indexdef
-                        FROM pg_indexes
-                        WHERE tablename = 'workflow_package_runtime_input_entries'
-                        """
-                    )
-                )
-            }
-
-        assert set(columns) == _RUNTIME_INPUT_REGISTRY_COLUMNS
-        assert row == ("preset", "Default review", {"ticker": "MSFT"})
-        slot_constraint_sql = check_constraints["ck_workflow_package_runtime_input_entries_slot"]
-        assert "preset" in slot_constraint_sql
-        assert "history" in slot_constraint_sql
-        assert "personal" not in slot_constraint_sql
-        assert index_columns["ix_workflow_package_runtime_input_entries_scope_slot_created"] == (
-            "package_id",
-            "workflow_key",
-            "slot",
-            "created_at",
-            "id",
-        )
-        assert index_columns["ix_workflow_package_runtime_input_entries_scope_slot_updated"] == (
-            "package_id",
-            "workflow_key",
-            "slot",
-            "updated_at",
-            "id",
-        )
-        assert all("owner_type" not in definition for definition in index_definitions.values())
-        assert all("owner_id" not in definition for definition in index_definitions.values())
-    finally:
-        engine.dispose()
-
-
-def test_runtime_input_owner_cutoff_invalid_legacy_scope_hard_fails(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            package = _insert_representable_workflow_package(
-                connection,
-                key="runtime_input_owner_cutoff_invalid",
-                workflow_key="daily_review",
-            )
-            _recreate_legacy_owner_scoped_runtime_input_registry_table(connection)
-            _insert_legacy_owner_scoped_runtime_input_entry(
-                connection,
-                package=package,
-                owner_type="local_user",
-                owner_id="unexpected",
-            )
-
-        with pytest.raises(RuntimeError) as error:
-            init_db(database_url)
-
-        message = str(error.value)
-        assert "workflow_package_runtime_input_entries" in message
-        assert "invalid owner scope" in message
-        with engine.connect() as connection:
-            invalid_count = connection.execute(
-                text(
-                    """
-                    SELECT COUNT(*)
-                    FROM workflow_package_runtime_input_entries
-                    WHERE owner_type = 'local_user'
-                      AND owner_id = 'unexpected'
-                    """
-                )
-            ).scalar_one()
-        assert invalid_count == 1
     finally:
         engine.dispose()
 
@@ -3553,9 +2225,7 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
             + json.dumps(row["package_definition"], sort_keys=True)
             + json.dumps(row["compiled_plan"], sort_keys=True)
         )
-        removed_budget_field = "budget" + "Usd"
         for forbidden_value in (
-            removed_budget_field,
             "encrypted",
             "requiredBindings",
             "secretPayload",
@@ -3587,7 +2257,7 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
                 expected_input_schema_title=expected_input_schema_title,
             )
 
-        upgrade_legacy_schema(engine)
+        apply_startup_schema_repairs(engine)
         with engine.connect() as connection:
             idempotent_row = (
                 connection.execute(
@@ -3827,232 +2497,6 @@ def test_init_db_seeds_macro_and_mixed_signal_presets_with_expected_boundaries(
             } == expected_digital_tool_keys
             assert secret_binding_count == 0
             assert run_count == 0
-    finally:
-        engine.dispose()
-
-
-def test_init_db_removes_cost_columns_and_deletes_non_package_runtime_rows(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            for column_name in _RUN_COST_COLUMNS:
-                _ = connection.exec_driver_sql(
-                    f"ALTER TABLE runs ADD COLUMN {column_name} NUMERIC(20, 8) NOT NULL DEFAULT 0"
-                )
-            for column_name, constraint_name in zip(
-                _RUN_COST_COLUMNS,
-                _RUN_COST_CHECKS,
-                strict=True,
-            ):
-                _ = connection.exec_driver_sql(
-                    f"ALTER TABLE runs ADD CONSTRAINT {constraint_name} CHECK ({column_name} >= 0)"
-                )
-            statement = (
-                "ALTER TABLE run_agent_invocations ADD COLUMN "
-                + f"{_INVOCATION_COST_COLUMN} NUMERIC(20, 8) NOT NULL DEFAULT 0"
-            )
-            _ = connection.exec_driver_sql(statement)
-            statement = (
-                "ALTER TABLE run_agent_invocations ADD CONSTRAINT "
-                + f"{_INVOCATION_COST_CHECK} CHECK ({_INVOCATION_COST_COLUMN} >= 0)"
-            )
-            _ = connection.exec_driver_sql(statement)
-
-            package = _insert_representable_workflow_package(
-                connection,
-                key="cost_package",
-                workflow_key="cost_workflow",
-            )
-            run_cost_columns_sql = ", ".join(_RUN_COST_COLUMNS)
-            run_cost_placeholders_sql = ", ".join(
-                f":run_legacy_amount_{index}" for index, _ in enumerate(_RUN_COST_COLUMNS)
-            )
-            run_id = connection.execute(
-                text(
-                    "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, "
-                    "workflow_package_workflow_key, "
-                    "input, status, total_tokens, inherited_tokens, executed_tokens, "
-                    f"{run_cost_columns_sql}"
-                    ") VALUES ("
-                    "'workflowPackage', :package_id, :package_key, :target_version, "
-                    ":package_id, :package_key, :workflow_key, "
-                    "'{}'::jsonb, 'succeeded', 17, 5, 12, "
-                    f"{run_cost_placeholders_sql}"
-                    ") RETURNING id"
-                ),
-                {
-                    **package,
-                    **{
-                        f"run_legacy_amount_{index}": index + 1
-                        for index, _ in enumerate(_RUN_COST_COLUMNS)
-                    },
-                },
-            ).scalar_one()
-            _insert_run_workflow_package_snapshot(
-                connection,
-                run_id=int(run_id),
-                package=package,
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE runs ADD CONSTRAINT ck_runs_target_kind "
-                "CHECK (target_kind IN ('agent', 'workflow', 'workflowPackage'))"
-            )
-            legacy_run_id = connection.execute(
-                text(
-                    "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, input, status, "
-                    "total_tokens, inherited_tokens, executed_tokens, "
-                    f"{run_cost_columns_sql}"
-                    ") VALUES ("
-                    "'workflow', 42, 'legacy_cost_workflow', 1, '{}'::jsonb, 'succeeded', "
-                    "31, 11, 20, "
-                    f"{run_cost_placeholders_sql}"
-                    ") RETURNING id"
-                ),
-                {
-                    f"run_legacy_amount_{index}": index + 1
-                    for index, _ in enumerate(_RUN_COST_COLUMNS)
-                },
-            ).scalar_one()
-            _insert_report_upgrade_row(
-                connection,
-                slug="legacy_cost_agent_memory_report",
-                source="agent",
-                metadata=_agent_memory_report_metadata(runId=int(legacy_run_id)),
-            )
-            _insert_report_upgrade_row(
-                connection,
-                slug="legacy_cost_external_agent_memory_report",
-                source="external",
-                metadata=_agent_memory_report_metadata(runId=int(legacy_run_id)),
-            )
-            step_id = connection.execute(
-                text(
-                    "INSERT INTO run_steps (run_id, step_index, status, origin, persisted_at) "
-                    "VALUES (:run_id, 1, 'succeeded', 'planned', NOW()) RETURNING id"
-                ),
-                {"run_id": run_id},
-            ).scalar_one()
-            invocation_id = connection.execute(
-                text(
-                    "INSERT INTO run_agent_invocations ("
-                    "run_step_id, run_id, step_index, slot, position, agent_id, agent_key, "
-                    "agent_version, output_schema_id, output_schema_version, status, "
-                    "resolved_input, tokens, "
-                    f"{_INVOCATION_COST_COLUMN}"
-                    ") VALUES ("
-                    ":step_id, :run_id, 1, 'review', 0, 7, 'legacy_cost_agent', "
-                    "1, 1, 1, 'succeeded', '{}'::jsonb, 19, :invocation_legacy_amount"
-                    ") RETURNING id"
-                ),
-                {"invocation_legacy_amount": 4, "run_id": run_id, "step_id": step_id},
-            ).scalar_one()
-
-        init_db(database_url)
-        init_db(database_url)
-
-        inspector = inspect(engine)
-        run_columns = {column["name"] for column in inspector.get_columns("runs")}
-        invocation_columns = {
-            column["name"] for column in inspector.get_columns("run_agent_invocations")
-        }
-        run_constraints = {
-            constraint["name"]
-            for constraint in inspector.get_check_constraints("runs")
-            if constraint.get("name")
-        }
-        invocation_constraints = {
-            constraint["name"]
-            for constraint in inspector.get_check_constraints("run_agent_invocations")
-            if constraint.get("name")
-        }
-        with engine.connect() as connection:
-            runtime_counts = connection.execute(
-                text(
-                    "SELECT "
-                    "(SELECT COUNT(*) FROM runs), "
-                    "(SELECT COUNT(*) FROM run_workflow_package_snapshots), "
-                    "(SELECT COUNT(*) FROM run_steps), "
-                    "(SELECT COUNT(*) FROM run_agent_invocations)"
-                )
-            ).one()
-            preserved_run = connection.execute(
-                text("SELECT target_key, status, total_tokens FROM runs WHERE id = :run_id"),
-                {"run_id": run_id},
-            ).one()
-            preserved_invocation = connection.execute(
-                text(
-                    "SELECT agent_key, status, tokens "
-                    "FROM run_agent_invocations WHERE id = :invocation_id"
-                ),
-                {"invocation_id": invocation_id},
-            ).one()
-            legacy_report_counts = connection.execute(
-                text(
-                    "SELECT "
-                    "(SELECT COUNT(*) FROM reports WHERE slug = 'legacy_cost_agent_memory_report'), "
-                    "(SELECT COUNT(*) FROM reports WHERE slug = 'legacy_cost_external_agent_memory_report')"
-                )
-            ).one()
-
-        assert runtime_counts == (1, 1, 1, 1)
-        assert preserved_run == ("cost_package", "succeeded", 17)
-        assert preserved_invocation == ("legacy_cost_agent", "succeeded", 19)
-        assert legacy_report_counts == (0, 0)
-        assert set(_RUN_COST_COLUMNS).isdisjoint(run_columns)
-        assert _INVOCATION_COST_COLUMN not in invocation_columns
-        assert set(_RUN_COST_CHECKS).isdisjoint(run_constraints)
-        assert _INVOCATION_COST_CHECK not in invocation_constraints
-    finally:
-        engine.dispose()
-
-
-def test_init_db_repairs_reports_columns_before_non_package_run_report_cleanup(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_target_kind"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE runs ADD CONSTRAINT ck_runs_target_kind "
-                "CHECK (target_kind IN ('agent', 'workflow', 'workflowPackage'))"
-            )
-            legacy_run_id = connection.execute(
-                text(
-                    "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, status, input"
-                    ") VALUES ('workflow', 99, 'legacy_report_cleanup_workflow', 1, "
-                    "'succeeded', '{}'::jsonb) RETURNING id"
-                )
-            ).scalar_one()
-            _insert_report_upgrade_row(
-                connection,
-                slug="legacy_report_cleanup_agent_memory_report",
-                source="external",
-                metadata=_agent_memory_report_metadata(runId=int(legacy_run_id)),
-            )
-            connection.exec_driver_sql("ALTER TABLE reports DROP COLUMN metadata CASCADE")
-            connection.exec_driver_sql("ALTER TABLE reports DROP COLUMN source CASCADE")
-
-        init_db(database_url)
-
-        inspector = inspect(engine)
-        report_columns = {column["name"] for column in inspector.get_columns("reports")}
-        assert {"source", "metadata"} <= report_columns
     finally:
         engine.dispose()
 
@@ -4447,108 +2891,6 @@ def test_init_db_running_run_recovery_marks_new_platform_rows_terminal(
         engine.dispose()
 
 
-def test_init_db_hard_cutover_recreates_legacy_runs_and_partial_runtime_tables(
-    database_url: str,
-) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE runs (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    workflow_id INTEGER NOT NULL,
-                    workflow_key VARCHAR(120) NOT NULL,
-                    workflow_version INTEGER NOT NULL,
-                    target_kind VARCHAR(20),
-                    target_id INTEGER,
-                    target_key VARCHAR(120),
-                    target_version INTEGER,
-                    input JSONB NOT NULL,
-                    per_step_outputs JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    final_output JSONB,
-                    status VARCHAR(20) NOT NULL DEFAULT 'running',
-                    total_tokens INTEGER NOT NULL DEFAULT 0,
-                    trace_id VARCHAR(255),
-                    error TEXT,
-                    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    finished_at TIMESTAMPTZ,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    CONSTRAINT ck_runs_status CHECK (
-                        status IN ('running', 'succeeded', 'failed')
-                    ),
-                    CONSTRAINT ck_runs_workflow_version_positive CHECK (workflow_version > 0),
-                    CONSTRAINT ck_runs_total_tokens_non_negative CHECK (total_tokens >= 0)
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                "CREATE INDEX ix_runs_workflow ON runs (workflow_id, workflow_version)"
-            )
-            connection.exec_driver_sql(
-                "CREATE INDEX ix_runs_workflow_key ON runs (workflow_key, workflow_version)"
-            )
-            connection.exec_driver_sql(
-                "CREATE TABLE run_steps ("
-                "id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, "
-                "run_id INTEGER NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending'"
-                ")"
-            )
-            connection.exec_driver_sql(
-                "CREATE TABLE run_agent_invocations ("
-                "id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, "
-                "run_step_id INTEGER NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending'"
-                ")"
-            )
-            legacy_run_id = connection.execute(
-                text(
-                    "INSERT INTO runs ("
-                    "workflow_id, workflow_key, workflow_version, target_kind, target_id, "
-                    "target_key, target_version, input, per_step_outputs, final_output, status, "
-                    "total_tokens, trace_id"
-                    ") VALUES ("
-                    "7, 'market_review', 3, 'agent', 9, 'different_target', 4, "
-                    "'{}'::jsonb, '{}'::jsonb, '{\"headline\":\"Buy\"}'::jsonb, "
-                    "'succeeded', 321, 'trace-legacy-run'"
-                    ") RETURNING id"
-                )
-            ).scalar_one()
-            legacy_step_id = connection.execute(
-                text(
-                    "INSERT INTO run_steps (run_id, status) "
-                    "VALUES (:run_id, 'running') RETURNING id"
-                ),
-                {"run_id": legacy_run_id},
-            ).scalar_one()
-            connection.execute(
-                text(
-                    "INSERT INTO run_agent_invocations (run_step_id, status) "
-                    "VALUES (:run_step_id, 'running')"
-                ),
-                {"run_step_id": legacy_step_id},
-            )
-
-        init_db(database_url)
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            runtime_counts = connection.execute(
-                text(
-                    "SELECT "
-                    "(SELECT COUNT(*) FROM runs), "
-                    "(SELECT COUNT(*) FROM run_steps), "
-                    "(SELECT COUNT(*) FROM run_agent_invocations)"
-                )
-            ).one()
-
-        assert runtime_counts == (0, 0, 0)
-        _assert_runtime_execution_table_shape(engine)
-    finally:
-        engine.dispose()
-
-
 def test_init_db_fresh_schema_has_flexible_model_connection_reasoning_effort(
     database_url: str,
 ) -> None:
@@ -4559,10 +2901,6 @@ def test_init_db_fresh_schema_has_flexible_model_connection_reasoning_effort(
         model_connection_columns = {
             column["name"]: column for column in inspect(engine).get_columns("model_connections")
         }
-        assert {"organization", "project"}.isdisjoint(model_connection_columns)
-        assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
-            model_connection_columns
-        )
         reasoning_effort_column = model_connection_columns["reasoning_effort"]
 
         assert reasoning_effort_column["nullable"] is True
@@ -4572,271 +2910,6 @@ def test_init_db_fresh_schema_has_flexible_model_connection_reasoning_effort(
         _assert_model_connection_reasoning_effort_direct_sql_contract(
             engine,
             key_prefix="fresh_reasoning_effort",
-        )
-    finally:
-        engine.dispose()
-
-
-def test_init_db_drops_legacy_model_connection_secret_metadata_columns(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-    marker_column, suffix_column = _LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                f"ALTER TABLE model_connections ADD COLUMN {marker_column} BOOLEAN DEFAULT TRUE"
-            )
-            connection.exec_driver_sql(
-                f"ALTER TABLE model_connections ADD COLUMN {suffix_column} VARCHAR(4)"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE model_connections ADD COLUMN organization VARCHAR(200)"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE model_connections ADD COLUMN project VARCHAR(200)"
-            )
-            connection.execute(
-                text(
-                    f"""
-                    INSERT INTO model_connections (
-                        key, status, name, description, base_url, organization, project,
-                        model_id, reasoning_effort, protocol_profile, timeout_seconds, secret_payload,
-                        {marker_column}, {suffix_column}, created_at, updated_at
-                    ) VALUES (
-                        :key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL,
-                        :model_id, 'medium', 'openai_responses', 60, CAST(:secret_payload AS jsonb),
-                        TRUE, '1234', NOW(), NOW()
-                    )
-                    """
-                ),
-                {
-                    "key": "legacy_secret_metadata_connection",
-                    "model_id": "openai:gpt-5.4-mini",
-                    "name": "Legacy Secret Metadata Connection",
-                    "secret_payload": json.dumps({"apiKey": "sk-forward-repair-1234"}),
-                },
-            )
-
-        init_db(database_url)
-        init_db(database_url)
-
-        model_connection_columns = {
-            column["name"]: column for column in inspect(engine).get_columns("model_connections")
-        }
-        with engine.connect() as connection:
-            secret_payload = connection.execute(
-                text(
-                    "SELECT secret_payload FROM model_connections "
-                    "WHERE key = 'legacy_secret_metadata_connection'"
-                )
-            ).scalar_one()
-
-        retired_columns = {
-            *_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS,
-            "organization",
-            "project",
-        }
-        assert retired_columns.isdisjoint(model_connection_columns)
-        assert secret_payload == {"apiKey": "sk-forward-repair-1234"}
-    finally:
-        engine.dispose()
-
-
-def test_init_db_backfills_model_connection_keys_deterministically(database_url: str) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE model_connections (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    status VARCHAR(20) NOT NULL DEFAULT 'active',
-                    name VARCHAR(200) NOT NULL,
-                    description TEXT NOT NULL DEFAULT '',
-                    base_url VARCHAR(500) NOT NULL,
-                    organization VARCHAR(200),
-                    project VARCHAR(200),
-                    model_id VARCHAR(200) NOT NULL,
-                    reasoning_effort VARCHAR(20) NOT NULL DEFAULT 'medium',
-                    timeout_seconds INTEGER NOT NULL DEFAULT 60,
-                    secret_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    last_tested_at TIMESTAMPTZ,
-                    last_test_ok BOOLEAN,
-                    last_test_message TEXT,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-                """
-            )
-            connection.execute(
-                text(
-                    "INSERT INTO model_connections ("
-                    "status, name, description, base_url, organization, project, model_id, "
-                    "reasoning_effort, timeout_seconds, secret_payload, "
-                    "created_at, updated_at"
-                    ") VALUES ("
-                    "'active', :name, '', 'https://api.openai.com/v1', NULL, NULL, :model_id, "
-                    "'medium', 60, '{}'::jsonb, NOW(), NOW()"
-                    ")"
-                ),
-                [
-                    {"name": "Primary OpenAI", "model_id": "gpt-5.4-mini"},
-                    {"name": "Primary OpenAI", "model_id": "gpt-5.4"},
-                    {"name": "!!!", "model_id": "openai:gpt-4.1"},
-                    {"name": "2026 Default", "model_id": "gpt-5.4"},
-                ],
-            )
-
-        init_db(database_url)
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            rows = connection.execute(
-                text("SELECT id, key, protocol_profile FROM model_connections ORDER BY id ASC")
-            ).all()
-
-        model_connection_columns = {
-            column["name"]: column for column in inspect(engine).get_columns("model_connections")
-        }
-        unique_constraints = {
-            constraint["name"]
-            for constraint in inspect(engine).get_unique_constraints("model_connections")
-        }
-        model_connection_indexes = {
-            index["name"] for index in inspect(engine).get_indexes("model_connections")
-        }
-        model_connection_check_constraints = {
-            constraint["name"]
-            for constraint in inspect(engine).get_check_constraints("model_connections")
-        }
-
-        assert rows == [
-            (1, "primary_openai", "openai_responses"),
-            (2, "primary_openai_2", "openai_responses"),
-            (3, "openai_gpt_4_1", "openai_responses"),
-            (4, "model_connection_2026_default", "openai_responses"),
-        ]
-        assert model_connection_columns["key"]["nullable"] is False
-        assert model_connection_columns["protocol_profile"]["nullable"] is False
-        assert "api_style" not in model_connection_columns
-        assert {"organization", "project"}.isdisjoint(model_connection_columns)
-        assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
-            model_connection_columns
-        )
-        assert "ck_model_connections_protocol_profile" in model_connection_check_constraints
-        assert "ck_model_connections_api_style" not in model_connection_check_constraints
-        assert "uq_model_connections_key" in unique_constraints
-        assert "ix_model_connections_key" in model_connection_indexes
-    finally:
-        engine.dispose()
-
-
-def test_init_db_repairs_legacy_enum_only_model_connection_reasoning_effort(
-    database_url: str,
-) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE model_connections (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    key VARCHAR(120) NOT NULL,
-                    status VARCHAR(20) NOT NULL DEFAULT 'active',
-                    name VARCHAR(200) NOT NULL,
-                    description TEXT NOT NULL DEFAULT '',
-                    base_url VARCHAR(500) NOT NULL,
-                    organization VARCHAR(200),
-                    project VARCHAR(200),
-                    model_id VARCHAR(200) NOT NULL,
-                    reasoning_effort VARCHAR(20) NOT NULL DEFAULT 'medium',
-                    api_style VARCHAR(30) NOT NULL DEFAULT 'responses',
-                    timeout_seconds INTEGER NOT NULL DEFAULT 60,
-                    secret_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    last_tested_at TIMESTAMPTZ,
-                    last_test_ok BOOLEAN,
-                    last_test_message TEXT,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    CONSTRAINT ck_model_connections_reasoning_effort CHECK (
-                        reasoning_effort IN ('low', 'medium', 'high')
-                    ),
-                    CONSTRAINT ck_model_connections_api_style CHECK (
-                        api_style IN ('responses', 'chat_completions')
-                    ),
-                    CONSTRAINT uq_model_connections_key UNIQUE (key)
-                )
-                """
-            )
-            connection.execute(
-                text(
-                    "INSERT INTO model_connections ("
-                    "key, status, name, description, base_url, organization, project, "
-                    "model_id, reasoning_effort, api_style, timeout_seconds, secret_payload, "
-                    "created_at, updated_at"
-                    ") VALUES ("
-                    ":key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL, "
-                    ":model_id, :reasoning_effort, 'responses', 60, '{}'::jsonb, "
-                    "NOW(), NOW()"
-                    ")"
-                ),
-                [
-                    {
-                        "key": "legacy_low",
-                        "model_id": "openai:gpt-5.4-mini-low",
-                        "name": "Legacy Low",
-                        "reasoning_effort": "low",
-                    },
-                    {
-                        "key": "legacy_medium",
-                        "model_id": "openai:gpt-5.4-mini-medium",
-                        "name": "Legacy Medium",
-                        "reasoning_effort": "medium",
-                    },
-                    {
-                        "key": "legacy_high",
-                        "model_id": "openai:gpt-5.4-mini-high",
-                        "name": "Legacy High",
-                        "reasoning_effort": "high",
-                    },
-                ],
-            )
-
-        init_db(database_url)
-        init_db(database_url)
-
-        model_connection_columns = {
-            column["name"]: column for column in inspect(engine).get_columns("model_connections")
-        }
-        with engine.connect() as connection:
-            preserved_rows = connection.execute(
-                text(
-                    "SELECT key, reasoning_effort FROM model_connections "
-                    "WHERE key LIKE 'legacy_%' ORDER BY key ASC"
-                )
-            ).all()
-
-        assert {"organization", "project"}.isdisjoint(model_connection_columns)
-        assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
-            model_connection_columns
-        )
-        reasoning_effort_column = model_connection_columns["reasoning_effort"]
-        assert reasoning_effort_column["nullable"] is True
-        assert getattr(reasoning_effort_column["type"], "length", None) == 128
-        assert preserved_rows == [
-            ("legacy_high", "high"),
-            ("legacy_low", "low"),
-            ("legacy_medium", "medium"),
-        ]
-        _assert_flexible_model_connection_reasoning_effort_check(engine)
-        _assert_model_connection_reasoning_effort_direct_sql_contract(
-            engine,
-            key_prefix="legacy_reasoning_effort",
         )
     finally:
         engine.dispose()
@@ -4886,138 +2959,6 @@ def test_init_db_refuses_existing_reports_with_unknown_source(database_url: str)
         engine.dispose()
 
 
-def test_upgrade_legacy_schema_migrates_agent_memory_reports_to_agent_source(
-    session_factory,
-) -> None:
-    matching_slug = "legacy_agent_memory_external"
-    weekly_slug = "legacy_weekly_external"
-    malformed_slug = "legacy_agent_memory_malformed"
-    uploaded_slug = "legacy_agent_memory_uploaded"
-    compiled_slug = "legacy_agent_memory_compiled"
-    slugs = (matching_slug, weekly_slug, malformed_slug, uploaded_slug, compiled_slug)
-    weekly_metadata: dict[str, object] = {
-        "analysis": {"reviewType": "weekly_review", "versionGroup": "weekly_review/v1"},
-        "tags": ["external"],
-    }
-    malformed_metadata = _agent_memory_report_metadata(agentVersion="v7")
-    uploaded_metadata = _agent_memory_report_metadata(runId=5252, agentKey="uploaded_agent")
-    compiled_metadata = _agent_memory_report_metadata(runId=6262, agentKey="compiled_agent")
-
-    with session_factory() as session:
-        engine = session.get_bind()
-        with engine.begin() as connection:
-            _insert_report_upgrade_row(
-                connection,
-                slug=matching_slug,
-                source="external",
-                metadata=_agent_memory_report_metadata(),
-            )
-            _insert_report_upgrade_row(
-                connection,
-                slug=weekly_slug,
-                source="external",
-                metadata=weekly_metadata,
-            )
-            _insert_report_upgrade_row(
-                connection,
-                slug=malformed_slug,
-                source="external",
-                metadata=malformed_metadata,
-            )
-            _insert_report_upgrade_row(
-                connection,
-                slug=uploaded_slug,
-                source="uploaded",
-                metadata=uploaded_metadata,
-            )
-            _insert_report_upgrade_row(
-                connection,
-                slug=compiled_slug,
-                source="compiled",
-                metadata=compiled_metadata,
-            )
-
-    upgrade_legacy_schema(engine)
-
-    rows = _report_upgrade_rows_by_slug(engine, slugs)
-    matching_metadata = cast(dict[str, object], rows[matching_slug]["metadata"])
-
-    assert rows[matching_slug]["source"] == "agent"
-    assert matching_metadata["createdBy"] == {
-        "type": "agent",
-        "runId": 4242,
-        "agentKey": "portfolio_manager",
-        "agentVersion": 7,
-        "agentName": "Portfolio Manager",
-        "workflowKey": "memory_workflow",
-        "workflowVersion": 2,
-        "stepId": "write_memory",
-        "slot": "decision",
-        "traceId": "trace-123",
-    }
-    assert matching_metadata["analysis"] == _agent_memory_report_metadata()["analysis"]
-    assert rows[weekly_slug] == {"source": "external", "metadata": weekly_metadata}
-    assert rows[malformed_slug] == {"source": "external", "metadata": malformed_metadata}
-    assert rows[uploaded_slug] == {"source": "uploaded", "metadata": uploaded_metadata}
-    assert rows[compiled_slug] == {"source": "compiled", "metadata": compiled_metadata}
-    _assert_report_source_constraint(engine)
-    _assert_invalid_report_source_rejected(engine, slug="invalid_after_agent_source_repair")
-
-
-def test_upgrade_legacy_schema_agent_memory_source_repair_is_idempotent(session_factory) -> None:
-    slug = "legacy_agent_memory_idempotent"
-
-    with session_factory() as session:
-        engine = session.get_bind()
-        with engine.begin() as connection:
-            _insert_report_upgrade_row(
-                connection,
-                slug=slug,
-                source="external",
-                metadata=_agent_memory_report_metadata(),
-            )
-
-    upgrade_legacy_schema(engine)
-    first_rows = _report_upgrade_rows_by_slug(engine, (slug,))
-    upgrade_legacy_schema(engine)
-    second_rows = _report_upgrade_rows_by_slug(engine, (slug,))
-
-    assert first_rows == second_rows
-    assert first_rows[slug]["source"] == "agent"
-    assert cast(dict[str, object], first_rows[slug]["metadata"])["createdBy"] == {
-        "type": "agent",
-        "runId": 4242,
-        "agentKey": "portfolio_manager",
-        "agentVersion": 7,
-        "agentName": "Portfolio Manager",
-        "workflowKey": "memory_workflow",
-        "workflowVersion": 2,
-        "stepId": "write_memory",
-        "slot": "decision",
-        "traceId": "trace-123",
-    }
-
-
-def test_upgrade_legacy_schema_drops_preexisting_legacy_backend_tables(session_factory) -> None:
-    with session_factory() as session:
-        engine = session.get_bind()
-        with engine.begin() as connection:
-            connection.exec_driver_sql("CREATE TABLE IF NOT EXISTS agent_specs (id INTEGER)")
-            connection.exec_driver_sql("CREATE TABLE IF NOT EXISTS workflow_specs (id INTEGER)")
-            connection.exec_driver_sql("CREATE TABLE IF NOT EXISTS runtime_runs (id INTEGER)")
-            connection.exec_driver_sql(
-                "CREATE TABLE IF NOT EXISTS orchestration_roles (id INTEGER)"
-            )
-            connection.exec_driver_sql(
-                "CREATE TABLE IF NOT EXISTS orchestration_characters (id INTEGER)"
-            )
-
-    upgrade_legacy_schema(engine)
-
-    table_names = set(inspect(engine).get_table_names())
-    assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
-
-
 def test_init_db_creates_extension_state_table_and_default_row(database_url: str) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
@@ -5026,14 +2967,6 @@ def test_init_db_creates_extension_state_table_and_default_row(database_url: str
         inspector = inspect(engine)
         table_names = set(inspector.get_table_names())
         columns = {column["name"]: column for column in inspector.get_columns("extension_states")}
-        indexes = {index["name"] for index in inspector.get_indexes("extension_states")}
-        unique_constraints = {
-            constraint["name"]
-            for constraint in inspector.get_unique_constraints("extension_states")
-        }
-        check_constraints = {
-            constraint["name"] for constraint in inspector.get_check_constraints("extension_states")
-        }
         primary_key = inspector.get_pk_constraint("extension_states")
 
         assert "extension_states" in table_names
@@ -5041,10 +2974,6 @@ def test_init_db_creates_extension_state_table_and_default_row(database_url: str
         assert primary_key["constrained_columns"] == ["extension_key"]
         assert columns["extension_key"]["nullable"] is False
         assert columns["enabled"]["nullable"] is False
-        assert "ix_extension_states_extension_key" not in indexes
-        assert "ix_extension_states_enabled" not in indexes
-        assert "uq_extension_states_extension_key" not in unique_constraints
-        assert "ck_extension_states_version_positive" not in check_constraints
 
         with engine.connect() as connection:
             rows = (
@@ -5069,158 +2998,20 @@ def test_init_db_creates_extension_state_table_and_default_row(database_url: str
         engine.dispose()
 
 
-def test_upgrade_legacy_schema_extension_state_is_idempotent_and_preserves_toggle(
-    session_factory,
+def test_startup_schema_repairs_add_run_extension_dependencies_column(
+    database_url: str,
 ) -> None:
-    with session_factory() as session:
-        engine = session.get_bind()
-        with engine.begin() as connection:
-            connection.exec_driver_sql('DROP TABLE IF EXISTS "extension_states" CASCADE')
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE extension_states (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    extension_key VARCHAR(120) NOT NULL,
-                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                    enabled_at TIMESTAMPTZ,
-                    disabled_at TIMESTAMPTZ,
-                    disabled_reason TEXT,
-                    state_version INTEGER NOT NULL DEFAULT 1,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    CONSTRAINT ck_extension_states_version_positive CHECK (state_version > 0),
-                    CONSTRAINT uq_extension_states_extension_key UNIQUE (extension_key)
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                "CREATE INDEX ix_extension_states_extension_key ON extension_states (extension_key)"
-            )
-            connection.exec_driver_sql(
-                "CREATE INDEX ix_extension_states_enabled ON extension_states (enabled)"
-            )
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO extension_states (
-                        extension_key, enabled, disabled_at, disabled_reason,
-                        state_version, created_at, updated_at
-                    ) VALUES (
-                        :extension_key, FALSE, NOW(), 'maintenance', 7, NOW(), NOW()
-                    )
-                    """
-                ),
-                {"extension_key": FINANCE_WORKSPACE_EXTENSION_KEY},
-            )
-
-    upgrade_legacy_schema(engine)
-    upgrade_legacy_schema(engine)
-
-    inspector = inspect(engine)
-    columns = {column["name"]: column for column in inspector.get_columns("extension_states")}
-    indexes = {index["name"] for index in inspector.get_indexes("extension_states")}
-    unique_constraints = {
-        constraint["name"] for constraint in inspector.get_unique_constraints("extension_states")
-    }
-    check_constraints = {
-        constraint["name"] for constraint in inspector.get_check_constraints("extension_states")
-    }
-
-    with engine.connect() as connection:
-        rows = (
-            connection.execute(
-                text(
-                    """
-                SELECT extension_key, enabled
-                FROM extension_states
-                ORDER BY extension_key ASC
-                """
-                )
-            )
-            .mappings()
-            .all()
-        )
-
-    assert set(columns) == {"extension_key", "enabled"}
-    assert "ix_extension_states_extension_key" not in indexes
-    assert "ix_extension_states_enabled" not in indexes
-    assert "uq_extension_states_extension_key" not in unique_constraints
-    assert "ck_extension_states_version_positive" not in check_constraints
-    assert rows == [
-        {"extension_key": DIGITAL_ORACLE_EXTENSION_KEY, "enabled": True},
-        {"extension_key": FINANCE_WORKSPACE_EXTENSION_KEY, "enabled": False},
-    ]
-
-
-def test_upgrade_legacy_schema_extension_state_deduplicates_legacy_rows(
-    session_factory,
-) -> None:
-    with session_factory() as session:
-        engine = session.get_bind()
-        with engine.begin() as connection:
-            connection.exec_driver_sql('DROP TABLE IF EXISTS "extension_states" CASCADE')
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE extension_states (
-                    id INTEGER,
-                    extension_key VARCHAR(120),
-                    enabled BOOLEAN,
-                    state_version INTEGER,
-                    created_at TIMESTAMPTZ,
-                    updated_at TIMESTAMPTZ
-                )
-                """
-            )
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO extension_states (
-                        id, extension_key, enabled, state_version, created_at, updated_at
-                    ) VALUES
-                        (1, :extension_key, TRUE, 2, '2026-01-01', '2026-01-04'),
-                        (2, :extension_key, FALSE, 7, '2026-01-02', '2026-01-02'),
-                        (3, :extension_key, TRUE, 7, '2026-01-03', '2026-01-03')
-                    """
-                ),
-                {"extension_key": FINANCE_WORKSPACE_EXTENSION_KEY},
-            )
-
-    upgrade_legacy_schema(engine)
-
-    with engine.connect() as connection:
-        rows = (
-            connection.execute(
-                text(
-                    """
-                    SELECT extension_key, enabled
-                    FROM extension_states
-                    ORDER BY extension_key ASC
-                    """
-                )
-            )
-            .mappings()
-            .all()
-        )
-
-    assert rows == [
-        {"extension_key": DIGITAL_ORACLE_EXTENSION_KEY, "enabled": True},
-        {"extension_key": FINANCE_WORKSPACE_EXTENSION_KEY, "enabled": True},
-    ]
-
-
-def test_upgrade_legacy_schema_adds_run_extension_dependencies_column(database_url: str) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
 
     try:
         with engine.begin() as connection:
             connection.exec_driver_sql("ALTER TABLE runs DROP COLUMN extension_dependencies")
-        upgrade_legacy_schema(engine)
+        apply_startup_schema_repairs(engine)
 
         inspector = inspect(engine)
         run_columns = {column["name"]: column for column in inspector.get_columns("runs")}
         assert "extension_dependencies" in run_columns
-        assert "extension_snapshots" not in run_columns
         assert run_columns["extension_dependencies"]["nullable"] is False
 
         with engine.begin() as connection:
@@ -5236,267 +3027,5 @@ def test_upgrade_legacy_schema_adds_run_extension_dependencies_column(database_u
                 )
             ).scalar_one()
         assert value == []
-    finally:
-        engine.dispose()
-
-
-def test_upgrade_legacy_schema_normalizes_run_extension_snapshot_jsonb(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-    legacy_snapshots = [
-        {
-            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "label": "Finance Workspace",
-            "enabled": True,
-            "defaultEnabled": True,
-            "stateVersion": 7,
-            "phase": "active",
-            "versioningRule": "bundled",
-            "enabledAt": "2026-05-16T09:00:00Z",
-            "disabledAt": None,
-            "disabledReason": None,
-            "surfaces": [
-                "tool.signaldeck.finance.market_data.quote_lookup",
-                "runtime.tool.signaldeck.finance.market_data.quote_lookup",
-                100,
-            ],
-            "fields": ["spec.capabilityProfiles.quote_tools.toolKeys[0]", None],
-        },
-        {
-            "extensionKey": "custom.extension",
-            "label": "Legacy Extension",
-            "enabled": False,
-            "surfaces": "not-an-array",
-            "fields": None,
-        },
-        {"label": "missing key", "surfaces": ["tool.invalid"]},
-    ]
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE runs RENAME COLUMN extension_dependencies TO extension_snapshots"
-            )
-            package = _insert_representable_workflow_package(
-                connection,
-                key="legacy_snapshot_package",
-                workflow_key="advisory_research",
-            )
-            run_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO runs (
-                        target_kind, target_id, target_key, target_version,
-                        workflow_package_id, workflow_package_key,
-                        workflow_package_workflow_key, extension_snapshots, input, status
-                    ) VALUES (
-                        'workflowPackage', :package_id, :package_key, :target_version,
-                        :package_id, :package_key, :workflow_key,
-                        CAST(:snapshots AS JSONB), '{}'::jsonb, 'queued'
-                    ) RETURNING id
-                    """
-                ),
-                {**package, "snapshots": json.dumps(legacy_snapshots)},
-            ).scalar_one()
-            _insert_run_workflow_package_snapshot(
-                connection,
-                run_id=int(run_id),
-                package=package,
-            )
-
-        upgrade_legacy_schema(engine)
-
-        inspector = inspect(engine)
-        run_columns = {column["name"] for column in inspector.get_columns("runs")}
-        assert "extension_dependencies" in run_columns
-        assert "extension_snapshots" not in run_columns
-
-        with engine.connect() as connection:
-            row = (
-                connection.execute(
-                    text(
-                        """
-                    SELECT extension_dependencies
-                    FROM runs
-                    WHERE target_key = 'legacy_snapshot_package'
-                    """
-                    )
-                )
-                .mappings()
-                .one()
-            )
-
-        assert row["extension_dependencies"] == [
-            {
-                "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-                "surfaces": [
-                    "tool.signaldeck.finance.market_data.quote_lookup",
-                    "runtime.tool.signaldeck.finance.market_data.quote_lookup",
-                ],
-                "fields": ["spec.capabilityProfiles.quote_tools.toolKeys[0]"],
-            },
-            {"extensionKey": "custom.extension", "surfaces": [], "fields": []},
-        ]
-    finally:
-        engine.dispose()
-
-
-def test_upgrade_legacy_schema_purges_pre_cutover_package_runs_snapshots_and_memory_reports(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql("DROP TABLE IF EXISTS db_upgrade_markers")
-            package = _insert_representable_workflow_package(
-                connection,
-                key="cleanup_order_package",
-                workflow_key="cleanup_order_workflow",
-            )
-            snapshot_run_id = connection.execute(
-                text(
-                    "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, "
-                    "workflow_package_workflow_key, input, status"
-                    ") VALUES ("
-                    "'workflowPackage', :package_id, :package_key, :target_version, "
-                    ":package_id, :package_key, :workflow_key, "
-                    "CAST(:input_payload AS jsonb), 'succeeded'"
-                    ") RETURNING id"
-                ),
-                {**package, "input_payload": json.dumps({"ticker": "MSFT"})},
-            ).scalar_one()
-            _insert_run_workflow_package_snapshot(
-                connection,
-                run_id=int(snapshot_run_id),
-                package=package,
-                parameters={"ticker": "MSFT"},
-            )
-            stale_run_id = connection.execute(
-                text(
-                    "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, "
-                    "workflow_package_workflow_key, input, status"
-                    ") VALUES ("
-                    "'workflowPackage', :package_id, 'stale_without_snapshot', "
-                    ":target_version, :package_id, 'stale_without_snapshot', "
-                    ":workflow_key, '{}'::jsonb, 'succeeded'"
-                    ") RETURNING id"
-                ),
-                package,
-            ).scalar_one()
-            for run_id, slug in (
-                (snapshot_run_id, "agent_memory_pre_cutover_snapshot_run"),
-                (stale_run_id, "agent_memory_pre_cutover_stale_run"),
-            ):
-                _insert_report_upgrade_row(
-                    connection,
-                    slug=slug,
-                    source="agent",
-                    metadata={"analysis": {"reviewType": "agent_memory", "runId": int(run_id)}},
-                )
-
-        upgrade_legacy_schema(engine)
-
-        with engine.connect() as connection:
-            package_run_count = connection.execute(
-                text(
-                    """
-                    SELECT COUNT(*)
-                    FROM runs
-                    WHERE target_kind = 'workflowPackage'
-                       OR workflow_package_id IS NOT NULL
-                       OR workflow_package_key IS NOT NULL
-                    """
-                )
-            ).scalar_one()
-            snapshot_count = connection.execute(
-                text("SELECT COUNT(*) FROM run_workflow_package_snapshots")
-            ).scalar_one()
-            memory_report_count = connection.execute(
-                text(
-                    """
-                    SELECT COUNT(*)
-                    FROM reports
-                    WHERE slug IN (
-                        'agent_memory_pre_cutover_snapshot_run',
-                        'agent_memory_pre_cutover_stale_run'
-                    )
-                    """
-                )
-            ).scalar_one()
-            marker_count = connection.execute(
-                text("SELECT COUNT(*) FROM db_upgrade_markers")
-            ).scalar_one()
-
-        assert package_run_count == 0
-        assert snapshot_count == 0
-        assert memory_report_count == 0
-        assert marker_count == 1
-
-        with engine.begin() as connection:
-            post_cutover_run_id = connection.execute(
-                text(
-                    "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, "
-                    "workflow_package_workflow_key, input, status"
-                    ") VALUES ("
-                    "'workflowPackage', :package_id, :package_key, :target_version, "
-                    ":package_id, :package_key, :workflow_key, "
-                    "CAST(:input_payload AS jsonb), 'succeeded'"
-                    ") RETURNING id"
-                ),
-                {**package, "input_payload": json.dumps({"ticker": "AAPL"})},
-            ).scalar_one()
-            _insert_run_workflow_package_snapshot(
-                connection,
-                run_id=int(post_cutover_run_id),
-                package=package,
-                parameters={"ticker": "AAPL"},
-            )
-            _insert_report_upgrade_row(
-                connection,
-                slug="agent_memory_post_cutover_run",
-                source="agent",
-                metadata={
-                    "analysis": {
-                        "reviewType": "agent_memory",
-                        "runId": int(post_cutover_run_id),
-                    }
-                },
-            )
-
-        upgrade_legacy_schema(engine)
-
-        with engine.connect() as connection:
-            surviving_row = (
-                connection.execute(
-                    text(
-                        """
-                        SELECT run.id, snapshot.launch_parameters
-                        FROM runs AS run
-                        JOIN run_workflow_package_snapshots AS snapshot
-                          ON snapshot.run_id = run.id
-                        WHERE run.id = :run_id
-                        """
-                    ),
-                    {"run_id": post_cutover_run_id},
-                )
-                .mappings()
-                .one()
-            )
-            surviving_memory_count = connection.execute(
-                text("SELECT COUNT(*) FROM reports WHERE slug = 'agent_memory_post_cutover_run'")
-            ).scalar_one()
-
-        assert surviving_row["launch_parameters"] == {"ticker": "AAPL"}
-        assert surviving_memory_count == 1
     finally:
         engine.dispose()

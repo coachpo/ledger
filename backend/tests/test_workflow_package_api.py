@@ -76,7 +76,6 @@ def _seed_model_connection(
         session.add(
             ModelConnection(
                 key="tradingagents_primary_model",
-                status="active",
                 name="TradingAgents Primary Model",
                 description="Package API test model binding.",
                 base_url="https://api.openai.com/v1",
@@ -221,7 +220,7 @@ def _edited_workflow_manifest_source(source: str) -> str:
     )
 
 
-def test_workflow_package_list_includes_browser_proven_presets(client: TestClient) -> None:
+def test_workflow_package_list_includes_bundled_presets(client: TestClient) -> None:
     response = client.get("/api/workflow-packages")
 
     assert response.status_code == 200, response.json()

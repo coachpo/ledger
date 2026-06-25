@@ -16,7 +16,6 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine, inspect
 from sqlalchemy import text as sql_text
 from sqlalchemy.engine.default import DefaultDialect
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
@@ -26,7 +25,7 @@ from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENS
 from app.extensions.signaldeck_finance.services.report_service import ReportService
 from app.models.market_quote import MarketQuote
 from app.models.model_connection import ModelConnection
-from app.models.report import REPORT_SOURCE_CHECK_CONSTRAINT, Report
+from app.models.report import Report
 from app.models.symbol_name_cache import SymbolNameCache
 from app.models.text_template import TextTemplate
 from app.schemas.model_connection import (
@@ -61,8 +60,6 @@ _EXPECTED_MODEL_CONNECTION_CAPABILITY_KEYS = {
     "textGeneration",
     "usageReporting",
 }
-_UNSUPPORTED_MODEL_CONNECTION_KIND_FIELD = f"connection{'K'}ind"
-_UNSUPPORTED_MODEL_CONNECTION_KIND_DB_FIELD = f"connection{'_'}kind"
 
 
 def _assert_logfire_trace_id(value: object) -> None:
@@ -237,9 +234,7 @@ def create_portfolio(
         },
     )
     assert response.status_code == 201, response.json()
-    payload = response.json()
-    assert "baseCurrency" not in payload
-    return payload
+    return response.json()
 
 
 def create_balance(
@@ -341,7 +336,6 @@ def _seed_model_connection_record(
             ModelConnection(
                 id=connection_id,
                 key=key,
-                status="active",
                 name=name,
                 description=description,
                 base_url=base_url,
@@ -517,42 +511,6 @@ def test_disabled_finance_workspace_preserves_template_and_report_rows(
     assert restored_response.json()["content"] == report["content"]
 
 
-def test_agent_platform_runs_reject_unsupported_target_filters(client: TestClient) -> None:
-    for params in (
-        {"targetKind": "agent"},
-        {"targetKind": "workflow"},
-        {"targetId": 1},
-        {"targetKey": "unsupported_target"},
-        {"targetKind": "workflowPackage", "targetKey": "package_key"},
-    ):
-        response = client.get("/api/runs", params=params)
-
-        assert response.status_code == 422, response.json()
-        assert response.json() == {
-            "code": "validation_error",
-            "message": "Request validation failed",
-            "details": [
-                {
-                    "field": "targetKind",
-                    "issue": (
-                        "targetKind, targetId, and targetKey are no longer supported "
-                        "for runs filtering; use workflowPackageId, "
-                        "workflowPackageKey, or workflowKey."
-                    ),
-                }
-            ],
-        }
-
-
-_UNSUPPORTED_MODEL_CONNECTION_SCOPE_FIELDS: dict[str, object] = {
-    "organization": "unsupported-org",
-    "project": "unsupported-project",
-    "organizationProject": "unsupported-org-project",
-    "organization_project": "unsupported_org_project",
-    "projectId": "unsupported-project-id",
-}
-
-
 def _model_connection_create_payload(
     base_url: str = "https://provider.example.test",
 ) -> dict[str, object]:
@@ -584,64 +542,6 @@ def _assert_unsupported_model_connection_fields_rejected(
         assert details[field_name] == "Extra inputs are not permitted"
 
 
-def _assert_schema_extra_forbidden(
-    schema_type: type[ModelConnectionCreate] | type[ModelConnectionUpdate],
-    payload: Mapping[str, object],
-    field_names: set[str],
-) -> None:
-    with pytest.raises(ValidationError) as excinfo:
-        _ = schema_type.model_validate(payload)
-
-    extra_error_types = {
-        str(error["loc"][0]): error["type"]
-        for error in excinfo.value.errors()
-        if error["type"] == "extra_forbidden"
-    }
-    expected_error_types = {field_name: "extra_forbidden" for field_name in field_names}
-    assert expected_error_types.items() <= extra_error_types.items()
-
-
-def test_model_connection_create_rejects_unsupported_scope_fields(
-    client: TestClient,
-) -> None:
-    payload = {
-        **_model_connection_create_payload(),
-        **_UNSUPPORTED_MODEL_CONNECTION_SCOPE_FIELDS,
-    }
-
-    response = client.post("/api/model-connections", json=payload)
-
-    field_names = set(_UNSUPPORTED_MODEL_CONNECTION_SCOPE_FIELDS)
-    _assert_unsupported_model_connection_fields_rejected(response, field_names)
-    _assert_schema_extra_forbidden(ModelConnectionCreate, payload, field_names)
-
-
-def test_model_connection_update_rejects_unsupported_scope_fields(
-    client: TestClient,
-) -> None:
-    create_response = client.post(
-        "/api/model-connections",
-        json=_model_connection_create_payload(),
-    )
-    assert create_response.status_code == 201, create_response.json()
-    create_body = cast(dict[str, object], create_response.json())
-    connection_id = cast(int, create_body["id"])
-    payload: dict[str, object] = {
-        "description": "Attempted update should not persist.",
-        **_UNSUPPORTED_MODEL_CONNECTION_SCOPE_FIELDS,
-    }
-
-    response = client.patch(f"/api/model-connections/{connection_id}", json=payload)
-
-    field_names = set(_UNSUPPORTED_MODEL_CONNECTION_SCOPE_FIELDS)
-    _assert_unsupported_model_connection_fields_rejected(response, field_names)
-    _assert_schema_extra_forbidden(ModelConnectionUpdate, payload, field_names)
-    unchanged_response = client.get(f"/api/model-connections/{connection_id}")
-    assert unchanged_response.status_code == 200, unchanged_response.json()
-    unchanged_body = cast(dict[str, object], unchanged_response.json())
-    assert unchanged_body["description"] == "Model connection with supported fields."
-
-
 def test_portfolio_isolation_and_summary_counts(client: TestClient) -> None:
     first = create_portfolio(client, name="Core")
     second = create_portfolio(client, name="Sandbox")
@@ -671,10 +571,8 @@ def test_portfolio_isolation_and_summary_counts(client: TestClient) -> None:
     assert portfolio_map[second["id"]]["slug"] == "sandbox"
     assert portfolio_map[first["id"]]["balanceCount"] == 1
     assert portfolio_map[first["id"]]["positionCount"] == 0
-    assert "baseCurrency" not in portfolio_map[first["id"]]
     assert portfolio_map[second["id"]]["balanceCount"] == 0
     assert portfolio_map[second["id"]]["positionCount"] == 1
-    assert "baseCurrency" not in portfolio_map[second["id"]]
 
 
 def test_portfolio_slug_validation_uniqueness_and_immutability(client: TestClient) -> None:
@@ -1643,7 +1541,7 @@ def test_position_symbol_lookup_returns_null_name_for_unresolved_symbol(
     assert response.json() == {"symbol": "UNKNOWN", "name": None}
 
 
-def test_create_position_backfills_name_from_symbol_lookup_when_missing(
+def test_create_position_fills_name_from_symbol_lookup_when_missing(
     client: TestClient,
 ) -> None:
     portfolio = create_portfolio(client)
@@ -1808,7 +1706,7 @@ def test_validate_supported_database_engine_rejects_non_postgres() -> None:
         validate_supported_database_engine(unsupported_engine)
 
 
-def test_init_db_rejects_legacy_uuid_backed_schema(database_url: str) -> None:
+def test_init_db_rejects_uuid_backed_portfolio_schema(database_url: str) -> None:
     engine = create_engine(database_url, future=True)
 
     try:
@@ -1848,9 +1746,7 @@ def test_init_db_rejects_legacy_uuid_backed_schema(database_url: str) -> None:
         engine.dispose()
 
 
-def test_init_db_upgrades_legacy_balance_schema_and_drops_obsolete_tables(
-    database_url: str,
-) -> None:
+def test_init_db_adds_balance_operation_type(database_url: str) -> None:
     engine = create_engine(database_url, future=True)
 
     try:
@@ -1877,19 +1773,6 @@ def test_init_db_upgrades_legacy_balance_schema_and_drops_obsolete_tables(
                 """
             )
 
-            for table_name in (
-                "llm_configs",
-                "prompt_templates",
-                "user_snippets",
-                "portfolio_stock_analysis_settings",
-                "stock_analysis_conversations",
-                "stock_analysis_runs",
-                "stock_analysis_requests",
-                "stock_analysis_responses",
-                "stock_analysis_versions",
-            ):
-                connection.exec_driver_sql(f'CREATE TABLE "{table_name}" (id INTEGER PRIMARY KEY)')
-
         init_db(database_url)
 
         inspector = inspect(engine)
@@ -1904,111 +1787,6 @@ def test_init_db_upgrades_legacy_balance_schema_and_drops_obsolete_tables(
 
         assert operation_type == "DEPOSIT"
 
-        table_names = set(inspector.get_table_names())
-        assert {
-            "llm_configs",
-            "prompt_templates",
-            "user_snippets",
-            "portfolio_stock_analysis_settings",
-            "stock_analysis_conversations",
-            "stock_analysis_runs",
-            "stock_analysis_requests",
-            "stock_analysis_responses",
-            "stock_analysis_versions",
-        }.isdisjoint(table_names)
-    finally:
-        engine.dispose()
-
-
-def test_init_db_backfills_legacy_portfolio_slugs_with_valid_unique_values(
-    database_url: str,
-) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE portfolios (
-                    id INTEGER PRIMARY KEY,
-                    name VARCHAR(100) NOT NULL,
-                    description TEXT,
-                    base_currency VARCHAR(3) NOT NULL,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                """
-                INSERT INTO portfolios (
-                    id, name, description, base_currency, created_at, updated_at
-                )
-                VALUES
-                    (1, 'Growth Income', 'Legacy', 'USD', NOW(), NOW()),
-                    (2, 'Growth-Income', 'Legacy', 'USD', NOW(), NOW()),
-                    (3, '123 Allocation', 'Legacy', 'USD', NOW(), NOW()),
-                    (4, '!!!', 'Legacy', 'USD', NOW(), NOW())
-                """
-            )
-
-        init_db(database_url)
-
-        portfolio_columns = {
-            column["name"]: column for column in inspect(engine).get_columns("portfolios")
-        }
-        assert "slug" in portfolio_columns
-        assert portfolio_columns["slug"]["nullable"] is False
-        assert "base_currency" not in portfolio_columns
-
-        with engine.connect() as connection:
-            slugs = (
-                connection.exec_driver_sql("SELECT slug FROM portfolios ORDER BY id")
-                .scalars()
-                .all()
-            )
-
-        assert slugs == [
-            "growth_income",
-            "growth_income_2",
-            "portfolio_123_allocation",
-            "portfolio",
-        ]
-        assert len(set(slugs)) == len(slugs)
-    finally:
-        engine.dispose()
-
-
-def test_init_db_adds_market_quote_name_column_for_legacy_schema(
-    database_url: str,
-) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE market_quotes (
-                    id INTEGER PRIMARY KEY,
-                    symbol VARCHAR(32) NOT NULL,
-                    provider VARCHAR(50) NOT NULL,
-                    price NUMERIC(20, 8) NOT NULL,
-                    previous_close NUMERIC(20, 8),
-                    currency VARCHAR(3) NOT NULL,
-                    as_of TIMESTAMP WITH TIME ZONE,
-                    fetched_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                    is_stale BOOLEAN NOT NULL
-                )
-                """
-            )
-
-        init_db(database_url)
-
-        market_quote_columns = {
-            column["name"]: column for column in inspect(engine).get_columns("market_quotes")
-        }
-        assert "name" in market_quote_columns
-        assert market_quote_columns["name"]["nullable"] is True
     finally:
         engine.dispose()
 
@@ -2137,9 +1915,7 @@ def test_report_name_normalization(client: TestClient) -> None:
     response = client.post(f"/api/v1/reports/compile/{template['id']}")
     assert response.status_code == 201
     name = response.json()["name"]
-    assert name.startswith("my_portfolio_march_")
-    assert "—" not in name
-    assert " " not in name
+    assert re.fullmatch(r"my_portfolio_march_\d{8}_\d{6}", name)
 
 
 def test_report_update_name_immutability(client: TestClient) -> None:
@@ -2604,7 +2380,6 @@ def test_report_source_filter_accepts_agent(
     assert response.status_code == 200
     reports = response.json()
     assert [report["id"] for report in reports] == [agent_report_id]
-    assert external_report["id"] not in [report["id"] for report in reports]
     assert reports[0]["source"] == "agent"
     assert reports[0]["metadata"]["createdBy"]["agentKey"] == "analyst"
 
@@ -2744,13 +2519,11 @@ def test_report_source_filter_external_excludes_agent_reports(
     assert agent_response.status_code == 200
     agent_report_ids = [report["id"] for report in agent_response.json()]
     assert agent_report_ids == [agent_report_id]
-    assert external_report["id"] not in agent_report_ids
     assert agent_response.json()[0]["metadata"]["createdBy"]["runId"] == 202
 
     assert response.status_code == 200
     report_ids = [report["id"] for report in response.json()]
     assert report_ids == [external_report["id"]]
-    assert agent_report_id not in report_ids
     assert response.json()[0]["source"] == "external"
 
 
@@ -2971,7 +2744,6 @@ def test_placeholder_tree_includes_reports(client: TestClient) -> None:
     assert "reports" in tree
     portfolio_nodes = [node for node in tree["portfolios"] if node["slug"] == portfolio["slug"]]
     assert len(portfolio_nodes) == 1
-    assert "baseCurrency" not in portfolio_nodes[0]
     report_names = [r["name"] for r in tree["reports"]]
     assert report["name"] in report_names
     assert "createdAt" in tree["reports"][0]
@@ -3100,7 +2872,7 @@ def test_report_placeholder_dynamic_selector_cycle_detection(client: TestClient)
 def test_report_filters_and_dynamic_selectors_ignore_reports_without_analysis_metadata(
     client: TestClient,
 ) -> None:
-    uploaded = client.post(
+    client.post(
         "/api/v1/reports/upload",
         files={
             "file": (
@@ -3143,73 +2915,7 @@ def test_report_filters_and_dynamic_selectors_ignore_reports_without_analysis_me
     assert compile_response.status_code == 200
     compiled = compile_response.json()["compiled"]
 
-    assert f"TickerLatest: {external['name']}" in compiled
-    assert f"TickerLatest: {uploaded['name']}" not in compiled
-    assert "NoTickerMatch: beforeafter" in compiled
-
-
-def test_init_db_upgrades_legacy_report_schema(database_url: str) -> None:
-    """Verify that upgrade_legacy_schema adds slug, source, and metadata to a
-    pre-existing reports table that only has the original (name, content) columns."""
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE reports (
-                    id SERIAL PRIMARY KEY,
-                    name VARCHAR(200) NOT NULL UNIQUE,
-                    content TEXT NOT NULL,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                """
-                INSERT INTO reports (name, content)
-                VALUES ('legacy_report_20260101_120000', '# Legacy')
-                """
-            )
-
-        init_db(database_url)
-
-        inspector = inspect(engine)
-        report_columns = {column["name"]: column for column in inspector.get_columns("reports")}
-
-        assert "slug" in report_columns
-        assert report_columns["slug"]["nullable"] is False
-
-        assert "source" in report_columns
-        assert report_columns["source"]["nullable"] is False
-
-        assert "metadata" in report_columns
-
-        with engine.connect() as connection:
-            row = connection.exec_driver_sql(
-                "SELECT slug, source, metadata FROM reports"
-                " WHERE name = 'legacy_report_20260101_120000'"
-            ).one()
-
-        check_constraints = {
-            constraint["name"] for constraint in inspector.get_check_constraints("reports")
-        }
-        assert REPORT_SOURCE_CHECK_CONSTRAINT in check_constraints
-        assert row[0] == "legacy_report_20260101_120000"  # slug backfilled from name
-        assert row[1] == "compiled"  # source defaults to 'compiled'
-        assert row[2] == {}  # metadata defaults to empty object
-
-        with pytest.raises(IntegrityError):
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    """
-                    INSERT INTO reports (name, slug, source, content, metadata)
-                    VALUES ('Invalid Source', 'invalid_source', 'wire', '# Invalid', '{}'::jsonb)
-                    """
-                )
-    finally:
-        engine.dispose()
+    assert compiled == f"TickerLatest: {external['name']}\nNoTickerMatch: beforeafter"
 
 
 def test_model_connection_secret_writes_are_explicit_encrypted_and_public_reads_safe(
@@ -3298,48 +3004,6 @@ def test_model_connection_secret_writes_are_explicit_encrypted_and_public_reads_
         assert connection.secret_payload == {"apiKey": rotated_value}
 
 
-def test_model_connection_rejects_unsupported_kind_fields(client: TestClient) -> None:
-    create_payload = _model_connection_create_payload()
-    create_field_names = {
-        _UNSUPPORTED_MODEL_CONNECTION_KIND_FIELD,
-        _UNSUPPORTED_MODEL_CONNECTION_KIND_DB_FIELD,
-    }
-    unsupported_fields_payload = {
-        _UNSUPPORTED_MODEL_CONNECTION_KIND_FIELD: "provider",
-        _UNSUPPORTED_MODEL_CONNECTION_KIND_DB_FIELD: "provider",
-    }
-
-    rejected_create = client.post(
-        "/api/model-connections",
-        json={**create_payload, **unsupported_fields_payload},
-    )
-    _assert_unsupported_model_connection_fields_rejected(rejected_create, create_field_names)
-    _assert_schema_extra_forbidden(
-        ModelConnectionCreate,
-        {**create_payload, **unsupported_fields_payload},
-        create_field_names,
-    )
-
-    create_response = client.post("/api/model-connections", json=create_payload)
-    assert create_response.status_code == 201, create_response.json()
-    create_body = cast(dict[str, object], create_response.json())
-    connection_id = cast(int, create_body["id"])
-
-    rejected_patch = client.patch(
-        f"/api/model-connections/{connection_id}",
-        json=unsupported_fields_payload,
-    )
-    _assert_unsupported_model_connection_fields_rejected(rejected_patch, create_field_names)
-    _assert_schema_extra_forbidden(
-        ModelConnectionUpdate,
-        unsupported_fields_payload,
-        create_field_names,
-    )
-
-    get_response = client.get(f"/api/model-connections/{connection_id}")
-    assert get_response.status_code == 200
-
-
 def test_model_connection_resolution_derives_caps_and_rejects_public_policy_writes(
     client: TestClient,
 ) -> None:
@@ -3363,16 +3027,10 @@ def test_model_connection_resolution_derives_caps_and_rejects_public_policy_writ
     )
     field_names = set(public_runtime_profile_fields)
     _assert_unsupported_model_connection_fields_rejected(rejected_create, field_names)
-    _assert_schema_extra_forbidden(
-        ModelConnectionCreate,
-        {**create_payload, **public_runtime_profile_fields},
-        field_names,
-    )
 
     create_response = client.post("/api/model-connections", json=create_payload)
     assert create_response.status_code == 201, create_response.json()
     create_body = cast(dict[str, object], create_response.json())
-    assert "apiStyle" not in create_body
     assert create_body["protocolProfile"] == "openai_chat_completions"
     assert create_body["outputStrategyPolicy"] == "prefer_strict_schema"
     assert create_body["parallelToolCallsPolicy"] == "serialize"
@@ -3390,11 +3048,6 @@ def test_model_connection_resolution_derives_caps_and_rejects_public_policy_writ
         json=public_runtime_profile_fields,
     )
     _assert_unsupported_model_connection_fields_rejected(rejected_patch, field_names)
-    _assert_schema_extra_forbidden(
-        ModelConnectionUpdate,
-        public_runtime_profile_fields,
-        field_names,
-    )
 
     patch_response = client.patch(
         f"/api/model-connections/{connection_id}",
@@ -3402,7 +3055,6 @@ def test_model_connection_resolution_derives_caps_and_rejects_public_policy_writ
     )
     assert patch_response.status_code == 200, patch_response.json()
     patch_body = cast(dict[str, object], patch_response.json())
-    assert "apiStyle" not in patch_body
     assert patch_body["protocolProfile"] == "openai_responses"
     assert patch_body["outputStrategyPolicy"] == "prefer_strict_schema"
     assert patch_body["parallelToolCallsPolicy"] == "serialize"
@@ -3540,9 +3192,6 @@ def test_model_connection_connection_test_uses_provider_openai_behavior(
 
     request_paths = [cast(str, entry["path"]) for entry in request_log]
     assert request_paths == ["/codex/v1/responses"]
-    assert "/codex/v1/v1/responses" not in request_paths
-    assert "/v1/responses" not in request_paths
-    assert not any(path.endswith("/chat/completions") for path in request_paths)
 
     test_body = cast(dict[str, object], test_response.json())
     assert test_body["modelConnectionId"] == connection_id
@@ -3963,9 +3612,6 @@ def test_model_connection_capability_probe_refresh_uses_literal_custom_root_requ
 
     request_paths = [cast(str, entry["path"]) for entry in request_log]
     assert request_paths == ["/codex/v1/responses"]
-    assert "/codex/v1/v1/responses" not in request_paths
-    assert "/v1/responses" not in request_paths
-    assert not any(path.endswith("/chat/completions") for path in request_paths)
 
     probe_body = cast(dict[str, object], probe_response.json())
     assert probe_body["cached"] is False

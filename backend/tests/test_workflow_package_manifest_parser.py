@@ -260,13 +260,34 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     agents = cast(list[dict[str, object]], spec["agents"])
     capability_profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
     mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
+    assert set(agents[0]) == {
+        "key",
+        "name",
+        "description",
+        "modelConnection",
+        "systemPrompt",
+        "inputSchema",
+        "outputSchema",
+        "capabilityProfiles",
+        "mcpServers",
+        "memory",
+    }
     assert agents[0]["modelConnection"] == "tradingagents_primary_model"
-    assert "modelConnectionId" not in agents[0]
+    assert agents[0]["memory"] is None
     assert capability_profiles[0]["toolKeys"] == ["signaldeck.finance.market_data.quote_lookup"]
-    assert "tool_keys" not in capability_profiles[0]
-    assert mcp_servers[0]["env"] == {"RESEARCH_CONTEXT_TOKEN": "local-token"}
-    assert "secretRefs" not in mcp_servers[0]
-    assert "requiredBindings" not in mcp_servers[0]
+    assert mcp_servers[0] == {
+        "key": "research_context",
+        "name": "Research Context",
+        "description": "Local context server declaration.",
+        "transport": "stdio",
+        "command": "python",
+        "args": ["server.py"],
+        "url": None,
+        "env": {"RESEARCH_CONTEXT_TOKEN": "local-token"},
+        "headers": {},
+        "query": {},
+        "toolKeys": ["research_context.search"],
+    }
 
 
 def test_parse_digital_oracle_demo_preserves_methodology_tools_and_graph() -> None:
@@ -768,10 +789,10 @@ def test_parse_package_workflow_graph_preserves_duplicate_diagnostics(
         (
             _valid_package_manifest_source().replace(
                 "      mcpServers: [research_context]\n",
-                "      mcpServers: [research_context]\n      " + "budget" + 'Usd: "0.25"\n',
+                "      mcpServers: [research_context]\n      unexpectedOption: true\n",
                 1,
             ),
-            "spec.agents[0]." + "budget" + "Usd",
+            "spec.agents[0].unexpectedOption",
             "Extra inputs are not permitted",
             True,
         ),

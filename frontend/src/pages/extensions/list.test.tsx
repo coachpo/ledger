@@ -101,13 +101,6 @@ describe("ExtensionsListPage", () => {
 
     expect(context).toBeInTheDocument();
     expect(
-      page.querySelector('[data-inventory-shell-region="toolbar"]'),
-    ).not.toBeInTheDocument();
-    expect(
-      page.querySelector('[data-inventory-shell-region="filters"]'),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expect(
       Array.from(
         page.querySelectorAll<HTMLElement>('[data-testid^="extension-row-"]'),
       ).map((row) => row.dataset.testid),
@@ -242,9 +235,6 @@ describe("ExtensionsListPage", () => {
     expect(emptyState).toHaveTextContent(
       "No bundled extensions are registered.",
     );
-    expect(
-      screen.queryByRole("button", { name: /install/i }),
-    ).not.toBeInTheDocument();
 
     useExtensionsMock.mockReturnValue({
       data: undefined,

@@ -129,7 +129,6 @@ frontend/
 ```bash
 pnpm install
 pnpm dev
-pnpm preview
 ```
 
 ## VALIDATION

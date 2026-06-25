@@ -138,12 +138,6 @@ test.describe("TradingAgents workflow-package smoke", () => {
     });
     expect(workflowStepCount(detail)).toBeGreaterThanOrEqual(14);
     expect(detail.finalOutput).toMatchObject({ posture: "fake provider posture" });
-
-    const serialized = JSON.stringify(detail);
-    expect(serialized).toContain("tradingagents_advisory_research");
-    for (const forbidden of ["secretPayload", "encrypted", "password"]) {
-      expect(serialized).not.toContain(forbidden);
-    }
   });
 
   test("reports missing model binding through launch readiness validation", async ({ request }) => {

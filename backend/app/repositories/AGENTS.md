@@ -62,6 +62,6 @@ uv run pytest tests/test_api.py tests/test_runtime_repositories.py
 - `ReportRepository` keeps slug and name lookups simple, exposes metadata-based filters, and leaves name-generation policy to `ReportService`.
 - `WorkflowPackageRepository` keeps current package persistence and lookup behavior centralized.
 - `WorkflowPackageScheduleRepository` and `WorkflowPackageScheduleFireRepository` own schedule list/detail filters, due-schedule locking, idempotent fire inserts, fire history, latest-run lookup, and active-run checks.
-- `ModelConnectionRepository` filters saved provider connections by status for list/editor/package-binding flows.
+- `ModelConnectionRepository` lists and resolves saved provider connections by key for editor and package-binding flows.
 - `RunRepository` backs current run list/detail surfaces, backend progress/queue projections, package-qualified queue claims, schedule-linked run lookups, and persisted package-run lookup behavior.
 - `TradingOperationRepository` keeps trading-operation lookup and attribution helpers scoped to preserved portfolio history.

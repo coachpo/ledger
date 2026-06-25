@@ -23,7 +23,6 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        BUILD_FRONTEND: ${BUILD_FRONTEND:-true}
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
     labels:
       io.signaldeck.support: "local-demo-only"

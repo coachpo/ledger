@@ -571,7 +571,7 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     items = cast(list[dict[str, object]], body["items"])
     tools_by_key = {str(item["key"]): item for item in items}
 
-    assert not any("module" in item for item in items)
+    assert {frozenset(item) for item in items} == {frozenset({"key", "displayName", "description"})}
     assert _REQUIRED_FINANCE_TOOL_KEYS <= set(tools_by_key)
     assert _DIGITAL_ORACLE_TOOL_KEYS <= set(tools_by_key)
     quote_tool = tools_by_key["signaldeck.finance.market_data.quote_lookup"]
@@ -680,26 +680,6 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
             "yfinance-backed provider with structured warnings for unavailable coverage."
         ),
     }
-    for tool in (
-        quote_tool,
-        history_tool,
-        ohlcv_tool,
-        indicator_tool,
-        news_tool,
-        report_lookup_tool,
-        prediction_markets_tool,
-        sec_filings_tool,
-        market_sentiment_tool,
-        macro_rates_tool,
-        crypto_derivatives_tool,
-        cftc_positioning_tool,
-        options_tool,
-    ):
-        assert "module" not in tool
-        assert "ownerExtensionKey" not in tool
-        assert "contributionCategories" not in tool
-        assert "toolGrants" not in tool
-        assert "toolDefinitions" not in tool
 
 
 def test_digital_oracle_api_tools_follow_extension_state_in_catalog_and_runtime(

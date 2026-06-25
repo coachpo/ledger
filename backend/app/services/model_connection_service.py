@@ -120,7 +120,6 @@ class ModelConnectionService:
 
         connection = ModelConnection(
             key=payload.key,
-            status="active",
             protocol_profile=payload.protocol_profile.value,
             name=payload.name,
             description=payload.description,

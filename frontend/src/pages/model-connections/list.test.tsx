@@ -81,13 +81,13 @@ describe("ModelConnectionsListPage", () => {
             },
             description: "Production traffic",
             id: 9,
-            key: "primary_compatible",
+            key: "primary_responses",
             lastProbedAt: "2026-04-22T07:45:00Z",
             lastTestMessage: "Connection OK",
             lastTestOk: true,
             lastTestedAt: "2026-04-22T08:00:00Z",
             modelId: "gpt-4.1",
-            name: "Primary Compatible",
+            name: "Primary Responses",
             outputStrategyPolicy: "prefer_strict_schema",
             parallelToolCallsPolicy: "serialize",
             probeCacheTtlSeconds: 900,
@@ -227,14 +227,14 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
     const primaryRowElement = screen.getByTestId("model-connections-row-9");
     const primaryRow = within(primaryRowElement);
-    const primaryName = primaryRow.getByText("Primary Compatible");
+    const primaryName = primaryRow.getByText("Primary Responses");
     expect(primaryName).toBeVisible();
-    expect(primaryRow.getByText("primary_compatible")).toBeVisible();
+    expect(primaryRow.getByText("primary_responses")).toBeVisible();
     expect(primaryRow.getByText("gpt-4.1")).toBeVisible();
     expect(primaryRow.getByText("Responses")).toBeVisible();
     fireEvent.click(primaryRow.getByTestId("model-connections-delete-9"));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
-      "Delete Primary Compatible?",
+      "Delete Primary Responses?",
     );
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Deletion is blocked while current workflow packages reference its stable key.",
@@ -276,7 +276,7 @@ describe("ModelConnectionsListPage", () => {
     expect(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
         "checkbox",
-        { name: "Select model connection Primary Compatible" },
+        { name: "Select model connection Primary Responses" },
       ),
     ).toBeVisible();
 
@@ -300,7 +300,7 @@ describe("ModelConnectionsListPage", () => {
     ).toBeVisible();
     fireEvent.click(primaryRow.getByTestId("model-connections-details-9"));
     const expandedDetails = screen.getByLabelText(
-      "Expanded details for Primary Compatible",
+      "Expanded details for Primary Responses",
     );
     expect(
       within(expandedDetails).getByText("Capability support"),
@@ -334,7 +334,7 @@ describe("ModelConnectionsListPage", () => {
     ).toBeVisible();
     fireEvent.click(primaryRow.getByTestId("model-connections-delete-9"));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
-      "Delete Primary Compatible?",
+      "Delete Primary Responses?",
     );
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   });
@@ -409,7 +409,7 @@ describe("ModelConnectionsListPage", () => {
     fireEvent.click(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
         "checkbox",
-        { name: "Select model connection Primary Compatible" },
+        { name: "Select model connection Primary Responses" },
       ),
     );
     expect(screen.getByText("1 of 4 model connections selected")).toBeVisible();
@@ -459,7 +459,7 @@ describe("ModelConnectionsListPage", () => {
     fireEvent.click(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
         "checkbox",
-        { name: "Select model connection Primary Compatible" },
+        { name: "Select model connection Primary Responses" },
       ),
     );
     expect(screen.getByText("1 of 4 model connections selected")).toBeVisible();
@@ -468,7 +468,7 @@ describe("ModelConnectionsListPage", () => {
     expect(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
         "checkbox",
-        { name: "Select model connection Primary Compatible" },
+        { name: "Select model connection Primary Responses" },
       ),
     ).toHaveAttribute("aria-checked", "false");
   });

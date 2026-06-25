@@ -1146,7 +1146,7 @@ describe("ScheduledTaskDetailPage", () => {
 
   it("gates stale workflow schedules with the canonical schedule update payload", async () => {
     useScheduledTaskMock.mockReturnValue({
-      data: scheduleFixture({ workflowKey: "retired_workflow" }),
+      data: scheduleFixture({ workflowKey: "unknown_workflow" }),
       error: null,
       isError: false,
       isPending: false,
@@ -1163,7 +1163,7 @@ describe("ScheduledTaskDetailPage", () => {
     expect(useWorkflowPackageManifestMock).toHaveBeenCalledWith(12);
     expect(useWorkflowPackageRuntimeInputRegistryMock).toHaveBeenCalledWith(12, "");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent(
-      "Unknown workflow: retired_workflow",
+      "Unknown workflow: unknown_workflow",
     );
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent(
       "Workflow no longer available",

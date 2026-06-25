@@ -38,8 +38,6 @@ describe("launch schema templates", () => {
     });
     expect(first.text).toBe(second.text);
     expect(first.text).toBe(JSON.stringify(first.parameters, null, 2));
-    expect(first.text).not.toContain("optionalNote");
-    expect(first.text).not.toContain("ignoredOptional");
   });
 
   it("resets back to the exact generated template text", () => {

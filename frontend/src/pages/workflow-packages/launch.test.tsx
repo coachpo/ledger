@@ -485,7 +485,7 @@ describe("WorkflowPackageLaunchPage", () => {
   });
 
   it("keeps a stale selected workflow visible as the active workflow option", async () => {
-    const retiredSchema = {
+    const unknownWorkflowSchema = {
       properties: {
         symbol: { title: "Symbol", type: "string" },
       },
@@ -495,10 +495,10 @@ describe("WorkflowPackageLaunchPage", () => {
     useWorkflowPackageManifestMock.mockReturnValue({
       data: manifestRead([
         {
-          description: "Retired workflow",
-          inputSchema: retiredSchema,
-          key: "retired_workflow",
-          name: "Retired Workflow",
+          description: "Unknown workflow",
+          inputSchema: unknownWorkflowSchema,
+          key: "unknown_workflow",
+          name: "Unknown Workflow",
         },
       ]),
       error: null,
@@ -507,13 +507,13 @@ describe("WorkflowPackageLaunchPage", () => {
     });
     useWorkflowPackageLaunchMock.mockImplementation((_packageId, workflowKey) => ({
       data:
-        workflowKey === "retired_workflow"
+        workflowKey === "unknown_workflow"
           ? {
               ...launchRead,
-              description: "Retired workflow",
-              inputSchema: retiredSchema,
-              name: "Retired Workflow",
-              workflowKey: "retired_workflow",
+              description: "Unknown workflow",
+              inputSchema: unknownWorkflowSchema,
+              name: "Unknown Workflow",
+              workflowKey: "unknown_workflow",
             }
           : launchRead,
       error: null,
@@ -524,11 +524,11 @@ describe("WorkflowPackageLaunchPage", () => {
     const view = renderLaunchPage();
 
     expect(workflowSelector()).toHaveTextContent("Choose a workflow");
-    await chooseWorkflow(/^Retired Workflow$/);
-    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Retired Workflow"));
+    await chooseWorkflow(/^Unknown Workflow$/);
+    await waitFor(() => expect(workflowSelector()).toHaveTextContent("Unknown Workflow"));
     expect(screen.getByRole("button", { name: /run preflight/i })).not.toBeDisabled();
     expect(screen.getByTestId("runtime-input-saved-inputs-helper")).toHaveTextContent(
-      "retired_workflow",
+      "unknown_workflow",
     );
 
     useWorkflowPackageManifestMock.mockReturnValue({
@@ -547,7 +547,7 @@ describe("WorkflowPackageLaunchPage", () => {
 
     await waitFor(() =>
       expect(workflowSelector()).toHaveTextContent(
-        "Unknown workflow: retired_workflow",
+        "Unknown workflow: unknown_workflow",
       ),
     );
     expect(screen.getByTestId("workflow-package-launch-next-step")).toHaveTextContent(
