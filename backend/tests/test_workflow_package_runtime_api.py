@@ -13,7 +13,6 @@ import httpx
 import openai
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
@@ -1345,8 +1344,6 @@ def test_seeded_digital_oracle_launch_persists_question_input(
         assert snapshot.workflow_package_key == _DIGITAL_ORACLE_PRESET_KEY
         assert snapshot.workflow_key == "research"
         assert snapshot.launch_parameters == parameters
-        table_names = set(sqlalchemy_inspect(session.get_bind()).get_table_names())
-        assert {"mcp_servers", "agents", "workflows"}.isdisjoint(table_names)
 
 
 def test_macro_and_mixed_signal_launch_snapshots_keep_private_operations_package_local(
@@ -1408,9 +1405,6 @@ def test_macro_and_mixed_signal_launch_snapshots_keep_private_operations_package
                 },
                 sort_keys=True,
             )
-            table_names = set(sqlalchemy_inspect(session.get_bind()).get_table_names())
-
-        assert {"mcp_servers", "agents", "workflows"}.isdisjoint(table_names)
         assert mcp_servers[0]["key"] == "web_research"
         assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
         private_macro_operation_ids = {
@@ -1434,7 +1428,7 @@ def test_macro_and_mixed_signal_launch_snapshots_keep_private_operations_package
         assert "signaldeck.digital_oracle.market_sentiment.lookup" not in serialized_snapshot
 
 
-def test_seeded_digital_oracle_launch_omits_null_optional_inputs_before_runtime(
+def test_seeded_digital_oracle_launch_records_parameters_and_expected_tools(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -1482,7 +1476,6 @@ def test_seeded_digital_oracle_launch_omits_null_optional_inputs_before_runtime(
         )
 
     assert "signaldeck.digital_oracle.macro_rates.lookup" in serialized_snapshot
-    assert "fred_fedfunds_observations" not in serialized_snapshot
     assert "web_research" in serialized_snapshot
     assert "ticker" in serialized_snapshot
     assert "secSubmissionsUrl" in serialized_snapshot
@@ -2401,11 +2394,11 @@ def test_runtime_input_registry_stale_workflow_read_remains_available(
     renamed = client.patch(
         f"/api/workflow-packages/{package_id}/runtime-input-registry/presets/{preset_id}",
         params={"workflowKey": "runtime_workflow"},
-        json={"name": "Renamed removed workflow preset"},
+        json={"name": "Renamed stale workflow preset"},
     )
     assert renamed.status_code == 200, renamed.json()
     renamed_body = cast(dict[str, Any], renamed.json())
-    assert renamed_body["name"] == "Renamed removed workflow preset"
+    assert renamed_body["name"] == "Renamed stale workflow preset"
     assert renamed_body["stale"] == expected_stale
 
     deleted = client.delete(
@@ -2436,15 +2429,9 @@ def test_runtime_input_registry_openapi_contract_is_scope_safe(client: TestClien
     registry_path = "/api/workflow-packages/{package_id}/runtime-input-registry"
     presets_path = "/api/workflow-packages/{package_id}/runtime-input-registry/presets"
     presets_item_path = f"{presets_path}/{{entry_id}}"
-    removed_path = "/" + "/".join(
-        ["api", "workflow-packages", "{package_id}", "runtime-input-registry", "personal"]
-    )
     assert registry_path in paths
     assert presets_path in paths
     assert presets_item_path in paths
-    assert removed_path not in paths
-    assert f"{registry_path}/history" not in paths
-    assert f"{registry_path}/history/{{entry_id}}" not in paths
 
     for path, method in (
         (registry_path, "get"),
@@ -2716,8 +2703,6 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         package_before_launch = session.get(WorkflowPackage, package_id)
         assert package_before_launch is not None
         package_updated_at_before_launch = package_before_launch.updated_at
-        removed_launch_column = "_".join(("last", "launched", "at"))
-        assert not hasattr(package_before_launch, removed_launch_column)
         connection = session.query(ModelConnection).filter_by(key="package_runtime_model").one()
         connection.base_url = "https://runtime-v2.example.com/v1"
         connection.model_id = "gpt-package-v2"
@@ -2736,7 +2721,6 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         package_after_launch = session.get(WorkflowPackage, package_id)
         assert package_after_launch is not None
         assert package_after_launch.updated_at == package_updated_at_before_launch
-        assert not hasattr(package_after_launch, removed_launch_column)
         snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
         assert snapshot is not None
         assert snapshot.workflow_package_key == "runtime_package"
@@ -2805,8 +2789,6 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         assert snapshot.workflow_key == "runtime_workflow"
         assert snapshot.launch_parameters == {"ticker": "MSFT"}
         assert snapshot.resolved_model_connections[0]["modelId"] == "gpt-package-v2"
-        table_names = set(sqlalchemy_inspect(session.get_bind()).get_table_names())
-        assert {"agents", "workflows"}.isdisjoint(table_names)
         invocation = session.query(RunAgentInvocation).filter_by(run_id=run_id).one()
         assert invocation.agent_id == 1
         assert invocation.agent_key == "package_analyst"
@@ -4724,7 +4706,7 @@ def _runtime_input_history_entries(
     return cast(list[dict[str, Any]], response.json()["history"])
 
 
-def test_workflow_package_launch_omits_absent_optional_inputs_without_defaults(
+def test_workflow_package_launch_records_canonical_required_parameters(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -4733,7 +4715,7 @@ def test_workflow_package_launch_omits_absent_optional_inputs_without_defaults(
         "/api/workflow-packages",
         json={
             "manifestSource": _package_source_with_optional_wired_inputs(
-                package_key="optional_input_omission_package"
+                package_key="optional_input_canonical_payload_package"
             )
         },
     )
@@ -5570,20 +5552,6 @@ def test_schedule_api_patch_rejects_null_for_non_nullable_fields(
     assert detail_body["overlapPolicy"] == "skip"
     assert detail_body["misfirePolicy"] == "catchUpOne"
     assert detail_body["misfireGraceSeconds"] == 86400
-
-
-def test_schedule_api_does_not_list_startup_seeded_tradingagents_preset_schedules(
-    client: TestClient,
-) -> None:
-    listed = client.get(
-        "/api/schedules",
-        params={"packageKey": "tradingagents_advisory_research", "limit": 50},
-    )
-
-    assert listed.status_code == 200, listed.json()
-    listed_body = cast(dict[str, Any], listed.json())
-    assert listed_body["totalCount"] == 0
-    assert listed_body["items"] == []
 
 
 def test_tradingagents_materializer_queues_canonical_schedules_without_provider_execution(

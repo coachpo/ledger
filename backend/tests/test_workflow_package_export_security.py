@@ -9,7 +9,7 @@ from app.services.workflow_package_manifest_compiler import compile_workflow_pac
 from tests.test_workflow_package_manifest_parser import _valid_http_sse_package_manifest_source
 
 
-def test_export_omits_secret_bearing_mcp_request_config() -> None:
+def test_export_redacts_secret_bearing_mcp_request_config() -> None:
     compiled = compile_workflow_package_manifest(_valid_http_sse_package_manifest_source())
     package_definition = deepcopy(cast(dict[str, Any], compiled["packageDefinition"]))
     compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))

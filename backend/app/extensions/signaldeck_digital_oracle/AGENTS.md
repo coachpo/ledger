@@ -18,7 +18,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 |---|---|---|
 | Extension identity | `ownership.py` | key, label, denied codes/messages, owned tool keys |
 | Registrar wiring | `registrars.py`, `tool_specs.py`, `runtime_executors.py` | private contribution loaders for server metadata and runtime tools |
-| Provider config/factories | `config.py`, `factory.py`, `provider_inventory.py` | provider toggles, item limits, runtime secret requirements, optional FRED/yfinance safety, disabled-provider failures |
+| Provider config/factories | `config.py`, `factory.py` | provider toggles, item limits, runtime secret requirements, optional FRED/yfinance safety, disabled-provider failures |
 | Runtime services | `service.py`, `types.py`, `mappers.py`, `warnings.py` | normalized provider queries/results, runtime result mapping, structured warnings |
 | Prediction markets | `runtime_prediction_markets.py` | Polymarket/Kalshi adapters, parser, executor, OpenAI function name |
 | SEC filings | `runtime_sec_filings.py` | EDGAR adapter, ticker/CIK lookup, parser, executor, contact-email requirement |

@@ -26,11 +26,6 @@ from app.extensions.signaldeck_digital_oracle.ownership import (
     DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES,
     DIGITAL_ORACLE_RUNTIME_TOOL_KEYS,
 )
-from app.extensions.signaldeck_digital_oracle.provider_inventory import (
-    DEFERRED_PROVIDER_INVENTORY,
-    IN_SCOPE_PROVIDER_INVENTORY,
-    NO_NEW_RUNTIME_KEYS_REGISTERED,
-)
 from app.extensions.signaldeck_digital_oracle.runtime_types import (
     NATIVE_RUNTIME_DIGITAL_ORACLE_TOOL_KEYS,
     RuntimeCftcPositioningLookupResult,
@@ -98,44 +93,6 @@ _REQUIRED_FINANCE_TOOL_KEYS = {
     *_FINANCE_INDICATOR_TOOL_KEYS,
     *_FINANCE_NEWS_TOOL_KEYS,
     *_FINANCE_PRICE_HISTORY_TOOL_KEYS,
-}
-_REQUIRED_CORE_TOOL_KEYS: set[str] = set()
-_RETIRED_CORE_MEMORY_TOOL_KEYS = {
-    "signaldeck.core.memory.write",
-    "signaldeck.core.memory.lookup",
-}
-
-
-def _legacy_tool_key(suffix: str) -> str:
-    return "signaldeck" + suffix
-
-
-_LEGACY_LIVE_TOOL_KEYS = (
-    _legacy_tool_key(".memory.write"),
-    _legacy_tool_key(".memory.lookup"),
-    _legacy_tool_key(".market_data.quote_lookup"),
-    _legacy_tool_key(".market_data.history_lookup"),
-    _legacy_tool_key(".market_data.ohlcv_lookup"),
-    _legacy_tool_key(".indicators.lookup"),
-    _legacy_tool_key(".fundamentals.lookup"),
-    _legacy_tool_key(".news.lookup"),
-    _legacy_tool_key(".social_sentiment.lookup"),
-    _legacy_tool_key(".insider_data.lookup"),
-    _legacy_tool_key(".positions.lookup"),
-    _legacy_tool_key(".reports.lookup"),
-    _legacy_tool_key(".prediction_markets.lookup"),
-    _legacy_tool_key(".sec_filings.lookup"),
-    _legacy_tool_key(".market_sentiment.lookup"),
-    "signaldeck.macro.lookup",
-)
-_DEFERRED_DIGITAL_ORACLE_TOOL_KEYS = {
-    "signaldeck.rates.lookup",
-    "signaldeck.macro.lookup",
-    "signaldeck.derivatives.lookup",
-    "signaldeck.crypto.lookup",
-    "signaldeck.cftc.lookup",
-    "signaldeck.web.lookup",
-    "signaldeck.price_history.lookup",
 }
 
 
@@ -237,12 +194,8 @@ def test_extension_tool_inventories_match_catalog_and_runtime() -> None:
     assert set(_EXPECTED_DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES) == (
         digital_oracle_runtime_function_names
     )
-    assert _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS.isdisjoint(digital_oracle_server_declared_keys)
-    assert _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS.isdisjoint(digital_oracle_runtime_keys)
-    assert _REQUIRED_CORE_TOOL_KEYS <= core_server_declared_keys
-    assert _REQUIRED_CORE_TOOL_KEYS <= core_runtime_keys
-    assert _REQUIRED_CORE_TOOL_KEYS.isdisjoint(finance_server_declared_keys)
-    assert _REQUIRED_CORE_TOOL_KEYS.isdisjoint(digital_oracle_server_declared_keys)
+    assert core_server_declared_keys == set()
+    assert core_runtime_keys == set()
     assert finance_server_declared_keys.isdisjoint(digital_oracle_server_declared_keys)
 
 
@@ -586,108 +539,6 @@ def test_digital_oracle_runtime_response_aliases_reject_raw_and_unknown_fields(
         _ = schema.model_validate({**payload, "unexpectedField": "denied"})
 
 
-def test_digital_oracle_upstream_provider_inventory_freezes_migration_scope(
-    client: TestClient,
-) -> None:
-    api_tool_keys = _api_tool_keys(client)
-    runtime_specs = get_default_runtime_tool_registry().list_specs()
-    digital_oracle_runtime_keys = {
-        spec.key
-        for spec in runtime_specs
-        if spec.owner_extension_key == DIGITAL_ORACLE_EXTENSION_KEY
-    }
-    in_scope_by_provider = {item.upstream_provider: item for item in IN_SCOPE_PROVIDER_INVENTORY}
-    deferred_modules_by_family = {
-        item.capability_family: {
-            module.rsplit(".", maxsplit=1)[-1]
-            for module in (
-                provider.upstream_module
-                for provider in DEFERRED_PROVIDER_INVENTORY
-                if provider.capability_family == item.capability_family
-            )
-        }
-        for item in DEFERRED_PROVIDER_INVENTORY
-    }
-    deferred_tool_keys = {
-        item.signaldeck_tool_key
-        for item in DEFERRED_PROVIDER_INVENTORY
-        if item.signaldeck_tool_key is not None
-    }
-
-    assert set(in_scope_by_provider) == {
-        "PolymarketProvider",
-        "KalshiProvider",
-        "EdgarProvider",
-        "FearGreedProvider",
-        "FredProvider",
-        "USTreasuryProvider",
-        "BisProvider",
-        "WorldBankProvider",
-        "CMEFedWatchProvider",
-        "DeribitProvider",
-        "CoinGeckoProvider",
-        "YahooPriceProvider",
-        "YFinanceProvider",
-        "CftcCotProvider",
-        "methodology/package patterns",
-    }
-    assert in_scope_by_provider["PolymarketProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.prediction_markets.lookup"
-    )
-    assert in_scope_by_provider["KalshiProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.prediction_markets.lookup"
-    )
-    assert in_scope_by_provider["EdgarProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.sec_filings.lookup"
-    )
-    assert in_scope_by_provider["FearGreedProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.market_sentiment.lookup"
-    )
-    assert in_scope_by_provider["FredProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.macro_rates.lookup"
-    )
-    assert in_scope_by_provider["USTreasuryProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.macro_rates.lookup"
-    )
-    assert in_scope_by_provider["BisProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.macro_rates.lookup"
-    )
-    assert in_scope_by_provider["WorldBankProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.macro_rates.lookup"
-    )
-    assert in_scope_by_provider["CMEFedWatchProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.macro_rates.lookup"
-    )
-    assert in_scope_by_provider["DeribitProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.crypto_derivatives.lookup"
-    )
-    assert in_scope_by_provider["CoinGeckoProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.crypto_derivatives.lookup"
-    )
-    assert in_scope_by_provider["YahooPriceProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.options.lookup"
-    )
-    assert in_scope_by_provider["YFinanceProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.options.lookup"
-    )
-    assert in_scope_by_provider["CftcCotProvider"].signaldeck_tool_key == (
-        "signaldeck.digital_oracle.cftc_positioning.lookup"
-    )
-    assert in_scope_by_provider["methodology/package patterns"].signaldeck_tool_key is None
-    assert in_scope_by_provider["methodology/package patterns"].capability_family == (
-        "Workflow Package methodology"
-    )
-    assert deferred_modules_by_family == {
-        "generic web": {"web"},
-        "price/history": {"prices", "stooq"},
-    }
-    assert NO_NEW_RUNTIME_KEYS_REGISTERED is False
-    assert deferred_tool_keys == set()
-    assert _DIGITAL_ORACLE_TOOL_KEYS == set(_EXPECTED_DIGITAL_ORACLE_TOOL_KEYS)
-    assert _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS.isdisjoint(api_tool_keys)
-    assert _DEFERRED_DIGITAL_ORACLE_TOOL_KEYS.isdisjoint(digital_oracle_runtime_keys)
-
-
 def test_default_tool_catalog_rejects_duplicate_and_unknown_keys() -> None:
     catalog = get_default_tool_catalog()
 
@@ -712,21 +563,6 @@ def test_default_tool_catalog_rejects_duplicate_and_unknown_keys() -> None:
     ]
 
 
-@pytest.mark.parametrize("legacy_tool_key", _LEGACY_LIVE_TOOL_KEYS)
-def test_default_tool_catalog_rejects_legacy_live_tool_keys(legacy_tool_key: str) -> None:
-    catalog = get_default_tool_catalog()
-
-    with pytest.raises(ToolCatalogValidationError) as exc_info:
-        _ = catalog.resolve_tool_keys([legacy_tool_key])
-
-    assert exc_info.value.details == [
-        {
-            "field": "toolKeys.0",
-            "issue": f"Unknown server-declared tool {legacy_tool_key!r}",
-        }
-    ]
-
-
 def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     response = client.get("/api/tools")
 
@@ -738,7 +574,6 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     assert not any("module" in item for item in items)
     assert _REQUIRED_FINANCE_TOOL_KEYS <= set(tools_by_key)
     assert _DIGITAL_ORACLE_TOOL_KEYS <= set(tools_by_key)
-    assert not _RETIRED_CORE_MEMORY_TOOL_KEYS & set(tools_by_key)
     quote_tool = tools_by_key["signaldeck.finance.market_data.quote_lookup"]
     history_tool = tools_by_key["signaldeck.finance.market_data.history_lookup"]
     ohlcv_tool = tools_by_key["signaldeck.finance.market_data.ohlcv_lookup"]
@@ -874,7 +709,6 @@ def test_digital_oracle_api_tools_follow_extension_state_in_catalog_and_runtime(
     enabled_api_tool_keys = _api_tool_keys(client)
     assert _DIGITAL_ORACLE_TOOL_KEYS <= enabled_api_tool_keys
     assert _REQUIRED_FINANCE_TOOL_KEYS <= enabled_api_tool_keys
-    assert _REQUIRED_CORE_TOOL_KEYS <= enabled_api_tool_keys
 
     with session_factory() as session:
         enabled_service = ExtensionService(session)
@@ -892,10 +726,8 @@ def test_digital_oracle_api_tools_follow_extension_state_in_catalog_and_runtime(
 
     assert _DIGITAL_ORACLE_TOOL_KEYS <= enabled_catalog_keys
     assert _REQUIRED_FINANCE_TOOL_KEYS <= enabled_catalog_keys
-    assert _REQUIRED_CORE_TOOL_KEYS <= enabled_catalog_keys
     assert _DIGITAL_ORACLE_TOOL_KEYS <= enabled_runtime_keys
     assert _REQUIRED_FINANCE_TOOL_KEYS <= enabled_runtime_keys
-    assert _REQUIRED_CORE_TOOL_KEYS <= enabled_runtime_keys
     assert enabled_descriptor_keys == _DIGITAL_ORACLE_TOOL_KEYS
 
     response = client.patch(
@@ -907,7 +739,6 @@ def test_digital_oracle_api_tools_follow_extension_state_in_catalog_and_runtime(
     disabled_api_tool_keys = _api_tool_keys(client)
     assert not _DIGITAL_ORACLE_TOOL_KEYS & disabled_api_tool_keys
     assert _REQUIRED_FINANCE_TOOL_KEYS <= disabled_api_tool_keys
-    assert _REQUIRED_CORE_TOOL_KEYS <= disabled_api_tool_keys
 
     with session_factory() as session:
         disabled_service = ExtensionService(session)
@@ -918,9 +749,7 @@ def test_digital_oracle_api_tools_follow_extension_state_in_catalog_and_runtime(
         disabled_runtime_keys = {
             spec.key for spec in disabled_runtime_registry.list_enabled_specs()
         }
-        requested_descriptor_keys = (
-            _DIGITAL_ORACLE_TOOL_KEYS | _REQUIRED_FINANCE_TOOL_KEYS | _REQUIRED_CORE_TOOL_KEYS
-        )
+        requested_descriptor_keys = _DIGITAL_ORACLE_TOOL_KEYS | _REQUIRED_FINANCE_TOOL_KEYS
         disabled_descriptor_keys = {
             descriptor.tool_key
             for descriptor in disabled_runtime_registry.get_execution_descriptors(
@@ -930,42 +759,9 @@ def test_digital_oracle_api_tools_follow_extension_state_in_catalog_and_runtime(
 
     assert not _DIGITAL_ORACLE_TOOL_KEYS & disabled_catalog_keys
     assert _REQUIRED_FINANCE_TOOL_KEYS <= disabled_catalog_keys
-    assert _REQUIRED_CORE_TOOL_KEYS <= disabled_catalog_keys
     assert not _DIGITAL_ORACLE_TOOL_KEYS & disabled_runtime_keys
     assert _REQUIRED_FINANCE_TOOL_KEYS <= disabled_runtime_keys
-    assert _REQUIRED_CORE_TOOL_KEYS <= disabled_runtime_keys
-    assert disabled_descriptor_keys == _REQUIRED_FINANCE_TOOL_KEYS | _REQUIRED_CORE_TOOL_KEYS
-
-
-def test_api_tools_keep_core_memory_visible_when_bundled_extensions_are_disabled(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    for extension_key in (FINANCE_WORKSPACE_EXTENSION_KEY, DIGITAL_ORACLE_EXTENSION_KEY):
-        response = client.patch(f"/api/extensions/{extension_key}", json={"enabled": False})
-        assert response.status_code == 200, response.json()
-
-    tools_response = client.get("/api/tools")
-    assert tools_response.status_code == 200, tools_response.json()
-    body = cast(dict[str, object], tools_response.json())
-    items = cast(list[dict[str, object]], body["items"])
-    visible_keys = {str(item["key"]) for item in items}
-    assert visible_keys == _REQUIRED_CORE_TOOL_KEYS
-    assert all(set(item) == {"key", "displayName", "description"} for item in items)
-
-    with session_factory() as session:
-        service = ExtensionService(session)
-        catalog_keys = {tool.key for tool in service.get_tool_catalog().list_registered_tools()}
-        runtime_registry = service.get_runtime_tool_registry()
-        runtime_keys = {spec.key for spec in runtime_registry.list_enabled_specs()}
-        runtime_function_names = {
-            str(tool["name"])
-            for tool in runtime_registry.get_openai_tools(_REQUIRED_CORE_TOOL_KEYS)
-        }
-
-    assert catalog_keys == _REQUIRED_CORE_TOOL_KEYS
-    assert runtime_keys == _REQUIRED_CORE_TOOL_KEYS
-    assert runtime_function_names == set()
+    assert disabled_descriptor_keys == _REQUIRED_FINANCE_TOOL_KEYS
 
 
 def test_tools_catalog_route_is_get_only(client: TestClient) -> None:
@@ -1017,7 +813,6 @@ def test_tool_catalog_hides_disabled_extension_tools_and_validation_stays_artifa
     assert not visible_keys & _FINANCE_PRICE_HISTORY_TOOL_KEYS
     assert not visible_keys & _FINANCE_NEWS_TOOL_KEYS
     assert _DIGITAL_ORACLE_TOOL_KEYS <= visible_keys
-    assert _REQUIRED_CORE_TOOL_KEYS <= visible_keys
 
     with session_factory() as session:
         disabled_service = ExtensionService(session)
@@ -1034,8 +829,6 @@ def test_tool_catalog_hides_disabled_extension_tools_and_validation_stays_artifa
     assert not disabled_runtime_keys & _FINANCE_NEWS_TOOL_KEYS
     assert _DIGITAL_ORACLE_TOOL_KEYS <= disabled_catalog_keys
     assert _DIGITAL_ORACLE_TOOL_KEYS <= disabled_runtime_keys
-    assert _REQUIRED_CORE_TOOL_KEYS <= disabled_catalog_keys
-    assert _REQUIRED_CORE_TOOL_KEYS <= disabled_runtime_keys
 
     manifest_source = _valid_manifest_source()
     validation_response = client.post(

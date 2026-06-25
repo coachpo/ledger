@@ -70,7 +70,7 @@ describe("run detail tab contract", () => {
     expect(
       resolveRunDetailTab({
         rawTab: "not-a-tab",
-        rawMode: "audit",
+        rawMode: "summary",
         rawPane: null,
         rawInspect: null,
         rawHash: null,
@@ -166,7 +166,7 @@ describe("run detail tab contract", () => {
 
     expect(
       inferRunDetailTabFromUrlHints({
-        rawMode: "tokens",
+        rawMode: "usage",
         rawPane: null,
         rawInspect: null,
         rawHash: null,

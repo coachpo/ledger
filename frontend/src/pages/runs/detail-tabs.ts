@@ -42,7 +42,6 @@ const RUN_DETAIL_TAB_KEYS: readonly RunDetailTabKey[] = [
 ];
 
 const RUN_DETAIL_TAB_INFERENCE_ALIASES: Record<string, RunDetailTabKey> = {
-  audit: "overview",
   diagnostics: "execution",
   input: "input",
   inputs: "input",
@@ -54,7 +53,6 @@ const RUN_DETAIL_TAB_INFERENCE_ALIASES: Record<string, RunDetailTabKey> = {
   overview: "overview",
   runtime: "runtime",
   summary: "overview",
-  tokens: "usage",
   usage: "usage",
   execution: "execution",
 };

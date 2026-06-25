@@ -142,7 +142,7 @@ describe("SavedRuntimeInputRegistryPanel", () => {
     expect(screen.getByText("No launch history yet.")).toBeVisible();
   });
 
-  it("shows stale notices plus preset-only overwrite and delete actions while history stays load-only", async () => {
+  it("shows stale notices with preset actions and load-only history", async () => {
     const SavedRuntimeInputRegistryPanel = await loadSavedRuntimeInputRegistryPanel();
     const preset = entry({
       id: 7,

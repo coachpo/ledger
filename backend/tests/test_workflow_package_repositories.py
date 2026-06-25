@@ -71,8 +71,6 @@ def test_workflow_package_repository_creates_current_package_artifact(
         assert stored.compiled_hash == _HASH_B
         assert stored.package_definition["metadata"]["key"] == "market_review"
         assert stored.compiled_plan["workflows"][0]["key"] == "primary_workflow"
-        removed_validation_column = "_".join(("validation", "summary"))
-        assert not hasattr(stored, removed_validation_column)
 
 
 def test_workflow_package_repository_lists_and_updates_current_packages(
@@ -116,5 +114,3 @@ def test_workflow_package_repository_replaces_current_artifact_in_place(
         assert stored.manifest_source == replacement["manifest_source"]
         assert stored.manifest_hash == _HASH_B
         assert stored.compiled_hash == _HASH_A
-        removed_validation_column = "_".join(("validation", "summary"))
-        assert not hasattr(stored, removed_validation_column)

@@ -81,33 +81,6 @@ _FINANCE_MARKET_CONTEXT_TOOL_KEYS = (
 )
 
 
-def _legacy_tool_key(suffix: str) -> str:
-    return "signaldeck" + suffix
-
-
-_LEGACY_LIVE_TOOL_KEYS = (
-    _legacy_tool_key(".memory.write"),
-    _legacy_tool_key(".memory.lookup"),
-    _legacy_tool_key(".market_data.quote_lookup"),
-    _legacy_tool_key(".market_data.history_lookup"),
-    _legacy_tool_key(".market_data.ohlcv_lookup"),
-    _legacy_tool_key(".indicators.lookup"),
-    _legacy_tool_key(".fundamentals.lookup"),
-    _legacy_tool_key(".news.lookup"),
-    _legacy_tool_key(".social_sentiment.lookup"),
-    _legacy_tool_key(".insider_data.lookup"),
-    _legacy_tool_key(".positions.lookup"),
-    _legacy_tool_key(".reports.lookup"),
-    _legacy_tool_key(".prediction_markets.lookup"),
-    _legacy_tool_key(".sec_filings.lookup"),
-    _legacy_tool_key(".market_sentiment.lookup"),
-)
-_OLD_CORE_MEMORY_TOOL_KEYS = (
-    "signaldeck.core.memory.write",
-    "signaldeck.core.memory.lookup",
-)
-
-
 def _canonicalize_live_tool_keys(source: str) -> str:
     return source
 
@@ -230,70 +203,6 @@ spec:
           researchQuestion: ${{ inputs.researchQuestion }}
       output:
         from: ${{ nodes.research_step.outputs.report }}
-"""
-
-
-def _old_core_memory_package_source() -> str:
-    return """apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: old_core_memory_runtime_fixture
-  name: Old Core Memory Runtime Fixture
-  description: Fixture that references retired core memory runtime tools.
-spec:
-  inputs:
-    type: object
-    required: [topic]
-    properties:
-      topic:
-        type: string
-  capabilityProfiles:
-    - key: old_core_memory_tools
-      name: Old Core Memory Tools
-      description: Retired platform-core memory tool references.
-      toolKeys:
-        - signaldeck.core.memory.write
-        - signaldeck.core.memory.lookup
-  outputSchemas:
-    - key: report
-      name: Report
-      jsonSchema:
-        type: object
-        required: [summary]
-        properties:
-          summary:
-            type: string
-  agents:
-    - key: analyst
-      name: Analyst
-      modelConnection: tradingagents_primary_model
-      systemPrompt: Return JSON.
-      inputSchema:
-        type: object
-        required: [topic]
-        properties:
-          topic:
-            type: string
-      outputSchema: report
-      capabilityProfiles: [old_core_memory_tools]
-  workflows:
-    - key: research
-      name: Research
-      inputSchema:
-        type: object
-        required: [topic]
-        properties:
-          topic:
-            type: string
-      flow:
-        kind: step
-        id: analyze
-        slot: report
-        uses: analyst
-        with:
-          topic: ${{ inputs.topic }}
-      output:
-        from: ${{ nodes.analyze.outputs.report }}
 """
 
 
@@ -665,30 +574,6 @@ def _seed_tool_required_package(session_factory: sessionmaker[Session]) -> None:
         session.commit()
 
 
-def _seed_package_with_old_core_memory_tools(session_factory: sessionmaker[Session]) -> None:
-    compiled = compile_workflow_package_manifest(_digital_oracle_phase1_package_source())
-    package_definition = cast(dict[str, Any], compiled["packageDefinition"])
-    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
-    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
-    profiles[0]["toolKeys"] = list(_OLD_CORE_MEMORY_TOOL_KEYS)
-    with session_factory() as session:
-        session.add(
-            WorkflowPackage(
-                id=9201,
-                key="old_core_memory_runtime_fixture",
-                name="Old Core Memory Runtime Fixture",
-                description="Fixture that references retired core memory runtime tools.",
-                manifest_source=_old_core_memory_package_source(),
-                manifest_hash=str(compiled["manifestHash"]),
-                package_definition=package_definition,
-                compiled_plan=compiled_plan,
-                compiled_hash=str(compiled["compiledHash"]),
-                extension_dependencies=[],
-            )
-        )
-        session.commit()
-
-
 def _seed_compatibility_fixture_connection(
     session_factory: sessionmaker[Session],
     *,
@@ -1040,45 +925,6 @@ def test_validation_projection_hides_blocker_only_facts_but_strict_readiness_pre
     assert strict_warnings == []
 
 
-def test_preflight_rejects_fixture_core_memory_tool_keys(
-    session_factory: sessionmaker[Session],
-) -> None:
-    compiled = compile_workflow_package_manifest(_digital_oracle_phase1_package_source())
-    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
-    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
-    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
-    memory_profile = profiles_by_key["digital_oracle_phase1_tools"]
-    memory_profile["key"] = "memory_write_tools"
-    memory_profile["toolKeys"] = [
-        "signaldeck.core.memory.lookup",
-        "signaldeck.core.memory.write",
-    ]
-    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
-
-    with session_factory() as session:
-        errors = _project_blocking_diagnostics(
-            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
-        )
-
-    assert errors == [
-        {
-            "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[0]",
-            "issue": "Unknown server-declared tool 'signaldeck.core.memory.lookup'",
-        },
-        {
-            "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[1]",
-            "issue": "Unknown server-declared tool 'signaldeck.core.memory.write'",
-        },
-    ]
-    assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
-        "signaldeck.core.memory.lookup",
-        "signaldeck.core.memory.write",
-    ]
-    assert cast(list[dict[str, Any]], compiled_plan["mcpServers"]) == []
-    assert "fanout" not in _package_source()
-    assert "kind: sequence" in _package_source()
-
-
 def test_preflight_accepts_digital_oracle_server_declared_toolKeys(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -1364,145 +1210,6 @@ def test_memory_research_fixture_validates_compiles_and_preflights(
     assert runtime_agent.memory_policy.enabled is True
     assert runtime_agent.memory_policy.retrieval is not None
     assert runtime_agent.memory_policy.retrieval.namespaces == ("advisory_research",)
-    assert "signaldeck.core.memory.lookup" not in manifest_source
-    assert "signaldeck.core.memory.write" not in manifest_source
-
-
-def test_preflight_rejects_duplicate_and_old_core_memory_tool_keys(
-    session_factory: sessionmaker[Session],
-) -> None:
-    compiled = compile_workflow_package_manifest(_digital_oracle_phase1_package_source())
-    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
-    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
-    profiles[0]["key"] = "memory_write_tools"
-    profiles[0]["toolKeys"] = [
-        "signaldeck.core.memory.write",
-        "signaldeck.core.memory.write",
-        "signaldeck.core.memory.lookup",
-    ]
-
-    with session_factory() as session:
-        errors = _project_blocking_diagnostics(
-            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
-        )
-
-    assert {
-        "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[0]",
-        "issue": "Unknown server-declared tool 'signaldeck.core.memory.write'",
-    } in errors
-    assert {
-        "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[1]",
-        "issue": "Unknown server-declared tool 'signaldeck.core.memory.write'",
-    } in errors
-    assert {
-        "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[2]",
-        "issue": "Unknown server-declared tool 'signaldeck.core.memory.lookup'",
-    } in errors
-
-
-def test_package_validation_rejects_old_core_memory_tool_keys_as_unknown_server_tools(
-    client: TestClient,
-) -> None:
-    validation = client.post(
-        "/api/workflow-packages/validate-manifest",
-        json={"manifestSource": _old_core_memory_package_source()},
-    )
-
-    assert validation.status_code == 200, validation.json()
-    validation_body = cast(dict[str, object], validation.json())
-    diagnostics = cast(list[dict[str, object]], validation_body["diagnostics"])
-    diagnostic_identities = {
-        (str(diagnostic.get("path")), str(diagnostic.get("message"))) for diagnostic in diagnostics
-    }
-    assert diagnostic_identities == {
-        (
-            "spec.capabilityProfiles.old_core_memory_tools.toolKeys[0]",
-            "Unknown server-declared tool 'signaldeck.core.memory.write'",
-        ),
-        (
-            "spec.capabilityProfiles.old_core_memory_tools.toolKeys[1]",
-            "Unknown server-declared tool 'signaldeck.core.memory.lookup'",
-        ),
-    }
-
-
-def test_preflight_rejects_old_core_memory_tool_keys_as_unsupported_tools(
-    session_factory: sessionmaker[Session],
-) -> None:
-    compiled = compile_workflow_package_manifest(_digital_oracle_phase1_package_source())
-    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
-    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
-    profile_key = str(profiles[0]["key"])
-    profiles[0]["toolKeys"] = list(_OLD_CORE_MEMORY_TOOL_KEYS)
-
-    with session_factory() as session:
-        errors = _project_blocking_diagnostics(
-            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
-        )
-
-    assert errors == [
-        {
-            "field": f"spec.capabilityProfiles.{profile_key}.toolKeys[0]",
-            "issue": "Unknown server-declared tool 'signaldeck.core.memory.write'",
-        },
-        {
-            "field": f"spec.capabilityProfiles.{profile_key}.toolKeys[1]",
-            "issue": "Unknown server-declared tool 'signaldeck.core.memory.lookup'",
-        },
-    ]
-
-
-def test_preflight_api_blocks_saved_package_with_old_core_memory_tool_keys(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_package_with_old_core_memory_tools(session_factory)
-    _seed_model_connection(session_factory)
-
-    preflight = client.post(
-        "/api/workflow-packages/9201/preflight",
-        json={"workflowKey": "research", "parameters": {"researchQuestion": "What changed?"}},
-    )
-
-    assert preflight.status_code == 200, preflight.json()
-    body = cast(dict[str, object], preflight.json())
-    assert body["ready"] is False
-    assert body["blockingErrors"] == [
-        {
-            "field": "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[0]",
-            "issue": "Unknown server-declared tool 'signaldeck.core.memory.write'",
-        },
-        {
-            "field": "spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[1]",
-            "issue": "Unknown server-declared tool 'signaldeck.core.memory.lookup'",
-        },
-    ]
-    warnings = cast(list[dict[str, object]], body["warnings"])
-    assert all(warning.get("severity") == "warning" for warning in warnings)
-
-
-@pytest.mark.parametrize("legacy_tool_key", _LEGACY_LIVE_TOOL_KEYS)
-def test_preflight_rejects_legacy_live_tool_keys_as_unknown_server_tools(
-    session_factory: sessionmaker[Session],
-    legacy_tool_key: str,
-) -> None:
-    compiled = compile_workflow_package_manifest(_digital_oracle_phase1_package_source())
-    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
-    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
-    profile_key = str(profiles[0]["key"])
-    profiles[0]["toolKeys"] = [legacy_tool_key]
-
-    with session_factory() as session:
-        errors = _project_blocking_diagnostics(
-            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
-        )
-
-    assert errors == [
-        {
-            "field": f"spec.capabilityProfiles.{profile_key}.toolKeys[0]",
-            "issue": f"Unknown server-declared tool {legacy_tool_key!r}",
-        }
-    ]
 
 
 def test_preflight_missing_digital_oracle_toolKeys_diagnostic_preserves_field_only_shape(

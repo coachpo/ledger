@@ -28,13 +28,13 @@ _MODEL_CONNECTION_DEFAULT_CAPABILITIES_JSON = json.dumps(
     _MODEL_CONNECTION_DEFAULT_CAPABILITIES,
     sort_keys=True,
 )
-_PROTOCOL_PROFILE_TO_LEGACY_API_STYLE = {
+_PROTOCOL_PROFILE_TO_API_STYLE = {
     "openai_chat_completions": "chat_completions",
     "openai_responses": "responses",
 }
-_LEGACY_API_STYLE_TO_PROTOCOL_PROFILE = {
+_API_STYLE_TO_PROTOCOL_PROFILE = {
     api_style: protocol_profile
-    for protocol_profile, api_style in _PROTOCOL_PROFILE_TO_LEGACY_API_STYLE.items()
+    for protocol_profile, api_style in _PROTOCOL_PROFILE_TO_API_STYLE.items()
 }
 
 
@@ -167,14 +167,14 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
 
     @property
     def api_style(self) -> str:
-        return _PROTOCOL_PROFILE_TO_LEGACY_API_STYLE.get(
+        return _PROTOCOL_PROFILE_TO_API_STYLE.get(
             self.protocol_profile,
             "responses",
         )
 
     @api_style.setter
     def api_style(self, value: str) -> None:
-        self.protocol_profile = _LEGACY_API_STYLE_TO_PROTOCOL_PROFILE.get(
+        self.protocol_profile = _API_STYLE_TO_PROTOCOL_PROFILE.get(
             str(value).strip(),
             "openai_responses",
         )

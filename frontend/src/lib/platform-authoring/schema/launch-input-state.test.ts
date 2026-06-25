@@ -37,7 +37,7 @@ describe("launch input state", () => {
     type: "object",
   };
 
-  it("creates required and defaulted state while omitting optional fields without defaults", () => {
+  it("creates canonical state for required and defaulted fields", () => {
     const state = createLaunchInputState(schema);
 
     expect(state.schemaSupported).toBe(true);
@@ -77,14 +77,14 @@ describe("launch input state", () => {
 
     const rejected = createLaunchDraftFromValidatedPayload(state, {
       filters: { sector: "technology" },
-      legacyField: true,
+      unsupportedField: true,
       ticker: "AAPL",
     });
 
     expect(rejected.draft).toBeNull();
     expect(rejected.issues).toEqual([
       {
-        field: "parameters.legacyField",
+        field: "parameters.unsupportedField",
         issue: "Extra inputs are not permitted.",
       },
     ]);
@@ -110,14 +110,14 @@ describe("launch input state", () => {
     const state = createLaunchInputState(schema);
 
     const rejected = createLaunchDraftFromValidatedPayload(state, {
-      filters: { legacyFilter: true },
+      filters: { unsupportedFilter: true },
       ticker: "AAPL",
     });
 
     expect(rejected.draft).toBeNull();
     expect(rejected.issues).toEqual([
       {
-        field: "parameters.filters.legacyFilter",
+        field: "parameters.filters.unsupportedFilter",
         issue: "Extra inputs are not permitted.",
       },
       { field: "parameters.filters.sector", issue: "Field is required." },
@@ -289,7 +289,7 @@ describe("launch input state", () => {
       type: "object",
     });
     const fallbackApply = createLaunchDraftFromValidatedPayload(state, {
-      legacyField: true,
+      unsupportedField: true,
       ticker: "AAPL",
     });
 

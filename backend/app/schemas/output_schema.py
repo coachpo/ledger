@@ -2,19 +2,11 @@ from __future__ import annotations
 
 # ruff: noqa: UP007
 import re
-from datetime import datetime
-from enum import Enum
-from typing import Annotated, Any, Literal, Union, cast
+from typing import Annotated, Literal, Union, cast
 
-from pydantic import (
-    Field,
-    SerializerFunctionWrapHandler,
-    field_validator,
-    model_serializer,
-    model_validator,
-)
+from pydantic import Field, SerializerFunctionWrapHandler, field_validator, model_serializer
 
-from app.schemas.common import CamelModel, ensure_timezone
+from app.schemas.common import CamelModel
 
 _STABLE_OUTPUT_SCHEMA_KEY_RE = r"^[a-z][a-z0-9_]{0,119}$"
 
@@ -61,17 +53,6 @@ def _primitive_kind(value: JsonPrimitive) -> str:
     if isinstance(value, int):
         return "integer"
     return "number"
-
-
-class OutputSchemaStatus(str, Enum):  # noqa: UP042
-    DRAFT = "draft"
-    PUBLISHED = "published"
-    DEPRECATED = "deprecated"
-
-
-class OutputSchemaKind(str, Enum):  # noqa: UP042
-    STANDALONE = "standalone"
-    SHARED = "shared"
 
 
 class OutputSchemaBuilderBase(CamelModel):
@@ -205,90 +186,6 @@ OutputSchemaBuilderArray.model_rebuild()
 OutputSchemaBuilderDiscriminatedUnion.model_rebuild()
 
 
-class OutputSchemaDraftCreate(CamelModel):
-    key: str = Field(min_length=1, max_length=120)
-    kind: OutputSchemaKind = OutputSchemaKind.STANDALONE
-    name: str = Field(min_length=1, max_length=200)
-    description: str = ""
-    builder: OutputSchemaBuilderNode | None = None
-    json_schema: dict[str, Any] | None = None
-
-    @field_validator("key", mode="before")
-    @classmethod
-    def validate_key(cls, value: object) -> str:
-        return _normalize_output_schema_key(value)
-
-    @field_validator("name", mode="before")
-    @classmethod
-    def validate_name(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="Name")
-
-    @field_validator("description", mode="before")
-    @classmethod
-    def validate_description(cls, value: object) -> str:
-        return _normalize_optional_text(value) or ""
-
-    @model_validator(mode="after")
-    def validate_schema_views(self) -> OutputSchemaDraftCreate:
-        if self.builder is None and self.json_schema is None:
-            raise ValueError("Either builder or jsonSchema must be provided")
-        return self
-
-
-class OutputSchemaDraftUpdate(CamelModel):
-    name: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = None
-    builder: OutputSchemaBuilderNode | None = None
-    json_schema: dict[str, Any] | None = None
-
-    @field_validator("builder", "json_schema", mode="before")
-    @classmethod
-    def reject_null_schema_views(cls, value: object) -> object:
-        if value is None:
-            raise ValueError("Schema view fields cannot be null")
-        return value
-
-    @field_validator("name", "description", mode="before")
-    @classmethod
-    def validate_optional_text(cls, value: object) -> str | None:
-        return _normalize_optional_text(value)
-
-    @model_validator(mode="after")
-    def validate_payload(self) -> OutputSchemaDraftUpdate:
-        if not self.model_fields_set:
-            raise ValueError("At least one field must be provided")
-        return self
-
-
-class OutputSchemaRead(CamelModel):
-    id: int
-    key: str
-    version: int = Field(ge=1)
-    status: OutputSchemaStatus
-    kind: OutputSchemaKind
-    name: str
-    description: str
-    json_schema: dict[str, Any]
-    builder: OutputSchemaBuilderNode
-    registry_refs: list[str]
-    created_at: datetime
-    updated_at: datetime
-
-    @field_validator("created_at", "updated_at")
-    @classmethod
-    def validate_timestamps(cls, value: datetime) -> datetime:
-        return ensure_timezone(value)
-
-
-class OutputSchemaListRead(CamelModel):
-    items: list[OutputSchemaRead]
-
-
-OutputSchemaRead.model_rebuild()
-OutputSchemaDraftCreate.model_rebuild()
-OutputSchemaDraftUpdate.model_rebuild()
-
-
 __all__ = [
     "JsonPrimitive",
     "JsonValue",
@@ -304,10 +201,4 @@ __all__ = [
     "OutputSchemaBuilderObject",
     "OutputSchemaBuilderRef",
     "OutputSchemaBuilderString",
-    "OutputSchemaDraftCreate",
-    "OutputSchemaDraftUpdate",
-    "OutputSchemaKind",
-    "OutputSchemaListRead",
-    "OutputSchemaRead",
-    "OutputSchemaStatus",
 ]

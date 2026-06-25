@@ -261,8 +261,6 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     capability_profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
     mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
     assert agents[0]["modelConnection"] == "tradingagents_primary_model"
-    removed_budget_field = "budget" + "Usd"
-    assert removed_budget_field not in agents[0]
     assert "modelConnectionId" not in agents[0]
     assert capability_profiles[0]["toolKeys"] == ["signaldeck.finance.market_data.quote_lookup"]
     assert "tool_keys" not in capability_profiles[0]

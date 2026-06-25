@@ -109,8 +109,6 @@ export function RunsDetailPage() {
       next.delete("fork");
       next.delete("resumeStepIndex");
       next.delete("invocationId");
-      next.delete("stepReplay");
-      next.delete("stepIndex");
       return next;
     });
   };
@@ -130,8 +128,6 @@ export function RunsDetailPage() {
       next.set("resumeStepIndex", String(stepIndex));
       next.set("invocationId", String(invocationId));
       next.delete("rerun");
-      next.delete("stepReplay");
-      next.delete("stepIndex");
       return next;
     });
   };

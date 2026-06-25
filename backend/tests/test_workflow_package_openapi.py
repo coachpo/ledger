@@ -24,53 +24,56 @@ def test_workflow_package_routes_are_registered(app) -> None:
     } <= route_paths
 
 
-def test_workflow_package_openapi_is_current_package_only(client: TestClient) -> None:
+def test_workflow_package_openapi_exposes_current_package_shapes(client: TestClient) -> None:
     openapi = cast(dict[str, object], client.get("/openapi.json").json())
     components = cast(dict[str, object], openapi["components"])
     schemas = cast(dict[str, dict[str, object]], components["schemas"])
     paths = cast(dict[str, dict[str, object]], openapi["paths"])
 
-    assert "WorkflowPackageVersionRead" not in schemas
-    assert "WorkflowPackageVersionListRead" not in schemas
-    assert "WorkflowPackageImportMode" not in schemas
-
     package_properties = cast(dict[str, object], schemas["WorkflowPackageRead"]["properties"])
-    assert "status" not in package_properties
-    assert "latestVersion" not in package_properties
-    assert "latestVersionId" not in package_properties
-    assert "warnings" not in package_properties
-    assert "validation" + "Summary" not in package_properties
-    assert "last" + "LaunchedAt" not in package_properties
-    assert "ready" not in package_properties
-    assert "blockingErrors" not in package_properties
+    assert {
+        "id",
+        "key",
+        "name",
+        "description",
+        "manifestHash",
+        "compiledHash",
+        "createdAt",
+        "updatedAt",
+    } <= set(package_properties)
 
     manifest_properties = cast(
         dict[str, object],
         schemas["WorkflowPackageManifestRead"]["properties"],
     )
-    assert "version" not in manifest_properties
+    assert {"packageId", "manifestSource"} <= set(manifest_properties)
 
     launch_properties = cast(dict[str, object], schemas["WorkflowPackageLaunchRead"]["properties"])
-    assert "packageVersion" not in launch_properties
-    assert "facts" not in launch_properties
-    assert {"ready", "blockingErrors", "warnings"} <= set(launch_properties)
+    assert {
+        "packageId",
+        "packageKey",
+        "workflowKey",
+        "ready",
+        "blockingErrors",
+        "warnings",
+    } <= set(launch_properties)
     launch_request_properties = cast(
         dict[str, object],
         schemas["WorkflowPackageLaunchCreateRequest"]["properties"],
     )
-    assert "version" not in launch_request_properties
+    assert {"workflowKey", "parameters"} <= set(launch_request_properties)
 
     update_request_properties = cast(
         dict[str, object],
         schemas["WorkflowPackageUpdateRequest"]["properties"],
     )
-    assert "status" not in update_request_properties
+    assert {"manifestSource"} <= set(update_request_properties)
 
     import_request_properties = cast(
         dict[str, object],
         schemas["WorkflowPackageImportRequest"]["properties"],
     )
-    assert "mode" not in import_request_properties
+    assert {"manifestSource"} <= set(import_request_properties)
 
     provenance_properties = cast(
         dict[str, object],
@@ -82,14 +85,14 @@ def test_workflow_package_openapi_is_current_package_only(client: TestClient) ->
     )
     assert "workflowPackageStatus" in provenance_properties
     assert "currentPackage" in provenance_properties
-    assert "status" not in current_package_properties
-
-    list_operation = cast(dict[str, object], paths["/api/workflow-packages"]["get"])
-    list_parameters = cast(
-        list[dict[str, object]],
-        list_operation.get("parameters") or [],
-    )
-    assert all(parameter["name"] != "status" for parameter in list_parameters)
+    assert {
+        "available",
+        "manifestHash",
+        "manifestHashMatchesSnapshot",
+        "compiledHash",
+        "compiledHashMatchesSnapshot",
+        "unavailableReason",
+    } <= set(current_package_properties)
 
     for path in (
         "/api/workflow-packages/{package_id}/manifest",
@@ -101,7 +104,7 @@ def test_workflow_package_openapi_is_current_package_only(client: TestClient) ->
         for raw_operation in paths[path].values():
             operation = cast(dict[str, object], raw_operation)
             parameters = cast(list[dict[str, object]], operation.get("parameters") or [])
-            assert all(parameter["name"] != "version" for parameter in parameters)
+            assert "package_id" in {str(parameter["name"]) for parameter in parameters}
 
 
 def test_schedule_openapi_exposes_hard_delete_operation(client: TestClient) -> None:

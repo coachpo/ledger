@@ -7,7 +7,7 @@ SignalDeck is a monorepo for a portfolio-tracking stack with a FastAPI backend, 
 - `backend/` — FastAPI, SQLAlchemy, Pydantic, PostgreSQL-backed API and tests
 - `frontend/` — React 19, Vite, TanStack Query, Vitest, and Playwright app
 - `docs/` — live product, platform, API, data-model, test, and runtime-input reference docs
-- `.github/workflows/` — root CI, Docker image, and cleanup workflows
+- `.github/workflows/` — root CI and Docker image workflows
 - `start.sh` — local Docker Compose launcher for the root combined stack
 
 ## What Ships
@@ -196,7 +196,6 @@ The direct Compose path uses the same local/demo-only root image and keeps datab
 - `ci.yml` runs version sync, backend quality, frontend quality, and frontend E2E
 - Backend CI installs with `uv sync --frozen`; frontend CI installs with `pnpm install --frozen-lockfile`
 - `docker-images.yml` builds and publishes the supported backend/frontend linux/arm64 images for GitHub Container Registry with SBOM/provenance metadata on non-PR pushes
-- `cleanup.yml` keeps at least 3 recent workflow runs and deletes untagged backend/frontend container packages
 
 ## Versioning
 

@@ -153,11 +153,8 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
         "apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\n"
     )
     assert "modelConnection: tradingagents_primary_model" in roundtrip.source
-    removed_budget_field = "budget" + "Usd"
-    assert removed_budget_field not in roundtrip.source
 
     serialized = _canonical_json(compiled)
-    assert removed_budget_field not in serialized
     assert "modelConnectionId" not in serialized
     assert "outputSchemaId" not in serialized
     assert "capabilityId" not in serialized
@@ -231,7 +228,6 @@ def test_compile_inline_private_mcp_preserves_report_and_quote_tool_keys() -> No
     assert "requiredBindings" not in roundtrip.source
     assert "signaldeck.finance.reports.lookup" in roundtrip.source
     assert "signaldeck.finance.market_data.quote_lookup" in roundtrip.source
-    assert "signaldeck.finance.reports.write" not in roundtrip.source
     assert _canonical_json(compiled) == _canonical_json(recompiled)
 
 
@@ -405,10 +401,10 @@ def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:
     )
 
 
-def test_compile_package_manifest_rejects_core_memory_tool_keys() -> None:
+def test_compile_package_manifest_rejects_unknown_tool_keys() -> None:
     source = _valid_package_manifest_source().replace(
         "        - signaldeck.finance.market_data.quote_lookup\n",
-        "        - signaldeck.core.memory.lookup\n",
+        "        - signaldeck.unknown.lookup\n",
         1,
     )
 
@@ -417,7 +413,7 @@ def test_compile_package_manifest_rejects_core_memory_tool_keys() -> None:
 
     assert any(
         diagnostic.path == "spec.capabilityProfiles.market_research_tools.toolKeys[0]"
-        and "Unknown server-declared tool 'signaldeck.core.memory.lookup'" in diagnostic.message
+        and "Unknown server-declared tool 'signaldeck.unknown.lookup'" in diagnostic.message
         for diagnostic in excinfo.value.diagnostics
     )
 

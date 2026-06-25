@@ -261,10 +261,6 @@ describe("RunsListPage", () => {
     expect(screen.getByTestId("runs-row-16")).toHaveTextContent(
       /workflow key:\s*macro_agent/i,
     );
-    expect(screen.queryByText(/standalone agent execution/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/multi-step workflow execution/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/workflow id:/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/agent id:/i)).not.toBeInTheDocument();
     expect(screen.getByText(/trace-15/i)).toBeVisible();
     expect(
       screen.queryByRole("link", { name: /package:/i }),

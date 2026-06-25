@@ -2906,7 +2906,7 @@ export function ScheduledTaskDetailPage() {
   if (scheduleQuery.isError) {
     return isNotFoundError(scheduleQuery.error) ? (
       <DetailPageMessage
-        description="No scheduled task exists for this route. It may have been deleted or removed from this environment."
+        description="No scheduled task exists for this route. It may be unavailable in this environment."
         testId="scheduled-task-detail-not-found"
         title="Scheduled task not found"
       />

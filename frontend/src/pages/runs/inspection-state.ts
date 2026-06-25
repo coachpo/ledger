@@ -56,7 +56,6 @@ export const RUN_INSPECTION_MODES = [
 ] as const satisfies readonly RunInspectionMode[];
 
 const RUN_INSPECTION_MODE_ALIASES: Record<string, RunInspectionMode> = {
-  audit: "metadata",
   diagnostics: "diagnostics",
   execution: "execution",
   input: "inputs",
@@ -68,9 +67,7 @@ const RUN_INSPECTION_MODE_ALIASES: Record<string, RunInspectionMode> = {
   outputs: "outputs",
   overview: "summary",
   runtime: "runtime",
-  steps: "execution",
   summary: "summary",
-  tokens: "runtime",
 };
 
 const RUN_PANES: RunInspectionPane[] = [

@@ -434,7 +434,7 @@ class AgentExecutionService:
             ),
             output_schema=self._model_output_schema_from_responses_text_format(text_format),
             tools=tuple(
-                self._model_tool_declaration_from_legacy_tool(tool) for tool in available_tools
+                self._model_tool_declaration_from_responses_tool(tool) for tool in available_tools
             ),
         )
 
@@ -470,7 +470,7 @@ class AgentExecutionService:
                 self,
                 request: ModelCapabilityProbeRequest,
             ) -> ModelCapabilityProbeResult:
-                raise NotImplementedError("Legacy Responses shim does not probe capabilities.")
+                raise NotImplementedError("Responses client adapter does not probe capabilities.")
 
         gateway = ModelExecutionGateway(protocol_adapter=_ClientProtocolAdapter())
         try:
@@ -519,7 +519,7 @@ class AgentExecutionService:
         )
 
     @staticmethod
-    def _model_tool_declaration_from_legacy_tool(
+    def _model_tool_declaration_from_responses_tool(
         tool: Mapping[str, Any],
     ) -> SignalDeckToolDeclaration:
         raw_function = tool.get("function")
@@ -539,7 +539,7 @@ class AgentExecutionService:
             model_name=raw_name.strip(),
             description=raw_description if isinstance(raw_description, str) else "",
             input_schema=parameters,
-            schema_hash="legacy",
+            schema_hash="responses-tool-adapter/v1",
             strict=bool(payload.get("strict", True)),
         )
 

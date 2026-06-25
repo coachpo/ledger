@@ -109,13 +109,13 @@ describe("ModelConnectionsListPage", () => {
             },
             description: "Fallback traffic",
             id: 4,
-            key: "legacy_backup",
+            key: "fallback_backup",
             lastProbedAt: "2026-04-21T07:30:00Z",
             lastTestMessage: "Key rejected",
             lastTestOk: false,
             lastTestedAt: "2026-04-21T08:00:00Z",
             modelId: "gpt-4o-mini",
-            name: "Legacy Backup",
+            name: "Fallback Backup",
             outputStrategyPolicy: "allow_json_object_validation",
             parallelToolCallsPolicy: "forbid",
             probeCacheTtlSeconds: 300,
@@ -415,7 +415,7 @@ describe("ModelConnectionsListPage", () => {
 
     fireEvent.change(
       screen.getByRole("textbox", { name: "Search model connections" }),
-      { target: { value: "legacy" } },
+      { target: { value: "fallback" } },
     );
     expect(
       screen.queryByTestId("model-connections-bulk-actions"),

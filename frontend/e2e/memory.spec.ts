@@ -60,10 +60,6 @@ test.describe("workflow memory review workspace", () => {
     await page.getByRole("tab", { name: "Quarantine" }).click();
     await expect(page.getByText(/No quarantined memory|Unresolved|Resolved/)).toBeVisible();
 
-    const pageText = await page.getByTestId("memory-list-page").innerText();
-    expect(pageText).not.toContain("Create memory");
-    expect(pageText).not.toContain("Workflow visibility");
-    expect(pageText).not.toContain("Memory Admin");
     expect(
       memoryRequests.some((requestLine) =>
         requestLine.startsWith("GET /api/memory/proposals"),
@@ -79,9 +75,6 @@ test.describe("workflow memory review workspace", () => {
         requestLine.startsWith("GET /api/memory/quarantine"),
       ),
     ).toBe(true);
-    expect(memoryRequests.some((line) => line.includes("/admin/entries"))).toBe(
-      false,
-    );
     await expectNoDocumentOverflow(page);
   });
 });

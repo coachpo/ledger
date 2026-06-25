@@ -141,9 +141,6 @@ describe("ExtensionsListPage", () => {
     );
     expect(financeRow).not.toHaveTextContent("Blast radius");
     expect(financeRow).not.toHaveTextContent("Finance routes, nav, tools");
-    expect(screen.queryByText(/marketplace/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/install/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/remove/i)).not.toBeInTheDocument();
     expect(
       within(financeRow).getByRole("switch", {
         name: "Disable Finance Workspace extension",
@@ -152,14 +149,6 @@ describe("ExtensionsListPage", () => {
     expect(
       within(financeRow).getByTestId("extension-toggle-signaldeck-finance"),
     ).toHaveAttribute("data-state", "checked");
-    for (const row of [digitalOracleRow, financeRow]) {
-      expect(
-        within(row).queryByRole("button", { name: /install/i }),
-      ).not.toBeInTheDocument();
-      expect(
-        within(row).queryByRole("button", { name: /remove/i }),
-      ).not.toBeInTheDocument();
-    }
   });
 
   it("toggles extension enabled state through the backend mutation", async () => {

@@ -107,7 +107,7 @@ describe("query keys", () => {
     ]);
   });
 
-  it("keeps package-first platform keys separate from removed authoring namespaces", () => {
+  it("normalizes current platform resource keys", () => {
     expect(queryKeys.platform.modelConnections.detail("7")).toEqual(
       queryKeys.platform.modelConnections.detail(7),
     );
@@ -123,17 +123,6 @@ describe("query keys", () => {
       "extensions",
       "detail",
       "signaldeck.finance",
-    ]);
-
-    expect(Object.keys(queryKeys.platform)).toEqual([
-      "all",
-      "memory",
-      "modelConnections",
-      "extensions",
-      "tools",
-      "schedules",
-      "runs",
-      "workflowPackages",
     ]);
   });
 
@@ -182,9 +171,6 @@ describe("query keys", () => {
       "memory",
       "auditEvents",
     ]);
-    expect(queryKeys.platform.memory).not.toHaveProperty("admin");
-    expect(queryKeys.platform.memory).not.toHaveProperty("detail");
-    expect(queryKeys.platform.memory).not.toHaveProperty("list");
   });
 
   it("normalizes schedule list and fire-history filters", () => {

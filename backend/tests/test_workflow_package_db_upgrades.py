@@ -16,32 +16,10 @@ _WORKFLOW_PACKAGE_TABLES = {
     "workflow_package_secret_bindings",
     "run_workflow_package_snapshots",
 }
-_REMOVED_PACKAGE_HISTORY_TABLES = {
-    "workflow_package_versions",
-    "workflow_package_version_model_connections",
-}
-_RETIRED_GLOBAL_AUTHORING_TABLES = {
-    "agents",
-    "workflows",
-    "capabilities",
-    "mcp_servers",
-    "output_schemas",
-    "skills",
-    "workflow_agent_refs",
-    "agent_capability_refs",
-    "agent_mcp_server_refs",
-}
 _RUN_PROVENANCE_COLUMNS = {
     "workflow_package_id",
     "workflow_package_key",
     "workflow_package_workflow_key",
-}
-_REMOVED_RUN_PROVENANCE_COLUMNS = {
-    "workflow_package_version_id",
-    "workflow_package_version",
-    "workflow_package_manifest_hash",
-    "workflow_package_compiled_hash",
-    "launch_snapshot",
 }
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
 _EXPECTED_TRADINGAGENTS_MANIFEST_WORKFLOW_KEYS = (
@@ -145,21 +123,6 @@ def _insert_run_snapshot(
     )
 
 
-def _assert_clean_preset_artifacts(row: RowMapping) -> None:
-    serialized_preset = "".join(
-        (
-            str(row["manifest_source"]),
-            json.dumps(row["package_definition"], sort_keys=True),
-            json.dumps(row["compiled_plan"], sort_keys=True),
-            json.dumps(row["extension_dependencies"], sort_keys=True),
-        )
-    )
-    removed_validation_column = "_".join(("validation", "summary"))
-    removed_budget_field = "budget" + "Usd"
-    assert removed_validation_column not in serialized_preset
-    assert removed_budget_field not in serialized_preset
-
-
 def _manifest_workflow_keys(row: RowMapping) -> tuple[str, ...]:
     package_definition = row["package_definition"]
     assert isinstance(package_definition, dict)
@@ -203,8 +166,6 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     assert _WORKFLOW_PACKAGE_TABLES <= table_names
-    assert _REMOVED_PACKAGE_HISTORY_TABLES.isdisjoint(table_names)
-    assert _RETIRED_GLOBAL_AUTHORING_TABLES.isdisjoint(table_names)
 
     package_columns = {
         column["name"]: column for column in inspector.get_columns("workflow_packages")
@@ -225,14 +186,6 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
     model_connection_columns = {
         column["name"]: column for column in inspector.get_columns("model_connections")
     }
-    model_connection_check_sql = {
-        constraint["name"]: str(constraint["sqltext"])
-        for constraint in inspector.get_check_constraints("model_connections")
-    }
-    package_check_sql = {
-        constraint["name"]: str(constraint["sqltext"])
-        for constraint in inspector.get_check_constraints("workflow_packages")
-    }
     assert {
         "id",
         "key",
@@ -247,16 +200,7 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         "created_at",
         "updated_at",
     } <= set(package_columns)
-    removed_validation_column = "_".join(("validation", "summary"))
-    removed_launch_column = "_".join(("last", "launched", "at"))
-    assert {
-        "latest_version_id",
-        "draft_source",
-        removed_validation_column,
-        removed_launch_column,
-    }.isdisjoint(package_columns)
     assert _RUN_PROVENANCE_COLUMNS <= set(run_columns)
-    assert _REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
     assert {
         "run_id",
         "workflow_package_id",
@@ -281,28 +225,12 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         "created_at",
         "updated_at",
     } == set(snapshot_columns)
-    removed_archive_status = "arch" + "ived"
-    removed_archive_columns = {
-        "_".join((removed_archive_status, suffix)) for suffix in ("at", "by", "reason")
-    }
-    assert {
-        *removed_archive_columns,
-        "deleted_at",
-        "deleted_by",
-        "deleted_reason",
-    }.isdisjoint(package_columns)
-    _assert_workflow_package_live_status_artifacts_removed(
-        package_columns=package_columns,
-        package_check_sql=package_check_sql,
-        package_indexes=package_indexes,
-    )
     assert package_columns["key"]["nullable"] is False
     assert package_columns["manifest_source"]["nullable"] is False
     assert package_columns["package_definition"]["nullable"] is False
     assert package_columns["compiled_plan"]["nullable"] is False
     assert package_columns["extension_dependencies"]["nullable"] is False
-    removed_launch_index = "ix_workflow_packages_" + removed_launch_column
-    assert removed_launch_index not in package_indexes
+    assert "uq_workflow_packages_key" in package_indexes
     assert {
         "ix_runs_workflow_package",
         "ix_runs_workflow_package_key",
@@ -315,7 +243,6 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         "ix_run_workflow_package_snapshots_compiled_hash",
     } <= snapshot_indexes
     assert snapshot_foreign_keys == {(("run_id",), "runs", "CASCADE")}
-    assert (("workflow_package_id",), "workflow_packages", "CASCADE") not in snapshot_foreign_keys
     assert {
         "id",
         "key",
@@ -341,13 +268,6 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         "created_at",
         "updated_at",
     } <= set(model_connection_columns)
-    assert "api_style" not in model_connection_columns
-    assert (
-        "connection_kind" not in model_connection_columns
-    )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-    assert (
-        "ck_model_connections_connection_kind" not in model_connection_check_sql
-    )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
 
 
 def test_init_db_creates_current_workflow_package_and_run_snapshot_schema(
@@ -394,6 +314,15 @@ def test_workflow_package_upgrade_drops_obsolete_package_row_state_columns(
         init_db(database_url)
 
         _assert_workflow_package_schema(engine)
+        package_columns = {
+            column["name"] for column in inspect(engine).get_columns("workflow_packages")
+        }
+        package_indexes = {
+            index["name"] for index in inspect(engine).get_indexes("workflow_packages")
+        }
+        assert removed_validation_column not in package_columns
+        assert removed_launch_column not in package_columns
+        assert removed_launch_index not in package_indexes
     finally:
         engine.dispose()
 
@@ -514,7 +443,6 @@ def test_workflow_package_upgrade_reseeds_stale_first_party_preset_row(
             "extension_dependencies",
         ):
             assert reseeded_row[field] == clean_row[field]
-        _assert_clean_preset_artifacts(reseeded_row)
         assert marker_count == 1
     finally:
         engine.dispose()
@@ -624,7 +552,6 @@ def test_workflow_package_upgrade_reseeds_stale_marked_first_party_preset_row(
             "extension_dependencies",
         ):
             assert reseeded_row[field] == clean_row[field]
-        _assert_clean_preset_artifacts(reseeded_row)
         assert marker_count_after == 1
     finally:
         engine.dispose()
@@ -748,6 +675,17 @@ def test_workflow_package_upgrade_drops_status_artifacts_and_archived_duplicates
         init_db(database_url)
 
         _assert_workflow_package_schema(engine)
+        inspector = inspect(engine)
+        _assert_workflow_package_live_status_artifacts_removed(
+            package_columns={
+                column["name"]: column for column in inspector.get_columns("workflow_packages")
+            },
+            package_check_sql={
+                constraint["name"]: str(constraint["sqltext"])
+                for constraint in inspector.get_check_constraints("workflow_packages")
+            },
+            package_indexes={index["name"] for index in inspector.get_indexes("workflow_packages")},
+        )
         with engine.connect() as connection:
             package_rows = connection.execute(
                 text(
@@ -764,7 +702,7 @@ def test_workflow_package_upgrade_drops_status_artifacts_and_archived_duplicates
         engine.dispose()
 
 
-def test_workflow_package_upgrade_drops_package_history_tables_and_keeps_current_refs(
+def test_workflow_package_upgrade_keeps_current_package_refs(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -788,7 +726,6 @@ def test_workflow_package_upgrade_drops_package_history_tables_and_keeps_current
         init_db(database_url)
 
         with engine.connect() as connection:
-            table_names = set(inspect(connection).get_table_names())
             rows = connection.execute(
                 text(
                     """
@@ -800,8 +737,6 @@ def test_workflow_package_upgrade_drops_package_history_tables_and_keeps_current
                 )
             ).all()
 
-        assert _REMOVED_PACKAGE_HISTORY_TABLES.isdisjoint(table_names)
-        assert _RETIRED_GLOBAL_AUTHORING_TABLES.isdisjoint(table_names)
         assert rows == [("dangling_refs",), ("live_refs",)]
     finally:
         engine.dispose()

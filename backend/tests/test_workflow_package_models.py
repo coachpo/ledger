@@ -5,7 +5,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import workflow_package as workflow_package_models
 from app.models.base import Base
 from app.models.workflow_package import WorkflowPackage
 
@@ -64,9 +63,6 @@ def _build_package(
 
 def test_workflow_package_tables_are_registered_with_constraints() -> None:
     assert "workflow_packages" in Base.metadata.tables
-    assert "workflow_package_versions" not in Base.metadata.tables
-    assert "workflow_package_version_model_connections" not in Base.metadata.tables
-    assert not hasattr(workflow_package_models, "WorkflowPackageVersion")
 
     package_table = Base.metadata.tables["workflow_packages"]
 
@@ -83,33 +79,12 @@ def test_workflow_package_tables_are_registered_with_constraints() -> None:
         "created_at",
         "updated_at",
     } <= set(package_table.c.keys())
-    removed_validation_column = "_".join(("validation", "summary"))
-    removed_launch_column = "_".join(("last", "launched", "at"))
-    assert {
-        "latest_version_id",
-        "draft_source",
-        removed_validation_column,
-        removed_launch_column,
-    }.isdisjoint(package_table.c.keys())
-    removed_archive_columns = {
-        "_".join(("arch" + "ived", suffix)) for suffix in ("at", "by", "reason")
-    }
-    assert {
-        *removed_archive_columns,
-        "deleted_at",
-        "deleted_by",
-        "deleted_reason",
-    }.isdisjoint(package_table.c.keys())
-    assert "status" not in package_table.c.keys()
     assert {
         "ix_workflow_packages_key",
         "uq_workflow_packages_key",
         "ix_workflow_packages_manifest_hash",
         "ix_workflow_packages_compiled_hash",
     } <= {index.name for index in package_table.indexes}
-    assert "uq_workflow_packages_active_key" not in {index.name for index in package_table.indexes}
-    removed_launch_index = "ix_workflow_packages_" + removed_launch_column
-    assert removed_launch_index not in {index.name for index in package_table.indexes}
 
 
 def test_workflow_package_models_store_current_artifacts_and_allow_private_key_reuse(
@@ -153,12 +128,6 @@ def test_workflow_package_models_store_current_artifacts_and_allow_private_key_r
         assert stored_packages[0].extension_dependencies == [
             {"key": "signaldeck.finance", "required": True}
         ]
-        removed_validation_column = "_".join(("validation", "summary"))
-        removed_launch_column = "_".join(("last", "launched", "at"))
-        assert not hasattr(stored_packages[0], removed_validation_column)
-        assert not hasattr(stored_packages[0], removed_launch_column)
-        assert not hasattr(stored_packages[0], "latest_version_id")
-        assert not hasattr(stored_packages[0], "versions")
 
 
 def test_workflow_package_key_is_unique(

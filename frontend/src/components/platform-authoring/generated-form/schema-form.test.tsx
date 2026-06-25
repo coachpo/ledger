@@ -213,7 +213,7 @@ describe("SchemaForm", () => {
     expect(screen.queryByRole("button", { name: /add field/i })).not.toBeInTheDocument();
   });
 
-  it("leaves optional absent fields without defaultValue out of the generated value", () => {
+  it("starts optional no-default fields as addable generated fields", () => {
     const schema = schemaWithDefaults({
       fields: [
         {

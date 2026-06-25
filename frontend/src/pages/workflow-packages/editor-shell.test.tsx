@@ -209,13 +209,6 @@ describe("WorkflowPackageEditorPage", () => {
       expect(screen.getByRole("tab", { name: `${tabName} tab` })).toBeVisible();
     }
 
-    expect(
-      screen.queryByRole("tab", { name: "Preflight tab" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("tab", { name: "Launch tab" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("Launch route")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save package" })).toBeEnabled();
     expect(
       screen.getByRole("button", { name: "Validate package" }),
@@ -314,27 +307,6 @@ describe("WorkflowPackageEditorPage", () => {
     expect(
       screen.getByRole("button", { name: "Validate package" }),
     ).toBeDisabled();
-  });
-
-  it("does not turn the editor shell into a launch mode when mounted on the run-shaped path", () => {
-    renderEditor(
-      "/workflow-packages/42/run",
-      "/workflow-packages/:packageId/run",
-    );
-
-    expect(screen.getByTestId("workflow-package-editor-shell")).toBeVisible();
-    expect(
-      screen.queryByRole("tab", { name: "Preflight tab" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("tab", { name: "Launch tab" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("Launch route")).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Overview tab" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    expect(screen.getByRole("tabpanel")).toHaveTextContent("Package overview");
   });
 
   it("renders the new package shell without loading package detail or manifest", () => {

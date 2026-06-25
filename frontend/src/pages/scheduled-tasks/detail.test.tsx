@@ -1176,7 +1176,7 @@ describe("ScheduledTaskDetailPage", () => {
     );
   });
 
-  it("gates stale workflow schedules without widening the schedule update contract", async () => {
+  it("gates stale workflow schedules with the canonical schedule update payload", async () => {
     useScheduledTaskMock.mockReturnValue({
       data: scheduleFixture({ workflowKey: "retired_workflow" }),
       error: null,

@@ -177,7 +177,7 @@ def test_safe_authorized_auto_commit_creates_active_memory_only_via_policy(
         assert active_items[0].content_json == {"text": "Revenue increased."}
 
 
-def test_repeated_policy_evaluation_does_not_duplicate_activation(
+def test_repeated_policy_evaluation_is_idempotent_for_activation(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:

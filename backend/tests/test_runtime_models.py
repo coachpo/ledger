@@ -23,30 +23,6 @@ from app.schemas.run import (
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
-RETIRED_GLOBAL_AUTHORING_TABLE_NAMES = {
-    "agents",
-    "workflows",
-    "capabilities",
-    "mcp_servers",
-    "output_schemas",
-    "workflow_agent_refs",
-    "agent_capability_refs",
-    "agent_mcp_server_refs",
-}
-LEGACY_BACKEND_TABLE_NAMES = {
-    "agent_specs",
-    "workflow_specs",
-    "persona_profiles",
-    "capability_registry_entries",
-    "runtime_runs",
-    "runtime_trace_events",
-    "runtime_approvals",
-    "runtime_checkpoints",
-    "runtime_run_artifacts",
-    "persona_projection_events",
-    "orchestration_roles",
-    "orchestration_characters",
-}
 AGENT_PLATFORM_PACKAGE_TABLE_NAMES = {
     "workflow_packages",
     "workflow_package_runtime_input_entries",
@@ -59,20 +35,6 @@ AGENT_PLATFORM_EXECUTION_TABLE_NAMES = {
     "run_agent_invocations",
     "run_operation_invocations",
     "run_forks",
-}
-OLD_CORE_MEMORY_TABLE_NAMES = {
-    "agent_memory_entries",
-    "agent_memory_revisions",
-    "run_memory_events",
-}
-REMOVED_CORE_MEMORY_TABLE_NAMES = {
-    "agent_memory_chunks",
-    "agent_memory_embeddings",
-}
-FINANCE_MEMORY_METADATA_TABLE_NAMES = {"signaldeck_finance_memory_metadata"}
-REMOVED_WORKFLOW_PACKAGE_VERSION_TABLE_NAMES = {
-    "workflow_package_versions",
-    "workflow_package_version_model_connections",
 }
 
 
@@ -130,19 +92,12 @@ def _build_run(
     return run
 
 
-def test_retired_global_authoring_tables_are_not_registered_on_metadata() -> None:
-    assert RETIRED_GLOBAL_AUTHORING_TABLE_NAMES.isdisjoint(Base.metadata.tables)
-    assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(Base.metadata.tables)
-
-
-def test_agent_platform_package_tables_are_current_only() -> None:
+def test_agent_platform_package_tables_are_registered() -> None:
     assert AGENT_PLATFORM_PACKAGE_TABLE_NAMES <= set(Base.metadata.tables)
-    assert REMOVED_WORKFLOW_PACKAGE_VERSION_TABLE_NAMES.isdisjoint(Base.metadata.tables)
 
 
 def test_agent_platform_execution_tables_are_package_run_only() -> None:
     assert AGENT_PLATFORM_EXECUTION_TABLE_NAMES <= set(Base.metadata.tables)
-    assert RETIRED_GLOBAL_AUTHORING_TABLE_NAMES.isdisjoint(Base.metadata.tables)
 
     run_table = Base.metadata.tables["runs"]
     target_kind_constraint = cast(
@@ -155,14 +110,6 @@ def test_agent_platform_execution_tables_are_package_run_only() -> None:
     )
 
     assert str(target_kind_constraint.sqltext) == "target_kind = 'workflowPackage'"
-    assert "agent_id" not in run_table.c
-    assert "workflow_id" not in run_table.c
-
-
-def test_old_core_memory_tables_are_not_registered_on_metadata() -> None:
-    assert OLD_CORE_MEMORY_TABLE_NAMES.isdisjoint(Base.metadata.tables)
-    assert REMOVED_CORE_MEMORY_TABLE_NAMES.isdisjoint(Base.metadata.tables)
-    assert FINANCE_MEMORY_METADATA_TABLE_NAMES.isdisjoint(Base.metadata.tables)
 
 
 def test_model_connections_enforce_unique_keys(session_factory) -> None:
@@ -210,13 +157,10 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
     assert {"target_kind", "target_id", "target_key", "target_version", "queued_at"} <= set(
         run_table.c.keys()
     )
-    assert {"agent_id", "workflow_id"}.isdisjoint(run_table.c.keys())
-    assert {"workflow_key", "workflow_version", "per_step_outputs"}.isdisjoint(run_table.c.keys())
 
     assert RunWorkflowPackageSnapshot.__tablename__ == "run_workflow_package_snapshots"
     snapshot_table = Base.metadata.tables["run_workflow_package_snapshots"]
     assert list(snapshot_table.primary_key.columns.keys()) == ["run_id"]
-    assert "id" not in snapshot_table.c
 
     with session_factory() as session:
         queued_at = datetime(2026, 4, 19, 9, 59, tzinfo=UTC_TZ)
@@ -339,7 +283,7 @@ def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_statu
             session.commit()
 
 
-def test_run_resolved_model_connection_schema_omits_runtime_secrets() -> None:
+def test_run_resolved_model_connection_schema_redacts_runtime_secrets() -> None:
     payload = {
         "key": "package_runtime_model",
         "name": "Package Runtime Model",

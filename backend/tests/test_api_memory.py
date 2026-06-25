@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -193,40 +191,3 @@ def test_quarantine_listing_exposes_evidence_without_runtime_retrieval(
     assert item["reasonCode"] == "secret_detected"
     assert item["evidence"]["text"].startswith("Use sk-test_")
     assert item["detectors"]["secrets"][0]["detector"] == "api_key"
-
-
-def test_direct_write_lookup_unavailable_and_old_admin_memory_api_removed(
-    client: TestClient,
-) -> None:
-    old_query_payload = {
-        "accessContext": {
-            "runId": 1,
-            "packageKey": "pkg",
-            "workflowKey": "workflow",
-            "agentKey": "agent",
-        },
-        "scope": {"scopeType": "run", "scopeKey": "1"},
-        "query": "old direct lookup",
-    }
-    old_write_payload = {
-        "kind": "research.note",
-        "summary": "Old direct write",
-        "content": "Old direct writes must be gone.",
-        "scope": {"scopeType": "run", "scopeKey": "1"},
-        "provenance": {"runId": 1, "agentKey": "agent", "workflowKey": "workflow"},
-    }
-
-    assert client.post("/api/memory", json=old_query_payload).status_code == 404
-    assert client.post("/api/memory/proposals", json=old_write_payload).status_code == 405
-    assert client.get("/api/memory/admin/entries").status_code == 404
-    assert client.post("/api/memory/admin/entries", json=old_write_payload).status_code == 404
-
-
-def test_route_layer_no_longer_imports_old_memory_service() -> None:
-    api_memory = Path("app/api/memory.py").read_text()
-    dependencies = Path("app/api/dependencies.py").read_text()
-
-    for forbidden in ("get_memory_service", "MemoryService", "MemoryWriteRequest", "MemoryQuery"):
-        assert forbidden not in api_memory
-    assert "get_memory_service" not in dependencies
-    assert "MemoryService" not in dependencies

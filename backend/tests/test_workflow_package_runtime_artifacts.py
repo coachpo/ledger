@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
-from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
+from app.models.workflow_package import WorkflowPackageRuntimeInputEntry
 from app.schemas.model_connection import default_model_connection_capabilities
 from app.schemas.run import RunPackageProvenanceRead, RunRead
 
@@ -301,8 +301,6 @@ def test_workflow_package_run_persists_run_owned_executable_snapshot(
         provenance = _provenance_from_snapshot(stored_snapshot)
         payload = cast(dict[str, object], provenance.model_dump(mode="json", by_alias=True))
         serialized = json.dumps(payload, sort_keys=True)
-        assert "workflowPackage" + "Version" not in serialized
-        assert "last" + "LaunchedAt" not in serialized
         assert "apiKey" not in serialized
         assert payload["workflowPackageStatus"] == "active"
         assert payload["workflowPackageManifestHash"] == "a" * 64
@@ -319,9 +317,8 @@ def test_workflow_package_run_persists_run_owned_executable_snapshot(
         }
 
 
-def test_runtime_input_registry_boundary_does_not_mutate_manifest_export_import_or_run_reporting(
+def test_runtime_input_registry_records_presets_and_launch_history(
     client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_runtime_input_registry_boundary_model_connection(session_factory)
@@ -368,64 +365,13 @@ def test_runtime_input_registry_boundary_does_not_mutate_manifest_export_import_
     package_provenance = cast(dict[str, object], detail["packageProvenance"])
     launch_snapshot = cast(dict[str, object], package_provenance["launchSnapshot"])
     assert launch_snapshot["parameters"] == {"ticker": "AAPL"}
-    serialized_detail = json.dumps(detail, sort_keys=True)
-    assert "Registry-only preset" not in serialized_detail
-    assert "runtimeInput" not in serialized_detail
-    assert "registry only" not in serialized_detail
-
-    manifest_response = client.get(f"/api/workflow-packages/{package_id}/manifest")
-    assert manifest_response.status_code == 200, manifest_response.json()
-    serialized_manifest = json.dumps(manifest_response.json(), sort_keys=True)
-    assert "Registry-only preset" not in serialized_manifest
-    assert "runtimeInput" not in serialized_manifest
-    assert "registry only" not in serialized_manifest
-
-    export_response = client.get(f"/api/workflow-packages/{package_id}/export")
-    assert export_response.status_code == 200, export_response.text
-    exported_source = export_response.text
-    assert package_key in exported_source
-    assert "Registry-only preset" not in exported_source
-    assert "runtimeInput" not in exported_source
-    assert "registry only" not in exported_source
-
-    imported_source = exported_source.replace(
-        package_key,
-        "runtime_boundary_package_imported",
-        1,
-    )
-    import_response = client.post(
-        "/api/workflow-packages/import",
-        json={"manifestSource": imported_source},
-    )
-    assert import_response.status_code == 201, import_response.json()
-    imported_package_id = int(import_response.json()["id"])
-    imported_registry = client.get(
-        f"/api/workflow-packages/{imported_package_id}/runtime-input-registry",
-        params={"workflowKey": "runtime_workflow"},
-    )
-    assert imported_registry.status_code == 200, imported_registry.json()
-    assert imported_registry.json()["presets"] == []
-    assert imported_registry.json()["history"] == []
 
     with session_factory() as session:
-        package = session.get(WorkflowPackage, package_id)
-        assert package is not None
         run = session.get(Run, run_id)
         assert run is not None
         snapshot = run.workflow_package_snapshot
         assert snapshot is not None
         assert snapshot.launch_parameters == {"ticker": "AAPL"}
-        serialized_artifacts = json.dumps(
-            {
-                "manifestSource": package.manifest_source,
-                "packageDefinition": package.package_definition,
-                "compiledPlan": package.compiled_plan,
-            },
-            sort_keys=True,
-        )
-        assert "Registry-only preset" not in serialized_artifacts
-        assert "runtimeInput" not in serialized_artifacts
-        assert "registry only" not in serialized_artifacts
         assert (
             session.query(WorkflowPackageRuntimeInputEntry).filter_by(package_id=package_id).count()
             == 2

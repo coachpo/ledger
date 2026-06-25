@@ -44,7 +44,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Fork actions are invocation-specific. Open them from agent invocation rows, use URL state `fork=1&resumeStepIndex=<n>&invocationId=<id>`, fetch drafts by `sourceInvocationId`, and submit full replacement `invocationInput`.
 - Treat `resumeStepIndex` as the execution boundary only. Do not use it as the editable target when an invocation id is required.
 - Operation and tool invocation forks are unsupported in phase 1. Show that limitation on operation rows instead of exposing ambiguous step-wide fork actions.
-- Historical replay data is read-only lineage. Label it as historical when rendered, and do not wire `stepReplay`, `stepIndex`, `step-replay-draft`, or `step-replays` as live run creation paths.
+- Historical replay data is read-only lineage. Label it as historical when rendered, and keep rerun/fork creation on the current `rerun` and invocation-specific `fork` URL state.
 - Hooks own polling and request behavior; the page owns presentation, filters, URL state, inspection panes, fork availability messaging, and trace summaries.
 - Route metadata intentionally treats `/runs` as an `inventory` polling monitor with scroll shell and `/runs/:runId` as a `console` with full-height shell. Preserve that split instead of turning run detail into a generic detail page.
 - Wide evidence, trace ids, JSON payloads, operation URLs, badges, and lineage nodes must use internal scrolling or wrapping so mobile viewports do not gain document-level horizontal overflow.

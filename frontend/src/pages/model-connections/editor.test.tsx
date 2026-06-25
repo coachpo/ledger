@@ -436,7 +436,7 @@ describe("ModelConnectionsEditorPage", () => {
     );
   });
 
-  it("keeps the secret blank on edit and preserves the existing key when save omits apiKey", async () => {
+  it("keeps the secret blank on edit and preserves the existing key when apiKey is left blank", async () => {
     paramsMock.modelConnectionId = "4";
     updateModelConnectionMock.mockResolvedValue({ id: 4 });
 

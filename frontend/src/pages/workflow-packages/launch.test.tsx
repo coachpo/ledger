@@ -496,7 +496,7 @@ describe("WorkflowPackageLaunchPage", () => {
     );
   });
 
-  it("keeps a stale selected workflow visible instead of remapping to the only current manifest workflow", async () => {
+  it("keeps a stale selected workflow visible as the active workflow option", async () => {
     const retiredSchema = {
       properties: {
         symbol: { title: "Symbol", type: "string" },
@@ -719,11 +719,11 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(createLaunchMock).not.toHaveBeenCalled();
   });
 
-  it("keeps stale extra saved inputs in advanced JSON with local validation details", async () => {
+  it("keeps stale extra saved inputs reviewable in advanced JSON", async () => {
     const preset = runtimeInputEntry({
       id: 7,
       name: "Baseline preset",
-      payload: { legacyWindow: "pre-upgrade", ticker: "MSFT" },
+      payload: { ticker: "MSFT", unsupportedWindow: "schema-mismatch" },
       slot: "preset",
       stale: {
         reasons: [{ current: "compiled-hash-123", field: "compiledHash", issue: "Compiled package changed", stored: "old-compiled" }],
@@ -739,12 +739,12 @@ describe("WorkflowPackageLaunchPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load saved runtime input preset Baseline preset" }));
 
     const feedback = await screen.findByTestId("runtime-input-validation-feedback");
-    expect(feedback).toHaveTextContent("parameters.legacyWindow");
+    expect(feedback).toHaveTextContent("parameters.unsupportedWindow");
     expect(feedback).toHaveTextContent("Extra inputs are not permitted.");
     expect(screen.queryByTestId("runtime-input-primary-form")).not.toBeInTheDocument();
     expect(screen.getByTestId("runtime-input-json-mode-notice")).toBeVisible();
     expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
-      JSON.stringify({ legacyWindow: "pre-upgrade", ticker: "MSFT" }, null, 2),
+      JSON.stringify({ ticker: "MSFT", unsupportedWindow: "schema-mismatch" }, null, 2),
     );
     fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
     expect(preflightPackageMock).not.toHaveBeenCalled();
@@ -874,11 +874,11 @@ describe("WorkflowPackageLaunchPage", () => {
     }));
   });
 
-  it("keeps invalid stale saved inputs in advanced JSON with local validation details", async () => {
+  it("keeps invalid stale saved inputs reviewable in advanced JSON", async () => {
     const preset = runtimeInputEntry({
       id: 7,
-      name: "Old nullable preset",
-      payload: { legacyField: "visible", ticker: null },
+      name: "Nullable preset with extra field",
+      payload: { ticker: null, unsupportedField: "visible" },
       slot: "preset",
       stale: {
         reasons: [{ current: "schema-fingerprint-123", field: "schemaFingerprint", issue: "Schema changed", stored: "old-schema" }],
@@ -891,16 +891,16 @@ describe("WorkflowPackageLaunchPage", () => {
     renderLaunchPage();
 
     await selectSingleWorkflow();
-    fireEvent.click(screen.getByRole("button", { name: "Load saved runtime input preset Old nullable preset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load saved runtime input preset Nullable preset with extra field" }));
 
     const feedback = await screen.findByTestId("runtime-input-validation-feedback");
-    expect(feedback).toHaveTextContent("parameters.legacyField");
+    expect(feedback).toHaveTextContent("parameters.unsupportedField");
     expect(feedback).toHaveTextContent("Extra inputs are not permitted.");
     expect(feedback).toHaveTextContent("parameters.ticker");
     expect(feedback).toHaveTextContent("Null is only allowed for nullable runtime input fields.");
     expect(screen.getByTestId("runtime-input-json-mode-notice")).toBeVisible();
     expect((screen.getByLabelText("Runtime inputs JSON") as HTMLTextAreaElement).value).toBe(
-      JSON.stringify({ legacyField: "visible", ticker: null }, null, 2),
+      JSON.stringify({ ticker: null, unsupportedField: "visible" }, null, 2),
     );
     fireEvent.change(screen.getByLabelText("Saved runtime input preset name"), {
       target: { value: "Still invalid" },

@@ -30,7 +30,7 @@ Keep platform-core versus extension-owned boundaries explicit. Decide intentiona
 - `backend/AGENTS.md`, `backend/app/*/AGENTS.md`, `backend/tests/AGENTS.md` — backend layer, runtime, persistence, schema, worker, and test rules
 - `backend/app/agents/{tool_catalog,runtime_tools,mcp}/AGENTS.md` — server tool metadata, native runtime dispatch, and MCP safety boundaries
 - `backend/app/extensions/signaldeck_finance/AGENTS.md`, `backend/app/extensions/signaldeck_digital_oracle/AGENTS.md` — first-party extension ownership
-- `.github/workflows/AGENTS.md` — CI gates, container publishing, and cleanup workflow rules
+- `.github/workflows/AGENTS.md` — CI gates and container publishing workflow rules
 - `docs/AGENTS.md` — live docs ownership, obsolete-content rules, and platform/extension documentation boundary
 - `frontend/AGENTS.md`, `frontend/src/components/shared/docs/README.md`, `frontend/e2e/AGENTS.md` — frontend shell, design system, browser tests, and startup conventions
 - `frontend/src/extensions/AGENTS.md`, `frontend/src/hooks/AGENTS.md`, `frontend/src/lib/**/AGENTS.md` — extension runtime, query hooks, API/type/platform-authoring contracts
@@ -42,9 +42,9 @@ Keep platform-core versus extension-owned boundaries explicit. Decide intentiona
 signaldeck/
 ├── backend/              # FastAPI app, SQLAlchemy models, services, pytest suite
 ├── frontend/             # React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
-├── docs/                 # canonical owner docs plus requirements and architecture-audit evidence
+├── docs/                 # canonical owner docs
 ├── demo/                 # grounded Workflow Package YAML examples
-├── .github/workflows/    # CI quality gates, Docker image publish, cleanup
+├── .github/workflows/    # CI quality gates and Docker image publishing
 └── start.sh              # root Docker Compose wrapper for the local/demo stack
 ```
 
@@ -68,8 +68,8 @@ signaldeck/
 | Frontend preserved product UI | `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md` | preserved portfolio, template, and report routes |
 | Frontend reports and templates | `frontend/src/components/templates/AGENTS.md`, `frontend/src/components/forms/AGENTS.md`, `frontend/src/lib/runtime-inputs.ts`, `frontend/src/lib/report-grouping.ts` | runtime inputs, placeholder browsing, grouping, upload, and report generation UI |
 | Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_workflow_package_preflight.py`, `backend/tests/test_workflow_package_runtime_api.py`, `backend/tests/test_workflow_package_run_contracts.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_mcp_runtime.py`, `backend/tests/test_runtime_db_upgrades.py` | preserved v1 CRUD plus package validation, Scheduled Tasks, runtime, MCP, rerun/fork, and DB-upgrade coverage |
-| Docs ownership and audit evidence | `docs/AGENTS.md`, `docs/requirements/*.md`, `docs/architecture-audit/README.md` | six canonical owner docs stay live; requirements companions and architecture-audit files are evidence/context, not new product scope |
-| CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml`, `.github/workflows/cleanup.yml` | version sync, frozen backend/frontend installs, quality gates, frontend E2E, arm64 GHCR images, cleanup |
+| Docs ownership | `docs/AGENTS.md`, `docs/*.md` | six canonical owner docs stay live and mirror current code |
+| CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml` | version sync, frozen backend/frontend installs, quality gates, frontend E2E, and arm64 GHCR images |
 
 ## CODE MAP
 
@@ -151,7 +151,7 @@ docker compose -f docker-compose.yml down
 - Supported schema repair is code-based in `backend/app/db/`; startup repair targets live tables and treats retired global authoring tables as drop-only cleanup targets, not compatibility backfill surfaces. Do not create migration instructions around a reappearing Alembic scaffold.
 - Playwright runs against backend `8001` and frontend `4173`; the backend startup helper starts both Uvicorn and the scheduler worker, while the frontend helper serves the built preview.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
-- Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing and cleanup live in separate workflows.
+- Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing lives in a separate workflow.
 - Root CI uses `uv sync --frozen` for backend jobs and `pnpm install --frozen-lockfile` for frontend jobs; `version-sync` checks `backend/VERSION` against `backend/pyproject.toml` and `frontend/VERSION` against `frontend/package.json`.
-- Docker image publishing builds backend and frontend linux/arm64 images for GHCR; cleanup keeps at least 3 recent workflow runs and deletes untagged backend/frontend container package versions.
-- `docs/AGENTS.md` governs the six canonical owner docs: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and `docs/AGENTS.md`. Requirements companions and architecture-audit files are evidence/context, pending design notes are historical context only, and live code remains source of truth for docs updates.
+- Docker image publishing builds backend and frontend linux/arm64 images for GHCR.
+- `docs/AGENTS.md` governs the six canonical owner docs: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and `docs/AGENTS.md`. Live code remains source of truth for docs updates.

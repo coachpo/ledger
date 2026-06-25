@@ -7,12 +7,11 @@ import react from "@vitejs/plugin-react";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frameworkChunkPattern =
-  /[/\\]node_modules[/\\](react|react-dom|scheduler|react-router|react-router-dom)[/\\]/;
+  /[/\\]node_modules[/\\](react|react-dom|scheduler|react-router)[/\\]/;
 const dataChunkPattern =
   /[/\\]node_modules[/\\]@tanstack[/\\](react-query|react-table)[/\\]/;
 const uiChunkPattern =
   /[/\\]node_modules[/\\](@radix-ui|@floating-ui|cmdk|lucide-react|react-resizable-panels|sonner|class-variance-authority|clsx|tailwind-merge)[/\\]/;
-const chartsChunkPattern = /[/\\]node_modules[/\\]recharts[/\\]/;
 const formsChunkPattern = /[/\\]node_modules[/\\](react-hook-form|zod)[/\\]|[/\\]node_modules[/\\]@hookform[/\\]resolvers[/\\]/;
 const dateChunkPattern =
   /[/\\]node_modules[/\\](react-day-picker|date-fns)[/\\]/;
@@ -39,10 +38,6 @@ export default defineConfig({
 
           if (uiChunkPattern.test(id)) {
             return "ui";
-          }
-
-          if (chartsChunkPattern.test(id)) {
-            return "charts";
           }
 
           if (formsChunkPattern.test(id)) {

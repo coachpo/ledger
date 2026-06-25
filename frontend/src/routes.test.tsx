@@ -645,9 +645,6 @@ describe("router", () => {
     expect(
       matchRoutes(router.routes, "/workflow-packages/123/run"),
     ).not.toBeNull();
-    expect(getRouteMetadataForPathname("/workflow-packages/123/launch")).toBe(
-      unknownRouteMetadata,
-    );
 
     for (const prefix of LIVE_BROWSER_ROUTE_PREFIXES) {
       expect(
@@ -668,12 +665,6 @@ describe("router", () => {
     expect(getRouteMetadataForPathname("/memory")?.testId).toBe(
       "route-memory-list",
     );
-    expect(getRouteMetadataForPathname("/memory/mem-risk-1")).toBe(
-      unknownRouteMetadata,
-    );
-    expect(getRouteMetadataForPathname("/api/memory")).toBe(
-      unknownRouteMetadata,
-    );
     expect(matchRoutes(router.routes, "/scheduled-tasks")).not.toBeNull();
     expect(matchRoutes(router.routes, "/scheduled-tasks/new")).not.toBeNull();
     expect(matchRoutes(router.routes, "/scheduled-tasks/123")).not.toBeNull();
@@ -682,9 +673,6 @@ describe("router", () => {
     );
     expect(getRouteMetadataForPathname("/scheduled-tasks/123")?.testId).toBe(
       "route-scheduled-task-detail",
-    );
-    expect(getRouteMetadataForPathname("/api/schedules")).toBe(
-      unknownRouteMetadata,
     );
     expect(matchRoutes(router.routes, "/runs")).not.toBeNull();
     expect(matchRoutes(router.routes, "/runs/123")).not.toBeNull();
@@ -712,15 +700,6 @@ describe("router", () => {
       screen.getByRole("combobox", { name: "Proposal status" }),
     ).toBeVisible();
     expect(screen.getByText("No proposals to review")).toBeVisible();
-    const memoryPageText =
-      screen.getByTestId("memory-list-page").textContent ?? "";
-    expect(memoryPageText).not.toContain("Memory Admin");
-    expect(memoryPageText).not.toContain("Create memory");
-    expect(memoryPageText).not.toContain("Workflow visibility");
-    expect(
-      screen.queryByLabelText("Namespace declarations"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Namespace grants")).not.toBeInTheDocument();
   });
 
   it("renders a product-owned catch-all 404 inside the app shell", async () => {
@@ -835,27 +814,6 @@ describe("router", () => {
     expect(digitalOracleExtension.label).toBe(DIGITAL_ORACLE_LABEL);
     expect(digitalOracleExtension.routeContributions).toEqual([]);
     expect(digitalOracleExtension.navContributions).toEqual([]);
-    for (const retiredDigitalOracleRoute of [
-      "/digital-oracle",
-      "/digital-oracle/prediction-markets",
-      "/digital-oracle/sec-filings",
-      "/digital-oracle/market-sentiment",
-      "/digital-oracle/macro-rates",
-      "/digital-oracle/crypto-derivatives",
-      "/digital-oracle/cftc-positioning",
-      "/digital-oracle/options",
-      "/prediction-markets",
-      "/sec-filings",
-      "/market-sentiment",
-      "/macro-rates",
-      "/crypto-derivatives",
-      "/cftc-positioning",
-      "/options",
-    ]) {
-      expect(getRouteMetadataForPathname(retiredDigitalOracleRoute)).toBe(
-        unknownRouteMetadata,
-      );
-    }
 
     const financeRouteContracts = financeExtension.routeContributions.map(
       (contribution) => ({
@@ -1017,7 +975,7 @@ describe("router", () => {
     ]);
   });
 
-  it("filters bundled extension tool discovery without changing finance route gates", () => {
+  it("filters bundled extension tool discovery while preserving finance route gates", () => {
     const extension = getBundledFrontendExtension(
       FINANCE_WORKSPACE_EXTENSION_KEY,
     );

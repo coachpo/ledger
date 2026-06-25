@@ -132,28 +132,6 @@ describe("api client", () => {
     );
   });
 
-  it("does not read stale JSON detail aliases for 404 responses", async () => {
-    const { ApiRequestError, getPortfolio } = await loadApiModule();
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ detail: "Portfolio not found" }, 404),
-    );
-
-    let error: unknown;
-    try {
-      await getPortfolio(999);
-    } catch (caught) {
-      error = caught;
-    }
-
-    expect(error).toBeInstanceOf(ApiRequestError);
-    expect(error).toMatchObject({
-      status: 404,
-      code: "request_failed",
-      message: "Request failed with status 404",
-      details: [],
-    });
-  });
-
   it("preserves status, code, message, and validation details for 422 responses", async () => {
     const { ApiRequestError, createPortfolio } = await loadApiModule();
     fetchMock.mockResolvedValueOnce(

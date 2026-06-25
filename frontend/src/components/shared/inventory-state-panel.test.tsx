@@ -51,7 +51,7 @@ describe("InventoryStatePanel", () => {
     expect(screen.getByText("Templates API unavailable")).toBeVisible();
   });
 
-  it("does not clamp long title-only error copy", async () => {
+  it("keeps long title-only error copy unclamped", async () => {
     const InventoryStatePanel = await loadInventoryStatePanel();
 
     render(

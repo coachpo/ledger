@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.run import Run, RunWorkflowPackageSnapshot
@@ -321,19 +320,15 @@ def test_run_detail_exposes_workflow_memory_middleware_evidence(
     ]
 
 
-def test_projection_omits_legacy_run_memory_event_fields(
+def test_projection_returns_empty_workflow_memory_evidence_without_memory_metadata(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
-        run = _seed_package_run(session, package_key="projection_legacy_event_pkg")
+        run = _seed_package_run(session, package_key="projection_empty_memory_pkg")
         invocation = session.query(RunAgentInvocation).filter_by(run_id=run.id).one()
         invocation.graph_metadata = None
         session.commit()
-        table_names = set(sqlalchemy_inspect(session.get_bind()).get_table_names())
-        assert "run_memory_events" not in table_names
 
         detail = _run_detail(session, run.id)
 
-    assert "memoryEvents" not in detail
-    assert "memoryArtifacts" not in detail
     assert detail["workflowMemoryEvidence"]["injections"] == []

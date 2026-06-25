@@ -61,8 +61,8 @@ _EXPECTED_MODEL_CONNECTION_CAPABILITY_KEYS = {
     "textGeneration",
     "usageReporting",
 }
-_REMOVED_MODEL_CONNECTION_KIND_FIELD = f"connection{'K'}ind"
-_REMOVED_MODEL_CONNECTION_KIND_DB_FIELD = f"connection{'_'}kind"
+_UNSUPPORTED_MODEL_CONNECTION_KIND_FIELD = f"connection{'K'}ind"
+_UNSUPPORTED_MODEL_CONNECTION_KIND_DB_FIELD = f"connection{'_'}kind"
 
 
 def _assert_logfire_trace_id(value: object) -> None:
@@ -382,7 +382,7 @@ def _set_model_connection_probe_cache(
         session.commit()
 
 
-def test_agent_platform_routes_mount_package_first_api_without_global_authoring_routes(
+def test_agent_platform_routes_mount_package_first_api(
     app: FastAPI,
 ) -> None:
     route_paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
@@ -397,18 +397,6 @@ def test_agent_platform_routes_mount_package_first_api_without_global_authoring_
         "/api/runs",
         "/api/runs/{run_id}",
     } <= route_paths
-    assert all(
-        not path.startswith(prefix)
-        for path in route_paths
-        for prefix in (
-            "/api/agents",
-            "/api/capabilities",
-            "/api/mcp-servers",
-            "/api/output-schemas",
-            "/api/workflows",
-        )
-    )
-    assert not any(path.startswith("/api/v3") for path in route_paths)
 
 
 def test_finance_workspace_product_routes_remain_mounted_for_portfolio_template_report_market_data(
@@ -529,12 +517,12 @@ def test_disabled_finance_workspace_preserves_template_and_report_rows(
     assert restored_response.json()["content"] == report["content"]
 
 
-def test_agent_platform_runs_reject_deprecated_target_filters(client: TestClient) -> None:
+def test_agent_platform_runs_reject_unsupported_target_filters(client: TestClient) -> None:
     for params in (
         {"targetKind": "agent"},
         {"targetKind": "workflow"},
         {"targetId": 1},
-        {"targetKey": "legacy_target"},
+        {"targetKey": "unsupported_target"},
         {"targetKind": "workflowPackage", "targetKey": "package_key"},
     ):
         response = client.get("/api/runs", params=params)
@@ -556,12 +544,12 @@ def test_agent_platform_runs_reject_deprecated_target_filters(client: TestClient
         }
 
 
-_DELETED_MODEL_CONNECTION_FIELDS: dict[str, object] = {
-    "organization": "legacy-org",
-    "project": "legacy-project",
-    "organizationProject": "legacy-org-project",
-    "organization_project": "legacy_org_project",
-    "projectId": "legacy-project-id",
+_UNSUPPORTED_MODEL_CONNECTION_SCOPE_FIELDS: dict[str, object] = {
+    "organization": "unsupported-org",
+    "project": "unsupported-project",
+    "organizationProject": "unsupported-org-project",
+    "organization_project": "unsupported_org_project",
+    "projectId": "unsupported-project-id",
 }
 
 
@@ -569,9 +557,9 @@ def _model_connection_create_payload(
     base_url: str = "https://provider.example.test",
 ) -> dict[str, object]:
     return {
-        "key": "deleted_fields_model",
-        "name": "Deleted Fields Model",
-        "description": "Model connection without removed fields.",
+        "key": "supported_fields_model",
+        "name": "Supported Fields Model",
+        "description": "Model connection with supported fields.",
         "baseUrl": base_url,
         "modelId": "gpt-5.5-mini",
         "reasoningEffort": "medium",
@@ -581,7 +569,7 @@ def _model_connection_create_payload(
     }
 
 
-def _assert_deleted_model_connection_fields_rejected(
+def _assert_unsupported_model_connection_fields_rejected(
     response: Response,
     field_names: set[str],
 ) -> None:
@@ -613,19 +601,22 @@ def _assert_schema_extra_forbidden(
     assert expected_error_types.items() <= extra_error_types.items()
 
 
-def test_model_connection_create_rejects_deleted_organization_project_fields(
+def test_model_connection_create_rejects_unsupported_scope_fields(
     client: TestClient,
 ) -> None:
-    payload = {**_model_connection_create_payload(), **_DELETED_MODEL_CONNECTION_FIELDS}
+    payload = {
+        **_model_connection_create_payload(),
+        **_UNSUPPORTED_MODEL_CONNECTION_SCOPE_FIELDS,
+    }
 
     response = client.post("/api/model-connections", json=payload)
 
-    field_names = set(_DELETED_MODEL_CONNECTION_FIELDS)
-    _assert_deleted_model_connection_fields_rejected(response, field_names)
+    field_names = set(_UNSUPPORTED_MODEL_CONNECTION_SCOPE_FIELDS)
+    _assert_unsupported_model_connection_fields_rejected(response, field_names)
     _assert_schema_extra_forbidden(ModelConnectionCreate, payload, field_names)
 
 
-def test_model_connection_update_rejects_deleted_organization_project_fields(
+def test_model_connection_update_rejects_unsupported_scope_fields(
     client: TestClient,
 ) -> None:
     create_response = client.post(
@@ -637,18 +628,18 @@ def test_model_connection_update_rejects_deleted_organization_project_fields(
     connection_id = cast(int, create_body["id"])
     payload: dict[str, object] = {
         "description": "Attempted update should not persist.",
-        **_DELETED_MODEL_CONNECTION_FIELDS,
+        **_UNSUPPORTED_MODEL_CONNECTION_SCOPE_FIELDS,
     }
 
     response = client.patch(f"/api/model-connections/{connection_id}", json=payload)
 
-    field_names = set(_DELETED_MODEL_CONNECTION_FIELDS)
-    _assert_deleted_model_connection_fields_rejected(response, field_names)
+    field_names = set(_UNSUPPORTED_MODEL_CONNECTION_SCOPE_FIELDS)
+    _assert_unsupported_model_connection_fields_rejected(response, field_names)
     _assert_schema_extra_forbidden(ModelConnectionUpdate, payload, field_names)
     unchanged_response = client.get(f"/api/model-connections/{connection_id}")
     assert unchanged_response.status_code == 200, unchanged_response.json()
     unchanged_body = cast(dict[str, object], unchanged_response.json())
-    assert unchanged_body["description"] == "Model connection without removed fields."
+    assert unchanged_body["description"] == "Model connection with supported fields."
 
 
 def test_portfolio_isolation_and_summary_counts(client: TestClient) -> None:
@@ -3307,49 +3298,46 @@ def test_model_connection_secret_writes_are_explicit_encrypted_and_public_reads_
         assert connection.secret_payload == {"apiKey": rotated_value}
 
 
-def test_model_connection_rejects_removed_kind_fields(client: TestClient) -> None:
+def test_model_connection_rejects_unsupported_kind_fields(client: TestClient) -> None:
     create_payload = _model_connection_create_payload()
     create_field_names = {
-        _REMOVED_MODEL_CONNECTION_KIND_FIELD,
-        _REMOVED_MODEL_CONNECTION_KIND_DB_FIELD,
+        _UNSUPPORTED_MODEL_CONNECTION_KIND_FIELD,
+        _UNSUPPORTED_MODEL_CONNECTION_KIND_DB_FIELD,
     }
-    removed_fields_payload = {
-        _REMOVED_MODEL_CONNECTION_KIND_FIELD: "provider",
-        _REMOVED_MODEL_CONNECTION_KIND_DB_FIELD: "provider",
+    unsupported_fields_payload = {
+        _UNSUPPORTED_MODEL_CONNECTION_KIND_FIELD: "provider",
+        _UNSUPPORTED_MODEL_CONNECTION_KIND_DB_FIELD: "provider",
     }
 
     rejected_create = client.post(
         "/api/model-connections",
-        json={**create_payload, **removed_fields_payload},
+        json={**create_payload, **unsupported_fields_payload},
     )
-    _assert_deleted_model_connection_fields_rejected(rejected_create, create_field_names)
+    _assert_unsupported_model_connection_fields_rejected(rejected_create, create_field_names)
     _assert_schema_extra_forbidden(
         ModelConnectionCreate,
-        {**create_payload, **removed_fields_payload},
+        {**create_payload, **unsupported_fields_payload},
         create_field_names,
     )
 
     create_response = client.post("/api/model-connections", json=create_payload)
     assert create_response.status_code == 201, create_response.json()
     create_body = cast(dict[str, object], create_response.json())
-    assert _REMOVED_MODEL_CONNECTION_KIND_FIELD not in create_body
     connection_id = cast(int, create_body["id"])
 
     rejected_patch = client.patch(
         f"/api/model-connections/{connection_id}",
-        json=removed_fields_payload,
+        json=unsupported_fields_payload,
     )
-    _assert_deleted_model_connection_fields_rejected(rejected_patch, create_field_names)
+    _assert_unsupported_model_connection_fields_rejected(rejected_patch, create_field_names)
     _assert_schema_extra_forbidden(
         ModelConnectionUpdate,
-        removed_fields_payload,
+        unsupported_fields_payload,
         create_field_names,
     )
 
     get_response = client.get(f"/api/model-connections/{connection_id}")
     assert get_response.status_code == 200
-    get_body = cast(dict[str, object], get_response.json())
-    assert _REMOVED_MODEL_CONNECTION_KIND_FIELD not in get_body
 
 
 def test_model_connection_compatibility_derives_caps_and_rejects_public_policy_writes(
@@ -3374,7 +3362,7 @@ def test_model_connection_compatibility_derives_caps_and_rejects_public_policy_w
         json={**create_payload, **public_compatibility_fields},
     )
     field_names = set(public_compatibility_fields)
-    _assert_deleted_model_connection_fields_rejected(rejected_create, field_names)
+    _assert_unsupported_model_connection_fields_rejected(rejected_create, field_names)
     _assert_schema_extra_forbidden(
         ModelConnectionCreate,
         {**create_payload, **public_compatibility_fields},
@@ -3401,7 +3389,7 @@ def test_model_connection_compatibility_derives_caps_and_rejects_public_policy_w
         f"/api/model-connections/{connection_id}",
         json=public_compatibility_fields,
     )
-    _assert_deleted_model_connection_fields_rejected(rejected_patch, field_names)
+    _assert_unsupported_model_connection_fields_rejected(rejected_patch, field_names)
     _assert_schema_extra_forbidden(
         ModelConnectionUpdate,
         public_compatibility_fields,

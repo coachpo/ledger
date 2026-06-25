@@ -69,7 +69,7 @@ def test_execution_plan_agent_requires_package_runtime_spec() -> None:
         )
 
 
-def test_package_execution_plan_builds_from_local_compiled_plan_without_global_rows() -> None:
+def test_package_execution_plan_builds_from_local_compiled_plan() -> None:
     plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
         _compiled_plan(),
         "daily_research",

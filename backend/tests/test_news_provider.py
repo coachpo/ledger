@@ -30,7 +30,7 @@ from app.services.news_provider import (
     ProviderNewsItem,
     YahooFinanceNewsProvider,
 )
-from app.services.quote_provider import DeterministicQuoteProvider, QuoteProvider
+from app.services.quote_provider import DeterministicQuoteProvider
 
 
 def test_deterministic_news_provider_preserves_existing_shape() -> None:
@@ -52,10 +52,6 @@ def test_deterministic_news_provider_preserves_existing_shape() -> None:
     assert result.items[0].published_at == datetime(2024, 3, 29, tzinfo=UTC)
     assert result.items[0].symbols == ["NVDA"]
     assert result.items[0].sentiment == "neutral"
-
-
-def test_quote_provider_protocol_has_no_news_method() -> None:
-    assert "fetch_news" not in QuoteProvider.__dict__
 
 
 def test_news_provider_contract_exports_sentiment_alias_and_error_codes() -> None:

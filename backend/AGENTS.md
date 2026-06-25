@@ -64,7 +64,7 @@ backend/
 | Service internals | `app/services/AGENTS.md` | transactions, manifest parser/compiler/decompiler/backfills, schedule recurrence/materialization, execution providers/lifecycle hooks, runtime execution, queue claims/read projections, workflow memory middleware/review, historical report-domain agent-memory records, and market-data fallback |
 | API payload shape | `app/schemas/AGENTS.md` | Pydantic validation, manifest contracts, run progress/queue read models, workflow memory review payloads, serialization, camelCase aliasing |
 | Persistence / constraints | `app/models/AGENTS.md`, `app/repositories/AGENTS.md` | ORM entities, report/cache/model-connection tables, manifest fields, run forks, and runtime data access |
-| Core test coverage | `tests/AGENTS.md` | CRUD, manifests, MCP, package preflight, rerun/fork contracts, workflow memory middleware/review, historical report-domain agent-memory records, runtime tools, removed-surface coverage, and DB-upgrade coverage |
+| Core test coverage | `tests/AGENTS.md` | CRUD, manifests, MCP, package preflight, rerun/fork contracts, workflow memory middleware/review, historical report-domain agent-memory records, runtime tools, runtime boundary coverage, and DB-upgrade coverage |
 
 ## CONVENTIONS
 - Each route module declares `APIRouter(prefix=..., tags=[...])`, accepts integer ids where applicable, and delegates to a service.

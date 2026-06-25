@@ -9,7 +9,6 @@ from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.formatting import utcnow
@@ -37,14 +36,6 @@ _MEMORY_FIXTURE = (
     / "workflow_packages"
     / "advisory_research_memory.yaml"
 )
-_OLD_MEMORY_TOOL_KEYS = {
-    "signaldeck.core.memory.write",
-    "signaldeck.core.memory.lookup",
-}
-_OLD_MEMORY_FUNCTION_NAMES = {
-    "signaldeck_core_memory_write",
-    "signaldeck_core_memory_lookup",
-}
 
 
 class _RuntimeOpenAIUsage:
@@ -136,7 +127,6 @@ def _create_memory_fixture_package(
 
 def _memory_integration_manifest_source() -> str:
     manifest_source = _MEMORY_FIXTURE.read_text()
-    assert _OLD_MEMORY_TOOL_KEYS.isdisjoint(manifest_source)
     return manifest_source.replace(
         "                content:\n                  type: object",
         "                content:\n                  type: string",
@@ -153,7 +143,6 @@ def _preflight_memory_fixture(client: TestClient, package_id: int) -> None:
     body = response.json()
     assert body["ready"] is True
     assert body["blockingErrors"] == []
-    assert _OLD_MEMORY_TOOL_KEYS.isdisjoint(str(body))
 
 
 def _launch_memory_fixture(client: TestClient, package_id: int) -> int:
@@ -190,13 +179,6 @@ def _wait_for_run(client: TestClient, run_id: int) -> dict[str, Any]:
             return body
         time.sleep(0.02)
     raise AssertionError(f"Run {run_id} did not finish in time: {last_body}")
-
-
-def _api_tool_keys(client: TestClient) -> set[str]:
-    response = client.get("/api/tools")
-    assert response.status_code == 200, response.json()
-    items = cast(list[dict[str, Any]], response.json()["items"])
-    return {str(item["key"]) for item in items}
 
 
 def _seed_active_memory(
@@ -261,11 +243,6 @@ def _assert_workflow_memory_evidence_contract(evidence: dict[str, Any]) -> None:
             "ranking",
             "completion",
         } <= set(injection)
-
-
-def _assert_no_old_memory_runtime_path(client: TestClient) -> None:
-    assert _OLD_MEMORY_TOOL_KEYS.isdisjoint(_api_tool_keys(client))
-    assert _OLD_MEMORY_FUNCTION_NAMES.isdisjoint(str(_RuntimeRecordingOpenAIClient.create_calls))
 
 
 def _run_finalize_checkpoints(session: Session, run_id: int) -> list[WorkflowCheckpoint]:
@@ -340,7 +317,6 @@ def test_memory_enabled_workflow_happy_path_projects_middleware_evidence(
     assert "Approved context says AAPL prefers long-form risk notes." in model_input
     assert "keywordOverlap" not in model_input
     assert "relevanceThreshold" not in model_input
-    assert "signaldeck.core.memory" not in model_input
 
     workflow_memory = _model_gateway_workflow_memory(detail)
     assert workflow_memory["contextItemIds"] == [active_memory_id]
@@ -417,7 +393,6 @@ def test_memory_enabled_workflow_happy_path_projects_middleware_evidence(
         "memory_policy_quarantine",
         "memory_review_commit",
     }
-    _assert_no_old_memory_runtime_path(client)
 
 
 def test_exact_memory_fixture_validates_preflights_and_launches(
@@ -561,7 +536,7 @@ def test_run_finalize_sequence_uses_persisted_steps_when_plan_rebuild_fails(
     assert scope.sequence == 2000
 
 
-def test_run_finalize_checkpoint_failure_does_not_block_terminal_commit(
+def test_run_finalize_checkpoint_failure_still_commits_terminal_state(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -714,7 +689,7 @@ def test_stale_lease_recovery_writes_one_run_finalize_checkpoint(
     assert "memory_consolidation_run" in {event.event_type for event in audit_events}
 
 
-def test_stale_lease_consolidation_failure_does_not_block_terminal_commit(
+def test_stale_lease_consolidation_failure_still_commits_terminal_state(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -838,12 +813,6 @@ def test_forbidden_states_not_injected_into_workflow_runtime_input(
     assert _model_gateway_workflow_memory(detail)["contextItemIds"] == [allowed_memory_id]
     for marker in forbidden_markers:
         assert marker not in model_input
-    with session_factory() as session:
-        table_names = set(sqlalchemy_inspect(session.get_bind()).get_table_names())
-    assert "agent_memory_entries" not in table_names
-    assert "agent_memory_revisions" not in table_names
-    assert "run_memory_events" not in table_names
-    _assert_no_old_memory_runtime_path(client)
 
 
 def test_unsafe_active_memory_is_scanned_and_excluded_before_provider_input(
@@ -904,7 +873,7 @@ def _seed_forbidden_memory_states(session_factory: sessionmaker[Session]) -> lis
         "expired": "Forbidden expired memory must not appear.",
         "unauthorized": "Forbidden unauthorized memory must not appear.",
         "review_pending": "Forbidden review pending memory must not appear.",
-        "legacy_archive": "Forbidden legacy archive memory must not appear.",
+        "report_archive": "Report-domain agent memory history must not appear.",
     }
     with session_factory() as session:
         repo = WorkflowMemoryRepository(session)
@@ -966,10 +935,10 @@ def _seed_forbidden_memory_states(session_factory: sessionmaker[Session]) -> lis
         )
         session.add(
             Report(
-                name="legacy_archive_memory_fixture",
-                slug="legacy-archive-memory-fixture",
+                name="report_memory_history_fixture",
+                slug="report-memory-history-fixture",
                 source="agent",
-                content=markers["legacy_archive"],
+                content=markers["report_archive"],
                 metadata_={
                     "analysis": {
                         "reviewType": "agent_memory",

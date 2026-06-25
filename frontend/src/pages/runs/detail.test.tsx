@@ -1234,13 +1234,13 @@ describe("RunsDetailPage", () => {
 
   it.each([
     [
-      "valid tab wins over legacy hints",
+      "valid tab wins over URL hints",
       "tab=input&mode=execution&inspect=step%3A1",
       "",
       "input",
     ],
     [
-      "missing tab infers execution from legacy mode and inspect",
+      "missing tab infers execution from mode and inspect",
       "mode=execution&inspect=step%3A1",
       "",
       "execution",
@@ -1248,7 +1248,7 @@ describe("RunsDetailPage", () => {
     ["memory mode infers memory", "mode=memory", "", "memory"],
     ["invalid tab infers memory from mode only", "tab=unknown&mode=memory", "", "memory"],
     ["metadata mode infers overview", "mode=metadata", "", "overview"],
-    ["tokens mode infers usage", "mode=tokens", "", "usage"],
+    ["usage tab remains usage", "tab=usage", "", "usage"],
     ["step hash infers execution", "", "#step-2", "execution"],
   ])(
     "passes controlled top-level tab state when %s",
@@ -1422,7 +1422,7 @@ describe("RunsDetailPage", () => {
     runtimeRender.unmount();
 
     useRunMock.mockReturnValue(queryResult(tokenlessRun));
-    searchParamsMock = new URLSearchParams("mode=tokens");
+    searchParamsMock = new URLSearchParams("tab=usage");
     const tokensRender = render(<RunsDetailPage />);
     const tokensWorkspace = screen.getByTestId("runs-tokens-workspace");
     expect(tokensWorkspace).toBeVisible();
@@ -1536,7 +1536,7 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
     runtimeRender.unmount();
 
-    searchParamsMock = new URLSearchParams("mode=tokens");
+    searchParamsMock = new URLSearchParams("tab=usage");
     render(<RunsDetailPage />);
     const tokensWorkspace = screen.getByTestId("runs-tokens-workspace");
     expect(tokensWorkspace).toHaveTextContent(/token accounting/i);
@@ -1639,33 +1639,6 @@ describe("RunsDetailPage", () => {
         .getByTestId("runs-diagnostics-workspace")
         .querySelector('[data-severity="error"]'),
     ).toBeInTheDocument();
-  });
-
-  it("resolves legacy mode aliases to canonical inspection state", () => {
-    useRunMock.mockReturnValue(queryResult(buildRun()));
-
-    searchParamsMock = new URLSearchParams("mode=steps");
-    const executionRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
-      "data-run-mode",
-      "execution",
-    );
-    executionRender.unmount();
-
-    searchParamsMock = new URLSearchParams("mode=tokens");
-    const runtimeRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
-      "data-run-mode",
-      "runtime",
-    );
-    runtimeRender.unmount();
-
-    searchParamsMock = new URLSearchParams("mode=audit");
-    render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute(
-      "data-run-mode",
-      "metadata",
-    );
   });
 
   it("renders selected execution evidence inline without an inspector pane", () => {
@@ -2775,7 +2748,7 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("groups graph metadata without rendering legacy memory artifact cards", () => {
+  it("groups graph metadata in execution and memory tabs", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
@@ -2859,10 +2832,9 @@ describe("RunsDetailPage", () => {
     expect(
       screen.queryByTestId("runs-memory-artifacts"),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText(/Open canonical memory/i)).not.toBeInTheDocument();
   });
 
-  it("renders workflow memory middleware evidence groups without legacy artifact actions", () => {
+  it("renders workflow memory middleware evidence groups", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
@@ -2953,17 +2925,6 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText(/No memory artifacts were created by this run/i),
-    ).not.toBeInTheDocument();
-  });
-
-  it("omits graph grouping and memory artifact cards when metadata is absent", () => {
-    useRunMock.mockReturnValue(queryResult(buildRun()));
-
-    render(<RunsDetailPage />);
-
-    expect(screen.queryByTestId("runs-graph-summary")).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("runs-memory-artifacts"),
     ).not.toBeInTheDocument();
   });
 
@@ -3546,7 +3507,7 @@ describe("RunsDetailPage", () => {
     expect(createRunRerunMutateAsyncMock).not.toHaveBeenCalled();
   });
 
-  it("does not treat historical rerun provenance preflight as current readiness", async () => {
+  it("keeps historical rerun provenance preflight out of current readiness", async () => {
     searchParamsMock = new URLSearchParams("rerun=1");
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
     useRunRerunDraftMock.mockReturnValue(
@@ -3648,7 +3609,7 @@ describe("RunsDetailPage", () => {
     expect(createRunForkMutateAsyncMock).not.toHaveBeenCalled();
   });
 
-  it("does not treat historical fork provenance preflight as current readiness", async () => {
+  it("keeps historical fork provenance preflight out of current readiness", async () => {
     searchParamsMock = new URLSearchParams(
       "fork=1&resumeStepIndex=1&invocationId=1001",
     );
@@ -3780,15 +3741,11 @@ describe("RunsDetailPage", () => {
     const updater = setSearchParamsMock.mock.calls[0][0] as (
       current: URLSearchParams,
     ) => URLSearchParams;
-    const nextParams = updater(
-      new URLSearchParams("panel=legacy&stepReplay=1&stepIndex=1"),
-    );
-    expect(nextParams.get("panel")).toBe("legacy");
+    const nextParams = updater(new URLSearchParams("panel=details"));
+    expect(nextParams.get("panel")).toBe("details");
     expect(nextParams.get("fork")).toBe("1");
     expect(nextParams.get("resumeStepIndex")).toBe("1");
     expect(nextParams.get("invocationId")).toBe("1001");
-    expect(nextParams.has("stepReplay")).toBe(false);
-    expect(nextParams.has("stepIndex")).toBe(false);
   });
 
   it("uses selected invocation fork actions and no ambiguous step shortcut for mixed or multi-invocation steps", () => {
@@ -3889,7 +3846,7 @@ describe("RunsDetailPage", () => {
     ).toHaveTextContent(/fork from this invocation/i);
   });
 
-  it("does not expose fork actions for non-succeeded steps", () => {
+  it("hides fork actions for non-succeeded steps", () => {
     searchParamsMock = new URLSearchParams("inspect=invocation:1001");
     useRunMock.mockReturnValue(
       queryResult(

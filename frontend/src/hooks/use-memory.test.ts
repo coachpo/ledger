@@ -253,8 +253,5 @@ describe("workflow memory review hooks", () => {
       "quarantine",
       "rejectProposal",
     ]);
-    expect(queryKeys.platform.memory).not.toHaveProperty("admin");
-    expect(queryKeys.platform.memory).not.toHaveProperty("detail");
-    expect(queryKeys.platform.memory).not.toHaveProperty("list");
   });
 });

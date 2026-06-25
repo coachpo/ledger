@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ResourceBulkActionsBar } from "./resource-bulk-actions-bar";
 
 describe("ResourceBulkActionsBar", () => {
-  it("omits the shared bulk action frame when nothing is selected", () => {
+  it("renders nothing when no resources are selected", () => {
     render(
       <ResourceBulkActionsBar
         resourceLabel="reports"

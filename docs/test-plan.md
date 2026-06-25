@@ -22,7 +22,7 @@ Automated backend coverage must stay deterministic. CI uses fake clients, fixtur
 - `pnpm test:run`
 - `pnpm test:e2e`
 
-Frontend coverage must prove API helpers, query keys, formatting helpers, portfolio analytics, template/report flows, Workflow Package authoring, package secret bindings, dedicated launch page behavior, Scheduled Tasks inventory/detail/create/input-preview/history/run-now flows, Model Connections, Extensions, server-declared Tools metadata in package authoring, independent filtering for extension-owned tool choices, Runs, run detail evidence, memory evidence rendering, trusted operator `/memory` admin behavior, and the product-owned unknown-route shell.
+Frontend coverage must prove API helpers, query keys, formatting helpers, portfolio analytics, template/report flows, Workflow Package authoring, package secret bindings, dedicated launch page behavior, Scheduled Tasks inventory/detail/create/input-preview/history/run-now flows, Model Connections, Extensions, server-declared Tools metadata in package authoring, independent filtering for extension-owned tool choices, Runs, run detail evidence, memory evidence rendering, trusted operator `/memory` review behavior, and the product-owned unknown-route shell.
 
 ## Contract Coverage Matrix
 
@@ -31,19 +31,19 @@ Frontend coverage must prove API helpers, query keys, formatting helpers, portfo
 | API conventions              | Error envelope shape, camelCase aliases, decimal string serialization, multipart upload routes, and `422` validation behavior.                                                                                                                                                   |
 | Preserved finance routes     | Portfolio, balance, position, CSV import, trade, quote/history, template, and report route families under `/api/v1`.                                                                                                                                                             |
 | Extension state              | `GET/PATCH /api/extensions` exposes only `key`, `label`, and `enabled`; bundled extension routes/nav/tools are hidden by their own toggles while workflow memory remains platform-core middleware declared in package YAML. |
-| Workflow Packages            | YAML parser rejects aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate refs, raw ids, unsupported `spec.skills`, old direct core memory tool grants, and prompt-like memory fields; package-local `systemPrompt` methodology stays in package artifacts; package reads/writes do not expose live status.             |
+| Workflow Packages            | YAML parser rejects aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate refs, raw ids, unsupported `spec.skills`, invalid runtime tool grants, and prompt-like memory fields; package-local `systemPrompt` methodology stays in package artifacts.             |
 | Scheduled Tasks              | `/api/schedules` CRUD, list filters, 204 delete response, retained direct run history, preserved run-linked artifacts through `scheduleProvenance`, startup repair detachment, structured recurrence, timezone and DST cases, overlap and misfire policy outcomes, input placeholder rendering, preview validation without persistence, run-now idempotency, fire history while the schedule exists, and linked run provenance. |
 | Package secrets and HTTP ops | Secret binding CRUD masks values; HTTP nodes allow only supported methods, keep secrets in request fields only, redact metadata, validate responses, and persist operation invocation rows.                                                                                      |
 | Model Connections            | Protocol profile validation, strict rejection of public compatibility/policy writes, backend-owned compatibility resolution, secret preservation/rotation, reachability test, capability probe cache, policy defaults, and secret-safe reads/errors.                             |
-| Tools                        | Server-declared `/api/tools` catalog, extension filtering, canonical owner-qualified tool keys, mechanical OpenAI function names derived from those keys, Finance Workspace data tools, Digital Oracle-owned `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, `signaldeck.digital_oracle.options.lookup`, report lookup, retired report-write fail-closed behavior, typed failure taxonomy, bounded `toolCallRetries`, old core memory tool removal, and absence of ownerless rates or macro aliases. |
+| Tools                        | Server-declared `/api/tools` catalog, extension filtering, canonical owner-qualified tool keys, mechanical OpenAI function names derived from those keys, Finance Workspace data tools, Digital Oracle-owned `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, `signaldeck.digital_oracle.options.lookup`, report lookup, typed failure taxonomy, and bounded `toolCallRetries`. |
 | Runs                         | Launch, scheduler queue semantics, progress read model, run-owned package snapshots, approved model runtime profile provenance, rerun, fork, operation cards, extension dependencies, trace/span ids, `workflowMemoryEvidence`, typed failure taxonomy, bounded `toolCallRetries`, and live-execution `providerRetries` with `terminalOutcome` only for `succeededAfterRetry` or `exhausted`.       |
 | Runtime inputs               | JSON Schema `title` and `description` render as display metadata only; unsupported help-text/schema mechanisms remain rejected or ignored according to schema rules.                                                                                                             |
-| Memory                       | Declarative `spec.memory` parsing and compiled policy precedence, disabled-by-omission behavior, retrieval lifecycle exclusions, non-authoritative input-only context injection, proposal-first writes, policy-only activation, secret and sensitive detector handling, quarantine/review states, audit evidence, checkpoint separation, `/api/memory` proposal/audit/quarantine review APIs, no old direct memory tools, no runtime tags, no arbitrary attributes, no chunk or embedding live contract, no direct runtime write/lookup API, and report-domain separation. |
+| Memory                       | Declarative `spec.memory` parsing and compiled policy precedence, disabled-by-omission behavior, retrieval lifecycle exclusions, non-authoritative input-only context injection, proposal-first writes, policy-only activation, secret and sensitive detector handling, quarantine/review states, audit evidence, checkpoint separation, `/api/memory` proposal/audit/quarantine review APIs, and report-domain separation. |
 | Routing fallback             | Unsupported frontend paths use the product-owned unknown-route shell; live backend route ownership is covered through API and OpenAPI tests.                                                                                                                                      |
 
 ## Backend Test Scope
 
-Backend tests cover preserved `/api/v1` CRUD, templates, reports, artifact-only workflow package dependency persistence, launch/preflight readiness, declarative workflow-memory YAML and demo preflight, capability-aware model-connection probes, protocol-profile validation, strict public compatibility-write rejection, backend-owned compatibility resolution, scoped package requirements, Digital Oracle package grants, package-local prompt methodology, rerun/fork draft readiness, package import/export with secret-bearing private MCP `env`, `headers`, and `query` omitted from export/read previews, package secret bindings, HTTP operation execution, Scheduled Tasks API CRUD, scheduled preview, run-now, 204 delete response, retained direct run history, preserved run-linked artifacts through `scheduleProvenance`, fire history while the schedule exists, recurrence and DST materialization, overlap and misfire handling, input-template validation, model connections, slim bundled extension state for both bundled extensions, independently extension-filtered tools, Model Gateway adapter execution, structured-output strategy selection, typed tool-failure taxonomy, bounded `toolCallRetries`, native tool-call capability enforcement, Digital Oracle runtime tool behavior under `signaldeck.digital_oracle`, provider error normalization, live-execution `providerRetries` with omission on first-attempt success and first non-retryable failure, frozen run-owned runtime-profile provenance, backend-owned run progress and queue read models, explicit scheduler worker semantics, dependency-only run extension records, ref-based invocation payloads, current runtime tools, workflow-memory middleware services, proposal/audit/quarantine `/api/memory` review APIs, persisted `workflowMemoryEvidence`, trace metadata, global runs, DB upgrades including schedule repair detachment and old memory table isolation, and retired direct-memory/report-write fail-closed behavior.
+Backend tests cover preserved `/api/v1` CRUD, templates, reports, artifact-only workflow package dependency persistence, launch/preflight readiness, declarative workflow-memory YAML and demo preflight, capability-aware model-connection probes, protocol-profile validation, strict public compatibility-write rejection, backend-owned compatibility resolution, scoped package requirements, Digital Oracle package grants, package-local prompt methodology, rerun/fork draft readiness, package import/export with secret-bearing private MCP `env`, `headers`, and `query` omitted from export/read previews, package secret bindings, HTTP operation execution, Scheduled Tasks API CRUD, scheduled preview, run-now, 204 delete response, retained direct run history, preserved run-linked artifacts through `scheduleProvenance`, fire history while the schedule exists, recurrence and DST materialization, overlap and misfire handling, input-template validation, model connections, slim bundled extension state for both bundled extensions, independently extension-filtered tools, Model Gateway adapter execution, structured-output strategy selection, typed tool-failure taxonomy, bounded `toolCallRetries`, native tool-call capability enforcement, Digital Oracle runtime tool behavior under `signaldeck.digital_oracle`, provider error normalization, live-execution `providerRetries` with omission on first-attempt success and first non-retryable failure, frozen run-owned runtime-profile provenance, backend-owned run progress and queue read models, explicit scheduler worker semantics, dependency-only run extension records, ref-based invocation payloads, current runtime tools, workflow-memory middleware services, proposal/audit/quarantine `/api/memory` review APIs, persisted `workflowMemoryEvidence`, trace metadata, global runs, workflow-memory upgrade safety, and fail-closed runtime behavior.
 
 ## Frontend Test Scope
 
@@ -76,44 +76,15 @@ Use targeted checks when these contracts change:
 (cd frontend && pnpm typecheck && pnpm test:run && cd ../backend && uv run pytest tests/test_workflow_package_preflight.py -k "digital_oracle" -q)
 ```
 
-Workflow memory docs alignment checks should prove the live owner docs describe declarative `spec.memory`, proposal-first writes, policy-only activation, non-authoritative input context, lifecycle exclusions, checkpoint separation, old direct tool removal, removed chunk/embedding contracts, and report-domain separation:
-
-```bash
-rg -n "spec.memory|proposal|policy|non-authoritative|checkpoint|chunk|embedding" docs/data-model.md docs/spec.md docs/requirements.md docs/test-plan.md
-rg -n "signaldeck.core.memory.write|signaldeck.core.memory.lookup|agent_memory_chunks|agent_memory_embeddings|report-domain" docs/data-model.md docs/spec.md docs/requirements.md docs/test-plan.md
-```
-
-Scheduled Tasks final-doc verification also checks live docs and route guidance for retention-contract drift, plus the broad build and backend suite:
+Scheduled Tasks changes use the broad build and backend suite:
 
 ```bash
 (cd frontend && pnpm build && cd ../backend && uv run pytest)
 ```
 
-Provider retry docs and type mirror verification checks the canonical owner docs, the untouched pending-design note, and targeted frontend stability:
-
-```bash
-grep -n "providerRetries\|toolCallRetries\|terminalOutcome" docs/spec.md docs/data-model.md docs/requirements.md docs/test-plan.md
-git diff --quiet -- docs/pending-design/model-provider-transient-retry.md
-(cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm test:run src/pages/runs/detail.test.tsx src/pages/runs/detail-http-operations.test.tsx)
-rg -n "providerRetries" frontend/src/lib/types/run.ts
-```
-
-Digital Oracle docs alignment must also keep `demo/digital_oracle_researcher.yaml` as the final artifact path, describe `signaldeck.digital_oracle` as the default-enabled tool-only bundled owner for seven shipped native tools, preserve base TradingAgents as Finance-only, keep mixed TradingAgents composition limited to `signaldeck.digital_oracle.macro_rates.lookup` plus `signaldeck.digital_oracle.prediction_markets.lookup` unless prompts explicitly use more, and avoid adding any Digital Oracle route/nav surface. Deferred roadmap docs must keep ownerless rates/macro aliases, Finance-owned macro/options/crypto/CFTC aliases, generic web search, and any Digital Oracle tools outside the seven-key topology out of shipped contracts.
-
-TradingAgents Finance provider migration checks must keep the base TradingAgents fixture and demo Finance-only, keep `signaldeck.finance.news.lookup` and `signaldeck.finance.social_sentiment.lookup` as separate capability-profile grants, prove runtime news dispatch uses injected Finance news providers, and document that Digital Oracle has no route or nav surface and no provider-settings UI route is added.
-
-No-live-network policy checks for Digital Oracle work:
+Digital Oracle and Finance provider changes use local runtime tests:
 
 ```bash
 (cd backend && uv run pytest tests/test_tool_catalog_api.py -q)
 (cd backend && uv run pytest tests/test_runtime_tools.py tests/test_mcp_runtime.py -q)
-rg -n "live provider|web_search_exa|yfinance|signaldeck\.rates\.lookup|signaldeck\.macro\.lookup" docs/spec.md docs/test-plan.md docs/requirements.md
-```
-
-## Extension Metadata Absence Guard
-
-The final cleanup guard searches live code, docs, and AGENTS files for removed public extension metadata names. Allowed matches are destructive upgrade code, explicit negative-validation tests, upgrade-normalization tests, and private initial-enabled seed wiring. Live docs and AGENTS files are not exceptions.
-
-```bash
-rg -n "disabled""Reason|disabled_""reason|state""Version|state_""version|contribution""Categories|contribution_""categories|versioning""Rule|versioning_""rule|default""Enabled|default_""enabled|Extension""ContributionRead|extension""Snapshots|extension_""snapshots|Run""ExtensionSnapshotRead" backend frontend docs AGENTS.md -g '!frontend/retired/**' -g '!frontend/dist/**' -g '!backend/.venv/**' -g '!backend/.mypy_cache/**' -g '!backend/.pytest_cache/**'
 ```

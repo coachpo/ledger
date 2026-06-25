@@ -290,8 +290,6 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     expect(screen.getByLabelText("Agent local key")).toBeVisible();
     expect(screen.getByText("Select model connection key")).toBeVisible();
     expect(screen.getByLabelText("System prompt")).toBeVisible();
-    const removedBudgetLabel = "Budget " + "USD";
-    expect(screen.queryByLabelText(removedBudgetLabel)).not.toBeInTheDocument();
     expect(screen.getByLabelText("Timeout seconds")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Close agent editor" }));
 

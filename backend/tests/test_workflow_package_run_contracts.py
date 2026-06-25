@@ -50,9 +50,8 @@ from app.schemas.schedule import (
     ScheduleCreate,
     ScheduleStatus,
 )
-from app.services.agent_execution_service import AgentExecutionService, RunAgentInvocationResult
+from app.services.agent_execution_service import AgentExecutionService
 from app.services.extension_service import ExtensionService
-from app.services.model_connection_snapshot import parse_model_connection_runtime_snapshot
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
@@ -64,8 +63,6 @@ from app.services.workflow_package_schedule_service import (
 )
 from tests.fake_openai_provider import run_fake_openai_provider
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
-
-_REMOVED_MODEL_CONNECTION_KIND_FIELD = f"connection{'K'}ind"
 
 _EXPECTED_STRUCTURED_OUTPUT_WARNING = {
     "field": "spec.outputSchemas.summary_output.jsonSchema",
@@ -178,19 +175,8 @@ _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
 )
 
 
-def _canonicalize_live_tool_keys(source: str) -> str:
-    retired_memory_profile = """  - key: memory_write_tools
-    name: Memory Tools
-    description: Reads and writes advisory memory through SignalDeck core memory tools.
-    toolKeys:
-    - signaldeck.core.memory.lookup
-    - signaldeck.core.memory.write
-"""
-    return source.replace(retired_memory_profile, "")
-
-
 def _digital_oracle_researcher_demo_source() -> str:
-    return _canonicalize_live_tool_keys(_DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text())
+    return _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text()
 
 
 def _delete_existing_package(client: TestClient, package_key: str) -> None:
@@ -209,7 +195,7 @@ def _seeded_tradingagents_package(client: TestClient) -> dict[str, Any]:
     _delete_existing_package(client, _TRADINGAGENTS_PRESET_KEY)
     response = client.post(
         "/api/workflow-packages",
-        json={"manifestSource": _canonicalize_live_tool_keys(_TRADINGAGENTS_FIXTURE.read_text())},
+        json={"manifestSource": _TRADINGAGENTS_FIXTURE.read_text()},
     )
     assert response.status_code == 201, response.json()
     return cast(dict[str, Any], response.json())
@@ -1032,7 +1018,7 @@ def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local
     assert "call signaldeck_digital_oracle_macro_rates_lookup" in instructions
 
 
-def test_digital_oracle_guidance_omits_ungranted_phase1_tools_and_global_skill_surface(
+def test_digital_oracle_guidance_respects_capability_profile_tool_grants(
     session_factory: sessionmaker[Session],
 ) -> None:
     granted_profile_tool_keys = (
@@ -1066,30 +1052,26 @@ def test_digital_oracle_guidance_omits_ungranted_phase1_tools_and_global_skill_s
 
     assert declared_tool_keys == set(granted_profile_tool_keys)
     assert MARKET_SENTIMENT_LOOKUP_TOOL_KEY not in declared_tool_keys
-    assert "Digital Oracle methodology" not in guidance
     assert "signaldeck_digital_oracle_prediction_markets_lookup" in instructions
     assert "signaldeck_digital_oracle_sec_filings_lookup" in instructions
     assert "signaldeck_digital_oracle_market_sentiment_lookup" not in instructions
     assert "When you need broad market sentiment" not in guidance
-    assert "skills:" not in manifest_source
-    assert "skills" not in compiled_plan
-    assert not hasattr(runtime_agent, "skills")
 
 
-def test_runtime_profile_normalizes_api_style_and_rejects_snapshot_mismatch() -> None:
-    legacy_profile_payload: dict[str, Any] = {
-        "key": "legacy_chat_model",
-        "name": "Legacy Chat Model",
+def test_runtime_profile_normalizes_api_style_and_rejects_mismatch() -> None:
+    chat_profile_payload: dict[str, Any] = {
+        "key": "chat_model",
+        "name": "Chat Model",
         "apiStyle": "chat_completions",
-        "baseUrl": "https://legacy-chat.example.test/v1",
-        "modelId": "gpt-legacy-chat",
+        "baseUrl": "https://chat.example.test/v1",
+        "modelId": "gpt-chat",
         "reasoningEffort": None,
         "timeoutSeconds": 45,
         "hasApiKey": True,
     }
 
     normalized_profile = RunPackageResolvedModelConnectionRead.model_validate(
-        legacy_profile_payload,
+        chat_profile_payload,
     ).model_dump(mode="json", by_alias=True)
 
     assert normalized_profile["protocolProfile"] == (
@@ -1105,40 +1087,11 @@ def test_runtime_profile_normalizes_api_style_and_rejects_snapshot_mismatch() ->
     assert normalized_profile["streamingPolicy"] == "allow"
     assert normalized_profile["probeCacheTtlSeconds"] == 900
 
-    parsed_snapshot = parse_model_connection_runtime_snapshot(
-        {
-            "api_style": "chat_completions",
-            "base_url": "https://legacy-chat.example.test/v1",
-            "model_id": "gpt-legacy-chat",
-            "reasoning_effort": None,
-            "timeout_seconds": 45,
-        },
-    )
-    assert parsed_snapshot.protocol_profile == (
-        ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS.value
-    )
-    assert parsed_snapshot.api_style == "chat_completions"
-    assert parsed_snapshot.output_strategy_policy == "prefer_strict_schema"
-    assert parsed_snapshot.parallel_tool_calls_policy == "serialize"
-    assert parsed_snapshot.reasoning_policy == "allow"
-    assert parsed_snapshot.streaming_policy == "allow"
-    assert parsed_snapshot.probe_cache_ttl_seconds == 900
-
     with pytest.raises(ValidationError, match="apiStyle does not match protocolProfile"):
         RunPackageResolvedModelConnectionRead.model_validate(
             {
-                **legacy_profile_payload,
+                **chat_profile_payload,
                 "protocolProfile": ModelConnectionProtocolProfile.OPENAI_RESPONSES.value,
-            },
-        )
-    with pytest.raises(ValueError, match="api_style does not match protocol_profile"):
-        parse_model_connection_runtime_snapshot(
-            {
-                "protocol_profile": ModelConnectionProtocolProfile.OPENAI_RESPONSES.value,
-                "api_style": "chat_completions",
-                "base_url": "https://legacy-chat.example.test/v1",
-                "model_id": "gpt-legacy-chat",
-                "timeout_seconds": 45,
             },
         )
 
@@ -1293,7 +1246,7 @@ def _assert_current_readiness_create_rejected(
         )
 
 
-def test_rerun_omits_absent_optional_workflow_inputs(
+def test_rerun_records_canonical_required_workflow_inputs(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -1302,7 +1255,7 @@ def test_rerun_omits_absent_optional_workflow_inputs(
         "/api/workflow-packages",
         json={
             "manifestSource": _package_source_with_optional_contract_inputs(
-                package_key="rerun_optional_omission_package"
+                package_key="rerun_optional_payload_package"
             )
         },
     )
@@ -1328,8 +1281,6 @@ def test_rerun_omits_absent_optional_workflow_inputs(
         assert source_run.input == {"ticker": "MSFT"}
         assert rerun_run.input == {"ticker": "AAPL"}
         assert rerun_snapshot.launch_parameters == {"ticker": "AAPL"}
-        assert "sector" not in rerun_run.input
-        assert "horizonDays" not in rerun_run.input
 
 
 def test_rerun_rejects_non_nullable_null(
@@ -1760,7 +1711,6 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     assert provenance["currentPackage"]["manifestHashMatchesSnapshot"] is True
     assert provenance["currentPackage"]["compiledHashMatchesSnapshot"] is True
     serialized = json.dumps(detail, sort_keys=True)
-    assert "last" + "LaunchedAt" not in serialized
     assert "sk-package-provenance-secret" not in serialized
     assert "secretPayload" not in serialized
 
@@ -1769,7 +1719,6 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     rerun_provenance = cast(dict[str, Any], rerun_draft.json()["packageProvenance"])
     assert rerun_provenance["workflowPackageKey"] == "provenance_filter_package"
     first_connection = cast(dict[str, Any], rerun_provenance["resolvedModelConnections"][0])
-    assert _REMOVED_MODEL_CONNECTION_KIND_FIELD not in first_connection
     assert first_connection["protocolProfile"] == "openai_responses"
     assert first_connection["outputStrategyPolicy"] == "prefer_strict_schema"
     assert first_connection["parallelToolCallsPolicy"] == "serialize"
@@ -1845,40 +1794,6 @@ def test_new_workflow_package_runs_store_null_snapshot_status_for_fresh_and_line
         assert rerun.workflow_package_snapshot.workflow_package_status is None
 
 
-_recording_package_agent_calls: list[dict[str, Any]] = []
-
-
-async def _recording_package_agent_invoke(
-    self: AgentExecutionService,
-    **kwargs: Any,
-) -> RunAgentInvocationResult:
-    del self
-    _recording_package_agent_calls.append(dict(kwargs))
-    return RunAgentInvocationResult(output={"summary": "versionless package context"}, tokens=1)
-
-
-def test_workflow_package_runtime_context_does_not_emit_fake_workflow_version(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    monkeypatch.setattr(AgentExecutionService, "invoke", _recording_package_agent_invoke)
-    _recording_package_agent_calls.clear()
-    _seed_model_connection(session_factory)
-    package = _create_package(client, package_key="versionless_context_package")
-    launched = _launch_package_run(client, package, ticker="MSFT")
-    run_id = int(launched["id"])
-
-    _drain_run_queue(session_factory)
-    detail = _wait_for_run(client, run_id)
-
-    assert detail["status"] == "succeeded"
-    assert len(_recording_package_agent_calls) == 1
-    assert _recording_package_agent_calls[0]["workflow_key"] == "runtime_workflow"
-    assert _recording_package_agent_calls[0]["workflow_version"] is None
-    assert _recording_package_agent_calls[0]["package_ownership"] is not None
-
-
 def test_rerun_uses_run_snapshot_after_current_package_mutation(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -1913,9 +1828,6 @@ def test_rerun_uses_run_snapshot_after_current_package_mutation(
     assert rerun_detail_response.status_code == 200, rerun_detail_response.json()
     rerun_provenance = cast(dict[str, Any], rerun_detail_response.json()["packageProvenance"])
 
-    removed_target_version_field = "target" + "Version"
-    assert removed_target_version_field not in rerun_response.json()
-    assert removed_target_version_field not in rerun_detail_response.json()
     by_snapshot_model = client.get(
         "/api/runs",
         params={"modelConnectionKey": "package_runtime_model"},

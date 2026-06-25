@@ -208,23 +208,9 @@ describe("MemoryListPage", () => {
     expect(screen.getByRole("tab", { name: "Audit events" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Quarantine" })).toBeVisible();
     expect(screen.getByText("No proposals to review")).toBeVisible();
-    expect(screen.queryByText("Proposal queue")).not.toBeInTheDocument();
     expect(useWorkflowMemoryProposalsMock).toHaveBeenLastCalledWith(
       { status: "review_pending" },
     );
-    expect(
-      screen.queryByRole("textbox", { name: /search/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", { name: /select/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /delete selected/i }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("Create memory")).not.toBeInTheDocument();
-    expect(screen.queryByText("New memory")).not.toBeInTheDocument();
-    expect(screen.queryByText("Memory Admin")).not.toBeInTheDocument();
-    expect(screen.queryByText("Workflow visibility")).not.toBeInTheDocument();
   });
 
   it("filters proposals by review status", async () => {

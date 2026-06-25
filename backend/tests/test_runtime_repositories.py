@@ -519,7 +519,7 @@ def test_runtime_input_cross_scope_lookup_update_delete_blocked(
         assert session.get(WorkflowPackageRuntimeInputEntry, history_entry.id) is not None
 
 
-def test_agent_platform_model_connection_repository_lists_rows_without_status_filters(
+def test_agent_platform_model_connection_repository_lists_rows_by_name(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
@@ -1163,13 +1163,13 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         assert latest_for_workflow.id == queued_run.id
 
 
-def test_run_detail_loads_fork_artifact_without_requiring_legacy_backfill(
+def test_run_detail_loads_fork_artifact_and_replay_lineage(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
         source_run = _build_deletable_run(target_id=9301, target_key="fork_source")
         fork_run = _build_deletable_run(target_id=9302, target_key="fork_descendant")
-        legacy_run = _build_deletable_run(target_id=9303, target_key="legacy_replay")
+        replay_run = _build_deletable_run(target_id=9303, target_key="replay_lineage")
         session.add(source_run)
         session.flush()
 
@@ -1208,11 +1208,11 @@ def test_run_detail_loads_fork_artifact_without_requiring_legacy_backfill(
         fork_run.source_run_id = source_run.id
         fork_run.lineage_root_run_id = source_run.id
         fork_run.resume_step_index = 2
-        legacy_run.source_run_id = source_run.id
-        legacy_run.lineage_root_run_id = source_run.id
-        legacy_run.forked_from_step_index = 2
-        legacy_run.resume_step_index = 2
-        session.add_all([fork_run, legacy_run])
+        replay_run.source_run_id = source_run.id
+        replay_run.lineage_root_run_id = source_run.id
+        replay_run.forked_from_step_index = 2
+        replay_run.resume_step_index = 2
+        session.add_all([fork_run, replay_run])
         session.flush()
         RunForkRepository(session).create_fork(
             run_id=fork_run.id,
@@ -1227,20 +1227,20 @@ def test_run_detail_loads_fork_artifact_without_requiring_legacy_backfill(
         source_run_id = source_run.id
         source_invocation_id = source_invocation.id
         fork_run_id = fork_run.id
-        legacy_run_id = legacy_run.id
+        replay_run_id = replay_run.id
         session.expunge_all()
 
         run_repo = RunRepository(session)
         fork_repo = RunForkRepository(session)
 
         fork_detail = run_repo.get_detail(fork_run_id)
-        legacy_detail = run_repo.get_detail(legacy_run_id)
+        replay_detail = run_repo.get_detail(replay_run_id)
         persisted_fork = fork_repo.get_by_run_id(fork_run_id)
 
         assert fork_detail is not None
-        assert legacy_detail is not None
+        assert replay_detail is not None
         assert "fork" not in sqlalchemy_inspect(fork_detail).unloaded
-        assert "fork" not in sqlalchemy_inspect(legacy_detail).unloaded
+        assert "fork" not in sqlalchemy_inspect(replay_detail).unloaded
         assert fork_detail.fork is not None
         fork_artifact = cast(RunFork, fork_detail.fork)
         assert fork_artifact.run_id == fork_run_id
@@ -1259,11 +1259,11 @@ def test_run_detail_loads_fork_artifact_without_requiring_legacy_backfill(
             fork.run_id for fork in fork_repo.list_by_source_invocation(source_invocation_id)
         ] == [fork_run_id]
         assert isinstance(fork_artifact, RunFork)
-        assert legacy_detail.fork is None
-        assert legacy_detail.source_run_id == source_run_id
-        assert legacy_detail.lineage_root_run_id == source_run_id
-        assert legacy_detail.forked_from_step_index == 2
-        assert legacy_detail.resume_step_index == 2
+        assert replay_detail.fork is None
+        assert replay_detail.source_run_id == source_run_id
+        assert replay_detail.lineage_root_run_id == source_run_id
+        assert replay_detail.forked_from_step_index == 2
+        assert replay_detail.resume_step_index == 2
 
 
 def _create_schedule_fixture(

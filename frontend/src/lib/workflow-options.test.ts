@@ -57,7 +57,7 @@ describe("getWorkflowOptions", () => {
     ]);
   });
 
-  it("appends a visible stale option when the selected workflow key is missing", () => {
+  it("appends a visible stale option for the selected workflow key", () => {
     const manifest = buildManifest({
       packageDefinition: {
         spec: {

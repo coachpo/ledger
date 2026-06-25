@@ -27,7 +27,7 @@ describe("Dashboard", () => {
     usePortfoliosMock.mockReset();
   });
 
-  it("renders the normalized dashboard hero without summary cards", () => {
+  it("renders the compact normalized dashboard hero", () => {
     usePortfoliosMock.mockReturnValue({
       data: [
         {

@@ -6,7 +6,7 @@
 
 ## OVERVIEW
 
-`docs/` has six canonical live owner documents: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and this `AGENTS.md`. Live code remains source of truth; these docs mirror the mounted browser/API surfaces and current persistence/runtime contracts, including package-first execution, backend-owned compatibility truth, platform-core memory, and finance-owned report history. Requirements companions under `docs/requirements/` and the `docs/architecture-audit/` workspace are evidence/context, not additional live owner docs.
+`docs/` has six canonical live owner documents: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and this `AGENTS.md`. Live code remains source of truth; these docs mirror the mounted browser/API surfaces and current persistence/runtime contracts, including package-first execution, backend-owned compatibility truth, platform-core memory, and finance-owned report history.
 
 Extension model: docs mirror the core app plus statically resident extensions; they should describe state-gated exposure, not marketplace installation or hot-loading.
 
@@ -28,16 +28,10 @@ Trusted single-user scope: Owner docs must frame auth, authorization, RBAC, logi
 | ------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Product scope      | `prd.md`          | Goals, non-goals, product areas, success criteria, and package-first platform framing.                                                          |
 | Requirements       | `requirements.md` | Functional/nonfunctional requirements and acceptance criteria.                                                                                  |
-| Requirements evidence | `requirements/*.md` | Reverse-engineered requirements, traceability, and open-question baseline; context only, not live owner docs.                                |
 | Technical behavior | `spec.md`         | Runtime topology, API conventions, Scheduled Tasks, backend/frontend architecture, validation gates, platform contracts, memory, and removed-surface boundaries. |
 | Data model         | `data-model.md`   | Current tables, JSONB contracts, persistence boundaries, memory tables, and schema-repair rules.                                                |
 | Test strategy      | `test-plan.md`    | Quality gates, coverage matrix, E2E ports, route-family coverage, and stale-claim guards.                                                       |
 | Docs governance    | `AGENTS.md`       | Ownership rules, obsolete-content rules, anti-patterns, and consolidation policy.                                                               |
-| Architecture audit | `architecture-audit/README.md` | Docs-only audit workspace; use as evidence and review history, not new product scope.                                               |
-
-## CONTEXT WORKSPACES
-
-`docs/requirements/` companion files and `docs/architecture-audit/` files may support audits, traceability, and reverse-engineered evidence. Do not treat these workspaces, older root-doc references, research notes, or implementation sketches as canonical over the six owner docs or live code.
 
 ## CONVENTIONS
 
@@ -59,12 +53,11 @@ Trusted single-user scope: Owner docs must frame auth, authorization, RBAC, logi
 - Document Scheduled Tasks as the package-first automation surface: `/api/schedules`, `/scheduled-tasks`, structured recurrence, scheduler materialization, fire history, and queued run provenance.
 - Finance-specific examples must not silently rewrite shared platform contracts.
 - PRD and requirements overlap is intentional: product framing lives in `prd.md`, testable requirements live in `requirements.md`.
-- Keep `docs/requirements/` companions and `docs/architecture-audit/` files under this guide unless they become independent live-owner documentation trees.
 
 ## OBSOLETE CONTENT RULES
 
 - Preserve the six canonical owner docs unless live code proves a file has no remaining owner.
-- Keep root-level docs distilled to the six canonical owner files only; keep requirements companions and architecture-audit files from becoming duplicate owner docs.
+- Keep root-level docs distilled to the six canonical owner files only.
 - Merge stale live-surface claims into the correct owner file instead of duplicating details.
 - Convert useful removed-surface material into explicit non-goals or out-of-scope notes.
 - Delete obsolete passages that duplicate a live owner or contradict mounted routes, schemas, or tests.

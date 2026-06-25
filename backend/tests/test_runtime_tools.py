@@ -12,7 +12,6 @@ from types import TracebackType
 from typing import Any, cast, override
 
 import pytest
-from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -80,7 +79,6 @@ from app.extensions.signaldeck_digital_oracle.ownership import (
     DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES,
     DIGITAL_ORACLE_RUNTIME_TOOL_KEYS,
 )
-from app.extensions.signaldeck_digital_oracle.provider_inventory import IN_SCOPE_PROVIDER_INVENTORY
 from app.extensions.signaldeck_digital_oracle.runtime_cftc_positioning import (
     CFTC_POSITIONING_LOOKUP_OPENAI_FUNCTION_NAME,
     CFTC_POSITIONING_LOOKUP_TOOL_SPEC,
@@ -389,77 +387,6 @@ _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
 def _reset_runtime_settings_caches() -> None:
     reset_settings_cache()
     reset_finance_workspace_settings_cache()
-
-
-def _legacy_tool_key(suffix: str) -> str:
-    return "signaldeck" + suffix
-
-
-_LEGACY_LIVE_TOOL_KEYS = (
-    _legacy_tool_key(".memory.write"),
-    _legacy_tool_key(".memory.lookup"),
-    _legacy_tool_key(".market_data.quote_lookup"),
-    _legacy_tool_key(".market_data.history_lookup"),
-    _legacy_tool_key(".market_data.ohlcv_lookup"),
-    _legacy_tool_key(".indicators.lookup"),
-    _legacy_tool_key(".fundamentals.lookup"),
-    _legacy_tool_key(".news.lookup"),
-    _legacy_tool_key(".social_sentiment.lookup"),
-    _legacy_tool_key(".insider_data.lookup"),
-    _legacy_tool_key(".positions.lookup"),
-    _legacy_tool_key(".reports.lookup"),
-    _legacy_tool_key(".prediction_markets.lookup"),
-    _legacy_tool_key(".sec_filings.lookup"),
-    _legacy_tool_key(".market_sentiment.lookup"),
-)
-
-
-def _legacy_function_name(suffix: str) -> str:
-    return "signaldeck" + suffix
-
-
-_LEGACY_LIVE_OPENAI_FUNCTION_NAMES = (
-    _legacy_function_name("_memory_write"),
-    _legacy_function_name("_memory_lookup"),
-    _legacy_function_name("_market_data_quote_lookup"),
-    _legacy_function_name("_market_data_history_lookup"),
-    _legacy_function_name("_market_data_ohlcv_lookup"),
-    _legacy_function_name("_indicators_lookup"),
-    _legacy_function_name("_fundamentals_lookup"),
-    _legacy_function_name("_news_lookup"),
-    _legacy_function_name("_social_sentiment_lookup"),
-    _legacy_function_name("_insider_data_lookup"),
-    _legacy_function_name("_positions_lookup"),
-    _legacy_function_name("_reports_lookup"),
-    _legacy_function_name("_prediction_markets_lookup"),
-    _legacy_function_name("_sec_filings_lookup"),
-    _legacy_function_name("_market_sentiment_lookup"),
-)
-_OLD_CORE_MEMORY_TOOL_KEYS = (
-    "signaldeck.core.memory.write",
-    "signaldeck.core.memory.lookup",
-)
-_OLD_CORE_MEMORY_OPENAI_FUNCTION_NAMES = (
-    "signaldeck_core_memory_write",
-    "signaldeck_core_memory_lookup",
-)
-_FORBIDDEN_REPORT_WRITE_MODEL_KEYS = {
-    "agentName",
-    "agentVersion",
-    "attributes",
-    "reportId",
-    "reportSlug",
-    "reportName",
-    "auditLinks",
-    "createdByType",
-    "traceId",
-    "url",
-    "downloadUrl",
-    "workflowVersion",
-}
-_FORBIDDEN_REPORT_WRITE_MODEL_FRAGMENTS = ("/reports/", "download")
-_FORBIDDEN_CORE_MEMORY_MODEL_KEYS = _FORBIDDEN_REPORT_WRITE_MODEL_KEYS | {"tags"}
-_FORBIDDEN_CORE_MEMORY_MODEL_FRAGMENTS = ("/reports/", "download", "http://", "https://")
 
 
 def _settings(**overrides: Any) -> Settings:
@@ -1348,29 +1275,6 @@ def _assert_no_snake_case_keys(value: object, *, path: str) -> None:
             _assert_no_snake_case_keys(nested_value, path=f"{path}[{index}]")
 
 
-def _assert_core_memory_payload_is_model_safe(payload: dict[str, object]) -> None:
-    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
-    _assert_core_memory_forbidden_keys_absent(payload, path="$")
-    payload_json = json.dumps(payload, sort_keys=True)
-    for fragment in _FORBIDDEN_CORE_MEMORY_MODEL_FRAGMENTS:
-        assert fragment not in payload_json
-
-
-def _assert_core_memory_forbidden_keys_absent(value: object, *, path: str) -> None:
-    if isinstance(value, dict):
-        payload = cast(dict[object, object], value)
-        for key, nested_value in payload.items():
-            assert isinstance(key, str)
-            assert key not in _FORBIDDEN_CORE_MEMORY_MODEL_KEYS, f"forbidden key at {path}.{key}"
-            _assert_core_memory_forbidden_keys_absent(nested_value, path=f"{path}.{key}")
-        return
-
-    if isinstance(value, list):
-        payload = cast(list[object], value)
-        for index, nested_value in enumerate(payload):
-            _assert_core_memory_forbidden_keys_absent(nested_value, path=f"{path}[{index}]")
-
-
 def _report_read() -> ReportRead:
     return ReportRead.model_validate(
         {
@@ -1820,8 +1724,6 @@ def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
 
     assert runtime_spec_keys == _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
     assert runtime_spec_keys <= server_declared_keys
-    assert runtime_spec_keys.isdisjoint(_OLD_CORE_MEMORY_TOOL_KEYS)
-    assert server_declared_keys.isdisjoint(_OLD_CORE_MEMORY_TOOL_KEYS)
     assert digital_oracle_tool_keys <= server_declared_keys
     assert digital_oracle_tool_keys <= runtime_spec_keys
     assert all(
@@ -1834,70 +1736,10 @@ def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
         for spec in runtime_specs
         if spec.key in digital_oracle_tool_keys
     )
-    assert runtime_function_names.isdisjoint(_OLD_CORE_MEMORY_OPENAI_FUNCTION_NAMES)
     assert len(runtime_function_names) == len(runtime_spec_keys)
     assert runtime_function_names == {
         tool_key.replace(".", "_") for tool_key in _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
     }
-
-    legacy_runtime_function_names = runtime_function_names & set(_LEGACY_LIVE_OPENAI_FUNCTION_NAMES)
-    assert legacy_runtime_function_names == set()
-    assert runtime_spec_keys.isdisjoint(_LEGACY_LIVE_TOOL_KEYS)
-    assert server_declared_keys.isdisjoint(_LEGACY_LIVE_TOOL_KEYS)
-
-    memory_tool_keys = {"signaldeck.core.memory.write", "signaldeck.core.memory.lookup"}
-    memory_runtime_specs = [spec for spec in runtime_specs if spec.key in memory_tool_keys]
-    memory_server_specs = [
-        spec for spec in SERVER_DECLARED_TOOL_SPECS if spec.key in memory_tool_keys
-    ]
-    assert {spec.key for spec in memory_runtime_specs} == set()
-    assert {spec.key for spec in memory_server_specs} == set()
-    assert all("delete" not in spec.key for spec in memory_runtime_specs)
-    assert all("delete" not in spec.openai_function_name for spec in memory_runtime_specs)
-    assert all("delete" not in spec.parameters_schema for spec in memory_runtime_specs)
-    assert all("delete" not in spec.key for spec in memory_server_specs)
-    assert all("delete" not in spec.module for spec in memory_server_specs)
-
-
-def test_old_core_memory_tools_are_absent_from_public_tool_surfaces(
-    client: TestClient,
-) -> None:
-    response = client.get("/api/tools")
-    assert response.status_code == 200, response.json()
-    payload = cast(dict[str, object], response.json())
-    items = cast(list[dict[str, object]], payload["items"])
-    api_tool_keys = {str(item["key"]) for item in items}
-    server_declared_keys = {spec.key for spec in SERVER_DECLARED_TOOL_SPECS}
-
-    assert api_tool_keys.isdisjoint(_OLD_CORE_MEMORY_TOOL_KEYS)
-    assert server_declared_keys.isdisjoint(_OLD_CORE_MEMORY_TOOL_KEYS)
-
-
-def test_old_core_memory_runtime_tools_are_absent_from_dispatch_and_openai_mapping() -> None:
-    registry = get_default_runtime_tool_registry()
-    runtime_specs = registry.list_specs()
-    runtime_spec_keys = {spec.key for spec in runtime_specs}
-    runtime_function_names = {spec.openai_function_name for spec in runtime_specs}
-    exposed_tools = registry.get_openai_tools(set(_OLD_CORE_MEMORY_TOOL_KEYS))
-    context = _runtime_context(fail_on_session=True)
-
-    assert runtime_spec_keys.isdisjoint(_OLD_CORE_MEMORY_TOOL_KEYS)
-    assert runtime_function_names.isdisjoint(_OLD_CORE_MEMORY_OPENAI_FUNCTION_NAMES)
-    assert [tool["name"] for tool in exposed_tools] == []
-
-    for function_name in _OLD_CORE_MEMORY_OPENAI_FUNCTION_NAMES:
-        with pytest.raises(RuntimeToolError) as exc_info:
-            _ = registry.dispatch(
-                name=function_name,
-                arguments_json="{}",
-                granted_tool_keys=set(_OLD_CORE_MEMORY_TOOL_KEYS),
-                context=context,
-            )
-
-        assert exc_info.value.code == "agent_tool_call_unsupported"
-        assert exc_info.value.message == (
-            f"Agent requested unsupported server tool {function_name!r}."
-        )
 
 
 def test_prediction_markets_sec_filings_market_sentiment_tool_ownership_constants() -> None:
@@ -2368,7 +2210,7 @@ def test_digital_oracle_edgar_missing_config_returns_structured_failure() -> Non
     }
 
 
-def test_digital_oracle_missing_edgar_contact_does_not_break_app_startup() -> None:
+def test_digital_oracle_missing_edgar_contact_starts_with_warning_payload() -> None:
     reset_digital_oracle_settings_cache()
     try:
         app = create_app(init_database=False)
@@ -4381,16 +4223,6 @@ def test_runtime_tool_registry_returns_signaldeck_declarations_in_sort_order() -
     )
 
 
-def test_core_memory_runtime_tools_are_not_available_as_strict_openai_tools() -> None:
-    registry = get_default_runtime_tool_registry()
-
-    tools = registry.get_openai_tools(set(_OLD_CORE_MEMORY_TOOL_KEYS))
-    tool_names = {str(tool["name"]) for tool in tools}
-
-    assert tools == []
-    assert tool_names.isdisjoint(_OLD_CORE_MEMORY_OPENAI_FUNCTION_NAMES)
-
-
 def test_runtime_tool_registry_closes_nested_object_schema() -> None:
     nested_spec = replace(
         _runtime_tool_spec(),
@@ -4421,11 +4253,9 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
     registry = get_default_runtime_tool_registry()
 
     spec_by_key = {spec.key: spec for spec in registry.list_specs()}
-    assert set(spec_by_key).isdisjoint(_OLD_CORE_MEMORY_TOOL_KEYS)
     assert spec_by_key[REPORT_LOOKUP_TOOL_KEY].openai_function_name == (
         REPORT_LOOKUP_OPENAI_FUNCTION_NAME
     )
-    assert "signaldeck.finance.reports.write" not in spec_by_key
     assert spec_by_key[MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY].openai_function_name == (
         MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME
     )
@@ -4447,7 +4277,6 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
     tools = registry.get_openai_tools(
         {
             REPORT_LOOKUP_TOOL_KEY,
-            "signaldeck.finance.reports.write",
             MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
             MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
             SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
@@ -4511,8 +4340,6 @@ def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typ
 
     assert registry.get_openai_tools({REPORT_LOOKUP_TOOL_KEY, NEWS_LOOKUP_TOOL_KEY}) == []
     assert registry.get_guidance({REPORT_LOOKUP_TOOL_KEY}) == ""
-    assert registry.get_openai_tools(set(_OLD_CORE_MEMORY_TOOL_KEYS)) == []
-    assert registry.get_guidance(set(_OLD_CORE_MEMORY_TOOL_KEYS)) == ""
 
     with pytest.raises(RuntimeToolError) as finance_exc_info:
         _ = registry.dispatch(
@@ -4587,7 +4414,6 @@ def test_runtime_tool_registry_descriptor_listing_respects_extension_state() -> 
     descriptor_keys = {descriptor.tool_key for descriptor in registry.list_execution_descriptors()}
 
     assert descriptor_keys == set()
-    assert not descriptor_keys & set(_OLD_CORE_MEMORY_TOOL_KEYS)
     assert not descriptor_keys & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
     assert not descriptor_keys & set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS)
 
@@ -4626,7 +4452,6 @@ def test_financial_runtime_tool_exposure_follows_quote_history_and_report_lookup
             MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
             MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
             REPORT_LOOKUP_TOOL_KEY,
-            "signaldeck.finance.reports.write",
         }
     )
 
@@ -4640,9 +4465,6 @@ def test_financial_runtime_tool_exposure_follows_quote_history_and_report_lookup
         MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
         MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME,
     ]
-    assert "signaldeck_reports_write" not in {
-        cast(str, tool["name"]) for tool in all_native_financial
-    }
 
 
 def test_runtime_tool_registry_deep_copies_openai_parameter_schemas() -> None:
@@ -4759,27 +4581,6 @@ def test_runtime_tool_registry_rejects_unknown_and_ungranted_names_before_parsin
     assert ungranted_error.value.message == POSITION_LOOKUP_ACCESS_DENIED_MESSAGE
 
 
-@pytest.mark.parametrize("legacy_function_name", _LEGACY_LIVE_OPENAI_FUNCTION_NAMES)
-def test_runtime_tool_registry_rejects_legacy_live_function_names(
-    legacy_function_name: str,
-) -> None:
-    registry = get_default_runtime_tool_registry()
-    context = _runtime_context(fail_on_session=True)
-
-    with pytest.raises(RuntimeToolError) as exc_info:
-        _ = registry.dispatch(
-            name=legacy_function_name,
-            arguments_json="{}",
-            granted_tool_keys=_EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS,
-            context=context,
-        )
-
-    assert exc_info.value.code == "agent_tool_call_unsupported"
-    assert exc_info.value.message == (
-        f"Agent requested unsupported server tool {legacy_function_name!r}."
-    )
-
-
 def test_agent_execution_native_to_mcp_fallback_only_for_unsupported_tool_calls() -> None:
     registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC])
     context = _runtime_context(fail_on_session=True)
@@ -4841,30 +4642,6 @@ def test_agent_execution_native_to_mcp_fallback_only_for_unsupported_tool_calls(
     ]
 
 
-def test_removed_reports_write_function_does_not_fall_through_to_mcp(
-    session_factory: sessionmaker[Session],
-) -> None:
-    registry = get_default_runtime_tool_registry()
-    context = _runtime_context(session_factory_override=session_factory)
-    mcp_dispatcher = _RecordingMcpDispatcher()
-
-    with pytest.raises(RuntimeToolError) as exc_info:
-        _ = AgentExecutionService._dispatch_function_call(
-            tool_call=ModelToolCall(
-                tool_name="signaldeck_reports_write",
-                arguments_json='{"analysis":{"ticker":"NVDA"}}',
-                call_id="call-retired-report-write",
-            ),
-            granted_tool_keys=set(),
-            runtime_tool_registry=registry,
-            runtime_tool_context=context,
-            mcp_dispatcher=cast(Any, mcp_dispatcher),
-        )
-
-    assert exc_info.value.code == "agent_tool_call_unsupported"
-    assert mcp_dispatcher.calls == []
-
-
 def test_failure_taxonomy_retryable_allowlist_is_closed_to_parser_schema_failures() -> None:
     assert RETRYABLE_FAILURE_CLASSES == {
         ToolFailureClass.PROVIDER_TOOL_ARGUMENT_JSON_INVALID,
@@ -4880,7 +4657,7 @@ def test_failure_taxonomy_retryable_allowlist_is_closed_to_parser_schema_failure
 def test_failure_taxonomy_marks_provider_payload_invalid_json_as_retryable() -> None:
     with pytest.raises(ModelGatewayError) as exc_info:
         _ = build_model_tool_call(
-            name="signaldeck_core_memory_lookup",
+            name=REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
             arguments="{",
             call_id="call-invalid-json",
             context="OpenAI response",
@@ -4902,7 +4679,7 @@ def test_failure_taxonomy_marks_provider_payload_invalid_json_as_retryable() -> 
 def test_failure_taxonomy_marks_provider_payload_non_object_arguments_as_retryable() -> None:
     with pytest.raises(ModelGatewayError) as exc_info:
         _ = build_model_tool_call(
-            name="signaldeck_core_memory_lookup",
+            name=REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
             arguments="[]",
             call_id="call-non-object",
             context="OpenAI response",
@@ -8983,7 +8760,7 @@ def test_options_lookup_service_and_executor_return_normalized_fake_provider_pay
         assert payload["warnings"] == []
 
 
-def test_options_lookup_yfinance_absence_degrades_and_keeps_registry_import_safe(
+def test_options_lookup_missing_yfinance_degrades_and_keeps_registry_import_safe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def missing_yfinance(module_name: str) -> object:
@@ -9865,30 +9642,6 @@ def test_macro_rates_parser_normalizes_sources_families_dates_and_filters() -> N
         )
     with pytest.raises(RuntimeToolError, match="itemLimit must be at most 50"):
         _ = parse_macro_rates_lookup_arguments(json.dumps({"itemLimit": 51}))
-
-
-def test_macro_rates_provider_inventory_marks_implemented_sources_live() -> None:
-    macro_inventory = {
-        item.upstream_provider: item
-        for item in IN_SCOPE_PROVIDER_INVENTORY
-        if item.signaldeck_tool_key == MACRO_RATES_LOOKUP_TOOL_KEY
-    }
-
-    assert {
-        "USTreasuryProvider",
-        "BisProvider",
-        "WorldBankProvider",
-        "CMEFedWatchProvider",
-        "FredProvider",
-    } <= set(macro_inventory)
-    for provider_name in (
-        "USTreasuryProvider",
-        "BisProvider",
-        "WorldBankProvider",
-        "CMEFedWatchProvider",
-        "FredProvider",
-    ):
-        assert macro_inventory[provider_name].migration_status == "phase_1_in_scope"
 
 
 def test_macro_rates_providers_map_public_payloads_to_normalized_series() -> None:

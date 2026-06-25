@@ -114,10 +114,6 @@ _PROTOCOL_PROFILE_TO_API_STYLE = {
     ModelConnectionProtocolProfile.OPENAI_CHAT_COMPLETIONS.value: "chat_completions",
     ModelConnectionProtocolProfile.OPENAI_RESPONSES.value: "responses",
 }
-_API_STYLE_TO_PROTOCOL_PROFILE = {
-    api_style: protocol_profile
-    for protocol_profile, api_style in _PROTOCOL_PROFILE_TO_API_STYLE.items()
-}
 
 
 def api_style_for_model_connection_protocol_profile(value: object) -> str:
@@ -126,14 +122,6 @@ def api_style_for_model_connection_protocol_profile(value: object) -> str:
         return _PROTOCOL_PROFILE_TO_API_STYLE[profile]
     except KeyError as exc:
         raise ValueError("Protocol profile is invalid") from exc
-
-
-def protocol_profile_for_legacy_api_style(value: object) -> str:
-    api_style = str(value).strip()
-    return _API_STYLE_TO_PROTOCOL_PROFILE.get(
-        api_style,
-        ModelConnectionProtocolProfile.OPENAI_RESPONSES.value,
-    )
 
 
 class ModelConnectionCapabilityState(CamelModel):
@@ -572,5 +560,4 @@ __all__ = [
     "dump_model_connection_capabilities",
     "normalize_model_connection_capability_key",
     "normalize_model_connection_key",
-    "protocol_profile_for_legacy_api_style",
 ]

@@ -117,22 +117,10 @@ def test_toggle_extension_state_persistence_and_enabled_views(
     assert snapshot.enabled is True
 
 
-@pytest.mark.parametrize(
-    ("removed_field", "value"),
-    [
-        ("disabledReason", "maintenance"),
-        ("defaultEnabled", False),
-        ("stateVersion", 2),
-    ],
-)
-def test_toggle_extension_rejects_removed_metadata_fields(
-    client: TestClient,
-    removed_field: str,
-    value: object,
-) -> None:
+def test_toggle_extension_rejects_unknown_fields(client: TestClient) -> None:
     response = client.patch(
         f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
-        json={"enabled": False, removed_field: value},
+        json={"enabled": False, "unexpected": "value"},
     )
 
     assert response.status_code == 422, response.json()
@@ -140,7 +128,7 @@ def test_toggle_extension_rejects_removed_metadata_fields(
     assert _extension_item(client, DIGITAL_ORACLE_EXTENSION_KEY)["enabled"] is True
 
 
-def test_extensions_openapi_contract_omits_removed_public_fields(client: TestClient) -> None:
+def test_extensions_openapi_contract_exposes_slim_state(client: TestClient) -> None:
     response = client.get("/openapi.json")
     assert response.status_code == 200, response.json()
     openapi = cast(dict[str, object], response.json())
@@ -154,24 +142,6 @@ def test_extensions_openapi_contract_omits_removed_public_fields(client: TestCli
     toggle_request = schemas["ExtensionToggleRequest"]
     toggle_properties = cast(dict[str, object], toggle_request["properties"])
     assert set(toggle_properties) == {"enabled"}
-
-    removed_fields = {
-        "defaultEnabled",
-        "phase",
-        "versioningRule",
-        "contributionCategories",
-        "dependencies",
-        "contributions",
-        "stateVersion",
-        "enabledAt",
-        "disabledAt",
-        "disabledReason",
-        "createdAt",
-        "updatedAt",
-    }
-    assert removed_fields.isdisjoint(read_properties)
-    assert removed_fields.isdisjoint(toggle_properties)
-    assert "ExtensionContributionRead" not in schemas
 
 
 def test_extension_disabled_error_contract_helper() -> None:

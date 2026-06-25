@@ -1,49 +1,79 @@
-import type {
-  JsonPrimitive,
-  JsonValue,
-  OutputSchemaBuilderArray,
-  OutputSchemaBuilderBoolean,
-  OutputSchemaBuilderDiscriminatedUnion,
-  OutputSchemaBuilderEnum,
-  OutputSchemaBuilderField,
-  OutputSchemaBuilderInteger,
-  OutputSchemaBuilderLiteral,
-  OutputSchemaBuilderNode,
-  OutputSchemaBuilderNumber,
-  OutputSchemaBuilderObject,
-  OutputSchemaBuilderRef,
-  OutputSchemaBuilderString,
-  OutputSchemaCreateInput,
-  OutputSchemaKind,
-  OutputSchemaListParams,
-  OutputSchemaListRead,
-  OutputSchemaRead,
-  OutputSchemaStatus,
-  OutputSchemaUpdateInput,
-} from "@/lib/types/output-schema";
+export type JsonPrimitive = boolean | number | string;
+export type JsonValue = boolean | number | string | null | JsonValue[] | { [key: string]: JsonValue };
 
-export type { JsonPrimitive, JsonValue, OutputSchemaKind, OutputSchemaStatus };
-export type { OutputSchemaCreateInput, OutputSchemaListParams, OutputSchemaListRead, OutputSchemaRead, OutputSchemaUpdateInput };
+interface SchemaIRBase {
+  title?: string | null;
+  description?: string | null;
+  defaultValue?: JsonValue;
+}
 
-export type SchemaIRNode = OutputSchemaBuilderNode;
-export type SchemaIRString = OutputSchemaBuilderString;
-export type SchemaIRInteger = OutputSchemaBuilderInteger;
-export type SchemaIRNumber = OutputSchemaBuilderNumber;
-export type SchemaIRBoolean = OutputSchemaBuilderBoolean;
-export type SchemaIREnum = OutputSchemaBuilderEnum;
-export type SchemaIRLiteral = OutputSchemaBuilderLiteral;
-export type SchemaIRObject = OutputSchemaBuilderObject;
-export type SchemaIRArray = OutputSchemaBuilderArray;
-export type SchemaIRRef = OutputSchemaBuilderRef;
-export type SchemaIRDiscriminatedUnion = OutputSchemaBuilderDiscriminatedUnion;
-export type SchemaIRField = OutputSchemaBuilderField;
+export interface SchemaIRString extends SchemaIRBase {
+  kind: "string";
+}
 
-export type SchemaIRBuilderInput = OutputSchemaBuilderNode;
-export type SchemaIRRead = OutputSchemaRead;
-export type SchemaIRCreateInput = OutputSchemaCreateInput;
-export type SchemaIRUpdateInput = OutputSchemaUpdateInput;
-export type SchemaIRListRead = OutputSchemaListRead;
-export type SchemaIRListParams = OutputSchemaListParams;
+export interface SchemaIRInteger extends SchemaIRBase {
+  kind: "integer";
+}
+
+export interface SchemaIRNumber extends SchemaIRBase {
+  kind: "number";
+}
+
+export interface SchemaIRBoolean extends SchemaIRBase {
+  kind: "boolean";
+}
+
+export interface SchemaIREnum extends SchemaIRBase {
+  kind: "enum";
+  values: JsonPrimitive[];
+}
+
+export interface SchemaIRLiteral extends SchemaIRBase {
+  kind: "literal";
+  value: JsonPrimitive;
+}
+
+export interface SchemaIRField {
+  name: string;
+  required?: boolean;
+  schema: SchemaIRNode;
+}
+
+export interface SchemaIRObject extends SchemaIRBase {
+  kind: "object";
+  fields?: SchemaIRField[];
+}
+
+export interface SchemaIRArray extends SchemaIRBase {
+  kind: "array";
+  items: SchemaIRNode;
+}
+
+export interface SchemaIRRef extends SchemaIRBase {
+  kind: "ref";
+  schemaKey: string;
+  schemaVersion?: number | null;
+}
+
+export interface SchemaIRDiscriminatedUnion extends SchemaIRBase {
+  kind: "discriminated_union";
+  discriminator: string;
+  variants: SchemaIRNode[];
+}
+
+export type SchemaIRNode =
+  | SchemaIRString
+  | SchemaIRInteger
+  | SchemaIRNumber
+  | SchemaIRBoolean
+  | SchemaIREnum
+  | SchemaIRLiteral
+  | SchemaIRObject
+  | SchemaIRArray
+  | SchemaIRRef
+  | SchemaIRDiscriminatedUnion;
+
+export type SchemaIRBuilderInput = SchemaIRNode;
 
 export type SchemaIR = SchemaIRNode;
 export type SchemaIRVariant = SchemaIRNode;

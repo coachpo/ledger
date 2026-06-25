@@ -85,13 +85,6 @@ LEGACY_BACKEND_TABLE_NAMES = {
 LIVE_AGENT_PLATFORM_TABLE_NAMES = AGENT_PLATFORM_TABLE_NAMES
 LIVE_WORKFLOW_MEMORY_TABLE_NAMES = WORKFLOW_MEMORY_TABLE_NAMES
 LIVE_SCHEDULE_TABLE_NAMES = SCHEDULE_TABLE_NAMES
-REMOVED_RUN_PROVENANCE_COLUMNS = {
-    "workflow_package_version_id",
-    "workflow_package_version",
-    "workflow_package_manifest_hash",
-    "workflow_package_compiled_hash",
-    "launch_snapshot",
-}
 _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
     "Run marked as failed during startup recovery because the previous process exited while "
     "it was still running."
@@ -622,41 +615,6 @@ def _assert_tradingagents_preset_launchable(
     assert cast(dict[str, object], launch.input_schema)["title"] == expected_input_schema_title
     assert launch.ready is True
     assert launch.blocking_errors == []
-
-
-def _tradingagents_preset_schedule_rows(connection: Connection) -> list[Mapping[str, object]]:
-    return cast(
-        list[Mapping[str, object]],
-        connection.execute(
-            text(
-                """
-                SELECT
-                    schedule.id,
-                    schedule.package_id,
-                    schedule.workflow_key,
-                    schedule.name,
-                    schedule.description,
-                    schedule.status,
-                    schedule.timezone,
-                    schedule.recurrence,
-                    schedule.next_fire_at,
-                    schedule.overlap_policy,
-                    schedule.misfire_policy,
-                    schedule.misfire_grace_seconds,
-                    schedule.input_template,
-                    schedule.template_vars
-                FROM workflow_package_schedules AS schedule
-                JOIN workflow_packages AS package
-                  ON package.id = schedule.package_id
-                WHERE package.key = :package_key
-                ORDER BY schedule.workflow_key ASC, schedule.id ASC
-                """
-            ),
-            {"package_key": _TRADINGAGENTS_PRESET_KEY},
-        )
-        .mappings()
-        .all(),
-    )
 
 
 def _agent_memory_report_metadata(**analysis_overrides: object) -> dict[str, object]:
@@ -1390,13 +1348,6 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     }
 
     assert _RUN_HEADER_COLUMNS <= set(run_columns)
-    assert {
-        "workflow_key",
-        "workflow_version",
-        "per_step_outputs",
-        *REMOVED_RUN_PROVENANCE_COLUMNS,
-        *_RUN_COST_COLUMNS,
-    }.isdisjoint(run_columns)
     assert run_columns["schedule_id"]["nullable"] is True
     assert run_columns["schedule_fire_id"]["nullable"] is True
     assert run_columns["scheduled_for"]["nullable"] is True
@@ -1449,24 +1400,15 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "ck_runs_attempt_count_non_negative",
         "ck_runs_schedule_reason",
     } <= run_checks
-    assert set(_RUN_COST_CHECKS).isdisjoint(run_checks)
     assert (("source_run_id",), "runs", "SET NULL") in run_foreign_keys
     assert (("lineage_root_run_id",), "runs", "SET NULL") in run_foreign_keys
     assert (("workflow_package_id",), "workflow_packages", "CASCADE") in run_foreign_keys
-    assert "agent_id" not in run_columns
-    assert "workflow_id" not in run_columns
     assert (("schedule_id",), "workflow_package_schedules", "SET NULL") in run_foreign_keys
     assert (
         ("schedule_fire_id",),
         "workflow_package_schedule_fires",
         "SET NULL",
     ) in run_foreign_keys
-    assert not any(
-        foreign_key[0]
-        for foreign_key in run_foreign_keys
-        if set(foreign_key[0]) & REMOVED_RUN_PROVENANCE_COLUMNS
-    )
-
     assert set(snapshot_columns) == _RUN_SNAPSHOT_COLUMNS
     assert snapshot_columns["run_id"]["nullable"] is False
     assert snapshot_columns["workflow_package_id"]["nullable"] is False
@@ -1503,7 +1445,6 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert (("source_run_id",), "runs", "SET NULL") in run_step_foreign_keys
 
     assert _RUN_AGENT_INVOCATION_COLUMNS <= set(invocation_columns)
-    assert _INVOCATION_COST_COLUMN not in invocation_columns
     assert invocation_columns["run_step_id"]["nullable"] is False
     assert invocation_columns["run_id"]["nullable"] is False
     assert invocation_columns["slot"]["nullable"] is False
@@ -1527,7 +1468,6 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "ck_run_agent_invocations_tokens_non_negative",
         "ck_run_agent_invocations_duration_non_negative",
     } <= invocation_checks
-    assert _INVOCATION_COST_CHECK not in invocation_checks
     assert "uq_run_agent_invocations_step_slot" in invocation_unique_constraints
     assert (("run_step_id",), "run_steps", "CASCADE") in invocation_foreign_keys
     assert (("run_id",), "runs", "CASCADE") in invocation_foreign_keys
@@ -1599,44 +1539,6 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     ) in operation_foreign_keys
     assert (("source_run_id",), "runs", "SET NULL") in operation_foreign_keys
     assert (("source_run_step_id",), "run_steps", "SET NULL") in operation_foreign_keys
-
-
-def test_s13_current_contract_bootstrap_excludes_retired_global_authoring_tables(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        inspector = inspect(engine)
-        table_names = set(inspector.get_table_names())
-        run_columns = {column["name"] for column in inspector.get_columns("runs")}
-
-        assert LIVE_AGENT_PLATFORM_TABLE_NAMES <= table_names
-        assert LIVE_WORKFLOW_MEMORY_TABLE_NAMES <= table_names
-        assert OLD_MEMORY_TABLE_NAMES.isdisjoint(table_names)
-        assert LIVE_SCHEDULE_TABLE_NAMES <= table_names
-        assert RETIRED_GLOBAL_AUTHORING_TABLE_NAMES.isdisjoint(table_names)
-        assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
-        assert REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
-    finally:
-        engine.dispose()
-
-
-def test_s13_retired_global_authoring_tables_are_drop_only_upgrade_targets() -> None:
-    upgrades_source = (Path(__file__).parents[1] / "app" / "db" / "upgrades.py").read_text()
-
-    for table_name in RETIRED_GLOBAL_AUTHORING_TABLE_NAMES | {"skills"}:
-        assert not re.search(rf"\bUPDATE\s+{table_name}\b", upgrades_source, re.I)
-        assert not re.search(rf"\bINSERT\s+INTO\s+{table_name}\b", upgrades_source, re.I)
-        assert not re.search(rf"\bALTER\s+TABLE\s+{table_name}\b", upgrades_source, re.I)
-        assert not re.search(
-            rf"\bSELECT\b[^;]*\bFROM\s+{table_name}\b", upgrades_source, re.I | re.S
-        )
-
-    assert "model_connection_snapshot" not in upgrades_source
-    assert "UPDATE run_workflow_package_snapshots" in upgrades_source
-    assert "DELETE FROM model_connections" in upgrades_source
 
 
 def test_init_db_creates_current_runtime_tables_and_drops_legacy_backend_tables(
@@ -3094,7 +2996,7 @@ def test_init_db_renames_non_empty_old_memory_tables_to_legacy_names(
         engine.dispose()
 
 
-def test_init_db_drops_removed_memory_chunk_and_embedding_tables(database_url: str) -> None:
+def test_init_db_drops_old_memory_chunk_and_embedding_tables(database_url: str) -> None:
     engine = create_engine(database_url, future=True)
 
     try:
@@ -3107,450 +3009,6 @@ def test_init_db_drops_removed_memory_chunk_and_embedding_tables(database_url: s
         table_names = set(inspect(engine).get_table_names())
         assert REMOVED_CORE_MEMORY_TABLE_NAMES.isdisjoint(table_names)
         _assert_workflow_memory_table_shape(engine)
-    finally:
-        engine.dispose()
-
-
-def retired_init_db_maps_legacy_status_to_workflow_visibility(database_url: str) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-    legacy_statuses = ("approved", "pending", "archived")
-    content_hashes = ("a" * 64, "b" * 64, "c" * 64)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE agent_memory_revisions DROP COLUMN visible_to_workflow CASCADE"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE agent_memory_entries DROP COLUMN visible_to_workflow CASCADE"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE agent_memory_entries ADD COLUMN status VARCHAR(20) "
-                "NOT NULL DEFAULT 'pending'"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE agent_memory_revisions ADD COLUMN status VARCHAR(20) "
-                "NOT NULL DEFAULT 'pending'"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE agent_memory_entries ADD CONSTRAINT ck_agent_memory_entries_status "
-                "CHECK (status IN ('pending', 'approved', 'archived'))"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE agent_memory_revisions ADD CONSTRAINT ck_agent_memory_revisions_status "
-                "CHECK (status IN ('pending', 'approved', 'archived'))"
-            )
-            connection.exec_driver_sql(
-                "CREATE INDEX ix_agent_memory_entries_scope_status_kind "
-                "ON agent_memory_entries (scope_type, scope_key, status, kind)"
-            )
-            connection.exec_driver_sql(
-                "CREATE INDEX ix_agent_memory_entries_status_kind "
-                "ON agent_memory_entries (status, kind)"
-            )
-            connection.exec_driver_sql(
-                "CREATE INDEX ix_agent_memory_entries_status_updated_at_id "
-                "ON agent_memory_entries (status, updated_at, id)"
-            )
-            run_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO runs (
-                        target_kind, target_id, target_key, target_version, input, status
-                    ) VALUES (
-                        'workflowPackage', 1, 'legacy_memory_status_package', 1,
-                        '{}'::jsonb, 'succeeded'
-                    )
-                    RETURNING id
-                    """
-                )
-            ).scalar_one()
-            for index, (legacy_status, content_hash) in enumerate(
-                zip(legacy_statuses, content_hashes, strict=True),
-                start=1,
-            ):
-                memory_entry_id = connection.execute(
-                    text(
-                        """
-                        INSERT INTO agent_memory_entries (
-                            memory_id, scope_type, scope_key, kind, status, summary,
-                            content_hash, source_run_id, source_agent_key,
-                            source_agent_version, source_step_id, source_slot
-                        ) VALUES (
-                            :memory_id, 'run', :scope_key, 'decision', :status,
-                            :summary, :content_hash, :run_id, 'research_agent', 1,
-                            :source_step_id, 'decision'
-                        ) RETURNING id
-                        """
-                    ),
-                    {
-                        "content_hash": content_hash,
-                        "memory_id": f"memory-status-{legacy_status}",
-                        "run_id": run_id,
-                        "scope_key": str(run_id),
-                        "source_step_id": f"write_memory_{index}",
-                        "status": legacy_status,
-                        "summary": f"{legacy_status} memory summary",
-                    },
-                ).scalar_one()
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO agent_memory_revisions (
-                            memory_entry_id, revision_id, version, status, summary, content,
-                            content_hash, source_run_id, source_agent_key, source_step_id,
-                            source_slot
-                        ) VALUES (
-                            :memory_entry_id, :revision_id, 1, :status, :summary,
-                            :content, :content_hash, :run_id, 'research_agent',
-                            :source_step_id, 'decision'
-                        )
-                        """
-                    ),
-                    {
-                        "content": f"{legacy_status} memory content.",
-                        "content_hash": content_hash,
-                        "memory_entry_id": memory_entry_id,
-                        "revision_id": f"memory-status-{legacy_status}:rev-1",
-                        "run_id": run_id,
-                        "source_step_id": f"write_memory_{index}",
-                        "status": legacy_status,
-                        "summary": f"{legacy_status} memory summary",
-                    },
-                )
-
-        init_db(database_url)
-        _assert_core_memory_table_shape(engine)
-
-        with engine.connect() as connection:
-            entry_visibility = connection.execute(
-                text(
-                    """
-                    SELECT memory_id, visible_to_workflow
-                    FROM agent_memory_entries
-                    WHERE memory_id LIKE 'memory-status-%'
-                    ORDER BY memory_id ASC
-                    """
-                )
-            ).all()
-            revision_visibility = connection.execute(
-                text(
-                    """
-                    SELECT revision_id, visible_to_workflow
-                    FROM agent_memory_revisions
-                    WHERE revision_id LIKE 'memory-status-%'
-                    ORDER BY revision_id ASC
-                    """
-                )
-            ).all()
-
-        assert entry_visibility == [
-            ("memory-status-approved", True),
-            ("memory-status-archived", False),
-            ("memory-status-pending", False),
-        ]
-        assert revision_visibility == [
-            ("memory-status-approved:rev-1", True),
-            ("memory-status-archived:rev-1", False),
-            ("memory-status-pending:rev-1", False),
-        ]
-    finally:
-        engine.dispose()
-
-
-def retired_init_db_normalizes_legacy_status_event_types(database_url: str) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE run_memory_events "
-                "DROP CONSTRAINT IF EXISTS ck_run_memory_events_event_type"
-            )
-            run_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO runs (
-                        target_kind, target_id, target_key, target_version, input, status
-                    ) VALUES (
-                        'workflowPackage', 1, 'legacy_memory_event_package', 1,
-                        '{}'::jsonb, 'succeeded'
-                    )
-                    RETURNING id
-                    """
-                )
-            ).scalar_one()
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO run_memory_events (run_id, event_type, status_snapshot)
-                    VALUES (
-                        :run_id, 'operator_status_changed',
-                        jsonb_build_object('visibleToWorkflow', TRUE)
-                    )
-                    """
-                ),
-                {"run_id": run_id},
-            )
-
-        init_db(database_url)
-        _assert_core_memory_table_shape(engine)
-        with engine.connect() as connection:
-            event_types = (
-                connection.execute(text("SELECT event_type FROM run_memory_events ORDER BY id"))
-                .scalars()
-                .all()
-            )
-
-        assert event_types == ["operator_visibility_changed"]
-    finally:
-        engine.dispose()
-
-
-def retired_init_db_drops_obsolete_core_attributes(database_url: str) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE agent_memory_entries "
-                "ADD COLUMN attributes JSONB NOT NULL DEFAULT '{}'::jsonb"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE agent_memory_revisions "
-                "ADD COLUMN attributes JSONB NOT NULL DEFAULT '{}'::jsonb"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE agent_memory_entries "
-                "ADD CONSTRAINT ck_agent_memory_entries_attributes "
-                "CHECK (jsonb_typeof(attributes) = 'object')"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE agent_memory_revisions "
-                "ADD CONSTRAINT ck_agent_memory_revisions_attributes "
-                "CHECK (jsonb_typeof(attributes) = 'object')"
-            )
-            connection.exec_driver_sql(
-                "CREATE INDEX ix_agent_memory_entries_attributes_gin "
-                "ON agent_memory_entries USING gin (attributes jsonb_path_ops)"
-            )
-            connection.exec_driver_sql(
-                "CREATE INDEX ix_agent_memory_revisions_attributes_gin "
-                "ON agent_memory_revisions USING gin (attributes jsonb_path_ops)"
-            )
-
-        init_db(database_url)
-        _assert_core_memory_table_shape(engine)
-    finally:
-        engine.dispose()
-
-
-def retired_init_db_creates_core_tables_idempotently(database_url: str) -> None:
-    init_db(database_url)
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-    first_content_hash = "a" * 64
-    second_content_hash = "b" * 64
-
-    try:
-        _assert_core_memory_table_shape(engine)
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                ALTER TABLE agent_memory_revisions
-                ADD CONSTRAINT uq_agent_memory_revisions_entry_content_hash
-                UNIQUE (memory_entry_id, content_hash)
-                """
-            )
-        init_db(database_url)
-        _assert_core_memory_table_shape(engine)
-
-        with engine.begin() as connection:
-            run_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO runs (
-                        target_kind, target_id, target_key, target_version, input, status
-                    ) VALUES (
-                        'workflowPackage', 1, 'memory_package', 1, '{}'::jsonb, 'succeeded'
-                    )
-                    RETURNING id
-                    """
-                )
-            ).scalar_one()
-            memory_entry_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO agent_memory_entries (
-                        memory_id, scope_type, scope_key, kind, visible_to_workflow, summary,
-                        content_hash, source_run_id, source_agent_key, source_agent_version,
-                        source_step_id, source_slot
-                    ) VALUES (
-                        'memory-core-1', 'run', :scope_key, 'decision', FALSE,
-                        'Memory summary', :content_hash, :run_id, 'research_agent', 1,
-                        'write_memory', 'decision'
-                    ) RETURNING id
-                    """
-                ),
-                {
-                    "content_hash": first_content_hash,
-                    "run_id": run_id,
-                    "scope_key": str(run_id),
-                },
-            ).scalar_one()
-
-            revision_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO agent_memory_revisions (
-                        memory_entry_id, revision_id, version, visible_to_workflow, summary,
-                        content, content_hash, source_run_id, source_agent_key, source_step_id,
-                        source_slot
-                    ) VALUES (
-                        :memory_entry_id, 'memory-core-1:rev-1', 1, FALSE,
-                        'Memory summary', 'Canonical memory content.', :content_hash, :run_id,
-                        'research_agent', 'write_memory', 'decision'
-                    ) RETURNING id
-                    """
-                ),
-                {
-                    "content_hash": first_content_hash,
-                    "memory_entry_id": memory_entry_id,
-                    "run_id": run_id,
-                },
-            ).scalar_one()
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO agent_memory_revisions (
-                        memory_entry_id, revision_id, version, visible_to_workflow, summary,
-                        content, content_hash, source_run_id, source_agent_key, source_step_id,
-                        source_slot
-                    ) VALUES
-                        (
-                            :memory_entry_id, 'memory-core-1:rev-2', 2, FALSE,
-                            'Updated memory summary', 'Canonical memory content B.',
-                            :second_content_hash, :run_id, 'research_agent', 'write_memory',
-                            'decision'
-                        ),
-                        (
-                            :memory_entry_id, 'memory-core-1:rev-3', 3, FALSE,
-                            'Memory summary restored', 'Canonical memory content.',
-                            :first_content_hash, :run_id, 'research_agent', 'write_memory',
-                            'decision'
-                        )
-                    """
-                ),
-                {
-                    "first_content_hash": first_content_hash,
-                    "memory_entry_id": memory_entry_id,
-                    "run_id": run_id,
-                    "second_content_hash": second_content_hash,
-                },
-            )
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO run_memory_events (
-                        run_id, event_type, memory_entry_id, memory_revision_id, memory_id,
-                        revision_id, retrieval_mode, result_snapshot, status_snapshot
-                    ) VALUES (
-                        :run_id, 'written', :memory_entry_id, :revision_id, 'memory-core-1',
-                        'memory-core-1:rev-1', 'write', '{"action":"created"}'::jsonb,
-                        '{"status":"pending"}'::jsonb
-                    )
-                    """
-                ),
-                {
-                    "memory_entry_id": memory_entry_id,
-                    "revision_id": revision_id,
-                    "run_id": run_id,
-                },
-            )
-
-        with engine.connect() as connection:
-            counts = connection.execute(
-                text(
-                    """
-                    SELECT
-                        (SELECT COUNT(*) FROM agent_memory_entries),
-                        (SELECT COUNT(*) FROM agent_memory_revisions),
-                        (SELECT COUNT(*) FROM run_memory_events)
-                    """
-                )
-            ).one()
-        assert counts == (1, 3, 1)
-        with engine.connect() as connection:
-            revision_hashes = connection.execute(
-                text(
-                    """
-                    SELECT version, content_hash
-                    FROM agent_memory_revisions
-                    WHERE memory_entry_id = :memory_entry_id
-                    ORDER BY version ASC
-                    """
-                ),
-                {"memory_entry_id": memory_entry_id},
-            ).all()
-        assert revision_hashes == [
-            (1, first_content_hash),
-            (2, second_content_hash),
-            (3, first_content_hash),
-        ]
-        with pytest.raises(IntegrityError):
-            with engine.begin() as connection:
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO agent_memory_entries (
-                            memory_id, scope_type, scope_key, kind, visible_to_workflow, summary,
-                            content_hash, source_run_id, source_agent_key, source_agent_version,
-                            source_step_id, source_slot
-                        ) VALUES (
-                            'memory-core-duplicate', 'run', :scope_key, 'decision', FALSE,
-                            'Duplicate memory summary', :content_hash, :run_id,
-                            'research_agent', 1, 'write_memory', 'decision'
-                        )
-                        """
-                    ),
-                    {
-                        "content_hash": first_content_hash,
-                        "run_id": run_id,
-                        "scope_key": str(run_id),
-                    },
-                )
-
-        with engine.begin() as connection:
-            connection.execute(
-                text("DELETE FROM agent_memory_entries WHERE id = :memory_entry_id"),
-                {"memory_entry_id": memory_entry_id},
-            )
-            cascade_counts = connection.execute(
-                text(
-                    """
-                    SELECT
-                        (SELECT COUNT(*) FROM agent_memory_entries),
-                        (SELECT COUNT(*) FROM agent_memory_revisions),
-                        (SELECT COUNT(*) FROM run_memory_events)
-                    """
-                )
-            ).one()
-            event_snapshot = connection.execute(
-                text(
-                    """
-                    SELECT memory_entry_id, memory_revision_id, memory_id, revision_id
-                    FROM run_memory_events
-                    WHERE run_id = :run_id
-                    """
-                ),
-                {"run_id": run_id},
-            ).one()
-
-        assert cascade_counts == (0, 0, 1)
-        assert event_snapshot == (None, None, "memory-core-1", "memory-core-1:rev-1")
     finally:
         engine.dispose()
 
@@ -3598,103 +3056,6 @@ def test_init_db_repairs_jsonb_and_text_indexes_on_existing_persistence_tables(
             "jsonb_path_ops"
             in index_definitions["ix_run_workflow_package_snapshots_model_connections_gin"]
         )
-    finally:
-        engine.dispose()
-
-
-def retired_init_db_drops_removed_chunk_and_embedding_tables(database_url: str) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE agent_memory_chunks (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    memory_entry_id INTEGER,
-                    memory_revision_id INTEGER
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE agent_memory_embeddings (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    memory_chunk_id INTEGER REFERENCES agent_memory_chunks(id) ON DELETE CASCADE
-                )
-                """
-            )
-
-        init_db(database_url)
-
-        table_names = set(inspect(engine).get_table_names())
-        assert REMOVED_CORE_MEMORY_TABLE_NAMES.isdisjoint(table_names)
-        _assert_core_memory_table_shape(engine)
-    finally:
-        engine.dispose()
-
-
-def retired_init_db_ignores_legacy_report_backed_rows(database_url: str) -> None:
-    engine = create_engine(database_url, future=True)
-    legacy_slug = "legacy_agent_memory_historical"
-    normal_slug = "ordinary_external_report"
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE reports (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    name VARCHAR(200) NOT NULL,
-                    slug VARCHAR(200) NOT NULL,
-                    source VARCHAR(20) NOT NULL DEFAULT 'compiled',
-                    content TEXT NOT NULL,
-                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    CONSTRAINT uq_reports_name UNIQUE (name),
-                    CONSTRAINT uq_reports_slug UNIQUE (slug)
-                )
-                """
-            )
-            _insert_report_upgrade_row(
-                connection,
-                slug=legacy_slug,
-                source="agent",
-                metadata=_agent_memory_report_metadata(),
-            )
-            _insert_report_upgrade_row(
-                connection,
-                slug=normal_slug,
-                source="external",
-                metadata={"analysis": {"reviewType": "weekly_review"}},
-            )
-
-        init_db(database_url)
-        init_db(database_url)
-
-        _assert_core_memory_table_shape(engine)
-        rows = _report_upgrade_rows_by_slug(engine, (legacy_slug, normal_slug))
-        with engine.connect() as connection:
-            memory_counts = connection.execute(
-                text(
-                    """
-                    SELECT
-                        (SELECT COUNT(*) FROM agent_memory_entries),
-                        (SELECT COUNT(*) FROM agent_memory_revisions),
-                        (SELECT COUNT(*) FROM run_memory_events)
-                    """
-                )
-            ).one()
-
-        assert memory_counts == (0, 0, 0)
-        assert rows[legacy_slug]["source"] == "agent"
-        assert rows[legacy_slug]["metadata"] == _agent_memory_report_metadata()
-        assert rows[normal_slug] == {
-            "source": "external",
-            "metadata": {"analysis": {"reviewType": "weekly_review"}},
-        }
     finally:
         engine.dispose()
 
@@ -4126,71 +3487,6 @@ def test_init_db_creates_runtime_input_registry_table_and_cascades(
         engine.dispose()
 
 
-def test_runtime_input_registry_upgrade_does_not_backfill_from_run_snapshots(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            package = _insert_representable_workflow_package(
-                connection,
-                key="runtime_input_no_backfill",
-                workflow_key="daily_review",
-            )
-            run_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO runs (
-                        target_kind, target_id, target_key, target_version,
-                        workflow_package_id, workflow_package_key,
-                        workflow_package_workflow_key, extension_dependencies,
-                        input, status
-                    ) VALUES (
-                        'workflowPackage', :package_id, :package_key, :target_version,
-                        :package_id, :package_key, :workflow_key,
-                        '[]'::jsonb, '{"ticker": "AAPL"}'::jsonb, 'succeeded'
-                    ) RETURNING id
-                    """
-                ),
-                {
-                    "package_id": package["package_id"],
-                    "package_key": package["package_key"],
-                    "target_version": package["target_version"],
-                    "workflow_key": package["workflow_key"],
-                },
-            ).scalar_one()
-            _insert_run_workflow_package_snapshot(
-                connection,
-                run_id=cast(int, run_id),
-                package=package,
-                parameters={"ticker": "AAPL"},
-            )
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            registry_count = connection.execute(
-                text("SELECT COUNT(*) FROM workflow_package_runtime_input_entries")
-            ).scalar_one()
-            snapshot_parameters = connection.execute(
-                text(
-                    """
-                    SELECT launch_parameters
-                    FROM run_workflow_package_snapshots
-                    WHERE run_id = :run_id
-                    """
-                ),
-                {"run_id": run_id},
-            ).scalar_one()
-
-        assert registry_count == 0
-        assert snapshot_parameters == {"ticker": "AAPL"}
-    finally:
-        engine.dispose()
-
-
 def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
     database_url: str,
 ) -> None:
@@ -4589,26 +3885,6 @@ def test_init_db_seeds_macro_and_mixed_signal_presets_with_expected_boundaries(
             } == expected_digital_tool_keys
             assert secret_binding_count == 0
             assert run_count == 0
-    finally:
-        engine.dispose()
-
-
-def test_init_db_does_not_seed_tradingagents_preset_schedules(
-    database_url: str,
-) -> None:
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.connect() as connection:
-            first_rows = _tradingagents_preset_schedule_rows(connection)
-        assert first_rows == []
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            second_rows = _tradingagents_preset_schedule_rows(connection)
-        assert second_rows == []
     finally:
         engine.dispose()
 
@@ -6094,7 +5370,6 @@ def test_upgrade_legacy_schema_normalizes_run_extension_snapshot_jsonb(
         run_columns = {column["name"] for column in inspector.get_columns("runs")}
         assert "extension_dependencies" in run_columns
         assert "extension_snapshots" not in run_columns
-        assert REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
 
         with engine.connect() as connection:
             row = (

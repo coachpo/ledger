@@ -40,7 +40,7 @@ describe("InventoryPageShell", () => {
     );
   });
 
-  it("omits the filter region when callers have no active filter bar", () => {
+  it("leaves the filter region empty when callers have no active filter bar", () => {
     render(
       <InventoryPageShell
         pageContext={{ title: "Reports" }}
@@ -55,7 +55,7 @@ describe("InventoryPageShell", () => {
     expect(screen.queryByTestId("inventory-filters")).not.toBeInTheDocument();
   });
 
-  it("omits the toolbar region when callers move summary into compact route context", () => {
+  it("leaves the toolbar region empty when callers move summary into compact route context", () => {
     render(
       <InventoryPageShell
         pageContext={{ title: "Extensions" }}
