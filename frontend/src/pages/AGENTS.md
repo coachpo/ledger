@@ -97,9 +97,9 @@ src/pages/
 
 ## REGRESSION COVERAGE MATRIX
 
-- `src/routes.test.tsx` guards metadata coverage for every registered route, route archetypes, state variants, shell mode ownership, product-owned 404/error routing, removed-route fallbacks, and extension contribution filtering.
+- `src/routes.test.tsx` guards metadata coverage for every registered route, route archetypes, state variants, shell mode ownership, product-owned 404/error routing, and extension contribution filtering.
 - `src/components/layout.test.tsx` guards sidebar grouping, breadcrumb labels, extension nav hide/show/restore behavior, the single page `<main>`, and metadata-owned full-height wrapping.
-- `e2e/navigation.spec.ts` covers primary nav, route shell metadata in the browser, removed nav absence, unknown-route 404 shell, link/button semantics, mobile overflow, and representative dark-mode chrome.
+- `e2e/navigation.spec.ts` covers primary nav, route shell metadata in the browser, unknown-route 404 shell, link/button semantics, mobile overflow, and representative dark-mode chrome.
 - `e2e/extensions.spec.ts` covers enabled, disabled, and re-enabled Finance Workspace states for nav and direct routes, plus mixed Finance Workspace and Digital Oracle states for tool authoring discovery.
 - `e2e/reports.spec.ts` covers seeded report flows plus representative empty and API-error list states for the finance inventory archetype.
 - `e2e/workflow-packages.spec.ts` covers package-first authoring, import/export, launch, run provenance, and wide payload overflow in the run-detail console.

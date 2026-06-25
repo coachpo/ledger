@@ -47,57 +47,6 @@ Object.defineProperty(globalThis, "localStorage", {
   },
 });
 
-const REMOVED_BROWSER_ROUTE_PATHS = [
-  "/agents",
-  "/agents/new",
-  "/agents/123/edit",
-  "/capabilities",
-  "/capabilities/new",
-  "/capabilities/123/edit",
-  "/mcp-servers",
-  "/mcp-servers/new",
-  "/mcp-servers/123/edit",
-  "/output-schemas",
-  "/output-schemas/new",
-  "/output-schemas/123/edit",
-  "/workflows",
-  "/workflows/new",
-  "/workflows/123/edit",
-  "/workflows/123/run",
-  "/skills",
-  "/skills/new",
-  "/skills/123/edit",
-  "/studio",
-  "/studio/agents",
-  "/tryout",
-  "/orchestration",
-  "/orchestration/roles",
-  "/orchestration/characters",
-  "/runtime-v2",
-  "/runtime-v2/agents",
-  "/simulations",
-  "/simulations/new",
-  "/simulations/123",
-  "/backtests",
-  "/backtests/new",
-  "/backtests/123",
-  "/tools",
-];
-const REMOVED_BROWSER_ROUTE_PREFIXES = [
-  "/agents",
-  "/capabilities",
-  "/mcp-servers",
-  "/output-schemas",
-  "/workflows",
-  "/skills",
-  "/studio",
-  "/tryout",
-  "/orchestration",
-  "/runtime-v2",
-  "/simulations",
-  "/backtests",
-  "/tools",
-];
 const LIVE_BROWSER_ROUTE_PREFIXES = [
   "/workflow-packages",
   "/scheduled-tasks",
@@ -106,26 +55,6 @@ const LIVE_BROWSER_ROUTE_PREFIXES = [
   "/runs",
   "/extensions",
 ];
-const REMOVED_NAV_ENTRIES = [
-  { label: "Agents", testId: "nav-agents", to: "/agents" },
-  { label: "Capabilities", testId: "nav-capabilities", to: "/capabilities" },
-  { label: "MCP Servers", testId: "nav-mcp-servers", to: "/mcp-servers" },
-  {
-    label: "Output Schemas",
-    testId: "nav-output-schemas",
-    to: "/output-schemas",
-  },
-  { label: "Workflows", testId: "nav-workflows", to: "/workflows" },
-  { label: "Skills", testId: "nav-skills", to: "/skills" },
-  { label: "Studio", testId: "nav-studio", to: "/studio" },
-  { label: "Tryout", testId: "nav-tryout", to: "/tryout" },
-  {
-    label: "Orchestration",
-    testId: "nav-orchestration",
-    to: "/orchestration",
-  },
-  { label: "Runtime V2", testId: "nav-runtime-v2", to: "/runtime-v2" },
-] as const;
 const LIVE_PLATFORM_NAV_ENTRIES = [
   {
     label: "Workflow Packages",
@@ -389,7 +318,7 @@ describe("router", () => {
     }
   });
 
-  it("keeps removed browser prefixes out of live route registration and metadata", () => {
+  it("registers live platform route prefixes in route registration and metadata", () => {
     const registeredPatterns = routePatternsFromDefinitions(
       registeredChildRoutes(),
     );
@@ -412,25 +341,6 @@ describe("router", () => {
       expect(
         sidebarPaths.some((path) => routePatternStartsWithPrefix(path, prefix)),
       ).toBe(true);
-    }
-
-    for (const prefix of REMOVED_BROWSER_ROUTE_PREFIXES) {
-      expect(
-        registeredPatterns.filter((pattern) =>
-          routePatternStartsWithPrefix(pattern, prefix),
-        ),
-      ).toEqual([]);
-      expect(
-        livePatterns.filter((pattern) =>
-          routePatternStartsWithPrefix(pattern, prefix),
-        ),
-      ).toEqual([]);
-      expect(
-        sidebarPaths.filter((path) =>
-          routePatternStartsWithPrefix(path, prefix),
-        ),
-      ).toEqual([]);
-      expect(getRouteMetadataForPathname(prefix)).toBe(unknownRouteMetadata);
     }
   });
 
@@ -684,7 +594,7 @@ describe("router", () => {
     ).toEqual(navGroupSummaryFromMetadata(disabledExtensions));
   });
 
-  it("omits removed nav entries while keeping live platform controls under mocked extension state", () => {
+  it("keeps live platform controls under mocked extension state", () => {
     const extensionStates = [
       extensionList(true, true),
       extensionList(false, true),
@@ -692,27 +602,11 @@ describe("router", () => {
 
     for (const extensions of extensionStates) {
       const navItems = navItemsFromGroups(assembleNavGroups(extensions));
-      const labels = navItems.map((item) => item.label);
-      const testIds = navItems.map((item) => item.testId);
-      const paths = navItems.map((item) => item.to);
 
       for (const liveEntry of LIVE_PLATFORM_NAV_ENTRIES) {
         expect(navItems).toEqual(
           expect.arrayContaining([expect.objectContaining(liveEntry)]),
         );
-      }
-
-      for (const removedEntry of REMOVED_NAV_ENTRIES) {
-        expect(navItems).not.toContainEqual(removedEntry);
-        expect(labels).not.toContain(removedEntry.label);
-        expect(testIds).not.toContain(removedEntry.testId);
-        expect(paths).not.toContain(removedEntry.to);
-      }
-
-      for (const prefix of REMOVED_BROWSER_ROUTE_PREFIXES) {
-        expect(
-          paths.filter((path) => routePatternStartsWithPrefix(path, prefix)),
-        ).toEqual([]);
       }
     }
   });
@@ -737,36 +631,7 @@ describe("router", () => {
     ]);
   });
 
-  it("routes removed legacy families to the product-owned 404", () => {
-    expect(getRouteMetadataForPathname("/tryout")).toBe(unknownRouteMetadata);
-    expect(getRouteMetadataForPathname("/studio")).toBe(unknownRouteMetadata);
-    expect(getRouteMetadataForPathname("/studio/agents")).toBe(
-      unknownRouteMetadata,
-    );
-    expect(getRouteMetadataForPathname("/orchestration")).toBe(
-      unknownRouteMetadata,
-    );
-    expect(getRouteMetadataForPathname("/orchestration/roles")).toBe(
-      unknownRouteMetadata,
-    );
-    expect(getRouteMetadataForPathname("/orchestration/characters")).toBe(
-      unknownRouteMetadata,
-    );
-  });
-
-  it("routes the removed backtests family to the product-owned 404", () => {
-    expect(getRouteMetadataForPathname("/backtests")).toBe(
-      unknownRouteMetadata,
-    );
-    expect(getRouteMetadataForPathname("/backtests/new")).toBe(
-      unknownRouteMetadata,
-    );
-    expect(getRouteMetadataForPathname("/backtests/123")).toBe(
-      unknownRouteMetadata,
-    );
-  });
-
-  it("registers workflow package routes and removes old global authoring routes", () => {
+  it("registers workflow package routes", () => {
     const registeredPatterns = routePatternsFromDefinitions(
       registeredChildRoutes(),
     );
@@ -790,20 +655,6 @@ describe("router", () => {
           routePatternStartsWithPrefix(pattern, prefix),
         ),
       ).toBe(true);
-    }
-
-    for (const prefix of REMOVED_BROWSER_ROUTE_PREFIXES) {
-      expect(
-        registeredPatterns.some((pattern) =>
-          routePatternStartsWithPrefix(pattern, prefix),
-        ),
-      ).toBe(false);
-    }
-
-    for (const retiredRoute of REMOVED_BROWSER_ROUTE_PATHS) {
-      expect(getRouteMetadataForPathname(retiredRoute)).toBe(
-        unknownRouteMetadata,
-      );
     }
   });
 

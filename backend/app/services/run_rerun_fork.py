@@ -36,7 +36,6 @@ from app.services.execution_plan import (
     PackageResolvedModelBinding,
     PackageRuntimeAgentSpec,
 )
-from app.services.legacy_authoring import raise_legacy_global_authoring_runtime_blocked
 from app.services.model_connection_compatibility import CompatibilityResolutionService
 from app.services.output_schema_compiler import OutputSchemaCompiler
 from app.services.package_execution_plan_builder import (
@@ -59,6 +58,19 @@ _RUN_STATUS_FAILED = "failed"
 
 _WorkflowPackageSnapshotResolver = Callable[[Run], RunWorkflowPackageSnapshot]
 _RuntimeAgentResolver = Callable[[ExecutionPlanAgent], PackageRuntimeAgentSpec]
+
+
+def _raise_package_run_required(target_kind: str) -> None:
+    raise business_rule_error(
+        "run_descendant_target_not_supported",
+        "Run descendants are supported only for Workflow Package runs.",
+        details=[
+            {
+                "field": "targetKind",
+                "issue": f"Expected workflowPackage, got {target_kind}.",
+            }
+        ],
+    )
 
 
 @dataclass(frozen=True)
@@ -118,7 +130,7 @@ class RunRerunForkPreparation:
     def build_rerun_draft(self, source_run_id: int) -> RunRerunDraftRead:
         source_run = self._get_run_or_raise(source_run_id)
         if source_run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
-            raise_legacy_global_authoring_runtime_blocked(source_run.target_kind)
+            _raise_package_run_required(source_run.target_kind)
         _ = self.build_plan_for_run(source_run)
         readiness = self._current_readiness_for_run(source_run)
         return RunRerunDraftRead.model_validate(
@@ -140,7 +152,7 @@ class RunRerunForkPreparation:
     ) -> PreparedRunRerun:
         source_run = self._get_run_or_raise(source_run_id)
         if source_run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
-            raise_legacy_global_authoring_runtime_blocked(source_run.target_kind)
+            _raise_package_run_required(source_run.target_kind)
         readiness = self._current_readiness_for_run(source_run)
         self._assert_current_readiness(readiness)
         plan = self.build_plan_for_run(source_run)
@@ -198,7 +210,7 @@ class RunRerunForkPreparation:
 
     def build_plan_for_run(self, run: Run) -> ExecutionPlan:
         if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
-            raise_legacy_global_authoring_runtime_blocked(run.target_kind)
+            _raise_package_run_required(run.target_kind)
         # Rebuild the plan from the stored run snapshot so rerun/fork keeps the
         # frozen effective runtime profile by default instead of rebinding live.
         snapshot = self._workflow_package_snapshot_for_run(run)
@@ -287,7 +299,7 @@ class RunRerunForkPreparation:
     ) -> PreparedRunFork:
         source_run = self._get_run_or_raise(source_run_id)
         if source_run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
-            raise_legacy_global_authoring_runtime_blocked(source_run.target_kind)
+            _raise_package_run_required(source_run.target_kind)
         if source_run.status != _RUN_STATUS_SUCCEEDED:
             raise business_rule_error(
                 "run_fork_source_not_succeeded",

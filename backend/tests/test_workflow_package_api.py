@@ -223,25 +223,6 @@ def _edited_workflow_manifest_source(source: str) -> str:
     )
 
 
-def test_workflow_package_list_rejects_removed_status_query(client: TestClient) -> None:
-    ordinary = client.get("/api/workflow-packages")
-    assert ordinary.status_code == 200, ordinary.json()
-
-    response = client.get("/api/workflow-packages", params={"status": "active"})
-
-    assert response.status_code == 422, response.json()
-    assert response.json() == {
-        "code": "validation_error",
-        "message": "Workflow package request validation failed",
-        "details": [
-            {
-                "field": "status",
-                "issue": "Workflow package status filtering is no longer supported",
-            }
-        ],
-    }
-
-
 def test_workflow_package_list_includes_browser_proven_presets(client: TestClient) -> None:
     response = client.get("/api/workflow-packages")
 
@@ -539,7 +520,7 @@ def test_validate_manifest_rejects_unsupported_api_version(
     assert "signaldeck.workflowPackage/v1" in cast(str, diagnostics[0]["message"])
 
 
-def test_launch_metadata_and_create_contract_reject_removed_version(
+def test_launch_metadata_and_create_contract_use_current_package(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -556,12 +537,6 @@ def test_launch_metadata_and_create_contract_reject_removed_version(
     assert launch_body["blockingErrors"] == []
     assert "facts" not in launch_body
 
-    versioned_launch = client.get(
-        f"/api/workflow-packages/{created['id']}/launch",
-        params={"version": 1},
-    )
-    assert versioned_launch.status_code == 422, versioned_launch.json()
-
     preflight = client.post(
         f"/api/workflow-packages/{created['id']}/preflight",
         json={"workflowKey": None, "parameters": _advisory_research_parameters()},
@@ -573,29 +548,6 @@ def test_launch_metadata_and_create_contract_reject_removed_version(
     assert preflight_body["ready"] is True
     assert preflight_body["blockingErrors"] == []
     assert "facts" not in preflight_body
-
-    versioned_preflight = client.post(
-        f"/api/workflow-packages/{created['id']}/preflight",
-        params={"version": 1},
-        json={"workflowKey": None, "parameters": {}},
-    )
-    assert versioned_preflight.status_code == 422, versioned_preflight.json()
-
-    created_launch = client.post(
-        f"/api/workflow-packages/{created['id']}/launches",
-        json={
-            "version": 1,
-            "workflowKey": "advisory_research",
-            "parameters": {
-                "ticker": "AAPL",
-                "asOfDate": "2026-05-08",
-                "portfolioId": "tradingagents_demo",
-                "horizonDays": 30,
-                "benchmarkSymbol": "SPY",
-            },
-        },
-    )
-    assert created_launch.status_code == 422, created_launch.json()
 
     deleted = client.delete(f"/api/workflow-packages/{created['id']}")
     assert deleted.status_code == 204, deleted.text

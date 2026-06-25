@@ -8,10 +8,10 @@ from typing import Any, Literal
 from pydantic import Field, field_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
-from app.schemas.workflow import WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH
 from app.schemas.workflow_package_manifest import WorkflowPackageManifestDiagnostic
 
 _SECRET_BINDING_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
+MANIFEST_SOURCE_MAX_LENGTH = 262_144
 
 
 def normalize_workflow_package_secret_binding_key(value: object) -> str:
@@ -31,10 +31,8 @@ def _validate_manifest_source(value: object) -> str:
         raise ValueError("manifestSource must be a string")
     if not value.strip():
         raise ValueError("manifestSource is required")
-    if len(value) > WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH:
-        raise ValueError(
-            f"manifestSource must be at most {WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH} characters"
-        )
+    if len(value) > MANIFEST_SOURCE_MAX_LENGTH:
+        raise ValueError(f"manifestSource must be at most {MANIFEST_SOURCE_MAX_LENGTH} characters")
     return value
 
 

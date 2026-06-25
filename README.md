@@ -31,7 +31,7 @@ Legacy global authoring routes are unsupported. `/api/agents`, `/api/capabilitie
 ## Prerequisites
 
 - Docker with `docker compose` for the containerized local stack
-- Python 3.13+, Node 24+, pnpm 10+, and uv for direct backend/frontend development and validation commands
+- Python 3.13+, Node 24+, pnpm 10+, and uv for validation commands
 - An LLM provider key if you want live model-backed agent-platform execution
 
 ## Production Release Images and Local Root Compose
@@ -137,8 +137,6 @@ It will:
 - keep the backend/API same-origin behind Nginx through `/health`, `/ready`, `/api/`, and `/api/v1/`
 
 The helper preserves the root Compose environment controls, including `APP_PORT`, `POSTGRES_PASSWORD`, `AGENT_PLATFORM_ENCRYPTION_KEY`, `BUILD_FRONTEND`, and `VITE_API_BASE_URL`.
-
-For direct backend/frontend development without the combined Docker app image, use `./start-local.sh`. It starts Uvicorn, the scheduler, and the Vite dev server on available loopback ports by default, prints the selected URLs, and lets Docker assign an available host port for its managed PostgreSQL container. Set `BACKEND_PORT`, `FRONTEND_PORT` or `APP_PORT`, `LOCAL_POSTGRES_PORT`, or `DATABASE_URL` only when you need deterministic ports or an external database.
 
 ### 2. Open the app and verify the stack
 

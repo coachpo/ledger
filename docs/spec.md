@@ -10,9 +10,8 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 
 ## Runtime Topology
 
-- Root startup has two supported paths: `start.sh` wraps the root `docker-compose.yml` local/demo stack, while `start-local.sh` runs the bare-metal local stack with Uvicorn, the scheduler, and the Vite dev server.
+- Root startup uses `start.sh`, which wraps the root `docker-compose.yml` local/demo stack.
 - The Compose public local app is `http://localhost:${APP_PORT:-8080}`. Nginx proxies `/health`, `/ready`, `/api/`, and `/api/v1/` to the internal backend; PostgreSQL and FastAPI are not exposed directly on host ports by default.
-- `start-local.sh` chooses available loopback ports for the backend and frontend by default, prints the selected URLs, and lets Docker assign an available host port for its managed PostgreSQL container unless explicit port overrides are set.
 - Playwright starts dedicated E2E servers on backend `8001` and frontend `4173`; the backend helper also launches the scheduler worker.
 - Backend requires Python 3.13+, frontend targets Node 24 and pnpm 10.
 
@@ -153,7 +152,7 @@ Scheduled inputs are JSON object templates, not scripts. The allowed placeholder
 
 `POST /api/schedules/{scheduleId}/run-now` requires `idempotencyKey` and `scheduledFor`, creates a manual fire through the same scheduled-run materialization path, and returns the compact queued run summary. Repeating the same schedule, scheduled time, and key returns the same fire and run. Paused schedules may run now and remain paused. The UI navigates to `/runs/:runId` for queue and execution evidence after run-now succeeds.
 
-`GET /api/schedules/{scheduleId}/fires` returns paged fire history with status, reason, local scheduled fields, rendered parameters, skip or error details, and linked run id while the schedule exists. `DELETE /api/schedules/{scheduleId}` returns 204 with no body, removes the schedule and its fire rows, stops future automation, preserves existing run history, and keeps direct run artifacts readable through run-owned `scheduleProvenance`. Deleted schedule fire history is not a preserved live surface. Rerun and fork descendants are ordinary run lineage and stay governed by run lineage. Startup schema repair detaches legacy schedule rows from linked runs, backfills `scheduleProvenance` when resolvable, deletes obsolete schedule and fire rows, and no longer routes schedule cleanup through a destructive service path. OpenAPI and regression tests assert the 204 delete operation and removed-route absence.
+`GET /api/schedules/{scheduleId}/fires` returns paged fire history with status, reason, local scheduled fields, rendered parameters, skip or error details, and linked run id while the schedule exists. `DELETE /api/schedules/{scheduleId}` returns 204 with no body, removes the schedule and its fire rows, stops future automation, preserves existing run history, and keeps direct run artifacts readable through run-owned `scheduleProvenance`. Deleted schedule fire history is not a preserved live surface. Rerun and fork descendants are ordinary run lineage and stay governed by run lineage. Startup schema repair detaches legacy schedule rows from linked runs, backfills `scheduleProvenance` when resolvable, deletes obsolete schedule and fire rows, and no longer routes schedule cleanup through a destructive service path. OpenAPI and regression tests assert the 204 delete operation and schedule provenance.
 
 ## Runs, Scheduler, Reruns, And Forks
 

@@ -30,7 +30,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Shared helpers | `common.ts`, `csv.ts` | common ids, timestamps, and CSV preview shapes |
 | Extension state contract | `extension.ts` | statically resident extension `key`, `label`, `enabled`, and toggle payloads |
 | Workflow Package contracts | `workflow-package.ts` | package manifests, runtime-input registry/stale state, secret bindings, versions, diagnostics, preflight, launch, import, and export payloads |
-| Package-local authoring contracts | `agent.ts`, `capability.ts`, `output-schema.ts`, `mcp-server.ts`, `workflow.ts` | package-local agent, capability profile, output schema, private MCP, and workflow graph resource shapes |
+| Package-local authoring contracts | `capability.ts`, `output-schema.ts`, `mcp-server.ts`, `workflow-package.ts` | package-local capability profile, output schema, private MCP, and Workflow Package resource shapes |
 | Scheduled Task contracts | `schedule.ts` | recurrence, status, preview, fire history, run-now, and schedule-linked run payloads |
 | Platform catalog and binding contracts | `tool.ts`, `model-connection.ts` | read-only tool metadata and saved model connection payloads |
 | Platform memory contracts | `memory.ts` | proposal review, approve/reject, audit-event, and quarantine payloads |

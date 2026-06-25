@@ -4,7 +4,7 @@ This summary records how the highest-value deviations from `02-current-architect
 
 ## Resolved Deviations
 
-1. Legacy and global authoring ballast is no longer treated as live architecture. S2 and S12 preserved removed-route absence, S4 kept package-local authoring semantics, and S13 removed live retired global authoring imports while keeping Workflow Packages as the only executable authoring root.
+1. Legacy and global authoring ballast is no longer treated as live architecture. S2 and S12 kept the live route contract current, S4 kept package-local authoring semantics, and S13 removed live retired global authoring imports while keeping Workflow Packages as the only executable authoring root.
 
 2. Startup repair is narrowed to current live table repair. S13 kept live PostgreSQL repair paths and changed retired global authoring tables to drop-only cleanup targets, with static tests rejecting retired-table DML and retired model-connection snapshot repair.
 
@@ -23,7 +23,7 @@ This summary records how the highest-value deviations from `02-current-architect
 
 5. Digital Oracle is aligned as tool-only. It owns the three phase-1 tools and contributes no route, navigation, provider bundle, or lifecycle surface.
 
-6. Frontend route and navigation gating are aligned. The live router keeps platform routes, Finance extension routes, removed-route NotFound behavior, and `/api/*` browser route absence covered.
+6. Frontend route and navigation gating are aligned. The live router keeps platform routes, Finance extension routes, the product-owned unknown-route shell, and `/api/*` browser route handling covered.
 
 7. CI quality gates are aligned. `.github/workflows/ci.yml` runs backend lint, format, type, and test checks; frontend lint, type, build, and unit checks; and Chromium E2E after quality jobs.
 

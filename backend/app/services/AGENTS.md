@@ -38,9 +38,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Run planning and execution | `package_execution_plan_builder.py`, `execution_plan.py`, `run_service.py`, `run_rerun_fork.py`, `run_queue_service.py`, `run_read_projection.py`, `../workers/run_scheduler.py`, `run_lifecycle.py`, `execution_providers.py`, `agent_execution_service.py`, `http_operation_execution_service.py` | compiled package planning, queued execution, rerun/fork lineage, backend progress/queue read models, lifecycle hooks, and HTTP/model/tool dispatch |
 | MCP boundary service | `mcp_server_service.py`, `../agents/mcp/AGENTS.md` | saved config connection testing and package-private MCP runtime boundary; active MCP support, not legacy quarantine |
 | Output-schema compiler | `output_schema_compiler.py` | locked schema-subset validation and runtime model compilation |
-| Legacy cutover helpers | `legacy_authoring.py`, `agent_service.py`, `workflow_service.py`, `capability_service.py`, `output_schema_service.py`, `agent_manifest_*`, `workflow_manifest_*`, `execution_plan_builder.py` | quarantine/upgrade-only legacy authoring context; not live route or package-first service surfaces |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
-| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_extensions_api.py`, `../../tests/test_extension_lifecycle_matrix.py`, `../../tests/test_workflow_package_preflight.py`, `../../tests/test_workflow_package_runtime_api.py`, `../../tests/test_workflow_package_runtime_artifacts.py`, `../../tests/test_workflow_package_run_contracts.py`, `../../tests/test_workflow_memory_middleware.py`, `../../tests/test_workflow_memory_policy.py`, `../../tests/test_workflow_memory_context.py`, `../../tests/test_workflow_memory_checkpoints.py`, `../../tests/test_social_sentiment_service.py`, `../../tests/test_legacy_backend_cutover.py` | preserved-product regressions, extension state, platform execution, workflow memory, provider warnings, run artifacts, and cutover assertions |
+| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_extensions_api.py`, `../../tests/test_extension_lifecycle_matrix.py`, `../../tests/test_workflow_package_preflight.py`, `../../tests/test_workflow_package_runtime_api.py`, `../../tests/test_workflow_package_runtime_artifacts.py`, `../../tests/test_workflow_package_run_contracts.py`, `../../tests/test_workflow_memory_middleware.py`, `../../tests/test_workflow_memory_policy.py`, `../../tests/test_workflow_memory_context.py`, `../../tests/test_workflow_memory_checkpoints.py`, `../../tests/test_social_sentiment_service.py` | preserved-product regressions, extension state, platform execution, workflow memory, provider warnings, and run artifacts |
 
 ## CONVENTIONS
 - Persistence-backed domain services are constructed with a `Session` and compose repositories or dependent services in `__init__`.
@@ -64,7 +63,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - API launch/rerun/fork paths create durable queued rows only; `RunSchedulerWorker` and `RunQueueService` own later claim, lease heartbeat, stale-lease recovery, and claimed execution.
 - Tools are global read-only server-declared metadata; package-local capability profiles store only canonical `signaldeck.<owner>.<tool_collection>.<tool>` `toolKeys` and validate against the extension-aware `ToolCatalog`.
 - Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from global Model Connections.
-- Quarantined legacy authoring services may remain for cutover tests and schema cleanup, but new execution and authoring work must use Workflow Package, schedule, Model Connection, Memory, and Run services.
+- Do not add quarantined legacy authoring services for cutover checks; execution and authoring work must use Workflow Package, schedule, Model Connection, Memory, and Run services.
 
 ## ANTI-PATTERNS
 - Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
@@ -86,7 +85,7 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_extensions_api.py tests/test_extension_lifecycle_matrix.py tests/test_workflow_package_preflight.py tests/test_mcp_runtime.py tests/test_social_sentiment_service.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_runtime_artifacts.py tests/test_workflow_package_run_contracts.py tests/test_workflow_memory_middleware.py tests/test_workflow_memory_policy.py tests/test_workflow_memory_context.py tests/test_workflow_memory_checkpoints.py tests/test_legacy_backend_cutover.py
+uv run pytest tests/test_api.py tests/test_extensions_api.py tests/test_extension_lifecycle_matrix.py tests/test_workflow_package_preflight.py tests/test_mcp_runtime.py tests/test_social_sentiment_service.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_runtime_artifacts.py tests/test_workflow_package_run_contracts.py tests/test_workflow_memory_middleware.py tests/test_workflow_memory_policy.py tests/test_workflow_memory_context.py tests/test_workflow_memory_checkpoints.py
 ```
 
 ## NOTES

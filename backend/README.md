@@ -17,7 +17,7 @@ uv sync
 uv run pytest
 ```
 
-The backend expects PostgreSQL everywhere. Full-stack local startup gets it from the root Compose `db` service at `db:5432`. Direct backend/frontend startup with `./start-local.sh` uses available loopback ports by default and lets Docker assign an available host port for its managed PostgreSQL container. Backend tests that run outside Docker can use `TEST_DATABASE_URL` or `DATABASE_URL` for a specific PostgreSQL server, otherwise the test fixture starts or reuses the same managed local PostgreSQL container with an available host port.
+The backend expects PostgreSQL everywhere. Full-stack local startup gets it from the root Compose `db` service at `db:5432`. Backend tests that run outside Docker can use `TEST_DATABASE_URL` or `DATABASE_URL` for a specific PostgreSQL server, otherwise the test fixture starts or reuses a managed local PostgreSQL container with an available host port.
 
 ## Model Connections
 
@@ -62,7 +62,7 @@ The root `docker-compose.yml` is the local/demo full-stack Compose file. It star
 docker compose -f ../docker-compose.yml up --build --remove-orphans
 ```
 
-From the repository root, prefer `./start.sh`, which runs the same command and streams logs in the foreground. Only the app/Nginx port is published on the host; PostgreSQL stays on the Docker network and FastAPI stays behind Nginx in the app container. For bare-metal development, use `./start-local.sh`; it chooses available local app/backend/PostgreSQL ports unless you set explicit environment overrides.
+From the repository root, prefer `./start.sh`, which runs the same command and streams logs in the foreground. Only the app/Nginx port is published on the host; PostgreSQL stays on the Docker network and FastAPI stays behind Nginx in the app container.
 
 To reset the container-managed PostgreSQL data:
 

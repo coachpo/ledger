@@ -55,7 +55,7 @@ Prometheus review input after every slice is the slice report plus changed-files
 Backend route/API command:
 
 ```bash
-cd backend && uv run pytest tests/test_legacy_backend_cutover.py tests/test_workflow_package_openapi.py tests/test_api.py
+cd backend && uv run pytest tests/test_workflow_package_openapi.py tests/test_api.py
 ```
 
 Frontend route command:

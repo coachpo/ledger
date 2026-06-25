@@ -22,7 +22,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## CHILD DOCS
 - `api/AGENTS.md` — resource request helpers and upload/download boundaries
 - `types/AGENTS.md` — shared TypeScript wire contracts and enum-like unions
-- `platform-authoring/AGENTS.md` plus child docs — pure schema/value/ref/workflow/agent authoring helpers
+- `platform-authoring/AGENTS.md` plus child docs — pure schema/value/ref/package manifest authoring helpers
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -36,7 +36,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Markdown formatting | `markdown-format.ts` | Prettier-backed markdown normalization for the template editor |
 | Runtime input helpers | `runtime-inputs.ts` | row ids, row-to-map conversion, shared editor/report-generation helpers |
 | Workflow option helpers | `workflow-options.ts` | visible fallback option when a saved selection is missing from package workflows |
-| Platform authoring helpers | `platform-authoring/AGENTS.md` | schema/value/ref/workflow/agent IR, codecs, factories, validation |
+| Platform authoring helpers | `platform-authoring/AGENTS.md` | schema/value/ref/package manifest IR, codecs, factories, validation |
 | Report grouping | `report-grouping.ts` | report list filtering, grouping, and sort helpers |
 | Unit coverage | `api.test.ts`, `api/schedules.test.ts`, `query-keys.test.ts`, `portfolio-analytics.test.ts`, `format.test.ts`, `markdown-format.test.ts` | contract and helper regressions |
 

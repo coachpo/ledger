@@ -11,7 +11,7 @@
 
 ## Required Changes Before Implementation
 
-- Completed slices must keep removed-route and retired-surface absence assertions green through S15.
+- Completed slices must keep live route, package, upgrade, and frontend unknown-route assertions green through S15.
 - The export rule is settled: private MCP `env`, `headers`, and `query` are secret-bearing and omitted from exports/browser-visible reads.
 - S6 resolved terminal-write ownership with active lease-owner checks before terminal persistence.
 - S13 resolved startup-repair ballast by keeping live-table repair and making retired global authoring tables drop-only cleanup targets.
@@ -30,4 +30,4 @@
 
 **Decision**: GO
 
-**Reason**: Slice 1 is the safest and most necessary starting point because it locks the live contract, removed-route absence, and retired-table/live-upgrade guards before any destructive cleanup begins. Its verification commands are concrete, it does not require compatibility-preserving decisions, and later slices depend on its negative tests staying intact.
+**Reason**: Slice 1 is the safest and most necessary starting point because it locks the live contract and retired-table/live-upgrade guards before any destructive cleanup begins. Its verification commands are concrete, it does not require compatibility-preserving decisions, and later slices depend on those checks staying intact.

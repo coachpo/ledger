@@ -8,7 +8,7 @@ Use this as an executable checklist. For each item, inspect the cited file, symb
 - [ ] Confirm `backend/app/api/platform_router.py::platform_router` mounts only platform routers: extensions, memory, model connections, tools, workflow packages, schedules, and runs.
 - [ ] Confirm finance `/api/v1` route ownership stays in `backend/app/extensions/signaldeck_finance/api_routers.py` and is not duplicated in platform core.
 - [ ] Confirm route handlers use `backend/app/api/dependencies.py` service factories rather than direct session/repository orchestration.
-- [ ] Confirm removed backend route families remain absent with `backend/tests/test_legacy_backend_cutover.py`.
+- [ ] Confirm live backend route ownership with API and OpenAPI tests.
 
 ## Workflow Package Authoring/Validation
 

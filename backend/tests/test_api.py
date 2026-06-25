@@ -857,27 +857,6 @@ def test_template_crud_and_compile_flow(client: TestClient) -> None:
     assert missing_response.json()["code"] == "not_found"
 
 
-@pytest.mark.parametrize("payload", [{"confirm": False}, {"confirm": True}])
-def test_template_seed_route_is_removed(
-    client: TestClient,
-    payload: dict[str, bool],
-) -> None:
-    create_portfolio(client, name="Legacy Portfolio", slug="legacy_portfolio")
-    create_template(client, name="Legacy Template", content="# Legacy")
-
-    response = client.post("/api/v1/templates/seed", json=payload)
-
-    assert response.status_code == 404
-
-    templates_response = client.get("/api/v1/templates")
-    assert templates_response.status_code == 200
-    assert [item["name"] for item in templates_response.json()] == ["Legacy Template"]
-
-    portfolios_response = client.get("/api/v1/portfolios")
-    assert portfolios_response.status_code == 200
-    assert [item["slug"] for item in portfolios_response.json()] == ["legacy_portfolio"]
-
-
 def test_template_compile_accepts_runtime_inputs(client: TestClient) -> None:
     portfolio = create_portfolio(client, name="Reusable", slug="reusable")
     create_position(

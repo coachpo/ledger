@@ -42,7 +42,7 @@ Trusted single-user scope: Owner docs must frame auth, authorization, RBAC, logi
 ## CONVENTIONS
 
 - Keep status lines aligned with the current branch and commit when refreshing docs.
-- Keep removed surfaces only as explicit non-goals, out-of-scope items, or removed-route guardrails.
+- Keep removed surfaces only as explicit non-goals or out-of-scope items.
 - Do not present Studio, Tryout, orchestration, runtime-v2, simulations, backtests, `/api/skills`, `/skills*`, or removed global authoring routes as live.
 - `spec.md` owns consolidated route summaries, API conventions, runtime topology, backend/frontend behavior, and platform technical contracts.
 - `requirements.md` owns testable functional and nonfunctional requirements.
@@ -66,7 +66,7 @@ Trusted single-user scope: Owner docs must frame auth, authorization, RBAC, logi
 - Preserve the six canonical owner docs unless live code proves a file has no remaining owner.
 - Keep root-level docs distilled to the six canonical owner files only; keep requirements companions and architecture-audit files from becoming duplicate owner docs.
 - Merge stale live-surface claims into the correct owner file instead of duplicating details.
-- Convert useful removed-surface material into explicit non-goals or removed-route guarantees.
+- Convert useful removed-surface material into explicit non-goals or out-of-scope notes.
 - Delete obsolete passages that duplicate a live owner or contradict mounted routes, schemas, or tests.
 
 ## ANTI-PATTERNS

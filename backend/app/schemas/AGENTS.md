@@ -62,7 +62,7 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests/test_workflow_memory_policy.py tests/test_runtime_models.py tests/test_legacy_backend_cutover.py
+uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests/test_workflow_memory_policy.py tests/test_runtime_models.py
 ```
 
 ## NOTES

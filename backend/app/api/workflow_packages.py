@@ -3,13 +3,12 @@ from __future__ import annotations
 
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.dependencies import (
     get_workflow_package_runtime_input_registry_service,
     get_workflow_package_service,
 )
-from app.core.errors import validation_error
 from app.schemas.workflow_package import (
     WorkflowPackageImportRequest,
     WorkflowPackageLaunchCreateRequest,
@@ -35,46 +34,15 @@ from app.services.workflow_package_runtime_input_registry import (
 )
 from app.services.workflow_package_service import WorkflowPackageService
 
-
-def reject_removed_version_query(request: Request) -> None:
-    if "version" not in request.query_params:
-        return
-    raise validation_error(
-        "Workflow package request validation failed",
-        [
-            {
-                "field": "version",
-                "issue": "Workflow package version selection is no longer supported",
-            }
-        ],
-    )
-
-
-def reject_removed_status_query(request: Request) -> None:
-    if "status" not in request.query_params:
-        return
-    raise validation_error(
-        "Workflow package request validation failed",
-        [
-            {
-                "field": "status",
-                "issue": "Workflow package status filtering is no longer supported",
-            }
-        ],
-    )
-
-
 router = APIRouter(
     prefix="/workflow-packages",
     tags=["workflow-packages"],
-    dependencies=[Depends(reject_removed_version_query)],
 )
 
 
 @router.get(
     "",
     response_model=WorkflowPackageListRead,
-    dependencies=[Depends(reject_removed_status_query)],
 )
 def list_workflow_packages(
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],

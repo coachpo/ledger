@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers `backend/tests/`.
 
 ## OVERVIEW
-`backend/tests/` is the behavioral spec for the shipped backend surface: preserved portfolio, template, report, trading, and market-data APIs behind Finance Workspace gates; Digital Oracle runtime tools behind `signaldeck.digital_oracle`; extension registry/state behavior; current agent-platform APIs; startup schema upgrades; run rerun/fork semantics; and removed-route/module absence assertions. Tests run against isolated PostgreSQL databases and a real FastAPI app instance.
+`backend/tests/` is the behavioral spec for the shipped backend surface: preserved portfolio, template, report, trading, and market-data APIs behind Finance Workspace gates; Digital Oracle runtime tools behind `signaldeck.digital_oracle`; extension registry/state behavior; current agent-platform APIs; startup schema upgrades; and run rerun/fork semantics. Tests run against isolated PostgreSQL databases and a real FastAPI app instance.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
@@ -27,7 +27,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Agent-platform run coverage | `test_workflow_package_runtime_api.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_run_service_http_operations.py` | package execution, scheduler defaults/worker queue semantics, run detail/list progress and queue read models, model-binding provenance, reruns, invocation-input forks, HTTP/tool operations, and historical step replay read-lineage coverage |
 | Runtime artifact and workflow memory coverage | `test_workflow_package_runtime_artifacts.py`, `test_api_memory.py`, `test_workflow_memory_manifest.py`, `test_workflow_memory_persistence.py`, `test_workflow_memory_checkpoints.py`, `test_workflow_memory_context.py`, `test_workflow_memory_policy.py`, `test_workflow_memory_middleware.py`, `test_agent_execution_memory_context.py`, `test_run_read_projection.py` | persisted step outputs, Logfire trace linkage, review API contracts, declarative memory policy, non-authoritative context injection, proposal/policy/quarantine flows, checkpoints, run-detail evidence, and workflow memory projections |
 | Model and repository coverage | `test_runtime_models.py`, `test_runtime_repositories.py` | current agent-platform metadata, uniqueness, current-package persistence, run-fork persistence, and run-snapshot expectations |
-| DB-upgrade, export, and removed-surface coverage | `test_runtime_db_upgrades.py`, `test_workflow_package_db_upgrades.py`, `test_workflow_package_export.py`, `test_workflow_package_export_security.py`, `test_workflow_package_removed_contract_gates.py`, `test_legacy_backend_cutover.py` | startup repairs, retired table cleanup, export redaction, and removed-route/module guarantees |
+| DB-upgrade, export, and demo preset coverage | `test_runtime_db_upgrades.py`, `test_workflow_package_db_upgrades.py`, `test_workflow_package_export.py`, `test_workflow_package_export_security.py`, `test_workflow_package_demo_presets.py` | startup repairs, retired table cleanup, export redaction, and demo seed contracts |
 | Focused helper coverage | `test_refactor_helpers.py` | targeted helper regressions when small backend refactors need coverage |
 
 ## CONVENTIONS
@@ -35,7 +35,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - The app fixture uses `create_app(init_database=False)` so fixtures, not app startup, control DB initialization.
 - Helper functions inside the test modules build portfolios, templates, reports, and platform fixtures explicitly instead of hiding setup behind opaque shared state.
 - Quote-provider behavior is exercised through `app.dependency_overrides` on the FastAPI app rather than through real network calls.
-- For ordinary removal-only checks, prefer manual confirmation over adding standalone “proves not” tests. Keep absence assertions only when the missing surface is itself the shipped contract, such as removed routes/modules or slim-state guarantees.
+- For ordinary removal-only checks, prefer manual confirmation over adding standalone “proves not” tests. Keep absence assertions only when the missing surface is itself the shipped contract, such as slim-state guarantees or fail-closed safety behavior.
 - `TEST_DATABASE_URL` or `DATABASE_URL` must point to a PostgreSQL server where the test user can connect to `postgres` and create/drop databases.
 
 ## ANTI-PATTERNS
@@ -57,4 +57,3 @@ uv run pytest
 - `test_api.py` covers preserved `/api/v1` behavior, finance extension gating, and current agent-platform validation paths.
 - Extension, tool-catalog, runtime-tool, and lifecycle tests lock statically resident `signaldeck.finance` and `signaldeck.digital_oracle` state, enabled-tool filtering, and provider/runtime-tool contracts.
 - `test_workflow_package_runtime_api.py`, `test_workflow_package_runtime_artifacts.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_mcp_runtime.py`, `test_workflow_memory_manifest.py`, `test_workflow_memory_persistence.py`, `test_workflow_memory_checkpoints.py`, `test_workflow_memory_context.py`, `test_workflow_memory_policy.py`, `test_workflow_memory_middleware.py`, `test_agent_execution_memory_context.py`, `test_run_read_projection.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_runtime_db_upgrades.py` lock the current agent-platform persistence, Scheduled Task APIs/materialization, saved model-connection, trace metadata, MCP boundaries, workflow memory policy/review/evidence behavior, run-fork behavior, upgrade, and execution contracts.
-- `test_legacy_backend_cutover.py` proves removed backend routes return `404` and removed modules stay absent.

@@ -23,13 +23,13 @@ Dependency exception for GAP-002: the plan freezes retired-table absence and liv
 **Goal**
 Lock the live contract and removed-surface guarantees before deleting code.
 
-**Scope**: removed backend/global-authoring routes, removed browser routes/nav entries, OpenAPI absence checks, retired-table absence/live-upgrade guards, and baseline regression commands.
-**Files likely affected**: `backend/tests/test_legacy_backend_cutover.py`; `backend/tests/test_workflow_package_removed_contract_gates.py`; `backend/tests/test_runtime_db_upgrades.py`; `frontend/src/routes.test.tsx`; `frontend/e2e/navigation.spec.ts`; `frontend/e2e/shell-regression.spec.ts`.
-**Code changes**: strengthen absence assertions for removed routes/modules/nav entries; add explicit retired-table/live-upgrade guard coverage for later GAP-002 cleanup; isolate negative-contract tests from happy-path platform tests; document Slice-1 verification as the gate for all later deletions.
-**Tests to add/update/delete**: add/update explicit 404/OpenAPI/browser-nav absence checks and retired-table/live-repair contract tests; keep existing removed-path tests where absence is the shipped contract; delete any test that preserves retired route behavior as acceptable.
+**Scope**: removed backend/global-authoring routes, retired-table live-upgrade guards, frontend unknown-route behavior, and baseline regression commands.
+**Files likely affected**: `backend/tests/test_runtime_db_upgrades.py`; `frontend/src/routes.test.tsx`; `frontend/e2e/navigation.spec.ts`; `frontend/e2e/shell-regression.spec.ts`.
+**Code changes**: keep backend tests focused on live API/OpenAPI coverage; add explicit retired-table/live-upgrade guard coverage for later GAP-002 cleanup; keep frontend tests focused on live route metadata and the product-owned unknown-route shell.
+**Tests to add/update/delete**: keep existing backend removed-path tests where absence is the shipped contract; delete browser/OpenAPI tests whose only value is proving historical tokens or URLs are absent; delete any test that preserves retired route behavior as acceptable.
 **Legacy code to delete**: stale test fixtures or assertions that treat removed global authoring/runtime surfaces or retired-table ballast as soft-deprecated instead of removed.
 **Risks**: over-asserting on implementation detail instead of contract; missing one retired path and reintroducing it later; freezing the wrong live-upgrade behavior before GAP-002 cleanup.
-**Verification commands**: `cd backend && uv run pytest tests/test_legacy_backend_cutover.py tests/test_workflow_package_removed_contract_gates.py tests/test_runtime_db_upgrades.py`; `cd frontend && pnpm test:run -- --run src/routes.test.tsx`; `cd frontend && pnpm test:e2e -- --grep "navigation|shell"`.
+**Verification commands**: `cd backend && uv run pytest tests/test_runtime_db_upgrades.py`; `cd frontend && pnpm test:run -- --run src/routes.test.tsx`; `cd frontend && pnpm test:e2e -- --grep "navigation|shell"`.
 **Roll-forward strategy**: land and keep these negative tests first; every later slice must preserve them or deliberately tighten them, never weaken them; S13 may delete startup-repair ballast only after these guards stay green.
 
 ## S02. Route/API Surface Cleanup
@@ -40,7 +40,7 @@ Lock the live contract and removed-surface guarantees before deleting code.
 **Tests to add/update/delete**: update OpenAPI and route-table tests to assert live prefixes only; preserve backend/frontend 404 tests; delete any test that tolerates hidden aliases or legacy route redirects.
 **Legacy code to delete**: orphaned route modules, route aliases, compatibility redirects, and route metadata for removed browser families.
 **Risks**: accidentally cutting live finance routes or exposing a route in OpenAPI after removing its handler.
-**Verification commands**: `cd backend && uv run pytest tests/test_legacy_backend_cutover.py tests/test_workflow_package_openapi.py tests/test_api.py`; `cd frontend && pnpm test:run -- --run src/routes.test.tsx`.
+**Verification commands**: `cd backend && uv run pytest tests/test_workflow_package_openapi.py tests/test_api.py`; `cd frontend && pnpm test:run -- --run src/routes.test.tsx`.
 **Roll-forward strategy**: finish route-table cleanup before broader refactors so later service/module movement does not have to preserve dead entrypoints.
 
 ## S03. Layer/Module Boundaries
@@ -57,7 +57,7 @@ Lock the live contract and removed-surface guarantees before deleting code.
 ## S04. Package Manifest Validation And Package-Local Resources
 **Goal**: keep package authoring package-local and remove legacy global-authoring semantics from manifest/resource handling.
 **Scope**: backend manifest parsing/compile/decompile, package-local graph resources, and frontend package-local authoring types/helpers.
-**Files likely affected**: `backend/app/services/workflow_package_manifest_parser.py`; `backend/app/services/workflow_package_manifest_compiler.py`; `backend/app/services/workflow_package_manifest_decompiler.py`; `frontend/src/lib/platform-authoring/workflows/*`; `frontend/src/lib/types/agent.ts`; `frontend/src/lib/types/workflow.ts`; `frontend/src/pages/workflow-packages/*`.
+**Files likely affected**: `backend/app/services/workflow_package_manifest_parser.py`; `backend/app/services/workflow_package_manifest_compiler.py`; `backend/app/services/workflow_package_manifest_decompiler.py`; `frontend/src/pages/workflow-packages/*`.
 **Code changes**: keep unsupported global roots invalid; remove legacy global-authoring names/assumptions from frontend helpers; keep package-private agents, output schemas, capability profiles, MCP configs, and workflow graphs inside package resources only.
 **Tests to add/update/delete**: update `backend/tests/test_workflow_package_manifest_parser.py`, `test_workflow_package_manifest_compiler.py`, `test_workflow_package_manifest_decompiler.py`, and `test_workflow_package_api.py`; update frontend package-editor/launch/export tests that still reference legacy names; delete any fixture that implies standalone global authoring remains valid.
 **Legacy code to delete**: frontend type adapters/imports and parser branches that preserve removed global ids or global resource roots.
@@ -155,10 +155,10 @@ Lock the live contract and removed-surface guarantees before deleting code.
 
 ## S12. Frontend Route/Navigation Cleanup
 **Goal**: keep only live browser surfaces and package-local authoring semantics in the frontend.
-**Scope**: route tree, route metadata, layout nav, workflow-package pages, package-local type naming, and removed browser route absence.
-**Files likely affected**: `frontend/src/routes.ts`; `frontend/src/routes.metadata.ts`; `frontend/src/components/layout.tsx`; `frontend/src/pages/workflow-packages/*`; `frontend/src/lib/platform-authoring/*`; `frontend/src/lib/types/agent.ts`; `frontend/src/lib/types/workflow.ts`; `frontend/e2e/navigation.spec.ts`.
+**Scope**: route tree, route metadata, layout nav, workflow-package pages, package-local type naming, and unknown-route behavior.
+**Files likely affected**: `frontend/src/routes.ts`; `frontend/src/routes.metadata.ts`; `frontend/src/components/layout.tsx`; `frontend/src/pages/workflow-packages/*`; `frontend/src/lib/platform-authoring/*`; `frontend/e2e/navigation.spec.ts`.
 **Code changes**: remove retired route families/nav entries; keep the single `/memory` route; rename package-local authoring types/helpers away from misleading global-authoring semantics; split dense workflow-package editor/launch pages if needed without introducing dual UI paths.
-**Tests to add/update/delete**: update `frontend/src/routes.test.tsx`, `frontend/e2e/navigation.spec.ts`, `frontend/e2e/shell-regression.spec.ts`, `frontend/e2e/workflow-packages.spec.ts`, and any workflow-package page tests; delete tests that accept hidden removed nav entries or compatibility redirects.
+**Tests to add/update/delete**: update `frontend/src/routes.test.tsx`, `frontend/e2e/navigation.spec.ts`, `frontend/e2e/shell-regression.spec.ts`, `frontend/e2e/workflow-packages.spec.ts`, and any workflow-package page tests; delete tests that preserve compatibility redirects or old route behavior.
 **Legacy code to delete**: compatibility imports, stale route metadata, dead nav items, and helper names/patterns that could imply standalone global authoring routes are supported.
 **Risks**: deep-link breakage on live pages or incomplete type/helper renames.
 **Verification commands**: `cd frontend && pnpm test:run -- --run src/routes.test.tsx`; `cd frontend && pnpm test:e2e -- --grep "navigation|shell|workflow-packages"`; `cd frontend && pnpm build`.
@@ -167,12 +167,12 @@ Lock the live contract and removed-surface guarantees before deleting code.
 ## S13. Persistence/Migration Cleanup
 **Goal**: simplify schema authority to live-table startup repair only and delete retired-surface ballast.
 **Scope**: DB init, startup repair, retired global-authoring tables/models/repos/schemas, and upgrade-contract tests.
-**Files likely affected**: `backend/app/db/session.py`; `backend/app/db/upgrades.py`; `backend/app/models/__init__.py`; `backend/app/models/agent.py`; `backend/app/models/workflow.py`; `backend/app/models/capability.py`; `backend/app/models/mcp_server.py`; `backend/app/models/output_schema.py`; matching repository/schema modules.
+**Files likely affected**: `backend/app/db/session.py`; `backend/app/db/upgrades.py`; `backend/app/models/__init__.py`; deleted global-authoring model/repository/schema modules if any remain.
 **Code changes**: split live-table repair from retired-surface cleanup; keep current tables and queue metadata supported; delete retired global-authoring model/repository/schema code and any startup repair paths that preserve draft-only tables or old runtime surfaces.
-**Tests to add/update/delete**: update `backend/tests/test_runtime_db_upgrades.py`, `test_workflow_package_db_upgrades.py`, `test_runtime_models.py`, and `test_legacy_backend_cutover.py`; delete upgrade tests whose only purpose is preserving retired global-authoring or legacy skill-storage cleanup after the clean cut lands.
+**Tests to add/update/delete**: update `backend/tests/test_runtime_db_upgrades.py`, `test_workflow_package_db_upgrades.py`, and `test_runtime_models.py`; delete upgrade tests whose only purpose is preserving retired global-authoring or legacy skill-storage cleanup after the clean cut lands.
 **Legacy code to delete**: retired global-authoring models/repos/schemas, speculative cleanup markers, old table statements, and draft-only repair branches.
 **Risks**: breaking local/dev databases that still carry retired tables or leaving one lingering import to deleted model modules.
-**Verification commands**: `cd backend && uv run pytest tests/test_runtime_db_upgrades.py tests/test_workflow_package_db_upgrades.py tests/test_runtime_models.py tests/test_legacy_backend_cutover.py`; `cd backend && uv run mypy app`.
+**Verification commands**: `cd backend && uv run pytest tests/test_runtime_db_upgrades.py tests/test_workflow_package_db_upgrades.py tests/test_runtime_models.py`; `cd backend && uv run mypy app`.
 **Roll-forward strategy**: this slice depends on S01, S02, S03, and S11 staying green; prove route/table absence, import cleanup, and live upgrade coverage first, then delete retired repair/model code in one irreversible cleanup slice.
 
 ## S14. Final Test/Docs Cleanup

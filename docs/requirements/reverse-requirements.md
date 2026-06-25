@@ -532,17 +532,18 @@ Edge Cases:
 - Unscoped global memory search is not evidenced as a live path.
 - Namespace access without explicit grants is denied.
 
-### FR-017: Removed Legacy And Global Authoring Surfaces
+### FR-017: Workflow Packages As The Authoring Surface
 
 Statement:
-The system MUST keep retired global authoring and orchestration-era surfaces unavailable in both backend and frontend routing.
+The system MUST expose Workflow Packages as the authoring entry point for executable agent workflows.
 
 Rationale:
-The implementation repeatedly enforces a package-first cutover and dead-surface boundary.
+The implementation routes executable authoring through package manifests and treats retired global authoring as non-goal scope.
 
 Evidence:
-- `backend/tests/test_legacy_backend_cutover.py` :: removed API families are not registered and return 404.
-- `frontend/src/routes.test.tsx` :: removed legacy route families resolve to the product-owned 404.
+- `backend/app/api/workflow_packages.py` :: package authoring API routes.
+- `backend/tests/test_workflow_package_api.py` :: package create/import/export/read behavior.
+- `frontend/src/routes.test.tsx` :: the package route and product-owned unknown-route shell are covered.
 - `README.md`, `docs/prd.md`, `docs/spec.md` — explicitly describe Workflow Packages as the only live authoring root.
 
 Confidence:
@@ -552,13 +553,13 @@ Status:
 Confirmed
 
 Acceptance Criteria:
-- Given removed backend authoring paths, when a client requests them, then they are absent or return 404 rather than aliasing to live surfaces.
-- Given removed frontend route families, when a user navigates to them, then the app renders the shell-owned not-found route.
-- Given live authoring needs, when the user uses the product, then Workflow Packages are the entry point instead of global agents/workflows/capabilities pages.
+- Given live authoring needs, when the user uses the product, then Workflow Packages are the entry point.
+- Given a package manifest, when it is imported or edited, then package-local agents, workflows, output schemas, capability profiles, and MCP config stay inside the package artifact.
+- Given an unsupported browser route, when a user navigates to it, then the app renders the shell-owned not-found route.
 
 Edge Cases:
-- Removed surfaces remain documented only as non-goals or guardrails, not as compatibility aliases.
-- Legacy route absence must survive schema repairs and cutover upgrades.
+- Retired global authoring remains documented only as non-goal scope, not as a compatibility alias.
+- Schema repair must not reintroduce retired global authoring persistence as a live authoring path.
 
 ### FR-018: API Contract Conventions And Shared Error Behavior
 
@@ -768,7 +769,7 @@ The table below summarizes the public contract surfaces that are evidence-backed
 - **BR-014**: Schedule detail reads intentionally omit editable input-template fields, while run-now remains idempotent and allowed for paused schedules. Evidence: `backend/app/schemas/schedule.py`, `backend/tests/test_workflow_package_runtime_api.py`. Confidence: High.
 - **BR-015**: Deleting a model connection removes the live saved row but does not cascade current packages or historical run snapshots that still reference its key. Evidence: `backend/app/services/model_connection_service.py`, `backend/tests/test_runtime_repositories.py`. Confidence: High.
 - **BR-016**: Reports are listed newest-first and have no automatic expiration or cleanup contract; removal happens only through explicit delete paths, including report deletion by slug and run deletion for run-owned agent-memory report rows. Evidence: `backend/app/repositories/report.py`, `backend/app/api/reports.py`, `backend/app/services/run_service.py`, `backend/tests/test_api.py::test_report_external_non_memory_update_and_delete_remains_allowed`, `backend/tests/test_runtime_repositories.py::test_delete_run_route_returns_204_then_404`. Confidence: High.
-- **BR-017**: Workflow Package import/export is a current-contract artifact flow; removed version/status selection and long-term backward-compatibility guarantees are not part of the live contract. Evidence: `backend/tests/test_workflow_package_versioning_absence.py`, `backend/tests/test_workflow_package_api.py`, `backend/app/services/workflow_package_export.py`. Confidence: High.
+- **BR-017**: Workflow Package import/export is a current-contract artifact flow; removed version/status selection and long-term backward-compatibility guarantees are not part of the live contract. Evidence: `backend/tests/test_workflow_package_api.py`, `backend/app/services/workflow_package_export.py`. Confidence: High.
 - **BR-018**: Structured runtime-input authoring is limited to the current supported object-schema subset; unsupported schemas remain on raw JSON fallback rather than implying broader structured-editor support. Evidence: `frontend/src/lib/platform-authoring/schema/launch-input-state.test.ts`, `docs/spec.md`. Confidence: High.
 - **BR-019**: The dashboard contract is limited to the stable landing header and retry behavior evidenced in code/tests; richer summary cards or metrics are not part of the confirmed contract. Evidence: `frontend/src/pages/dashboard.tsx`, `frontend/src/pages/dashboard.test.tsx`. Confidence: High.
 - **BR-020**: Hard deletion of runs is a live public API feature; deleting a run removes the targeted run, removes its run-owned agent-memory report rows, and nulls descendant lineage references rather than cascading descendant runs. Evidence: `backend/app/api/runs.py`, `backend/tests/test_runtime_repositories.py`. Confidence: High.

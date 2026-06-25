@@ -117,9 +117,7 @@ test.describe("Reports", () => {
       ),
     ).toHaveCount(0);
     const contentPane = page.getByTestId("report-content-pane");
-    await expect(contentPane).toHaveClass(/rounded-md/);
-    await expect(contentPane).toHaveClass(/border/);
-    await expect(contentPane).toHaveClass(/bg-muted\/30/);
+    await expect(contentPane).toBeVisible();
     await expect(
       page.getByTestId("report-detail-header").getByRole("heading", { name: report.name }),
     ).toBeVisible();

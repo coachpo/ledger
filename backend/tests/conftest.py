@@ -117,9 +117,7 @@ def _ensure_start_local_database() -> URL:
         _run_docker(["start", LOCAL_POSTGRES_CONTAINER], check=True)
     else:
         postgres_publish_port = (
-            f"127.0.0.1:{LOCAL_POSTGRES_PORT}:5432"
-            if LOCAL_POSTGRES_PORT
-            else "127.0.0.1::5432"
+            f"127.0.0.1:{LOCAL_POSTGRES_PORT}:5432" if LOCAL_POSTGRES_PORT else "127.0.0.1::5432"
         )
         _run_docker(["volume", "create", LOCAL_POSTGRES_VOLUME], check=True)
         _run_docker(

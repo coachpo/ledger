@@ -55,16 +55,7 @@ Primary evidence:
 
 ## Backend Removed Global Authoring Ballast
 
-| Current path | Target home | Status | Reason |
-| --- | --- | --- | --- |
-| `backend/app/models/agent.py` | none | delete | Standalone global agents are removed authoring ballast under `GAP-001`. |
-| `backend/app/models/workflow.py` | none | delete | Standalone global workflows are outside the Workflow Package-only contract. |
-| `backend/app/models/capability.py` | none | delete | Global capabilities should remain package-local artifact data only. |
-| `backend/app/models/mcp_server.py` | none | delete | Global MCP server persistence is a removed authoring root; package-private MCP config remains artifact data. |
-| `backend/app/models/output_schema.py` | none | delete | Global output schemas should remain package-local artifact data only. |
-| `backend/app/repositories/agent.py` and matching global authoring repositories | none | delete | Repository support for removed global authoring tables should not be carried forward. |
-| `backend/app/schemas/agent.py` and matching global authoring schemas | none | delete | External DTOs for removed global authoring routes should not remain as compatibility ballast. |
-| `backend/app/services/legacy_authoring.py` | none | delete | Runtime-blocked helper preserves removed behavior instead of deleting it. |
+Retired global authoring models, repositories, schemas, and blocked helper services are deleted rather than mapped to compatibility homes.
 
 ## Backend Tools, MCP, Memory, And Extensions
 
@@ -92,7 +83,7 @@ Primary evidence:
 | `frontend/src/extensions/signaldeck-finance*` | `frontend/src/extensions/signaldeck-finance*` | keep in place | Finance frontend routes, nav, and tool-prefix discovery remain extension-owned. |
 | `frontend/src/extensions/signaldeck-digital-oracle/*` | `frontend/src/extensions/signaldeck-digital-oracle/*` | keep in place | Digital Oracle stays tool-discovery only and contributes no pages or navigation. |
 | `frontend/src/pages/workflow-packages/*` | `frontend/src/pages/workflow-packages/*` plus package-local types | split | Page components stay, but any legacy global authoring type imports should be replaced with package-local contracts. |
-| `frontend/src/lib/platform-authoring/*` | package-local authoring helpers under the same feature area | rewrite | Helpers should speak Workflow Package artifact concepts directly, not global `AgentRead` or `WorkflowRead`. |
+| `frontend/src/lib/platform-authoring/*` | package-local authoring helpers under the same feature area | keep in place | Helpers should speak Workflow Package artifact concepts directly, not global authoring resources. |
 | `frontend/src/lib/api/workflow-packages.ts` | `frontend/src/lib/api/workflow-packages.ts` | keep in place | Typed package manifest, import, export, preflight, launch, and secret-binding API helpers remain package-first client contracts. |
 | `frontend/src/hooks/use-workflow-packages.ts` | `frontend/src/hooks/use-workflow-packages.ts` | keep in place | Query/mutation policy stays hook-owned and should continue using extension-filtered tool reads. |
 | `frontend/src/pages/workflow-packages/editor.tsx` | route-local workflow-package editor panels | split | Correct package scope, but editor shell, resource editors, validation, and YAML panels should be separated if refactored. |
@@ -102,6 +93,3 @@ Primary evidence:
 | `frontend/src/pages/scheduled-tasks/*` | `frontend/src/pages/scheduled-tasks/*` | keep in place | Package-first automation route family remains platform-owned. |
 | `frontend/src/pages/runs/*` | `frontend/src/pages/runs/*` | keep in place | Run console/detail sections remain platform-owned and should stay split by detail sections. |
 | `frontend/src/pages/memory/list.tsx` | `frontend/src/pages/memory/list.tsx` plus route-local panels if needed | split | Single `/memory` route remains correct; access-context controls, inspector, revisions, and events can split without child routes. |
-| `frontend/src/lib/types/agent.ts` | package-local authoring type modules | rewrite | Still-used type names imply global authoring; target naming should describe package-local agents. |
-| `frontend/src/lib/types/workflow.ts` | package-local workflow graph type modules | rewrite | Still-used type names imply standalone workflows; target naming should describe package-local workflow graphs. |
-| `frontend/src/lib/platform-authoring/workflows/*` | package-local workflow graph helpers | rewrite | Helpers should emphasize Workflow Package graph authoring, not standalone global workflows. |

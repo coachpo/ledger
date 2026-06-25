@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 import pytest
 from pydantic import ValidationError
 
@@ -15,41 +13,6 @@ from app.schemas.run import (
     RunStatus,
     RunTargetKind,
 )
-from app.schemas.workflow import (
-    WorkflowLaunchCreateRequest,
-    WorkflowLaunchCreateResponse,
-    WorkflowLaunchRead,
-    WorkflowStatus,
-    WorkflowVersionRead,
-)
-
-
-def test_workflow_launch_create_request_accepts_exact_envelope_with_dynamic_parameters() -> None:
-    request = WorkflowLaunchCreateRequest.model_validate(
-        {"version": 3, "parameters": {"ticker": "MSFT", "nested": {"limit": 5}}}
-    )
-
-    assert request.model_dump(by_alias=True, mode="json") == {
-        "version": 3,
-        "parameters": {"ticker": "MSFT", "nested": {"limit": 5}},
-    }
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"parameters": {"ticker": "MSFT"}},
-        {"version": 3},
-        {"version": 3, "parameters": "MSFT"},
-        {"version": 3, "parameters": ["MSFT"]},
-        {"version": 3, "parameters": {"ticker": "MSFT"}, "unexpected": True},
-    ],
-)
-def test_workflow_launch_create_request_rejects_invalid_envelopes(
-    payload: dict[str, object],
-) -> None:
-    with pytest.raises(ValidationError):
-        _ = WorkflowLaunchCreateRequest.model_validate(payload)
 
 
 def test_run_status_contract_is_frozen() -> None:
@@ -58,63 +21,6 @@ def test_run_status_contract_is_frozen() -> None:
 
 def test_run_target_kind_contract_is_package_only() -> None:
     assert {target_kind.value for target_kind in RunTargetKind} == {"workflowPackage"}
-
-
-def test_workflow_launch_read_contract_uses_camel_case_aliases() -> None:
-    payload = {
-        "workflowId": 42,
-        "key": "portfolio_review",
-        "version": 7,
-        "name": "Portfolio Review",
-        "description": "Review holdings",
-        "inputSchema": {"type": "object"},
-    }
-
-    read = WorkflowLaunchRead.model_validate(payload)
-
-    assert read.model_dump(by_alias=True, mode="json") == payload
-
-
-def test_workflow_version_read_contract_uses_camel_case_aliases() -> None:
-    payload = {
-        "id": 42,
-        "key": "portfolio_review",
-        "version": 7,
-        "status": WorkflowStatus.PUBLISHED.value,
-        "name": "Portfolio Review",
-        "description": "Review holdings",
-        "inputSchema": {"type": "object"},
-        "createdAt": "2026-05-03T12:00:00Z",
-        "updatedAt": "2026-05-03T12:01:00Z",
-    }
-
-    read = WorkflowVersionRead.model_validate(payload)
-
-    assert read.model_dump(by_alias=True, mode="json") == payload
-
-
-def test_workflow_launch_create_response_contract_uses_queued_status() -> None:
-    created_at = datetime(2026, 5, 3, 12, 0, tzinfo=UTC)
-
-    response = WorkflowLaunchCreateResponse.model_validate(
-        {
-            "id": 99,
-            "status": "queued",
-            "workflowId": 42,
-            "workflowKey": "portfolio_review",
-            "workflowVersion": 7,
-            "createdAt": created_at,
-        }
-    )
-
-    assert response.model_dump(by_alias=True, mode="json") == {
-        "id": 99,
-        "status": "queued",
-        "workflowId": 42,
-        "workflowKey": "portfolio_review",
-        "workflowVersion": 7,
-        "createdAt": "2026-05-03T12:00:00Z",
-    }
 
 
 def test_rerun_contracts_use_parameters_object_and_reject_extra_fields() -> None:

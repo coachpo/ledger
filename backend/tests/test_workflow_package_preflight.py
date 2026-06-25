@@ -183,8 +183,11 @@ spec:
       name: Digital Oracle Phase 1 Tools
       description: Grants Digital Oracle-owned phase-1 research tools.
       toolKeys:
+        - signaldeck.digital_oracle.cftc_positioning.lookup
+        - signaldeck.digital_oracle.crypto_derivatives.lookup
         - signaldeck.digital_oracle.macro_rates.lookup
         - signaldeck.digital_oracle.market_sentiment.lookup
+        - signaldeck.digital_oracle.options.lookup
         - signaldeck.digital_oracle.prediction_markets.lookup
         - signaldeck.digital_oracle.sec_filings.lookup
   outputSchemas:
@@ -334,8 +337,11 @@ spec:
       name: Digital Oracle Phase 1 Tools
       description: Grants Digital Oracle-owned phase-1 research tools.
       toolKeys:
+        - signaldeck.digital_oracle.cftc_positioning.lookup
+        - signaldeck.digital_oracle.crypto_derivatives.lookup
         - signaldeck.digital_oracle.macro_rates.lookup
         - signaldeck.digital_oracle.market_sentiment.lookup
+        - signaldeck.digital_oracle.options.lookup
         - signaldeck.digital_oracle.prediction_markets.lookup
         - signaldeck.digital_oracle.sec_filings.lookup
   outputSchemas:

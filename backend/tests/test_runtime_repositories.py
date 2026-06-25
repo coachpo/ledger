@@ -778,15 +778,6 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
         assert session.get(RunWorkflowPackageSnapshot, run_id) is not None
 
 
-def test_legacy_agent_workflow_runtime_entrypoint_is_removed(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        service = RunService(session, session_factory)
-
-    assert not hasattr(service, "create_target_run")
-
-
 def test_delete_package_with_queued_running_runs_deletes_package_runs(
     session_factory: sessionmaker[Session],
 ) -> None:

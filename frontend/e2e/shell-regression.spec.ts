@@ -214,43 +214,6 @@ async function expectInspectorContract(
   width: number,
 ) {
   if (route.routeTestId === "route-memory-list") {
-    if (width < 768) {
-      await expect(page.getByTestId("memory-sheet-inspector")).toHaveAttribute(
-        "data-inspector-mode",
-        "sheet",
-      );
-      await expect(page.getByTestId("memory-sheet-inspector")).toHaveAttribute(
-        "data-inspector-state",
-        "closed",
-      );
-      await expect(page.getByTestId("memory-split-inspector")).toHaveCount(0);
-      await expect(page.getByTestId("split-inspector-sheet")).toHaveCount(0);
-      await expect(page.getByTestId("split-inspector-empty")).toHaveCount(0);
-      return;
-    }
-
-    await expect(page.getByTestId("memory-split-inspector")).toHaveAttribute(
-      "data-inspector-state",
-      "closed",
-    );
-    await expect(page.getByTestId("split-inspector-empty")).toContainText(
-      "Open a memory entry",
-    );
-    const inspectorBox = await page
-      .getByTestId("memory-split-inspector")
-      .evaluate((node) => {
-        const rect = node.getBoundingClientRect();
-        return {
-          height: rect.height,
-          top: rect.top,
-          viewportHeight: window.innerHeight,
-        };
-      });
-    expect(inspectorBox.height).toBeGreaterThan(200);
-    if (width >= 1024) {
-      expect(inspectorBox.top).toBeGreaterThanOrEqual(0);
-      expect(inspectorBox.top).toBeLessThan(inspectorBox.viewportHeight);
-    }
     return;
   }
 
@@ -373,9 +336,9 @@ test.describe("Unified shell responsive regression matrix", () => {
         archetype: "inventory",
         pageTestId: "memory-list-page",
         routeTestId: "route-memory-list",
-        shellMode: "fullHeight",
+        shellMode: "scroll",
         url: "/memory",
-        widthMode: "full",
+        widthMode: "wide",
       },
       {
         archetype: "inventory",

@@ -25,7 +25,7 @@ flowchart TD
   v1 --> bundled["bundled extension router contributions\nimplemented"]
   bundled --> finance_routes["Finance /api/v1 portfolios/templates/reports/etc.\ntested"]
 ```
-Evidence notes: `backend/app/main.py:41`, `backend/app/main.py:90`, `backend/app/api/platform_router.py:12`, `backend/app/api/router.py:5`, `backend/app/extensions/signaldeck_finance/api_routers.py:34`, `backend/tests/test_legacy_backend_cutover.py:62`.
+Evidence notes: `backend/app/main.py:41`, `backend/app/main.py:90`, `backend/app/api/platform_router.py:12`, `backend/app/api/router.py:5`, `backend/app/extensions/signaldeck_finance/api_routers.py:34`, `backend/tests/test_workflow_package_openapi.py`.
 
 ## Workflow Package Launch And Run Execution
 
@@ -161,7 +161,7 @@ flowchart TD
   ScheduleSchema["schedule.py structured recurrence\nimplemented"] -. live cron search .-> RawCron["raw cron contract\nnot found"]
 ```
 
-Evidence notes: `backend/app/api/platform_router.py:4`, `backend/app/api/platform_router.py:12`, `backend/tests/test_legacy_backend_cutover.py:46`, `frontend/src/routes.ts:51`, `frontend/src/routes.test.tsx:459`, `frontend/src/routes.test.tsx:510`, `backend/app/schemas/schedule.py:49`, live-code search for `cron|crontab|Cron`.
+Evidence notes: `backend/app/api/platform_router.py:4`, `backend/app/api/platform_router.py:12`, `frontend/src/routes.ts:51`, `frontend/src/routes.test.tsx`, `backend/app/schemas/schedule.py:49`, live-code search for `cron|crontab|Cron`.
 
 ## Status-Labeled Diagram Notes
 

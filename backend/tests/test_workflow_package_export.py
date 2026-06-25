@@ -4,10 +4,7 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
-from tests.test_workflow_package_manifest_http_node import (
-    assert_removed_contract_tokens_absent,
-    http_node_package_source,
-)
+from tests.test_workflow_package_manifest_http_node import http_node_package_source
 
 
 def test_secret_binding_export_omission(client: TestClient) -> None:
@@ -28,7 +25,6 @@ def test_secret_binding_export_omission(client: TestClient) -> None:
 
     assert export_response.status_code == 200, export_response.text
     exported = export_response.text
-    assert_removed_contract_tokens_absent(exported, context="secret-safe manifest export")
     assert "kind: http" in exported
     assert "Authorization: ${{ secrets.slack_webhook_token }}" in exported
     assert "token: ${{ secrets.body_token }}" in exported

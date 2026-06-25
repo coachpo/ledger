@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/components/AGENTS.md`.
 
 ## OVERVIEW
-`src/components/platform-authoring/` contains editor widgets for package-local platform authoring: schema composition, generated schema-driven forms, workflow wiring, package resource selectors, and structured value inspection. Components are UI-only and are driven by `src/lib/platform-authoring/**` types/helpers.
+`src/components/platform-authoring/` contains editor widgets for package-local platform authoring: schema composition, generated schema-driven forms, package resource selectors, and structured value inspection. Components are UI-only and are driven by `src/lib/platform-authoring/**` types/helpers.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -22,7 +22,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 platform-authoring/
 ├── generated-form/   # schema-driven value-entry form renderer
 ├── schema-composer/  # JSON Schema subset builder UI
-├── workflow-builder/ # workflow step/wire-binding wizard UI
 ├── refs/             # single/multi package-resource selectors
 └── inspectors/       # read-only structured output displays
 ```
@@ -32,7 +31,6 @@ platform-authoring/
 |---|---|---|
 | Generated input forms | `generated-form/schema-form.tsx` | schema IR + value-entry rendering and validation display |
 | Schema builder UI | `schema-composer/schema-composer.tsx` | object/array/scalar/discriminated-union editor surface |
-| Workflow builder UI | `workflow-builder/workflow-builder-wizard.tsx` | step composition, slots, wire bindings, validation feedback |
 | Resource selectors | `refs/*.tsx` | package-local agent/capability/MCP/output-schema ref inputs |
 | Structured previews | `inspectors/structured-value-inspector.tsx`, `inspectors/exact-json-preview.tsx` | read-only nested value display and exact JSON preview panes |
 
@@ -41,12 +39,11 @@ platform-authoring/
 - Keep parsing, serialization, and validation in `src/lib/platform-authoring/**`; components render the result and collect user edits.
 - `generated-form/` owns schema-driven value editing, not generic form primitives.
 - `schema-composer/` owns authoring for the supported schema subset only.
-- `workflow-builder/` owns workflow wiring UI and delegates path/slot validation to lib helpers.
 
 ## ANTI-PATTERNS
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not call API helpers, hooks, navigation, or toasts from this directory.
-- Do not duplicate schema/value/workflow codecs in components.
+- Do not duplicate schema/value codecs in components.
 - Do not move app-wide shadcn primitives into this feature folder.
 - Do not make these widgets depend on specific route ids when props can carry the required data.
 

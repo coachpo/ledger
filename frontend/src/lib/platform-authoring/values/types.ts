@@ -1,10 +1,9 @@
 import type { JsonPrimitive } from "../schema/types";
-import type { WorkflowBindingPath } from "../workflows/types";
 
 export type ValueEntryKind = "null" | "boolean" | "integer" | "number" | "string" | "array" | "object";
 
 export type ValueEntryPathToken = string;
-export type ValueEntryPath = WorkflowBindingPath;
+export type ValueEntryPath = ValueEntryPathToken[];
 
 export interface ValueEntryBase {
   kind: ValueEntryKind;

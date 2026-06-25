@@ -91,7 +91,7 @@ Primary evidence:
 | Decision | Removed global authoring and retired runtime surfaces stay deleted. Missing routes return not found; no compatibility aliases, redirects, wrappers, or hidden pages are added. |
 | Rationale | `00-contract-baseline.md:27-31`, `00-contract-baseline.md:52-60`, `02-current-architecture.md:31`, and `03-gap-register.md:29-37` define removed surfaces as deletion targets rather than compatibility contracts. |
 | Consequences | Cleanup may delete retained global authoring models, repositories, schemas, frontend wire types, and blocked helpers. Tests should preserve absence guarantees, not old route behavior. |
-| Acceptance checks | Backend removed-route tests pass as 404/not-found; frontend removed-route tests pass as 404/not-found; docs mention retired surfaces only as non-goals, removed routes, or deletion targets. |
+| Acceptance checks | Backend API/OpenAPI tests cover the live route set; frontend unknown-route tests pass through the product-owned shell; docs mention retired surfaces only as non-goals or deletion targets. |
 
 ## ADR Acceptance Checklist
 

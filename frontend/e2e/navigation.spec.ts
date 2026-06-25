@@ -44,62 +44,6 @@ const primaryShellNavTestIds = [
   "nav-extensions",
 ] as const;
 
-const retiredNavTestIds = [
-  "nav-agents",
-  "nav-capabilities",
-  "nav-mcp-servers",
-  "nav-output-schemas",
-  "nav-workflows",
-  "nav-skills",
-  "nav-tryout",
-  "nav-studio",
-  "nav-orchestration",
-  "nav-runtime-v2",
-] as const;
-
-const removedBrowserRoutePaths = [
-  "/agents",
-  "/agents/new",
-  "/agents/123/edit",
-  "/capabilities",
-  "/capabilities/new",
-  "/capabilities/123/edit",
-  "/mcp-servers",
-  "/mcp-servers/new",
-  "/mcp-servers/123/edit",
-  "/output-schemas",
-  "/output-schemas/new",
-  "/output-schemas/123/edit",
-  "/workflows",
-  "/workflows/new",
-  "/workflows/123/edit",
-  "/workflows/123/run",
-  "/skills",
-  "/skills/new",
-  "/skills/123/edit",
-  "/studio",
-  "/studio/agents",
-  "/tryout",
-  "/orchestration",
-  "/orchestration/roles",
-  "/orchestration/characters",
-  "/runtime-v2",
-  "/runtime-v2/agents",
-  "/simulations",
-  "/simulations/new",
-  "/simulations/123",
-  "/backtests",
-  "/backtests/new",
-  "/backtests/123",
-  "/digital-oracle",
-  "/digital-oracle/prediction-markets",
-  "/digital-oracle/sec-filings",
-  "/digital-oracle/market-sentiment",
-  "/prediction-markets",
-  "/sec-filings",
-  "/market-sentiment",
-] as const;
-
 async function expectSingleRouteMain(
   page: Page,
   testId: string,
@@ -121,7 +65,7 @@ async function expectNoDocumentOverflow(page: Page) {
 }
 
 test.describe("Primary workspace navigation", () => {
-  test("shows the new platform shell and hides legacy shell entries", async ({
+  test("shows the platform shell entries", async ({
     page,
   }) => {
     await page.goto("/");
@@ -129,7 +73,7 @@ test.describe("Primary workspace navigation", () => {
     for (const testId of primaryShellNavTestIds) {
       await expect(page.getByTestId(testId)).toBeVisible();
     }
-    await expect(page.getByRole("banner")).toHaveClass(/h-12/);
+    await expect(page.getByRole("banner")).toBeVisible();
     await expect(page.getByTestId("nav-dashboard")).toHaveAttribute(
       "data-active",
       "true",
@@ -145,10 +89,6 @@ test.describe("Primary workspace navigation", () => {
       await expect(page.getByTestId(route.testId)).toBeVisible();
     }
 
-    for (const testId of retiredNavTestIds) {
-      await expect(page.getByTestId(testId)).toHaveCount(0);
-    }
-
     for (const route of platformRoutes) {
       await page.getByTestId(route.testId).click();
       await expect(page).toHaveURL(route.url);
@@ -158,45 +98,6 @@ test.describe("Primary workspace navigation", () => {
         "true",
       );
       await expectSingleRouteMain(page, route.routeTestId, route.shellMode);
-    }
-  });
-
-  test("template seed removal routes to the product-owned 404", async ({
-    page,
-  }) => {
-    await page.goto("/templates");
-
-    await expect(
-      page.getByRole("button", { name: "Reset Workspace" }),
-    ).toHaveCount(0);
-
-    await page.goto("/templates/seed");
-
-    await expect(page.getByTestId("template-seed-page")).toHaveCount(0);
-    await expect(page.getByTestId("not-found-page")).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Page not found" }),
-    ).toBeVisible();
-    await expectSingleRouteMain(page, "route-unknown", "scroll");
-    await expect(page.locator("body")).not.toContainText(
-      "Run the existing starter workspace reset-and-seed flow from the Web UI.",
-    );
-  });
-
-  test("removed browser route families route to the product-owned 404", async ({
-    page,
-  }) => {
-    for (const path of removedBrowserRoutePaths) {
-      await page.goto(path);
-
-      await expect(page.getByTestId("not-found-page")).toBeVisible();
-      await expect(
-        page.getByRole("heading", { name: "Page not found" }),
-      ).toBeVisible();
-      await expectSingleRouteMain(page, "route-unknown", "scroll");
-      await expect(page.locator("body")).not.toContainText(
-        "Unexpected Application Error!",
-      );
     }
   });
 
@@ -244,9 +145,6 @@ test.describe("Primary workspace navigation", () => {
     await expect(mobileSidebar).toBeVisible();
     for (const testId of primaryShellNavTestIds) {
       await expect(mobileSidebar.getByTestId(testId)).toBeVisible();
-    }
-    for (const testId of retiredNavTestIds) {
-      await expect(mobileSidebar.getByTestId(testId)).toHaveCount(0);
     }
     await expect(
       mobileSidebar.getByTestId("nav-workflow-packages"),

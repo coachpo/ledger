@@ -67,7 +67,7 @@ Ports define the contracts application use cases need from infrastructure: packa
 
 `frontend/src/routes.metadata.ts` remains the ownership and shell contract for routes. Pages consume shared shell components and route metadata; they should not duplicate sidebar grouping or extension visibility rules. Extension state from the backend remains the only runtime visibility source for extension routes, navigation, and tool-prefix discovery.
 
-Package authoring UI must use package-local DTOs and helpers. It should not import global `AgentRead`, `WorkflowRead`, or other removed global authoring wire types from legacy frontend type modules. Removed browser routes remain explicit 404/not-found behavior, not hidden compatibility pages.
+Package authoring UI must use Workflow Package DTOs and helpers instead of removed global authoring wire types. Removed browser routes remain explicit 404/not-found behavior, not hidden compatibility pages.
 
 ## Runtime And Worker Boundaries
 

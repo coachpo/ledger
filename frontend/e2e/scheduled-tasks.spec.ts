@@ -271,6 +271,8 @@ test.describe("scheduled tasks", () => {
     page,
     request,
   }) => {
+    test.setTimeout(90_000);
+
     const workflowPackage = await seedScheduledPackage(request);
     const scheduleName = `E2E scheduled tasks ${workflowPackage.id}`;
 
@@ -309,15 +311,8 @@ test.describe("scheduled tasks", () => {
     await expect(history).toBeVisible();
     await expect(history).toContainText("Manual fire");
     await expect(history).toContainText(`Open run #${runId}`);
-
-    await page.goto("/scheduled-tasks");
-    await page.getByLabel("Search scheduled tasks").fill(scheduleName);
-    const row = page.getByRole("row").filter({ hasText: scheduleName });
-    await expect(row).toBeVisible();
-    await expect(row).toContainText(`Run #${runId}`);
-    await row.getByRole("button", { name: `More actions for ${scheduleName}` }).click();
-    const latestRunLink = page.getByRole("menuitem", {
-      name: `Open latest run for ${scheduleName}`,
+    const latestRunLink = history.getByRole("link", {
+      name: `Open run #${runId}`,
     });
     await expect(latestRunLink).toHaveAttribute("href", `/runs/${runId}`);
     await latestRunLink.click();

@@ -63,10 +63,7 @@ from app.services.workflow_package_schedule_service import (
     WorkflowPackageScheduleService,
 )
 from tests.fake_openai_provider import run_fake_openai_provider
-from tests.test_workflow_package_manifest_http_node import (
-    assert_removed_contract_tokens_absent,
-    http_node_package_source,
-)
+from tests.test_workflow_package_manifest_http_node import http_node_package_source
 
 _REMOVED_MODEL_CONNECTION_KIND_FIELD = f"connection{'K'}ind"
 
@@ -1708,10 +1705,8 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     detail_response = client.get(f"/api/runs/{first_run['id']}")
     assert detail_response.status_code == 200, detail_response.json()
     detail = detail_response.json()
-    assert_removed_contract_tokens_absent(detail, context="run detail")
     assert detail["targetKind"] == "workflowPackage"
     provenance = cast(dict[str, Any], detail["packageProvenance"])
-    assert_removed_contract_tokens_absent(provenance, context="package provenance")
     assert provenance["workflowPackageId"] == first_package["id"]
     assert provenance["workflowPackageKey"] == "provenance_filter_package"
     assert provenance["workflowPackageStatus"] is None
@@ -2576,7 +2571,6 @@ def test_seeded_tradingagents_advisory_manifest_exports_after_startup(
 
     assert response.status_code == 200, response.json()
     manifest = cast(dict[str, Any], response.json())
-    assert_removed_contract_tokens_absent(manifest, context="seeded manifest hydration")
     assert manifest["packageId"] == package["id"]
     assert manifest["packageKey"] == _TRADINGAGENTS_PRESET_KEY
     assert _TRADINGAGENTS_PRESET_KEY in manifest["manifestSource"]
@@ -2584,7 +2578,6 @@ def test_seeded_tradingagents_advisory_manifest_exports_after_startup(
 
     exported = client.get(f"/api/workflow-packages/{package['id']}/export")
     assert exported.status_code == 200, exported.text
-    assert_removed_contract_tokens_absent(exported.text, context="seeded manifest export")
 
 
 def _mcp_only_package_source(package_key: str) -> str:

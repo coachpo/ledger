@@ -1,40 +1,9 @@
 from __future__ import annotations
 
-import json
 from typing import Any, cast
 
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_manifest_parser import parse_workflow_package_manifest
-
-
-def removed_contract_tokens() -> tuple[str, ...]:
-    cost_word = "budget"
-    aggregate_prefix = "aggregate"
-    usd_title_suffix = "Usd"
-    validation_word = "validation"
-    summary_title_suffix = "Summary"
-    return (
-        " ".join((cost_word.title(), "USD")),
-        cost_word + usd_title_suffix,
-        "_".join((cost_word, "usd")),
-        "_".join((aggregate_prefix, cost_word, "usd")),
-        aggregate_prefix + cost_word.title() + usd_title_suffix,
-        cost_word.title() + usd_title_suffix,
-        "_".join((validation_word, "summary")),
-        validation_word + summary_title_suffix,
-    )
-
-
-def serialize_for_removed_contract_scan(value: object) -> str:
-    if isinstance(value, str):
-        return value
-    return json.dumps(value, default=str, sort_keys=True)
-
-
-def assert_removed_contract_tokens_absent(value: object, *, context: str) -> None:
-    serialized = serialize_for_removed_contract_scan(value)
-    matches = [token for token in removed_contract_tokens() if token in serialized]
-    assert not matches, f"{context} contains removed contract token(s): {matches}"
 
 
 def http_node_package_source(*, method: str = "POST") -> str:

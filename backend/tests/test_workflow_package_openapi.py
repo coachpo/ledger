@@ -7,7 +7,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 
-def test_workflow_package_routes_are_registered_without_old_authoring(app) -> None:
+def test_workflow_package_routes_are_registered(app) -> None:
     route_paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
 
     assert {
@@ -114,12 +114,3 @@ def test_schedule_openapi_exposes_hard_delete_operation(client: TestClient) -> N
     delete_responses = cast(dict[str, dict[str, object]], delete_operation["responses"])
     assert "204" in delete_responses
     assert "content" not in delete_responses["204"]
-
-
-def test_schedule_openapi_removes_archive_route(client: TestClient) -> None:
-    openapi = cast(dict[str, object], client.get("/openapi.json").json())
-    paths = cast(dict[str, dict[str, object]], openapi["paths"])
-    schedule_paths = {path for path in paths if path.startswith("/api/schedules/")}
-
-    assert "/api/schedules/{scheduleId}/archive" not in paths
-    assert all(not path.endswith("/archive") for path in schedule_paths)
