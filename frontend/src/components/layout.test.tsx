@@ -358,6 +358,21 @@ describe("Layout", () => {
       const wrapper = getLayoutContentWrapper(pathname);
 
       expect(wrapper).toHaveClass(...wrapperClassNames);
+      expect(wrapper?.parentElement).toHaveAttribute(
+        "data-slot",
+        "layout-scroll-viewport",
+      );
+      expect(wrapper?.parentElement).toHaveClass(
+        "h-full",
+        "min-w-0",
+        "overflow-y-auto",
+        "overflow-x-hidden",
+      );
+      expect(
+        screen
+          .getByTestId(getRouteMetadataForPathname(pathname).testId)
+          .querySelector('[data-slot="scroll-area"]'),
+      ).toBeNull();
       unmount();
     }
   });

@@ -8,7 +8,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "./ui/breadcrumb";
-import { ScrollArea } from "./ui/scroll-area";
 import { ThemeToggle } from "./theme-toggle";
 import {
   Sidebar,
@@ -184,11 +183,14 @@ export function Layout() {
               <Outlet />
             </div>
           ) : (
-            <ScrollArea className="h-full min-w-0 [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0 [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:max-w-full">
+            <div
+              className="h-full min-w-0 overflow-x-hidden overflow-y-auto"
+              data-slot="layout-scroll-viewport"
+            >
               <div className={routeWidthWrapperClassName(routeMetadata.widthMode)}>
                 <Outlet />
               </div>
-            </ScrollArea>
+            </div>
           )}
         </main>
       </SidebarInset>
