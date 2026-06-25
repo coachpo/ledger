@@ -26,7 +26,7 @@ Scheduled Tasks is the package-first automation surface for recurring Workflow P
 
 Rerun and fork are separate run-descendant flows. Rerun edits root launch `parameters` through `/api/runs/{runId}/reruns`. Fork edits one selected agent invocation input through `/api/runs/{runId}/fork-draft?sourceInvocationId=...` and `/api/runs/{runId}/forks`, preserves the source run input, copies upstream context, and resumes from `resumeStepIndex`. Historical step replay data may still appear through historical replay lineage reads, but it is not a live write surface.
 
-Legacy global authoring routes are unsupported. `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*` are removed surfaces, not compatibility aliases. Runtime tool keys use canonical owner-qualified names, and OpenAI function names are mechanical forms derived from those canonical keys.
+Runtime tool keys use canonical owner-qualified names, and OpenAI function names are mechanical forms derived from those canonical keys.
 
 ## Prerequisites
 
@@ -177,7 +177,6 @@ The direct Compose path uses the same local/demo-only root image and keeps datab
 - Backend startup schema repair detaches legacy schedule rows from linked runs, backfills `scheduleProvenance` when resolvable, deletes obsolete schedule and fire rows, and no longer routes schedule cleanup through a destructive schedule cleanup path.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright E2E uses Chromium only with dedicated startup helpers: backend `8001`, frontend preview `4173`, deterministic quote provider, and frontend API base `http://127.0.0.1:8001/api/v1` by default.
-- `docs/run-input-schema-helptext.md` explains optional `title` and `description` metadata for generated run input form labels and help text.
 - `PUBLIC_BASE_URL` is not required for normal local development; only set it when you need an explicit externally reachable backend origin for downstream absolute links.
 
 ## Validation
@@ -211,4 +210,3 @@ The VERSION files are lightweight mirrors used for repository-level checks; this
 - `backend/README.md` covers backend-specific development details
 - `AGENTS.md` maps the repo's live surfaces and nested documentation hierarchy
 - `docs/prd.md`, `docs/requirements.md`, `docs/spec.md`, `docs/data-model.md`, `docs/test-plan.md`, and `docs/AGENTS.md` are the canonical live owner docs for product scope, requirements, technical behavior, persistence, validation, and docs governance
-- `docs/run-input-schema-helptext.md` supports generated run-input form metadata

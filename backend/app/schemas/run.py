@@ -7,7 +7,7 @@ from typing import Any, Literal, Self
 from pydantic import Field, field_validator, model_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
-from app.schemas.model_connection import ModelConnectionCompatibilityResolution
+from app.schemas.model_connection import ModelConnectionRuntimeProfile
 
 
 class RunStatus(str, Enum):  # noqa: UP042
@@ -599,7 +599,7 @@ class RunPackageLocalResourceRefsRead(CamelModel):
     workflows: list[str] = Field(default_factory=list)
 
 
-RunPackageResolvedModelConnectionRead = ModelConnectionCompatibilityResolution
+RunPackageResolvedModelConnectionRead = ModelConnectionRuntimeProfile
 
 
 class RunPackagePreflightSummaryRead(CamelModel):
@@ -648,9 +648,7 @@ class RunPackageProvenanceRead(CamelModel):
     launch_snapshot: RunPackageLaunchSnapshotRead | None = None
     extension_dependencies: list[RunExtensionDependencyRead] = Field(default_factory=list)
     local_resource_refs: RunPackageLocalResourceRefsRead
-    resolved_model_connections: list[ModelConnectionCompatibilityResolution] = Field(
-        default_factory=list
-    )
+    resolved_model_connections: list[ModelConnectionRuntimeProfile] = Field(default_factory=list)
     preflight_summary: RunPackagePreflightSummaryRead | None = None
     current_package: RunCurrentPackageAuditRead | None = None
 

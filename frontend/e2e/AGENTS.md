@@ -33,7 +33,6 @@ e2e/
 |-- runs.spec.ts
 |-- workflow-packages.spec.ts
 |-- scheduled-tasks.spec.ts
-|-- workflow-package-compatibility-mock.spec.ts
 |-- workflow-package-tradingagents-smoke.spec.ts
 `-- functional.spec.ts
 ```

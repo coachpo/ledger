@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from app.models.model_connection import ModelConnection
 from app.schemas.model_connection import (
     ModelConnectionCapabilities,
-    ModelConnectionCompatibilityResolution,
+    ModelConnectionRuntimeProfile,
     api_style_for_model_connection_protocol_profile,
     default_model_connection_capabilities,
     dump_model_connection_capabilities,
@@ -14,7 +14,7 @@ from app.services.execution_plan import PackageResolvedModelBinding
 from app.services.model_gateway_dto import ModelGatewayConnectionConfig
 
 
-class CompatibilityResolutionService:
+class ModelConnectionResolutionService:
     @staticmethod
     def _get_api_key(connection: ModelConnection) -> str | None:
         payload = connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
@@ -31,10 +31,8 @@ class CompatibilityResolutionService:
         except ValidationError:
             return default_model_connection_capabilities(connection.protocol_profile)
 
-    def resolve_connection(
-        self, connection: ModelConnection
-    ) -> ModelConnectionCompatibilityResolution:
-        return ModelConnectionCompatibilityResolution.model_validate(
+    def resolve_connection(self, connection: ModelConnection) -> ModelConnectionRuntimeProfile:
+        return ModelConnectionRuntimeProfile.model_validate(
             {
                 "key": connection.key,
                 "name": connection.name,
@@ -60,7 +58,7 @@ class CompatibilityResolutionService:
         self,
         connection: ModelConnection,
         *,
-        resolution: ModelConnectionCompatibilityResolution | None = None,
+        resolution: ModelConnectionRuntimeProfile | None = None,
     ) -> ModelGatewayConnectionConfig:
         resolved = resolution or self.resolve_connection(connection)
         return ModelGatewayConnectionConfig(
@@ -104,8 +102,8 @@ class CompatibilityResolutionService:
     @staticmethod
     def resolve_package_model_binding(
         binding: PackageResolvedModelBinding,
-    ) -> ModelConnectionCompatibilityResolution:
-        return ModelConnectionCompatibilityResolution.model_validate(
+    ) -> ModelConnectionRuntimeProfile:
+        return ModelConnectionRuntimeProfile.model_validate(
             {
                 "key": binding.key,
                 "name": binding.name,
@@ -127,7 +125,7 @@ class CompatibilityResolutionService:
 
     @staticmethod
     def to_package_resolved_model_binding(
-        resolution: ModelConnectionCompatibilityResolution,
+        resolution: ModelConnectionRuntimeProfile,
     ) -> PackageResolvedModelBinding:
         return PackageResolvedModelBinding(
             key=resolution.key,
@@ -148,4 +146,4 @@ class CompatibilityResolutionService:
         )
 
 
-__all__ = ["CompatibilityResolutionService"]
+__all__ = ["ModelConnectionResolutionService"]

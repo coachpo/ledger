@@ -2673,7 +2673,7 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         assert package_before_launch is not None
         package_updated_at_before_launch = package_before_launch.updated_at
         connection = session.query(ModelConnection).filter_by(key="package_runtime_model").one()
-        connection.base_url = "https://runtime-v2.example.com/v1"
+        connection.base_url = "https://model-gateway.example.com/v1"
         connection.model_id = "gpt-package-v2"
         connection.reasoning_effort = "low"
         connection.timeout_seconds = 91
@@ -2738,7 +2738,7 @@ def test_workflow_package_launch_executes_with_live_model_connection(
     }
     init_call = _RuntimeRecordingOpenAIClient.init_calls[-1]
     assert init_call["api_key"] == "test-api-key-rotated"
-    assert init_call["base_url"] == "https://runtime-v2.example.com/v1"
+    assert init_call["base_url"] == "https://model-gateway.example.com/v1"
     assert init_call["timeout"] == 91.0
     create_call = _RuntimeRecordingOpenAIClient.create_calls[-1]
     assert create_call["model"] == "gpt-package-v2"

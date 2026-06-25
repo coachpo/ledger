@@ -30,9 +30,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Text templates | `text_template.py` | stored template names and content |
 | Reports | `report.py` | slug-addressed markdown snapshots with source and metadata |
 | Extension state | `extension.py` | persisted enable/disable state for statically resident extension keys |
-| Platform package entities | `workflow_package.py`, `workflow_package_schedule.py` | package headers, immutable package version artifacts, package-backed schedules, and schedule fire history |
+| Platform package entities | `workflow_package.py`, `workflow_package_schedule.py` | package artifacts, package-backed schedules, and schedule fire history |
 | Platform global entities | `model_connection.py`, `run.py`, `workflow_memory.py`, `workflow_checkpoint.py` | saved model connections, persisted global run detail, schedule provenance, package provenance, workflow memory lifecycle rows, and checkpoint state |
-| Quarantined legacy entities | `agent.py`, `workflow.py`, `capability.py`, `mcp_server.py`, `output_schema.py`, `platform_reference.py` | cutover-era models kept out of live routes/import paths; do not document as shipped authoring surfaces |
 ## CONVENTIONS
 - ORM models use `Mapped[...]` annotations and `mapped_column(...)`.
 - Use explicit table names via `__tablename__` and explicit indexes or `CheckConstraint`s.
@@ -62,7 +61,7 @@ uv run pytest tests/test_api.py tests/test_runtime_models.py
 
 ## NOTES
 - `app/models/__init__.py` imports the full preserved-product, extension-state, and agent-platform model surface for startup registration.
-- `workflow_package.py` stores mutable package headers and immutable package version artifacts without database ids in exported manifests.
+- `workflow_package.py` stores current package artifacts without database ids in exported manifests.
 - `model_connection.py` stores UI-managed provider endpoint defaults, encrypted API-key payload metadata, status, and last connection-test results.
 - `run.py` persists package version identity, package hash, workflow key, queued/running status, execution scope, concurrency policy, lease metadata, attempt counts, per-step outputs, final output, and run totals used by the run monitor.
 - `workflow_memory.py` persists workflow memory items, proposals, decisions, audit events, revisions, quarantine evidence, and consolidation runs for declarative package memory.

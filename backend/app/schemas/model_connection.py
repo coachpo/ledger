@@ -429,7 +429,7 @@ class ModelConnectionCapabilityProbeRead(CamelModel):
         return ensure_timezone(value)
 
 
-class ModelConnectionCompatibilityResolution(CamelModel):
+class ModelConnectionRuntimeProfile(CamelModel):
     key: str
     name: str
     protocol_profile: ModelConnectionProtocolProfile
@@ -542,7 +542,7 @@ __all__ = [
     "ModelConnectionCapabilityProbeRead",
     "ModelConnectionCapabilityProbeRequest",
     "ModelConnectionConnectionTestRead",
-    "ModelConnectionCompatibilityResolution",
+    "ModelConnectionRuntimeProfile",
     "ModelConnectionCreate",
     "ModelConnectionListItemRead",
     "ModelConnectionListRead",

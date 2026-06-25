@@ -94,7 +94,7 @@ from app.services.http_operation_execution_service import (
     HttpOperationExecutionResult,
     HttpOperationExecutionService,
 )
-from app.services.model_connection_compatibility import CompatibilityResolutionService
+from app.services.model_connection_resolution import ModelConnectionResolutionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_openai import DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI
 from app.services.output_schema_compiler import (
@@ -258,7 +258,7 @@ class RunService:
         )
         self.http_operation_execution_service = HttpOperationExecutionService(session)
         self.workflow_memory_middleware = WorkflowMemoryMiddleware(session)
-        self.compatibility_resolution_service = CompatibilityResolutionService()
+        self.model_connection_resolution_service = ModelConnectionResolutionService()
         self.schema_compiler = OutputSchemaCompiler()
         self._stored_schema_node_cache: dict[tuple[str, int], SchemaNode] = {}
         self._run_rerun_fork_preparation = RunRerunForkPreparation(
@@ -3231,7 +3231,7 @@ class RunService:
         )
 
     def _model_binding_payload(self, binding: PackageResolvedModelBinding) -> dict[str, Any]:
-        resolution = self.compatibility_resolution_service.resolve_package_model_binding(binding)
+        resolution = self.model_connection_resolution_service.resolve_package_model_binding(binding)
         return resolution.model_dump(mode="json", by_alias=True)
 
     @staticmethod

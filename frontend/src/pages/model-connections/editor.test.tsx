@@ -177,9 +177,9 @@ describe("ModelConnectionsEditorPage", () => {
     ).toBeVisible();
     expect(screen.getByText("Editable connection details")).toBeVisible();
     expect(screen.getByText("Credential rotation")).toBeVisible();
-    expect(screen.getByText("Compatibility evidence")).toBeVisible();
+    expect(screen.getByText("Capability evidence")).toBeVisible();
     const compactEvidence = screen.getByTestId(
-      "model-connection-compatibility-evidence",
+      "model-connection-capability-evidence",
     );
     expect(
       within(compactEvidence).getAllByTestId(
@@ -580,7 +580,7 @@ describe("ModelConnectionsEditorPage", () => {
     );
   });
 
-  it("keeps compatibility evidence read-only when saving endpoint edits", async () => {
+  it("keeps capability evidence read-only when saving endpoint edits", async () => {
     paramsMock.modelConnectionId = "4";
     updateModelConnectionMock.mockResolvedValue({ id: 4 });
 

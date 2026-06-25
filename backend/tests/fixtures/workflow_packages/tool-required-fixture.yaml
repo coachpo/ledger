@@ -44,7 +44,7 @@ spec:
     - key: analyst
       name: Analyst
       description: Tool-dependent analyst.
-      modelConnection: compat_fixture_tools_disabled
+      modelConnection: runtime_profile_tools_disabled
       systemPrompt: |-
         Use the granted tools before writing conclusions.
         Return concise JSON output only.

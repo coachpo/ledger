@@ -18,7 +18,7 @@ from app.models.workflow_package import WorkflowPackage
 from app.repositories.run import RunRepository
 from app.repositories.run_agent_invocation import RunAgentInvocationRepository
 from app.repositories.run_operation_invocation import RunOperationInvocationRepository
-from app.schemas.model_connection import ModelConnectionCompatibilityResolution
+from app.schemas.model_connection import ModelConnectionRuntimeProfile
 from app.schemas.run import (
     RunForkCreateRequest,
     RunForkDraftRead,
@@ -36,7 +36,7 @@ from app.services.execution_plan import (
     PackageResolvedModelBinding,
     PackageRuntimeAgentSpec,
 )
-from app.services.model_connection_compatibility import CompatibilityResolutionService
+from app.services.model_connection_resolution import ModelConnectionResolutionService
 from app.services.output_schema_compiler import OutputSchemaCompiler
 from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
@@ -600,10 +600,10 @@ class RunRerunForkPreparation:
             if not key:
                 continue
             try:
-                resolution = ModelConnectionCompatibilityResolution.model_validate(raw_binding)
+                resolution = ModelConnectionRuntimeProfile.model_validate(raw_binding)
             except ValidationError as exc:
                 raise ValueError("Model connection snapshot is invalid") from exc
-            bindings[key] = CompatibilityResolutionService.to_package_resolved_model_binding(
+            bindings[key] = ModelConnectionResolutionService.to_package_resolved_model_binding(
                 resolution,
             )
         return bindings

@@ -313,7 +313,7 @@ kind: WorkflowPackage
 metadata:
   key: mixed_capability_fixture
   name: Mixed Capability Fixture
-  description: Multi-agent fixture for scoped compatibility requirements.
+  description: Multi-agent fixture for scoped capability requirements.
 spec:
   inputs:
     type: object
@@ -574,7 +574,7 @@ def _seed_tool_required_package(session_factory: sessionmaker[Session]) -> None:
         session.commit()
 
 
-def _seed_compatibility_fixture_connection(
+def _seed_runtime_profile_fixture_connection(
     session_factory: sessionmaker[Session],
     *,
     native_tool_calls_status: ModelConnectionCapabilityStatus,
@@ -591,12 +591,12 @@ def _seed_compatibility_fixture_connection(
     with session_factory() as session:
         session.add(
             ModelConnection(
-                key="compat_fixture_tools_disabled",
+                key="runtime_profile_tools_disabled",
                 status="active",
                 protocol_profile="openai_chat_completions",
-                name="Compatibility Fixture: Tools Disabled",
+                name="Provider Profile Fixture: Tools Disabled",
                 description="Probe fixture with tool calls disabled.",
-                base_url="https://compat-fixture-tools-disabled.example.test",
+                base_url="https://runtime-profile-tools-disabled.example.test",
                 model_id="fake-tools-disabled",
                 capabilities=dump_model_connection_capabilities(capabilities),
                 output_strategy_policy="prefer_strict_schema",
@@ -1256,7 +1256,7 @@ def test_preflight_blocks_tool_required_fixture_with_unsupported_native_tool_cal
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_tool_required_package(session_factory)
-    _seed_compatibility_fixture_connection(
+    _seed_runtime_profile_fixture_connection(
         session_factory,
         native_tool_calls_status=ModelConnectionCapabilityStatus.UNSUPPORTED,
         strict_json_schema_status=ModelConnectionCapabilityStatus.UNSUPPORTED,
@@ -1275,7 +1275,7 @@ def test_preflight_blocks_tool_required_fixture_with_unsupported_native_tool_cal
         "field": "spec.capabilityProfiles.tool_required.toolKeys",
         "code": "model_capability_required_missing",
         "agentKey": "analyst",
-        "modelConnectionKey": "compat_fixture_tools_disabled",
+        "modelConnectionKey": "runtime_profile_tools_disabled",
         "requirement": "nativeToolCalls",
         "issue": (
             "This workflow requires native tool calls, but the selected model connection "
@@ -1296,7 +1296,7 @@ def test_preflight_warns_when_required_model_capabilities_are_unproven(
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_tool_required_package(session_factory)
-    _seed_compatibility_fixture_connection(
+    _seed_runtime_profile_fixture_connection(
         session_factory,
         native_tool_calls_status=ModelConnectionCapabilityStatus.UNKNOWN,
         strict_json_schema_status=ModelConnectionCapabilityStatus.UNKNOWN,
@@ -1317,7 +1317,7 @@ def test_preflight_warns_when_required_model_capabilities_are_unproven(
             "field": "spec.capabilityProfiles.tool_required.toolKeys",
             "code": "model_capability_probe_inconclusive",
             "agentKey": "analyst",
-            "modelConnectionKey": "compat_fixture_tools_disabled",
+            "modelConnectionKey": "runtime_profile_tools_disabled",
             "requirement": "nativeToolCalls",
             "issue": (
                 "This workflow requires native tool calls, but support has not been proven yet."
@@ -1328,7 +1328,7 @@ def test_preflight_warns_when_required_model_capabilities_are_unproven(
             "field": "spec.outputSchemas.report.jsonSchema",
             "code": "model_capability_probe_inconclusive",
             "agentKey": "analyst",
-            "modelConnectionKey": "compat_fixture_tools_disabled",
+            "modelConnectionKey": "runtime_profile_tools_disabled",
             "requirement": "structuredOutput",
             "issue": (
                 "This workflow requires structured JSON output, but strict "
@@ -1344,7 +1344,7 @@ def test_preflight_warns_when_structured_output_falls_back_to_json_object_valida
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_tool_required_package(session_factory)
-    _seed_compatibility_fixture_connection(
+    _seed_runtime_profile_fixture_connection(
         session_factory,
         native_tool_calls_status=ModelConnectionCapabilityStatus.SUPPORTED,
         strict_json_schema_status=ModelConnectionCapabilityStatus.UNSUPPORTED,
@@ -1366,7 +1366,7 @@ def test_preflight_warns_when_structured_output_falls_back_to_json_object_valida
             "field": "spec.outputSchemas.report.jsonSchema",
             "code": "model_capability_required_missing",
             "agentKey": "analyst",
-            "modelConnectionKey": "compat_fixture_tools_disabled",
+            "modelConnectionKey": "runtime_profile_tools_disabled",
             "requirement": "structuredOutput",
             "issue": (
                 "This workflow requires structured JSON output, but strict JSON-schema output "

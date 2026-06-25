@@ -31,7 +31,7 @@ from app.schemas.model_connection import (
     normalize_model_connection_key,
 )
 from app.services.execution_plan import PackageResolvedModelBinding
-from app.services.model_connection_compatibility import CompatibilityResolutionService
+from app.services.model_connection_resolution import ModelConnectionResolutionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_dto import ModelConnectionTestRequest
 from app.services.model_gateway_openai import DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI
@@ -51,7 +51,7 @@ _MODEL_CONNECTION_KEY_CONSTRAINTS = frozenset({"uq_model_connections_key"})
 class ModelConnectionService:
     session: Session
     repository: ModelConnectionRepository
-    compatibility_resolution_service: CompatibilityResolutionService
+    model_connection_resolution_service: ModelConnectionResolutionService
     model_gateway: ModelExecutionGateway
 
     def __init__(
@@ -61,7 +61,7 @@ class ModelConnectionService:
     ) -> None:
         self.session = session
         self.repository = ModelConnectionRepository(session)
-        self.compatibility_resolution_service = CompatibilityResolutionService()
+        self.model_connection_resolution_service = ModelConnectionResolutionService()
         self.model_gateway = model_gateway or ModelExecutionGateway(
             OpenAIProtocolAdapter(client_factory=OpenAI)
         )
@@ -309,7 +309,7 @@ class ModelConnectionService:
         )
 
     def _read_payload(self, connection: ModelConnection) -> dict[str, object]:
-        resolution = self.compatibility_resolution_service.resolve_connection(connection)
+        resolution = self.model_connection_resolution_service.resolve_connection(connection)
         return {
             "id": connection.id,
             "key": resolution.key,
@@ -333,8 +333,8 @@ class ModelConnectionService:
         }
 
     def _to_package_binding(self, connection: ModelConnection) -> PackageResolvedModelBinding:
-        resolution = self.compatibility_resolution_service.resolve_connection(connection)
-        return self.compatibility_resolution_service.to_package_resolved_model_binding(
+        resolution = self.model_connection_resolution_service.resolve_connection(connection)
+        return self.model_connection_resolution_service.to_package_resolved_model_binding(
             resolution,
         )
 
@@ -342,7 +342,7 @@ class ModelConnectionService:
         tested_at = utcnow()
         result = self.model_gateway.test_connection(
             ModelConnectionTestRequest(
-                connection=self.compatibility_resolution_service.to_gateway_connection_config(
+                connection=self.model_connection_resolution_service.to_gateway_connection_config(
                     connection,
                 ),
                 instructions="Reply with the single word OK.",

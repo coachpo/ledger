@@ -1008,11 +1008,11 @@ export function ModelConnectionsEditorPage() {
           ) : null}
 
           <ConsoleSection
-            title="Compatibility evidence"
+            title="Capability evidence"
             description="Read-only backend evidence resolved from saved connection tests, capability probes, and runtime policies. Save before refreshing it."
           >
             <div
-              data-testid="model-connection-compatibility-evidence"
+              data-testid="model-connection-capability-evidence"
               className="flex min-w-0 flex-col gap-4"
             >
               <EvidenceGroup title="Connection health">

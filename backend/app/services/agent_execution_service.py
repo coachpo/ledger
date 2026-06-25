@@ -29,7 +29,7 @@ from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import PackageResolvedModelBinding, PackageRuntimeAgentSpec
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.extension_service import ExtensionService
-from app.services.model_connection_compatibility import CompatibilityResolutionService
+from app.services.model_connection_resolution import ModelConnectionResolutionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_dto import (
     ModelCapabilityProbeRequest,
@@ -121,7 +121,7 @@ class AgentExecutionService:
         self.session_factory: sessionmaker[Session] = session_factory
         self.provider_bundle: ExecutionProviderBundle = provider_bundle or ExecutionProviderBundle()
         self.model_gateway = model_gateway or ModelExecutionGateway()
-        self.compatibility_resolution_service = CompatibilityResolutionService()
+        self.model_connection_resolution_service = ModelConnectionResolutionService()
         self.mcp_tool_client: McpToolClient | None = mcp_tool_client
 
     async def invoke(
@@ -236,7 +236,7 @@ class AgentExecutionService:
             binding=binding,
             connection=connection,
         )
-        resolver = self.compatibility_resolution_service
+        resolver = self.model_connection_resolution_service
         return resolver.to_gateway_connection_config_from_package_binding(
             binding,
             live_connection=connection,

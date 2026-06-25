@@ -262,7 +262,7 @@ describe("ModelConnectionsListPage", () => {
       screen.getByRole("textbox", { name: "Search model connections" }),
     ).toHaveAttribute(
       "placeholder",
-      "Search by name, key, model, protocol, or compatibility evidence...",
+      "Search by name, key, model, protocol, or capability evidence...",
     );
     expect(screen.getByRole("table").parentElement).toHaveClass(
       "min-w-0",

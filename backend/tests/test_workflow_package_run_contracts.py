@@ -2332,14 +2332,14 @@ def test_rerun_and_fork_preserve_literal_trailing_slash_base_url_after_live_mode
     assert fork_init_call["base_url"] == literal_base_url
 
 
-def test_compat_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(
+def test_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
     fixture_run_id = 9201
     fixture_package_id = 9101
-    fixture_target_key = "compat-runtime-profile-run"
-    manifest_source = _package_source(package_key="compat_runtime_profile_package")
+    fixture_target_key = "runtime-profile-run"
+    manifest_source = _package_source(package_key="runtime_profile_package")
     compiled = compile_workflow_package_manifest(manifest_source)
     package_definition = cast(dict[str, Any], deepcopy(compiled["packageDefinition"]))
     compiled_plan = cast(dict[str, Any], deepcopy(compiled["compiledPlan"]))
@@ -2353,10 +2353,10 @@ def test_compat_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(
     resolved_model_connections = [
         {
             "key": "package_runtime_model",
-            "name": "Compatibility Runtime Profile Model",
+            "name": "Runtime Profile Model",
             "protocolProfile": "openai_chat_completions",
-            "baseUrl": "https://compat-runtime-profile.example.test/v1",
-            "modelId": "fake-compat-runtime-profile",
+            "baseUrl": "https://runtime-profile.example.test/v1",
+            "modelId": "fake-runtime-profile",
             "reasoningEffort": None,
             "capabilities": capabilities,
             "outputStrategyPolicy": "allow_json_object_validation",
@@ -2374,7 +2374,7 @@ def test_compat_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(
         package = WorkflowPackage(
             id=fixture_package_id,
             key=fixture_target_key,
-            name="Compatibility Runtime Profile Package",
+            name="Runtime Profile Package",
             description="Deterministic run-detail fixture for runtime profile provenance.",
             manifest_source=manifest_source,
             manifest_hash=str(compiled["manifestHash"]),
@@ -2401,17 +2401,17 @@ def test_compat_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(
             lineage_root_run_id=None,
             forked_from_step_index=None,
             resume_step_index=1,
-            final_output={"summary": "compat fixture output"},
+            final_output={"summary": "runtime profile fixture output"},
             total_tokens=17,
             inherited_tokens=0,
             executed_tokens=17,
-            trace_id="trace-compat-runtime-profile",
+            trace_id="trace-runtime-profile",
             error=None,
         )
         run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
             workflow_package_id=fixture_package_id,
             workflow_package_key=fixture_target_key,
-            workflow_package_name="Compatibility Runtime Profile Package",
+            workflow_package_name="Runtime Profile Package",
             workflow_package_description=package.description,
             workflow_package_status=None,
             workflow_key="runtime_workflow",

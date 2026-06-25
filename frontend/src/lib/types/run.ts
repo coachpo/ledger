@@ -229,7 +229,7 @@ export interface RunPackageResolvedModelConnectionRead {
   reasoningPolicy: ModelConnectionReasoningPolicy;
   streamingPolicy: ModelConnectionStreamingPolicy;
   probeCacheTtlSeconds: number;
-  /** @deprecated Historical compatibility only; use protocolProfile. */
+  /** Derived snapshot field for historical run provenance; prefer protocolProfile. */
   apiStyle: ModelConnectionApiStyle;
   timeoutSeconds: number;
   hasApiKey: boolean;

@@ -6,7 +6,7 @@
 
 ## OVERVIEW
 
-`docs/` has six canonical live owner documents: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and this `AGENTS.md`. Live code remains source of truth; these docs mirror the mounted browser/API surfaces and current persistence/runtime contracts, including package-first execution, backend-owned compatibility truth, platform-core memory, and finance-owned report history.
+`docs/` has six canonical live owner documents: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and this `AGENTS.md`. Live code remains source of truth; these docs mirror the mounted browser/API surfaces and current persistence/runtime contracts, including package-first execution, backend-owned capability and runtime-profile truth, platform-core memory, and finance-owned report history.
 
 Extension model: docs mirror the core app plus statically resident extensions; they should describe state-gated exposure, not marketplace installation or hot-loading.
 
@@ -48,7 +48,7 @@ Trusted single-user scope: Owner docs must frame auth, authorization, RBAC, logi
 - Migration docs should mark intentionally narrower local behavior as partial migration or product decision, avoid exact-copy requirements, and treat renamed or restructured equivalent behavior as covered rather than a gap.
 - Document declarative Workflow Package `spec.memory` middleware separately from trusted local operator `/api/memory` proposal, audit, and quarantine review surfaces. Removed direct runtime tools `signaldeck.core.memory.lookup` and `signaldeck.core.memory.write` may appear only as migration/removal notes or negative test fixtures, not as live authoring guidance.
 - Document workflow memory context as non-authoritative model input reference data. Proposal-first writes, policy-only activation, detector handling, lifecycle exclusions, quarantine/review, audit evidence, and checkpoint separation are the live memory contracts.
-- Document Model Connection compatibility as backend-owned read/provenance truth; public writes may select `protocolProfile` but must not author capabilities, runtime policies, probe TTL, `apiStyle`, or `compatibilityProfile`.
+- Document Model Connection runtime profiles as backend-owned read/provenance truth; public writes may select `protocolProfile` but must not author capabilities, runtime policies, probe TTL, or `apiStyle`.
 - Document tool-call recovery as typed and narrow: only pre-dispatch parser/schema/argument validation failures can use the bounded model-feedback retry path.
 - Document Scheduled Tasks as the package-first automation surface: `/api/schedules`, `/scheduled-tasks`, structured recurrence, scheduler materialization, fire history, and queued run provenance.
 - Finance-specific examples must not silently rewrite shared platform contracts.

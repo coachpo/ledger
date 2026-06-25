@@ -36,7 +36,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Blank edit submissions must preserve the stored API key. Only newly entered values rotate the secret.
 - Connection tests run only against saved backend records; unsaved drafts should be blocked locally with inline feedback.
 - Reasoning-effort handling supports omit, preset, and custom values. Omit sends no reasoning parameter; literal `"none"` stays a string value.
-- `deterministic_smoke` connections are the offline/smoke path; API keys remain optional there.
 - Route metadata owns the split between the scroll inventory and full-height create/edit editor routes. Keep `route-model-connections-list`, `route-model-connection-new`, and `route-model-connection-edit` aligned with their metadata state variants.
 - The create/edit metadata `editor` routes are full-height editors and must use the `DESIGN.md` `WorkspacePageShell` guidance, not inventory shell chrome.
 - Inventory navigation, edit, delete, and connection-test actions must remain explicit links or buttons. Never expose saved secrets while testing semantics or error states.

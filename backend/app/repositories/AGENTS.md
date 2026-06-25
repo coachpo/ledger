@@ -30,7 +30,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Report queries | `report.py` | newest-first listing, slug lookup, and name lookup |
 | Platform package queries | `workflow_package.py`, `workflow_package_schedule.py` | current package reads/writes, import/export, preflight, schedules, due-fire claims, fire history, and lifecycle helpers |
 | Platform global queries | `model_connection.py`, `run.py` | saved model connection lookup, package run provenance, schedule-linked runs, and run list/detail helpers |
-| Quarantined legacy repositories | `agent.py`, `workflow.py`, `capability.py`, `mcp_server.py`, `output_schema.py` | cutover-era data access kept out of live route/service wiring; do not use for new package-first behavior |
 ## CONVENTIONS
 - Each repository is constructed with a `Session` and exposes query methods.
 - Methods return ORM objects, not Pydantic schemas; services handle conversion.
@@ -65,5 +64,4 @@ uv run pytest tests/test_api.py tests/test_runtime_repositories.py
 - `WorkflowPackageScheduleRepository` and `WorkflowPackageScheduleFireRepository` own schedule list/detail filters, due-schedule locking, idempotent fire inserts, fire history, latest-run lookup, and active-run checks.
 - `ModelConnectionRepository` filters saved provider connections by status for list/editor/package-binding flows.
 - `RunRepository` backs current run list/detail surfaces, backend progress/queue projections, package-qualified queue claims, schedule-linked run lookups, and persisted package-run lookup behavior.
-- `TradingOperationRepository` retains historical attribution helpers where preserved legacy columns still matter, but there is no active `SimulationRepository` in the shipped package.
-- Legacy global-authoring repositories are quarantine/upgrade context only. New work should target Workflow Package, schedule, model-connection, memory, and run repositories.
+- `TradingOperationRepository` keeps trading-operation lookup and attribution helpers scoped to preserved portfolio history.

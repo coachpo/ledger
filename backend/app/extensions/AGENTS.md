@@ -7,7 +7,7 @@
 
 `signaldeck.finance` owns preserved finance `/api/v1` routers, finance provider factories, finance service gates/grants/dependency records, finance runtime tool specs/executors, split runtime modules for market data/positions/reports, report lookup, and historical agent-memory report readers. Its public runtime tool keys are `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, and `signaldeck.finance.reports.lookup`.
 
-`signaldeck.digital_oracle` owns only `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup` in this upgrade.
+`signaldeck.digital_oracle` owns only `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, and `signaldeck.digital_oracle.options.lookup` in this upgrade.
 
 Extension model: this folder owns statically resident extension registration, private registrar wiring, and extension-owned composition roots for code shipped with SignalDeck Core.
 
@@ -35,7 +35,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Bundled registry | `registry.py` | extension identity, initial enabled seed, and private registrar references |
 | Extension package exports | `__init__.py` | statically resident extension registry exports |
 | Finance extension | `signaldeck_finance/AGENTS.md` | current first-party finance workspace extension |
-| Digital Oracle extension | `signaldeck_digital_oracle/AGENTS.md` | tool-only prediction markets, SEC filings, and market sentiment runtime extension |
+| Digital Oracle extension | `signaldeck_digital_oracle/AGENTS.md` | tool-only prediction markets, SEC filings, market sentiment, macro rates, crypto derivatives, CFTC positioning, and options runtime extension |
 | Service state/filtering | `../services/extension_service.py` | persisted slim state plus ToolCatalog/runtime registry filtering |
 | API state | `../api/extensions.py` | `/api/extensions` list/toggle route family |
 | DB state | `../models/extension.py`, `../db/upgrades.py` | `extension_states` persistence and default statically resident extension seeding |

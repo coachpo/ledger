@@ -413,9 +413,6 @@ describe("Layout", () => {
       }
     }
 
-    expect(
-      screen.queryByRole("link", { name: /backtests/i }),
-    ).not.toBeInTheDocument();
   });
 
   it("keeps finance navigation when only Digital Oracle is disabled", () => {

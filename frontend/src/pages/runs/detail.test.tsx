@@ -516,7 +516,7 @@ function buildCapabilities(
     ),
     parallelToolCalls: buildCapabilityState(
       "unsupported",
-      "Parallel tool calls were serialized to preserve compatibility.",
+      "Parallel tool calls were serialized to match provider policy.",
       "2026-05-08T07:14:00Z",
     ),
     reasoningHints: buildCapabilityState(
@@ -1840,7 +1840,7 @@ describe("RunsDetailPage", () => {
               ),
               parallelToolCalls: buildCapabilityState(
                 "unsupported",
-                "Parallel tool calls were serialized for compatibility.",
+                "Parallel tool calls were serialized by provider policy.",
                 "2026-05-08T07:23:00Z",
               ),
               responsesApi: buildCapabilityState(
@@ -1911,9 +1911,9 @@ describe("RunsDetailPage", () => {
               ),
             }),
             hasApiKey: false,
-            key: "local_compatibility_model",
-            modelId: "local-compatibility-gpt",
-            name: "Local Compatibility Model",
+            key: "local_runtime_model",
+            modelId: "local-runtime-gpt",
+            name: "Local Runtime Model",
             outputStrategyPolicy: "allow_plain_text",
             parallelToolCallsPolicy: "forbid",
             probeCacheTtlSeconds: 300,
@@ -2149,11 +2149,11 @@ describe("RunsDetailPage", () => {
     overviewRender.unmount();
     searchParamsMock = new URLSearchParams("mode=runtime");
     const runtimeModeRender = render(<RunsDetailPage />);
-    const runtimeProfile = screen.getByTestId("runs-runtime-profile");
-    expect(runtimeProfile).toBeVisible();
-    expect(runtimeProfile).toHaveTextContent(/runtime profile/i);
-    expect(runtimeProfile).not.toHaveTextContent(/runtime snapshot summary/i);
-    expect(runtimeProfile).not.toHaveTextContent(/frozen run provenance/i);
+    const runtimeProfilePanel = screen.getByTestId("runs-runtime-profile");
+    expect(runtimeProfilePanel).toBeVisible();
+    expect(runtimeProfilePanel).toHaveTextContent(/runtime profile/i);
+    expect(runtimeProfilePanel).not.toHaveTextContent(/runtime snapshot summary/i);
+    expect(runtimeProfilePanel).not.toHaveTextContent(/frozen run provenance/i);
     const primaryProfile = screen.getByTestId(
       "runs-runtime-profile-connection-primary_openai",
     );
@@ -2166,16 +2166,16 @@ describe("RunsDetailPage", () => {
     expect(primaryProfile).not.toHaveTextContent(/Snapshot key/i);
     expect(primaryProfile).not.toHaveTextContent(/Selected strategies/i);
     expect(primaryProfile).not.toHaveTextContent(/Last probed/i);
-    const compatibilityProfile = screen.getByTestId(
-      "runs-runtime-profile-connection-local_compatibility_model",
+    const localRuntimeProfile = screen.getByTestId(
+      "runs-runtime-profile-connection-local_runtime_model",
     );
-    expect(compatibilityProfile).toHaveTextContent(
-      /Local Compatibility Model/i,
+    expect(localRuntimeProfile).toHaveTextContent(
+      /Local Runtime Model/i,
     );
-    expect(compatibilityProfile).toHaveTextContent(
+    expect(localRuntimeProfile).toHaveTextContent(
       /Chat Completions-compatible/i,
     );
-    expect(compatibilityProfile).toHaveTextContent(
+    expect(localRuntimeProfile).toHaveTextContent(
       /5 supported · 3 unsupported · 0 unknown · 3 not applicable/i,
     );
     expect(

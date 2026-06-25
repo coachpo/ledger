@@ -20,7 +20,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Runtime dispatch | `runtime.py` | tool discovery, dispatcher construction, execution, result/error shaping |
 | Security checks | `security.py` | URL and stdio validation rules |
 | Tool adapter | `tool_adapter.py` | MCP tool snapshots to execution descriptors |
-| Integration | `../../services/mcp_server_service.py`, `../../services/agent_execution_service.py` | saved config tests and runtime execution wiring |
+| Integration | `../../services/agent_execution_service.py` | runtime execution wiring |
 | Coverage | `../../../tests/test_mcp_runtime.py`, `../../../tests/test_workflow_package_preflight.py` | MCP safety, snapshots, preflight dependency checks |
 
 ## CONVENTIONS

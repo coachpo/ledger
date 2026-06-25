@@ -17,7 +17,7 @@ from app.schemas.model_connection import (
     dump_model_connection_capabilities,
     normalize_model_connection_capability_key,
 )
-from app.services.model_connection_compatibility import CompatibilityResolutionService
+from app.services.model_connection_resolution import ModelConnectionResolutionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_dto import ModelCapabilityProbeRequest
 from app.services.model_gateway_openai import DEFAULT_OPENAI_CLIENT_FACTORY as OpenAI
@@ -35,7 +35,7 @@ class ModelConnectionProbeService:
     ) -> None:
         self.session = session
         self.repository = ModelConnectionRepository(session)
-        self.compatibility_resolution_service = CompatibilityResolutionService()
+        self.model_connection_resolution_service = ModelConnectionResolutionService()
         self.model_gateway = model_gateway or ModelExecutionGateway(
             OpenAIProtocolAdapter(client_factory=OpenAI)
         )
@@ -47,7 +47,7 @@ class ModelConnectionProbeService:
     ) -> ModelConnectionCapabilityProbeRead:
         request = payload or ModelConnectionCapabilityProbeRequest()
         connection = self._get_model(connection_id)
-        resolution = self.compatibility_resolution_service.resolve_connection(connection)
+        resolution = self.model_connection_resolution_service.resolve_connection(connection)
         capabilities = resolution.capabilities
         requested_capability_fields = self._requested_capability_fields(request)
         cached = not request.refresh and self._is_cache_fresh(
@@ -64,7 +64,7 @@ class ModelConnectionProbeService:
         else:
             probe_result = self.model_gateway.probe_capabilities(
                 ModelCapabilityProbeRequest(
-                    connection=self.compatibility_resolution_service.to_gateway_connection_config(
+                    connection=self.model_connection_resolution_service.to_gateway_connection_config(
                         connection,
                         resolution=resolution,
                     ),
@@ -87,7 +87,7 @@ class ModelConnectionProbeService:
             except Exception:
                 self.session.rollback()
                 raise
-            resolution = self.compatibility_resolution_service.resolve_connection(connection)
+            resolution = self.model_connection_resolution_service.resolve_connection(connection)
             capabilities = resolution.capabilities
         return ModelConnectionCapabilityProbeRead.model_validate(
             {

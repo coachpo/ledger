@@ -604,7 +604,7 @@ export function ModelConnectionsListPage() {
           id: "model-connections-search",
           label: "Search model connections",
           placeholder:
-            "Search by name, key, model, protocol, or compatibility evidence...",
+            "Search by name, key, model, protocol, or capability evidence...",
           value: search,
           onChange: setSearch,
         },

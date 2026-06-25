@@ -21,7 +21,6 @@
 ```text
 app/
 ├── main.py          # create_app(), health/readiness, router mounting
-├── reset_seed.py    # local/demo reset helper
 ├── api/             # route modules and request-scoped dependencies
 ├── core/            # shared backend primitives
 ├── db/              # PostgreSQL session/init/upgrade code

@@ -77,7 +77,7 @@ function packageManifest(
   ].join("\n");
 }
 
-function compatibilityPackageManifest(packageKey: string, modelKey: string) {
+function runtimeProfilePackageManifest(packageKey: string, modelKey: string) {
   return packageManifest(packageKey, modelKey)
     .replace(
       "  capabilityProfiles:\n    - key: quote_tools\n      name: Quote Tools\n      toolKeys:\n        - signaldeck.finance.market_data.quote_lookup\n",
@@ -736,7 +736,7 @@ test.describe("Workflow packages", () => {
       `${PLATFORM_API_BASE}/workflow-packages`,
       {
         data: {
-          manifestSource: compatibilityPackageManifest(
+          manifestSource: runtimeProfilePackageManifest(
             `e2e_fake_strict_${suffix}`,
             strictModelKey,
           ),
@@ -788,7 +788,7 @@ test.describe("Workflow packages", () => {
       `${PLATFORM_API_BASE}/workflow-packages`,
       {
         data: {
-          manifestSource: compatibilityPackageManifest(
+          manifestSource: runtimeProfilePackageManifest(
             `e2e_fake_json_${suffix}`,
             jsonModelKey,
           ),
@@ -833,7 +833,7 @@ test.describe("Workflow packages", () => {
       `${PLATFORM_API_BASE}/workflow-packages`,
       {
         data: {
-          manifestSource: compatibilityPackageManifest(
+          manifestSource: runtimeProfilePackageManifest(
             `e2e_fake_usage_${suffix}`,
             noUsageModelKey,
           ),
@@ -881,7 +881,7 @@ test.describe("Workflow packages", () => {
       `${PLATFORM_API_BASE}/workflow-packages`,
       {
         data: {
-          manifestSource: compatibilityPackageManifest(
+          manifestSource: runtimeProfilePackageManifest(
             `e2e_fake_reasoning_${suffix}`,
             reasoningModelKey,
           ),

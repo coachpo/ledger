@@ -2,7 +2,7 @@ export type ModelConnectionReasoningEffort = string;
 export type ModelConnectionProtocolProfile =
   | "openai_chat_completions"
   | "openai_responses";
-/** @deprecated Historical run provenance may still include apiStyle. */
+/** Derived snapshot field for historical run provenance. */
 export type ModelConnectionApiStyle = "responses" | "chat_completions";
 export type ModelConnectionCapabilityStatus =
   | "supported"

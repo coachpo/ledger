@@ -338,24 +338,6 @@ _TRADINGAGENTS_MACRO_FIXTURE_PATH = (
 _TRADINGAGENTS_MIXED_SIGNALS_FIXTURE_PATH = (
     Path(__file__).parents[2] / "demo" / "tradingagents_advisory_research_mixed_signals.yaml"
 )
-_DIGITAL_ORACLE_DRAFT_FIXTURE_PATH = (
-    Path(__file__).parent
-    / "fixtures"
-    / "workflow_packages"
-    / "digital_oracle_researcher.draft.yaml"
-)
-_TRADINGAGENTS_PRESET_SQL_PATH = (
-    Path(__file__).parents[1] / "app" / "db" / "tradingagents_advisory_research.sql"
-)
-_DIGITAL_ORACLE_PRESET_SQL_PATH = (
-    Path(__file__).parents[1] / "app" / "db" / "digital_oracle_researcher.sql"
-)
-_TRADINGAGENTS_MACRO_PRESET_SQL_PATH = (
-    Path(__file__).parents[1] / "app" / "db" / "tradingagents_advisory_research_macro.sql"
-)
-_TRADINGAGENTS_MIXED_SIGNALS_PRESET_SQL_PATH = (
-    Path(__file__).parents[1] / "app" / "db" / "tradingagents_advisory_research_mixed_signals.sql"
-)
 _EXPECTED_PRESET_HASHES = {
     _DIGITAL_ORACLE_PRESET_KEY: (
         "9cdde0eaf311164747948b386c9901cd3a70c0ef981c8296e616c52e212ac0c4",
@@ -3491,18 +3473,6 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
     database_url: str,
 ) -> None:
     fixture_source = _TRADINGAGENTS_FIXTURE_PATH.read_text(encoding="utf-8")
-    preset_sql = _TRADINGAGENTS_PRESET_SQL_PATH.read_text(encoding="utf-8")
-    assert "INSERT INTO workflow_packages" in preset_sql
-    assert "ON CONFLICT (key) DO UPDATE" in preset_sql
-    assert "WHERE NOT EXISTS" not in preset_sql
-    assert "INSERT INTO workflow_package_versions" not in preset_sql
-    assert "latest_version_id" not in preset_sql
-    assert "draft_source" not in preset_sql
-    removed_validation_column = "_".join(("validation", "summary"))
-    assert removed_validation_column not in preset_sql
-    assert "INSERT INTO model_connections" not in preset_sql
-    assert "workflow_package_secret_bindings (" not in preset_sql
-    assert "INSERT INTO runs" not in preset_sql
 
     init_db(database_url)
     engine = create_engine(database_url, future=True)
@@ -3515,9 +3485,6 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
 
     try:
         with engine.connect() as connection:
-            table_names = set(inspect(connection).get_table_names())
-            assert "workflow_package_versions" not in table_names
-            assert "workflow_package_version_model_connections" not in table_names
             row = (
                 connection.execute(
                     text(
@@ -3643,15 +3610,6 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
 
 def test_init_db_seeds_digital_oracle_preset_without_secret_state(database_url: str) -> None:
     fixture_source = _DIGITAL_ORACLE_FIXTURE_PATH.read_text(encoding="utf-8")
-    draft_fixture_source = _DIGITAL_ORACLE_DRAFT_FIXTURE_PATH.read_text(encoding="utf-8")
-    preset_sql = _DIGITAL_ORACLE_PRESET_SQL_PATH.read_text(encoding="utf-8")
-    assert "finance-owned" not in fixture_source
-    assert "finance-owned" not in draft_fixture_source
-    assert "INSERT INTO workflow_packages" in preset_sql
-    assert "ON CONFLICT (key) DO UPDATE" in preset_sql
-    assert "INSERT INTO model_connections" not in preset_sql
-    assert "workflow_package_secret_bindings (" not in preset_sql
-    assert "INSERT INTO runs" not in preset_sql
 
     init_db(database_url)
     engine = create_engine(database_url, future=True)
@@ -3766,13 +3724,11 @@ def test_init_db_seeds_macro_and_mixed_signal_presets_with_expected_boundaries(
     preset_expectations = {
         _TRADINGAGENTS_MACRO_PRESET_KEY: (
             _TRADINGAGENTS_MACRO_FIXTURE_PATH,
-            _TRADINGAGENTS_MACRO_PRESET_SQL_PATH,
             {FINANCE_WORKSPACE_EXTENSION_KEY},
             set(),
         ),
         _TRADINGAGENTS_MIXED_SIGNALS_PRESET_KEY: (
             _TRADINGAGENTS_MIXED_SIGNALS_FIXTURE_PATH,
-            _TRADINGAGENTS_MIXED_SIGNALS_PRESET_SQL_PATH,
             {FINANCE_WORKSPACE_EXTENSION_KEY, DIGITAL_ORACLE_EXTENSION_KEY},
             {
                 "signaldeck.digital_oracle.macro_rates.lookup",
@@ -3781,26 +3737,12 @@ def test_init_db_seeds_macro_and_mixed_signal_presets_with_expected_boundaries(
         ),
     }
 
-    for _package_key, (
-        _fixture_path,
-        preset_sql_path,
-        _extensions,
-        _digital_tools,
-    ) in preset_expectations.items():
-        preset_sql = preset_sql_path.read_text(encoding="utf-8")
-        assert "INSERT INTO workflow_packages" in preset_sql
-        assert "ON CONFLICT (key) DO UPDATE" in preset_sql
-        assert "INSERT INTO model_connections" not in preset_sql
-        assert "workflow_package_secret_bindings (" not in preset_sql
-        assert "INSERT INTO runs" not in preset_sql
-
     init_db(database_url)
     engine = create_engine(database_url, future=True)
 
     try:
         for package_key, (
             fixture_path,
-            _preset_sql_path,
             expected_extension_keys,
             expected_digital_tool_keys,
         ) in preset_expectations.items():

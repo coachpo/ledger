@@ -12,7 +12,7 @@ from app.models.base import Base, prune_retired_global_authoring_metadata
 
 
 def init_db(database_url: str | None = None) -> None:
-    """Initialize the startup-owned schema and compatibility repairs."""
+    """Initialize the startup-owned schema and startup repairs."""
 
     __import__("app.models")
     prune_retired_global_authoring_metadata()

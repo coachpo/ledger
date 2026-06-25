@@ -20,7 +20,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Runtime spec types | `types.py`, `declarations.py` | tool spec, context, warnings, model-facing declarations |
 | Failure taxonomy | `failure_taxonomy.py` | typed retryable/non-retryable runtime failure categories |
 | Workflow Package memory middleware | workflow memory context service, `../../services/workflow_memory_middleware.py`, `../../services/workflow_memory_policy_service.py`, `../../services/workflow_checkpoint_service.py` | declarative context injection, proposal staging, policy activation, checkpoints, and memory review persistence |
-| Extension boundaries | `market_data.py`, `positions.py`, `reports.py` | import/export boundaries for extension-owned implementations; not public compatibility aliases |
 | Coverage | `../../../tests/test_runtime_tools.py`, `../../../tests/test_workflow_package_preflight.py` | tool keys, OpenAI function names, access checks, package validation |
 
 ## CONVENTIONS

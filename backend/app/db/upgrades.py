@@ -65,9 +65,6 @@ _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
 _AGENT_PLATFORM_PENDING_SKIP_MESSAGE = (
     "Runtime row skipped during startup recovery because the parent run failed before it started."
 )
-_MODEL_CONNECTION_KIND_CHECK = (
-    "ck_model_connections_connection_kind"  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-)
 _MODEL_CONNECTION_REASONING_EFFORT_CHECK = "ck_model_connections_reasoning_effort"
 _MODEL_CONNECTION_REASONING_EFFORT_CHECK_SQL = (
     "reasoning_effort IS NULL OR (length(btrim(reasoning_effort)) BETWEEN 1 AND 128)"
@@ -1502,10 +1499,6 @@ def _drop_constraint_if_exists(
 
 def _ensure_hard_delete_lifecycle_schema(engine: Engine, table_names: set[str]) -> None:
     removed_status = "arch" + "ived"
-    removed_archive_index = "_".join(("ix", "workflow", "packages", removed_status, "at"))
-    removed_archive_columns = tuple(
-        "_".join((removed_status, suffix)) for suffix in ("at", "by", "reason")
-    )
     lifecycle_checks = {
         "model_connections": ("ck_model_connections_status", "status IN ('active')"),
     }
@@ -1519,31 +1512,6 @@ def _ensure_hard_delete_lifecycle_schema(engine: Engine, table_names: set[str]) 
                 connection.exec_driver_sql(
                     f"ALTER TABLE {table_name} ADD CONSTRAINT {constraint_name} "
                     f"CHECK ({constraint_sql})"
-                )
-        if "workflow_packages" in table_names:
-            workflow_package_columns = {
-                column["name"] for column in inspect(engine).get_columns("workflow_packages")
-            }
-            archived_at_column = removed_archive_columns[0]
-            if archived_at_column in workflow_package_columns:
-                connection.exec_driver_sql(
-                    f"DELETE FROM workflow_packages WHERE {archived_at_column} IS NOT NULL"
-                )
-            connection.exec_driver_sql(f"DROP INDEX IF EXISTS {removed_archive_index}")
-            connection.exec_driver_sql("DROP INDEX IF EXISTS ix_workflow_packages_deleted_at")
-            connection.exec_driver_sql("DROP INDEX IF EXISTS uq_workflow_packages_active_key")
-            connection.exec_driver_sql(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_key "
-                "ON workflow_packages (key)"
-            )
-            for column_name in (
-                *removed_archive_columns,
-                "deleted_at",
-                "deleted_by",
-                "deleted_reason",
-            ):
-                connection.exec_driver_sql(
-                    f"ALTER TABLE workflow_packages DROP COLUMN IF EXISTS {column_name}"
                 )
 
 
@@ -1646,7 +1614,6 @@ def _ensure_workflow_package_tables(engine: Engine, table_names: set[str]) -> No
             "workflow_package_secret_bindings",
         }
     )
-    _drop_removed_package_history_schema(engine, table_names)
     _ensure_workflow_package_current_artifact_columns(engine, table_names)
     with engine.begin() as connection:
         for statement in index_statements:
@@ -2232,30 +2199,6 @@ def _ensure_workflow_package_schedule_tables(engine: Engine, table_names: set[st
             connection.exec_driver_sql(statement)
 
 
-def _drop_removed_package_history_schema(engine: Engine, table_names: set[str]) -> None:
-    with engine.begin() as connection:
-        if "workflow_packages" in table_names:
-            for constraint_name in (
-                "fk_workflow_packages_" + "latest_" + "version_" + "id",
-                "workflow_packages_" + "latest_" + "version_" + "id_fkey",
-            ):
-                _drop_constraint_if_exists(connection, "workflow_packages", constraint_name)
-            removed_pointer_column = "latest_" + "version_" + "id"
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_packages "
-                f"DROP COLUMN IF EXISTS {removed_pointer_column} CASCADE"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_packages DROP COLUMN IF EXISTS draft_source CASCADE"
-            )
-        for table_name in (
-            "workflow_package_" + "version_model_connections",
-            "workflow_package_" + "versions",
-        ):
-            connection.exec_driver_sql(f'DROP TABLE IF EXISTS "{table_name}" CASCADE')
-            table_names.discard(table_name)
-
-
 def _ensure_workflow_package_current_artifact_columns(
     engine: Engine,
     table_names: set[str],
@@ -2274,11 +2217,6 @@ def _ensure_workflow_package_current_artifact_columns(
         "compiled_hash": "VARCHAR(64)",
         "extension_dependencies": "JSONB DEFAULT '[]'::jsonb",
     }
-    removed_state_columns = {
-        "_".join(("last", "launched", "at")),
-        "_".join(("validation", "summary")),
-    }
-    obsolete_columns = removed_state_columns & package_columns
     required_artifact_columns = {
         "manifest_source",
         "manifest_hash",
@@ -2288,25 +2226,6 @@ def _ensure_workflow_package_current_artifact_columns(
     }
 
     with engine.begin() as connection:
-        if obsolete_columns:
-            connection.exec_driver_sql("DROP INDEX IF EXISTS ix_workflow_packages_last_launched_at")
-        for column_name in sorted(obsolete_columns):
-            connection.exec_driver_sql(
-                f"ALTER TABLE workflow_packages DROP COLUMN IF EXISTS {column_name}"
-            )
-            package_columns.discard(column_name)
-        if "status" in package_columns:
-            _drop_constraint_if_exists(
-                connection,
-                "workflow_packages",
-                "ck_workflow_packages_status",
-            )
-            connection.exec_driver_sql("DROP INDEX IF EXISTS ix_workflow_packages_status")
-            connection.exec_driver_sql(
-                "ALTER TABLE workflow_packages DROP COLUMN IF EXISTS status CASCADE"
-            )
-            package_columns.discard("status")
-        connection.exec_driver_sql("DROP INDEX IF EXISTS uq_workflow_packages_active_key")
         connection.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_key ON workflow_packages (key)"
         )
@@ -3161,116 +3080,6 @@ def _ensure_model_connection_key_support(engine: Engine, table_names: set[str]) 
         )
 
 
-def _scrub_legacy_model_connection_kind_snapshot_json(  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-    connection: Connection,
-    table_names: set[str],
-) -> None:
-    inspector = inspect(connection)
-    if "run_workflow_package_snapshots" in table_names:
-        snapshot_columns = {
-            column["name"] for column in inspector.get_columns("run_workflow_package_snapshots")
-        }
-        if "resolved_model_connections" in snapshot_columns:
-            updated_at_assignment = (
-                ", updated_at = NOW()" if "updated_at" in snapshot_columns else ""
-            )
-            _ = connection.execute(
-                text(
-                    f"""
-                    UPDATE run_workflow_package_snapshots
-                    SET resolved_model_connections = COALESCE(
-                            (
-                                SELECT jsonb_agg(
-                                    CASE
-                                        WHEN jsonb_typeof(profile.value) = 'object'
-                                        THEN profile.value - 'connectionKind' - 'connection_kind' -- OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-                                        ELSE profile.value
-                                    END
-                                    ORDER BY profile.ordinality
-                                )
-                                FROM jsonb_array_elements(
-                                    CASE
-                                        WHEN jsonb_typeof(resolved_model_connections) = 'array'
-                                        THEN resolved_model_connections
-                                        ELSE '[]'::jsonb
-                                    END
-                                ) WITH ORDINALITY AS profile(value, ordinality)
-                            ),
-                            '[]'::jsonb
-                        ){updated_at_assignment}
-                    WHERE EXISTS (
-                        SELECT 1
-                        FROM jsonb_array_elements(
-                            CASE
-                                WHEN jsonb_typeof(resolved_model_connections) = 'array'
-                                THEN resolved_model_connections
-                                ELSE '[]'::jsonb
-                            END
-                        ) AS profile(value)
-                        WHERE jsonb_typeof(profile.value) = 'object'
-                          AND profile.value ?| ARRAY['connectionKind', 'connection_kind'] -- OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-                    )
-                    """
-                )
-            )
-
-
-def _remove_legacy_model_connection_kind_support(  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-    engine: Engine, table_names: set[str]
-) -> None:
-    if not ({"model_connections", "run_workflow_package_snapshots"} & table_names):
-        return
-
-    inspector = inspect(engine)
-    model_connection_columns: dict[str, object] = {}
-    model_connection_kind_checks: set[str] = set()  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-    if "model_connections" in table_names:
-        model_connection_columns = {
-            column["name"]: column for column in inspector.get_columns("model_connections")
-        }
-        for constraint in inspector.get_check_constraints("model_connections"):
-            constraint_name = constraint.get("name")
-            if not constraint_name:
-                continue
-            if constraint_name == _MODEL_CONNECTION_KIND_CHECK or "connection_kind" in str(
-                constraint.get("sqltext") or ""
-            ):  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-                model_connection_kind_checks.add(
-                    str(constraint_name)
-                )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-
-    with engine.begin() as connection:
-        _scrub_legacy_model_connection_kind_snapshot_json(
-            connection, table_names
-        )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-        if "model_connections" not in table_names:
-            return
-        if (
-            "connection_kind" in model_connection_columns
-        ):  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-            _ = connection.execute(
-                text(
-                    """
-                    DELETE FROM model_connections
-                    WHERE connection_kind = :legacy_connection_kind -- OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-                    """
-                ),
-                {
-                    "legacy_connection_kind": "deterministic_smoke"
-                },  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-            )
-        for (
-            constraint_name
-        ) in model_connection_kind_checks:  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-            _drop_constraint_if_exists(connection, "model_connections", constraint_name)
-        if (
-            "connection_kind" in model_connection_columns
-        ):  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-            _ = connection.exec_driver_sql(
-                "ALTER TABLE model_connections DROP COLUMN IF EXISTS connection_kind"  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
-            )
-
-
 def _is_flexible_model_connection_reasoning_effort_check(sqltext: object) -> bool:
     normalized_sql = re.sub(r"\s+", " ", str(sqltext or "").lower())
     return all(
@@ -3968,10 +3777,6 @@ def _recover_stale_agent_platform_runs(engine: Engine, table_names: set[str]) ->
             )
 
 
-def _sanitize_retired_stock_analysis_resources(engine: Engine, table_names: set[str]) -> None:
-    del engine, table_names
-
-
 def _drop_tables(engine: Engine, table_names: set[str], tables: tuple[str, ...]) -> None:
     with engine.begin() as connection:
         for table_name in tables:
@@ -4092,9 +3897,6 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _ensure_runtime_input_registry_table(engine, table_names)
     _ensure_browser_proven_package_preset(engine, table_names)
     _ensure_model_connection_key_support(engine, table_names)
-    _remove_legacy_model_connection_kind_support(
-        engine, table_names
-    )  # OMO_ALLOW_LEGACY_MODEL_CONNECTION_CLEANUP
     _ensure_model_connection_reasoning_effort_support(engine, table_names)
     _ensure_model_connection_protocol_contract_support(engine, table_names)
     _drop_model_connection_api_key_metadata_columns(engine, table_names)
@@ -4176,6 +3978,5 @@ def upgrade_legacy_schema(engine: Engine) -> None:
             with engine.begin() as connection:
                 connection.exec_driver_sql("ALTER TABLE market_quotes ADD COLUMN name VARCHAR(255)")
 
-    _sanitize_retired_stock_analysis_resources(engine, table_names)
     _drop_tables(engine, table_names, _LEGACY_BACKEND_TABLES)
     _drop_tables(engine, table_names, _OBSOLETE_TABLES)

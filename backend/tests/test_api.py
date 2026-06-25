@@ -3044,7 +3044,7 @@ def test_report_placeholder_dynamic_selectors(client: TestClient) -> None:
             'NoMatchInline: before{{reports.latest("NVDA").name}}after\n'
             "NoMatchIndex: before{{reports[99].content}}after\n"
             'InvalidSelector: {{reports.by_tag("weekly_review")}}\n'
-            f"ExactNameCompatibility: {{{{reports.{compiled_aapl['name']}.name}}}}"
+            f"ExactNameReportName: {{{{reports.{compiled_aapl['name']}.name}}}}"
         ),
     )
 
@@ -3063,7 +3063,7 @@ def test_report_placeholder_dynamic_selectors(client: TestClient) -> None:
     assert "NoMatchInline: beforeafter" in compiled
     assert "NoMatchIndex: beforeafter" in compiled
     assert 'InvalidSelector: [Invalid report selector: reports.by_tag("weekly_review")]' in compiled
-    assert f"ExactNameCompatibility: {compiled_aapl['name']}" in compiled
+    assert f"ExactNameReportName: {compiled_aapl['name']}" in compiled
 
 
 def test_report_placeholder_dynamic_selector_cycle_detection(client: TestClient) -> None:
@@ -3340,14 +3340,14 @@ def test_model_connection_rejects_unsupported_kind_fields(client: TestClient) ->
     assert get_response.status_code == 200
 
 
-def test_model_connection_compatibility_derives_caps_and_rejects_public_policy_writes(
+def test_model_connection_resolution_derives_caps_and_rejects_public_policy_writes(
     client: TestClient,
 ) -> None:
     create_payload = {
         **_model_connection_create_payload(),
         "protocolProfile": "openai_chat_completions",
     }
-    public_compatibility_fields: dict[str, object] = {
+    public_runtime_profile_fields: dict[str, object] = {
         "apiStyle": "chat_completions",
         "capabilities": {"nativeToolCalls": {"status": "supported"}},
         "outputStrategyPolicy": "allow_json_object_validation",
@@ -3359,13 +3359,13 @@ def test_model_connection_compatibility_derives_caps_and_rejects_public_policy_w
 
     rejected_create = client.post(
         "/api/model-connections",
-        json={**create_payload, **public_compatibility_fields},
+        json={**create_payload, **public_runtime_profile_fields},
     )
-    field_names = set(public_compatibility_fields)
+    field_names = set(public_runtime_profile_fields)
     _assert_unsupported_model_connection_fields_rejected(rejected_create, field_names)
     _assert_schema_extra_forbidden(
         ModelConnectionCreate,
-        {**create_payload, **public_compatibility_fields},
+        {**create_payload, **public_runtime_profile_fields},
         field_names,
     )
 
@@ -3387,12 +3387,12 @@ def test_model_connection_compatibility_derives_caps_and_rejects_public_policy_w
 
     rejected_patch = client.patch(
         f"/api/model-connections/{connection_id}",
-        json=public_compatibility_fields,
+        json=public_runtime_profile_fields,
     )
     _assert_unsupported_model_connection_fields_rejected(rejected_patch, field_names)
     _assert_schema_extra_forbidden(
         ModelConnectionUpdate,
-        public_compatibility_fields,
+        public_runtime_profile_fields,
         field_names,
     )
 
@@ -3735,13 +3735,13 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
     fresh_capabilities = default_model_connection_capabilities("openai_chat_completions")
     fresh_capabilities.native_tool_calls.status = ModelConnectionCapabilityStatus.UNSUPPORTED
     fresh_capabilities.native_tool_calls.detail = (
-        "Compatibility fixture keeps tool calls unsupported."
+        "Provider profile fixture keeps tool calls unsupported."
     )
     fresh_capabilities.strict_json_schema_output.status = (
         ModelConnectionCapabilityStatus.UNSUPPORTED
     )
     fresh_capabilities.strict_json_schema_output.detail = (
-        "Compatibility fixture keeps strict schema unsupported."
+        "Provider profile fixture keeps strict schema unsupported."
     )
     for field_name in type(fresh_capabilities).model_fields:
         getattr(fresh_capabilities, field_name).last_probed_at = fresh_probe_at
@@ -3749,10 +3749,10 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
     _seed_model_connection_record(
         session_factory,
         connection_id=9001,
-        key="compat_fixture_tools_disabled",
-        name="Compatibility Fixture: Tools Disabled",
+        key="runtime_profile_tools_disabled",
+        name="Provider Profile Fixture: Tools Disabled",
         description="Probe fixture with tool calls disabled.",
-        base_url="https://compat-fixture-tools-disabled.example.test",
+        base_url="https://runtime-profile-tools-disabled.example.test",
         model_id="fake-tools-disabled",
         protocol_profile="openai_chat_completions",
         capabilities=fresh_capabilities,
@@ -3764,7 +3764,7 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
         ModelConnectionCapabilityStatus.UNSUPPORTED
     )
     stale_capabilities.strict_json_schema_output.detail = (
-        "Compatibility fixture keeps strict schema unsupported."
+        "Provider profile fixture keeps strict schema unsupported."
     )
     for field_name in type(stale_capabilities).model_fields:
         getattr(stale_capabilities, field_name).last_probed_at = stale_probe_at
@@ -3772,10 +3772,10 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
     _seed_model_connection_record(
         session_factory,
         connection_id=9002,
-        key="compat_fixture_strict_schema_disabled",
-        name="Compatibility Fixture: Strict Schema Disabled",
+        key="runtime_profile_strict_schema_disabled",
+        name="Provider Profile Fixture: Strict Schema Disabled",
         description="Probe fixture with strict schema disabled.",
-        base_url="https://compat-fixture-strict-schema-disabled.example.test",
+        base_url="https://runtime-profile-strict-schema-disabled.example.test",
         model_id="fake-strict-schema-disabled",
         protocol_profile="openai_responses",
         capabilities=stale_capabilities,
@@ -3808,7 +3808,7 @@ def test_model_connection_capability_probe_uses_cache_refresh_and_fixtures(
     assert cached_capabilities["nativeToolCalls"]["status"] == "unsupported"
     assert cached_capabilities["reasoningHints"]["status"] == "unknown"
     assert cached_capabilities["strictJsonSchemaOutput"]["detail"] == (
-        "Compatibility fixture keeps strict schema unsupported."
+        "Provider profile fixture keeps strict schema unsupported."
     )
     assert (
         datetime.fromisoformat(
@@ -4030,10 +4030,10 @@ def test_model_connection_capability_probe_marks_transport_failures_inconclusive
     _seed_model_connection_record(
         session_factory,
         connection_id=9003,
-        key="compat_fixture_transport_inconclusive",
-        name="Compatibility Fixture: Transport Inconclusive",
+        key="runtime_profile_transport_inconclusive",
+        name="Provider Profile Fixture: Transport Inconclusive",
         description="Probe fixture with an inconclusive transport failure.",
-        base_url="https://compat-fixture-transport-inconclusive.example.test",
+        base_url="https://runtime-profile-transport-inconclusive.example.test",
         model_id="fake-transport-inconclusive",
     )
     monkeypatch.setattr("app.services.model_connection_probe_service.utcnow", lambda: fixed_now)
