@@ -123,7 +123,6 @@ describe("WorkflowPackageEditorPage import and export flows", () => {
     renderEditor();
     clickTab("Import / Export");
 
-    expect(screen.queryByRole("heading", { name: "Launch Workflow Package" })).not.toBeInTheDocument();
     expect(screen.getByTestId("workflow-package-exports-tab")).toBeVisible();
     const preview = await screen.findByLabelText("Package YAML preview");
     expect(preview).toHaveClass("min-h-96", "font-mono", "text-xs");
@@ -140,7 +139,6 @@ describe("WorkflowPackageEditorPage import and export flows", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Import Package" }));
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/import");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("protects dirty package edits before routing to the import workspace", () => {

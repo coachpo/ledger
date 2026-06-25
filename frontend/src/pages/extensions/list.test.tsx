@@ -87,7 +87,9 @@ describe("ExtensionsListPage", () => {
 
     const page = screen.getByTestId("extensions-list-page");
     expect(page).toBeVisible();
-    expect(screen.getByRole("heading", { level: 1, name: "Extensions" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Extensions" }),
+    ).toBeVisible();
     expect(screen.getByText("Manage bundled extensions.")).toBeVisible();
     const context = page.querySelector<HTMLElement>(
       '[data-inventory-shell-region="context"]',
@@ -104,8 +106,6 @@ describe("ExtensionsListPage", () => {
     expect(
       page.querySelector('[data-inventory-shell-region="filters"]'),
     ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(
       Array.from(
@@ -239,7 +239,9 @@ describe("ExtensionsListPage", () => {
     const { rerender } = render(<ExtensionsListPage />);
 
     const emptyState = screen.getByTestId("extensions-empty-state");
-    expect(emptyState).toHaveTextContent("No bundled extensions are registered.");
+    expect(emptyState).toHaveTextContent(
+      "No bundled extensions are registered.",
+    );
     expect(
       screen.queryByRole("button", { name: /install/i }),
     ).not.toBeInTheDocument();

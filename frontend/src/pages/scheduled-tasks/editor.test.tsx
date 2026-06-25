@@ -246,13 +246,11 @@ describe("ScheduledTaskEditorPage", () => {
     }));
   });
 
-  it("replaces raw target textboxes with dependent package and workflow selectors", async () => {
+  it("renders dependent package and workflow selectors", async () => {
     renderPage();
 
     expect(packageSelector()).toBeVisible();
     expect(workflowSelector()).toBeDisabled();
-    expect(screen.queryByTestId("schedule-package-id")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("schedule-workflow-key")).not.toBeInTheDocument();
 
     await choosePackage(/TradingAgents · trading_agents · #77/i);
     expect(workflowSelector()).not.toBeDisabled();

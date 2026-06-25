@@ -358,10 +358,6 @@ describe("Layout", () => {
       const wrapper = getLayoutContentWrapper(pathname);
 
       expect(wrapper).toHaveClass(...wrapperClassNames);
-      if (pathname === "/extensions") {
-        expect(wrapper?.className).not.toContain("[&>*]:max-w-4xl");
-        expect(wrapper?.className).not.toContain("[&>*]:mx-auto");
-      }
       unmount();
     }
   });

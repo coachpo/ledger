@@ -23,9 +23,9 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Shared class merging | `utils.ts` | `cn()` wraps `clsx` + `tailwind-merge` |
 | Button-like variants | `button-variants.ts`, `badge-variants.ts`, `toggle-variants.ts` | shared `cva()` recipes and token choices |
 | Sidebar primitives | `sidebar.tsx`, `sidebar-context.ts` | provider/context, mobile sheet vs desktop inset, tooltip-ready menu buttons |
-| Form controls | `input.tsx`, `textarea.tsx`, `select.tsx`, `checkbox.tsx`, `radio-group.tsx`, `switch.tsx` | presentational controls only |
-| Overlay/menu wrappers | `dialog.tsx`, `sheet.tsx`, `dropdown-menu.tsx`, `context-menu.tsx`, `popover.tsx`, `tooltip.tsx`, `menubar.tsx`, `navigation-menu.tsx` | Radix-backed wrappers |
-| Layout/display wrappers | `accordion.tsx`, `card.tsx`, `scroll-area.tsx`, `separator.tsx`, `table.tsx`, `tabs.tsx`, `chart.tsx`, `sidebar.tsx` | structural UI building blocks |
+| Form controls | `input.tsx`, `textarea.tsx`, `select.tsx`, `checkbox.tsx`, `switch.tsx` | presentational controls only |
+| Overlay/menu wrappers | `dialog.tsx`, `sheet.tsx`, `dropdown-menu.tsx`, `popover.tsx`, `tooltip.tsx` | Radix-backed wrappers |
+| Layout/display wrappers | `card.tsx`, `collapsible.tsx`, `progress.tsx`, `resizable.tsx`, `scroll-area.tsx`, `separator.tsx`, `table.tsx`, `tabs.tsx`, `sidebar.tsx` | structural UI building blocks |
 
 ## CONVENTIONS
 - Treat shadcn/ui primitives as copied local source: customize in-repo while preserving Radix/shadcn composition and accessibility patterns.

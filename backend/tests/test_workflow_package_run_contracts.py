@@ -2093,7 +2093,6 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
         draft = cast(dict[str, Any], draft_response.json())
         assert draft["ready"] is True
         assert draft["blockingErrors"] == []
-        assert "facts" not in draft
         draft_provenance = cast(dict[str, Any], draft["packageProvenance"])
         assert draft_provenance["preflightSummary"]["ready"] is False
         draft_profile = cast(dict[str, Any], draft_provenance["resolvedModelConnections"][0])

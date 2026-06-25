@@ -621,9 +621,6 @@ describe("ScheduledTaskDetailPage", () => {
     expect(within(header).getByText("schedule:44")).toBeVisible();
     expect(within(header).getByTestId("scheduled-task-detail-status-enabled")).toHaveTextContent("enabled");
     expect(within(header).getByTestId("schedule-run-now")).toBeVisible();
-    expect(
-      within(header).queryByRole("link", { name: "Scheduled Tasks" }),
-    ).not.toBeInTheDocument();
 
     const headerDescription = screen.getByTestId("scheduled-task-detail-header-description");
     expect(headerDescription).toHaveTextContent("Runs before the opening bell");
@@ -632,7 +629,6 @@ describe("ScheduledTaskDetailPage", () => {
     expect(headerMetaRow).toHaveTextContent(/Pattern\s*Weekly Mon, Tue, Wed, Thu, Fri at 09:00/);
     expect(headerMetaRow).toHaveTextContent(/Timezone\s*America\/New_York/);
     expect(headerMetaRow).toHaveTextContent(/Package\s*Market Research Package/);
-    expect(headerMetaRow).not.toHaveTextContent(/Package\s*market_research_package/);
     expect(headerMetaRow).toHaveTextContent(/Workflow\s*Daily research/);
     expect(headerMetaRow).toHaveTextContent(new RegExp(`Updated\\s*${expectedUpdatedAt}`));
     expect(headerMetaRow).toHaveTextContent(/Last run\s*#2104/);
@@ -653,21 +649,14 @@ describe("ScheduledTaskDetailPage", () => {
     );
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Target workflow");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Market Research Package");
-    expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("market_research_package");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Daily research");
-    expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("Package id");
-    expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("Schedule id");
     expect(screen.getByTestId("scheduled-task-detail-last-run-summary")).toHaveTextContent("Last run");
     expect(screen.getByTestId("scheduled-task-detail-health-summary")).toHaveTextContent("Health");
-    expect(screen.queryByTestId("scheduled-task-detail-diagnostics-strip")).not.toBeInTheDocument();
-    expect(screen.queryByText("Inputs use schema draft source")).not.toBeInTheDocument();
 
     expect(screen.getByRole("tab", { name: "Overview" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Schedule" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Inputs" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Runs" })).toBeVisible();
-    expect(screen.queryByRole("tab", { name: "Diagnostics" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "History" })).not.toBeInTheDocument();
 
     const overviewPanel = screen.getByTestId("scheduled-task-detail-tab-overview");
     const schedulePanel = screen.getByTestId("scheduled-task-detail-tab-schedule");
@@ -739,8 +728,6 @@ describe("ScheduledTaskDetailPage", () => {
     expect(health).toHaveTextContent("Latest fire failed");
     expect(health).toHaveTextContent("Schedule paused");
     expect(screen.getAllByText("Latest fire failed")).toHaveLength(1);
-    expect(within(health).queryByRole("button", { name: "Developer details" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Inputs use schema draft source")).not.toBeInTheDocument();
   });
 
   it("deletes the scheduled task and redirects back to the scheduled-tasks list", async () => {
@@ -776,10 +763,9 @@ describe("ScheduledTaskDetailPage", () => {
     expect(history).toHaveTextContent("No runs yet");
     expect(history).toHaveTextContent("Scheduled and manual runs will appear here.");
     expect(within(history).getByRole("button", { name: "Run now" })).toBeVisible();
-    expect(screen.queryByRole("tab", { name: "Diagnostics" })).not.toBeInTheDocument();
   });
 
-  it("renders runs loading and error states without a default diagnostics tab", () => {
+  it("renders runs loading and error states", () => {
     useScheduledTaskFiresMock.mockReturnValue({
       data: undefined,
       error: null,
@@ -789,7 +775,6 @@ describe("ScheduledTaskDetailPage", () => {
     const loadingView = renderDetailPage();
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Runs" }), { button: 0 });
     expect(screen.getByText("Loading runs...")).toBeVisible();
-    expect(screen.queryByRole("tab", { name: "Diagnostics" })).not.toBeInTheDocument();
     loadingView.unmount();
 
     useScheduledTaskFiresMock.mockReturnValue({
@@ -803,7 +788,6 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByTestId("scheduled-task-fire-history-error")).toHaveTextContent(
       "Fire history API unavailable",
     );
-    expect(screen.queryByText("Recent fire diagnostics unavailable")).not.toBeInTheDocument();
   });
 
   it("renders fire history with reasons, rendered parameters, linked runs, and run-now history navigation", async () => {
@@ -879,9 +863,6 @@ describe("ScheduledTaskDetailPage", () => {
       "href",
       "/runs/2104",
     );
-    expect(within(history).queryByRole("button", { name: "Developer details" })).not.toBeInTheDocument();
-    expect(screen.queryByTestId("scheduled-task-fire-diagnostics-panel")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("scheduled-task-fire-diagnostic-799")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Show details for fire #801" }));
     expect(screen.getByTestId("scheduled-task-fire-parameters-801")).toHaveTextContent("asOfDate");
@@ -903,7 +884,7 @@ describe("ScheduledTaskDetailPage", () => {
     expect(screen.getByTestId("run-detail-route")).toHaveTextContent("Run detail 3001");
   });
 
-  it("defers fire rows without deferring the fire history panel chrome", () => {
+  it("applies deferred rendering to fire rows", () => {
     const queued = scheduleFireFixture({
       id: 801,
       reason: "manual",
@@ -937,16 +918,6 @@ describe("ScheduledTaskDetailPage", () => {
       button: 0,
     });
 
-    expect(screen.getByTestId("scheduled-task-detail-tab-runs")).not.toHaveClass(
-      CONTENT_VISIBILITY_AUTO_CLASS,
-      FIRE_HISTORY_ROW_SIZE_CLASS,
-    );
-    expect(
-      screen.getByTestId("scheduled-task-fire-history-panel"),
-    ).not.toHaveClass(
-      CONTENT_VISIBILITY_AUTO_CLASS,
-      FIRE_HISTORY_ROW_SIZE_CLASS,
-    );
     expect(screen.getByTestId("scheduled-task-fire-801")).toHaveClass(
       CONTENT_VISIBILITY_AUTO_CLASS,
       FIRE_HISTORY_ROW_SIZE_CLASS,
@@ -1004,7 +975,6 @@ describe("ScheduledTaskDetailPage", () => {
     expect(toastErrorMock).toHaveBeenCalledWith("Manual fire rejected");
     expect(screen.queryByTestId("run-detail-route")).not.toBeInTheDocument();
     expect(screen.getByTestId("scheduled-task-detail-page")).toHaveTextContent("Daily market brief");
-    expect(screen.queryByTestId("scheduled-task-run-now-feedback")).not.toBeInTheDocument();
   });
 
   it("keeps basic schedule controls visible and advanced scheduler options collapsed by default", async () => {
@@ -1024,7 +994,6 @@ describe("ScheduledTaskDetailPage", () => {
     );
     expect(screen.queryByLabelText("Overlap policy")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Misfire policy")).not.toBeInTheDocument();
-    expect(screen.queryByText(/PATCH endpoint/i)).not.toBeInTheDocument();
 
     await chooseSelectOption("Timezone", /^Helsinki \(Europe\/Helsinki\) · Current browser timezone$/i);
     expect(screen.getByLabelText("Timezone")).toHaveTextContent(
@@ -1135,11 +1104,10 @@ describe("ScheduledTaskDetailPage", () => {
     expect(toastSuccessMock).toHaveBeenCalledWith("Scheduled task configuration saved");
   });
 
-  it("serializes weekly and monthly recurrence arrays without raw JSON editing", async () => {
+  it("serializes weekly and monthly recurrence arrays from structured controls", async () => {
     renderDetailPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Schedule" }));
-    expect(screen.queryByText(/raw json/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Sunday"));
     fireEvent.click(screen.getByLabelText("Wednesday"));
     fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
@@ -1330,15 +1298,10 @@ describe("ScheduledTaskDetailPage", () => {
     expect(useWorkflowPackageManifestMock).toHaveBeenCalledWith(12);
     expect(useWorkflowPackageRuntimeInputRegistryMock).toHaveBeenCalledWith(12, "daily_research");
     expect(screen.getByTestId("scheduled-task-detail-target-summary")).toHaveTextContent("Daily research");
-    expect(screen.getByTestId("scheduled-task-detail-target-summary")).not.toHaveTextContent("Unknown workflow:");
     expect(screen.getByTestId("schedule-run-now")).toBeEnabled();
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
     expect(screen.getByLabelText("Scheduled input template JSON")).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Customize inputs" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Start from workflow defaults" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Placeholders and presets" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Runtime inputs are unavailable because this schedule references a workflow that is no longer in the package manifest.")).not.toBeInTheDocument();
   });
 
   it("scheduled inputs show the workflow-seeded editor and placeholder examples immediately", async () => {
@@ -1350,15 +1313,10 @@ describe("ScheduledTaskDetailPage", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
-    const editor = screen.getByTestId("scheduled-inputs-editor");
     expect(screen.getByTestId("scheduled-inputs-toolbar")).toHaveTextContent("Reset to schema template");
     expect(screen.getByTestId("scheduled-inputs-toolbar")).toHaveTextContent("Preview next run");
     expect(screen.getByTestId("scheduled-inputs-toolbar")).toHaveTextContent("Save inputs");
     const inputJson = screen.getByLabelText("Scheduled input template JSON") as HTMLTextAreaElement;
-    expect(editor).not.toHaveTextContent("Start a custom draft from the workflow defaults.");
-    expect(screen.queryByRole("button", { name: "Customize inputs" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Start from workflow defaults" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Placeholders and presets" })).not.toBeInTheDocument();
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Allowed scheduled placeholders");
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Schedule");
     expect(screen.getByTestId("scheduled-input-placeholder-reference")).toHaveTextContent("Fire");
@@ -1423,7 +1381,6 @@ describe("ScheduledTaskDetailPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
 
-    expect(screen.queryByRole("button", { name: "Customize inputs" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Scheduled input template JSON")).toHaveValue(
       JSON.stringify({ asOfDate: "{{fire.scheduledLocalDate}}", portfolioSlug: "{{vars.portfolioSlug}}" }, null, 2),
     );

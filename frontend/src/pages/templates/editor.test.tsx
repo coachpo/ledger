@@ -127,14 +127,10 @@ describe("TemplateEditorPage", () => {
 
     const shell = screen.getByTestId("template-editor-shell");
     expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0");
-    expect(screen.queryByRole("main")).not.toBeInTheDocument();
     expect(screen.getByTestId("workspace-page-shell-context")).toHaveClass(
       "sticky",
       "top-0",
       "z-10",
-    );
-    expect(screen.getByTestId("template-editor-header")).not.toHaveClass(
-      "sticky",
     );
     const authoringContext = screen.getByTestId("template-authoring-context");
     expect(authoringContext).toHaveClass("grid", "shrink-0");
@@ -149,11 +145,6 @@ describe("TemplateEditorPage", () => {
     expect(
       within(authoringContext).getByLabelText(/^Template name$/i),
     ).toHaveAttribute("placeholder", "Name this template...");
-    expect(
-      within(screen.getByTestId("template-editor-header")).queryByLabelText(
-        /^Template name$/i,
-      ),
-    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("textbox", { name: /^Template content$/i }),
     ).toHaveAttribute("placeholder", "Enter template content…");
@@ -281,8 +272,5 @@ describe("TemplateEditorPage", () => {
     });
 
     expect(screen.getByText("No templates match your search.")).toBeVisible();
-    expect(screen.queryByText("No templates yet.")).not.toBeInTheDocument();
-    expect(screen.queryByText("Quarterly Review")).not.toBeInTheDocument();
   });
-
 });

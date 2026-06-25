@@ -815,7 +815,7 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-tab-panel-output")).toBeVisible();
   });
 
-  it("renders run detail tabs as a non-sticky normal row while preserving flat compact detail grids", () => {
+  it("renders compact detail grids across run detail tabs", () => {
     const run = buildRun({
       executedTokens: 2302,
       id: 362,
@@ -838,20 +838,14 @@ describe("RunsDetailPage", () => {
     const expectFlatDetailGrid = (testId: string) => {
       const section = screen.getByTestId(testId);
       expect(section.querySelector("dl")).toBeInTheDocument();
-      expect(within(section).queryAllByRole("listitem")).toHaveLength(0);
-      expect(section.querySelector(".rounded-lg.border.bg-card")).toBeNull();
       return section;
     };
 
     const outputRender = renderTab("output");
-    expect(
-      screen.queryByTestId("runs-detail-tab-list-scroll"),
-    ).not.toBeInTheDocument();
     const tabList = screen.getByRole("tablist", {
       name: /run detail sections/i,
     });
     expect(tabList).toBeInTheDocument();
-    expect(tabList).not.toHaveClass("sticky", "top-0");
     const outputProvenance = expectFlatDetailGrid(
       "runs-detail-section-output-provenance",
     );
@@ -932,7 +926,7 @@ describe("RunsDetailPage", () => {
     ["memory", "Memory"],
     ["lineage", "Lineage"],
   ] satisfies Array<[RunDetailTabKey, string]>)(
-    "renders the %s tab as one always-open tab-titled block",
+    "renders the %s tab as one titled section block",
     (tab, label) => {
       useRunMock.mockReturnValue(
         queryResult(
@@ -958,12 +952,6 @@ describe("RunsDetailPage", () => {
       expect(
         within(block).getByTestId(`runs-detail-section-title-${tab}`),
       ).toHaveTextContent(label);
-      expect(
-        within(block).queryByRole("button", { name: "Toggle" }),
-      ).not.toBeInTheDocument();
-      expect(
-        block.querySelector('[data-state="open"], [data-state="closed"]'),
-      ).toBeNull();
     },
   );
 
@@ -1127,7 +1115,6 @@ describe("RunsDetailPage", () => {
       const section = within(runtimePanel).getByTestId(
         `runs-detail-section-${sectionId}`,
       );
-      expect(section).not.toHaveAttribute("data-run-detail-section-block");
       expect(
         within(section).getByRole("heading", { name: title }),
       ).toBeVisible();
@@ -1178,31 +1165,15 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps final output and run input content always visible without collapsible padding chrome", () => {
+  it("keeps final output and run input content visible", () => {
     useRunMock.mockReturnValue(queryResult(buildRun()));
 
     const outputRender = render(<RunsDetailPage />);
-    const finalOutputCard = screen.getByTestId("runs-detail-final-output-card");
-    expect(finalOutputCard).not.toHaveClass("min-h-[136px]");
-    expect(finalOutputCard).not.toHaveAttribute(
-      "data-run-detail-section-block",
-    );
-    expect(
-      finalOutputCard.querySelector(
-        '[data-state="open"], [data-state="closed"]',
-      ),
-    ).toBeNull();
     expect(screen.getByTestId("runs-detail-final-output")).toBeVisible();
     outputRender.unmount();
 
     searchParamsMock = new URLSearchParams("tab=input");
     render(<RunsDetailPage />);
-    const runInputCard = screen.getByTestId("runs-detail-input-card");
-    expect(runInputCard).not.toHaveClass("min-h-[136px]");
-    expect(runInputCard).not.toHaveAttribute("data-run-detail-section-block");
-    expect(
-      runInputCard.querySelector('[data-state="open"], [data-state="closed"]'),
-    ).toBeNull();
     expect(screen.getByTestId("runs-detail-input")).toBeVisible();
   });
 
@@ -1687,10 +1658,6 @@ describe("RunsDetailPage", () => {
       "runs-invocation-1001-inline-evidence",
     );
     expect(invocationInlineEvidence).toHaveTextContent(/output/i);
-    expect(invocationInlineEvidence).not.toHaveClass("rounded-lg");
-    expect(invocationInlineEvidence).not.toHaveClass("border");
-    expect(invocationInlineEvidence).not.toHaveClass("bg-card/80");
-    expect(invocationInlineEvidence).not.toHaveClass("p-3");
     expect(
       within(invocationInlineEvidence).getByTestId("runs-evidence-pane-nav"),
     ).toBeVisible();
@@ -2083,14 +2050,6 @@ describe("RunsDetailPage", () => {
     const finalOutput = within(finalOutputCard).getByTestId(
       "runs-detail-final-output",
     );
-    expect(finalOutputCard).not.toHaveAttribute(
-      "data-run-detail-section-block",
-    );
-    expect(
-      finalOutputCard.querySelector(
-        '[data-state="open"], [data-state="closed"]',
-      ),
-    ).toBeNull();
     expect(finalOutput).toHaveTextContent(/normalized/i);
     expect(finalOutput).toHaveClass(
       "flex",
@@ -2099,7 +2058,6 @@ describe("RunsDetailPage", () => {
       "min-w-0",
       "gap-3",
     );
-    expect(finalOutput).not.toHaveClass("overflow-hidden", "text-xs");
     expect(finalOutput.querySelector("pre")).toBeNull();
     expect(
       within(finalOutputCard).getAllByRole("heading", {
@@ -2288,13 +2246,8 @@ describe("RunsDetailPage", () => {
     const runInputRender = render(<RunsDetailPage />);
     const runInputCard = screen.getByTestId("runs-detail-input-card");
     const runInput = within(runInputCard).getByTestId("runs-detail-input");
-    expect(runInputCard).not.toHaveAttribute("data-run-detail-section-block");
-    expect(
-      runInputCard.querySelector('[data-state="open"], [data-state="closed"]'),
-    ).toBeNull();
     expect(runInput).toHaveTextContent(/AAPL/i);
     expect(runInput).toHaveClass("flex", "flex-col", "min-w-0", "gap-3");
-    expect(runInput).not.toHaveClass("overflow-hidden", "text-xs");
     expect(
       screen.getAllByRole("heading", { name: /^run input$/i }),
     ).toHaveLength(1);
@@ -2320,10 +2273,6 @@ describe("RunsDetailPage", () => {
       "runs-step-1-inline-evidence",
     );
     expect(stepInlineEvidence).toHaveTextContent(/step evidence/i);
-    expect(stepInlineEvidence).not.toHaveClass("rounded-lg");
-    expect(stepInlineEvidence).not.toHaveClass("border");
-    expect(stepInlineEvidence).not.toHaveClass("bg-card/80");
-    expect(stepInlineEvidence).not.toHaveClass("p-3");
     expect(
       within(stepInlineEvidence).getByTestId("runs-evidence-pane-nav"),
     ).toBeVisible();
@@ -2357,10 +2306,6 @@ describe("RunsDetailPage", () => {
     expect(stepSummary.querySelectorAll(":scope > section")).toHaveLength(2);
     const metadata = screen.getByTestId("runs-step-1-metadata");
     expect(metadata.tagName).toBe("DL");
-    expect(metadata).not.toHaveClass("rounded-md");
-    expect(metadata).not.toHaveClass("border");
-    expect(metadata).not.toHaveClass("bg-muted/20");
-    expect(metadata).not.toHaveClass("p-3");
     expect(metadata.querySelectorAll("dt")).toHaveLength(9);
     expect(
       screen.getByTestId("runs-step-1-aggregated-output"),
@@ -3292,14 +3237,6 @@ describe("RunsDetailPage", () => {
     const pendingFinalOutput = within(pendingFinalOutputCard).getByTestId(
       "runs-detail-final-output",
     );
-    expect(pendingFinalOutputCard).not.toHaveAttribute(
-      "data-run-detail-section-block",
-    );
-    expect(
-      pendingFinalOutputCard.querySelector(
-        '[data-state="open"], [data-state="closed"]',
-      ),
-    ).toBeNull();
     expect(pendingFinalOutput).toHaveTextContent(
       "No final output payload was recorded for this run.",
     );

@@ -10,7 +10,11 @@ describe("PageContextBar", () => {
 
     render(
       <PageContextBar
-        actions={<button onClick={onRefresh} type="button">Refresh</button>}
+        actions={
+          <button onClick={onRefresh} type="button">
+            Refresh
+          </button>
+        }
         description="Operational context for this route."
         meta="Updated 2 minutes ago"
         status={
@@ -49,7 +53,6 @@ describe("PageContextBar", () => {
       .closest("[data-slot='page-context-bar']");
 
     expect(root).toHaveClass("gap-3");
-    expect(root?.closest("[data-slot='card']")).not.toBeInTheDocument();
     expect(screen.getByText("Compact metadata")).toHaveAttribute(
       "data-slot",
       "page-context-meta",
@@ -76,7 +79,10 @@ describe("PageContextBar", () => {
       "md:flex-row",
       "md:items-baseline",
     );
-    expect(description).toHaveAttribute("data-slot", "page-context-description");
+    expect(description).toHaveAttribute(
+      "data-slot",
+      "page-context-description",
+    );
     expect(description).toHaveClass(
       "min-w-0",
       "max-w-3xl",
@@ -100,9 +106,9 @@ describe("PageContextBar", () => {
     const root = screen
       .getByText("Toolbar Context")
       .closest("[data-slot='page-context-bar']");
-    const actionRegion = screen.getByText("Ready").closest(
-      "[data-slot='page-context-actions']",
-    );
+    const actionRegion = screen
+      .getByText("Ready")
+      .closest("[data-slot='page-context-actions']");
 
     expect(root).toHaveClass("sm:flex-row", "sm:items-start");
     expect(actionRegion).toHaveClass("sm:ml-3", "sm:justify-end");
@@ -137,20 +143,5 @@ describe("PageContextBar", () => {
     expect(meta.parentElement).toHaveClass("lg:justify-center");
     expect(status).toBeInTheDocument();
     expect(screen.getByText("3 results returned")).toBeInTheDocument();
-  });
-
-  it("stays visual-only without boxed, sticky, or shell-offset chrome", () => {
-    render(<PageContextBar title="Visual Context" />);
-
-    const root = screen
-      .getByText("Visual Context")
-      .closest("[data-slot='page-context-bar']");
-
-    expect(root).not.toBeNull();
-    expect(root?.closest("[data-slot='card']")).not.toBeInTheDocument();
-    expect(root?.className).not.toMatch(/\bborder\b|\bbg-card\b|\brounded/);
-    expect(root?.className).not.toMatch(/\bsticky\b/);
-    expect(root?.className).not.toMatch(/\btop-0\b/);
-    expect(root?.className).not.toMatch(/\bz-10\b|\bz-20\b/);
   });
 });

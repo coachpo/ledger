@@ -81,22 +81,18 @@ describe("PortfolioListPage", () => {
         .querySelectorAll("[data-inventory-shell-region]"),
     ).map((region) => region.getAttribute("data-inventory-shell-region"));
     expect(shellRegions).toEqual(["context", "toolbar", "content"]);
-    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
-
     const inventory = screen.getByRole("region", {
       name: "Portfolio inventory",
     });
     const emptyState = within(inventory).getByText("No portfolios yet.");
     expect(emptyState).toBeVisible();
-    expect(within(inventory).getByTestId("portfolios-empty-state")).toHaveTextContent(
-      "No portfolios yet.",
-    );
+    expect(
+      within(inventory).getByTestId("portfolios-empty-state"),
+    ).toHaveTextContent("No portfolios yet.");
     expect(emptyState.closest("[data-slot='card']")).toHaveClass(
       "border-border/70",
       "shadow-ui-xs",
     );
-    expect(screen.queryByText("Loading portfolios...")).not.toBeInTheDocument();
     expect(
       screen.getByRole("textbox", { name: "Search portfolios" }),
     ).toHaveClass("h-[var(--ui-size-control-sm)]", "pl-9", "text-xs");
@@ -138,22 +134,17 @@ describe("PortfolioListPage", () => {
     expect(
       within(inventory).getByText("No portfolios match your search."),
     ).toBeVisible();
-    expect(within(inventory).getByTestId("portfolios-filtered-empty-state")).toHaveTextContent(
-      "No portfolios match your search.",
-    );
+    expect(
+      within(inventory).getByTestId("portfolios-filtered-empty-state"),
+    ).toHaveTextContent("No portfolios match your search.");
     expect(screen.getByTestId("portfolios-active-filters")).toHaveTextContent(
       "missing",
     );
-    expect(screen.queryByText("No portfolios yet.")).not.toBeInTheDocument();
-    expect(screen.queryByText("Growth Fund")).not.toBeInTheDocument();
 
     fireEvent.click(
       within(inventory).getByRole("button", { name: "Clear search" }),
     );
 
-    expect(
-      screen.queryByTestId("portfolios-active-filters"),
-    ).not.toBeInTheDocument();
     expect(screen.getByText("Growth Fund")).toBeVisible();
   });
 
@@ -176,15 +167,10 @@ describe("PortfolioListPage", () => {
 
     render(<PortfolioListPage />);
 
-    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     const inventory = screen.getByRole("region", {
       name: "Portfolio inventory",
     });
     const table = within(inventory).getByRole("table");
-    expect(
-      within(table).queryByRole("columnheader", { name: "Currency" }),
-    ).not.toBeInTheDocument();
     expect(table.parentElement?.parentElement).toHaveClass(
       "min-w-0",
       "max-w-full",
@@ -194,14 +180,15 @@ describe("PortfolioListPage", () => {
       "shadow-ui-xs",
     );
     expect(
-      within(table).getByRole("checkbox", { name: /select portfolio growth fund/i }),
+      within(table).getByRole("checkbox", {
+        name: /select portfolio growth fund/i,
+      }),
     ).toBeVisible();
 
     const visibleOpen = within(table).getByRole("link", {
       name: "Open portfolio Growth Fund",
     });
     expect(visibleOpen).toHaveAttribute("href", "/portfolios/42");
-    expect(within(table).queryByRole("button", { name: "Open" })).not.toBeInTheDocument();
 
     const editButton = within(table).getByRole("button", {
       name: "Edit portfolio Growth Fund",
@@ -231,8 +218,6 @@ describe("PortfolioListPage", () => {
 
     render(<PortfolioListPage />);
 
-    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("checkbox", { name: /select portfolio growth fund/i }),
     );

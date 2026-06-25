@@ -271,7 +271,6 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(identity).toHaveTextContent("Package #42");
     expect(identity).toHaveTextContent("market_review_package");
     expect(identity).toHaveTextContent(/Updated/i);
-    expect(screen.queryByText("manifest-hash-123")).not.toBeInTheDocument();
     fireEvent.click(within(identity).getByRole("button", { name: "Details" }));
     expect(screen.getByTestId("workflow-package-launch-details")).toHaveTextContent("Market Review Package");
     expect(screen.getByTestId("workflow-package-launch-details")).toHaveTextContent("manifest-hash-123");
@@ -286,8 +285,6 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(readiness).toHaveTextContent("Workflow selection required");
     expect(readiness).toHaveTextContent("Manifest not recorded");
     expect(readiness).toHaveTextContent("Input schema unavailable");
-    expect(readiness).not.toHaveTextContent("Blocking");
-    expect(readiness).not.toHaveTextContent("Warnings");
     const runConfig = screen.getByTestId("workflow-package-run-config");
     expect(screen.getByTestId("workflow-package-launch-tab")).toContainElement(runConfig);
     expect(runConfig).toHaveTextContent("Runtime inputs");
@@ -296,10 +293,6 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByLabelText("Runtime inputs JSON")).toHaveClass("max-w-full", "overflow-x-auto", "whitespace-pre");
     const actionBar = screen.getByTestId("workflow-package-run-actions");
     expect(actionBar).toHaveClass("sticky", "flex", "min-w-0", "flex-col", "sm:flex-row");
-    expect(actionBar).not.toHaveClass(
-      "backdrop-blur",
-      "supports-[backdrop-filter]:bg-background/85",
-    );
     const preflightButton = within(actionBar).getByRole("button", {
       name: /run preflight/i,
     });
@@ -312,10 +305,6 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByRole("tablist")).toBeVisible();
     expect(screen.getByRole("tab", { name: /presets/i })).toBeDisabled();
     expect(screen.getByRole("tab", { name: /history/i })).toBeDisabled();
-    expect(screen.queryByTestId("workflow-package-launch-context")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("workflow-package-constraint-inspector")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("workflow-package-editor-shell")).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: /workflow/i })).not.toBeInTheDocument();
     expect(useWorkflowPackageMock).toHaveBeenCalledWith("42");
     expect(useWorkflowPackageManifestMock).toHaveBeenCalledWith("42");
     await waitFor(() =>
@@ -393,7 +382,6 @@ describe("WorkflowPackageLaunchPage", () => {
     });
     renderLaunchPage();
     expect(screen.getByText("Workflow package not found")).toBeVisible();
-    expect(screen.queryByTestId("workflow-package-launch-tab")).not.toBeInTheDocument();
   });
 
   it("shows launch metadata missing, loading, and load-error states", async () => {

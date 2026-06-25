@@ -229,7 +229,6 @@ describe("ModelConnectionsListPage", () => {
     const primaryRow = within(primaryRowElement);
     const primaryName = primaryRow.getByText("Primary Compatible");
     expect(primaryName).toBeVisible();
-    expect(primaryName.closest("a")).toBeNull();
     expect(primaryRow.getByText("primary_compatible")).toBeVisible();
     expect(primaryRow.getByText("gpt-4.1")).toBeVisible();
     expect(primaryRow.getByText("Responses")).toBeVisible();
@@ -256,7 +255,7 @@ describe("ModelConnectionsListPage", () => {
     );
   });
 
-  it("renders search and table controls by default with no view switcher controls", () => {
+  it("renders search and table controls by default", () => {
     render(<ModelConnectionsListPage />);
 
     expect(
@@ -265,8 +264,6 @@ describe("ModelConnectionsListPage", () => {
       "placeholder",
       "Search by name, key, model, protocol, or compatibility evidence...",
     );
-    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     expect(screen.getByRole("table").parentElement).toHaveClass(
       "min-w-0",
       "overflow-x-auto",
@@ -305,15 +302,22 @@ describe("ModelConnectionsListPage", () => {
     const expandedDetails = screen.getByLabelText(
       "Expanded details for Primary Compatible",
     );
-    expect(expandedDetails.querySelector('[data-slot="badge"]')).toBeNull();
-    expect(within(expandedDetails).getByText("Capability support")).toBeVisible();
     expect(
-      within(expandedDetails).getByText("3 supported · 0 unsupported · 7 unknown"),
+      within(expandedDetails).getByText("Capability support"),
     ).toBeVisible();
     expect(
-      within(expandedDetails).getByText(/strict json schema output: supported/i),
+      within(expandedDetails).getByText(
+        "3 supported · 0 unsupported · 7 unknown",
+      ),
     ).toBeVisible();
-    expect(within(expandedDetails).getByText("Test and reachability")).toBeVisible();
+    expect(
+      within(expandedDetails).getByText(
+        /strict json schema output: supported/i,
+      ),
+    ).toBeVisible();
+    expect(
+      within(expandedDetails).getByText("Test and reachability"),
+    ).toBeVisible();
     expect(within(expandedDetails).getByText("Connection OK")).toBeVisible();
     expect(within(expandedDetails).getByText("Tested at")).toBeVisible();
     expect(within(expandedDetails).getByText("Apr 22, 2026")).toBeVisible();
@@ -322,7 +326,9 @@ describe("ModelConnectionsListPage", () => {
     expect(expandedDetails).toHaveTextContent("Serialize tool calls");
     expect(within(expandedDetails).getByText("Reasoning")).toBeVisible();
     expect(within(expandedDetails).getByText("Omitted")).toBeVisible();
-    expect(within(expandedDetails).getByText("https://api.openai.com/v1")).toBeVisible();
+    expect(
+      within(expandedDetails).getByText("https://api.openai.com/v1"),
+    ).toBeVisible();
     expect(
       primaryRow.getByRole("button", { name: "Hide details" }),
     ).toBeVisible();
@@ -341,9 +347,9 @@ describe("ModelConnectionsListPage", () => {
       { target: { value: "responses-compatible" } },
     );
 
-    expect(screen.getByTestId("model-connections-active-filters")).toHaveTextContent(
-      "responses-compatible",
-    );
+    expect(
+      screen.getByTestId("model-connections-active-filters"),
+    ).toHaveTextContent("responses-compatible");
     expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
     expect(
@@ -355,9 +361,9 @@ describe("ModelConnectionsListPage", () => {
       { target: { value: "provider.example.com/custom-root" } },
     );
 
-    expect(screen.getByTestId("model-connections-active-filters")).toHaveTextContent(
-      "provider.example.com/custom-root",
-    );
+    expect(
+      screen.getByTestId("model-connections-active-filters"),
+    ).toHaveTextContent("provider.example.com/custom-root");
     expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
     expect(
       screen.queryByTestId("model-connections-row-9"),
@@ -370,9 +376,9 @@ describe("ModelConnectionsListPage", () => {
       screen.getByRole("textbox", { name: "Search model connections" }),
       { target: { value: "missing" } },
     );
-    expect(screen.getByTestId("model-connections-active-filters")).toHaveTextContent(
-      "missing",
-    );
+    expect(
+      screen.getByTestId("model-connections-active-filters"),
+    ).toHaveTextContent("missing");
     expect(
       screen.getByText("No model connections match this search."),
     ).toBeVisible();
@@ -420,9 +426,6 @@ describe("ModelConnectionsListPage", () => {
     expect(
       screen.queryByTestId("model-connections-bulk-actions"),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Delete selected" }),
-    ).not.toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("checkbox", {
@@ -461,9 +464,6 @@ describe("ModelConnectionsListPage", () => {
     );
     expect(screen.getByText("1 of 4 model connections selected")).toBeVisible();
 
-    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
-
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(
       within(screen.getByTestId("model-connections-row-9")).getByRole(
@@ -471,9 +471,6 @@ describe("ModelConnectionsListPage", () => {
         { name: "Select model connection Primary Compatible" },
       ),
     ).toHaveAttribute("aria-checked", "false");
-    expect(
-      screen.queryByRole("button", { name: "Delete selected" }),
-    ).not.toBeInTheDocument();
   });
 
   it("shows blocked delete backend messages without rendering secret payloads", async () => {

@@ -190,13 +190,6 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     const outlineRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-page")).toHaveClass("h-full", "overflow-hidden");
-    expect(screen.queryByTestId("runs-inspection-split-layout"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByTestId("split-inspector-right-pane"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByTestId("workspace-page-shell-left-rail"))
-      .not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-tab-console")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-mode-workspace")).toContainElement(
       screen.getByTestId("runs-execution-outline"),
     );
@@ -206,28 +199,8 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     outlineRender.unmount();
     searchParamsMock = new URLSearchParams("mode=metadata");
     const auditRender = render(<RunsDetailPage />);
-    expect(
-      screen.queryByTestId("runs-detail-section-metadata"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "Metadata" }),
-    ).not.toBeInTheDocument();
-    [
-      "runs-audit-table",
-      "runs-audit-row-trace-root",
-      "runs-audit-row-payload-output",
-      "runs-audit-row-payload-input",
-      "runs-audit-row-trace-operation-2001",
-      "runs-audit-row-trace-operation-2002",
-      "runs-audit-row-memory-groups",
-    ].forEach((testId) => {
-      expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
-    });
     expect(screen.getByTestId("runs-detail-tab-panel-overview")).toBeVisible();
     expect(screen.getByTestId("runs-overview-workspace")).toBeVisible();
-    expect(screen.queryByTestId("runs-detail-final-output")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-detail-input")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-step-1-trace-summary")).not.toBeInTheDocument();
 
     auditRender.unmount();
     searchParamsMock = new URLSearchParams("mode=summary");

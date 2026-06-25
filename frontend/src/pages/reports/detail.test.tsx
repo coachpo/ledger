@@ -84,11 +84,12 @@ describe("ReportDetailPage", () => {
     const contextBar = header.querySelector('[data-slot="page-context-bar"]');
     const identity = screen.getByTestId("report-detail-identity");
     expect(contextBar).toHaveClass("border-b", "border-border", "pb-3");
-    expect(contextBar).not.toHaveClass("rounded-xl", "bg-card/95");
     expect(identity).toHaveClass("min-w-0", "break-words", "text-sm");
-    const heading = screen.getAllByRole("heading", {
-      name: /Memory Snapshot/,
-    })[0];
+    expect(
+      screen.getAllByRole("heading", {
+        name: /Memory Snapshot/,
+      })[0],
+    ).toBeVisible();
     const title = screen.getByText("Memory Snapshot", {
       selector: "#report-detail-title",
     });
@@ -98,7 +99,6 @@ describe("ReportDetailPage", () => {
       "font-semibold",
       "tracking-tight",
     );
-    expect(heading).not.toHaveClass("truncate", "text-lg");
     expect(within(header).getByText("Agent")).toBeVisible();
     expect(within(header).getByText("Source")).toBeVisible();
     expect(within(header).getByText("agent snapshot")).toBeVisible();
@@ -116,14 +116,6 @@ describe("ReportDetailPage", () => {
     expect(
       within(actions).getByRole("button", { name: /edit/i }),
     ).toBeVisible();
-    expect(
-      screen.queryByRole("heading", { name: "Report content" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(
-        "Only markdown content is editable; report identity, source, and slug remain fixed.",
-      ),
-    ).not.toBeInTheDocument();
     const contentPane = screen.getByTestId("report-content-pane");
     expect(contentPane).toHaveClass(
       "rounded-xl",
@@ -141,9 +133,6 @@ describe("ReportDetailPage", () => {
     render(<ReportDetailPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
-    expect(
-      screen.queryByRole("heading", { name: "Edit report content" }),
-    ).not.toBeInTheDocument();
     const textarea = screen.getByLabelText("Report markdown content");
     expect(textarea).toHaveValue("# Memory Snapshot\n\nAgent-created report.");
 

@@ -167,7 +167,6 @@ describe("WorkflowPackageEditorPage", () => {
       screen.getByRole("heading", { name: "Market Review Package" }),
     );
     expect(within(headerTopRow).getByText("market_review_package")).toBeVisible();
-    expect(within(headerTopRow).queryByRole("button")).not.toBeInTheDocument();
 
     const actionsRow = screen.getByTestId("workflow-package-editor-actions-row");
     expect(

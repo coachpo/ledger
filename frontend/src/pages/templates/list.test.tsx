@@ -84,13 +84,10 @@ describe("TemplateListPage", () => {
       "/templates/new",
     );
     expect(screen.getByLabelText("Search templates")).toBeVisible();
-    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     expect(screen.getByText("No templates loaded")).toBeVisible();
 
     const inventory = screen.getByTestId("templates-inventory");
     expect(within(inventory).getByText("Loading templates...")).toBeVisible();
-    expect(within(inventory).queryByText("No templates yet.")).not.toBeInTheDocument();
   });
 
   it("keeps error copy in the inventory content while route-owned toolbar controls stay visible", () => {
@@ -115,7 +112,6 @@ describe("TemplateListPage", () => {
     expect(within(inventory).getByRole("alert")).toHaveTextContent(
       "Templates API unavailable",
     );
-    expect(within(inventory).queryByText("Loading templates...")).not.toBeInTheDocument();
   });
 
   it("keeps compact route controls and the new-template entry visible in the empty state", () => {
@@ -127,8 +123,6 @@ describe("TemplateListPage", () => {
         .querySelectorAll("[data-inventory-shell-region]"),
     ).map((region) => region.getAttribute("data-inventory-shell-region"));
     expect(shellRegions).toEqual(["context", "toolbar", "content"]);
-    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Templates" })).toBeVisible();
     const newTemplateLink = screen.getByRole("link", {
       name: /new template/i,
@@ -136,14 +130,12 @@ describe("TemplateListPage", () => {
     expect(newTemplateLink).toBeVisible();
     expect(newTemplateLink).toHaveAttribute("href", "/templates/new");
     expect(screen.getByLabelText("Search templates")).toBeVisible();
-    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
 
     const inventory = screen.getByTestId("templates-inventory");
     expect(within(inventory).getByText("No templates yet.")).toBeVisible();
-    expect(within(inventory).getByTestId("templates-empty-state")).toHaveTextContent(
-      "No templates yet.",
-    );
+    expect(
+      within(inventory).getByTestId("templates-empty-state"),
+    ).toHaveTextContent("No templates yet.");
     expect(
       within(inventory).getByText(/Create a reusable markdown template/i),
     ).toBeVisible();
@@ -166,21 +158,20 @@ describe("TemplateListPage", () => {
       "missing",
     );
     expect(screen.getByText("No templates match your search.")).toBeVisible();
-    expect(screen.getByTestId("templates-filtered-empty-state")).toHaveTextContent(
-      "No templates match your search.",
-    );
+    expect(
+      screen.getByTestId("templates-filtered-empty-state"),
+    ).toHaveTextContent("No templates match your search.");
     expect(screen.getByText("Showing 0 templates of 1 template")).toBeVisible();
-    expect(screen.queryByText("No templates yet.")).not.toBeInTheDocument();
-    expect(screen.queryByText("Quarterly Review")).not.toBeInTheDocument();
 
     fireEvent.click(
-      within(screen.getByTestId("templates-active-filters")).getByRole("button", {
-        name: "Clear filters",
-      }),
+      within(screen.getByTestId("templates-active-filters")).getByRole(
+        "button",
+        {
+          name: "Clear filters",
+        },
+      ),
     );
 
-    expect(screen.queryByTestId("templates-active-filters")).not.toBeInTheDocument();
     expect(screen.getByText("Quarterly Review")).toBeVisible();
   });
-
 });

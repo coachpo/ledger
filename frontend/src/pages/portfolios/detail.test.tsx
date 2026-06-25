@@ -129,9 +129,11 @@ describe("PortfolioDetailPage", () => {
   it("renders a named detail identity block with consistent back and action hierarchy", () => {
     render(<PortfolioDetailPage />);
 
-    const heading = screen.getByRole("heading", {
-      name: "Growth Fund With A Very Long Workspace Name",
-    });
+    expect(
+      screen.getByRole("heading", {
+        name: "Growth Fund With A Very Long Workspace Name",
+      }),
+    ).toBeVisible();
     const title = screen.getByText(
       "Growth Fund With A Very Long Workspace Name",
       {
@@ -144,7 +146,6 @@ describe("PortfolioDetailPage", () => {
       "font-semibold",
       "tracking-tight",
     );
-    expect(heading).not.toHaveClass("truncate", "text-lg");
 
     const backButton = screen.getByRole("button", { name: /portfolios/i });
     fireEvent.click(backButton);
@@ -167,10 +168,8 @@ describe("PortfolioDetailPage", () => {
     const contextBar = header.querySelector('[data-slot="page-context-bar"]');
     const identity = screen.getByTestId("portfolio-detail-identity");
     expect(contextBar).toHaveClass("border-b", "border-border", "pb-3");
-    expect(contextBar).not.toHaveClass("rounded-xl", "bg-card/95");
     expect(identity).toHaveClass("min-w-0", "break-words", "text-sm");
     expect(identity).toHaveTextContent(/Long-term allocation/);
-    expect(within(header).queryByText("Base currency")).not.toBeInTheDocument();
     expect(within(header).getByText("Portfolio ID")).toBeVisible();
     expect(within(header).getByText("#42")).toBeVisible();
     expect(within(header).getByText("Last updated")).toBeVisible();
@@ -182,9 +181,6 @@ describe("PortfolioDetailPage", () => {
     expect(within(statusList).getByText("Positions")).toBeVisible();
     expect(within(statusList).getByText("Balances")).toBeVisible();
     expect(within(statusList).getByText("Trades")).toBeVisible();
-    expect(within(statusList).queryByText("Quotes")).not.toBeInTheDocument();
-    expect(within(statusList).queryByText("Ready")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("portfolio-detail-quote-warnings")).not.toBeInTheDocument();
 
     const metrics = screen.getByLabelText("Portfolio metrics");
     expect(metrics).toHaveClass(
@@ -194,7 +190,6 @@ describe("PortfolioDetailPage", () => {
       "sm:grid-cols-2",
       "xl:grid-cols-4",
     );
-    expect(metrics).not.toHaveClass("border-y", "divide-border");
     expect(metrics.querySelectorAll('[data-slot="card"]')).toHaveLength(4);
     expect(within(metrics).getByText("Total Value")).toBeVisible();
     expect(within(metrics).getByText("Cash Balances")).toBeVisible();

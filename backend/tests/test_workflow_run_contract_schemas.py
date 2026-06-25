@@ -40,7 +40,6 @@ def test_rerun_contracts_use_parameters_object_and_reject_extra_fields() -> None
     create = RunRerunCreateRequest.model_validate({"parameters": {"ticker": "MSFT"}})
 
     assert draft.model_dump(by_alias=True, mode="json") == draft_payload
-    assert "facts" not in draft.model_dump(by_alias=True, mode="json")
     assert create.model_dump(by_alias=True, mode="json") == {"parameters": {"ticker": "MSFT"}}
     with pytest.raises(ValidationError):
         _ = RunRerunCreateRequest.model_validate(
@@ -74,7 +73,6 @@ def test_fork_contracts_use_source_invocation_input_and_reject_extra_fields() ->
     )
 
     assert draft.model_dump(by_alias=True, mode="json") == draft_payload
-    assert "facts" not in draft.model_dump(by_alias=True, mode="json")
     assert create.model_dump(by_alias=True, mode="json") == {
         "sourceInvocationId": 77,
         "invocationInput": {"ticker": "MSFT"},

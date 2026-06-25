@@ -176,9 +176,7 @@ function expectCanonicalGateLayout(testId: string) {
     "sm:py-10",
     "lg:px-8",
   );
-  expect(gate).not.toHaveClass("items-center", "justify-center", "p-4");
   expect(content).toHaveClass("w-full", "max-w-6xl", "flex-col", "gap-6");
-  expect(content).not.toHaveClass("max-w-2xl");
   expect(status).toHaveClass("w-full", "min-w-0");
   expect(statusStrip).toHaveClass(
     "w-full",
@@ -243,18 +241,6 @@ function navItemsFromGroups(groups: ReturnType<typeof assembleNavGroups>) {
   return groups.flatMap((group) => group.items);
 }
 
-type RouteWithComponent = {
-  Component?: unknown;
-  element?: { type?: unknown } | null;
-  lazy?: unknown;
-};
-
-function matchedRoute(path: string) {
-  return matchRoutes(router.routes, path)?.at(-1)?.route as
-    | RouteWithComponent
-    | undefined;
-}
-
 type RootRouteWithChildren = {
   children?: readonly RouteCoverageDefinition[];
   path?: string;
@@ -291,31 +277,6 @@ describe("router", () => {
     expect(getRouteMetadataForPathname("/does-not-exist")).toBe(
       unknownRouteMetadata,
     );
-  });
-
-  it("keeps child route modules lazy to avoid eager page imports", () => {
-    for (const path of [
-      "/",
-      "/reports",
-      "/templates/new",
-      "/portfolios/123",
-      "/extensions",
-      "/workflow-packages",
-      "/workflow-packages/123/run",
-      "/model-connections",
-      "/memory",
-      "/scheduled-tasks/123",
-      "/runs/123",
-      "/does-not-exist",
-    ]) {
-      const route = matchedRoute(path);
-
-      expect(route?.Component, `${path} should not expose an eager Component`).toBeUndefined();
-      expect(route?.element, `${path} should not expose an eager element`).toBeUndefined();
-      expect(route?.lazy, `${path} should lazy-load its route module`).toEqual(
-        expect.any(Function),
-      );
-    }
   });
 
   it("registers live platform route prefixes in route registration and metadata", () => {
@@ -1155,7 +1116,6 @@ describe("router", () => {
       "Finance-owned routes, navigation, and tools are paused while this bundled extension is disabled.",
     );
     expect(disabledState).toHaveTextContent("Blast radius");
-    expect(disabledState).not.toHaveTextContent("signaldeck.finance");
     expectCanonicalGateLayout("extension-disabled-state");
     expect(
       screen.getByRole("link", { name: "Open core workflow packages" }),

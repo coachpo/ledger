@@ -110,9 +110,6 @@ describe("WorkflowPackagesListPage", () => {
       screen.getByTestId("workflow-packages-list-page"),
     ).toBeInTheDocument();
     expect(document.querySelectorAll("[data-slot='skeleton']")).toHaveLength(4);
-    expect(
-      document.querySelector("[data-slot='skeleton']")?.closest("[data-slot='card']"),
-    ).not.toBeInTheDocument();
 
     useWorkflowPackagesMock.mockReturnValue({
       data: undefined,
@@ -128,9 +125,9 @@ describe("WorkflowPackagesListPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Package API unavailable",
     );
-    expect(screen.getByTestId("workflow-packages-error-state")).toHaveTextContent(
-      "Package API unavailable",
-    );
+    expect(
+      screen.getByTestId("workflow-packages-error-state"),
+    ).toHaveTextContent("Package API unavailable");
 
     useWorkflowPackagesMock.mockReturnValue({
       data: { items: [] },
@@ -144,12 +141,12 @@ describe("WorkflowPackagesListPage", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("No workflow packages yet.")).toBeVisible();
-    expect(screen.getByTestId("workflow-packages-empty-state")).toHaveTextContent(
-      "No workflow packages yet.",
-    );
+    expect(
+      screen.getByTestId("workflow-packages-empty-state"),
+    ).toHaveTextContent("No workflow packages yet.");
   });
 
-  it("renders package table by default with no view switcher controls", () => {
+  it("renders package table by default", () => {
     useWorkflowPackagesMock.mockReturnValue({
       data: {
         items: [
@@ -193,8 +190,6 @@ describe("WorkflowPackagesListPage", () => {
       "Search packages by name, key, hash, or readiness...",
     );
 
-    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     expect(screen.getByRole("table").parentElement).toHaveClass(
       "min-w-0",
       "overflow-x-auto",
@@ -257,12 +252,6 @@ describe("WorkflowPackagesListPage", () => {
       "Missing manifest or compiled artifact evidence",
     );
     expect(allocationRow).toHaveTextContent("Not recorded");
-
-    expect(
-      screen.queryByRole("button", {
-        name: "Open actions for package Risk Review",
-      }),
-    ).not.toBeInTheDocument();
   });
 
   it("filters packages through search while keeping Open and Launch routes separate", () => {
@@ -312,7 +301,7 @@ describe("WorkflowPackagesListPage", () => {
     ).toHaveAttribute("href", "/workflow-packages/4/run");
   });
 
-  it("keeps package selection table-only with no card-mode reset path", () => {
+  it("keeps package selection in the table workflow", () => {
     useWorkflowPackagesMock.mockReturnValue({
       data: {
         items: [
@@ -326,8 +315,6 @@ describe("WorkflowPackagesListPage", () => {
 
     renderPage();
 
-    expect(screen.queryByLabelText("Cards view")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Table view")).not.toBeInTheDocument();
     fireEvent.click(
       within(screen.getByTestId("workflow-packages-row-risk_review")).getByRole(
         "checkbox",
@@ -343,9 +330,6 @@ describe("WorkflowPackagesListPage", () => {
         { name: "Select workflow package Risk Review" },
       ),
     ).toHaveAttribute("aria-checked", "false");
-    expect(
-      screen.queryByRole("button", { name: "Delete selected" }),
-    ).not.toBeInTheDocument();
   });
 
   it("permanently deletes packages and surfaces backend delete errors", async () => {

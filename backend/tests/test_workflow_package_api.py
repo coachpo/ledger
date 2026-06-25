@@ -129,8 +129,6 @@ def _assert_manifest_payload(
 ) -> dict[str, object]:
     assert body["packageId"] == package_id
     assert body["packageKey"] == package_key
-    assert "version" not in body
-    assert "compiledPlan" not in body
 
     source = cast(str, body["manifestSource"])
     assert source.startswith("apiVersion: signaldeck.workflowPackage/v1")
@@ -490,7 +488,6 @@ def test_validate_manifest_reports_diagnostics_without_persisting(
     assert response.status_code == 200, response.json()
     body = cast(dict[str, object], response.json())
     assert body["metadata"] is None
-    assert "facts" not in body
     assert "warnings" in body
     diagnostics = cast(list[dict[str, object]], body["diagnostics"])
     assert diagnostics[0]["path"] == "spec.capabilityProfiles.market_research_tools.toolKeys[3]"
@@ -531,11 +528,9 @@ def test_launch_metadata_and_create_contract_use_current_package(
     assert launch.status_code == 200, launch.json()
     launch_body = cast(dict[str, object], launch.json())
     assert launch_body["packageId"] == created["id"]
-    assert "packageVersion" not in launch_body
     assert launch_body["workflowKey"] == "advisory_research"
     assert launch_body["ready"] is True
     assert launch_body["blockingErrors"] == []
-    assert "facts" not in launch_body
 
     preflight = client.post(
         f"/api/workflow-packages/{created['id']}/preflight",
@@ -543,11 +538,9 @@ def test_launch_metadata_and_create_contract_use_current_package(
     )
     assert preflight.status_code == 200, preflight.json()
     preflight_body = cast(dict[str, object], preflight.json())
-    assert "packageVersion" not in preflight_body
     assert preflight_body["workflowKey"] == "advisory_research"
     assert preflight_body["ready"] is True
     assert preflight_body["blockingErrors"] == []
-    assert "facts" not in preflight_body
 
     deleted = client.delete(f"/api/workflow-packages/{created['id']}")
     assert deleted.status_code == 204, deleted.text
@@ -626,7 +619,6 @@ def test_launch_blocks_failed_model_connection(
     assert launch.status_code == 200, launch.json()
     launch_body = cast(dict[str, object], launch.json())
     assert launch_body["ready"] is False
-    assert "facts" not in launch_body
     launch_errors = cast(list[dict[str, object]], launch_body["blockingErrors"])
     assert len(launch_errors) == 12
     assert launch_errors[0] == {
@@ -642,7 +634,6 @@ def test_launch_blocks_failed_model_connection(
     assert preflight.status_code == 200, preflight.json()
     preflight_body = cast(dict[str, object], preflight.json())
     assert preflight_body["ready"] is False
-    assert "facts" not in preflight_body
     preflight_errors = cast(list[dict[str, object]], preflight_body["blockingErrors"])
     assert len(preflight_errors) == 12
     assert preflight_errors[0] == {

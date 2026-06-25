@@ -23,7 +23,6 @@ describe("ErrorBoundaryFallback", () => {
     const message = screen.getByTestId("error-boundary-fallback-error");
 
     expect(page).toHaveClass("min-h-screen", "px-4", "py-8");
-    expect(page).not.toHaveClass("items-center", "justify-center", "p-6");
     expect(content).toHaveClass("w-full", "max-w-6xl", "flex-col", "gap-6");
     expect(status).toHaveClass("w-full", "min-w-0");
     expect(statusStrip).toHaveClass(

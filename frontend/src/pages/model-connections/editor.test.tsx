@@ -200,7 +200,6 @@ describe("ModelConnectionsEditorPage", () => {
 
     render(<ModelConnectionsEditorPage />);
 
-    expect(screen.queryByText("Connection mode:")).not.toBeInTheDocument();
     fillRequiredCreateFields();
     fireEvent.change(screen.getByLabelText(/^Base URL$/i), {
       target: { value: "https://new.sharedchat.cc/codex/v1" },

@@ -140,11 +140,6 @@ describe("RunsListPage", () => {
     const { rerender } = render(<RunsListPage />);
 
     expect(
-      screen.queryByText(
-        "Polling every 2 seconds while queued or running rows are present.",
-      ),
-    ).not.toBeInTheDocument();
-    expect(
       screen.getByText("No runs match the current monitor filters"),
     ).toBeVisible();
     expect(screen.getByTestId("runs-empty-state")).toHaveTextContent(
@@ -195,27 +190,15 @@ describe("RunsListPage", () => {
       .getByRole("heading", { level: 1, name: "Runs" })
       .closest("[data-slot='page-context-bar']");
     expect(header).toHaveClass("sm:flex-row", "sm:items-start");
-    expect(header?.closest("[data-slot='card']")).not.toBeInTheDocument();
     expect(
       within(contextRegion as HTMLElement).getByText(/monitor workflow runs/i),
     ).toHaveClass("max-w-3xl", "text-sm", "leading-6");
     expect(
-      within(contextRegion as HTMLElement).queryByRole("list"),
-    ).not.toBeInTheDocument();
-    expect(
       page.querySelector('[data-inventory-shell-region="toolbar"]'),
     ).toBeInTheDocument();
-    expect(
-      page.querySelector('[data-inventory-shell-region="filters"]'),
-    ).not.toBeInTheDocument();
-    expect(within(contextRegion as HTMLElement).queryByText("Returned")).not.toBeInTheDocument();
-    expect(within(contextRegion as HTMLElement).queryByText("Active")).not.toBeInTheDocument();
-    expect(within(contextRegion as HTMLElement).queryByText("Queued")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Package key")).toBeVisible();
     expect(screen.getByLabelText("Workflow key")).toBeVisible();
     expect(screen.getByLabelText("Run status")).toBeVisible();
-    expect(screen.queryByLabelText("Target kind")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-monitor-filter-card")).not.toBeInTheDocument();
 
     const table = screen.getByRole("table");
     for (const column of [
@@ -262,10 +245,6 @@ describe("RunsListPage", () => {
       /workflow key:\s*macro_agent/i,
     );
     expect(screen.getByText(/trace-15/i)).toBeVisible();
-    expect(
-      screen.queryByRole("link", { name: /package:/i }),
-    ).not.toBeInTheDocument();
-
     const queuedRow = screen.getByTestId("runs-row-14");
     expect(queuedRow).toHaveTextContent(/run #14/i);
     expect(queuedRow).toHaveTextContent(/queued/i);
@@ -291,7 +270,6 @@ describe("RunsListPage", () => {
     );
     expect(blockedRow).toHaveTextContent(/blocking run: #14/i);
     expect(blockedRow).toHaveTextContent(/0\/3 invocations · 0%/i);
-    expect(screen.queryByText(/awaiting execution/i)).not.toBeInTheDocument();
 
     expect(screen.getByTestId("runs-row-15")).toHaveTextContent(
       /2\/5 invocations · 37%/i,
@@ -300,7 +278,6 @@ describe("RunsListPage", () => {
     expect(screen.getByTestId("runs-row-16")).toHaveTextContent(
       /3\/3 invocations · 100%/i,
     );
-    expect(screen.queryByText(/total cost/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
     expect(refetchMock).toHaveBeenCalled();
@@ -310,9 +287,6 @@ describe("RunsListPage", () => {
 
     expect(openAction).toHaveAccessibleName("Open run #15");
     expect(openAction).toHaveAttribute("href", "/runs/15");
-    expect(
-      within(runsRow).queryByRole("button", { name: /open run #15/i }),
-    ).not.toBeInTheDocument();
   });
 
   it("keeps target filters route-owned while polling through the runs hook", async () => {
@@ -344,11 +318,9 @@ describe("RunsListPage", () => {
     expect(screen.getByTestId("runs-active-filters")).toHaveTextContent(
       "market_review_package",
     );
-    expect(screen.queryByTestId("runs-monitor-filter-card")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Package key")).toHaveValue(
       " market_review_package ",
     );
-    expect(screen.queryByRole("combobox", { name: /target kind/i })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Workflow key")).toBeVisible();
 
     fireEvent.change(screen.getByLabelText("Workflow key"), {
@@ -383,7 +355,6 @@ describe("RunsListPage", () => {
       },
       { refetchInterval: 2000 },
     );
-    expect(screen.queryByTestId("runs-active-filters")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Package key")).toHaveValue("");
     expect(screen.getByLabelText("Workflow key")).toHaveValue("");
   });

@@ -145,5 +145,5 @@ pnpm test:e2e
 - `vite.config.ts` sets up the `@` alias, Vitest jsdom mode, and manual chunking for framework/data/ui/forms/date/vendor bundles.
 - Playwright only runs Chromium here and starts both backend/frontend web servers automatically via `scripts/start-playwright-*.mjs`, with backend `8001`, fake provider `18081`, and frontend `4173`; the frontend helper builds before preview.
 - Current Vitest coverage spans `src/lib/` helpers plus targeted agent-platform, shared route-shell, resource filter/selection state, template-editor, and layout pages.
-- `src/styles/fonts.css` is empty/unreferenced; theme tokens live in `src/styles/theme.css` and Tailwind import/source control lives in `src/styles/tailwind.css`.
+- Font and theme tokens live in `src/styles/theme.css`; Tailwind import/source control lives in `src/styles/tailwind.css`.
 - The live router exposes dashboard, extension-gated portfolio/template/report routes, `/extensions`, Workflow Packages, Scheduled Tasks, Model Connections, `/memory`, and Runs; the product-owned catch-all is covered in `src/routes.test.tsx`.

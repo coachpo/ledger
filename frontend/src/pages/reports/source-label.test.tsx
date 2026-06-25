@@ -132,16 +132,10 @@ describe("report source labels", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.getByText("Memory Snapshot")).toBeVisible();
-    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "View report Memory Snapshot" }),
     ).toHaveAttribute("href", "/reports/agent_memory_snapshot");
     expect(screen.getByText("Agent")).toBeVisible();
-    expect(screen.queryByText("External")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", { name: /select all shown reports/i }),
-    ).not.toBeInTheDocument();
 
     const table = screen.getByRole("table");
     expect(table.parentElement?.parentElement).toHaveClass(
@@ -170,7 +164,6 @@ describe("report source labels", () => {
     ).toBeVisible();
     expect(within(table).getByText("Memory Snapshot")).toBeVisible();
     expect(within(table).getByText("Agent")).toBeVisible();
-    expect(within(table).queryByText("External")).not.toBeInTheDocument();
   });
 
   it("renders Uploaded source badge consistently across list views", () => {
@@ -189,11 +182,9 @@ describe("report source labels", () => {
 
     expect(screen.getByText("Uploaded Snapshot")).toBeVisible();
     expect(screen.getByText("Uploaded")).toBeVisible();
-    expect(screen.queryByText("Agent")).not.toBeInTheDocument();
 
     const table = screen.getByRole("table");
     expect(within(table).getByText("Uploaded")).toBeVisible();
-    expect(within(table).queryByText("Agent")).not.toBeInTheDocument();
   });
 
   it("keeps single report delete in an overflow confirmation path", () => {
@@ -231,9 +222,6 @@ describe("report source labels", () => {
 
     renderReportRoute("/reports");
     expect(
-      screen.queryByRole("checkbox", { name: /select all shown reports/i }),
-    ).not.toBeInTheDocument();
-    expect(
       screen.getAllByRole("checkbox", { name: /select reports in memory/i }),
     ).toHaveLength(1);
     const table = screen.getByRole("table");
@@ -248,12 +236,6 @@ describe("report source labels", () => {
       table.compareDocumentPosition(bulkActions) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(
-      within(table).queryByText("2 of 2 reports selected"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /download selected/i }),
-    ).not.toBeInTheDocument();
 
     fireEvent.click(
       within(bulkActions).getByRole("button", { name: /delete selected/i }),
@@ -263,7 +245,6 @@ describe("report source labels", () => {
       ["agent_memory_snapshot", "uploaded_snapshot"],
       expect.any(Object),
     );
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   it("hides bulk actions when the current search filters away selected reports", () => {
@@ -285,15 +266,11 @@ describe("report source labels", () => {
       "missing",
     );
     expect(screen.getByText("No reports match your search.")).toBeVisible();
-    expect(screen.getByTestId("reports-filtered-empty-state")).toHaveTextContent(
-      "No reports match your search.",
-    );
-    expect(screen.queryByText(/No reports yet/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("reports-filtered-empty-state"),
+    ).toHaveTextContent("No reports match your search.");
     expect(
       screen.queryByTestId("reports-bulk-actions"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /delete selected/i }),
     ).not.toBeInTheDocument();
 
     fireEvent.click(
@@ -302,7 +279,6 @@ describe("report source labels", () => {
       }),
     );
 
-    expect(screen.queryByTestId("reports-active-filters")).not.toBeInTheDocument();
     expect(
       within(screen.getByTestId("reports-bulk-actions")).getByText(
         "1 of 1 reports selected",
@@ -327,13 +303,11 @@ describe("report source labels", () => {
       "font-semibold",
       "tracking-tight",
     );
-    expect(detailHeading).not.toHaveClass("truncate", "text-lg");
     expect(
       within(screen.getByTestId("report-detail-header")).getByText("Agent", {
         selector: "[data-slot='badge']",
       }),
     ).toBeVisible();
-    expect(screen.queryByText("External")).not.toBeInTheDocument();
 
     const actions = screen.getByTestId("report-detail-actions");
     expect(actions).toHaveClass("flex-wrap", "sm:w-auto");

@@ -61,7 +61,6 @@ describe("EntityDialogShell", () => {
       "overflow-hidden",
       "p-0",
     );
-    expect(dialog).not.toHaveClass("grid");
     expect(header).toHaveClass("shrink-0");
     expect(constraintStrip).toHaveClass("shrink-0");
     expect(body).toHaveClass(

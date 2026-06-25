@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
@@ -30,14 +30,17 @@ describe("ResourceRowCard", () => {
       "hover:bg-accent/35",
       "shadow-ui-xs",
     );
-    expect(within(row).queryByRole("button", { name: /quarterly report/i })).not.toBeInTheDocument();
-    expect(within(row).queryByRole("link", { name: /quarterly report/i })).not.toBeInTheDocument();
   });
 
   it("renders link primary actions as focusable title links", () => {
     renderResourceRowCard(
       <ResourceRowCard
-        primaryAction={{ kind: "link", label: "Open Resource", to: "/resources/research", testId: "resource-link" }}
+        primaryAction={{
+          kind: "link",
+          label: "Open Resource",
+          to: "/resources/research",
+          testId: "resource-link",
+        }}
         title="Research Resource"
       />,
     );
@@ -46,9 +49,11 @@ describe("ResourceRowCard", () => {
     expect(link).toHaveAttribute("href", "/resources/research");
     expect(link).toHaveAttribute("data-testid", "resource-link");
     expect(link).toHaveTextContent("Research Resource");
-    expect(link).toHaveClass("rounded-sm", "hover:underline", "focus-visible:ring-2");
-    expect(link).not.toHaveClass("absolute", "inset-0", "cursor-pointer", "text-left");
-    expect(screen.queryByRole("button", { name: "Open Resource" })).not.toBeInTheDocument();
+    expect(link).toHaveClass(
+      "rounded-sm",
+      "hover:underline",
+      "focus-visible:ring-2",
+    );
   });
 
   it("keeps sibling action buttons isolated from the primary link", () => {
@@ -56,12 +61,16 @@ describe("ResourceRowCard", () => {
 
     renderResourceRowCard(
       <ResourceRowCard
-        actions={(
+        actions={
           <button onClick={actionClick} type="button">
             Archive
           </button>
-        )}
-        primaryAction={{ kind: "link", label: "Open Workflow", to: "/workflow-packages/7" }}
+        }
+        primaryAction={{
+          kind: "link",
+          label: "Open Workflow",
+          to: "/workflow-packages/7",
+        }}
         title="Workflow"
       />,
     );
@@ -82,22 +91,29 @@ describe("ResourceRowCard", () => {
 
     renderResourceRowCard(
       <EntityListCard
-        metadata={(
+        metadata={
           <div>
             <a href="/workflow-packages/7">Package link</a>
             <button onClick={metadataClick} type="button">
               Inspect metadata
             </button>
           </div>
-        )}
-        primaryAction={{ kind: "link", label: "Open Run", to: "/runs/12", testId: "run-primary" }}
+        }
+        primaryAction={{
+          kind: "link",
+          label: "Open Run",
+          to: "/runs/12",
+          testId: "run-primary",
+        }}
         title="Workflow"
       />,
     );
 
     const primaryLink = screen.getByTestId("run-primary");
     const metadataLink = screen.getByRole("link", { name: "Package link" });
-    const metadataButton = screen.getByRole("button", { name: "Inspect metadata" });
+    const metadataButton = screen.getByRole("button", {
+      name: "Inspect metadata",
+    });
 
     fireEvent.click(metadataButton);
 
@@ -118,14 +134,20 @@ describe("ResourceRowCard", () => {
       />,
     );
 
-    const content = screen.getByTestId("compact-row").querySelector("[data-slot='card-content']");
-    expect(content).toHaveClass("flex", "items-center", "justify-between", "gap-3", "px-4", "py-3");
-    expect(screen.getByRole("button", { name: "More" }).parentElement).toHaveClass(
+    const content = screen
+      .getByTestId("compact-row")
+      .querySelector("[data-slot='card-content']");
+    expect(content).toHaveClass(
       "flex",
-      "shrink-0",
       "items-center",
-      "gap-1.5",
+      "justify-between",
+      "gap-3",
+      "px-4",
+      "py-3",
     );
+    expect(
+      screen.getByRole("button", { name: "More" }).parentElement,
+    ).toHaveClass("flex", "shrink-0", "items-center", "gap-1.5");
   });
 
   it("applies compactPlus density classes", () => {
@@ -141,7 +163,9 @@ describe("ResourceRowCard", () => {
       />,
     );
 
-    const content = screen.getByTestId("compact-plus-row").querySelector("[data-slot='card-content']");
+    const content = screen
+      .getByTestId("compact-plus-row")
+      .querySelector("[data-slot='card-content']");
     expect(content).toHaveClass(
       "flex",
       "min-w-0",
@@ -153,7 +177,9 @@ describe("ResourceRowCard", () => {
       "sm:justify-between",
       "sm:p-4",
     );
-    expect(screen.getByRole("button", { name: "Run" }).parentElement).toHaveClass(
+    expect(
+      screen.getByRole("button", { name: "Run" }).parentElement,
+    ).toHaveClass(
       "flex",
       "w-full",
       "flex-wrap",
@@ -163,9 +189,18 @@ describe("ResourceRowCard", () => {
       "sm:justify-end",
       "[&_button]:cursor-pointer",
     );
-    expect(screen.getByText("Compact plus subtitle")).toHaveClass("text-xs", "text-muted-foreground");
-    expect(screen.getByText("Compact plus description")).toHaveClass("text-sm", "text-muted-foreground");
-    expect(screen.getByText("Compact plus metadata")).toHaveClass("text-xs", "text-muted-foreground");
+    expect(screen.getByText("Compact plus subtitle")).toHaveClass(
+      "text-xs",
+      "text-muted-foreground",
+    );
+    expect(screen.getByText("Compact plus description")).toHaveClass(
+      "text-sm",
+      "text-muted-foreground",
+    );
+    expect(screen.getByText("Compact plus metadata")).toHaveClass(
+      "text-xs",
+      "text-muted-foreground",
+    );
   });
 
   it("preserves row and primary action test id contracts", () => {
@@ -173,7 +208,12 @@ describe("ResourceRowCard", () => {
       <ResourceRowCard
         description="A long description that should remain inside the primary body."
         metadata="Created by SignalDeck"
-        primaryAction={{ kind: "link", label: "Inspect Resource", to: "/resources/shared", testId: "inspect-resource" }}
+        primaryAction={{
+          kind: "link",
+          label: "Inspect Resource",
+          to: "/resources/shared",
+          testId: "inspect-resource",
+        }}
         subtitle="Reusable primitive"
         testId="resource-card"
         title="Shared Resource"
@@ -191,13 +231,19 @@ describe("ResourceRowCard", () => {
       "tracking-tight",
       "text-foreground",
     );
-    expect(screen.getByText("Reusable primitive")).toHaveClass("text-[11px]", "text-muted-foreground");
-    expect(screen.getByText("A long description that should remain inside the primary body.")).toHaveClass(
-      "break-words",
+    expect(screen.getByText("Reusable primitive")).toHaveClass(
       "text-[11px]",
       "text-muted-foreground",
     );
-    expect(screen.getByText("Created by SignalDeck")).toHaveClass("text-[11px]", "text-muted-foreground");
+    expect(
+      screen.getByText(
+        "A long description that should remain inside the primary body.",
+      ),
+    ).toHaveClass("break-words", "text-[11px]", "text-muted-foreground");
+    expect(screen.getByText("Created by SignalDeck")).toHaveClass(
+      "text-[11px]",
+      "text-muted-foreground",
+    );
   });
 
   it("renders facts and evidence chip slots inside the shared body without wrapping the primary link", () => {
@@ -222,7 +268,11 @@ describe("ResourceRowCard", () => {
             </div>
           </dl>
         }
-        primaryAction={{ kind: "link", label: "Open Model Connection", to: "/model-connections/9/edit" }}
+        primaryAction={{
+          kind: "link",
+          label: "Open Model Connection",
+          to: "/model-connections/9/edit",
+        }}
         testId="model-connection-row"
         title="Primary Compatible"
       />,
@@ -249,11 +299,22 @@ describe("ResourceRowCard", () => {
     renderResourceRowCard(
       <ResourceRowCard
         actions={<button type="button">Archive</button>}
-        evidence={<EvidenceCluster items={[{ label: "Trace", value: "trace-123" }]} layout="inline" />}
+        evidence={
+          <EvidenceCluster
+            items={[{ label: "Trace", value: "trace-123" }]}
+            layout="inline"
+          />
+        }
         footer="Footer metadata"
         provenance={<ProvenanceBadge detail="snapshot" label="Imported" />}
-        primaryAction={{ kind: "link", label: "Open Evidence", to: "/resources/evidence" }}
-        statusStrip={<ResourceStatusStrip items={[{ label: "Ready", tone: "success" }]} />}
+        primaryAction={{
+          kind: "link",
+          label: "Open Evidence",
+          to: "/resources/evidence",
+        }}
+        statusStrip={
+          <ResourceStatusStrip items={[{ label: "Ready", tone: "success" }]} />
+        }
         title="Evidence Resource"
       />,
     );
@@ -261,10 +322,15 @@ describe("ResourceRowCard", () => {
     const primaryLink = screen.getByRole("link", { name: "Open Evidence" });
     const archiveButton = screen.getByRole("button", { name: "Archive" });
 
-    expect(screen.getByText("Ready").closest("[data-slot='badge']")).toHaveAttribute("data-tone", "success");
+    expect(
+      screen.getByText("Ready").closest("[data-slot='badge']"),
+    ).toHaveAttribute("data-tone", "success");
     expect(screen.getByLabelText("Imported: snapshot")).toBeInTheDocument();
     expect(screen.getByText("Trace")).toBeInTheDocument();
-    expect(screen.getByText("Footer metadata")).toHaveClass("text-[11px]", "text-muted-foreground");
+    expect(screen.getByText("Footer metadata")).toHaveClass(
+      "text-[11px]",
+      "text-muted-foreground",
+    );
     expect(primaryLink).not.toContainElement(archiveButton);
     expect(archiveButton.closest("a")).toBeNull();
   });

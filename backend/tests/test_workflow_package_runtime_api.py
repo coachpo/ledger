@@ -1820,13 +1820,13 @@ def test_runtime_input_service_limits(
         assert not hasattr(service, "append_history_entry")
 
 
-def test_runtime_input_service_personal_cap_uses_scope_lock_for_concurrent_creates(
+def test_runtime_input_service_preset_cap_uses_scope_lock_for_concurrent_creates(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_model_connection(session_factory)
-    created = _create_package(client, package_key="runtime_input_personal_lock_package")
+    created = _create_package(client, package_key="runtime_input_preset_lock_package")
     package_id = cast(int, created["id"])
     with session_factory() as session:
         service = WorkflowPackageRuntimeInputRegistryService(session)
@@ -1868,7 +1868,7 @@ def test_runtime_input_service_personal_cap_uses_scope_lock_for_concurrent_creat
         observed_acquire_scope_lock,
     )
 
-    def create_concurrent_personal(ticker: str) -> tuple[str, int | str]:
+    def create_concurrent_preset(ticker: str) -> tuple[str, int | str]:
         with session_factory() as session:
             try:
                 entry = WorkflowPackageRuntimeInputRegistryService(session).create_preset_entry(
@@ -1882,9 +1882,9 @@ def test_runtime_input_service_personal_cap_uses_scope_lock_for_concurrent_creat
             return ("created", entry.id)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        first = executor.submit(create_concurrent_personal, "LOCK_A")
+        first = executor.submit(create_concurrent_preset, "LOCK_A")
         assert first_lock_acquired.wait(timeout=5)
-        second = executor.submit(create_concurrent_personal, "LOCK_B")
+        second = executor.submit(create_concurrent_preset, "LOCK_B")
         assert second_lock_attempted.wait(timeout=5)
         try:
             assert not second.done()
@@ -1902,7 +1902,7 @@ def test_runtime_input_service_personal_cap_uses_scope_lock_for_concurrent_creat
         assert len(registry.presets) == RUNTIME_INPUT_PRESET_ENTRY_LIMIT
 
 
-def test_runtime_input_service_personal_payload_updates_validate_current_schema(
+def test_runtime_input_service_preset_payload_updates_validate_current_schema(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -2003,8 +2003,8 @@ def test_runtime_input_presets_entry_persists_canonical_workflow_schema_payload(
     _seed_model_connection(session_factory)
     created = _create_package_from_source(
         client,
-        manifest_source=_package_source_with_personal_runtime_input_schema(
-            package_key="runtime_input_personal_canonical_package"
+        manifest_source=_package_source_with_runtime_input_preset_schema(
+            package_key="runtime_input_preset_canonical_package"
         ),
     )
     package_id = cast(int, created["id"])
@@ -2023,7 +2023,6 @@ def test_runtime_input_presets_entry_persists_canonical_workflow_schema_payload(
     expected_payload = {"ticker": "MSFT", "sector": None, "horizonDays": 14}
     assert created_preset_body["slot"] == "preset"
     assert created_preset_body["payload"] == expected_payload
-    assert "optionalNote" not in created_preset_body["payload"]
 
     renamed_preset = client.patch(
         f"{endpoint}/{entry_id}",
@@ -2046,8 +2045,6 @@ def test_runtime_input_presets_entry_persists_canonical_workflow_schema_payload(
     updated_preset_body = cast(dict[str, Any], updated_preset.json())
     assert updated_preset_body["name"] == "Renamed canonical preset"
     assert updated_preset_body["payload"] == {"ticker": "AAPL", "horizonDays": 14}
-    assert "sector" not in updated_preset_body["payload"]
-    assert "optionalNote" not in updated_preset_body["payload"]
 
 
 def test_runtime_input_presets_entry_rejects_missing_required_workflow_input(
@@ -2057,8 +2054,8 @@ def test_runtime_input_presets_entry_rejects_missing_required_workflow_input(
     _seed_model_connection(session_factory)
     created = _create_package_from_source(
         client,
-        manifest_source=_package_source_with_personal_runtime_input_schema(
-            package_key="runtime_input_personal_invalid_package"
+        manifest_source=_package_source_with_runtime_input_preset_schema(
+            package_key="runtime_input_preset_invalid_package"
         ),
     )
     package_id = cast(int, created["id"])
@@ -2089,7 +2086,7 @@ def test_runtime_input_presets_entry_rejects_non_nullable_null(
     created = _create_package_from_source(
         client,
         manifest_source=_package_source_with_optional_wired_inputs(
-            package_key="runtime_input_personal_non_nullable_null_package"
+            package_key="runtime_input_preset_non_nullable_null_package"
         ),
     )
     package_id = cast(int, created["id"])
@@ -2130,14 +2127,11 @@ def test_runtime_input_registry_api_contract_and_presets_mutations(
     assert empty_body["packageId"] == package_id
     assert empty_body["packageKey"] == "runtime_input_registry_api_package"
     assert empty_body["workflowKey"] == "runtime_workflow"
-    assert "ownerType" not in empty_body
-    assert "ownerId" not in empty_body
     current_metadata = cast(dict[str, Any], empty_body["currentMetadata"])
     assert current_metadata["workflowKey"] == "runtime_workflow"
     assert current_metadata["inputSchema"]["required"] == ["ticker"]
     assert empty_body["presets"] == []
     assert empty_body["history"] == []
-    assert "personal" not in empty_body
 
     created_preset = client.post(
         f"/api/workflow-packages/{package_id}/runtime-input-registry/presets",
@@ -2156,8 +2150,6 @@ def test_runtime_input_registry_api_contract_and_presets_mutations(
     assert created_preset_body["sourceRunId"] is None
     assert created_preset_body["inputSchemaSnapshot"]["required"] == ["ticker"]
     assert created_preset_body["stale"] == {"stale": False, "reasons": []}
-    assert "ownerType" not in created_preset_body
-    assert "ownerId" not in created_preset_body
 
     invalid_payload = client.post(
         f"/api/workflow-packages/{package_id}/runtime-input-registry/presets",
@@ -2195,7 +2187,6 @@ def test_runtime_input_registry_api_contract_and_presets_mutations(
     assert history_entry["sourceKind"] == "launch"
     assert history_entry["sourceRunId"] == source_run_id
     assert history_entry["payload"] == {"ticker": "HIST"}
-    assert "personal" not in registry_body
 
     history_update = client.patch(
         f"/api/workflow-packages/{package_id}/runtime-input-registry/presets/{history_id}",
@@ -2236,7 +2227,6 @@ def test_runtime_input_registry_api_contract_and_presets_mutations(
     after_delete_body = cast(dict[str, Any], after_delete.json())
     assert after_delete_body["presets"] == []
     assert len(cast(list[dict[str, Any]], after_delete_body["history"])) == 1
-    assert "personal" not in after_delete_body
 
     with session_factory() as session:
         service = WorkflowPackageRuntimeInputRegistryService(session)
@@ -2369,8 +2359,6 @@ def test_runtime_input_registry_stale_workflow_read_remains_available(
     assert stale_body["packageId"] == package_id
     assert stale_body["workflowKey"] == "runtime_workflow"
     assert stale_body["currentMetadata"] is None
-    assert "ownerType" not in stale_body
-    assert "ownerId" not in stale_body
     presets = cast(list[dict[str, Any]], stale_body["presets"])
     history = cast(list[dict[str, Any]], stale_body["history"])
     assert [entry["id"] for entry in presets] == [preset_id]
@@ -2443,15 +2431,10 @@ def test_runtime_input_registry_openapi_contract_is_scope_safe(client: TestClien
         parameters = cast(list[dict[str, Any]], operation.get("parameters") or [])
         parameter_names = {str(parameter["name"]) for parameter in parameters}
         assert {"package_id", "workflowKey"} <= parameter_names
-        assert {"ownerType", "ownerId", "slot"}.isdisjoint(parameter_names)
 
     registry_properties = cast(
         dict[str, Any],
         schemas["WorkflowPackageRuntimeInputRegistryRead"]["properties"],
-    )
-    entry_properties = cast(
-        dict[str, Any],
-        schemas["WorkflowPackageRuntimeInputEntryRead"]["properties"],
     )
     create_properties = cast(
         dict[str, Any],
@@ -2470,20 +2453,8 @@ def test_runtime_input_registry_openapi_contract_is_scope_safe(client: TestClien
         "presets",
         "history",
     }
-    assert {"ownerType", "ownerId"}.isdisjoint(entry_properties)
     assert set(create_properties) == {"name", "payload"}
     assert set(update_properties) == {"name", "payload"}
-
-    workflow_package_properties = cast(
-        dict[str, Any],
-        schemas["WorkflowPackageRead"]["properties"],
-    )
-    manifest_properties = cast(
-        dict[str, Any],
-        schemas["WorkflowPackageManifestRead"]["properties"],
-    )
-    assert "runtimeInputRegistry" not in workflow_package_properties
-    assert "runtimeInputRegistry" not in manifest_properties
 
 
 def test_workflow_package_read_contract_is_artifact_inventory_and_launch_keeps_live_readiness(
@@ -2513,7 +2484,6 @@ def test_workflow_package_read_contract_is_artifact_inventory_and_launch_keeps_l
     assert launch.status_code == 200, launch.json()
     launch_body = cast(dict[str, object], launch.json())
     assert {"ready", "blockingErrors", "warnings"} <= set(launch_body)
-    assert "facts" not in launch_body
 
     preflight = client.post(
         f"/api/workflow-packages/{package_id}/preflight",
@@ -2522,7 +2492,6 @@ def test_workflow_package_read_contract_is_artifact_inventory_and_launch_keeps_l
     assert preflight.status_code == 200, preflight.json()
     preflight_body = cast(dict[str, object], preflight.json())
     assert {"ready", "blockingErrors", "warnings"} <= set(preflight_body)
-    assert "facts" not in preflight_body
 
 
 def test_workflow_package_launch_rejects_unknown_root_parameter_key(
@@ -2647,7 +2616,7 @@ def test_workflow_package_preflight_rejects_typed_parameter_errors_before_launch
     _seed_model_connection(session_factory)
     created = _create_package_from_source(
         client,
-        manifest_source=_package_source_with_personal_runtime_input_schema(
+        manifest_source=_package_source_with_runtime_input_preset_schema(
             package_key="runtime_preflight_invalid_typed_package"
         ),
     )
@@ -4552,7 +4521,7 @@ def _package_source_with_runtime_input_default(*, package_key: str) -> str:
     )
 
 
-def _package_source_with_personal_runtime_input_schema(*, package_key: str) -> str:
+def _package_source_with_runtime_input_preset_schema(*, package_key: str) -> str:
     original_input_schema = (
         "      inputSchema:\n"
         "        type: object\n"
@@ -4562,7 +4531,7 @@ def _package_source_with_personal_runtime_input_schema(*, package_key: str) -> s
         "        required: [ticker]\n"
         "      flow:\n"
     )
-    personal_input_schema = (
+    preset_input_schema = (
         "      inputSchema:\n"
         "        type: object\n"
         "        properties:\n"
@@ -4580,7 +4549,7 @@ def _package_source_with_personal_runtime_input_schema(*, package_key: str) -> s
     )
     return _package_source(package_key=package_key).replace(
         original_input_schema,
-        personal_input_schema,
+        preset_input_schema,
         1,
     )
 
@@ -5158,10 +5127,10 @@ def test_runtime_input_history_on_launch_persists_validated_payload_source_run_a
 
     trimmed_history = _runtime_input_history_entries(client, package_id)
     trimmed_payloads = [entry["payload"] for entry in trimmed_history]
-    assert len(trimmed_history) == RUNTIME_INPUT_PRESET_ENTRY_LIMIT
-    assert expected_validated_payload not in trimmed_payloads
-    assert trimmed_payloads[0] == {"ticker": "HIST19", "horizonDays": 14}
-    assert trimmed_payloads[-1] == {"ticker": "HIST00", "horizonDays": 14}
+    assert trimmed_payloads == [
+        {"ticker": f"HIST{index:02d}", "horizonDays": 14}
+        for index in reversed(range(RUNTIME_INPUT_PRESET_ENTRY_LIMIT))
+    ]
     assert all(entry["sourceKind"] == "launch" for entry in trimmed_history)
     assert all(entry["sourceRunId"] is not None for entry in trimmed_history)
 

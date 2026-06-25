@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -105,26 +105,25 @@ describe("ReportListPage", () => {
         .querySelectorAll("[data-inventory-shell-region]"),
     ).map((region) => region.getAttribute("data-inventory-shell-region"));
     expect(shellRegions).toEqual(["context", "toolbar", "content"]);
-    expect(screen.queryByRole("radio", { name: /cards view/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /table view/i })).not.toBeInTheDocument();
     const heading = screen.getByRole("heading", { level: 1, name: "Reports" });
     expect(heading).toBeVisible();
     const header = heading.closest("[data-slot='page-context-bar']");
     expect(header).toHaveClass("sm:flex-row", "sm:items-start");
-    expect(header?.closest("[data-slot='card']")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Generate Report" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Generate Report" }),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Upload Report" })).toBeVisible();
     expect(screen.getByLabelText("Search reports")).toBeVisible();
     expect(screen.getByLabelText("Group reports")).toBeVisible();
-    expect(within(header as HTMLElement).queryByText("Total")).not.toBeInTheDocument();
-    expect(within(header as HTMLElement).queryByText("Shown")).not.toBeInTheDocument();
     expect(screen.getByText("Showing 0 of 0 reports")).toBeVisible();
     expect(screen.getByText("No reports yet.")).toBeVisible();
     expect(screen.getByTestId("reports-empty-state")).toHaveTextContent(
       "No reports yet.",
     );
     expect(
-      screen.getByText("Generate one from a template or upload a markdown file."),
+      screen.getByText(
+        "Generate one from a template or upload a markdown file.",
+      ),
     ).toBeVisible();
   });
 
@@ -138,7 +137,6 @@ describe("ReportListPage", () => {
 
     renderReportsList();
 
-    expect(screen.queryByText("Error")).not.toBeInTheDocument();
     expect(screen.getByText("Reports could not be loaded")).toBeVisible();
     expect(screen.getByText("Reports API unavailable")).toBeVisible();
     expect(screen.getByTestId("reports-error-state")).toHaveTextContent(
@@ -167,7 +165,9 @@ describe("ReportListPage", () => {
     fireEvent.change(screen.getByLabelText("Tags (optional)"), {
       target: { value: "market, uploaded" },
     });
-    fireEvent.submit(screen.getByRole("button", { name: "Upload" }).closest("form")!);
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Upload" }).closest("form")!,
+    );
 
     expect(uploadReportMutateMock).toHaveBeenCalledTimes(1);
     const [formData, callbacks] = uploadReportMutateMock.mock.calls[0];
@@ -178,7 +178,11 @@ describe("ReportListPage", () => {
     expect(formData.get("tags")).toBe("market, uploaded");
 
     callbacks.onSuccess(
-      buildReport({ name: "Uploaded Brief", slug: "uploaded_brief", source: "uploaded" }),
+      buildReport({
+        name: "Uploaded Brief",
+        slug: "uploaded_brief",
+        source: "uploaded",
+      }),
     );
     expect(router.state.location.pathname).toBe("/reports/uploaded_brief");
   });

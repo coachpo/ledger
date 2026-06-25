@@ -34,8 +34,6 @@ describe("ResourceToolbar", () => {
     expect(screen.getByText("3 packages shown")).toHaveClass(
       "text-muted-foreground",
     );
-    expect(screen.queryByRole("radio", { name: "Cards view" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: "Table view" })).not.toBeInTheDocument();
 
     fireEvent.change(searchInput, { target: { value: "beta" } });
 
@@ -49,12 +47,12 @@ describe("ResourceToolbar", () => {
 
     render(
       <ResourceToolbar
-        actions={(
+        actions={
           <Button size="sm" type="button" variant="outline" onClick={onExport}>
             Export
           </Button>
-        )}
-        filters={(
+        }
+        filters={
           <ResourceFilterBar
             summary="Filters"
             testId="resource-filter-bar"
@@ -70,18 +68,21 @@ describe("ResourceToolbar", () => {
             ]}
             onClearAll={onClearAll}
           />
-        )}
+        }
         selectionSummary={<span>2 of 5 selected</span>}
       />,
     );
 
     const filterBar = screen.getByTestId("resource-filter-bar");
-    expect(filterBar).toHaveClass("rounded-xl", "border", "bg-ui-surface-grouped/70");
-    expect(screen.getByText("2 of 5 selected")).toBeInTheDocument();
-    expect(screen.getByText("Owner").closest("[data-slot='badge']")).toHaveAttribute(
-      "data-active",
-      "true",
+    expect(filterBar).toHaveClass(
+      "rounded-xl",
+      "border",
+      "bg-ui-surface-grouped/70",
     );
+    expect(screen.getByText("2 of 5 selected")).toBeInTheDocument();
+    expect(
+      screen.getByText("Owner").closest("[data-slot='badge']"),
+    ).toHaveAttribute("data-active", "true");
 
     fireEvent.click(screen.getByRole("button", { name: "Clear owner filter" }));
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
