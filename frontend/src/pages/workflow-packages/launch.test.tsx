@@ -142,6 +142,7 @@ const launchRead: WorkflowPackageLaunchRead = {
   packageKey: "market_review_package",
   ready: true,
   warnings: [],
+  resolvedModelConnections: [],
   workflowKey: "market_review",
 };
 

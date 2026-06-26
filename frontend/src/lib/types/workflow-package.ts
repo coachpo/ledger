@@ -1,5 +1,5 @@
 import type { UnknownRecord } from "./common";
-import type { RunStatus } from "./run";
+import type { RunPackageResolvedModelConnectionRead, RunStatus } from "./run";
 
 export type WorkflowPackageManifestApiVersion = "signaldeck.workflowPackage/v1";
 export type WorkflowPackageManifestDiagnosticSeverity = "error" | "warning";
@@ -98,6 +98,7 @@ export interface WorkflowPackageLaunchRead {
   ready: boolean;
   blockingErrors: WorkflowPackageLaunchDiagnostic[];
   warnings: WorkflowPackageLaunchDiagnostic[];
+  resolvedModelConnections: RunPackageResolvedModelConnectionRead[];
 }
 
 export type WorkflowPackageRuntimeInputSlot = "history" | "preset";

@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import Field, field_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
+from app.schemas.model_connection import ModelConnectionRuntimeProfile
 from app.schemas.workflow_package_manifest import WorkflowPackageManifestDiagnostic
 
 _SECRET_BINDING_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
@@ -148,6 +149,7 @@ class WorkflowPackageLaunchRead(CamelModel):
     ready: bool
     blocking_errors: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[dict[str, Any]] = Field(default_factory=list)
+    resolved_model_connections: list[ModelConnectionRuntimeProfile] = Field(default_factory=list)
 
 
 class WorkflowPackageRuntimeInputStaleRead(CamelModel):

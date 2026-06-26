@@ -33,6 +33,7 @@ from app.schemas.workflow_package import (
 )
 from app.schemas.workflow_package_manifest import WorkflowPackageManifestDiagnostic
 from app.services.execution_providers import ExecutionProviderBundle
+from app.services.model_connection_resolution import ModelConnectionResolutionService
 from app.services.output_schema_compiler import OutputSchemaCompiler
 from app.services.run_input_validation import validate_run_input_payload
 from app.services.run_service import RunService
@@ -324,6 +325,15 @@ class WorkflowPackageService:
                 "ready": preflight.ready and not parameter_errors,
                 "blockingErrors": blocking_errors,
                 "warnings": preflight.warnings,
+                "resolvedModelConnections": [
+                    ModelConnectionResolutionService.resolve_package_model_binding(
+                        binding,
+                    ).model_dump(mode="json", by_alias=True)
+                    for binding in sorted(
+                        preflight.model_bindings.values(),
+                        key=lambda item: item.key,
+                    )
+                ],
             }
         )
 
