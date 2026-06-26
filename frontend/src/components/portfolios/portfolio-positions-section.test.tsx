@@ -1,5 +1,5 @@
 import type { ComponentProps, PropsWithChildren } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const createPositionMutateMock = vi.fn();
@@ -128,15 +128,15 @@ describe("PortfolioPositionsSection", () => {
       />,
     );
 
-    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
-    expect(screen.queryByText("NVDA")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-
-    expect(await screen.findByText("Page 2 of 2")).toBeInTheDocument();
     expect(screen.getByText("NVDA")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /record trading operation/i }));
+    const nvdaRow = screen.getByText("NVDA").closest("tr");
+    expect(nvdaRow).not.toBeNull();
+    if (!nvdaRow) {
+      throw new Error("Expected NVDA row");
+    }
+
+    fireEvent.click(within(nvdaRow).getByRole("button", { name: /record trading operation/i }));
 
     const symbolInput = await screen.findByLabelText("Symbol");
     expect(symbolInput).toHaveValue("NVDA");

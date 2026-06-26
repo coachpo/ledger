@@ -26,7 +26,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Run detail         | `detail.tsx`, `detail-sections/AGENTS.md`                             | progress cards, lineage diagrams, inspection panes, rerun dialog, invocation-specific fork dialog, trace linkage, final output, memory evidence, and per-agent accordions |
 | Fork/rerun helpers | `rerun-dialog.tsx`, `inspection-state.ts`, `detail-tabs.ts`            | root-parameter rerun modal plus URL-backed inspection-pane and tab state                                                                                                  |
 | Run hooks          | `../../hooks/use-runs.ts`                                             | list/detail queries, rerun draft/create hooks, fork draft/create hooks, and refetch intervals                                                                             |
-| Shared formatting  | `../../lib/format.ts`, `../platform-resource-shared.tsx`              | timestamps, badges, and JSON helpers                                                                                                                                      |
+| Shared formatting  | `../../lib/format.ts`                                                 | timestamps and JSON helpers                                                                                                                                               |
 | Route coverage     | `list.test.tsx`, `detail.test.tsx`, `detail-tabs.test.ts`, `detail-http-operations.test.tsx`, `detail-sections.exports.test.ts` | list polling, detail rendering, URL tab resolution, fork/rerun behavior, HTTP operation coverage, and detail-section export contract |
 
 ## CONVENTIONS

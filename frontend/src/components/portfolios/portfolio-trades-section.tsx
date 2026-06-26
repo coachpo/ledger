@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
 
 import { formatCurrency, formatDateTime, formatDecimal } from "@/lib/format";
@@ -9,6 +8,7 @@ import type { TradingOperationRead } from "@/lib/types/trading";
 
 import { ConsoleSection } from "@/components/shared/console-section";
 import { DataTable } from "@/components/shared/data-table";
+import type { DataTableColumn } from "@/components/shared/data-table";
 import { DataTableColumnHeader } from "@/components/shared/data-table-column-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,7 +51,7 @@ export function PortfolioTradesSection({
     () => [...operations].sort((left, right) => right.executedAt.localeCompare(left.executedAt)),
     [operations],
   );
-  const columns = useMemo<ColumnDef<TradingOperationRead>[]>(
+  const columns = useMemo<DataTableColumn<TradingOperationRead>[]>(
     () => [
       {
         accessorKey: "executedAt",

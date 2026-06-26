@@ -403,9 +403,7 @@ export function ScheduledTaskEditorPage() {
           <div className="flex flex-col gap-2">
             <Label id="schedule-at-local-time-label">Daily local time</Label>
             <ScheduleTimePicker
-              hourTestId="schedule-at-local-time-hour"
               label="Daily local time"
-              minuteTestId="schedule-at-local-time-minute"
               value={draft.atLocalTime}
               onChange={(atLocalTime) => updateDraft({ atLocalTime })}
             />
@@ -414,10 +412,8 @@ export function ScheduledTaskEditorPage() {
             <Label id="schedule-preview-scheduled-for-label">Preview scheduled for</Label>
             <ScheduleDateTimePicker
               clearLabel="Clear preview scheduled for"
-              hourTestId="schedule-preview-scheduled-for-hour"
               label="Preview scheduled for"
               labelId="schedule-preview-scheduled-for-label"
-              minuteTestId="schedule-preview-scheduled-for-minute"
               placeholder="Pick a date and time"
               triggerId="schedule-preview-scheduled-for-trigger"
               triggerTestId="schedule-preview-scheduled-for"

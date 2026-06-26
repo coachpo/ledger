@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -10,6 +9,7 @@ import type { BalanceRead, BalanceUpdateInput, BalanceWriteInput } from "@/lib/t
 
 import { ConsoleSection } from "@/components/shared/console-section";
 import { DataTable } from "@/components/shared/data-table";
+import type { DataTableColumn } from "@/components/shared/data-table";
 import { DataTableColumnHeader } from "@/components/shared/data-table-column-header";
 import { ResourceActionsMenu } from "@/components/shared/resource-actions-menu";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +39,7 @@ export function PortfolioBalancesSection({
     () => [...balances].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
     [balances],
   );
-  const columns = useMemo<ColumnDef<BalanceRead>[]>(
+  const columns = useMemo<DataTableColumn<BalanceRead>[]>(
     () => [
       {
         accessorKey: "label",

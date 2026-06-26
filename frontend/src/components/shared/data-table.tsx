@@ -1,24 +1,6 @@
-import { useState } from "react";
-import {
-  flexRender,
-  getCoreRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
-  type ColumnDef,
-  type PaginationState,
-  type Row,
-  type SortingState,
-} from "@tanstack/react-table";
+import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -31,16 +13,62 @@ import { cn } from "@/components/ui/utils";
 
 export type DataTableDensity = "comfortable" | "compact";
 
-type DataTableProps<TData, TValue> = {
+type DataTableSortDirection = "asc" | "desc";
+
+export type DataTableSortingState = {
+  desc: boolean;
+  id: string;
+}[];
+
+export type DataTableRow<TData> = {
+  index: number;
+  original: TData;
+};
+
+export type DataTableHeaderContext = {
+  column: DataTableColumnInstance;
+};
+
+export type DataTableCellContext<TData> = {
+  getValue: () => unknown;
+  row: DataTableRow<TData>;
+  value: unknown;
+};
+
+export type DataTableColumn<TData> = {
+  accessorFn?: (row: TData) => unknown;
+  accessorKey?: keyof TData & string;
+  cell?: (context: DataTableCellContext<TData>) => ReactNode;
+  enableSorting?: boolean;
+  header?:
+    | ReactNode
+    | ((context: DataTableHeaderContext) => ReactNode)
+    | string;
+  id?: string;
+};
+
+export type DataTableColumnInstance = {
+  getCanSort: () => boolean;
+  getIsSorted: () => false | DataTableSortDirection;
+  id: string;
+  toggleSorting: (desc?: boolean) => void;
+};
+
+type ResolvedColumn<TData> = {
+  id: string;
+  original: DataTableColumn<TData>;
+  canSort: boolean;
+  resolver: (row: TData) => unknown;
+};
+
+type DataTableProps<TData> = {
   className?: string;
-  columns: ColumnDef<TData, TValue>[];
+  columns: DataTableColumn<TData>[];
   data: TData[];
   density?: DataTableDensity;
   emptyMessage: string;
-  getRowTestId?: (row: Row<TData>) => string | undefined;
-  initialSorting?: SortingState;
-  initialPageSize?: number;
-  pageSizeOptions?: number[];
+  getRowTestId?: (row: DataTableRow<TData>) => string | undefined;
+  initialSorting?: DataTableSortingState;
   tableLabel?: string;
 };
 
@@ -56,7 +84,7 @@ const tableCellClassByDensity: Record<DataTableDensity, string> = {
   compact: "py-2 text-xs",
 };
 
-export function DataTable<TData, TValue>({
+export function DataTable<TData>({
   className,
   columns,
   data,
@@ -64,73 +92,153 @@ export function DataTable<TData, TValue>({
   emptyMessage,
   getRowTestId,
   initialSorting = [],
-  initialPageSize = 10,
-  pageSizeOptions = [10, 20, 50],
   tableLabel,
-}: DataTableProps<TData, TValue>) {
-  const [sorting, setSorting] = useState<SortingState>(initialSorting);
-  const [pagination, setPagination] = useState<PaginationState>({
-    pageIndex: 0,
-    pageSize: initialPageSize,
-  });
+}: DataTableProps<TData>) {
+  const [sorting, setSorting] = useState<DataTableSortingState>(initialSorting);
 
-  const table = useReactTable({
-    columns,
-    data,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    onPaginationChange: setPagination,
-    onSortingChange: setSorting,
-    state: {
-      pagination,
-      sorting,
+  const resolvedColumns = useMemo<ResolvedColumn<TData>[]>(() => {
+    return columns.map((column, index) => {
+      const accessorKey = column.accessorKey;
+
+      return {
+        canSort: column.enableSorting !== false && Boolean(accessorKey || column.accessorFn),
+        id: column.id ?? String(accessorKey ?? `column-${index}`),
+        original: column,
+        resolver: column.accessorFn
+          ? column.accessorFn
+          : accessorKey
+            ? (row: TData) => (row as Record<string, unknown>)[accessorKey]
+            : () => undefined,
+      };
+    });
+  }, [columns]);
+
+  const sortColumnInstance = (column: ResolvedColumn<TData>): DataTableColumnInstance => ({
+    getCanSort: () => column.canSort,
+    getIsSorted: () => {
+      if (!sorting.length || sorting[0].id !== column.id) {
+        return false;
+      }
+
+      return sorting[0].desc ? "desc" : "asc";
+    },
+    id: column.id,
+    toggleSorting: (desc = false) => {
+      setSorting((current) => {
+        if (!current.length || current[0].id !== column.id) {
+          return [{ desc, id: column.id }];
+        }
+
+        if (current[0].desc === desc) {
+          return [{ ...current[0], desc: !current[0].desc }];
+        }
+
+        return [{ ...current[0], desc }];
+      });
     },
   });
+
+  const sortedData = useMemo(() => {
+    const activeSorting = sorting[0];
+    if (!activeSorting) {
+      return data;
+    }
+
+    const activeColumn = resolvedColumns.find((column) => column.id === activeSorting.id);
+    if (!activeColumn || !activeColumn.canSort) {
+      return data;
+    }
+
+    const direction = activeSorting.desc ? -1 : 1;
+
+    return [...data].sort((left, right) => {
+      const leftValue = activeColumn.resolver(left);
+      const rightValue = activeColumn.resolver(right);
+
+      if (leftValue === rightValue) {
+        return 0;
+      }
+      if (leftValue == null) {
+        return 1 * direction;
+      }
+      if (rightValue == null) {
+        return -1 * direction;
+      }
+
+      if (typeof leftValue === "number" && typeof rightValue === "number") {
+        if (Number.isNaN(leftValue) && Number.isNaN(rightValue)) {
+          return 0;
+        }
+        if (Number.isNaN(leftValue)) {
+          return 1 * direction;
+        }
+        if (Number.isNaN(rightValue)) {
+          return -1 * direction;
+        }
+
+        return leftValue < rightValue ? -1 * direction : 1 * direction;
+      }
+
+      return String(leftValue).localeCompare(String(rightValue)) * direction;
+    });
+  }, [data, resolvedColumns, sorting]);
+  const rows = useMemo(
+    () =>
+      sortedData.map((rowData, rowIndex) => {
+        const row: DataTableRow<TData> = {
+          index: rowIndex,
+          original: rowData,
+        };
+
+        return (
+          <TableRow key={rowIndex} data-state={undefined} data-testid={getRowTestId?.(row)}>
+            {resolvedColumns.map((column) => {
+              const value = column.resolver(rowData);
+              const cell =
+                column.original.cell == null
+                  ? (value as ReactNode)
+                  : column.original.cell({
+                      getValue: () => value,
+                      row,
+                      value,
+                    });
+
+              return (
+                <TableCell
+                  className={tableCellClassByDensity[density]}
+                  key={`${column.id}-${rowIndex}`}
+                >
+                  {cell}
+                </TableCell>
+              );
+            })}
+          </TableRow>
+        );
+      }),
+    [resolvedColumns, sortedData, density, getRowTestId],
+  );
 
   return (
     <div className={cn("flex flex-col gap-4", className)}>
       <div className={tableContainerClassByDensity[density]}>
         <Table aria-label={tableLabel}>
           <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
+            <TableRow>
+              {resolvedColumns.map((column) => (
+                <TableHead key={column.id}>
+                  {typeof column.original.header === "function"
+                    ? column.original.header({ column: sortColumnInstance(column) })
+                    : column.original.header ?? null}
+                </TableHead>
+              ))}
+            </TableRow>
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() ? "selected" : undefined}
-                  data-testid={getRowTestId?.(row)}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      className={tableCellClassByDensity[density]}
-                      key={cell.id}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
+            {rows.length ? rows : (
               <TableRow>
                 <TableCell
                   className="h-28 text-center text-muted-foreground"
-                  colSpan={columns.length}
+                  colSpan={resolvedColumns.length}
                 >
                   {emptyMessage}
                 </TableCell>
@@ -138,55 +246,6 @@ export function DataTable<TData, TValue>({
             )}
           </TableBody>
         </Table>
-      </div>
-
-      <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/70 p-2 shadow-ui-xs sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Rows per page</span>
-            <Select
-              value={`${table.getState().pagination.pageSize}`}
-              onValueChange={(value) => {
-                table.setPageSize(Number(value));
-              }}
-            >
-              <SelectTrigger className="h-8 w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent side="top">
-                {pageSizeOptions.map((pageSize) => (
-                  <SelectItem key={pageSize} value={`${pageSize}`}>
-                    {pageSize} rows
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 sm:justify-end">
-          <p className="text-sm text-muted-foreground">
-            Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              disabled={!table.getCanPreviousPage()}
-              onClick={() => table.previousPage()}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              Previous
-            </Button>
-            <Button
-              disabled={!table.getCanNextPage()}
-              onClick={() => table.nextPage()}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              Next
-            </Button>
-          </div>
-        </div>
       </div>
     </div>
   );

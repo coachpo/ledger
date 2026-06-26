@@ -1470,9 +1470,7 @@ function ScheduleConfigurationEditor({
               >
                 <ScheduleTimePicker
                   disabled={controlDisabled}
-                  hourTestId="schedule-at-local-time-hour"
                   label="At local time"
-                  minuteTestId="schedule-at-local-time-minute"
                   value={draft.atLocalTime}
                   onChange={(atLocalTime) => updateDraft({ atLocalTime })}
                 />
@@ -1566,10 +1564,8 @@ function ScheduleConfigurationEditor({
           <ScheduleDateTimePicker
             clearLabel="Clear starts at date and time"
             disabled={controlDisabled}
-            hourTestId="schedule-starts-at-hour"
             label="Starts at"
             labelId="schedule-starts-at-label"
-            minuteTestId="schedule-starts-at-minute"
             placeholder="Pick a date and time"
             triggerId="schedule-starts-at"
             triggerTestId="schedule-starts-at-trigger"
@@ -1585,10 +1581,8 @@ function ScheduleConfigurationEditor({
           <ScheduleDateTimePicker
             clearLabel="Clear ends at date and time"
             disabled={controlDisabled}
-            hourTestId="schedule-ends-at-hour"
             label="Ends at"
             labelId="schedule-ends-at-label"
-            minuteTestId="schedule-ends-at-minute"
             placeholder="Pick a date and time"
             triggerId="schedule-ends-at"
             triggerTestId="schedule-ends-at-trigger"

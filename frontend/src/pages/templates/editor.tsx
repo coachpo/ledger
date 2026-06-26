@@ -23,7 +23,6 @@ import {
 } from "@/hooks/use-templates";
 import { useCompileReport } from "@/hooks/use-reports";
 import { useDebounce } from "@/hooks/use-debounce";
-import { formatMarkdown } from "@/lib/markdown-format";
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import {
   buildRuntimeInputs,
@@ -35,21 +34,17 @@ import {
 
 function TemplateEditorHeader({
   isEditing,
-  isFormatting,
   isGenerating,
   isSaving,
   onClose,
-  onFormat,
   onGenerateOpen,
   onSave,
   onTogglePlaceholders,
 }: {
   isEditing: boolean;
-  isFormatting: boolean;
   isGenerating: boolean;
   isSaving: boolean;
   onClose: () => void;
-  onFormat: () => void;
   onGenerateOpen: () => void;
   onSave: () => void;
   onTogglePlaceholders: () => void;
@@ -92,18 +87,6 @@ function TemplateEditorHeader({
               aria-label="Close editor"
             >
               <X className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5 px-3 text-sm"
-              onClick={onFormat}
-              disabled={isFormatting}
-            >
-              {isFormatting ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : null}
-              {isFormatting ? "Formatting" : "Format"}
             </Button>
             <Button
               variant="ghost"
@@ -163,7 +146,6 @@ export function TemplateEditorPage() {
 
   const [name, setName] = useState("");
   const [content, setContent] = useState("");
-  const [isFormatting, setIsFormatting] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [placeholdersOpen, setPlaceholdersOpen] = useState(true);
   const [runtimeInputsOpen, setRuntimeInputsOpen] = useState(false);
@@ -290,41 +272,6 @@ export function TemplateEditorPage() {
     );
   };
 
-  const handleFormat = async () => {
-    const selectionStart = textareaRef.current?.selectionStart ?? 0;
-    const selectionEnd = textareaRef.current?.selectionEnd ?? 0;
-    const currentContent = content;
-
-    setIsFormatting(true);
-
-    try {
-      const formattedContent = await formatMarkdown(currentContent);
-
-      setContent(formattedContent);
-
-      requestAnimationFrame(() => {
-        if (textareaRef.current) {
-          textareaRef.current.focus();
-          textareaRef.current.setSelectionRange(
-            Math.min(selectionStart, formattedContent.length),
-            Math.min(selectionEnd, formattedContent.length),
-          );
-        }
-      });
-
-      if (formattedContent === currentContent) {
-        toast.success("Markdown already formatted");
-        return;
-      }
-
-      toast.success("Markdown formatted");
-    } catch {
-      toast.error("Failed to format markdown");
-    } finally {
-      setIsFormatting(false);
-    }
-  };
-
   const addRuntimeInputRow = () => {
     setRuntimeInputsOpen(true);
     setRuntimeInputRows((rows) => [...rows, createRuntimeInputRow("template")]);
@@ -372,11 +319,9 @@ export function TemplateEditorPage() {
       contextBar={
         <TemplateEditorHeader
           isEditing={isEditing && Boolean(templateId)}
-          isFormatting={isFormatting}
           isGenerating={isGenerating}
           isSaving={isSaving}
           onClose={handleClose}
-          onFormat={() => void handleFormat()}
           onGenerateOpen={() => setGenerateOpen(true)}
           onSave={() => void handleSave()}
           onTogglePlaceholders={() => setPlaceholdersOpen((open) => !open)}

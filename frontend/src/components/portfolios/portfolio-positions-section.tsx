@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,6 +14,7 @@ import type { PositionRead, PositionUpdateInput, PositionWriteInput } from "@/li
 
 import { ConsoleSection } from "@/components/shared/console-section";
 import { DataTable } from "@/components/shared/data-table";
+import type { DataTableColumn } from "@/components/shared/data-table";
 import { DataTableColumnHeader } from "@/components/shared/data-table-column-header";
 import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { ResourceActionsMenu } from "@/components/shared/resource-actions-menu";
@@ -50,7 +50,7 @@ export function PortfolioPositionsSection({
     () => [...positions].sort((left, right) => left.symbol.localeCompare(right.symbol)),
     [positions],
   );
-  const columns = useMemo<ColumnDef<PositionWithMarketData>[]>(
+  const columns = useMemo<DataTableColumn<PositionWithMarketData>[]>(
     () => [
       {
         accessorKey: "symbol",

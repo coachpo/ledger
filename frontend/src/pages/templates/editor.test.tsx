@@ -37,10 +37,6 @@ vi.mock("@/hooks/use-debounce", () => ({
   useDebounce: <T,>(value: T) => value,
 }));
 
-vi.mock("@/lib/markdown-format", () => ({
-  formatMarkdown: vi.fn(),
-}));
-
 vi.mock("@/hooks/use-templates", () => ({
   useTemplate: (templateId?: string) => useTemplateMock(templateId),
   useTemplates: () => useTemplatesListMock(),

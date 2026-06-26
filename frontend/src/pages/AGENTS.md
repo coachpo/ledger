@@ -48,7 +48,6 @@ src/pages/
 ├── portfolios/                  # portfolio workspace routes
 ├── templates/                   # stored-template list/editor routes
 ├── reports/                     # report inventory and detail routes
-└── platform-resource-shared.tsx # shared route helper utilities for platform pages
 ```
 
 ## WHERE TO LOOK
@@ -65,7 +64,6 @@ src/pages/
 | Portfolio workspace          | `portfolios/AGENTS.md`, `../components/portfolios/AGENTS.md`                            | portfolio list/detail workspace                                                                             |
 | Template list/editor         | `templates/AGENTS.md`, `../components/templates/AGENTS.md`, `../hooks/use-templates.ts` | stored-template CRUD, inline compile preview, placeholder browser, and saved-template report generation     |
 | Report routes                | `reports/AGENTS.md`, `../hooks/use-reports.ts`, `../lib/report-grouping.ts`             | list/detail, upload/generate, markdown view/edit/download                                                   |
-| Shared platform page helpers | `platform-resource-shared.tsx`                                                          | common badges, JSON helpers, and small route-level utilities                                                |
 | UI/UX standards and page blueprints | `../../DESIGN.md`, `../components/shared/docs/README.md`                         | design-system source of truth, reusable component specs, examples, and migration guidance                   |
 
 ## GLOBAL ROUTE GUARDRAILS
@@ -87,7 +85,7 @@ src/pages/
 - Dashboard routes may use summary bands and singleton landing sections, but must keep the same semantic header across loading, ready, and error states.
 - Inventory routes, identified by route metadata archetype `inventory`, must use the `DESIGN.md` inventory-page pattern: `InventoryPageShell`, `PageContextBar`, `ResourceToolbar` for search/result summary/actions, optional `ResourceFilterBar`, `InventoryStatePanel`/`EmptyStatePanel`/`InlineStatePanel`, `ResourceTableFrame` or approved shared resource-list/card primitives, `ResourceSelectionCheckbox`/`ResourceBulkActionsBar`/`ConfirmDeleteDialog`/`ResourceActionsMenu` where selection/delete/actions exist, and `ResourceStatusBadge`/`ResourceStatusStrip` for statuses.
 - Inventory routes must not use `WorkspacePageShell`, route-local page wrappers, custom toolbar cards, custom filter cards, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
-- Non-inventory routes follow their `DESIGN.md` route shell: full-height editors/consoles use `WorkspacePageShell`, inspectable flows use `SplitInspectorLayout` or `SheetInspectorLayout`, and system-state routes remain narrow and contract-bound.
+- Non-inventory routes follow their `DESIGN.md` route shell: full-height editors/consoles use `WorkspacePageShell`, inspectable flows keep route-owned panels/dialogs, and system-state routes remain narrow and contract-bound.
 - Detail routes keep route identity and back navigation explicit. Use `text-xl font-semibold tracking-tight` for the route title, keep secondary actions before destructive or primary save actions, and do not truncate the entity identity.
 - Editor routes use metadata-owned `fullHeight` shell mode when they need split panes or persistent action bars. They must expose a labeled route shell, labeled inputs, save/cancel hierarchy, and mobile containment.
 - Console routes such as package launch, Scheduled Task detail, and run detail use metadata-owned `fullHeight` shell mode. Preserve evidence, preflight, backend progress/queue/readiness payloads, scheduled input previews, trace, payload, and fork/rerun controls with internal scrolling for wide data.

@@ -20,14 +20,14 @@ Replace repeated card rows with `ResourceRowCard` when the card represents a res
 
 Replace raw status spans with `ResourceStatusBadge` or `ResourceStatusStrip`.
 
-Replace ad-hoc bordered table wrappers with `ResourceTableFrame`, or replace custom TanStack table shells with `DataTable` when sorting and pagination are generic.
+Replace ad-hoc bordered table wrappers with `ResourceTableFrame`, or replace small custom sortable tables with `DataTable`.
 Replace local empty, warning, and error card markup with `InventoryStatePanel`, `EmptyStatePanel`, or `InlineStatePanel`.
 
 Replace create or edit dialog content scaffolding with `EntityDialogShell` when the flow has a form body and footer actions.
 
 Replace destructive confirmation dialogs with `ConfirmDeleteDialog`.
 
-Replace route-local split pane scaffolds with `SplitInspectorLayout` or `SheetInspectorLayout` when the route has a selected item and inspector content.
+Leave route-local inspector scaffolds alone unless a second route needs the same markup.
 
 ## What to leave route-owned
 
@@ -58,7 +58,7 @@ Leave feature-only widgets in their feature folder until they have a second real
 | New `space-y-*` stacks in shared UI | `flex flex-col gap-*` or `grid gap-*` | Keeps spacing explicit and easier to combine with responsive layouts. |
 | Local dialog content frame | `EntityDialogShell` | Parent still controls `Dialog` open state. |
 | Local destructive confirmation | `ConfirmDeleteDialog` | Parent still owns mutation state and post-delete cleanup. |
-| Local split pane with resize or inspector | `SplitInspectorLayout` or `SheetInspectorLayout` | Requires full-height route treatment when used as page structure. |
+| Local split pane with resize or inspector | Route-owned panel or dialog | Add shared layout only after repeated use. |
 ## Incremental migration order
 
 1. Confirm the route is live in `src/routes.ts` and has correct metadata in `src/routes.metadata.ts`.

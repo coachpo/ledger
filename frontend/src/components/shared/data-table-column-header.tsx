@@ -1,4 +1,4 @@
-import type { Column } from "@tanstack/react-table";
+import type { DataTableColumnInstance } from "./data-table";
 import { useId } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 
@@ -7,9 +7,9 @@ import { cn } from "@/components/ui/utils";
 
 export type DataTableColumnHeaderDensity = "comfortable" | "compact";
 
-type DataTableColumnHeaderProps<TData, TValue> = {
+type DataTableColumnHeaderProps = {
   className?: string;
-  column: Column<TData, TValue>;
+  column: DataTableColumnInstance;
   density?: DataTableColumnHeaderDensity;
   title: string;
 };
@@ -19,12 +19,12 @@ const headerClassByDensity: Record<DataTableColumnHeaderDensity, string> = {
   compact: "-ml-2 h-8 px-2 text-xs font-medium",
 };
 
-export function DataTableColumnHeader<TData, TValue>({
+export function DataTableColumnHeader({
   className,
   column,
   density = "comfortable",
   title,
-}: DataTableColumnHeaderProps<TData, TValue>) {
+}: DataTableColumnHeaderProps) {
   const titleId = useId();
 
   if (!column.getCanSort()) {

@@ -149,7 +149,7 @@ function MultilineStringValue({
       {enableMarkdownStringPreview ? (
         <TabsContent value="markdown">
           <div
-            className="prose prose-sm dark:prose-invert max-w-none overflow-x-auto rounded-md bg-background px-3 py-2 [&_pre]:overflow-x-auto"
+            className="markdown-preview compact max-w-none overflow-x-auto rounded-md bg-background px-3 py-2"
             data-structured-string-view="markdown"
           >
             <Markdown

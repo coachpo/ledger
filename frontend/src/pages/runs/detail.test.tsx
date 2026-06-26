@@ -79,170 +79,6 @@ vi.mock("./detail-sections", async (importOriginal) => {
   };
 });
 
-vi.mock("@xyflow/react", () => ({
-  applyNodeChanges: (
-    changes: Array<{
-      id: string;
-      position?: { x: number; y: number };
-      type: string;
-    }>,
-    nodes: Array<{ id: string; position?: { x: number; y: number } }>,
-  ) =>
-    nodes.map((node) => {
-      const positionChange = changes.find(
-        (change) => change.id === node.id && change.type === "position",
-      );
-      return positionChange?.position
-        ? { ...node, position: positionChange.position }
-        : node;
-    }),
-  Background: () => <div data-testid="mock-react-flow-background" />,
-  BackgroundVariant: { Dots: "dots" },
-  Handle: () => <span data-testid="mock-react-flow-handle" />,
-  MarkerType: { ArrowClosed: "arrowclosed" },
-  Position: { Left: "left", Right: "right" },
-  ReactFlow: ({
-    autoPanOnNodeDrag,
-    children,
-    connectOnClick,
-    edges = [],
-    edgesFocusable,
-    elementsSelectable,
-    fitViewOptions,
-    maxZoom,
-    minZoom,
-    nodes = [],
-    nodesConnectable,
-    nodesDraggable,
-    nodesFocusable,
-    onNodesChange,
-    onViewportChange,
-    panOnDrag,
-    preventScrolling,
-    selectNodesOnDrag,
-    viewport,
-    zoomOnDoubleClick,
-    zoomOnPinch,
-    zoomOnScroll,
-  }: {
-    autoPanOnNodeDrag?: boolean;
-    children?: ReactNode;
-    connectOnClick?: boolean;
-    edges?: Array<{ id: string; label?: ReactNode }>;
-    edgesFocusable?: boolean;
-    elementsSelectable?: boolean;
-    fitViewOptions?: { maxZoom?: number; padding?: number };
-    maxZoom?: number;
-    minZoom?: number;
-    nodes?: Array<{
-      data: {
-        details: Array<{ label: string; value: ReactNode }>;
-        eyebrow: string;
-        testId: string;
-        title: ReactNode;
-      };
-      id: string;
-      position?: { x: number; y: number };
-    }>;
-    nodesConnectable?: boolean;
-    nodesDraggable?: boolean;
-    nodesFocusable?: boolean;
-    onNodesChange?: (
-      changes: Array<{
-        id: string;
-        position?: { x: number; y: number };
-        type: string;
-      }>,
-    ) => void;
-    onViewportChange?: (viewport: {
-      x: number;
-      y: number;
-      zoom: number;
-    }) => void;
-    panOnDrag?: boolean;
-    preventScrolling?: boolean;
-    selectNodesOnDrag?: boolean;
-    viewport?: { x: number; y: number; zoom: number };
-    zoomOnDoubleClick?: boolean;
-    zoomOnPinch?: boolean;
-    zoomOnScroll?: boolean;
-  }) => (
-    <div
-      data-auto-pan-on-node-drag={String(autoPanOnNodeDrag)}
-      data-connect-on-click={String(connectOnClick)}
-      data-edges-focusable={String(edgesFocusable)}
-      data-elements-selectable={String(elementsSelectable)}
-      data-fit-view-max-zoom={String(fitViewOptions?.maxZoom)}
-      data-has-on-nodes-change={String(typeof onNodesChange === "function")}
-      data-has-on-viewport-change={String(
-        typeof onViewportChange === "function",
-      )}
-      data-max-zoom={String(maxZoom)}
-      data-min-zoom={String(minZoom)}
-      data-nodes-connectable={String(nodesConnectable)}
-      data-nodes-draggable={String(nodesDraggable)}
-      data-nodes-focusable={String(nodesFocusable)}
-      data-pan-on-drag={String(panOnDrag)}
-      data-prevent-scrolling={String(preventScrolling)}
-      data-select-nodes-on-drag={String(selectNodesOnDrag)}
-      data-testid="mock-react-flow"
-      data-viewport-zoom={String(viewport?.zoom)}
-      data-zoom-on-double-click={String(zoomOnDoubleClick)}
-      data-zoom-on-pinch={String(zoomOnPinch)}
-      data-zoom-on-scroll={String(zoomOnScroll)}
-    >
-      <button
-        aria-label="mock drag first lineage node"
-        data-testid="mock-react-flow-drag-first-node"
-        onClick={() => {
-          const firstNode = nodes[0];
-          if (firstNode) {
-            onNodesChange?.([
-              {
-                id: firstNode.id,
-                position: { x: 123, y: 45 },
-                type: "position",
-              },
-            ]);
-          }
-        }}
-        type="button"
-      />
-      <button
-        aria-label="mock zoom lineage viewport"
-        data-testid="mock-react-flow-zoom-viewport"
-        onClick={() => onViewportChange?.({ x: 0, y: 0, zoom: 1.25 })}
-        type="button"
-      />
-      {nodes.map((node) => (
-        <div
-          data-node-x={String(node.position?.x)}
-          data-node-y={String(node.position?.y)}
-          data-testid={node.data.testId}
-          key={node.id}
-        >
-          <p>{node.data.eyebrow}</p>
-          <p>{node.data.title}</p>
-          <dl>
-            {node.data.details.map((item) => (
-              <div key={item.label}>
-                <dt>{item.label}</dt>
-                <dd>{item.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      ))}
-      {edges.map((edge) => (
-        <p data-testid={`mock-react-flow-edge-${edge.id}`} key={edge.id}>
-          {edge.label}
-        </p>
-      ))}
-      {children}
-    </div>
-  ),
-}));
-
 const NOW = "2026-04-20T10:00:00Z";
 const CONTENT_VISIBILITY_AUTO_CLASS = "[content-visibility:auto]";
 const RUNTIME_DEFERRED_SECTION_SIZE_CLASS =
@@ -705,24 +541,8 @@ function forkDraftQueryResult(data: RunForkDraftRead | undefined = undefined) {
   return draftQueryResult(data);
 }
 
-function expectDraggableZoomableLineageContract(flow: HTMLElement) {
-  expect(flow).toHaveAttribute("data-nodes-draggable", "true");
-  expect(flow).toHaveAttribute("data-has-on-nodes-change", "true");
-  expect(flow).toHaveAttribute("data-has-on-viewport-change", "true");
-  expect(flow).toHaveAttribute("data-zoom-on-double-click", "true");
-  expect(flow).toHaveAttribute("data-zoom-on-pinch", "true");
-  expect(flow).toHaveAttribute("data-zoom-on-scroll", "true");
-  expect(flow).toHaveAttribute("data-prevent-scrolling", "true");
-  expect(flow).toHaveAttribute("data-fit-view-max-zoom", "1");
-  expect(flow).toHaveAttribute("data-max-zoom", "1.8");
-  expect(flow).toHaveAttribute("data-auto-pan-on-node-drag", "false");
-  expect(flow).toHaveAttribute("data-connect-on-click", "false");
-  expect(flow).toHaveAttribute("data-edges-focusable", "false");
-  expect(flow).toHaveAttribute("data-elements-selectable", "false");
-  expect(flow).toHaveAttribute("data-nodes-connectable", "false");
-  expect(flow).toHaveAttribute("data-nodes-focusable", "false");
-  expect(flow).toHaveAttribute("data-pan-on-drag", "false");
-  expect(flow).toHaveAttribute("data-select-nodes-on-drag", "false");
+function expectStaticLineageDiagramContract(diagram: HTMLElement) {
+  expect(diagram).toHaveClass("h-80");
 }
 
 function applyLatestSearchParamsUpdate(currentSearch: string) {
@@ -2324,10 +2144,7 @@ describe("RunsDetailPage", () => {
       "runs-step-1-lineage-diagram",
     );
     expect(stepLineageDiagram).toBeInTheDocument();
-    expect(stepLineageDiagram).toHaveClass("h-80");
-    expectDraggableZoomableLineageContract(
-      within(stepLineageDiagram).getByTestId("mock-react-flow"),
-    );
+    expectStaticLineageDiagramContract(stepLineageDiagram);
     expect(
       within(stepLineage).getByTestId("runs-step-1-lineage-node-source"),
     ).toHaveTextContent(/source run/i);
@@ -2353,7 +2170,7 @@ describe("RunsDetailPage", () => {
     ).toHaveTextContent(/copied/i);
     expect(
       within(stepLineageDiagram).getByTestId(
-        "mock-react-flow-edge-source-current",
+        "lineage-edge-source-current",
       ),
     ).toHaveTextContent(/provenance/i);
 
@@ -2387,24 +2204,13 @@ describe("RunsDetailPage", () => {
     const runLineageDiagram = within(lineage).getByTestId(
       "runs-lineage-diagram",
     );
-    expect(runLineageDiagram).toBeInTheDocument();
-    expect(runLineageDiagram).toHaveClass("h-80");
-    const runLineageFlow =
-      within(runLineageDiagram).getByTestId("mock-react-flow");
-    expectDraggableZoomableLineageContract(runLineageFlow);
-    fireEvent.click(
-      within(runLineageFlow).getByTestId("mock-react-flow-drag-first-node"),
-    );
+    expectStaticLineageDiagramContract(runLineageDiagram);
     expect(
       within(lineage).getByTestId("runs-lineage-node-root"),
-    ).toHaveAttribute("data-node-x", "123");
+    ).toHaveAttribute("data-node-x", "0");
     expect(
       within(lineage).getByTestId("runs-lineage-node-root"),
-    ).toHaveAttribute("data-node-y", "45");
-    fireEvent.click(
-      within(runLineageFlow).getByTestId("mock-react-flow-zoom-viewport"),
-    );
-    expect(runLineageFlow).toHaveAttribute("data-viewport-zoom", "1.25");
+    ).toHaveAttribute("data-node-y", "24");
     expect(
       within(lineage).getByTestId("runs-lineage-node-root"),
     ).toHaveTextContent(/lineage root/i);
@@ -2439,11 +2245,11 @@ describe("RunsDetailPage", () => {
       within(lineage).getByTestId("runs-lineage-node-current"),
     ).toHaveTextContent(/1 copied · 1 planned\/executed/i);
     expect(
-      within(runLineageDiagram).getByTestId("mock-react-flow-edge-root-source"),
+      within(runLineageDiagram).getByTestId("lineage-edge-root-source"),
     ).toHaveTextContent(/lineage root/i);
     expect(
       within(runLineageDiagram).getByTestId(
-        "mock-react-flow-edge-source-current",
+        "lineage-edge-source-current",
       ),
     ).toHaveTextContent(/historical lineage \/ resume/i);
 
@@ -2885,10 +2691,7 @@ describe("RunsDetailPage", () => {
     const stepLineageDiagram = within(stepLineage).getByTestId(
       "runs-step-1-lineage-diagram",
     );
-    expect(stepLineageDiagram).toHaveClass("h-80");
-    expectDraggableZoomableLineageContract(
-      within(stepLineageDiagram).getByTestId("mock-react-flow"),
-    );
+    expectStaticLineageDiagramContract(stepLineageDiagram);
     expect(
       within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
     ).toHaveTextContent(/origin/i);
@@ -2912,7 +2715,7 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
     expect(
       within(stepLineageDiagram).queryByTestId(
-        "mock-react-flow-edge-source-current",
+        "lineage-edge-source-current",
       ),
     ).not.toBeInTheDocument();
   });

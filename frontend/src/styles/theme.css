@@ -313,3 +313,49 @@
     }
   }
 }
+
+@layer components {
+  .report-markdown {
+    @apply text-sm leading-7 text-foreground;
+  }
+
+  .report-markdown :where(p) {
+    @apply max-w-full whitespace-normal;
+  }
+
+  .report-markdown :where(ul, ol) {
+    @apply my-2 ml-5 list-disc space-y-1;
+  }
+
+  .report-markdown :where(pre) {
+    @apply max-w-full overflow-x-auto rounded-md bg-black/5 p-3;
+  }
+
+  .dark .report-markdown :where(pre) {
+    @apply bg-white/[0.06];
+  }
+
+  .report-markdown :where(table) {
+    @apply block w-full max-w-full overflow-x-auto;
+  }
+
+  .report-markdown :where(th, td) {
+    @apply break-words border border-border/80 px-3 py-2 text-left;
+  }
+
+  .markdown-preview {
+    @apply text-sm leading-7 text-foreground;
+  }
+
+  .markdown-preview :where(pre) {
+    @apply max-w-full overflow-x-auto rounded-md bg-black/5 p-3;
+  }
+
+  .dark .markdown-preview :where(pre) {
+    @apply bg-white/[0.06];
+  }
+
+  .markdown-preview :where(a) {
+    @apply text-primary underline-offset-2 hover:underline;
+  }
+}

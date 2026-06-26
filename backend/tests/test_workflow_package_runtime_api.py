@@ -111,8 +111,6 @@ _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
 )
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
 _DIGITAL_ORACLE_PRESET_KEY = "digital_oracle_researcher"
-_TRADINGAGENTS_MACRO_PRESET_KEY = "tradingagents_advisory_research_macro"
-_TRADINGAGENTS_MIXED_SIGNALS_PRESET_KEY = "tradingagents_advisory_research_mixed_signals"
 _TRADINGAGENTS_FIXTURE = (
     Path(__file__).resolve().parent
     / "fixtures"
@@ -121,14 +119,6 @@ _TRADINGAGENTS_FIXTURE = (
 )
 _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
     Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
-)
-_TRADINGAGENTS_MACRO_FIXTURE = (
-    Path(__file__).resolve().parents[2] / "demo" / "tradingagents_advisory_research_macro.yaml"
-)
-_TRADINGAGENTS_MIXED_SIGNALS_FIXTURE = (
-    Path(__file__).resolve().parents[2]
-    / "demo"
-    / "tradingagents_advisory_research_mixed_signals.yaml"
 )
 _TRADINGAGENTS_CANONICAL_SCHEDULES = (
     ("TradingAgents Advisory Research · 1h", "advisory_research"),
@@ -904,22 +894,6 @@ def _seeded_digital_oracle_package(client: TestClient) -> dict[str, Any]:
     )
 
 
-def _seeded_tradingagents_macro_package(client: TestClient) -> dict[str, Any]:
-    return _create_canonical_fixture_package(
-        client,
-        package_key=_TRADINGAGENTS_MACRO_PRESET_KEY,
-        fixture=_TRADINGAGENTS_MACRO_FIXTURE,
-    )
-
-
-def _seeded_tradingagents_mixed_signals_package(client: TestClient) -> dict[str, Any]:
-    return _create_canonical_fixture_package(
-        client,
-        package_key=_TRADINGAGENTS_MIXED_SIGNALS_PRESET_KEY,
-        fixture=_TRADINGAGENTS_MIXED_SIGNALS_FIXTURE,
-    )
-
-
 def _create_tradingagents_canonical_schedules(
     session_factory: sessionmaker[Session],
     *,
@@ -1334,88 +1308,6 @@ def test_seeded_digital_oracle_launch_persists_question_input(
         assert snapshot.workflow_package_key == _DIGITAL_ORACLE_PRESET_KEY
         assert snapshot.workflow_key == "research"
         assert snapshot.launch_parameters == parameters
-
-
-def test_macro_and_mixed_signal_launch_snapshots_keep_private_operations_package_local(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(
-        session_factory,
-        key="tradingagents_primary_model",
-        name="TradingAgents Primary Model",
-        description="TradingAgents preset model binding.",
-    )
-    package_builders = (
-        (_seeded_tradingagents_macro_package, _TRADINGAGENTS_MACRO_PRESET_KEY, False),
-        (
-            _seeded_tradingagents_mixed_signals_package,
-            _TRADINGAGENTS_MIXED_SIGNALS_PRESET_KEY,
-            True,
-        ),
-    )
-
-    for package_builder, package_key, expect_prediction_market in package_builders:
-        package = package_builder(client)
-        _bind_package_secret(client, int(package["id"]), "fred_api_key")
-        launch = client.post(
-            f"/api/workflow-packages/{package['id']}/launches",
-            json={
-                "workflowKey": "advisory_research",
-                "parameters": {
-                    "ticker": "AAPL",
-                    "asOfDate": "2026-05-08",
-                    "horizonDays": 30,
-                    "benchmarkSymbol": "SPY",
-                },
-            },
-        )
-        assert launch.status_code == 201, launch.json()
-        run_id = int(launch.json()["id"])
-
-        with session_factory() as session:
-            snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
-            assert snapshot is not None
-            assert snapshot.workflow_package_key == package_key
-            package_definition = cast(dict[str, Any], snapshot.package_definition)
-            compiled_plan = cast(dict[str, Any], snapshot.compiled_plan)
-            spec = cast(dict[str, Any], package_definition["spec"])
-            mcp_servers = cast(list[dict[str, Any]], spec["mcpServers"])
-            workflow = cast(list[dict[str, Any]], compiled_plan["workflows"])[0]
-            operation_ids = {
-                str(operation["operationKey"])
-                for step in cast(list[dict[str, Any]], workflow["steps"])
-                for operation in cast(list[dict[str, Any]], step.get("operations", []))
-            }
-            serialized_snapshot = json.dumps(
-                {
-                    "packageDefinition": package_definition,
-                    "compiledPlan": compiled_plan,
-                    "extensionDependencies": snapshot.extension_dependencies,
-                },
-                sort_keys=True,
-            )
-        assert mcp_servers[0]["key"] == "web_research"
-        assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
-        private_macro_operation_ids = {
-            "fred_fedfunds_observations",
-            "fred_unrate_observations",
-            "fred_cpiaucsl_observations",
-            "fred_t10y2y_observations",
-            "treasury_rates_snapshot_json",
-        }
-        if expect_prediction_market:
-            assert private_macro_operation_ids.isdisjoint(operation_ids)
-            assert "signaldeck.digital_oracle.macro_rates.lookup" in serialized_snapshot
-        else:
-            assert private_macro_operation_ids <= operation_ids
-            assert "signaldeck.digital_oracle.macro_rates.lookup" not in serialized_snapshot
-        assert "mcp.packagePrivate.web_search_exa" in serialized_snapshot
-        assert ("signaldeck.digital_oracle.prediction_markets.lookup" in serialized_snapshot) is (
-            expect_prediction_market
-        )
-        assert "signaldeck.digital_oracle.sec_filings.lookup" not in serialized_snapshot
-        assert "signaldeck.digital_oracle.market_sentiment.lookup" not in serialized_snapshot
 
 
 def test_seeded_digital_oracle_launch_records_parameters_and_expected_tools(

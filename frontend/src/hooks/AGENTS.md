@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/hooks/`.
 
 ## OVERVIEW
-`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, Extensions, Workflow Packages, Scheduled Tasks, extension-filtered read-only Tools metadata for package authoring, Model Connections, Memory, Runs, plus lightweight route-shell UI state helpers for inventory filters, table selection, split-inspector panes, and one small debounce helper.
+`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, Extensions, Workflow Packages, Scheduled Tasks, extension-filtered read-only Tools metadata for package authoring, Model Connections, Memory, Runs, plus lightweight route-shell UI state helpers for inventory filters, table selection, and one small debounce helper.
 
 Extension model: statically resident extension state flows.
 
@@ -37,8 +37,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Run flows | `use-runs.ts` | run list/detail reads with package provenance, backend progress/queue payloads, active queued/running polling, plus rerun/fork drafts and create mutations |
 | Resource filter state | `use-resource-filter-state.ts` | labeled search/filter text and derived filter helpers for shared inventory shells |
 | Resource selection state | `use-resource-selection-state.ts` | table-only selection, select-all, clear, and scoped bulk-action state |
-| Split inspector state | `use-split-inspector-state.ts` | workspace/run-detail inspector open state for shared split-pane layouts |
-| Hook test hotspots | `use-workflow-packages.test.ts`, `use-scheduled-tasks.test.ts`, `use-model-connections.test.ts`, `use-runs.test.ts`, `use-resource-filter-state.test.ts`, `use-resource-selection-state.test.ts`, `use-split-inspector-state.test.ts` | focused cache, mutation, and shared route-shell state coverage |
+| Hook test hotspots | `use-workflow-packages.test.ts`, `use-scheduled-tasks.test.ts`, `use-model-connections.test.ts`, `use-runs.test.ts`, `use-resource-filter-state.test.ts`, `use-resource-selection-state.test.ts` | focused cache, mutation, and shared route-shell state coverage |
 | Generic timing helper | `use-debounce.ts` | small debounce helper used by the template editor |
 
 ## CONVENTIONS

@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/lib/`.
 
 ## OVERVIEW
-`src/lib/` owns the frontend API contract, query-key naming, derived portfolio analytics, formatting helpers, markdown formatting, report grouping helpers, runtime-input row helpers, and shared type definitions for portfolios, market data, templates, reports, extensions, Memory, Scheduled Tasks, and the current agent-platform domains.
+`src/lib/` owns the frontend API contract, query-key naming, derived portfolio analytics, formatting helpers, report grouping helpers, runtime-input row helpers, and shared type definitions for portfolios, market data, templates, reports, extensions, Memory, Scheduled Tasks, and the current agent-platform domains.
 
 Extension model: statically resident extension state.
 
@@ -33,12 +33,11 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Query key factory | `query-keys.ts` | hierarchical keys, param normalization, and preserved-product plus platform/extension cache namespaces |
 | Portfolio analytics | `portfolio-analytics.ts` | quote enrichment, market value, PnL, allocation |
 | Display formatting | `format.ts` | currency, decimal, percent, date/datetime, compact numbers |
-| Markdown formatting | `markdown-format.ts` | Prettier-backed markdown normalization for the template editor |
 | Runtime input helpers | `runtime-inputs.ts` | row ids, row-to-map conversion, shared editor/report-generation helpers |
 | Workflow option helpers | `workflow-options.ts` | visible fallback option when a saved selection is missing from package workflows |
 | Platform authoring helpers | `platform-authoring/AGENTS.md` | schema/value/ref/package manifest IR, codecs, factories, validation |
 | Report grouping | `report-grouping.ts` | report list filtering, grouping, and sort helpers |
-| Unit coverage | `api.test.ts`, `api/schedules.test.ts`, `query-keys.test.ts`, `portfolio-analytics.test.ts`, `format.test.ts`, `markdown-format.test.ts` | contract and helper regressions |
+| Unit coverage | `api.test.ts`, `api/schedules.test.ts`, `query-keys.test.ts`, `portfolio-analytics.test.ts`, `format.test.ts` | contract and helper regressions |
 
 ## CONVENTIONS
 - `api-client.ts` is the only place that should know the base URL, query-string encoding, and error-envelope parsing.
@@ -76,7 +75,6 @@ pnpm build
 
 ## NOTES
 - Route code should import direct modules from `api/*` and `types/*` instead of relying on barrel re-exports.
-- `markdown-format.ts` centralizes Prettier-based markdown cleanup so the template editor does not embed formatter setup inline.
 - `runtime-inputs.ts` is shared by `TemplateEditorPage` and `GenerateReportDialog`; keep those flows aligned when changing row semantics.
 - Current unit tests in this folder are helper/API focused; routed and feature-heavy behavior is covered primarily by Playwright and targeted page tests.
 - `portfolio-analytics.ts` is where quote-enriched position math belongs, not in routed screens.

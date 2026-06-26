@@ -141,39 +141,6 @@ export function ExampleEditorPage() {
 
 Keep editor forms route-owned. The shared shell should not know query keys, route params, API modules, or toast messages.
 
-## Split inspector page
-
-Use this for inventory plus selected detail, run evidence panes, or package resource browsers.
-
-```tsx
-import { SplitInspectorLayout } from "@/components/shared/split-inspector-layout";
-import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
-```
-```tsx
-export function ExampleInspectorPage({ selectedId }: { selectedId?: string }) {
-  const selected = selectedId ? getResource(selectedId) : null;
-
-  return (
-    <SplitInspectorLayout
-      leftPane={<ResourceList selectedId={selectedId} />}
-      leftPaneAriaLabel="Resources"
-      inspectorAriaLabel="Resource inspector"
-      inspectorTitle={selected?.name ?? "No resource selected"}
-      inspectorOpen={Boolean(selected)}
-      emptyInspector={
-        <InventoryStatePanel
-          title="Select a resource"
-          description="Choose a row to inspect details and activity."
-        />
-      }
-      tabs={selected ? [
-        { value: "summary", label: "Summary", content: <ResourceSummary resource={selected} /> },
-        { value: "events", label: "Events", content: <ResourceEvents id={selected.id} /> },
-      ] : undefined}
-    />
-  );
-}
-```
 ## Dialog and form flow
 
 Use `EntityDialogShell` inside shadcn `Dialog` for create or edit flows. Keep dialog open state and submit behavior in the route or owning component.

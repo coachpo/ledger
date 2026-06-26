@@ -10,8 +10,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SQL_SEED_PATHS = (
     _REPO_ROOT / "backend" / "app" / "db" / "tradingagents_advisory_research.sql",
     _REPO_ROOT / "backend" / "app" / "db" / "digital_oracle_researcher.sql",
-    _REPO_ROOT / "backend" / "app" / "db" / "tradingagents_advisory_research_macro.sql",
-    _REPO_ROOT / "backend" / "app" / "db" / "tradingagents_advisory_research_mixed_signals.sql",
 )
 _DEMO_PRESET_OWNER_EXPECTATIONS = (
     {
@@ -37,42 +35,6 @@ _DEMO_PRESET_OWNER_EXPECTATIONS = (
         "sql_seed_path": _REPO_ROOT / "backend" / "app" / "db" / "digital_oracle_researcher.sql",
         "allowed_tool_prefixes": ("signaldeck.digital_oracle.",),
         "forbidden_tool_keys": (),
-    },
-    {
-        "name": "TradingAgents macro demo preset",
-        "manifest_path": _REPO_ROOT / "demo" / "tradingagents_advisory_research_macro.yaml",
-        "sql_seed_path": (
-            _REPO_ROOT / "backend" / "app" / "db" / "tradingagents_advisory_research_macro.sql"
-        ),
-        "allowed_tool_prefixes": ("signaldeck.finance.",),
-        "forbidden_tool_keys": (
-            "signaldeck.digital_oracle.crypto_derivatives.lookup",
-            "signaldeck.digital_oracle.cftc_positioning.lookup",
-            "signaldeck.digital_oracle.macro_rates.lookup",
-            "signaldeck.digital_oracle.market_sentiment.lookup",
-            "signaldeck.digital_oracle.options.lookup",
-            "signaldeck.digital_oracle.prediction_markets.lookup",
-            "signaldeck.digital_oracle.sec_filings.lookup",
-        ),
-    },
-    {
-        "name": "TradingAgents mixed-signals demo preset",
-        "manifest_path": _REPO_ROOT / "demo" / "tradingagents_advisory_research_mixed_signals.yaml",
-        "sql_seed_path": (
-            _REPO_ROOT
-            / "backend"
-            / "app"
-            / "db"
-            / "tradingagents_advisory_research_mixed_signals.sql"
-        ),
-        "allowed_tool_prefixes": ("signaldeck.finance.", "signaldeck.digital_oracle."),
-        "forbidden_tool_keys": (
-            "signaldeck.digital_oracle.crypto_derivatives.lookup",
-            "signaldeck.digital_oracle.cftc_positioning.lookup",
-            "signaldeck.digital_oracle.sec_filings.lookup",
-            "signaldeck.digital_oracle.market_sentiment.lookup",
-            "signaldeck.digital_oracle.options.lookup",
-        ),
     },
 )
 _SQL_BASE64_DECODE_RE: re.Pattern[str] = re.compile(
@@ -103,32 +65,11 @@ _DIGITAL_ORACLE_PHASE1_NATIVE_TOOL_KEYS = {
     "signaldeck.digital_oracle.prediction_markets.lookup",
     "signaldeck.digital_oracle.sec_filings.lookup",
 }
-_MACRO_PRIVATE_HTTP_OPERATION_IDS = {
-    "fred_cpiaucsl_observations",
-    "fred_fedfunds_observations",
-    "fred_t10y2y_observations",
-    "fred_unrate_observations",
-    "treasury_rates_snapshot_json",
-}
 _DEMO_SQL_PAYLOAD_EXPECTATIONS = {
     "tradingagents_advisory_research.sql": (
         _FINANCE_TOOL_KEYS,
         set(),
         {"signaldeck.finance"},
-    ),
-    "tradingagents_advisory_research_macro.sql": (
-        _FINANCE_TOOL_KEYS,
-        _MACRO_PRIVATE_HTTP_OPERATION_IDS,
-        {"signaldeck.finance"},
-    ),
-    "tradingagents_advisory_research_mixed_signals.sql": (
-        _FINANCE_TOOL_KEYS
-        | {
-            "signaldeck.digital_oracle.macro_rates.lookup",
-            "signaldeck.digital_oracle.prediction_markets.lookup",
-        },
-        set(),
-        {"signaldeck.digital_oracle", "signaldeck.finance"},
     ),
     "digital_oracle_researcher.sql": (
         _DIGITAL_ORACLE_PHASE1_NATIVE_TOOL_KEYS,

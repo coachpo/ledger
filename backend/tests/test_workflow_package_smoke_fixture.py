@@ -50,13 +50,6 @@ EXPECTED_TOOL_KEYS = {
     "signaldeck.finance.positions.lookup",
     "signaldeck.finance.reports.lookup",
 }
-EXPECTED_MACRO_AND_MIXED_HTTP_IDS = {
-    "fred_fedfunds_observations",
-    "fred_unrate_observations",
-    "fred_cpiaucsl_observations",
-    "fred_t10y2y_observations",
-    "treasury_rates_snapshot_json",
-}
 FORBIDDEN_EXPORT_FIELDS = {
     "secretPayload",
     "encrypted",
@@ -171,18 +164,6 @@ def test_tradingagents_fixture_declares_report_lookup_profile() -> None:
 def test_demo_fixture_variants_lock_tool_ownership_and_private_operations() -> None:
     expectations: dict[str, tuple[set[str], set[str]]] = {
         "tradingagents_advisory_research.yaml": (EXPECTED_TOOL_KEYS, set()),
-        "tradingagents_advisory_research_macro.yaml": (
-            EXPECTED_TOOL_KEYS,
-            EXPECTED_MACRO_AND_MIXED_HTTP_IDS,
-        ),
-        "tradingagents_advisory_research_mixed_signals.yaml": (
-            EXPECTED_TOOL_KEYS
-            | {
-                "signaldeck.digital_oracle.macro_rates.lookup",
-                "signaldeck.digital_oracle.prediction_markets.lookup",
-            },
-            set(),
-        ),
     }
 
     for filename, (expected_tool_keys, expected_http_ids) in expectations.items():
@@ -195,9 +176,5 @@ def test_demo_fixture_variants_lock_tool_ownership_and_private_operations() -> N
 
         assert _profile_tool_keys(package_definition) == expected_tool_keys
         assert expected_http_ids <= operation_ids
-        if filename == "tradingagents_advisory_research.yaml":
-            assert mcp_servers == []
-            assert not operation_ids
-        else:
-            assert mcp_servers[0]["key"] == "web_research"
-            assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
+        assert mcp_servers == []
+        assert not operation_ids

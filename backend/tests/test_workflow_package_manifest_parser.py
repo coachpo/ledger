@@ -11,14 +11,6 @@ from app.services.workflow_package_manifest_parser import parse_workflow_package
 _DIGITAL_ORACLE_RESEARCHER_DEMO = (
     Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
 )
-_TRADINGAGENTS_MACRO_DEMO = (
-    Path(__file__).resolve().parents[2] / "demo" / "tradingagents_advisory_research_macro.yaml"
-)
-_TRADINGAGENTS_MIXED_SIGNALS_DEMO = (
-    Path(__file__).resolve().parents[2]
-    / "demo"
-    / "tradingagents_advisory_research_mixed_signals.yaml"
-)
 
 
 def _valid_package_manifest_source() -> str:
@@ -228,21 +220,6 @@ spec:
 """
 
 
-def _flow_http_node_ids(node: dict[str, object]) -> list[str]:
-    ids: list[str] = []
-    if node.get("kind") == "http":
-        ids.append(str(node["id"]))
-    for child in cast(list[dict[str, object]], node.get("nodes", [])):
-        ids.extend(_flow_http_node_ids(child))
-    for branch in cast(list[dict[str, object]], node.get("branches", [])):
-        ids.extend(_flow_http_node_ids(cast(dict[str, object], branch["node"])))
-    body = node.get("body")
-    if isinstance(body, dict):
-        for child in cast(list[dict[str, object]], body.get("nodes", [])):
-            ids.extend(_flow_http_node_ids(child))
-    return ids
-
-
 def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     result = parse_workflow_package_manifest(_valid_package_manifest_source())
 
@@ -368,38 +345,6 @@ def test_parse_digital_oracle_demo_preserves_methodology_tools_and_graph() -> No
         "${{ nodes.sec_metadata_collect.outputs.sec_metadata }}"
     )
     assert output["from"] == "${{ nodes.synthesis.outputs.report }}"
-
-
-def test_parse_tradingagents_macro_and_mixed_variants_preserve_private_mcp_and_http() -> None:
-    for manifest_path, package_key in (
-        (_TRADINGAGENTS_MACRO_DEMO, "tradingagents_advisory_research_macro"),
-        (_TRADINGAGENTS_MIXED_SIGNALS_DEMO, "tradingagents_advisory_research_mixed_signals"),
-    ):
-        result = parse_workflow_package_manifest(manifest_path.read_text())
-
-        assert result.diagnostics == []
-        assert result.manifest is not None
-        dumped = result.manifest.model_dump(mode="json", by_alias=True)
-        spec = cast(dict[str, object], dumped["spec"])
-        assert cast(dict[str, object], dumped["metadata"])["key"] == package_key
-        mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
-        workflows = cast(list[dict[str, object]], spec["workflows"])
-        advisory_flow = cast(dict[str, object], workflows[0]["flow"])
-        http_node_ids = _flow_http_node_ids(advisory_flow)
-
-        assert mcp_servers[0]["key"] == "web_research"
-        assert mcp_servers[0]["transport"] == "http-sse"
-        assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
-        if package_key == "tradingagents_advisory_research_macro":
-            assert http_node_ids == [
-                "fred_fedfunds_observations",
-                "fred_unrate_observations",
-                "fred_cpiaucsl_observations",
-                "fred_t10y2y_observations",
-                "treasury_rates_snapshot_json",
-            ]
-        else:
-            assert http_node_ids == []
 
 
 def test_parse_rejects_package_schema_additional_properties_keyword() -> None:

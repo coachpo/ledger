@@ -24,8 +24,6 @@ _DEMO_ROOT = Path(__file__).resolve().parents[2] / "demo"
 _BUNDLED_PRESET_KEYS = {
     "tradingagents_advisory_research",
     "digital_oracle_researcher",
-    "tradingagents_advisory_research_macro",
-    "tradingagents_advisory_research_mixed_signals",
 }
 _EXPECTED_PACKAGE_TOOL_KEYS = {
     "signaldeck.finance.market_data.quote_lookup",
@@ -233,21 +231,21 @@ def test_validate_manifest_accepts_private_mcp_and_http_demo_variants(
     client: TestClient,
 ) -> None:
     expected_hashes = {
-        "digital_oracle_researcher": (
-            "9cdde0eaf311164747948b386c9901cd3a70c0ef981c8296e616c52e212ac0c4",
-            "1a997fe3f393bdef1db33473c7241683ecbba6e5f266b3bc1b1960c4e5ba5ea4",
-        ),
-        "tradingagents_advisory_research_macro": (
-            "09c79f75209be49c4745b548129df309c039d84894e3dc80e27d21eeae6812de",
-            "43cf2f6e2890e15ab1d943636d08471d9013aa1c8435cacea496da930ff50865",
-        ),
-        "tradingagents_advisory_research_mixed_signals": (
-            "6b5e54a5bd3fc62d99aa6bec8d0be839f548d232e3e610535da3bc0d083ba92f",
-            "59010485fc6eac23f94bb75777ae3fb3b920b5879738007f0dfd7ad58daa16fd",
-        ),
+        "tradingagents_advisory_research": {
+            "manifest_hash": compile_workflow_package_manifest(
+                _demo_source("tradingagents_advisory_research")
+            )["manifestHash"],
+            "compiled_hash": compile_workflow_package_manifest(
+                _demo_source("tradingagents_advisory_research")
+            )["compiledHash"],
+        },
+        "digital_oracle_researcher": {
+            "manifest_hash": "9cdde0eaf311164747948b386c9901cd3a70c0ef981c8296e616c52e212ac0c4",
+            "compiled_hash": "1a997fe3f393bdef1db33473c7241683ecbba6e5f266b3bc1b1960c4e5ba5ea4",
+        },
     }
 
-    for package_key, (manifest_hash, compiled_hash) in expected_hashes.items():
+    for package_key, expected in expected_hashes.items():
         response = client.post(
             "/api/workflow-packages/validate-manifest",
             json={"manifestSource": _demo_source(package_key)},
@@ -256,8 +254,8 @@ def test_validate_manifest_accepts_private_mcp_and_http_demo_variants(
         assert response.status_code == 200, response.json()
         body = cast(dict[str, object], response.json())
         assert body["diagnostics"] == []
-        assert body["manifestHash"] == manifest_hash
-        assert body["compiledHash"] == compiled_hash
+        assert body["manifestHash"] == expected["manifest_hash"]
+        assert body["compiledHash"] == expected["compiled_hash"]
         metadata = cast(dict[str, object], body["metadata"])
         assert metadata["key"] == package_key
 
@@ -351,10 +349,10 @@ def test_manifest_read_keeps_private_mcp_safe_and_package_local(
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_model_connection(session_factory)
-    _delete_existing_package(client, "tradingagents_advisory_research_macro")
+    _delete_existing_package(client, "digital_oracle_researcher")
     response = client.post(
         "/api/workflow-packages",
-        json={"manifestSource": _demo_source("tradingagents_advisory_research_macro")},
+        json={"manifestSource": _demo_source("digital_oracle_researcher")},
     )
     assert response.status_code == 201, response.json()
     created = cast(dict[str, object], response.json())

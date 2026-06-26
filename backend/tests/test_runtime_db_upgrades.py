@@ -273,31 +273,15 @@ _RUN_OPERATION_INVOCATION_COLUMNS = {
 }
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
 _DIGITAL_ORACLE_PRESET_KEY = "digital_oracle_researcher"
-_TRADINGAGENTS_MACRO_PRESET_KEY = "tradingagents_advisory_research_macro"
-_TRADINGAGENTS_MIXED_SIGNALS_PRESET_KEY = "tradingagents_advisory_research_mixed_signals"
 _TRADINGAGENTS_MODEL_CONNECTION_KEY = "tradingagents_primary_model"
 _TRADINGAGENTS_FIXTURE_PATH = (
     Path(__file__).parents[2] / "demo" / "tradingagents_advisory_research.yaml"
 )
 _DIGITAL_ORACLE_FIXTURE_PATH = Path(__file__).parents[2] / "demo" / "digital_oracle_researcher.yaml"
-_TRADINGAGENTS_MACRO_FIXTURE_PATH = (
-    Path(__file__).parents[2] / "demo" / "tradingagents_advisory_research_macro.yaml"
-)
-_TRADINGAGENTS_MIXED_SIGNALS_FIXTURE_PATH = (
-    Path(__file__).parents[2] / "demo" / "tradingagents_advisory_research_mixed_signals.yaml"
-)
 _EXPECTED_PRESET_HASHES = {
     _DIGITAL_ORACLE_PRESET_KEY: (
         "9cdde0eaf311164747948b386c9901cd3a70c0ef981c8296e616c52e212ac0c4",
         "1a997fe3f393bdef1db33473c7241683ecbba6e5f266b3bc1b1960c4e5ba5ea4",
-    ),
-    _TRADINGAGENTS_MACRO_PRESET_KEY: (
-        "09c79f75209be49c4745b548129df309c039d84894e3dc80e27d21eeae6812de",
-        "43cf2f6e2890e15ab1d943636d08471d9013aa1c8435cacea496da930ff50865",
-    ),
-    _TRADINGAGENTS_MIXED_SIGNALS_PRESET_KEY: (
-        "6b5e54a5bd3fc62d99aa6bec8d0be839f548d232e3e610535da3bc0d083ba92f",
-        "59010485fc6eac23f94bb75777ae3fb3b920b5879738007f0dfd7ad58daa16fd",
     ),
 }
 _DIGITAL_ORACLE_PRESET_EXTENSION_DEPENDENCIES = [
@@ -2206,7 +2190,7 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
             ).scalar_one()
             run_count = connection.execute(text("SELECT COUNT(*) FROM runs")).scalar_one()
 
-        assert package_count == 4
+        assert package_count == 2
         assert row["key"] == _TRADINGAGENTS_PRESET_KEY
         assert row["name"] == "TradingAgents Advisory Research"
         assert (
@@ -2384,119 +2368,6 @@ def test_init_db_seeds_digital_oracle_preset_without_secret_state(database_url: 
         assert secret_binding_count == 0
         assert schedule_count == 0
         assert run_count == 0
-    finally:
-        engine.dispose()
-
-
-def test_init_db_seeds_macro_and_mixed_signal_presets_with_expected_boundaries(
-    database_url: str,
-) -> None:
-    preset_expectations = {
-        _TRADINGAGENTS_MACRO_PRESET_KEY: (
-            _TRADINGAGENTS_MACRO_FIXTURE_PATH,
-            {FINANCE_WORKSPACE_EXTENSION_KEY},
-            set(),
-        ),
-        _TRADINGAGENTS_MIXED_SIGNALS_PRESET_KEY: (
-            _TRADINGAGENTS_MIXED_SIGNALS_FIXTURE_PATH,
-            {FINANCE_WORKSPACE_EXTENSION_KEY, DIGITAL_ORACLE_EXTENSION_KEY},
-            {
-                "signaldeck.digital_oracle.macro_rates.lookup",
-                "signaldeck.digital_oracle.prediction_markets.lookup",
-            },
-        ),
-    }
-
-    init_db(database_url)
-    engine = create_engine(database_url, future=True)
-
-    try:
-        for package_key, (
-            fixture_path,
-            expected_extension_keys,
-            expected_digital_tool_keys,
-        ) in preset_expectations.items():
-            fixture_source = fixture_path.read_text(encoding="utf-8")
-            fixture_compiled = _compile_fixture_artifacts(engine, fixture_source)
-            expected_package_definition = cast(
-                dict[str, object], fixture_compiled["packageDefinition"]
-            )
-            expected_compiled_plan = cast(dict[str, object], fixture_compiled["compiledPlan"])
-            expected_extension_dependencies = cast(
-                list[dict[str, object]], fixture_compiled["extensionDependencies"]
-            )
-
-            with engine.connect() as connection:
-                row = (
-                    connection.execute(
-                        text(
-                            """
-                        SELECT
-                            package.id AS package_id,
-                            package.key,
-                            package.name,
-                            package.manifest_source,
-                            package.manifest_hash,
-                            package.package_definition,
-                            package.compiled_plan,
-                            package.compiled_hash,
-                            package.extension_dependencies
-                        FROM workflow_packages AS package
-                        WHERE package.key = :package_key
-                        """
-                        ),
-                        {"package_key": package_key},
-                    )
-                    .mappings()
-                    .one()
-                )
-                secret_binding_count = connection.execute(
-                    text(
-                        """
-                        SELECT COUNT(*)
-                        FROM workflow_package_secret_bindings
-                        WHERE package_id = :package_id
-                        """
-                    ),
-                    {"package_id": row["package_id"]},
-                ).scalar_one()
-                run_count = connection.execute(text("SELECT COUNT(*) FROM runs")).scalar_one()
-
-            assert row["key"] == package_key
-            assert row["manifest_source"] == fixture_source
-            assert row["manifest_hash"] == fixture_compiled["manifestHash"]
-            assert row["compiled_hash"] == fixture_compiled["compiledHash"]
-            assert (row["manifest_hash"], row["compiled_hash"]) == _EXPECTED_PRESET_HASHES[
-                package_key
-            ]
-            assert row["package_definition"] == expected_package_definition
-            assert row["compiled_plan"] == expected_compiled_plan
-            assert row["extension_dependencies"] == expected_extension_dependencies
-            assert {
-                dependency["extensionKey"] for dependency in expected_extension_dependencies
-            } == expected_extension_keys
-
-            serialized_preset = (
-                fixture_source
-                + json.dumps(row["package_definition"], sort_keys=True)
-                + json.dumps(row["compiled_plan"], sort_keys=True)
-            )
-            assert "mcp.packagePrivate.web_search_exa" in json.dumps(
-                expected_extension_dependencies,
-                sort_keys=True,
-            )
-            assert {
-                tool_key
-                for tool_key in (
-                    "signaldeck.digital_oracle.macro_rates.lookup",
-                    "signaldeck.digital_oracle.prediction_markets.lookup",
-                    "signaldeck.digital_oracle.sec_filings.lookup",
-                    "signaldeck.digital_oracle.market_sentiment.lookup",
-                )
-                if tool_key in serialized_preset
-            } == expected_digital_tool_keys
-            assert secret_binding_count == 0
-            assert run_count == 0
     finally:
         engine.dispose()
 

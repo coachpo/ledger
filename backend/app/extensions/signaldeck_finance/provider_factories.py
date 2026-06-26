@@ -31,12 +31,6 @@ from app.services.social_sentiment_provider import (
 
 
 @dataclass(frozen=True, slots=True)
-class FinanceWorkspaceProviderFactory:
-    key: str
-    factory: Callable[[], object]
-
-
-@dataclass(frozen=True, slots=True)
 class FinanceProviderSecrets:
     alpha_vantage_api_key: str | None = None
 
@@ -134,29 +128,16 @@ def create_execution_provider_bundle(
     )
 
 
-def register() -> tuple[FinanceWorkspaceProviderFactory, ...]:
+def register() -> tuple[tuple[str, Callable[[], object]], ...]:
     return (
-        FinanceWorkspaceProviderFactory(
-            key="quote_provider",
-            factory=create_quote_provider,
-        ),
-        FinanceWorkspaceProviderFactory(
-            key="deterministic_quote_provider",
-            factory=create_deterministic_quote_provider,
-        ),
-        FinanceWorkspaceProviderFactory(
-            key="social_sentiment_adapters",
-            factory=create_social_sentiment_adapters,
-        ),
-        FinanceWorkspaceProviderFactory(
-            key="news_providers",
-            factory=create_news_providers,
-        ),
+        ("quote_provider", create_quote_provider),
+        ("deterministic_quote_provider", create_deterministic_quote_provider),
+        ("social_sentiment_adapters", create_social_sentiment_adapters),
+        ("news_providers", create_news_providers),
     )
 
 
 __all__ = [
-    "FinanceWorkspaceProviderFactory",
     "FinanceProviderSecrets",
     "create_deterministic_quote_provider",
     "create_execution_provider_bundle",

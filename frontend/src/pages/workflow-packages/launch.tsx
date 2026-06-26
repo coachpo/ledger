@@ -44,7 +44,6 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/components/ui/utils";
 import {
   useCreateWorkflowPackageLaunch,
@@ -1507,32 +1506,38 @@ export function WorkflowPackageLaunchPage() {
                           object and apply it back to the form after validation.
                         </p>
                       </div>
-                      <ToggleGroup
+                      <div
+                        className="flex w-full gap-1 sm:w-fit"
+                        role="radiogroup"
                         aria-label="Launch input mode"
-                        className="w-full sm:w-fit"
-                        type="single"
-                        value={activeLaunchInputMode}
-                        onValueChange={(value) => {
-                          if (value === "form" || value === "json") {
-                            updateLaunchInputMode(value);
-                          }
-                        }}
                       >
-                        <ToggleGroupItem
+                        <Button
+                          aria-checked={activeLaunchInputMode === "form"}
                           className="h-8 px-3 text-xs"
                           disabled={!workflowSelected}
-                          value="form"
+                          role="radio"
+                          variant={
+                            activeLaunchInputMode === "form" ? "secondary" : "outline"
+                          }
+                          type="button"
+                          onClick={() => updateLaunchInputMode("form")}
                         >
                           Form
-                        </ToggleGroupItem>
-                        <ToggleGroupItem
+                        </Button>
+                        <Button
+                          aria-checked={activeLaunchInputMode === "json"}
                           className="h-8 px-3 text-xs"
                           disabled={!workflowSelected}
-                          value="json"
+                          role="radio"
+                          variant={
+                            activeLaunchInputMode === "json" ? "secondary" : "outline"
+                          }
+                          type="button"
+                          onClick={() => updateLaunchInputMode("json")}
                         >
                           JSON
-                        </ToggleGroupItem>
-                      </ToggleGroup>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ) : null}

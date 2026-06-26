@@ -356,42 +356,13 @@ async function chooseSelectOption(label: string, optionName: RegExp | string) {
   fireEvent.click(await screen.findByRole("option", { name: optionName }));
 }
 
-async function chooseSelectByTestId(testId: string, optionName: RegExp | string) {
-  const select = screen.getByTestId(testId);
-  select.focus();
-  fireEvent.keyDown(select, { key: "ArrowDown" });
-  fireEvent.click(await screen.findByRole("option", { name: optionName }));
-}
-
-function parseCalendarLabel(label: string): string {
-  const match = label.match(/([A-Za-z]+) (\d{1,2})(?:st|nd|rd|th), (\d{4})/);
-  if (!match) {
-    throw new Error(`Unable to parse calendar label: ${label}`);
-  }
-
-  const monthName = match[1] ?? "";
-  const day = (match[2] ?? "").padStart(2, "0");
-  const year = match[3] ?? "";
-  const monthIndex = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-  ].indexOf(monthName);
-
-  if (monthIndex < 0) {
-    throw new Error(`Unknown calendar month: ${monthName}`);
-  }
-
-  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${day}`;
+function currentLocalDate() {
+  const now = new Date();
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 async function chooseDateTimeValue({
@@ -403,27 +374,11 @@ async function chooseDateTimeValue({
   minute: string;
   triggerTestId: string;
 }) {
-  const currentMonthName = new Intl.DateTimeFormat("en-US", { month: "long" }).format(new Date());
-  const currentYear = String(new Date().getFullYear());
-
-  fireEvent.click(screen.getByTestId(triggerTestId));
-
-  const dayButton = screen
-    .getAllByRole("button")
-    .find((candidate) => {
-      const label = candidate.getAttribute("aria-label") ?? "";
-      return label.includes(currentMonthName) && label.includes(currentYear);
-    });
-
-  if (!dayButton) {
-    throw new Error("Unable to find a day button in the current calendar month.");
-  }
-
-  const label = dayButton.getAttribute("aria-label") ?? "";
-  fireEvent.click(dayButton);
-  await chooseSelectByTestId(`${triggerTestId.replace(/-trigger$/, "")}-hour`, hour);
-  await chooseSelectByTestId(`${triggerTestId.replace(/-trigger$/, "")}-minute`, minute);
-  return parseCalendarLabel(label);
+  const date = currentLocalDate();
+  fireEvent.change(screen.getByTestId(triggerTestId), {
+    target: { value: `${date}T${hour}:${minute}` },
+  });
+  return date;
 }
 
 function expectedViewerLocalDateTime(isoString: string): string {
@@ -986,8 +941,7 @@ describe("ScheduledTaskDetailPage", () => {
     expect(scheduleTab).toHaveTextContent("Schedule configuration");
     expect(screen.getByLabelText("Schedule enabled")).toBeChecked();
     expect(screen.getByLabelText("Timezone")).toHaveTextContent(/America\/New_York/i);
-    expect(screen.getByTestId("schedule-at-local-time-hour")).toHaveTextContent(/^09$/);
-    expect(screen.getByTestId("schedule-at-local-time-minute")).toHaveTextContent(/^00$/);
+    expect(screen.getByLabelText("At local time")).toHaveValue("09:00");
     expect(screen.getByRole("combobox", { name: "Recurrence" })).toHaveAttribute(
       "aria-labelledby",
       "schedule-recurrence-type-label",

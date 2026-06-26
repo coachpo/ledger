@@ -76,14 +76,12 @@ def news_service_factory(
 
 
 def test_market_data_provider_factories_are_extension_owned() -> None:
-    registrations = {
-        registration.key: registration for registration in provider_factories.register()
-    }
+    registrations = dict(provider_factories.register())
 
     assert "quote_provider" in registrations
     assert "news_providers" in registrations
-    quote_provider = registrations["quote_provider"].factory()
-    news_providers = registrations["news_providers"].factory()
+    quote_provider = registrations["quote_provider"]()
+    news_providers = registrations["news_providers"]()
     assert quote_provider.__class__.__name__ in {
         "DeterministicQuoteProvider",
         "YahooFinanceQuoteProvider",

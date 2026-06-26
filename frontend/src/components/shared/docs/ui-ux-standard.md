@@ -30,7 +30,7 @@ Inventory routes use `InventoryPageShell` when the route has a page header, tool
 
 Workspace and console routes use `WorkspacePageShell` when content needs full-height layout, a sticky context bar, optional left rail, and an internally scrolling body.
 
-Split inspector flows use `SplitInspectorLayout` on desktop-like full-height routes and `SheetInspectorLayout` when the inspector should open as a sheet.
+Inspector flows stay route-owned; use dialogs or simple panels before adding shared split-pane scaffolding.
 Use `gap-*` for spacing. Don't use `space-x-*` or `space-y-*` in new shared UI. Prefer `min-w-0`, `overflow-auto`, `break-words`, and table wrappers for dense content.
 
 Use the project `--ui-*` tokens when component CSS needs custom values for surfaces, spacing, shadows, z-index, motion, breakpoints, or control sizes. Don't create a parallel token file.
@@ -84,7 +84,7 @@ Use `ResourceToolbar.search` for compact inventory search. It supplies a hidden 
 
 ## Tables, lists, and resource rows
 
-Use `DataTable` for generic TanStack tables with sorting and pagination. Use `ResourceTableFrame` for route-owned table markup that only needs the shared border and containment frame.
+Use `DataTable` for small generic sortable tables. Use `ResourceTableFrame` for route-owned table markup that only needs the shared border and containment frame.
 
 Use `ResourceRowCard` for compact inventory cards that need title links, badges, metadata, status strips, evidence chips, provenance, or trailing actions.
 
@@ -97,7 +97,7 @@ Lists and tables must be mobile contained. Use `min-w-0`, internal horizontal sc
 Use shadcn `Dialog`, `Sheet`, and related primitives. Every dialog or sheet needs a title, visible or screen-reader-only.
 Use `EntityDialogShell` for entity create or edit dialogs with a form body and footer actions.
 
-Use `SplitInspectorLayout` for desktop split panes and `SheetInspectorLayout` for sheet-based inspectors. Pass accessible labels for source and inspector regions when defaults are too generic.
+Keep inspector dialogs and panels labeled. Promote a shared inspector layout only after repeated route-owned markup proves it needs one.
 
 Dialogs should not fetch data directly. The parent route or hook supplies data and callbacks.
 
@@ -124,7 +124,7 @@ Loading states should reserve enough structure to avoid layout jumps. Route-leve
 
 Design for 375px, 768px, 1024px, and 1440px. Inventory controls wrap, not overflow. Full-height workspaces keep internal scrolling instead of document-wide overflow.
 
-Use `SheetInspectorLayout` or route-owned responsive branching when a resizable split inspector would be cramped on small screens.
+Use route-owned responsive branching when inspector content would be cramped on small screens.
 
 Floating or sticky chrome needs enough clearance from viewport edges and fixed shell regions.
 ## Accessibility requirements

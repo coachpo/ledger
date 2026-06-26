@@ -21,11 +21,11 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Task | Location | Notes |
 |---|---|---|
 | Error containment | `error-boundary.tsx`, `error-boundary-fallback.tsx` | route-safe fallback UI |
-| Route-safe shells | `inventory-page-shell.tsx`, `workspace-page-shell.tsx`, `split-inspector-layout.tsx`, `entity-dialog-shell.tsx` | shared inventory/workspace/inspector framing and dialog shell composition |
+| Route-safe shells | `inventory-page-shell.tsx`, `workspace-page-shell.tsx`, `entity-dialog-shell.tsx` | shared inventory/workspace framing and dialog shell composition |
 | Resource chrome | `resource-toolbar.tsx`, `resource-filter-bar.tsx`, `resource-status-strip.tsx`, `page-context-bar.tsx`, `provenance-badge.tsx` | reusable filter, summary, and status chrome for finance and platform pages |
 | Management-list actions | `resource-actions-menu.tsx`, `resource-bulk-actions-bar.tsx`, `resource-selection-checkbox.tsx`, `confirm-delete-dialog.tsx` | row overflow menus, selected-count action bars, accessible select-all/row checkboxes, and destructive confirmations |
 | Evidence / state helpers | `console-section.tsx`, `evidence-cluster.tsx`, `constraint-inspector.tsx`, `empty-state-panel.tsx`, `inventory-state-panel.tsx`, `inline-state-panel.tsx`, `saved-runtime-input-registry-panel.tsx` | wide payload, evidence, saved-input registry, and empty/error/loading presentation |
-| Generic tables | `data-table.tsx`, `data-table-column-header.tsx`, `resource-table-frame.tsx` | reusable TanStack table wrappers and route-owned table framing |
+| Generic tables | `data-table.tsx`, `data-table-column-header.tsx`, `resource-table-frame.tsx` | lightweight sortable tables and route-owned table framing |
 | Summary metrics | `metric-card.tsx` | consistent KPI card layout |
 | Shared field logic | `form-schemas.ts` | reusable Zod validation snippets for portfolio, balance, position, and trading forms |
 | Search/select UI | `searchable-select.tsx` | command-style picker used by feature forms |

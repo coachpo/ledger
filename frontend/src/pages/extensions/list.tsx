@@ -2,14 +2,11 @@ import { toast } from "sonner";
 
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { useExtensions, useToggleExtension } from "@/hooks/use-extensions";
 import type { ExtensionRead } from "@/lib/types/extension";
-
-import {
-  PlatformResourceCard,
-  PlatformResourceList,
-} from "../platform-resource-shared";
 
 function sortExtensions(items: readonly ExtensionRead[]) {
   return [...items].sort((left, right) => {
@@ -40,22 +37,33 @@ function ExtensionRow({
   const enabledLabel = extension.enabled ? "Enabled" : "Disabled";
 
   return (
-    <PlatformResourceCard
-      actions={
-        <Switch
-          aria-label={`${extension.enabled ? "Disable" : "Enable"} ${extension.label} extension`}
-          checked={extension.enabled}
-          data-testid={`extension-toggle-${testSegment}`}
-          disabled={togglePending}
-          onCheckedChange={(checked) => onToggle(extension, checked)}
-        />
-      }
-      density="compact"
-      description={enabledLabel}
-      subtitle={extension.key}
-      testId={`extension-row-${testSegment}`}
-      title={extension.label}
-    />
+    <Card
+      className="overflow-hidden transition-[background-color,border-color,box-shadow] hover:border-border hover:bg-accent/35"
+      data-testid={`extension-row-${testSegment}`}
+    >
+      <CardContent className="flex min-w-0 flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+        <div className="min-w-0 flex flex-col gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h2 className="min-w-0 break-words text-sm font-medium leading-5 tracking-tight text-foreground">
+              {extension.label}
+            </h2>
+            <Badge variant="outline">{enabledLabel}</Badge>
+          </div>
+          <p className="min-w-0 break-words text-xs text-muted-foreground">
+            {extension.key}
+          </p>
+        </div>
+        <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
+          <Switch
+            aria-label={`${extension.enabled ? "Disable" : "Enable"} ${extension.label} extension`}
+            checked={extension.enabled}
+            data-testid={`extension-toggle-${testSegment}`}
+            disabled={togglePending}
+            onCheckedChange={(checked) => onToggle(extension, checked)}
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -131,7 +139,7 @@ export function ExtensionsListPage() {
       {!extensionsQuery.isPending &&
       !extensionsQuery.isError &&
       extensions.length > 0 ? (
-        <PlatformResourceList>
+        <div className="grid gap-2 sm:gap-3">
           {extensions.map((extension) => (
             <ExtensionRow
               extension={extension}
@@ -140,7 +148,7 @@ export function ExtensionsListPage() {
               togglePending={toggleExtension.isPending}
             />
           ))}
-        </PlatformResourceList>
+        </div>
       ) : null}
     </InventoryPageShell>
   );

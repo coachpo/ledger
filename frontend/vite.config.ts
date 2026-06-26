@@ -11,10 +11,8 @@ const frameworkChunkPattern =
 const dataChunkPattern =
   /[/\\]node_modules[/\\]@tanstack[/\\](react-query|react-table)[/\\]/;
 const uiChunkPattern =
-  /[/\\]node_modules[/\\](@radix-ui|@floating-ui|cmdk|lucide-react|react-resizable-panels|sonner|class-variance-authority|clsx|tailwind-merge)[/\\]/;
+  /[/\\]node_modules[/\\](@radix-ui|@floating-ui|cmdk|lucide-react|sonner|class-variance-authority|clsx|tailwind-merge)[/\\]/;
 const formsChunkPattern = /[/\\]node_modules[/\\](react-hook-form|zod)[/\\]|[/\\]node_modules[/\\]@hookform[/\\]resolvers[/\\]/;
-const dateChunkPattern =
-  /[/\\]node_modules[/\\](react-day-picker|date-fns)[/\\]/;
 const vendorChunkPattern = /[/\\]node_modules[/\\]/;
 
 export default defineConfig({
@@ -42,10 +40,6 @@ export default defineConfig({
 
           if (formsChunkPattern.test(id)) {
             return "forms";
-          }
-
-          if (dateChunkPattern.test(id)) {
-            return "date";
           }
 
           if (vendorChunkPattern.test(id)) {

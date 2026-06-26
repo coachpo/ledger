@@ -213,7 +213,7 @@ export function ReportDetailPage() {
         />
       ) : (
         <div
-          className="prose prose-sm dark:prose-invert min-w-0 max-w-none rounded-xl border border-border/70 bg-card/95 px-6 py-5 text-foreground shadow-ui-xs [&_*]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto"
+          className="report-markdown min-w-0 max-w-none rounded-xl border border-border/70 bg-card/95 px-6 py-5 text-foreground shadow-ui-xs"
           data-testid="report-content-pane"
         >
           <Markdown remarkPlugins={[remarkGfm]}>{report.content}</Markdown>

@@ -1,19 +1,4 @@
 import {
-  applyNodeChanges,
-  Background,
-  BackgroundVariant,
-  Handle,
-  MarkerType,
-  Position,
-  ReactFlow,
-  type Edge,
-  type Node,
-  type NodeChange,
-  type NodeProps,
-  type Viewport,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import {
   Activity,
   AlertCircle,
   Download,
@@ -22,9 +7,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
-  useCallback,
-  useEffect,
-  useState,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
@@ -158,15 +140,26 @@ type LineageDiagramNodeData = {
   tone?: "current" | "source";
 };
 
-type LineageDiagramNode = Node<LineageDiagramNodeData, "lineage">;
-type LineageDiagramEdge = Edge;
+type LineageDiagramNode = {
+  data: LineageDiagramNodeData;
+  id: string;
+  position: {
+    x: number;
+    y: number;
+  };
+  type: "lineage";
+};
+
+type LineageDiagramEdge = {
+  id: string;
+  label: string;
+  source: string;
+  target: string;
+};
 
 const LINEAGE_NODE_WIDTH = 192;
 const LINEAGE_NODE_GAP = 56;
 const LINEAGE_NODE_Y = 24;
-const LINEAGE_INITIAL_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
-const LINEAGE_FIT_VIEW_MAX_ZOOM = 1;
-const LINEAGE_MAX_ZOOM = 1.8;
 const LINEAGE_CANVAS_HEIGHT_CLASS = "h-80";
 const WORKFLOW_MEMORY_GROUP_DEFERRED_SECTION_CLASS_NAME =
   "[content-visibility:auto] [contain-intrinsic-size:auto_720px]";
@@ -293,7 +286,15 @@ function lineageNodePosition(index: number) {
   };
 }
 
-function LineageNode({ data }: NodeProps<LineageDiagramNode>) {
+function LineageNode({
+  data,
+  x,
+  y,
+}: {
+  data: LineageDiagramNodeData;
+  x: number;
+  y: number;
+}) {
   return (
     <div
       className={cn(
@@ -302,13 +303,9 @@ function LineageNode({ data }: NodeProps<LineageDiagramNode>) {
         data.tone === "source" && "border-positive/30 bg-positive/5",
       )}
       data-testid={data.testId}
+      data-node-x={String(x)}
+      data-node-y={String(y)}
     >
-      <Handle
-        className="size-1.5 border-border bg-muted-foreground"
-        isConnectable={false}
-        position={Position.Left}
-        type="target"
-      />
       <div className="flex flex-col gap-2">
         <div>
           <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -331,23 +328,27 @@ function LineageNode({ data }: NodeProps<LineageDiagramNode>) {
           ))}
         </dl>
       </div>
-      <Handle
-        className="size-1.5 border-border bg-muted-foreground"
-        isConnectable={false}
-        position={Position.Right}
-        type="source"
-      />
     </div>
   );
 }
 
-const lineageNodeTypes = { lineage: LineageNode };
-
-const lineageDefaultEdgeOptions: Partial<LineageDiagramEdge> = {
-  markerEnd: { type: MarkerType.ArrowClosed },
-  style: { stroke: "var(--border)", strokeWidth: 1.5 },
-  type: "smoothstep",
-};
+function LineageEdge({ edge }: { edge: LineageDiagramEdge }) {
+  return (
+    <div
+      className="relative mt-8 flex min-w-20 shrink-0 flex-col items-center"
+      data-testid={`lineage-edge-${edge.id}`}
+    >
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span aria-hidden="true" className="h-px w-10 bg-border/60" />
+        <span aria-hidden="true">→</span>
+        <span aria-hidden="true" className="h-px w-10 bg-border/60" />
+      </div>
+      <span className="mt-1 rounded-md border border-border/70 bg-muted px-2 py-0.5 text-center text-[11px] text-muted-foreground">
+        {edge.label}
+      </span>
+    </div>
+  );
+}
 
 function LineageDiagram({
   ariaLabel,
@@ -360,88 +361,38 @@ function LineageDiagram({
   nodes: LineageDiagramNode[];
   testId: string;
 }) {
-  const [interactiveNodes, setInteractiveNodes] = useState(nodes);
-  const [viewport, setViewport] = useState(LINEAGE_INITIAL_VIEWPORT);
-
-  useEffect(() => {
-    setInteractiveNodes((currentNodes) => {
-      const currentNodesById = new Map(
-        currentNodes.map((node) => [node.id, node]),
-      );
-      const hasSameNodes =
-        currentNodes.length === nodes.length &&
-        nodes.every((node) => currentNodesById.has(node.id));
-
-      if (!hasSameNodes) {
-        return nodes;
-      }
-
-      return nodes.map((node) => ({
-        ...node,
-        position: currentNodesById.get(node.id)?.position ?? node.position,
-      }));
-    });
-  }, [nodes]);
-
-  const handleNodesChange = useCallback(
-    (changes: NodeChange<LineageDiagramNode>[]) => {
-      setInteractiveNodes((currentNodes) =>
-        applyNodeChanges(changes, currentNodes),
-      );
-    },
-    [],
-  );
-
-  const handleViewportChange = useCallback((nextViewport: Viewport) => {
-    setViewport(nextViewport);
-  }, []);
+  const sortedNodes = [...nodes].sort((a, b) => a.position.x - b.position.x);
 
   return (
     <div
       className={cn(
         LINEAGE_CANVAS_HEIGHT_CLASS,
-        "overflow-hidden rounded-xl border border-border/70 bg-ui-surface-grouped/60 shadow-ui-xs [&_.react-flow__edge-text]:fill-muted-foreground [&_.react-flow__edge-textbg]:fill-background",
+        "overflow-auto rounded-xl border border-border/70 bg-ui-surface-grouped/60 shadow-ui-xs",
       )}
       data-testid={testId}
+      aria-label={ariaLabel}
     >
-      <ReactFlow
-        aria-label={ariaLabel}
-        autoPanOnNodeDrag={false}
-        connectOnClick={false}
-        defaultEdgeOptions={lineageDefaultEdgeOptions}
-        deleteKeyCode={null}
-        edges={edges}
-        edgesFocusable={false}
-        elementsSelectable={false}
-        fitView
-        fitViewOptions={{ maxZoom: LINEAGE_FIT_VIEW_MAX_ZOOM, padding: 0.22 }}
-        maxZoom={LINEAGE_MAX_ZOOM}
-        minZoom={0.55}
-        multiSelectionKeyCode={null}
-        nodeTypes={lineageNodeTypes}
-        nodes={interactiveNodes}
-        nodesConnectable={false}
-        nodesDraggable
-        nodesFocusable={false}
-        onNodesChange={handleNodesChange}
-        onViewportChange={handleViewportChange}
-        panOnDrag={false}
-        preventScrolling
-        proOptions={{ hideAttribution: true }}
-        selectNodesOnDrag={false}
-        selectionKeyCode={null}
-        viewport={viewport}
-        zoomOnDoubleClick
-        zoomOnPinch
-        zoomOnScroll
-      >
-        <Background
-          color="var(--border)"
-          gap={16}
-          size={1}
-          variant={BackgroundVariant.Dots}
-        />
-      </ReactFlow>
+      <div className="flex min-h-full min-w-max items-start gap-2 overflow-x-auto px-4 py-4">
+        {sortedNodes.map((node, nodeIndex) => {
+          const nextNode = sortedNodes[nodeIndex + 1];
+          const edge = nextNode
+            ? edges.find(
+                (item) => item.source === node.id && item.target === nextNode.id,
+              )
+            : undefined;
+
+          return (
+            <div className="flex items-start gap-2" key={node.id}>
+              <div
+                className="w-48 shrink-0"
+              >
+                <LineageNode data={node.data} x={node.position.x} y={node.position.y} />
+              </div>
+              {edge ? <LineageEdge edge={edge} /> : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

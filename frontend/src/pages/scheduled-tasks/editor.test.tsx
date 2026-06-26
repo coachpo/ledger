@@ -184,35 +184,19 @@ async function chooseTimeZone(optionName: string | RegExp) {
   fireEvent.click(await screen.findByRole("option", { name: optionName }));
 }
 
-async function chooseSelectByTestId(testId: string, optionName: string | RegExp) {
-  const selector = screen.getByTestId(testId);
-  selector.focus();
-  fireEvent.keyDown(selector, { key: "ArrowDown" });
-  fireEvent.click(await screen.findByRole("option", { name: optionName }));
+function currentLocalDate() {
+  const now = new Date();
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
-function currentCalendarDayButton() {
-  const currentMonthName = new Intl.DateTimeFormat("en-US", { month: "long" }).format(new Date());
-  const currentYear = String(new Date().getFullYear());
-  const button = screen
-    .getAllByRole("button")
-    .find((candidate) => {
-      const label = candidate.getAttribute("aria-label") ?? "";
-      return label.includes(currentMonthName) && label.includes(currentYear);
-    });
-
-  if (!button) {
-    throw new Error("Unable to find a day button in the current calendar month.");
-  }
-
-  return button;
-}
-
-async function choosePreviewScheduledFor(hour: string, minute: string) {
-  fireEvent.click(screen.getByTestId("schedule-preview-scheduled-for"));
-  fireEvent.click(currentCalendarDayButton());
-  await chooseSelectByTestId("schedule-preview-scheduled-for-hour", hour);
-  await chooseSelectByTestId("schedule-preview-scheduled-for-minute", minute);
+function choosePreviewScheduledFor(hour: string, minute: string) {
+  fireEvent.change(screen.getByTestId("schedule-preview-scheduled-for"), {
+    target: { value: `${currentLocalDate()}T${hour}:${minute}` },
+  });
 }
 
 describe("ScheduledTaskEditorPage", () => {

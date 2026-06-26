@@ -1,8 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { PageContextBar } from "./page-context-bar";
-import { SplitInspectorLayout } from "./split-inspector-layout";
 import { WorkspacePageShell } from "./workspace-page-shell";
 
 describe("WorkspacePageShell", () => {
@@ -47,28 +46,22 @@ describe("WorkspacePageShell", () => {
     expect(body).toContainElement(screen.getByTestId("consumer-split-content"));
   });
 
-  it("keeps consumer-owned split inspectors inside the body region", () => {
+  it("keeps consumer-owned workspace content inside the body region", () => {
     render(
       <WorkspacePageShell
         contextBar={<PageContextBar title="Run context" />}
         leftRail={<nav>Modes</nav>}
       >
-        <SplitInspectorLayout
-          emptyInspector={<p>No evidence selected</p>}
-          leftPane={<div>Execution outline</div>}
-          rightPane={<div>Evidence payload</div>}
-          testId="consumer-owned-split"
-        />
+        <div data-testid="consumer-owned-content">Evidence payload</div>
       </WorkspacePageShell>,
     );
 
     const body = screen.getByTestId("workspace-page-shell-body");
     const rail = screen.getByTestId("workspace-page-shell-left-rail");
-    const split = screen.getByTestId("consumer-owned-split");
+    const content = screen.getByTestId("consumer-owned-content");
 
-    expect(within(body).getByTestId("consumer-owned-split")).toBe(split);
-    expect(rail).not.toContainElement(split);
-    expect(split).toHaveAttribute("data-inspector-state", "open");
+    expect(body).toContainElement(content);
+    expect(rail).not.toContainElement(content);
   });
 
   it("renders without a left rail and keeps body as the only content region", () => {

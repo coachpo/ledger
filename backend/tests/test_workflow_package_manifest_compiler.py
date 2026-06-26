@@ -17,17 +17,13 @@ from tests.test_workflow_package_manifest_parser import _valid_package_manifest_
 
 _DEMO_ROOT = Path(__file__).resolve().parents[2] / "demo"
 _EXPECTED_DEMO_HASHES = {
+    "tradingagents_advisory_research": (
+        "c58db1b4bb8e66dcd95b479e238dda0d5a2f894d03c8986c0787f6638c31dc62",
+        "31d873e55180536aa501fc7b77d47e2ac2c42f489e8214a19748aacb3553b96a",
+    ),
     "digital_oracle_researcher": (
         "9cdde0eaf311164747948b386c9901cd3a70c0ef981c8296e616c52e212ac0c4",
         "1a997fe3f393bdef1db33473c7241683ecbba6e5f266b3bc1b1960c4e5ba5ea4",
-    ),
-    "tradingagents_advisory_research_macro": (
-        "09c79f75209be49c4745b548129df309c039d84894e3dc80e27d21eeae6812de",
-        "43cf2f6e2890e15ab1d943636d08471d9013aa1c8435cacea496da930ff50865",
-    ),
-    "tradingagents_advisory_research_mixed_signals": (
-        "6b5e54a5bd3fc62d99aa6bec8d0be839f548d232e3e610535da3bc0d083ba92f",
-        "59010485fc6eac23f94bb75777ae3fb3b920b5879738007f0dfd7ad58daa16fd",
     ),
 }
 
@@ -45,10 +41,6 @@ def _compiled_tool_keys(compiled: dict[str, object]) -> set[str]:
     spec = cast(dict[str, object], package_definition["spec"])
     profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
     return {tool_key for profile in profiles for tool_key in cast(list[str], profile["toolKeys"])}
-
-
-def _items_by_key(items: list[dict[str, object]]) -> dict[str, dict[str, object]]:
-    return {str(item["key"]): item for item in items}
 
 
 def _inline_private_mcp_manifest_source() -> str:
@@ -272,32 +264,8 @@ def test_compile_inline_private_mcp_preserves_report_and_quote_tool_keys() -> No
             set(),
         ),
         (
-            "tradingagents_advisory_research_macro",
+            "tradingagents_advisory_research",
             {
-                "signaldeck.finance.fundamentals.lookup",
-                "signaldeck.finance.indicators.lookup",
-                "signaldeck.finance.insider_data.lookup",
-                "signaldeck.finance.market_data.history_lookup",
-                "signaldeck.finance.market_data.ohlcv_lookup",
-                "signaldeck.finance.market_data.quote_lookup",
-                "signaldeck.finance.news.lookup",
-                "signaldeck.finance.positions.lookup",
-                "signaldeck.finance.reports.lookup",
-                "signaldeck.finance.social_sentiment.lookup",
-            },
-            {
-                "fred_fedfunds_observations",
-                "fred_unrate_observations",
-                "fred_cpiaucsl_observations",
-                "fred_t10y2y_observations",
-                "treasury_rates_snapshot_json",
-            },
-        ),
-        (
-            "tradingagents_advisory_research_mixed_signals",
-            {
-                "signaldeck.digital_oracle.macro_rates.lookup",
-                "signaldeck.digital_oracle.prediction_markets.lookup",
                 "signaldeck.finance.fundamentals.lookup",
                 "signaldeck.finance.indicators.lookup",
                 "signaldeck.finance.insider_data.lookup",
@@ -346,62 +314,7 @@ def test_compile_demo_presets_lock_hashes_tools_and_private_operations(
             "signaldeck.finance",
         }
     else:
-        assert mcp_servers and mcp_servers[0]["key"] == "web_research"
-        assert mcp_servers[0]["toolKeys"] == ["web_search_exa"]
-    if package_key == "tradingagents_advisory_research_macro":
-        assert not any(
-            tool_key.startswith("signaldeck.digital_oracle.") for tool_key in expected_tool_keys
-        )
-    if package_key == "tradingagents_advisory_research_mixed_signals":
-        assert (
-            not {
-                "signaldeck.digital_oracle.sec_filings.lookup",
-                "signaldeck.digital_oracle.market_sentiment.lookup",
-            }
-            & expected_tool_keys
-        )
-
-
-def test_compile_macro_demo_collector_accepts_raw_http_payload_shapes() -> None:
-    compiled = compile_workflow_package_manifest(
-        _demo_source("tradingagents_advisory_research_macro")
-    )
-    package_definition = cast(dict[str, object], compiled["packageDefinition"])
-    compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
-    spec = cast(dict[str, object], package_definition["spec"])
-    output_schemas = _items_by_key(cast(list[dict[str, object]], spec["outputSchemas"]))
-    agents = _items_by_key(cast(list[dict[str, object]], spec["agents"]))
-    macro_collector = agents["macro_context_collector"]
-    input_schema = cast(dict[str, object], macro_collector["inputSchema"])
-    input_properties = cast(dict[str, object], input_schema["properties"])
-    fred_schema = cast(dict[str, object], output_schemas["fred_observations_raw"])["jsonSchema"]
-    treasury_schema = cast(dict[str, object], output_schemas["treasury_rates_raw"])["jsonSchema"]
-
-    for property_name in (
-        "fredFedfundsObservations",
-        "fredUnrateObservations",
-        "fredCpiaucslObservations",
-        "fredT10y2yObservations",
-    ):
-        assert input_properties[property_name] == fred_schema
-    assert input_properties["treasuryRatesSnapshot"] == treasury_schema
-
-    advisory_workflow = next(
-        workflow
-        for workflow in cast(list[dict[str, object]], compiled_plan["workflows"])
-        if workflow["key"] == "advisory_research"
-    )
-    treasury_operation = next(
-        operation
-        for step in cast(list[dict[str, object]], advisory_workflow["steps"])
-        for operation in cast(list[dict[str, object]], step.get("operations", []))
-        if operation["operationKey"] == "treasury_rates_snapshot_json"
-    )
-    request = cast(dict[str, object], treasury_operation["request"])
-    assert request["url"] == (
-        "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/"
-        "v2/accounting/od/avg_interest_rates"
-    )
+        assert mcp_servers == []
 
 
 def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:

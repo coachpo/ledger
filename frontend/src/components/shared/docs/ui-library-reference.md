@@ -63,35 +63,6 @@ Example:
 ```
 Common mistakes: adding a nested `main`, allowing body content to escape internal scroll, or rebuilding breadcrumbs in the context bar.
 
-## SplitInspectorLayout and SheetInspectorLayout
-
-Purpose: two-region source and inspector layout with optional tabs, inspector actions, and empty inspector content.
-
-Use `SplitInspectorLayout` for desktop split panes. Use `SheetInspectorLayout` when the inspector should be controlled as a sheet.
-
-Don't use for basic dialogs or route lists without an inspectable selected item.
-
-API: `leftPane`, `emptyInspector`, optional `rightPane`, `tabs`, `activeTab`, `onActiveTabChange`, `inspectorTitle`, `inspectorActions`, `inspectorOpen`, aria labels, panel size props, and `testId`. Sheet mode adds `onInspectorOpenChange` and `sheetDescription`.
-
-Variants: direction `horizontal` or `vertical`; panel sizes through `defaultSize`, `minSize`, and `maxSize`.
-
-Accessibility: source and inspector regions are `section` and `aside`. Use specific labels when showing entities, runs, or payloads.
-```tsx
-<SplitInspectorLayout
-  leftPane={<PackageList />}
-  leftPaneAriaLabel="Workflow packages"
-  inspectorAriaLabel="Selected package details"
-  inspectorTitle={selectedPackage?.name ?? "No package selected"}
-  inspectorOpen={Boolean(selectedPackage)}
-  emptyInspector={<InventoryStatePanel title="Select a package" />}
-  tabs={selectedPackage ? [
-    { value: "summary", label: "Summary", content: <PackageSummary /> },
-    { value: "manifest", label: "Manifest", content: <ManifestPreview /> },
-  ] : undefined}
-/>
-```
-
-Common mistakes: using the split layout on routes without full-height metadata, leaving tabs uncontrolled when route state owns the active tab, or omitting useful inspector labels.
 ## PageContextBar
 
 Purpose: consistent route title, description, metadata, status, and action row.
@@ -265,13 +236,13 @@ Purpose: minimal rounded bordered table container with width containment.
 
 Use when route-owned table markup already exists and only needs the shared frame.
 
-Don't use when you need TanStack sorting and pagination. Use `DataTable` instead.
+Don't use when you need shared sorting. Use `DataTable` instead.
 
 API: `children`, optional `className`, and `testId`.
 
 Accessibility: the table inside still needs its own labels, headers, and actions.
 
-Common mistakes: expecting this component to add horizontal scroll or pagination. The child table owns those details.
+Common mistakes: expecting this component to add sorting or horizontal scroll. The child table owns those details.
 
 ## EmptyStatePanel, InventoryStatePanel, and InlineStatePanel
 
@@ -354,9 +325,9 @@ Accessibility: when `to` is provided, the card renders as a link. The title and 
 Common mistakes: using metric cards for action panels, hiding key status in icon color only, or putting long prose in `note`.
 ## DataTable and DataTableColumnHeader
 
-Purpose: generic TanStack table wrapper with sorting, pagination, density options, empty message, and row test id support.
+Purpose: lightweight generic table wrapper with sorting, density options, empty message, and row test id support.
 
-Use for data that benefits from tabular scan, sortable columns, and pagination.
+Use for small data that benefits from tabular scan and sortable columns.
 
 Don't use for simple cards, route-owned custom tables that already handle paging, or wide payload consoles.
 
