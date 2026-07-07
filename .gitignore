@@ -69,5 +69,5 @@ backend/results/
 
 *.png
 docs/pending-design/*
-.codegraph/*
+.codebase-memory/*
 .opencode/*

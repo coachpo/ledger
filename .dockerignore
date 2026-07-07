@@ -1,6 +1,6 @@
 .git
 .github
-.codegraph
+.codebase-memory
 .env
 .env.*
 **/__pycache__
