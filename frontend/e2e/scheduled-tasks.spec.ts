@@ -205,16 +205,8 @@ async function createScheduledTask(
   const timezoneSelect = page.getByTestId("schedule-timezone-select");
   await timezoneSelect.click();
   await page.getByRole("option", { name: "America/New_York" }).click();
-  await page.getByTestId("schedule-at-local-time-hour").click();
-  await page.getByRole("option", { name: "09" }).click();
-  await page.getByTestId("schedule-at-local-time-minute").click();
-  await page.getByRole("option", { name: "30" }).click();
-  await page.getByTestId("schedule-preview-scheduled-for").click();
-  await page.getByRole("button", { name: "Monday, June 8th, 2026" }).click();
-  await page.getByTestId("schedule-preview-scheduled-for-hour").click();
-  await page.getByRole("option", { name: "13" }).click();
-  await page.getByTestId("schedule-preview-scheduled-for-minute").click();
-  await page.getByRole("option", { name: "30" }).click();
+  await page.getByLabel("Daily local time").fill("09:30");
+  await page.getByTestId("schedule-preview-scheduled-for").fill("2026-06-08T13:30");
   await page.getByLabel("Description").fill("Timezone-sensitive E2E schedule.");
   await page.getByTestId("schedule-input-template-json").fill(
     JSON.stringify(

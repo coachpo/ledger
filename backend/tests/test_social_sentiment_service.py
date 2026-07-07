@@ -689,13 +689,10 @@ def test_social_sentiment_service_degrades_malformed_stocktwits_source() -> None
 
 
 def test_social_sentiment_provider_factories_are_extension_owned() -> None:
-    registrations = {
-        registration.key: registration
-        for registration in register_finance_workspace_provider_factories()
-    }
+    registrations = dict(register_finance_workspace_provider_factories())
     adapters = create_social_sentiment_adapters()
 
-    assert registrations["social_sentiment_adapters"].factory is create_social_sentiment_adapters
+    assert registrations["social_sentiment_adapters"] is create_social_sentiment_adapters
     assert [adapter.source for adapter in adapters] == ["reddit", "stocktwits"]
 
 
